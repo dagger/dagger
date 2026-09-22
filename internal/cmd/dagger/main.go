@@ -1247,7 +1247,15 @@ func getViewWidth() int {
 // flagUsagesWrapped returns the usage string for all flags in the given FlagSet
 // wrapped to the width of the terminal.
 func flagUsagesWrapped(flags *pflag.FlagSet) string {
-	return flags.FlagUsagesWrapped(getViewWidth())
+	usage := flags.FlagUsagesWrapped(getViewWidth())
+	flags.VisitAll(func(flag *pflag.Flag) {
+		if len(flag.Annotations[artifactDimensionFlag]) > 0 {
+			name, _ := pflag.UnquoteUsage(flag)
+			// Uppercase the placeholder without changing the argument name in prose.
+			usage = strings.Replace(usage, "--"+flag.Name+" "+name+" ", "--"+flag.Name+" "+strings.ToUpper(name)+" ", 1)
+		}
+	})
+	return usage
 }
 
 const visibleAliasesAnnotation = "help:visibleAliases"

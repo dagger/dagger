@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/jinzhu/inflection"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -24,15 +25,15 @@ var listCmd = newListCommand()
 
 func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list [TYPE | DIMENSION]",
+		Use:   "list [TYPE]",
 		Short: "List artifacts or collection values",
-		Long:  "List artifacts by type, or values for a collection dimension. Use -a to list all artifacts.",
+		Long:  "List artifacts by type, or keys by collection type. Use -a to list all artifacts.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			all, _ := cmd.Flags().GetBool("all")
 			if !all {
 				if len(args) > 0 {
-					return fmt.Errorf("unknown list type or dimension %q; see 'dagger list --help'", args[0])
+					return fmt.Errorf("unknown list type %q; see 'dagger list --help'", args[0])
 				}
 				return cmd.Help()
 			}
@@ -40,7 +41,7 @@ func newListCommand() *cobra.Command {
 		},
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
-	cmd.AddGroup(&cobra.Group{ID: "types", Title: "Types:"}, &cobra.Group{ID: "dimensions", Title: "Dimensions:"})
+	cmd.AddGroup(&cobra.Group{ID: "types", Title: "Types:"}, &cobra.Group{ID: "dimensions", Title: "Collections:"})
 	cmd.Flags().BoolP("all", "a", false, "List all artifacts, optionally filtered by address")
 	cmd.PersistentFlags().StringArrayP("type", "t", nil, "Select artifacts of this `TYPE` (repeat to select more)")
 	registerArtifactListFlags(cmd)
@@ -78,12 +79,38 @@ func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions artifact.Dimen
 		if name != dimension.Identifier {
 			visible[name] = true
 		}
+		flag := cmd.Flag(name)
+		if flag == nil || len(flag.Annotations[artifactDimensionFlag]) == 0 {
+			continue
+		}
+		key := cliName(dimension.KeyName)
+		if key == "" {
+			key = "key"
+		}
+		placeholder := strings.ToUpper(key)
+		flag.Usage = fmt.Sprintf("Select %s by `%s`. List values: 'dagger list %s'", artifactItemLabel(dimension.ItemType), key, cliName(dimension.CollectionType))
+		if description := strings.TrimSpace(dimension.KeyDescription); description != "" {
+			flag.Usage += "\n" + placeholder + ": " + description
+		}
 	}
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		if len(flag.Annotations[artifactDimensionFlag]) > 0 {
 			flag.Hidden = !visible[flag.Name]
 		}
 	})
+}
+
+func artifactItemLabel(typeName string) string {
+	if typeName == "" {
+		return "items"
+	}
+	words := strings.Split(cliName(typeName), "-")
+	if len(words) > 1 {
+		// Keep the author's prefix casing: GoModule -> Go modules.
+		words[0] = typeName[:len(words[0])]
+	}
+	words[len(words)-1] = inflection.Plural(words[len(words)-1])
+	return strings.Join(words, " ")
 }
 
 // Keep each address intact: its type and dimension filters apply only to its path.
@@ -308,7 +335,7 @@ func artifactDimensions(ctx context.Context, dag *dagger.Client, artifacts *dagg
 		Node struct{ DimensionDefinitions artifact.Dimensions }
 	}
 	err = dag.Do(ctx, &dagger.Request{
-		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { identifier name qualifiedName } } } }`,
+		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { identifier name qualifiedName collectionType itemType keyName keyDescription } } } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &res})
 	return res.Node.DimensionDefinitions, err

@@ -28,7 +28,7 @@ dagger [options] [subcommand | file...]
 * [dagger generate](#dagger-generate)	 - Generate derived files for your project — code, SDKs, types, docs, etc.
 * [dagger init](#dagger-init)	 - Initialize a workspace and show the next commands
 * [dagger install](#dagger-install)	 - Install a module into your workspace
-* [dagger list](#dagger-list)	 - List artifacts or collection items
+* [dagger list](#dagger-list)	 - List artifacts or collection values
 * [dagger llm](#dagger-llm)	 - Manage LLM configuration
 * [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
@@ -1190,23 +1190,22 @@ DIMENSIONS
 
 ## dagger list
 
-List artifacts or collection items
+List artifacts or collection values
 
 ### Synopsis
 
-List artifacts by type or collection. Use -a to list all artifacts.
+List artifacts by type, or keys by collection type. Use -a to list all artifacts.
 
 ```
-dagger list [TYPE | DIMENSION]
+dagger list [TYPE]
 ```
 
 ### Options
 
 ```
-      --absolute        Show absolute links (alias: --abs)
-  -a, --all             List all artifacts, optionally filtered by address
-  -f, --format FORMAT   Output FORMAT: table, link, or cli (default "table")
-  -t, --type TYPE       Select artifacts of this TYPE (repeat to select more)
+      --absolute    Show absolute links (alias: --abs)
+  -a, --all         List all artifacts, optionally filtered by address
+  -t, --type TYPE   Select artifacts of this TYPE (repeat to select more)
 ```
 
 ### Options inherited from parent commands

@@ -14,6 +14,9 @@ type Dimension struct {
 	Identifier     string `field:"true" doc:"Exact GraphQL ParentType.field identifier."`
 	Name           string `field:"true" doc:"Short name derived from the author item type."`
 	QualifiedName  string `field:"true" doc:"Author parent type and field name, in CLI case."`
+	ItemType       string `field:"true" doc:"The author item type name."`
+	KeyName        string `field:"true" doc:"The name of the author get function's key argument."`
+	KeyDescription string `field:"true" doc:"The description of the author get function's key argument."`
 }
 
 func (*Dimension) Type() *ast.Type {

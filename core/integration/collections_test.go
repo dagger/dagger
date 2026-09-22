@@ -163,7 +163,7 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		{[]string{"list", "-a", "items/file", "--collections-items=a"}, "dag://items/file?item=a\n"},
 		{[]string{"list", "-a", "items/file?item=a", "other/file?item=c"}, "dag://items/file?item=a\ndag://other/file?item=c\n"},
 		{[]string{"list", "-a", "items/file?item=a", "--collections-items=c"}, "dag://items/file?item=a\ndag://items/file?item=c\n"},
-		{[]string{"list", "item", "items"}, "a\nb\nc\n"},
+		{[]string{"list", "collections-items", "items"}, "a\nb\nc\n"},
 	} {
 		out, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
 		require.NoError(t, err)

@@ -312,7 +312,7 @@ When `uri` returns an address, `artifacts.filterUri(a.uri)` must select the same
 ### 5. Use the existing CLI and resolver
 
 ```console
-$ dagger list go-test golang --go-module=sdk/go
+$ dagger list go-tests golang --go-module=sdk/go
 TestConnect
 TestQuery
 
