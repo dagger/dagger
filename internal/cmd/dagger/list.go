@@ -8,8 +8,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/iancoleman/strcase"
-	"github.com/jinzhu/inflection"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -17,7 +15,7 @@ import (
 func artifactTypeCommands(types []string) map[string]string {
 	byName := map[string][]string{}
 	for _, typeName := range types {
-		name := inflection.Plural(strcase.ToKebab(typeName))
+		name := cliName(typeName)
 		byName[name] = append(byName[name], typeName)
 	}
 	commands := map[string]string{}
