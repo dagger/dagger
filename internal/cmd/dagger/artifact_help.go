@@ -56,31 +56,31 @@ func artifactCommandFlags(cmd *cobra.Command) string {
 		case "list", "all", "absolute":
 			group = "List options"
 		case "workspace":
-			group, copy.Usage = "Workspace", "Select a workspace at `location` (local path or Git ref)"
+			group, copy.Usage = "Workspace options", "Select a workspace at `location` (local path or Git ref)"
 		case "env":
-			group, copy.Usage = "Workspace", "Apply workspace environment `name`"
+			group, copy.Usage = "Workspace options", "Apply workspace environment `name`"
 		case "load-module":
-			group, copy.Usage = "Workspace", "Use a one-off `module`"
+			group, copy.Usage = "Workspace options", "Use a one-off `module`"
 		case "engine":
-			group, copy.Usage = "Engine", "Select an `engine` (or set DAGGER_ENGINE)"
+			group, copy.Usage = "Execution options", "Select an `engine` (or set DAGGER_ENGINE)"
 		case "allow-llm":
-			group, copy.Usage = "Engine", "Allow `module` to access LLM APIs; use 'all' for all modules"
+			group, copy.Usage = "Execution options", "Allow `module` to access LLM APIs; use 'all' for all modules"
 		case "shell-on-error":
-			group, copy.Usage = "Engine", "Open a shell when a container command fails"
+			group, copy.Usage = "Execution options", "Open a shell when a container command fails"
 		case "progress":
-			group, copy.Usage = "Progress", "Select progress `mode`"
+			group, copy.Usage = "Tracing options", "Select progress `mode`"
 		case "quiet":
-			group, copy.Usage = "Progress", "Reduce progress output"
+			group, copy.Usage = "Tracing options", "Reduce progress output"
 		case "silent":
-			group, copy.Usage = "Progress", "Hide progress output"
+			group, copy.Usage = "Tracing options", "Hide progress output"
 		case "verbose":
-			group, copy.Usage = "Progress", "Show more detail; repeat for more"
+			group, copy.Usage = "Tracing options", "Show more detail; repeat for more"
 		case "debug":
-			group, copy.Usage = "Progress", "Show engine diagnostics"
+			group, copy.Usage = "Tracing options", "Show engine diagnostics"
 		case "web":
-			group, copy.Usage = "Progress", "Open the trace in a browser"
+			group, copy.Usage = "Tracing options", "Open the trace in a browser"
 		case "no-exit":
-			group, copy.Usage = "Progress", "Keep the terminal UI open"
+			group, copy.Usage = "Tracing options", "Keep the terminal UI open"
 		}
 		if len(flag.Annotations[artifactDimensionFlag]) > 0 {
 			group = "Filters"
@@ -135,7 +135,7 @@ func artifactCommandFlags(cmd *cobra.Command) string {
 	}
 	groups["Filters"] = filters
 	var out strings.Builder
-	for _, title := range []string{"Filters", "Options", "List options", "Workspace", "Engine", "Progress"} {
+	for _, title := range []string{"Filters", "Options", "List options", "Workspace options", "Execution options", "Tracing options"} {
 		group := groups[title]
 		if title != "Filters" && (group == nil || !group.HasAvailableFlags()) {
 			continue
