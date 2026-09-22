@@ -109,11 +109,11 @@ func validateCheckSelection(include []string, selected int) error {
 }
 
 func selectCommandChecks(dag *dagger.Client, artifacts *dagger.Artifacts, cmd *cobra.Command) (*dagger.Artifacts, error) {
-	checks := artifacts.FilterCheck()
+	checks := artifacts.FilterCheckCommand()
 	if cmd.Flags().Changed("generated") {
 		// Go SDK option structs omit false. Send the explicit Boolean value.
 		checks = checks.WithGraphQLQuery(dag.QueryBuilder().Select("node").Arg("id", artifacts).
-			InlineFragment("Artifacts").Select("filterCheck").Arg("generated", checksGenerated))
+			InlineFragment("Artifacts").Select("filterCheckCommand").Arg("generated", checksGenerated))
 	}
 	for _, skip := range checksSkip {
 		address, err := dagaddress.Parse(skip)

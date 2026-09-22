@@ -193,11 +193,11 @@ func commandArtifactTargets(dag *dagger.Client, cmd *cobra.Command, artifacts *d
 	case "shell":
 		return artifacts.FilterTypes([]string{"Container", "Directory"}), nil
 	case "agent":
-		return artifacts.FilterAgent(), nil
+		return artifacts.FilterAgentCommand(), nil
 	case "generate":
-		return artifacts.FilterGenerate(), nil
+		return artifacts.FilterGenerateCommand(), nil
 	case "up":
-		return artifacts.FilterUp(), nil
+		return artifacts.FilterUpCommand(), nil
 	default:
 		return nil, fmt.Errorf("command %q does not select artifacts", cmd.Name())
 	}
