@@ -253,6 +253,8 @@ func (dev *EngineDev) test(
 // would itself need the cache locks we may be trying to diagnose. Each timer is
 // relative to runner startup, independent of earlier requests, and both the
 // timer and an in-flight request are reaped when the tests finish.
+//
+//nolint:gosec // G101: this constant is a shell script, not a credential.
 const engineDumpWatchdog = `
 engine_url='http://daggerengine:6060/debug/pprof/goroutine?debug=2'
 runner=
