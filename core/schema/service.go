@@ -285,11 +285,9 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent dagql.ObjectResult[*core.Container], args core.ContainerAsServiceArgs) (*core.Service, error) {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
+	// A service needs only the container config. The service evaluates the
+	// filesystem when it starts.
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return nil, err
 	}
 
