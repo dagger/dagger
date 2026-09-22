@@ -20,6 +20,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
+	"dagger.io/dagger/engineconn"
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -877,53 +878,40 @@ func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program 
 	require.Regexp(t, re, out)
 }
 
-// TestPortableID verifies that llm.portableID returns a portable,
-// recipe-form ID that node() can resolve in any session, whereas llm.id
-// returns an engine-local runtime handle. `dagger llm` session save/resume
-// persists portableID; persisting id used to fail on resume with "missing
-// shared result" once the original engine was gone.
-func (LLMSuite) TestPortableID(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
+// TestTraceRecipe reconstructs a committed conversation from the control record's
+// digest and complete call-payload closure after its source session has closed.
+func (LLMSuite) TestTraceRecipe(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
 	llm := c.LLM().
 		WithModel("openai/gpt-4o").
 		WithSystemPrompt("you are a helpful assistant").
 		WithPrompt("hello")
-
-	portableID, err := llm.PortableID(ctx)
-	require.NoError(t, err)
-	handleID, err := llm.ID(ctx)
-	require.NoError(t, err)
-
-	// portableID must be a self-contained recipe, not an engine-local handle.
-	gid := new(call.ID)
-	require.NoError(t, gid.Decode(string(portableID)))
-	require.False(t, gid.IsHandle(), "portableID must be recipe-form, got a runtime handle")
-
-	// id is the runtime handle that does not survive across engines: this is
-	// exactly the engineResult(N) reference that broke session resume.
-	hid := new(call.ID)
-	require.NoError(t, hid.Decode(string(handleID)))
-	require.True(t, hid.IsHandle(), "id is expected to be a runtime handle")
-
-	// portableID resolves via node() and reconstructs the same conversation.
-	reloaded := dagger.Ref[*dagger.LLM](c, portableID)
-	reloadedModel, err := reloaded.Model(ctx)
+	origHist, err := llm.Transcript(ctx)
 	require.NoError(t, err)
 	origModel, err := llm.Model(ctx)
 	require.NoError(t, err)
-	require.Equal(t, origModel, reloadedModel)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, llm)
+	require.NoError(t, err)
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(string(recipe)))
+	require.False(t, gid.IsHandle(), "the traced anchor must reconstruct without a source-session handle")
+	require.NoError(t, c.Close())
+
+	dst, _ := connectWithTrace(ctx, t)
+	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	model, err := reloaded.Model(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origModel, model)
+	history, err := reloaded.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, history)
 }
 
-// TestPortableIDWithResponse verifies that a conversation containing
-// assistant content blocks survives the portableID round trip. Empty
-// "arguments" on a
-// non-tool-call block decodes to nil and is dropped from the serialized ID
-// literal; reloading used to fail with `missing required input field
-// "arguments"`, which broke resume for every saved session with a reply.
-func (LLMSuite) TestPortableIDWithResponse(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
+// Empty arguments on non-tool-call content decode to nil and may be omitted
+// from recipe literals. This once prevented conversations with replies from
+// being reconstructed, with a missing required input field "arguments" error.
+func (LLMSuite) TestTraceRecipeWithResponse(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
 	llm := c.LLM().
 		WithModel("openai/gpt-4o").
 		WithPrompt("hello").
@@ -931,25 +919,25 @@ func (LLMSuite) TestPortableIDWithResponse(ctx context.Context, t *testctx.T) {
 			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: dagger.JSON(`{"path":"/x"}`)},
 		})
-
-	portableID, err := llm.PortableID(ctx)
+	origHist, err := llm.Transcript(ctx)
 	require.NoError(t, err)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, llm)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
 
-	reloaded := dagger.Ref[*dagger.LLM](c, portableID)
+	dst, _ := connectWithTrace(ctx, t)
+	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
 	reply, err := reloaded.LastReply(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", reply)
+	history, err := reloaded.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, history)
 }
 
-// TestPortableIDCarriesProvider verifies that an explicitly selected provider
-// survives the portableID round trip. The model name here matches no known
-// provider pattern — the exact case llm(provider:) exists for — so a resumed
-// session that re-inferred the provider from the name would route to the
-// generic OpenAI-compatible fallback instead of the provider the session was
-// created with.
-func (LLMSuite) TestPortableIDCarriesProvider(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
+// An unknown model name cannot recover its explicit provider by inference.
+func (LLMSuite) TestTraceRecipeCarriesProvider(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
 	llm := c.LLM(dagger.LLMOpts{
 		Model:    "my-custom-finetune",
 		Provider: "openai",
@@ -958,117 +946,75 @@ func (LLMSuite) TestPortableIDCarriesProvider(ctx context.Context, t *testctx.T)
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
 		})
-
 	origProvider, err := llm.Provider(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "openai", origProvider)
-
-	portableID, err := llm.PortableID(ctx)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
+	require.NoError(t, c.Close())
 
-	reloaded := dagger.Ref[*dagger.LLM](c, portableID)
-	reloadedProvider, err := reloaded.Provider(ctx)
+	dst, _ := connectWithTrace(ctx, t)
+	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	provider, err := reloaded.Provider(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "openai", reloadedProvider,
-		"an explicit provider must survive a save/resume round trip")
-
-	reloadedModel, err := reloaded.Model(ctx)
+	require.Equal(t, "openai", provider, "the trace must retain the explicit provider")
+	model, err := reloaded.Model(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "my-custom-finetune", reloadedModel)
+	require.Equal(t, "my-custom-finetune", model)
 }
 
-// TestDefaultModelPinnedInID verifies that llm() with no model re-calls
-// itself with the configured default model and its provider pinned as
-// explicit arguments — the Container.from digest-expansion pattern — so the
-// recorded ID names the model the conversation actually runs against. A
-// saved session then resumes on its own model instead of whatever default
-// the resuming environment happens to configure. Runs the CLI in a container
-// so the client environment (which the router reads its config from) is
-// controlled regardless of the test host's own provider configuration.
-func (LLMSuite) TestDefaultModelPinnedInID(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	out, err := workspaceBase(t, c).
-		WithEnvVariable("OPENAI_MODEL", "gpt-4o-test").
-		With(daggerShell(`llm | portable-id`)).
-		Stdout(ctx)
+// Resolve routing in the source CLI's controlled environment, then reconstruct
+// in a session with different defaults. The traced conversation, not the new
+// client's configuration or a semantic small-model selector, owns the route.
+func (LLMSuite) TestDefaultModelPinnedInTrace(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t, engineconn.Config{
+		ExtraEnv: []string{"OPENAI_MODEL=gpt-4o-test"},
+	})
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM())
 	require.NoError(t, err)
+	require.NoError(t, c.Close())
 
-	gid := new(call.ID)
-	require.NoError(t, gid.Decode(strings.TrimSpace(out)))
-
-	var llmCall *call.ID
-	for cur := gid; cur != nil; cur = cur.Receiver() {
-		if cur.Field() == "llm" {
-			llmCall = cur
-		}
-	}
-	require.NotNil(t, llmCall, "the portable ID must be rooted at llm()")
-	pinned := map[string]string{}
-	for _, arg := range llmCall.Args() {
-		if lit, ok := arg.Value().(*call.LiteralString); ok {
-			pinned[arg.Name()] = lit.Value()
-		}
-	}
-	require.Equal(t, "gpt-4o-test", pinned["model"],
-		"llm() must pin the configured default model into the recorded call")
-	require.Equal(t, "openai", pinned["provider"],
-		"llm() must pin the default model's routed provider alongside it")
+	dst, _ := connectWithTrace(ctx, t, engineconn.Config{
+		ExtraEnv: []string{"OPENAI_MODEL=different-default"},
+	})
+	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	model, err := reloaded.Model(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-4o-test", model)
+	provider, err := reloaded.Provider(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "openai", provider)
 }
 
-func (LLMSuite) TestSmallModelPinnedInID(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	out, err := workspaceBase(t, c).
-		WithEnvVariable("OPENAI_MODEL", "gpt-main-model-test").
-		WithEnvVariable("OPENAI_SMALL_MODEL", "small-model-test").
-		With(daggerShell(`llm | with-small-model | portable-id`)).
-		Stdout(ctx)
+func (LLMSuite) TestSmallModelPinnedInTrace(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t, engineconn.Config{
+		ExtraEnv: []string{"OPENAI_MODEL=gpt-main-model-test", "OPENAI_SMALL_MODEL=small-model-test"},
+	})
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithSmallModel())
 	require.NoError(t, err)
+	require.NoError(t, c.Close())
 
-	gid := new(call.ID)
-	require.NoError(t, gid.Decode(strings.TrimSpace(out)))
-
-	var llmCall *call.ID
-	for cur := gid; cur != nil; cur = cur.Receiver() {
-		require.NotEqual(t, "withSmallModel", cur.Field(),
-			"the durable recipe must not retain the semantic selector")
-		if cur.Field() == "llm" {
-			llmCall = cur
-		}
-	}
-	// PortableRecipe follows the repository's flat-LLM convention: a final
-	// withModel state is folded into the root llm(model:, provider:) selector
-	// rather than retaining the mutator in the spine. Either representation is
-	// concrete; importantly, withSmallModel itself is absent.
-	require.NotNil(t, llmCall,
-		"withSmallModel must pin its resolved route into the flat LLM recipe")
-	pinned := map[string]string{}
-	for _, arg := range llmCall.Args() {
-		if lit, ok := arg.Value().(*call.LiteralString); ok {
-			pinned[arg.Name()] = lit.Value()
-		}
-	}
-	require.Equal(t, "small-model-test", pinned["model"])
-	require.Equal(t, "openai", pinned["provider"])
+	dst, _ := connectWithTrace(ctx, t, engineconn.Config{
+		ExtraEnv: []string{"OPENAI_MODEL=different-main", "OPENAI_SMALL_MODEL=different-small"},
+	})
+	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	model, err := reloaded.Model(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "small-model-test", model)
+	provider, err := reloaded.Provider(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "openai", provider)
 }
 
-// TestPortableIDDropsSupersededWorkspaceBindings verifies that portableID
-// re-emits the session as a flat, data-only recipe: the conversation survives
-// byte-for-byte, but the workspace overlays recorded during the session
-// (withWorkspace nodes carrying withChanges derivations) are superseded by the
-// current binding and dropped, so a persisted ID no longer reapplies workspace
-// edits when loaded. This is what makes ctrl+s (export + rebind) durable:
-// reapplying an edit chain against already-updated files fails with "search
-// string not found" or silently re-applies.
-func (LLMSuite) TestPortableIDDropsSupersededWorkspaceBindings(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	initGitRepo(ctx, t, workdir)
-	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	current := c.CurrentWorkspace()
-
-	// llm() starts unbound; bind the live workspace explicitly, as the CLI
-	// does at session start.
+// Exporting and rebinding to a new snapshot must not resurrect superseded
+// withChanges overlays when the traced conversation is reconstructed.
+func (LLMSuite) TestTraceRecipeAfterChangesExport(ctx context.Context, t *testctx.T) {
+	workdir, git := workspaceExportCheckout(ctx, t)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "a.txt"), []byte("before"), 0o644))
+	git("add", "a.txt")
+	git("commit", "-m", "initial editable file")
+	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
+	current := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
 	llm := c.LLM().
 		WithWorkspace(current).
 		WithModel("openai/gpt-4o").
@@ -1080,50 +1026,30 @@ func (LLMSuite) TestPortableIDDropsSupersededWorkspaceBindings(ctx context.Conte
 		}).
 		WithToolResult("call_1", "file contents", false)
 
-	// Overlay a changeset onto the LLM's workspace, mimicking what a
-	// workspace-mutating tool call records mid-session.
 	base := c.Directory().WithNewFile("a.txt", "before")
 	edited := base.WithNewFile("a.txt", "after")
 	llmEdited := llm.WithWorkspace(llm.Workspace().WithChanges(edited.Changes(base)))
-
-	// Simulate ctrl+s after the export: rebind the live workspace, whose
-	// on-disk content the export just made equal to the overlay result.
-	rebound := llmEdited.WithWorkspace(current)
-
-	// The conversation is preserved exactly.
+	require.NoError(t, llmEdited.Workspace().Export(ctx, dagger.WorkspaceExportOpts{Path: workdir}))
+	rebound := llmEdited.WithWorkspace(snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()))
 	origHist, err := llmEdited.Transcript(ctx)
 	require.NoError(t, err)
 	reboundHist, err := rebound.Transcript(ctx)
 	require.NoError(t, err)
 	require.Equal(t, origHist, reboundHist)
-
-	// The persisted recipe is flat: exactly one workspace binding (the current
-	// one) survives, and no withResetWorkspace node exists at all.
-	globalID, err := rebound.PortableID(ctx)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, rebound)
 	require.NoError(t, err)
-	gid := new(call.ID)
-	require.NoError(t, gid.Decode(string(globalID)))
-	var bindings int
-	for cur := gid; cur != nil; cur = cur.Receiver() {
-		require.NotEqual(t, "withResetWorkspace", cur.Field(),
-			"withResetWorkspace is gone; portableID re-emits the recipe itself")
-		if cur.Field() == "withWorkspace" {
-			bindings++
-		}
-	}
-	require.Equal(t, 1, bindings,
-		"only the current workspace binding belongs in the recipe; "+
-			"superseded overlay bindings must be dropped")
+	require.NoError(t, c.Close())
 
-	// The property that actually matters: reloading the persisted session does
-	// not resurrect the already-exported overlay as a pending change.
-	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
-	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
+	// A new session must reconstruct the current binding, irrespective of
+	// whether the producer prunes superseded immutable recipe dependencies.
+	dst, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
+	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, dst.CurrentWorkspace())}).IsEmpty(ctx)
 	require.NoError(t, err)
-	require.True(t, reloadedEmpty,
-		"a reloaded session must not reapply already-exported workspace edits")
-
-	// The reloaded session reloads with the conversation intact.
+	require.True(t, reloadedEmpty, "resume must not reapply already-exported workspace edits")
+	contents, err := reloaded.Workspace().File("a.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "after", contents)
 	reply, err := reloaded.LastReply(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", reply)
@@ -1132,21 +1058,12 @@ func (LLMSuite) TestPortableIDDropsSupersededWorkspaceBindings(ctx context.Conte
 	require.Equal(t, origHist, reloadedHist)
 }
 
-// TestPortableIDDropsNonChangesOverlays verifies that the flattening drops
-// workspace overlays applied through mutators other than withChanges — e.g.
-// the withNewFile / withNewDirectory calls the built-in filesystem tools use.
-// An earlier reset only peeled a trailing withChanges chain, so a workspace
-// edited via withNewFile stayed pinned with its overlay: the persisted session
-// still reported the (already-exported) edit as a pending change, which is
-// what made `dagger agent`'s ctrl+s leave a stale "Changes" bubble and re-diff
-// already-saved files as deletions on the next turn. Emitting only the current
-// binding strips every overlay shape, including ones added later.
-func (LLMSuite) TestPortableIDDropsNonChangesOverlays(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	initGitRepo(ctx, t, workdir)
-	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	current := c.CurrentWorkspace()
-
+// Exercise overlays made by filesystem tools, not only withChanges. Previously
+// these retained an already-exported overlay and reported stale pending edits.
+func (LLMSuite) TestTraceRecipeAfterFileExport(ctx context.Context, t *testctx.T) {
+	workdir, git := workspaceExportCheckout(ctx, t)
+	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
+	current := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
 	llm := c.LLM().
 		WithWorkspace(current).
 		WithModel("openai/gpt-4o").
@@ -1155,66 +1072,49 @@ func (LLMSuite) TestPortableIDDropsNonChangesOverlays(ctx context.Context, t *te
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
 		})
-
-	// Overlay edits via workspace mutators (not withChanges), mimicking the
-	// built-in write tool: currentWorkspace().withNewFile(...).withNewFile(...).
 	edited := llm.WithWorkspace(
 		llm.Workspace().
 			WithNewFile("added.txt", "one").
 			WithNewFile("another.txt", "two"),
 	)
-
-	// Sanity check: before the rebind the overlay reports the edits as pending.
 	editedEmpty, err := edited.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.False(t, editedEmpty, "overlaid workspace should report pending changes")
-
-	// Rebind the live workspace, as the CLI does after ctrl+s exports.
-	rebound := edited.WithWorkspace(current)
-	reboundEmpty, err := rebound.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
+	require.NoError(t, edited.Workspace().Export(ctx, dagger.WorkspaceExportOpts{Path: workdir}))
+	git("add", "added.txt", "another.txt")
+	fresh := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	rebound := edited.WithWorkspace(fresh)
+	reboundEmpty, err := rebound.Workspace().Changes(dagger.WorkspaceChangesOpts{From: fresh}).IsEmpty(ctx)
 	require.NoError(t, err)
-	require.True(t, reboundEmpty,
-		"rebinding the live workspace must drop the overlay edits")
-
-	// The persisted recipe carries only the current binding: no overlay
-	// mutator survives on the workspace argument's chain.
-	globalID, err := rebound.PortableID(ctx)
-	require.NoError(t, err)
-	gid := new(call.ID)
-	require.NoError(t, gid.Decode(string(globalID)))
-	for cur := gid; cur != nil; cur = cur.Receiver() {
-		require.NotEqual(t, "withResetWorkspace", cur.Field(),
-			"withResetWorkspace is gone; portableID re-emits the recipe itself")
-		require.NotEqual(t, "withNewFile", cur.Field(),
-			"superseded overlay mutators must not reach the persisted recipe")
-	}
-
-	// Reloading must not resurrect the already-exported edits.
-	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
-	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
-	require.NoError(t, err)
-	require.True(t, reloadedEmpty,
-		"a reloaded session must not reapply already-exported workspace edits")
-
-	// The conversation survives the rebind byte-for-byte.
+	require.True(t, reboundEmpty, "rebinding the exported snapshot must drop the overlay edits")
 	origHist, err := edited.Transcript(ctx)
 	require.NoError(t, err)
-	reboundHist, err := rebound.Transcript(ctx)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, rebound)
 	require.NoError(t, err)
-	require.Equal(t, origHist, reboundHist)
+	require.NoError(t, c.Close())
+
+	dst, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
+	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, dst.CurrentWorkspace())}).IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, reloadedEmpty, "resume must not reapply already-exported workspace edits")
+	for path, expected := range map[string]string{"added.txt": "one", "another.txt": "two"} {
+		contents, err := reloaded.Workspace().File(path).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expected, contents)
+	}
+	reloadedHist, err := reloaded.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, reloadedHist)
 }
 
-// TestPortableIDPreservesPendingEdits guards the other half of the contract:
-// a mid-session autosave (no export, no rebind) must bring the agent's pending
-// workspace edits back when the session is resumed. The current binding is
-// emitted verbatim, overlay derivations and all, so un-exported work is not
-// silently discarded by saving.
-func (LLMSuite) TestPortableIDPreservesPendingEdits(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	initGitRepo(ctx, t, workdir)
-	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	current := c.CurrentWorkspace()
-
+// Capturing before export must preserve the agent's pending edits and its
+// frozen base, even if the client checkout changes after the source closes.
+func (LLMSuite) TestTraceRecipePreservesPendingEdits(ctx context.Context, t *testctx.T) {
+	workdir, _ := workspaceExportCheckout(ctx, t)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("SOURCE"), 0o644))
+	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
+	current := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
 	llm := c.LLM().
 		WithWorkspace(current).
 		WithModel("openai/gpt-4o").
@@ -1222,29 +1122,25 @@ func (LLMSuite) TestPortableIDPreservesPendingEdits(ctx context.Context, t *test
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
 		})
-
-	// A tool call edits the workspace; nothing is exported.
 	edited := llm.WithWorkspace(llm.Workspace().WithNewFile("pending.txt", "PENDING"))
-
-	// Autosave as-is — the shape LLMSession.AutoSaveSession persists.
-	savedID, err := edited.PortableID(ctx)
+	origHist, err := edited.Transcript(ctx)
 	require.NoError(t, err)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, edited)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("DESTINATION"), 0o644))
 
-	reloaded := dagger.Ref[*dagger.LLM](c, savedID)
-
-	// The pending edit comes back, both as content and as a pending change.
+	dst, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
+	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
 	contents, err := reloaded.Workspace().File("pending.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "PENDING", contents)
-
-	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
+	base, err := reloaded.Workspace().File("base.txt").Contents(ctx)
 	require.NoError(t, err)
-	require.False(t, reloadedEmpty,
-		"un-exported edits must survive a save/resume round trip")
-
-	// And so does the conversation.
-	origHist, err := edited.Transcript(ctx)
+	require.Equal(t, "SOURCE", base, "the trace, not the client checkout, owns the workspace")
+	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, dst.CurrentWorkspace())}).IsEmpty(ctx)
 	require.NoError(t, err)
+	require.False(t, reloadedEmpty, "un-exported edits must survive trace reconstruction")
 	reloadedHist, err := reloaded.Transcript(ctx)
 	require.NoError(t, err)
 	require.Equal(t, origHist, reloadedHist)
