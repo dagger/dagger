@@ -11673,12 +11673,6 @@ class LLM(Type):
         _ctx = self._select("withWorkspace", _args)
         return LLM(_ctx)
 
-    def without_default_system_prompt(self) -> Self:
-        """Disable the default system prompt"""
-        _args: list[Arg] = []
-        _ctx = self._select("withoutDefaultSystemPrompt", _args)
-        return LLM(_ctx)
-
     def without_message_history(self) -> Self:
         """Clear the message history, keeping only the system prompts."""
         _args: list[Arg] = []
@@ -11686,9 +11680,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     def without_system_prompts(self) -> Self:
-        """Clear the user-added system prompts, keeping only the default system
-        prompt.
-        """
+        """Clear all system prompts."""
         _args: list[Arg] = []
         _ctx = self._select("withoutSystemPrompts", _args)
         return LLM(_ctx)

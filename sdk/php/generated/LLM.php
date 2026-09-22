@@ -77,7 +77,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Clear the user-added system prompts, keeping only the default system prompt.
+     * Clear all system prompts.
      */
     public function withoutSystemPrompts(): LLM
     {
@@ -269,15 +269,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         if (null !== $except) {
         $innerQueryBuilder->setArgument('except', $except);
         }
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Disable the default system prompt
-     */
-    public function withoutDefaultSystemPrompt(): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDefaultSystemPrompt');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

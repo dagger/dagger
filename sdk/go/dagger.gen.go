@@ -11769,15 +11769,6 @@ func (r *LLM) WithWorkspace(workspace *Workspace) *LLM {
 	}
 }
 
-// Disable the default system prompt
-func (r *LLM) WithoutDefaultSystemPrompt() *LLM {
-	q := r.query.Select("withoutDefaultSystemPrompt")
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // Clear the message history, keeping only the system prompts.
 func (r *LLM) WithoutMessageHistory() *LLM {
 	q := r.query.Select("withoutMessageHistory")
@@ -11787,7 +11778,7 @@ func (r *LLM) WithoutMessageHistory() *LLM {
 	}
 }
 
-// Clear the user-added system prompts, keeping only the default system prompt.
+// Clear all system prompts.
 func (r *LLM) WithoutSystemPrompts() *LLM {
 	q := r.query.Select("withoutSystemPrompts")
 

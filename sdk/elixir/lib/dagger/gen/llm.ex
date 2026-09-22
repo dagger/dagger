@@ -593,20 +593,6 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Disable the default system prompt
-  """
-  @spec without_default_system_prompt(t()) :: Dagger.LLM.t()
-  def without_default_system_prompt(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("withoutDefaultSystemPrompt")
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
   Clear the message history, keeping only the system prompts.
   """
   @spec without_message_history(t()) :: Dagger.LLM.t()
@@ -621,7 +607,7 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Clear the user-added system prompts, keeping only the default system prompt.
+  Clear all system prompts.
   """
   @spec without_system_prompts(t()) :: Dagger.LLM.t()
   def without_system_prompts(%__MODULE__{} = llm) do
