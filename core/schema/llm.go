@@ -48,7 +48,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("withoutMessageHistory", s.withoutMessageHistory).
 			Doc("Clear the message history, keeping only the system prompts."),
 		dagql.Func("withoutSystemPrompts", s.withoutSystemPrompts).
-			Doc("Clear the user-added system prompts, keeping only the default system prompt."),
+			Doc("Clear all system prompts."),
 		dagql.Func("lastReply", s.lastReply).
 			Doc("The text of the model's most recent reply."),
 		dagql.Func("withWorkspace", s.withWorkspace).
@@ -160,8 +160,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					LazyRef(),
 				dagql.Arg("except").Doc("Method names to exclude from the toolset (e.g. constructors, entrypoints)."),
 			),
-		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
-			Doc("Disable the default system prompt"),
 		dagql.Func("withMCPServer", s.withMCPServer).
 			Doc("Add an external MCP server to the LLM").
 			Args(
@@ -565,10 +563,6 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 		return nil, fmt.Errorf("bind object to its defining type: %w", err)
 	}
 	return llm.WithTools(obj, definingServer.Schema(), args.Except), nil
-}
-
-func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm.WithoutDefaultSystemPrompt(), nil
 }
 
 func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struct {

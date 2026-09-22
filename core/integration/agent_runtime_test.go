@@ -2056,12 +2056,16 @@ func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *te
 	task := "hire task " + identity.NewID()
 
 	// Unlike the roster test's empty recording, this one SUCCEEDS turn 1
-	// and holds a second exchange for the post-hire send. It deliberately
-	// does NOT lead with the worker system prompt hire composes in: the
-	// replayer drops one leading SYSTEM message from the live history
-	// before matching (core/llm_replay.go), and with no synthesized default
-	// prompt in play the dropped message is hire's WithSystemPrompt itself.
+	// and holds a second exchange for the post-hire send. Include the exact
+	// system prompt hire composes into the worker's history.
+	worker, err := testutil.QueryWithClient[struct {
+		Hirer struct {
+			WorkerPrompt string
+		}
+	}](c, t, `{ hirer { workerPrompt } }`, nil)
+	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithSystemPrompt(worker.Hirer.WorkerPrompt).
 		WithPrompt(task).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: firstReply},
