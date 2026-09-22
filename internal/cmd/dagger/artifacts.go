@@ -98,6 +98,13 @@ func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions artifact.Dimen
 			flag.Hidden = !visible[flag.Name]
 		}
 	})
+	const selectionHelp = "Repeat a flag to select multiple keys. Different flags must all match."
+	if len(visible) > 0 && !strings.Contains(cmd.Long, selectionHelp) {
+		if cmd.Long == "" {
+			cmd.Long = cmd.Short
+		}
+		cmd.Long += "\n\n" + selectionHelp
+	}
 }
 
 func artifactItemLabel(typeName string) string {
