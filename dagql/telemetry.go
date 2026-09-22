@@ -63,42 +63,31 @@ func ShouldEmitTelemetry(ctx context.Context, store TelemetrySeenKeyStore, callK
 	return true
 }
 
-// callPayloadSeenKeyPrefix namespaces call-payload dedupe keys inside the
-// session's seen-key store. The two uses of that store must never touch each
-// other's keys: ShouldEmitTelemetry's keys are bare call digests and decide
-// whether a SPAN is emitted at all, while these decide whether a call PAYLOAD
-// still needs to cross the log channel. Claiming a payload digest is done for
-// every frame of a chain's transitive closure, so sharing the key space would
-// suppress the spans of every one of those frames; conversely span dedupe must
-// remain independent because a suppressed span still needs its log payload.
-// A prefix that cannot occur in a digest keeps the two disjoint by
-// construction.
-const callPayloadSeenKeyPrefix = "dag.call.payload:"
-
-// ShouldEmitCallPayload reports whether the payload for callDigest still has
-// to reach clients through the given claim store, CLAIMING it for the caller
-// when so: it returns true at most once per digest per store scope, to
-// whoever asks first. The store defines the scope — the engine hands this a
-// store scoped to the emitting client's delivery domain (the client and its
-// ancestors, i.e. the DBs the record actually fans out to), so a claim never
-// outlives the set of clients it was delivered to.
+// CallPayloadSeenKeyStore tracks immutable call payload delivery per target in
+// the current route — the emitting client and its ancestors, i.e. the DBs its
+// telemetry fans out to. The engine hands producers a store scoped to that
+// route rather than to the session, so a claim never outlives the set of
+// clients the payload was actually delivered to; a client attaching later
+// still receives every frame on its first closure walk.
 //
-// Producers claim every root and transitive frame through this function before
-// carrying it on a span or emitting its log record. Consumers may also populate
-// the same payload store from legacy dagger.io/dag.call span attributes, but
-// those ingested attributes do not participate in producer-side claims.
+// ClaimCallPayload reports whether the payload for a digest still has to
+// cross the log channel for ANY target on the route, CLAIMING those targets
+// for the caller when so. It returns true at most once per digest per target
+// until the claim is released, so concurrent closure walks over a shared
+// chain build and encode each frame once rather than once per walk. The
+// engine's log exporter settles the claim per target after persistence: a
+// successful write marks the target delivered for good, a failed one releases
+// it so a later walk can repair the gap.
+//
+// CallPayloadDelivered marks the digest delivered to every route target
+// outright, for a payload that rode a recording span rather than a log.
 //
 // Unlike ShouldEmitTelemetry this is deliberately NOT sensitive to
 // WithRepeatedTelemetry or to DoNotCache. Both exist so the same work can be
 // SHOWN again — a re-run tool call is a new span worth seeing — but a
 // payload is immutable data keyed by its own digest, so a second copy tells a
 // client nothing it does not already have.
-//
-// With no store there is no session to dedupe against, so nothing is emitted
-// rather than emitting unboundedly.
-func ShouldEmitCallPayload(store TelemetrySeenKeyStore, callDigest string) bool {
-	if store == nil || callDigest == "" {
-		return false
-	}
-	return !store.LoadOrStoreTelemetrySeenKey(callPayloadSeenKeyPrefix + callDigest)
+type CallPayloadSeenKeyStore interface {
+	ClaimCallPayload(string) bool
+	CallPayloadDelivered(string)
 }

@@ -137,6 +137,14 @@ type daggerSession struct {
 	telemetryPubSub *PubSub
 	seenKeys        sync.Map
 
+	// callPayloadTargets tracks, per immutable call payload digest, where each
+	// client delivery target stands in the payload pipeline (see
+	// callPayloadState). Producers claim under this lock before any recipe
+	// work; the log exporter takes and settles under it around each write. It
+	// is never held across I/O.
+	callPayloadMu      sync.Mutex
+	callPayloadTargets map[string]map[string]callPayloadState
+
 	services *core.Services
 	agents   *core.AgentRuntimes
 	resolver *serverresolver.Resolver
@@ -790,7 +798,8 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, cloudEngine b
 	sess.logExporter = logExporter
 
 	// Keep the raised link limit used by wcprof wait edges. One bounded trace
-	// queue and one bounded log queue serve the entire session.
+	// queue and an ordinary log queue plus a payload-only on-demand queue
+	// serve the entire session. Metric readers are owned by each client.
 	spanLimits := sdktrace.NewSpanLimits()
 	spanLimits.LinkCountLimit = 16384
 	tracerOpts := []sdktrace.TracerProviderOption{
@@ -813,9 +822,14 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, cloudEngine b
 	)
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
-		// Stamp origin before the batch processor copies the record.
+		// Stamp origin before either batch processor copies the record. Call
+		// payloads take their own lossless, retrying, on-demand batch path so
+		// sparse closures reach clients before fast calls finish and recipe
+		// bursts never evict ordinary logs (exec output) from the bounded queue;
+		// the ordinary 250ms batch processor carries everything else.
 		sdklog.WithProcessor(telemetryOriginLogProcessor{sessionID: sess.sessionID}),
-		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(logExporter)),
+		sdklog.WithProcessor(enginetel.NewCallPayloadBatchProcessor(logExporter)),
+		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
@@ -823,7 +837,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, cloudEngine b
 		TracerProviders:          1,
 		LoggerProviders:          1,
 		ConfiguredSpanProcessors: 4,
-		ConfiguredLogProcessors:  2,
+		ConfiguredLogProcessors:  3,
 		ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
 		ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
 	}
@@ -3459,20 +3473,11 @@ func (srv *Server) TelemetrySeenKeyStore(ctx context.Context) (dagql.TelemetrySe
 }
 
 // CallPayloadSeenKeyStore returns the claim store for call-payload telemetry
-// (core/dag_call_telemetry.go), scoped to the current client's DELIVERY
-// domain rather than the whole session.
-//
-// Telemetry emitted in a client's context is delivered to that client's DB
-// and every ancestor's (PubSub's fan-out in engine/server/telemetry.go), so a
-// session-wide claim would let one client's emission permanently satisfy the
-// claim for clients that never received it: a client attaching to the session
-// later — a nested `dagger agent`, a sibling joining via a shared session ID —
-// could then never obtain the payloads its ID rebuilds need, and every agent
-// referenced through an already-claimed frame would be unaddressable there.
-// Claiming per delivery target instead marks a digest "seen" exactly where it
-// actually landed, so a later client's first closure walk re-publishes into
-// its own domain.
-func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.TelemetrySeenKeyStore, error) {
+// (core/dag_call_telemetry.go), scoped to the current client's delivery route
+// — the client and its ancestors, exactly the DBs PubSub fans its telemetry
+// out to — rather than the whole session. Claims are per (digest, target), so
+// a client attaching later still receives every frame on its own first walk.
+func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.CallPayloadSeenKeyStore, error) {
 	record, err := srv.clientRecordFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -3487,33 +3492,126 @@ func (srv *Server) CallPayloadSeenKeyStore(ctx context.Context) (dagql.Telemetry
 	}, nil
 }
 
-// callPayloadDeliveryStore marks seen-keys per delivery target — the emitting
-// client and its ancestors, exactly the DBs PubSub fans this telemetry out to —
-// backed by the session's seen-key map with a per-target suffix. A key counts
-// as seen only when EVERY target has it, so an emission is skipped only when
-// nobody in the delivery domain still needs it. The NUL separator cannot occur
-// in a digest or client ID, keeping the suffixed key space disjoint from the
-// session store's other keys by construction.
+// callPayloadDeliveryStore is the producer's view of the session's per-target
+// payload state, bound to one route.
 type callPayloadDeliveryStore struct {
 	session *daggerSession
 	targets []string
 }
 
-var _ dagql.TelemetrySeenKeyStore = (*callPayloadDeliveryStore)(nil)
+var _ dagql.CallPayloadSeenKeyStore = (*callPayloadDeliveryStore)(nil)
 
-func (s *callPayloadDeliveryStore) LoadOrStoreTelemetrySeenKey(key string) bool {
-	seenEverywhere := true
-	for _, target := range s.targets {
-		if !s.session.LoadOrStoreTelemetrySeenKey(key + "\x00" + target) {
-			seenEverywhere = false
-		}
-	}
-	return seenEverywhere
+func (s *callPayloadDeliveryStore) ClaimCallPayload(digest string) bool {
+	return len(s.session.claimCallPayload(digest, s.targets)) > 0
 }
 
-func (s *callPayloadDeliveryStore) StoreTelemetrySeenKey(key string) {
-	for _, target := range s.targets {
-		s.session.StoreTelemetrySeenKey(key + "\x00" + target)
+func (s *callPayloadDeliveryStore) CallPayloadDelivered(digest string) {
+	s.session.settleCallPayload(digest, s.targets, true)
+}
+
+// callPayloadState is one (digest, target) pair's position in the payload
+// pipeline. The producer claims a target before doing any recipe work; the
+// session log exporter takes the claim exclusively for the duration of a DB
+// write and then settles it, so overlapping records for the same digest
+// (sibling routes sharing an ancestor, a retried batch racing a fresh walk)
+// never write the same row twice and a failed write never leaves a target
+// stuck.
+type callPayloadState uint8
+
+const (
+	// callPayloadUnclaimed: no producer has claimed the target, or its last
+	// write failed. The failed record may still be queued for retry, but a
+	// fresh walk is free to emit it again; the exporter dedupes either way.
+	callPayloadUnclaimed callPayloadState = iota
+	// callPayloadClaimed: a producer claimed the target and its record is
+	// queued for export.
+	callPayloadClaimed
+	// callPayloadWriting: the log exporter owns the target while it writes.
+	callPayloadWriting
+	// callPayloadDelivered: the target's DB holds the payload (or its span).
+	callPayloadDelivered
+)
+
+func (sess *daggerSession) callPayloadStates(digest string, create bool) map[string]callPayloadState {
+	states := sess.callPayloadTargets[digest]
+	if states == nil && create {
+		if sess.callPayloadTargets == nil {
+			sess.callPayloadTargets = map[string]map[string]callPayloadState{}
+		}
+		states = map[string]callPayloadState{}
+		sess.callPayloadTargets[digest] = states
+	}
+	return states
+}
+
+// claimCallPayload moves every unclaimed target on the route to claimed and
+// returns them, in route order. Observing and claiming the whole missing
+// subset is one critical section, so concurrent overlapping routes assign each
+// target to exactly one claimant.
+func (sess *daggerSession) claimCallPayload(digest string, targets []string) []string {
+	if digest == "" || len(targets) == 0 {
+		return nil
+	}
+	sess.callPayloadMu.Lock()
+	defer sess.callPayloadMu.Unlock()
+
+	states := sess.callPayloadStates(digest, true)
+	claimed := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if states[target] == callPayloadUnclaimed {
+			states[target] = callPayloadClaimed
+			claimed = append(claimed, target)
+		}
+	}
+	return claimed
+}
+
+// takeCallPayloadForWrite gives the caller exclusive ownership of every route
+// target that still needs the digest and is not already being written by
+// another export, returning them in route order. Each returned target must be
+// settled afterwards: delivered on success, released on failure.
+func (sess *daggerSession) takeCallPayloadForWrite(digest string, targets []string) []string {
+	if digest == "" || len(targets) == 0 {
+		return nil
+	}
+	sess.callPayloadMu.Lock()
+	defer sess.callPayloadMu.Unlock()
+
+	states := sess.callPayloadStates(digest, true)
+	taken := make([]string, 0, len(targets))
+	for _, target := range targets {
+		switch states[target] {
+		case callPayloadUnclaimed, callPayloadClaimed:
+			states[target] = callPayloadWriting
+			taken = append(taken, target)
+		case callPayloadWriting, callPayloadDelivered:
+			// Another export owns it, or it is already there.
+		}
+	}
+	return taken
+}
+
+// settleCallPayload records the outcome of a delivery attempt. delivered
+// marks each target done for good. Otherwise the targets are released so the
+// record's retry can deliver them — or, once the payload processor gives up
+// on it, a later closure walk, though only one that reaches the record via a
+// root not yet delivered to that target; a target a span delivered in the
+// meantime keeps that state.
+func (sess *daggerSession) settleCallPayload(digest string, targets []string, delivered bool) {
+	if digest == "" || len(targets) == 0 {
+		return
+	}
+	sess.callPayloadMu.Lock()
+	defer sess.callPayloadMu.Unlock()
+
+	states := sess.callPayloadStates(digest, true)
+	for _, target := range targets {
+		switch {
+		case delivered:
+			states[target] = callPayloadDelivered
+		case states[target] == callPayloadWriting:
+			delete(states, target)
+		}
 	}
 }
 

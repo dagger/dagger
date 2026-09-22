@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -46,6 +47,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
@@ -547,7 +549,7 @@ func (c *Client) telemetryContext(ctx context.Context) (context.Context, context
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 	// Keep telemetry alive across the caller's cancellation and the server's
 	// shutdown drain, but tie it to the client-owned internal lifetime so a
-	// failed initialization or rejected /shutdown cannot strand SSE streams.
+	// failed initialization or rejected /shutdown cannot strand telemetry streams.
 	ctx, cancel := c.telemetryContext(ctx)
 	defer func() {
 		if rerr != nil {
@@ -853,9 +855,22 @@ func (c *Client) Close() (rerr error) {
 		// once it has sent everything. Drain them now, before internalCancel
 		// closes the connections from our side, or the final spans (including
 		// the error that ended the run) never reach the frontend.
-		if err := c.telemetry.Wait(); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
+		//
+		// Telemetry transport failures are logged rather than returned: the
+		// run's own work has already completed, and callers join Close errors
+		// into the run's exit status.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), clientShutdownTimeout())
+		drained := make(chan error, 1)
+		go func() { drained <- c.telemetry.Wait() }()
+		select {
+		case err := <-drained:
+			if err != nil {
+				slog.Warn("telemetry drain failed after shutdown", "err", err)
+			}
+		case <-ctx.Done():
+			slog.Warn("telemetry drain timed out after shutdown", "timeout", clientShutdownTimeout())
 		}
+		cancel()
 	}
 
 	c.closeMu.Lock()
@@ -904,10 +919,11 @@ func (c *Client) Close() (rerr error) {
 		rerr = errors.Join(rerr, err)
 	}
 
-	// Wait for telemetry to finish draining
+	// Wait for telemetry to finish draining. Transport errors are logged, not
+	// returned, for the same reason as the post-shutdown drain above.
 	if c.telemetry != nil {
 		if err := c.telemetry.Wait(); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
+			slog.Warn("telemetry drain failed", "err", err)
 		}
 	}
 
@@ -920,85 +936,274 @@ type otlpConsumer struct {
 	traceID    trace.TraceID
 	clientID   string
 	eg         *errgroup.Group
+
+	// reconnectDelay overrides telemetryReconnectDelay; zero uses the default.
+	reconnectDelay time.Duration
+	// connectAttempts overrides telemetryConnectAttempts; zero uses the default.
+	connectAttempts int
 }
 
-func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr error) {
+const (
+	// telemetryReconnectDelay is the pause between connection attempts.
+	telemetryReconnectDelay = time.Second
+	// telemetryConnectAttempts bounds consecutive transient failures per
+	// connect. Beyond it the engine is treated as persistently unavailable,
+	// since httpHandlerFunc maps unclassified handler errors to 500s that
+	// would otherwise be retried forever.
+	telemetryConnectAttempts = 10
+)
+
+var errPermanentTelemetryConnection = errors.New("permanent telemetry connection failure")
+
+type liveTelemetryEncoding uint8
+
+const (
+	liveTelemetryBinary liveTelemetryEncoding = iota
+	liveTelemetryProtoJSON
+)
+
+func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetryEncoding) error) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "consuming "+c.path)
 	defer telemetry.EndWithCause(span, &rerr)
 
-	slog := slog.With("path", c.path, "traceID", c.traceID, "clientID", c.clientID)
-
+	logger := slog.With("path", c.path, "traceID", c.traceID, "clientID", c.clientID)
 	defer func() {
 		if rerr != nil {
-			slog.Error("consume failed", "err", rerr)
+			logger.Error("consume failed", "err", rerr)
 		} else {
-			slog.ExtraDebug("done consuming", "ctxErr", ctx.Err())
+			logger.ExtraDebug("done consuming", "ctxErr", ctx.Err())
 		}
 	}()
 
-	sseConn, err := sse.Connect(c.httpClient, time.Second, func() *http.Request {
-		return (&http.Request{
-			Method: http.MethodGet,
-			URL: &url.URL{
-				Scheme: "http",
-				Host:   "dagger",
-				Path:   c.path,
-			},
-		}).WithContext(ctx)
-	})
+	resp, err := c.connect(ctx, 0)
 	if err != nil {
-		return fmt.Errorf("connect to SSE: %w", err)
+		return fmt.Errorf("connect to OTLP stream: %w", err)
 	}
-
-	var closeOnce sync.Once
-	closeSSE := func() {
-		closeOnce.Do(func() {
-			_ = sseConn.Close()
-		})
-	}
-	stopClose := context.AfterFunc(ctx, closeSSE)
 
 	c.eg.Go(func() error {
-		defer func() {
-			stopClose()
-			closeSSE()
-		}()
-
+		cursor := int64(0)
 		for {
-			event, err := sseConn.Next()
-			if err != nil {
-				if errors.Is(err, io.EOF) ||
-					errors.Is(err, context.Canceled) ||
-					errors.Is(err, sse.ErrSourceClosed) {
-					return nil
+			current := resp
+			stopClose := context.AfterFunc(ctx, func() { _ = current.Body.Close() })
+			complete, err := c.consumeResponse(current, &cursor, cb, span, logger)
+			stopClose()
+			_ = current.Body.Close()
+			if complete || ctx.Err() != nil {
+				return nil //nolint:nilerr // Cancellation and terminal frames end the background consumer normally.
+			}
+			if errors.Is(err, enginetel.ErrInvalidLiveFrame) || errors.Is(err, enginetel.ErrLiveStream) {
+				return fmt.Errorf("decode OTLP stream: %w", err)
+			}
+			logger.Debug("reconnecting to OTLP stream", "cursor", cursor, "err", err)
+
+			if err := c.waitForReconnect(ctx); err != nil {
+				return nil //nolint:nilerr // Cancellation ends the background consumer normally.
+			}
+			resp, err = c.connect(ctx, cursor) //nolint:bodyclose // The outer loop closes every response after consumeResponse.
+			if ctx.Err() != nil {
+				if resp != nil {
+					resp.Body.Close()
 				}
-				return fmt.Errorf("decode: %w", err)
+				return nil
 			}
-			if event.Name == "subscribed" {
-				continue
-			}
-
-			data := event.Data
-
-			span.AddEvent("data", trace.WithAttributes(
-				attribute.String("cursor", event.ID),
-				attribute.Int("bytes", len(data)),
-			))
-
-			if len(data) == 0 {
-				continue
-			}
-
-			if err := cb(data); err != nil {
-				slog.Warn("consume error", "err", err)
-				span.AddEvent("consume error", trace.WithAttributes(
-					attribute.String("error", err.Error()),
-				))
+			if err != nil {
+				return fmt.Errorf("reconnect to OTLP stream: %w", err)
 			}
 		}
 	})
 
 	return nil
+}
+
+func (c *otlpConsumer) connect(ctx context.Context, cursor int64) (*http.Response, error) {
+	attempts := c.connectAttempts
+	if attempts <= 0 {
+		attempts = telemetryConnectAttempts
+	}
+	for attempt := 1; ; attempt++ {
+		resp, err := c.connectOnce(ctx, cursor)
+		if err == nil || errors.Is(err, errPermanentTelemetryConnection) {
+			return resp, err
+		}
+		if attempt >= attempts {
+			return nil, fmt.Errorf("%w: giving up after %d attempts: %w", errPermanentTelemetryConnection, attempt, err)
+		}
+		if err := c.waitForReconnect(ctx); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func (c *otlpConsumer) waitForReconnect(ctx context.Context) error {
+	delay := c.reconnectDelay
+	if delay <= 0 {
+		delay = telemetryReconnectDelay
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *otlpConsumer) connectOnce(ctx context.Context, cursor int64) (*http.Response, error) {
+	req := (&http.Request{
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Scheme: "http",
+			Host:   "dagger",
+			Path:   c.path,
+		},
+		Header: make(http.Header),
+	}).WithContext(ctx)
+	req.Header.Set("Accept", enginetel.LiveContentType+", "+enginetel.LegacyLiveContentType)
+	if cursor > 0 {
+		value := strconv.FormatInt(cursor, 10)
+		req.Header.Set(enginetel.LiveCursorHeader, value)
+		req.Header.Set(enginetel.LegacyLiveCursorHeader, value)
+		req.Header.Set("Last-Event-ID", value)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		err := fmt.Errorf("unexpected status %d: %s", resp.StatusCode, body)
+		switch resp.StatusCode {
+		case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return nil, err
+		default:
+			return nil, fmt.Errorf("%w: %w", errPermanentTelemetryConnection, err)
+		}
+	}
+	if _, err := liveTelemetryResponseEncoding(resp); err != nil {
+		resp.Body.Close()
+		return nil, fmt.Errorf("%w: %w", errPermanentTelemetryConnection, err)
+	}
+	return resp, nil
+}
+
+func liveTelemetryResponseEncoding(resp *http.Response) (liveTelemetryEncoding, error) {
+	contentType := resp.Header.Get("Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return 0, fmt.Errorf("unexpected content type %q", contentType)
+	}
+	switch mediaType {
+	case enginetel.LiveContentType:
+		return liveTelemetryBinary, nil
+	case enginetel.LegacyLiveContentType:
+		return liveTelemetryProtoJSON, nil
+	default:
+		return 0, fmt.Errorf("unexpected content type %q", contentType)
+	}
+}
+
+func (c *otlpConsumer) consumeResponse(
+	resp *http.Response,
+	cursor *int64,
+	cb func([]byte, liveTelemetryEncoding) error,
+	span trace.Span,
+	logger *slog.Logger,
+) (bool, error) {
+	encoding, err := liveTelemetryResponseEncoding(resp)
+	if err != nil {
+		return false, err
+	}
+	if encoding == liveTelemetryProtoJSON {
+		return c.consumeSSEResponse(resp, cursor, cb, span, logger)
+	}
+
+	for {
+		kind, next, data, err := enginetel.ReadLiveFrame(resp.Body)
+		if err != nil {
+			return false, err
+		}
+		switch kind {
+		case enginetel.LiveFrameHello:
+			// The server announces where it resumed from; that is our own
+			// cursor echoed back, so it neither advances nor validates state.
+			logger.ExtraDebug("subscribed to OTLP stream", "cursor", next)
+		case enginetel.LiveFrameTerminal:
+			if next != *cursor {
+				return false, fmt.Errorf("%w: terminal cursor %d, expected %d", enginetel.ErrInvalidLiveFrame, next, *cursor)
+			}
+			return true, nil
+		default:
+			if err := consumeTelemetryPayload(next, data, liveTelemetryBinary, cursor, cb, span, logger); err != nil {
+				return false, err
+			}
+		}
+	}
+}
+
+func (c *otlpConsumer) consumeSSEResponse(
+	resp *http.Response,
+	cursor *int64,
+	cb func([]byte, liveTelemetryEncoding) error,
+	span trace.Span,
+	logger *slog.Logger,
+) (bool, error) {
+	reader := sse.NewReadCloser(resp.Body)
+	for {
+		event, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if event.Name == "subscribed" || len(event.Data) == 0 {
+			continue
+		}
+		next, err := strconv.ParseInt(event.ID, 10, 64)
+		if err != nil || next < 0 {
+			return false, fmt.Errorf("%w: invalid SSE cursor %q", enginetel.ErrInvalidLiveFrame, event.ID)
+		}
+		if err := consumeTelemetryPayload(next, event.Data, liveTelemetryProtoJSON, cursor, cb, span, logger); err != nil {
+			return false, err
+		}
+	}
+}
+
+func consumeTelemetryPayload(
+	next int64,
+	data []byte,
+	encoding liveTelemetryEncoding,
+	cursor *int64,
+	cb func([]byte, liveTelemetryEncoding) error,
+	span trace.Span,
+	logger *slog.Logger,
+) error {
+	if next <= *cursor {
+		return fmt.Errorf("%w: non-increasing cursor %d after %d", enginetel.ErrInvalidLiveFrame, next, *cursor)
+	}
+	*cursor = next
+
+	span.AddEvent("data", trace.WithAttributes(
+		attribute.Int64("cursor", next),
+		attribute.Int("bytes", len(data)),
+	))
+	if err := cb(data, encoding); err != nil {
+		logger.Warn("consume error", "err", err)
+		span.AddEvent("consume error", trace.WithAttributes(
+			attribute.String("error", err.Error()),
+		))
+	}
+	return nil
+}
+
+func unmarshalLiveTelemetry(data []byte, encoding liveTelemetryEncoding, message proto.Message) error {
+	if encoding == liveTelemetryProtoJSON {
+		return protojson.Unmarshal(data, message)
+	}
+	return proto.Unmarshal(data, message)
 }
 
 func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
@@ -1010,9 +1215,9 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		eg:         c.telemetry,
 	}
 
-	return exp.Consume(ctx, func(data []byte) error {
+	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
 		var req coltracepb.ExportTraceServiceRequest
-		if err := protojson.Unmarshal(data, &req); err != nil {
+		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
 		}
 
@@ -1041,9 +1246,9 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		eg:         c.telemetry,
 	}
 
-	return exp.Consume(ctx, func(data []byte) error {
+	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
 		var req collogspb.ExportLogsServiceRequest
-		if err := protojson.Unmarshal(data, &req); err != nil {
+		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
 		if err := telemetry.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
@@ -1062,9 +1267,9 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 		eg:         c.telemetry,
 	}
 
-	return exp.Consume(ctx, func(data []byte) error {
+	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
 		var req colmetricspb.ExportMetricsServiceRequest
-		if err := protojson.Unmarshal(data, &req); err != nil {
+		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal metrics: %w", err)
 		}
 		if err := enginetel.ReexportMetricsFromPB(ctx, c.EngineMetrics, &req); err != nil {
@@ -1093,11 +1298,7 @@ func (c *Client) init(ctx context.Context) error {
 	return resp.Body.Close()
 }
 
-func (c *Client) shutdownServer() error {
-	// don't immediately cancel shutdown if we're shutting down because we were
-	// canceled
-	ctx := context.WithoutCancel(c.internalCtx)
-
+func clientShutdownTimeout() time.Duration {
 	timeout := 10 * time.Second
 	if timeoutStr, ok := os.LookupEnv(shutdownTimeoutEnvName); ok {
 		if interval, err := time.ParseDuration(timeoutStr); err == nil {
@@ -1106,7 +1307,13 @@ func (c *Client) shutdownServer() error {
 			slog.Warn("invalid "+shutdownTimeoutEnvName+" value, using default 10 seconds", "error", err)
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	return timeout
+}
+
+func (c *Client) shutdownServer() error {
+	// don't immediately cancel shutdown if we're shutting down because we were
+	// canceled
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), clientShutdownTimeout())
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.ShutdownEndpoint, nil)
@@ -1219,6 +1426,15 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	maps.Copy(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
+	// Flush the headers right away rather than waiting for the first body
+	// write. The telemetry streams no longer depend on this — the engine
+	// writes a DTS1 hello frame (or the SSE "subscribed" event) right after
+	// the headers, and those body bytes flush through writeFlusher below —
+	// but it is cheap and keeps other streamed responses, and any nested
+	// client waiting on headers alone, from stalling behind an idle body.
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
 	_, err = io.Copy(writeFlusher{w}, resp.Body)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		panic(err) // don't write header because we already wrote to the body, which isn't allowed
