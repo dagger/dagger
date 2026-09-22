@@ -119,7 +119,10 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 // terminals or other devices, such as /dev/null.
 func readPipedStdin() (string, bool, error) {
 	info, err := os.Stdin.Stat()
-	if err != nil || info.Mode()&os.ModeNamedPipe == 0 && !info.Mode().IsRegular() {
+	if err != nil {
+		return "", false, fmt.Errorf("stat stdin: %w", err)
+	}
+	if info.Mode()&os.ModeNamedPipe == 0 && !info.Mode().IsRegular() {
 		return "", false, nil
 	}
 	in, err := io.ReadAll(stdin)
