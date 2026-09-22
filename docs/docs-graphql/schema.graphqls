@@ -6100,7 +6100,7 @@ type TerminalGroup implements Node {
     copy: [TerminalCopy!] = []
 
     """
-    Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+    Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
     """
     init: [String!] = []
   ): TerminalGroup!
@@ -6111,15 +6111,18 @@ type TerminalGroup implements Node {
   """
   exec(
     """
-    Content to write to the command's standard input. Example: "go test ./..."
+    Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
     """
-    stdin: String!
+    args: [String!] = []
+
+    """Content to write to the command's standard input."""
+    stdin: String = ""
 
     """Directories to copy into the container, in order."""
     copy: [TerminalCopy!] = []
 
     """
-    Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+    Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
     """
     init: [String!] = []
   ): Container!

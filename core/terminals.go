@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -82,14 +83,14 @@ func (r *TerminalGroup) Run(ctx context.Context, setup TerminalSetupArgs) error 
 	return target.Node.RunTerminal(r.workspaceContext(ctx), setup)
 }
 
-// Exec runs the selected terminal target's command with stdin as its
-// standard input, and returns the container after execution.
-func (r *TerminalGroup) Exec(ctx context.Context, stdin string, setup TerminalSetupArgs) (dagql.ObjectResult[*Container], error) {
+// Exec runs the selected terminal target's command with args appended, and
+// returns the container after execution.
+func (r *TerminalGroup) Exec(ctx context.Context, args []string, stdin string, setup TerminalSetupArgs) (dagql.ObjectResult[*Container], error) {
 	target, err := r.selected()
 	if err != nil {
 		return dagql.ObjectResult[*Container]{}, err
 	}
-	return target.Node.ExecTerminal(r.workspaceContext(ctx), stdin, setup)
+	return target.Node.ExecTerminal(r.workspaceContext(ctx), args, stdin, setup)
 }
 
 // selected returns the one target to open, because terminals cannot run in
@@ -122,7 +123,7 @@ func (r *TerminalGroup) selected() (*TerminalTarget, error) {
 	for _, terminal := range r.Terminals {
 		names = append(names, terminal.Name())
 	}
-	return nil, fmt.Errorf("terminal selection matched %d targets: %s", len(names), strings.Join(names, ", "))
+	return nil, fmt.Errorf("terminal selection matched %d targets: %s; select one, or run 'dagger shell -l' to list them", len(names), strings.Join(names, ", "))
 }
 
 func (r *TerminalGroup) workspaceContext(ctx context.Context) context.Context {
@@ -185,8 +186,8 @@ func (node *ModTreeNode) RunTerminal(ctx context.Context, setup TerminalSetupArg
 }
 
 // ExecTerminal runs the command of the terminal that RunTerminal opens, with
-// stdin as its standard input.
-func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string, setup TerminalSetupArgs) (res dagql.ObjectResult[*Container], _ error) {
+// args appended.
+func (node *ModTreeNode) ExecTerminal(ctx context.Context, args []string, stdin string, setup TerminalSetupArgs) (res dagql.ObjectResult[*Container], _ error) {
 	ctr, err := node.terminalContainer(ctx, setup)
 	if err != nil {
 		return res, err
@@ -224,7 +225,7 @@ func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string, setup T
 	}
 
 	ctx = dagql.WithNonInternalTelemetry(ctx)
-	if err := srv.Select(ctx, ctr, &res, terminalStdinExec(ctr.Self(), stdin, ReturnAny)); err != nil {
+	if err := srv.Select(ctx, ctr, &res, terminalExec(ctr.Self(), args, stdin, ReturnAny)); err != nil {
 		return res, err
 	}
 	// Run the command now, in the context of the bound workspace.
@@ -245,7 +246,9 @@ func (node *ModTreeNode) terminalContainer(ctx context.Context, setup TerminalSe
 			return ctr, err
 		}
 		var err error
-		ctr, err = dir.Self().terminalContainer(ctx, dagql.ObjectResult[*Container]{}, dir)
+		// Unlike Directory.terminal, allow changes, so that setup can
+		// change the directory.
+		ctr, err = dir.Self().terminalContainer(ctx, dagql.ObjectResult[*Container]{}, dir, false)
 		if err != nil {
 			return ctr, err
 		}
@@ -272,7 +275,7 @@ func (node *ModTreeNode) terminalContainer(ctx context.Context, setup TerminalSe
 		})
 	}
 	for _, init := range setup.Init {
-		sels = append(sels, terminalStdinExec(ctr.Self(), init, ReturnSuccess))
+		sels = append(sels, terminalExec(ctr.Self(), []string{"-c", init}, "", ReturnSuccess))
 	}
 	if len(sels) == 0 {
 		return ctr, nil
@@ -284,18 +287,19 @@ func (node *ModTreeNode) terminalContainer(ctx context.Context, setup TerminalSe
 	return ctr, cache.Evaluate(ctx, ctr)
 }
 
-// terminalStdinExec selects an exec of the terminal command of ctr, with
-// stdin as its standard input.
-func terminalStdinExec(ctr *Container, stdin string, expect ReturnTypes) dagql.Selector {
-	args := ctr.WithTerminalDefaults(TerminalArgs{})
+// terminalExec selects an exec of the terminal command of ctr, with args
+// appended.
+func terminalExec(ctr *Container, args []string, stdin string, expect ReturnTypes) dagql.Selector {
+	term := ctr.WithTerminalDefaults(TerminalArgs{})
+	cmd := append(slices.Clone(term.Cmd), args...)
 	return dagql.Selector{
 		Field: "withExec",
 		Args: []dagql.NamedInput{
-			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Cmd...))},
+			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(cmd...))},
 			{Name: "stdin", Value: dagql.String(stdin)},
 			{Name: "expect", Value: expect},
-			{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(args.ExperimentalPrivilegedNesting.Value.Bool())},
-			{Name: "insecureRootCapabilities", Value: dagql.NewBoolean(args.InsecureRootCapabilities.Value.Bool())},
+			{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(term.ExperimentalPrivilegedNesting.Value.Bool())},
+			{Name: "insecureRootCapabilities", Value: dagql.NewBoolean(term.InsecureRootCapabilities.Value.Bool())},
 		},
 	}
 }

@@ -16573,16 +16573,28 @@ func (r *TerminalGroup) WithGraphQLQuery(q *querybuilder.Selection) *TerminalGro
 
 // TerminalGroupExecOpts contains options for TerminalGroup.Exec
 type TerminalGroupExecOpts struct {
+	// Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+	Args []string
+	// Content to write to the command's standard input.
+	Stdin string
 	// Directories to copy into the container, in order.
 	Copy []TerminalCopy
-	// Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+	// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
 	Init []string
 }
 
 // Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
-func (r *TerminalGroup) Exec(stdin string, opts ...TerminalGroupExecOpts) *Container {
+func (r *TerminalGroup) Exec(opts ...TerminalGroupExecOpts) *Container {
 	q := r.query.Select("exec")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
+		// `stdin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Stdin) {
+			q = q.Arg("stdin", opts[i].Stdin)
+		}
 		// `copy` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Copy) {
 			q = q.Arg("copy", opts[i].Copy)
@@ -16592,7 +16604,6 @@ func (r *TerminalGroup) Exec(stdin string, opts ...TerminalGroupExecOpts) *Conta
 			q = q.Arg("init", opts[i].Init)
 		}
 	}
-	q = q.Arg("stdin", stdin)
 
 	return &Container{
 		query: q,
@@ -16676,7 +16687,7 @@ func (r *TerminalGroup) List(ctx context.Context) ([]TerminalTarget, error) {
 type TerminalGroupRunOpts struct {
 	// Directories to copy into the container, in order.
 	Copy []TerminalCopy
-	// Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+	// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
 	Init []string
 }
 

@@ -18,13 +18,18 @@ defmodule Dagger.TerminalGroup do
   @doc """
   Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
   """
-  @spec exec(t(), String.t(), [{:copy, [Dagger.TerminalCopy.t()]}, {:init, [String.t()]}]) ::
-          Dagger.Container.t()
-  def exec(%__MODULE__{} = terminal_group, stdin, optional_args \\ []) do
+  @spec exec(t(), [
+          {:args, [String.t()]},
+          {:stdin, String.t() | nil},
+          {:copy, [Dagger.TerminalCopy.t()]},
+          {:init, [String.t()]}
+        ]) :: Dagger.Container.t()
+  def exec(%__MODULE__{} = terminal_group, optional_args \\ []) do
     query_builder =
       terminal_group.query_builder
       |> QB.select("exec")
-      |> QB.put_arg("stdin", stdin)
+      |> QB.maybe_put_arg("args", optional_args[:args])
+      |> QB.maybe_put_arg("stdin", optional_args[:stdin])
       |> QB.maybe_put_arg("copy", optional_args[:copy])
       |> QB.maybe_put_arg("init", optional_args[:init])
 

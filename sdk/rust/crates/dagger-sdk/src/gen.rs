@@ -15872,18 +15872,24 @@ pub struct TerminalGroupRunOpts<'a> {
     /// Directories to copy into the container, in order.
     #[builder(setter(into, strip_option), default)]
     pub copy: Option<Vec<TerminalCopy>>,
-    /// Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+    /// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
     #[builder(setter(into, strip_option), default)]
     pub init: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TerminalGroupExecOpts<'a> {
+    /// Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+    #[builder(setter(into, strip_option), default)]
+    pub args: Option<Vec<&'a str>>,
     /// Directories to copy into the container, in order.
     #[builder(setter(into, strip_option), default)]
     pub copy: Option<Vec<TerminalCopy>>,
-    /// Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+    /// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
     #[builder(setter(into, strip_option), default)]
     pub init: Option<Vec<&'a str>>,
+    /// Content to write to the command's standard input.
+    #[builder(setter(into, strip_option), default)]
+    pub stdin: Option<&'a str>,
 }
 impl IntoID<Id> for TerminalGroup {
     fn into_id(
@@ -15967,11 +15973,9 @@ impl TerminalGroup {
     ///
     /// # Arguments
     ///
-    /// * `stdin` - Content to write to the command's standard input. Example: "go test ./..."
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn exec(&self, stdin: impl Into<String>) -> Container {
-        let mut query = self.selection.select("exec");
-        query = query.arg("stdin", stdin.into());
+    pub fn exec(&self) -> Container {
+        let query = self.selection.select("exec");
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -15982,15 +15986,15 @@ impl TerminalGroup {
     ///
     /// # Arguments
     ///
-    /// * `stdin` - Content to write to the command's standard input. Example: "go test ./..."
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn exec_opts<'a>(
-        &self,
-        stdin: impl Into<String>,
-        opts: TerminalGroupExecOpts<'a>,
-    ) -> Container {
+    pub fn exec_opts<'a>(&self, opts: TerminalGroupExecOpts<'a>) -> Container {
         let mut query = self.selection.select("exec");
-        query = query.arg("stdin", stdin.into());
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        if let Some(stdin) = opts.stdin {
+            query = query.arg("stdin", stdin);
+        }
         if let Some(copy) = opts.copy {
             query = query.arg("copy", copy);
         }

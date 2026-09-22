@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 
@@ -42,8 +43,10 @@ var shellCmd = &cobra.Command{
 	Long: `Open a terminal for a container or directory in your project.
 
 Without a pattern, open the only container, or else the only container in the
-entrypoint module. If standard input is not a terminal, read the command to run
-from it, as with -c.
+entrypoint module.
+
+As with sh: with -c, the command reads standard input. Without -c, if standard
+input is a pipe or a file, run it as a script.
 
 Examples:
   dagger shell                                # Open the default shell
@@ -51,7 +54,7 @@ Examples:
   dagger shell go:dev                         # Open the go:dev shell
   dagger sh go:dev                            # Use the short command alias
   dagger shell go:dev -c 'go test ./...'      # Run a command in the go:dev shell
-  echo 'go test ./...' | dagger shell go:dev  # Read the command from stdin
+  echo 'go test ./...' | dagger shell go:dev  # Read the script from stdin
   dagger shell --copy /src=. --init 'go mod download'
                                               # Set up the shell before it opens
 `,
@@ -69,17 +72,20 @@ Examples:
 }
 
 func runTerminalCommand(cmd *cobra.Command, args []string) error {
-	command, hasCommand := terminalCommand, cmd.Flags().Changed("command")
-	if !hasCommand && !terminalListMode && !stdinIsTTY {
-		if stderrIsTTY {
-			// Tell the user why we wait, in case stdin never closes.
-			fmt.Fprintln(cmd.ErrOrStderr(), "reading commands from stdin")
-		}
-		in, err := io.ReadAll(stdin)
+	var exec *dagger.TerminalGroupExecOpts
+	if !terminalListMode {
+		in, piped, err := readPipedStdin()
 		if err != nil {
-			return fmt.Errorf("read commands from stdin: %w", err)
+			return err
 		}
-		command, hasCommand = string(in), true
+		switch {
+		case cmd.Flags().Changed("command"):
+			exec = &dagger.TerminalGroupExecOpts{Args: []string{"-c", terminalCommand}, Stdin: in}
+		case piped && strings.TrimSpace(in) == "":
+			return fmt.Errorf("no commands on stdin")
+		case piped:
+			exec = &dagger.TerminalGroupExecOpts{Stdin: in}
+		}
 	}
 
 	return withEngine(
@@ -99,16 +105,28 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 				}
 				copies = append(copies, dagger.TerminalCopy{Path: path, Source: dag.Address(source).Directory()})
 			}
-			if hasCommand {
-				return execTerminalCommand(ctx, cmd, terminals.Exec(command, dagger.TerminalGroupExecOpts{
-					Copy: copies,
-					Init: terminalInits,
-				}))
+			if exec != nil {
+				exec.Copy, exec.Init = copies, terminalInits
+				return execTerminalCommand(ctx, cmd, terminals.Exec(*exec))
 			}
 			_, err := terminals.Run(dagger.TerminalGroupRunOpts{Copy: copies, Init: terminalInits}).ID(ctx)
 			return err
 		},
 	)
+}
+
+// readPipedStdin reads stdin if it is a pipe or a file. It does not read
+// terminals or other devices, such as /dev/null.
+func readPipedStdin() (string, bool, error) {
+	info, err := os.Stdin.Stat()
+	if err != nil || info.Mode()&os.ModeNamedPipe == 0 && !info.Mode().IsRegular() {
+		return "", false, nil
+	}
+	in, err := io.ReadAll(stdin)
+	if err != nil {
+		return "", false, fmt.Errorf("read stdin: %w", err)
+	}
+	return string(in), true, nil
 }
 
 // parseTerminalCopy parses a --copy value, [PATH=]SOURCE. SOURCE can contain

@@ -313,7 +313,7 @@ func (dir *Directory) Terminal(
 	args *TerminalArgs,
 	parent dagql.ObjectResult[*Directory],
 ) error {
-	termCtr, err := dir.terminalContainer(ctx, ctr, parent)
+	termCtr, err := dir.terminalContainer(ctx, ctr, parent, true)
 	if err != nil {
 		return fmt.Errorf("failed to create terminal container: %w", err)
 	}
@@ -321,11 +321,12 @@ func (dir *Directory) Terminal(
 }
 
 // terminalContainer returns ctr, or the default terminal image, with the
-// directory mounted read-only at /src as its working directory.
+// directory mounted at /src as its working directory.
 func (dir *Directory) terminalContainer(
 	ctx context.Context,
 	ctr dagql.ObjectResult[*Container],
 	parent dagql.ObjectResult[*Directory],
+	readOnly bool,
 ) (res dagql.ObjectResult[*Container], _ error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -343,7 +344,7 @@ func (dir *Directory) terminalContainer(
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String("/src")},
 				{Name: "source", Value: dagql.NewID[*Directory](dirID)},
-				{Name: "readOnly", Value: dagql.Boolean(true)},
+				{Name: "readOnly", Value: dagql.Boolean(readOnly)},
 			},
 		},
 		{

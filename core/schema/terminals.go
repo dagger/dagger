@@ -18,7 +18,7 @@ func (s terminalsSchema) Install(srv *dagql.Server) {
 
 	setupArgs := []dagql.Argument{
 		dagql.Arg("copy").Doc("Directories to copy into the container, in order."),
-		dagql.Arg("init").Doc("Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept."),
+		dagql.Arg("init").Doc("Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept."),
 	}
 
 	dagql.Fields[*core.TerminalGroup]{
@@ -32,7 +32,8 @@ func (s terminalsSchema) Install(srv *dagql.Server) {
 			DoNotCache("Runs the command again on each call, like a terminal.").
 			Doc("Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.").
 			Args(append([]dagql.Argument{
-				dagql.Arg("stdin").Doc(`Content to write to the command's standard input. Example: "go test ./..."`),
+				dagql.Arg("args").Doc(`Arguments to append to the terminal command. Example: ["-c", "go test ./..."]`),
+				dagql.Arg("stdin").Doc(`Content to write to the command's standard input.`),
 			}, setupArgs...)...),
 	}.Install(srv)
 
@@ -57,12 +58,13 @@ func (s terminalsSchema) run(ctx context.Context, parent dagql.ObjectResult[*cor
 }
 
 type terminalExecArgs struct {
-	Stdin string
+	Args  []string `default:"[]"`
+	Stdin string   `default:""`
 	core.TerminalSetupArgs
 }
 
 func (s terminalsSchema) exec(ctx context.Context, parent dagql.ObjectResult[*core.TerminalGroup], args terminalExecArgs) (dagql.ObjectResult[*core.Container], error) {
-	return parent.Self().Exec(ctx, args.Stdin, args.TerminalSetupArgs)
+	return parent.Self().Exec(ctx, args.Args, args.Stdin, args.TerminalSetupArgs)
 }
 
 func (s terminalsSchema) name(_ context.Context, parent *core.TerminalTarget, _ struct{}) (string, error) {

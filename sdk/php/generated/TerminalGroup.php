@@ -46,10 +46,15 @@ class TerminalGroup extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
      */
-    public function exec(string $stdin, ?array $copy = null, ?array $init = []): Container
+    public function exec(?array $args = [], ?string $stdin = '', ?array $copy = null, ?array $init = []): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('exec');
+        if (null !== $args) {
+        $innerQueryBuilder->setArgument('args', $args);
+        }
+        if (null !== $stdin) {
         $innerQueryBuilder->setArgument('stdin', $stdin);
+        }
         if (null !== $copy) {
         $innerQueryBuilder->setArgument('copy', $copy);
         }

@@ -3374,12 +3374,22 @@ export type TerminalCopy = {
 
 export type TerminalGroupExecOpts = {
   /**
+   * Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+   */
+  args?: string[]
+
+  /**
+   * Content to write to the command's standard input.
+   */
+  stdin?: string
+
+  /**
    * Directories to copy into the container, in order.
    */
   copy?: TerminalCopy[]
 
   /**
-   * Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+   * Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
    */
   init?: string[]
 }
@@ -3391,7 +3401,7 @@ export type TerminalGroupRunOpts = {
   copy?: TerminalCopy[]
 
   /**
-   * Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+   * Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
    */
   init?: string[]
 }
@@ -16341,12 +16351,13 @@ export class TerminalGroup extends BaseClient {
 
   /**
    * Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
-   * @param stdin Content to write to the command's standard input. Example: "go test ./..."
+   * @param opts.args Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+   * @param opts.stdin Content to write to the command's standard input.
    * @param opts.copy Directories to copy into the container, in order.
-   * @param opts.init Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+   * @param opts.init Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
    */
-  exec = (stdin: string, opts?: TerminalGroupExecOpts): Container => {
-    const ctx = this._ctx.select("exec", { stdin, ...opts })
+  exec = (opts?: TerminalGroupExecOpts): Container => {
+    const ctx = this._ctx.select("exec", { ...opts })
     return new Container(ctx)
   }
 
@@ -16370,7 +16381,7 @@ export class TerminalGroup extends BaseClient {
   /**
    * Open the selected terminal target
    * @param opts.copy Directories to copy into the container, in order.
-   * @param opts.init Commands to run after copy, in order, with the same method as exec. Only their changes to the filesystem are kept.
+   * @param opts.init Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
    */
   run = (opts?: TerminalGroupRunOpts): TerminalGroup => {
     const ctx = this._ctx.select("run", { ...opts })

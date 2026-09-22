@@ -22,7 +22,7 @@ func TestTerminalGroupRunRequiresOneTarget(t *testing.T) {
 		}}
 
 		err := group.Run(context.Background(), TerminalSetupArgs{})
-		require.EqualError(t, err, "terminal selection matched 2 targets: first, second")
+		require.EqualError(t, err, "terminal selection matched 2 targets: first, second; select one, or run 'dagger shell -l' to list them")
 	})
 }
 
@@ -56,7 +56,7 @@ func TestTerminalGroupSelectsDefault(t *testing.T) {
 
 	t.Run("no default", func(t *testing.T) {
 		_, err := (&TerminalGroup{Terminals: []*TerminalTarget{target(entrypoint, "a", ctr), target(entrypoint, "b", ctr)}}).selected()
-		require.EqualError(t, err, "terminal selection matched 2 targets: a, b")
+		require.EqualError(t, err, "terminal selection matched 2 targets: a, b; select one, or run 'dagger shell -l' to list them")
 	})
 }
 

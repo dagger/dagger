@@ -115,26 +115,31 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 			return string(out), 0
 		}
 
-		// Without a pattern, select the only container. Like a terminal, each
-		// call runs the command again.
-		script := `echo "$COOLENV in $PWD"; cat /proc/sys/kernel/random/uuid; exit 3`
-		out1, code := shell("", "-c", script)
+		// Without a pattern, select the only container. With -c, the command
+		// reads stdin. Like a terminal, each call runs the command again.
+		script := `echo "$COOLENV in $PWD"; cat; cat /proc/sys/kernel/random/uuid; exit 3`
+		out1, code := shell("from stdin\n", "-c", script)
 		require.Equal(t, 3, code)
-		require.Contains(t, out1, "woo in /coolworkdir\n")
-		out2, _ := shell("", "-c", script)
+		require.Contains(t, out1, "woo in /coolworkdir\nfrom stdin\n")
+		out2, _ := shell("from stdin\n", "-c", script)
 		require.NotEqual(t, out1, out2)
 
-		out, code := shell(`echo "$COOLENV from stdin"`, "ctr")
+		// Without -c, stdin is the script.
+		out, code := shell(`echo "$COOLENV from script"`, "ctr")
 		require.Equal(t, 0, code)
-		require.Equal(t, "woo from stdin\n", out)
+		require.Equal(t, "woo from script\n", out)
 
-		out, code = shell("", "ctr",
+		// Set up a directory target, in its writable working directory.
+		out, code = shell("", "src",
 			"--copy", "data",
 			"--copy", "/opt/data=data",
-			"--init", `echo "$COOLENV" > /init.txt`,
-			"-c", "cat hello.txt /opt/data/hello.txt /init.txt")
+			"--init", "echo init > init.txt",
+			"-c", "cat src.txt hello.txt /opt/data/hello.txt init.txt")
 		require.Equal(t, 0, code)
-		require.Equal(t, "hello\nhello\nwoo\n", out)
+		require.Equal(t, "src\nhello\nhello\ninit\n", out)
+
+		_, code = shell("", "ctr", "--init", "exit 7", "-c", "true")
+		require.NotEqual(t, 0, code, "a failed init must fail the command")
 	})
 
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {

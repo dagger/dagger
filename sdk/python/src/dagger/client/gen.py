@@ -16017,8 +16017,9 @@ class Terminal(Type):
 class TerminalGroup(Type):
     def exec(
         self,
-        stdin: str,
         *,
+        args: list[str] | None = None,
+        stdin: str | None = "",
         copy: list[TerminalCopy] | None = None,
         init: list[str] | None = None,
     ) -> Container:
@@ -16027,17 +16028,20 @@ class TerminalGroup(Type):
 
         Parameters
         ----------
+        args:
+            Arguments to append to the terminal command. Example: ["-c", "go
+            test ./..."]
         stdin:
-            Content to write to the command's standard input. Example: "go
-            test ./..."
+            Content to write to the command's standard input.
         copy:
             Directories to copy into the container, in order.
         init:
-            Commands to run after copy, in order, with the same method as
-            exec. Only their changes to the filesystem are kept.
+            Commands to run after copy, in order, with the terminal command
+            and -c. Only their changes to the filesystem are kept.
         """
         _args = [
-            Arg("stdin", stdin),
+            Arg("args", [] if args is None else args, []),
+            Arg("stdin", stdin, ""),
             Arg("copy", [] if copy is None else copy, []),
             Arg("init", [] if init is None else init, []),
         ]
@@ -16091,8 +16095,8 @@ class TerminalGroup(Type):
         copy:
             Directories to copy into the container, in order.
         init:
-            Commands to run after copy, in order, with the same method as
-            exec. Only their changes to the filesystem are kept.
+            Commands to run after copy, in order, with the terminal command
+            and -c. Only their changes to the filesystem are kept.
         """
         _args = [
             Arg("copy", [] if copy is None else copy, []),
