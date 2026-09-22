@@ -66,6 +66,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 			Args(dagql.Arg("uri").Doc("A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]")),
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
+		dagql.Func("dimensionItems", s.dimensionItems).Doc("List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values."),
 		dagql.Func("__evaluationItems", s.evaluationItems),
 		dagql.Func("items", s.items).Doc("Enumerate complete artifacts without evaluating their values."),
 		dagql.Func("one", s.one).Doc("Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line."),
@@ -260,7 +261,18 @@ func (*artifactsSchema) dimensions(ctx context.Context, parent *core.Artifacts, 
 	}
 	return expanded.Dimensions(), nil
 }
-func (*artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
+func (s *artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
+	items, err := s.dimensionItems(ctx, parent, args)
+	if err != nil {
+		return nil, err
+	}
+	dimension, err := parent.ResolveDimension(args.Dimension)
+	if err != nil {
+		return nil, err
+	}
+	return (&core.Artifacts{Entries: items}).DimensionKeys(dimension), nil
+}
+func (*artifactsSchema) dimensionItems(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]*core.Artifact, error) {
 	dimension, err := parent.ResolveDimension(args.Dimension)
 	if err != nil {
 		return nil, err
@@ -273,7 +285,7 @@ func (*artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifact
 	if err != nil {
 		return nil, err
 	}
-	return expanded.DimensionKeys(dimension), nil
+	return expanded.DimensionItems(dimension)
 }
 func (*artifactsSchema) items(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
 	expanded, err := expandArtifacts(ctx, parent)

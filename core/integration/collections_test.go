@@ -400,6 +400,50 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
 }}}`, string(*got))
 }
 
+func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// Two parents expose the same child key. A leaf panics if discovery
+	// evaluates its value, and unrelated parent c must remain deferred.
+	source := strings.Replace(collectionGoSource,
+		`if item.Name != "item:a" { panic("excluded parent must stay deferred") }`,
+		`if item.Name == "item:c" { panic("excluded parent must stay deferred") }`, 1)
+	ws, err := goGitBase(t, c).
+		WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).
+		WithWorkdir("/work").Directory("/work").AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts {
+    selected: filterUri(uri: "items/parts?item=a&item=b&part=x") {
+      parents: dimensionItems(dimension: "item") { uri(typeAssertion: true) path dimensionKeys { dimension key } }
+      children: dimensionItems(dimension: "part") { uri dimensionKeys { dimension key } }
+      keys: dimensionKeys(dimension: "part")
+    }
+    lazy: filterUri(uri: "items/broken?item=b") { dimensionItems(dimension: "item") { uri } }
+    fields: filterTypes(types: ["CollectionsItem"]) {
+      dimensionItems(dimension: "collections-other") { uri }
+    }
+    unknown: dimensionItems(dimension: "missing") { uri }
+  } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{
+  "selected":{
+    "parents":[
+      {"uri":"dag+collections-item://items?item=b","path":["items"],"dimensionKeys":[{"dimension":"Collections.items","key":"b"}]},
+      {"uri":"dag+collections-item://items?item=a","path":["items"],"dimensionKeys":[{"dimension":"Collections.items","key":"a"}]}
+    ],
+    "children":[
+      {"uri":"dag://items/parts?item=b&part=x","dimensionKeys":[{"dimension":"Collections.items","key":"b"},{"dimension":"CollectionsItem.parts","key":"x"}]},
+      {"uri":"dag://items/parts?item=a&part=x","dimensionKeys":[{"dimension":"Collections.items","key":"a"},{"dimension":"CollectionsItem.parts","key":"x"}]}
+    ],
+    "keys":["x"]
+  },
+  "lazy":{"dimensionItems":[{"uri":"dag://items?item=b"}]},
+  "fields":{"dimensionItems":[{"uri":"dag://other?item=b"},{"uri":"dag://other?item=a"},{"uri":"dag://other?item=c"}]},
+  "unknown":[]
+}}}`, string(*got))
+}
+
 func (CollectionsSuite) TestArtifactUnion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	all := goGitBase(t, c).

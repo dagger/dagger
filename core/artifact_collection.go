@@ -147,6 +147,57 @@ func (a *Artifacts) ForDimensionKeys(dimension string) *Artifacts {
 	})
 }
 
+// DimensionItems projects expanded artifacts to the collection item that
+// supplies dimension. Parent keys remain attached; descendant keys are removed.
+func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
+	items := []*Artifact{}
+	seen := map[string]bool{}
+	for _, selected := range a.Entries {
+		for node := selected.Node; node != nil; node = node.Parent {
+			if node.CollectionDimension == nil || node.CollectionDimension.Identifier != dimension {
+				continue
+			}
+			members, err := node.Parent.ObjectType().CollectionMembers()
+			if err != nil {
+				return nil, err
+			}
+			// A batch-only operation carries the same dimension on its batch
+			// receiver. Project it to get(key), never to the batch object.
+			itemNode := *node
+			itemNode.Name = "get"
+			itemNode.Type = members.Get.ReturnType
+			itemNode.Description = members.Get.Description
+			itemNode.Directives = nil
+			itemNode.CollectionKeys = nil
+			item := *selected
+			item.Node = &itemNode
+			item.Path = itemNode.CommandPath().CliCase()
+			if len(item.Path) == 0 {
+				item.Path = itemNode.Path().CliCase()
+			}
+			item.TypeName = itemNode.ObjectType().Name
+			item.Directives = nil
+			item.DimensionKeys = nil
+			for _, key := range selected.DimensionKeys {
+				item.DimensionKeys = append(item.DimensionKeys, key)
+				if key.Dimension == dimension {
+					break
+				}
+			}
+			id, err := item.identity()
+			if err != nil {
+				return nil, err
+			}
+			if !seen[id] {
+				items = append(items, item.Clone())
+				seen[id] = true
+			}
+			break
+		}
+	}
+	return items, nil
+}
+
 // Expand evaluates only the collection receivers needed to enumerate selected
 // keys. A leaf artifact's value remains deferred.
 func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
