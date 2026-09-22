@@ -32,6 +32,16 @@ func TestArtifactListFormats(t *testing.T) {
 		require.Regexp(t, `\./api +TestHealth +Check health`, out)
 		require.Regexp(t, `\./worker +TestHealth`, out)
 	})
+	t.Run("unique child keys do not need a parent column", func(t *testing.T) {
+		other := items[1]
+		other.DimensionKeys = []struct{ Dimension, Key string }{{"Go.modules", "./worker"}, {"GoModule.tests", "TestWorker"}}
+		out := render(t, "table", []listedArtifact{items[0], other})
+		require.NotContains(t, out, "GO-MODULE")
+		require.NotContains(t, out, "VARIANT")
+		require.Contains(t, out, "GO-TEST")
+		require.Contains(t, out, "TestWorker")
+	})
+
 	t.Run("different paths with the same keys need a variant", func(t *testing.T) {
 		other := items[0]
 		other.URI = "dag+test://other/tests?go-module=.%2Fapi&go-test=TestHealth"

@@ -84,7 +84,6 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		}
 		described = described || firstDescriptionLine(item.Description) != ""
 	}
-	seenKeys := map[string]bool{}
 	for _, item := range items {
 		addr, err := dagaddress.Parse(item.URI)
 		if err != nil {
@@ -100,23 +99,32 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 			}
 			values[slices.Index(dimensions, key.Dimension)] = value
 		}
-		// Compare the displayed tuple, including absent and empty keys.
-		identity, _ := json.Marshal(values)
-		needsVariant = needsVariant || len(item.DimensionKeys) == 0 || seenKeys[string(identity)]
-		seenKeys[string(identity)] = true
+
 		if described {
 			values = append(values, firstDescriptionLine(item.Description))
 		}
 		rows = append(rows, append(values, addr.Path))
 		paths = append(paths, addr.Path)
 	}
+	columns := artifactTableColumns(items, dimensions, rows)
 	var header []string
-	for _, dimension := range dimensions {
-		name := names[dimension]
+	for _, i := range columns {
+		name := names[dimensions[i]]
 		if name == "" {
-			name = dimension
+			name = dimensions[i]
 		}
 		header = append(header, strings.ToUpper(name))
+	}
+	seenKeys := map[string]bool{}
+	for i, row := range rows {
+		values := make([]string, 0, len(columns)+2)
+		for _, column := range columns {
+			values = append(values, row[column])
+		}
+		identity, _ := json.Marshal(values)
+		needsVariant = needsVariant || len(items[i].DimensionKeys) == 0 || seenKeys[string(identity)]
+		seenKeys[string(identity)] = true
+		rows[i] = append(values, row[len(dimensions):]...)
 	}
 	if described {
 		header = append(header, "DESCRIPTION")
@@ -146,6 +154,51 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		}
 	}
 	return writer.Flush()
+}
+
+// Keep each row's innermost dimension. Remove a parent column only if the
+// remaining columns still distinguish every complete dimension tuple.
+func artifactTableColumns(items []listedArtifact, dimensions []string, rows [][]string) []int {
+	columns := make([]int, len(dimensions))
+	innermost := map[string]bool{}
+	for _, item := range items {
+		if len(item.DimensionKeys) > 0 {
+			innermost[item.DimensionKeys[len(item.DimensionKeys)-1].Dimension] = true
+		}
+	}
+	full := make([]string, len(rows))
+	for i, row := range rows {
+		encoded, _ := json.Marshal(row[:len(dimensions)])
+		full[i] = string(encoded)
+	}
+	for i := range dimensions {
+		columns[i] = i
+	}
+	for column, dimension := range dimensions {
+		if innermost[dimension] {
+			continue
+		}
+		candidate := slices.DeleteFunc(slices.Clone(columns), func(i int) bool { return i == column })
+		seen := map[string]string{}
+		unique := true
+		for i, row := range rows {
+			values := make([]string, len(candidate))
+			for j, index := range candidate {
+				values[j] = row[index]
+			}
+			encoded, _ := json.Marshal(values)
+			key := string(encoded)
+			if previous, ok := seen[key]; ok && previous != full[i] {
+				unique = false
+				break
+			}
+			seen[key] = full[i]
+		}
+		if unique {
+			columns = candidate
+		}
+	}
+	return columns
 }
 
 // Count each suffix once per distinct path. Labels depend only on paths, not
