@@ -126,6 +126,20 @@ func (s agentSchema) Install(srv *dagql.Server) {
 				dagql.Arg("on").Doc(`The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.`),
 			),
 
+		dagql.NodeFunc("restoreNotify", s.restoreNotify).
+			Experimental("Agent APIs are likely to change.").
+			DoNotCache("Installs a restored lifecycle subscription.").
+			Doc(`Restore a lifecycle subscription without announcing the current state or starting work.`,
+				`Both agents must have been restored with a supplied spawn handle and never activated. An empty state set removes the subscription.`).
+			Args(dagql.Arg("subscriber").Doc(`The restored subscriber capability.`),
+				dagql.Arg("on").Doc(`The recorded lifecycle state filter.`)),
+
+		dagql.NodeFunc("discardRestore", s.discardRestore).
+			Experimental("Agent APIs are likely to change.").
+			DoNotCache("Rolls back an unactivated restored runtime.").
+			Doc(`Discard a restored runtime during failed graph installation.`,
+				`Refuses fresh or already activated agents. Removes its notification edges and preserves a telemetry removal tombstone for archive verification.`),
+
 		dagql.NodeFunc("stop", s.stop).
 			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively mutates runtime state.").
@@ -411,6 +425,39 @@ func (s agentSchema) notify(ctx context.Context, parent dagql.ObjectResult[*core
 		return res, err
 	}
 	if err := agents.Notify(ctx, parent, subscriber, args.On); err != nil {
+		return res, err
+	}
+	return agentSelfID(ctx, parent)
+}
+
+func (s agentSchema) restoreNotify(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
+	Subscriber core.AgentID
+	On         []core.AgentState
+}) (res dagql.Result[core.AgentID], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	subscriber, err := args.Subscriber.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return res, err
+	}
+	if err := agents.RestoreNotify(ctx, parent, subscriber, args.On); err != nil {
+		return res, err
+	}
+	return agentSelfID(ctx, parent)
+}
+
+func (s agentSchema) discardRestore(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return res, err
+	}
+	if err := agents.DiscardRestore(ctx, parent); err != nil {
 		return res, err
 	}
 	return agentSelfID(ctx, parent)
