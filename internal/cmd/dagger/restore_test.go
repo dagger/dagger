@@ -338,8 +338,7 @@ func TestAgentTraceFlagConflicts(t *testing.T) {
 	const traceID = "2f123ba77bf7bd2d4db2f70ed20613e8"
 
 	require.NoError(t, validateAgentTraceFlags(traceID, false, nil))
-	require.NoError(t, validateAgentTraceFlags("", true, []string{"editor"}),
-		"the flags only conflict WITH --trace")
+	require.ErrorContains(t, validateAgentTraceFlags("", true, []string{"editor"}), "local JSON sessions are no longer supported")
 
 	err := validateAgentTraceFlags(traceID, true, nil)
 	require.ErrorContains(t, err, "-r/--resume")

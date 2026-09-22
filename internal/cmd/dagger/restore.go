@@ -456,16 +456,11 @@ func (r *sessionRestore) Focus(ctx context.Context, entry dagui.AgentRestore, ag
 // validateAgentTraceFlags rejects the combinations §5.4 rules out, before any
 // engine work happens.
 func validateAgentTraceFlags(traceID string, resume bool, args []string) error {
+	if resume {
+		return errors.New("-r/--resume local JSON sessions are no longer supported; use dagger agent --trace <trace-id> with a verified archive (existing session files are left untouched)")
+	}
 	if traceID == "" {
 		return nil
-	}
-	if resume {
-		// Two stores, one conversation: a saved session and a trace both
-		// claim to say what the conversation is, and nothing decides between
-		// them. (The direction §5.4 sketches — the save file as a pointer AT
-		// a trace — makes this one flag later, not two.)
-		return errors.New("--trace cannot be combined with -r/--resume: " +
-			"a saved session and a trace are two stores for one conversation")
 	}
 	if len(args) > 0 {
 		// Composition comes from the trace: the restored agents are the ones

@@ -325,7 +325,7 @@ func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
 	return err
 }
 
-// assignAgent exposes a portable conversation recipe as an LLM-valued shell
+// assignAgent exposes a session-local conversation ID as an LLM-valued shell
 // variable, ready to continue through an ordinary Dagger Shell pipeline.
 func (h *shellCallHandler) assignAgent(id dagger.ID) {
 	if h == nil || h.shellEnv == nil || h.state == nil {
