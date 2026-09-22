@@ -62,20 +62,21 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 				}
 				flags = append(flags, "--"+name+"="+value)
 			}
-			// Keys alone can select paths outside this type or address filter.
-			link, err := quoteArtifactArgument(addr.String())
-			if err != nil {
-				return err
+			if !item.CLIFlagsOnly || len(item.DimensionKeys) == 0 {
+				// Keys alone do not encode an artifact type or operation.
+				link, err := quoteArtifactArgument(addr.String())
+				if err != nil {
+					return err
+				}
+				flags = append(flags, link)
 			}
-			flags = append(flags, link)
 			lines = append(lines, commandListItem{Name: strings.Join(flags, " "), Comment: firstDescriptionLine(item.Description)})
 		}
 		return writeCommandList(cmd.OutOrStdout(), lines)
 	}
 	var dimensions []string
 	var rows [][]string
-	described, needsVariant := false, false
-	var paths []string
+	described, needsLink := false, false
 	for _, item := range items {
 		for _, key := range item.DimensionKeys {
 			if !slices.Contains(dimensions, key.Dimension) {
@@ -103,8 +104,8 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		if described {
 			values = append(values, firstDescriptionLine(item.Description))
 		}
-		rows = append(rows, append(values, addr.Path))
-		paths = append(paths, addr.Path)
+		addr.Query = nil
+		rows = append(rows, append(values, addr.String()))
 	}
 	columns := artifactTableColumns(items, dimensions, rows)
 	var header []string
@@ -122,28 +123,22 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 			values = append(values, row[column])
 		}
 		identity, _ := json.Marshal(values)
-		needsVariant = needsVariant || len(items[i].DimensionKeys) == 0 || seenKeys[string(identity)]
+		needsLink = needsLink || len(items[i].DimensionKeys) == 0 || seenKeys[string(identity)]
 		seenKeys[string(identity)] = true
 		rows[i] = append(values, row[len(dimensions):]...)
 	}
 	if described {
 		header = append(header, "DESCRIPTION")
 	}
-	if needsVariant {
-		header = append(header, "VARIANT")
+	if needsLink {
+		header = append(header, "LINK")
 	}
 	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(writer, strings.Join(header, "\t")); err != nil {
 		return err
 	}
-	var variants map[string]string
-	if needsVariant {
-		variants = artifactVariantLabels(paths)
-	}
 	for _, row := range rows {
-		if needsVariant {
-			row[len(row)-1] = variants[row[len(row)-1]]
-		} else {
+		if !needsLink {
 			row = row[:len(row)-1]
 		}
 		for i, value := range row {
@@ -199,35 +194,6 @@ func artifactTableColumns(items []listedArtifact, dimensions []string, rows [][]
 		}
 	}
 	return columns
-}
-
-// Count each suffix once per distinct path. Labels depend only on paths, not
-// their order or how many dimension rows use each path.
-func artifactVariantLabels(paths []string) map[string]string {
-	parts := map[string][]string{}
-	counts := map[string]int{}
-	for _, path := range paths {
-		if _, exists := parts[path]; exists {
-			continue
-		}
-		parts[path] = strings.Split(path, "/")
-		for i := range parts[path] {
-			counts[strings.Join(parts[path][i:], "/")]++
-		}
-	}
-	labels := map[string]string{}
-	for path, segments := range parts {
-		label := path
-		for i := len(segments) - 1; i >= 0; i-- {
-			suffix := strings.Join(segments[i:], "/")
-			if counts[suffix] == 1 {
-				label = suffix
-				break
-			}
-		}
-		labels[path] = label
-	}
-	return labels
 }
 
 func quoteArtifactArgument(value string) (string, error) {

@@ -41,7 +41,7 @@ func newListCommand() *cobra.Command {
 	cmd.Flags().BoolP("all", "a", false, "List all artifacts, optionally filtered by address")
 	cmd.PersistentFlags().StringArrayP("type", "t", nil, "Select artifacts of this `TYPE` (repeat to select more)")
 	registerArtifactListFlags(cmd)
-	cmd.Flags().StringP("format", "f", "table", "Output format: table, link, or cli")
+	cmd.Flags().StringP("format", "f", "table", "Output `FORMAT`: table, link, or cli")
 	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
 	return cmd
 }
@@ -257,6 +257,7 @@ func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Art
 }
 
 type listedArtifact struct {
+	CLIFlagsOnly     bool `json:"-"`
 	URI, Description string
 	DimensionKeys    []struct{ Dimension, Key string }
 }
