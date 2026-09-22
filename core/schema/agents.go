@@ -22,6 +22,17 @@ func (s agentsSchema) Install(srv *dagql.Server) {
 			Experimental("Agent APIs are likely to change.").
 			Doc("Return a list of individual agents and their details"),
 
+		dagql.Func("recompose", s.recompose).
+			View(AfterVersion("v1.0.0-0")).
+			Experimental("Agent APIs are likely to change.").
+			Doc(
+				"Recompose the selected agent middlewares onto an existing LLM, replacing their owned system prompts and tool bindings while preserving tool object state.",
+				"Caller-added prompts and unrelated middleware contributions are retained. Prompts from older conversations without ownership metadata are never removed automatically. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.",
+				"Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or a changed module origin are errors regardless of version. The base workspace is preserved.",
+			).
+			Args(
+				dagql.Arg("base").Doc("The existing conversation whose tool state should be preserved."),
+			),
 		dagql.Func("compose", s.compose).
 			Experimental("Agent APIs are likely to change.").
 			Doc("Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.").
@@ -91,6 +102,20 @@ func (s agentsSchema) compose(ctx context.Context, parent *core.AgentMiddlewareG
 	}
 
 	return parent.Compose(ctx, base)
+}
+
+func (s agentsSchema) recompose(ctx context.Context, parent *core.AgentMiddlewareGroup, args struct {
+	Base core.LLMID
+}) (dagql.ObjectResult[*core.LLM], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.LLM]{}, err
+	}
+	base, err := args.Base.Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.LLM]{}, err
+	}
+	return parent.Recompose(ctx, base)
 }
 
 func (s agentsSchema) name(_ context.Context, parent *core.AgentMiddleware, args struct{}) (string, error) {
