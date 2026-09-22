@@ -94,6 +94,7 @@ func TestBuiltinMetadataSelectors(t *testing.T) {
 				path, _ := output.Self().File.Peek()
 				require.Equal(t, wantPath, path)
 				require.Equal(t, wantPlatform, output.Self().Platform.Format())
+				require.False(t, parent.Self().Lazy.IsEvaluated())
 			} else {
 				var output dagql.ObjectResult[*core.Directory]
 				require.NoError(t, srv.Select(ctx, parent, &output, selector))
@@ -297,6 +298,27 @@ func TestBuiltinLegacyServiceMetadata(t *testing.T) {
 			require.True(t, svc.Self().Container.Self().Lazy.IsEvaluated())
 		})
 	}
+}
+
+func TestContainerAsServiceIsLazy(t *testing.T) {
+	ctx, srv, _, _, parent := builtinLazyFixture(t, false, false)
+
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Service]{}))
+	dagql.Fields[*core.Container]{
+		dagql.NodeFunc("asService", (&serviceSchema{}).containerAsService),
+	}.Install(srv)
+
+	var svc dagql.ObjectResult[*core.Service]
+	require.NoError(t, srv.Select(ctx, parent, &svc, dagql.Selector{
+		Field: "asService",
+	}))
+
+	require.False(t, parent.Self().Lazy.IsEvaluated())
+	require.False(t, svc.Self().Container.Self().Lazy.IsEvaluated())
+
+	require.NoError(t, svc.Self().Container.Self().LazyEvalFunc()(ctx))
+
+	require.True(t, svc.Self().Container.Self().Lazy.IsEvaluated())
 }
 
 func TestBuiltinCacheOwnerDynamicInput(t *testing.T) {

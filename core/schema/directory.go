@@ -19,7 +19,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -862,37 +861,8 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, err
 	}
-	fileResult, err := dagql.NewObjectResultForCurrentCall(ctx, srv, f)
-	if err != nil {
-		return inst, err
-	}
 
-	if lazy := fileResult.Self().LazyEvalFunc(); lazy != nil {
-		if err := lazy(ctx); err != nil {
-			return inst, err
-		}
-	}
-
-	snapshot, ok := fileResult.Self().Snapshot.Peek()
-	if !ok {
-		return inst, fmt.Errorf("file snapshot not set after detached evaluation")
-	}
-	filePath, ok := fileResult.Self().File.Peek()
-	if !ok {
-		return inst, fmt.Errorf("file path not set after detached evaluation")
-	}
-
-	dgst, err := core.GetContentHashFromFile(ctx, snapshot, filePath)
-	if err != nil {
-		return inst, err
-	}
-
-	dgst = hashutil.HashStrings(
-		filePath,
-		string(dgst),
-	)
-
-	return fileResult.WithContentDigest(ctx, dgst)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
 
 type WithNewFileArgs struct {
