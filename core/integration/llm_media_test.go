@@ -56,7 +56,7 @@ func mediaHistory(t *testctx.T, c *dagger.Client, llm *dagger.LLM) []mediaMessag
 }
 
 func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	png := c.Container().From(alpineImage).
 		WithNewFile("/image.b64", mediaPNG).
 		WithExec([]string{"sh", "-c", "base64 -d /image.b64 > /image.png"}).File("/image.png")
@@ -91,7 +91,7 @@ func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 
 			// Portable reconstruction must contain the resolved bytes rather than
 			// depend on the original File or its producing container.
-			id, err := llm.PortableID(ctx)
+			id, err := sink.captureLLMRecipe(ctx, t, c, llm)
 			require.NoError(t, err)
 			recipe := new(call.ID)
 			require.NoError(t, recipe.Decode(string(id)))
@@ -114,7 +114,7 @@ func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 }
 
 func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	pdf := base64.StdEncoding.EncodeToString([]byte(mediaPDF))
 	llm := c.LLM().WithContent([]dagger.LLMContentBlockInput{
 		{Kind: dagger.LLMContentBlockKindText, Text: "Compare these:"},
@@ -145,7 +145,7 @@ func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 	require.NotContains(t, transcript, pdf)
 	require.NotContains(t, transcript, mediaWAV)
 
-	id, err := llm.PortableID(ctx)
+	id, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	require.Equal(t, messages, mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, id)))
 
@@ -161,7 +161,7 @@ func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 }
 
 func (LLMSuite) TestMediaToolResultBlocks(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	llm := c.LLM().WithToolResult("media-call", "legacy text", false, dagger.LLMWithToolResultOpts{
 		Blocks: []dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "caption"},
@@ -180,7 +180,7 @@ func (LLMSuite) TestMediaToolResultBlocks(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "caption", result.Content[0].Text)
 	require.Equal(t, mediaPNG, result.Content[1].Data)
 
-	id, err := llm.PortableID(ctx)
+	id, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	require.Equal(t, messages, mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, id)))
 

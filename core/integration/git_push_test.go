@@ -282,7 +282,7 @@ func (GitSuite) TestPushCallerURLRewrite(ctx context.Context, t *testctx.T) {
 }
 
 func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	fetchService, fetchURL := gitService(ctx, t, c, c.Directory().WithNewFile("base", "fetch"))
 	pushService, pushURL := gitService(ctx, t, c, c.Directory().WithNewFile("base", "divergent push history"))
 	_, err := fetchService.Start(ctx)
@@ -303,7 +303,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 		WithExec([]string{"git", "config", "remote.origin.pushurl", pushURL})
 	// The capture's owner exits before this recipe is restored by the outer
 	// client. Routing data must survive without carrying any authorization.
-	recipe, err := checkout.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | snapshot) | portable-id`)).Stdout(ctx)
+	recipe, err := sink.captureShellRecipe(ctx, t, checkout, `llm | with-workspace --workspace $(current-workspace | snapshot)`)
 	require.NoError(t, err)
 	frozen := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(recipe))).Workspace()
 	head, err := frozen.Git().Head().CommitSHA(ctx)
@@ -332,8 +332,9 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 
 	// Git pushes to every configured pushurl, but capture retains only the
 	// first: a push routes to one destination. An explicit to remains usable.
-	multiRecipe, err := checkout.WithExec([]string{"git", "config", "--add", "remote.origin.pushurl", fetchURL}).
-		With(daggerShell(`llm | with-workspace --workspace $(current-workspace | snapshot) | portable-id`)).Stdout(ctx)
+	multiRecipe, err := sink.captureShellRecipe(ctx, t,
+		checkout.WithExec([]string{"git", "config", "--add", "remote.origin.pushurl", fetchURL}),
+		`llm | with-workspace --workspace $(current-workspace | snapshot)`)
 	require.NoError(t, err)
 	multi := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(multiRecipe))).Workspace()
 	multiHead, err := multi.Git().Head().CommitSHA(ctx)

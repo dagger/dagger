@@ -107,7 +107,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorFromModule(ctx context.Con
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitResolvedIdentityReplay(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c).
 		WithEnvVariable("GIT_CONFIG_NOSYSTEM", "1").
 		WithEnvVariable("GIT_CONFIG_GLOBAL", "/tmp/author.gitconfig")
@@ -120,7 +120,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitResolvedIdentityReplay(ctx context.
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			original := base.WithNewFile("/tmp/author.gitconfig", tc.config)
-			recipe, err := original.With(daggerShell(fmt.Sprintf(`ws=$(git --url %s | head | as-workspace | with-new-file authored.txt authored); llm | with-workspace --workspace $($ws | with-commit --changes $($ws | git | uncommitted) --message authored --date 2026-09-05T12:00:00Z) | portable-id`, repoURL))).Stdout(ctx)
+			recipe, err := sink.captureShellRecipe(ctx, t, original, fmt.Sprintf(`ws=$(git --url %s | head | as-workspace | with-new-file authored.txt authored); llm | with-workspace --workspace $($ws | with-commit --changes $($ws | git | uncommitted) --message authored --date 2026-09-05T12:00:00Z)`, repoURL))
 			require.NoError(t, err)
 			recipe = strings.TrimSpace(recipe)
 			// The original client is gone. Replaying the commit retains its

@@ -121,7 +121,7 @@ type Editor {
 // evaluated. A warm constructor cache would hide a dispatch through the core
 // schema, which is what broke tool calls after resuming an agent from a trace.
 func (LLMSuite) TestRestoredModuleTool(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	source := c.Directory().
 		WithNewFile("dagger.toml", "[modules.editor]\nsource = \"modules/editor\"\n").
 		WithNewFile("modules/editor/dagger.json", `{"name":"editor","engineVersion":"v1.0.0-0","sdk":"dang"}`).
@@ -145,7 +145,7 @@ type Editor {
 `)
 	// Recover the real constructor's provenance from a portable composition,
 	// then give it a new argument so this receiver cannot already be cached.
-	portable, err := source.AsWorkspace().Agents().Compose().PortableID(ctx)
+	portable, err := sink.captureLLMRecipe(ctx, t, c, source.AsWorkspace().Agents().Compose())
 	require.NoError(t, err)
 	id := new(call.ID)
 	require.NoError(t, id.Decode(string(portable)))
@@ -182,22 +182,22 @@ type Editor {
 	var res struct {
 		LLM struct {
 			WithTools struct {
-				PortableID string
-				Tools      string
+				ID    string
+				Tools string
 			}
 		}
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query: `query($model: String!, $object: ID!) {
-			llm(model: $model) { withTools(object: $object) { portableID tools } }
+			llm(model: $model) { withTools(object: $object) { id tools } }
 		}`,
 		Variables: map[string]any{"model": model, "object": objectID},
 	}, &dagger.Response{Data: &res}))
 	require.Contains(t, res.LLM.WithTools.Tools, "## readMarker")
-	seed := dagger.Ref[*dagger.LLM](c, dagger.ID(res.LLM.WithTools.PortableID)).
+	seed := dagger.Ref[*dagger.LLM](c, dagger.ID(res.LLM.WithTools.ID)).
 		WithPrompt("before restore").
 		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "remembered"}})
-	snapshot, err := seed.PortableID(ctx)
+	snapshot, err := sink.captureLLMRecipe(ctx, t, c, seed)
 	require.NoError(t, err)
 
 	// No modules are served into the restoring client's schema. Restore and
@@ -365,7 +365,7 @@ type Swapper {
 // TestLargeChangesetToolSkipsPatchWork covers a move with both additions and
 // removals: computing full paths would stage every file for rename detection.
 func (LLMSuite) TestLargeChangesetToolSkipsPatchWork(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	source := c.Directory().
 		WithNewFile("dagger.toml", "[modules.editor]\nsource = \"modules/editor\"\n").
 		WithNewFile("modules/editor/dagger.json", `{"name":"editor","engineVersion":"v1.0.0-0","sdk":"dang"}`).
@@ -399,7 +399,7 @@ type Editor {
 	require.NoError(t, err)
 	require.Contains(t, transcript, "exceeds the 200-path inspection budget")
 
-	id, err := result.PortableID(ctx)
+	id, err := sink.captureLLMRecipe(ctx, t, c, result)
 	require.NoError(t, err)
 	gid := new(call.ID)
 	require.NoError(t, gid.Decode(string(id)))
@@ -422,7 +422,7 @@ type Editor {
 // replaces the original on the live workspace binding — would silently drop
 // the empty directory while keeping the file beside it.
 func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	base := workspaceFixture(t, c, "workspace-tool-return")
 
 	model := cannedRecordingModel(ctx, t, c, c.LLM().
@@ -463,10 +463,10 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		// discriminates: a normalized overlay is withPatch plus the
 		// withNewDirectory that restored the empty directory, while the raw
 		// changeset's chain has the tool's operations and no withPatch.
-		out, err := base.With(daggerShell(fmt.Sprintf(
-			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "scaffold the project" | loop | portable-id`,
+		out, err := sink.captureShellRecipe(ctx, t, base, fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "scaffold the project" | loop`,
 			model,
-		))).Stdout(ctx)
+		))
 		require.NoError(t, err)
 
 		gid := new(call.ID)
