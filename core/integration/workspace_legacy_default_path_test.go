@@ -142,7 +142,7 @@ legacy-default-path = true
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ws := tc.ws
-			checks, err := ws.Artifacts().FilterDirectives([]string{"check"}).Items(ctx)
+			checks, err := ws.Artifacts().FilterCheck().Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, checks, 1)
 			name, err := checks[0].URI(ctx)
@@ -156,7 +156,7 @@ legacy-default-path = true
 			// The module code is unchanged, so only the context tree differs.
 			// Its content must distinguish module instances in the cache.
 			edited := ws.WithNewFile("workspace-marker.txt", "wrong marker")
-			editedChecks, err := edited.Artifacts().FilterDirectives([]string{"check"}).Items(ctx)
+			editedChecks, err := edited.Artifacts().FilterCheck().Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, editedChecks, 1)
 			passed, err = artifactValue[*dagger.Check](ctx, t, c, &editedChecks[0]).Pass(ctx)

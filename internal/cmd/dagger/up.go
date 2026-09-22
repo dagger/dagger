@@ -59,7 +59,7 @@ Examples:
 				if err != nil {
 					return err
 				}
-				services := all.FilterDirectives([]string{"up"})
+				services := all.FilterUp()
 				if upListMode {
 					return listArtifactSelection(ctx, dag, services, cmd)
 				}

@@ -543,7 +543,7 @@ func (*Probe) Committed() error { return nil }
 `)
 	committed, err := commitWorkspace(ctx, c, ws, "add module", nil)
 	require.NoError(t, err)
-	checks, err := dagger.Ref[*dagger.Workspace](c, committed.ID).Artifacts().FilterDirectives([]string{"check"}).WithoutURI("**/stale").Items(ctx)
+	checks, err := dagger.Ref[*dagger.Workspace](c, committed.ID).Artifacts().FilterCheck().WithoutURI("**/stale").Items(ctx)
 	require.NoError(t, err)
 	require.Len(t, checks, 1)
 	name, err := checks[0].URI(ctx)

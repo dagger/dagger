@@ -412,7 +412,7 @@ import (
 type Consumer struct{}
 
 func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspace) (string, error) {
-	items, err := workspace.Artifacts().FilterDirectives([]string{"generate"}).Items(ctx)
+	items, err := workspace.Artifacts().FilterGenerate().Items(ctx)
 	if err != nil { return "", err }
 	var changes []*dagger.Changeset
 	for _, artifact := range items {
@@ -1576,12 +1576,12 @@ func (GeneratorsSuite) TestGeneratorArtifactEvaluation(ctx context.Context, t *t
 	modGen, err := generatorsTestEnv(t, c)
 	require.NoError(t, err)
 	out, err := modGen.WithWorkdir("hello-with-generators").With(daggerQuery(`{
- currentWorkspace { artifacts(include: ["generate-files"]) { filterDirectives(directives: ["generate"]) {
+ currentWorkspace { artifacts(include: ["generate-files"]) { filterGenerate {
   values { error { message } value { ... on Changeset { isEmpty } } }
  } } }
 }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterDirectives":{"values":[{"error":null,"value":{"isEmpty":false}}]}}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterGenerate":{"values":[{"error":null,"value":{"isEmpty":false}}]}}}}`, out)
 }
 
 // TestClientSchemaIntrospectionJSON locks in that

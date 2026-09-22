@@ -53,7 +53,7 @@ func (m *HelloWithGenerators) LazyExecFailure() *dagger.Changeset {
 }
 
 func (m *HelloWithGenerators) WorkspaceGeneratorsEmpty(ctx context.Context, ws *dagger.Workspace) (bool, error) {
-	items, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"toolchain-generators"}}).FilterDirectives([]string{"generate"}).Items(ctx)
+	items, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"toolchain-generators"}}).FilterGenerate().Items(ctx)
 	if err != nil {
 		return false, err
 	}

@@ -69,20 +69,11 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			checks := artifacts.FilterDirectives([]string{"check"})
-			cfg, err := artifactWorkspaceConfig(ctx, ws)
-			if err != nil {
-				return err
-			}
-			generated := checksGenerated
-			if !cmd.Flags().Changed("generated") && cfg.CheckGenerated != nil {
-				generated = *cfg.CheckGenerated
-			}
-			regular := checks.FilterParentTypes([]string{"Changeset"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true})
-			checks = regular
-			if generated {
-				stale := artifacts.FilterDirectives([]string{"check"}).FilterParentTypes([]string{"Changeset"}).FilterParentDirectives([]string{"generate"})
-				checks = checks.WithArtifacts(stale)
+			checks := artifacts.FilterCheck()
+			if cmd.Flags().Changed("generated") {
+				// Go SDK option structs omit false. Send the explicit Boolean value.
+				checks = checks.WithGraphQLQuery(dag.QueryBuilder().Select("node").Arg("id", artifacts).
+					InlineFragment("Artifacts").Select("filterCheck").Arg("generated", checksGenerated))
 			}
 			for _, skip := range checksSkip {
 				address, err := dagaddress.Parse(skip)

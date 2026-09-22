@@ -1379,7 +1379,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		runGeneratorArtifact := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
 			t.Helper()
 
-			artifact := engineClient.CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"generate-files"}}).FilterDirectives([]string{"generate"}).One()
+			artifact := engineClient.CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"generate-files"}}).FilterGenerate().One()
 			changes := artifactValue[*dagger.Changeset](ctx, t, engineClient, artifact)
 			empty, err := changes.IsEmpty(ctx)
 			require.NoError(t, err)

@@ -30,7 +30,7 @@ func (m *HelloWithServices) Redis() *dagger.Service {
 
 // Returns the names of all services visible from the current workspace.
 func (m *HelloWithServices) WorkspaceServices(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
-	services, err := ws.Artifacts().FilterDirectives([]string{"up"}).Items(ctx)
+	services, err := ws.Artifacts().FilterUp().Items(ctx)
 	if err != nil {
 		return nil, err
 	}

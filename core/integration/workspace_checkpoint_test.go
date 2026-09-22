@@ -335,7 +335,7 @@ func (*Probe) Frozen() error { return nil }
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query: `query($id: ID!) { node(id: $id) { ... on Workspace {
-   artifacts { checks: filterDirectives(directives: ["check"]) { list: items { name: uri } } }
+   artifacts { checks: filterCheck { list: items { name: uri } } }
   } } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &got}))

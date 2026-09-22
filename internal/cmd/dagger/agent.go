@@ -192,7 +192,7 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 	if err != nil {
 		return "", err
 	}
-	selection := all.FilterDirectives([]string{"agent"}).FilterTypes([]string{"LLM"})
+	selection := all.FilterAgent()
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return "", err
@@ -264,5 +264,5 @@ func listAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *
 	if err != nil {
 		return err
 	}
-	return listArtifactSelection(ctx, dag, all.FilterDirectives([]string{"agent"}).FilterTypes([]string{"LLM"}), cmd)
+	return listArtifactSelection(ctx, dag, all.FilterAgent(), cmd)
 }

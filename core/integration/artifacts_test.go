@@ -1076,9 +1076,7 @@ More details."""
  {"uri":"dag://failing","directives":["check"]},
  {"uri":"dag://passing","directives":["check"]}
  ]}}}}`, string(*metadata))
-	checks := dagger.Ref[*dagger.Workspace](c, wsID).Artifacts().FilterDirectives([]string{"check"})
-	selected := checks.FilterParentTypes([]string{"Changeset"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true}).
-		WithArtifacts(checks.FilterParentTypes([]string{"Changeset"}).FilterParentDirectives([]string{"generate"}))
+	selected := dagger.Ref[*dagger.Workspace](c, wsID).Artifacts().FilterCheck()
 	selectionID, err := selected.ID(ctx)
 	require.NoError(t, err)
 	opts = &testutil.QueryOptions{Variables: map[string]any{"selection": selectionID}}
@@ -1132,6 +1130,72 @@ More details."""
 			require.NotContains(t, out, "edit")
 		})
 	}
+}
+
+func (ArtifactsSuite) TestCommandFilters(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	config := `check-generated = false
+[modules.probe]
+source = "./probe"
+entrypoint = true
+check.skip = ["skipped"]
+generate.skip = ["skipped-generate"]
+up.skip = ["skipped-service"]
+`
+	source := c.Directory().
+		WithNewFile("dagger.toml", config).
+		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"latest\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("probe/main.dang", `type Probe {
+ pub verify: Void @check { raise "must not run" }
+ pub skipped: Void @check { raise "must not run" }
+ pub gen: Changeset! @generate { raise "must not run" }
+ pub skippedGenerate: Changeset! @generate { raise "must not run" }
+ pub edit: Changeset! { raise "must not run" }
+ pub serve: Service! @up { raise "must not run" }
+ pub skippedService: Service! @up { raise "must not run" }
+ pub assistant: LLM! @agent { raise "must not run" }
+}`)
+	all := source.AsWorkspace().Artifacts()
+	id, err := all.ID(ctx)
+	require.NoError(t, err)
+	got, err := testutil.QueryWithClient[struct {
+		Node map[string]struct{ Items []struct{ URI string } }
+	}](c, t, `query($id: ID!) { node(id: $id) { ... on Artifacts {
+ rawChecks: filterDirectives(directives: ["check"]) { items { uri } }
+ checks: filterCheck { items { uri } }
+ withGenerated: filterCheck(generated: true) { items { uri } }
+ withoutGenerated: filterCheck(generated: false) { items { uri } }
+ rawGenerators: filterDirectives(directives: ["generate"]) { items { uri } }
+ generators: filterGenerate { items { uri } }
+ rawServices: filterDirectives(directives: ["up"]) { items { uri } }
+ services: filterUp { items { uri } }
+ agents: filterAgent { items { uri } }
+} } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
+	require.NoError(t, err)
+	for name, want := range map[string][]string{
+		"rawChecks":        {"dag://edit/stale", "dag://gen/stale", "dag://skipped", "dag://skipped-generate/stale", "dag://verify"},
+		"checks":           {"dag://verify"},
+		"withGenerated":    {"dag://gen/stale", "dag://verify"},
+		"withoutGenerated": {"dag://verify"},
+		"rawGenerators":    {"dag://gen", "dag://skipped-generate"},
+		"generators":       {"dag://gen"},
+		"rawServices":      {"dag://serve", "dag://skipped-service"},
+		"services":         {"dag://serve"},
+		"agents":           {"dag://assistant"},
+	} {
+		var names []string
+		for _, item := range got.Node[name].Items {
+			names = append(names, item.URI)
+		}
+		require.Equal(t, want, names, name)
+	}
+	// A union retains each workspace's generated-check setting.
+	enabled := source.WithNewFile("dagger.toml", strings.Replace(config, "check-generated = false", "check-generated = true", 1)).
+		AsWorkspace().Artifacts().FilterURI("gen/stale")
+	mixed := all.FilterURI("gen/stale").WithArtifacts(enabled).FilterCheck()
+	items, err := mixed.WithArtifacts(enabled).Items(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
 }
 
 func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.T) {
@@ -1208,7 +1272,7 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 		require.Equal(t, uris(ctx, t, directories), uris(ctx, t, joined.FilterTypes([]string{"Directory"})))
 		require.Equal(t, allURIs, uris(ctx, t, all))
 	})
-	t.Run("directive filters use each workspace settings", func(ctx context.Context, t *testctx.T) {
+	t.Run("command filters use each workspace settings", func(ctx context.Context, t *testctx.T) {
 		config, err := source.File("dagger.toml").Contents(ctx)
 		require.NoError(t, err)
 		skipped := source.WithNewFile("dagger.toml", config+`
@@ -1217,12 +1281,13 @@ skip = ["gen"]
 `).AsWorkspace().Artifacts().FilterURI("dag://gen/stale")
 		enabled := all.FilterURI("dag://gen/stale")
 		for _, joined := range []*dagger.Artifacts{skipped.WithArtifacts(enabled), enabled.WithArtifacts(skipped)} {
-			included := joined.FilterDirectives([]string{"check"})
-			excluded := joined.FilterDirectives([]string{"check"}, dagger.ArtifactsFilterDirectivesOpts{Exclude: true})
+			// Raw directive inclusion and exclusion do not apply workspace settings.
+			require.Len(t, uris(ctx, t, joined.FilterDirectives([]string{"check"})), 2)
+			require.Empty(t, uris(ctx, t, joined.FilterDirectives([]string{"check"}, dagger.ArtifactsFilterDirectivesOpts{Exclude: true})))
+			included := joined.FilterCheck()
 			require.Equal(t, []string{"dag://gen/stale"}, uris(ctx, t, included))
-			require.Equal(t, []string{"dag://gen/stale"}, uris(ctx, t, excluded))
 			require.Len(t, uris(ctx, t, included.WithArtifacts(enabled)), 1)
-			require.Len(t, uris(ctx, t, excluded.WithArtifacts(skipped)), 1)
+			require.Len(t, uris(ctx, t, included.WithArtifacts(skipped)), 2)
 		}
 	})
 	t.Run("union preserves workspace identity", func(ctx context.Context, t *testctx.T) {
