@@ -92,7 +92,7 @@ func replaceSection(body, section string) (string, error) {
 }
 
 func renderSection(diff, base, head string, descriptions bool) string {
-	command := "go run ./hack/sdl-diff"
+	command := "go -C hack/sdl-diff run ."
 	if !descriptions {
 		command += " -descriptions=false"
 	}

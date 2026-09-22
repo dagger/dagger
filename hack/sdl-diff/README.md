@@ -4,7 +4,7 @@ Compare two SDL files, or Git `revision:path` objects, semantically:
 
 ```sh
 git fetch upstream main
-go run ./hack/sdl-diff upstream/main:docs/docs-graphql/schema.graphqls docs/docs-graphql/schema.graphqls
+go -C hack/sdl-diff run . upstream/main:docs/docs-graphql/schema.graphqls ../../docs/docs-graphql/schema.graphqls
 ```
 
 New types and directives appear as full SDL declarations. Added fields, enum

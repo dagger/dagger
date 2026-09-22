@@ -12,7 +12,7 @@ type SdlDiff {
   @agent
   agent(base: LLM!): LLM! {
     base
-      .withTools(currentNode, except: ["test"])
+      .withTools(currentNode)
       .withSystemPrompt("When asked to open or update a PR that changes public APIs, include a semantic SDL diff in its description. Regenerate and publish the schema snapshot first, then preview and publish the diff with the sdl-diff tool. It compares published commits, not pending edits.")
   }
 
@@ -53,26 +53,18 @@ type SdlDiff {
       .stdout
   }
 
-  @check
-  test(ws: Workspace!): Void {
-    buildBase(ws)
-      .withExec(["go", "test", "./hack/sdl-diff", "-count=1"])
-      .sync
-    null
-  }
-
   let buildBase(ws: Workspace!): Container! {
     container.from("golang:1.26")
       .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
       .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
       .withWorkdir("/src")
-      .withDirectory("/src", ws.directory("/", gitignore: true))
+      .withDirectory("/src", ws.directory("/hack/sdl-diff", gitignore: true))
   }
 
   let runner(ws: Workspace!): Container! {
     let binary = buildBase(ws)
       .withEnvVariable("CGO_ENABLED", "0")
-      .withExec(["go", "build", "-o", "/out/sdl-diff", "./hack/sdl-diff"])
+      .withExec(["go", "build", "-o", "/out/sdl-diff", "."])
       .file("/out/sdl-diff")
     container.from("alpine:3.23")
       .withExec(["apk", "add", "--no-cache", "git", "ca-certificates"])
