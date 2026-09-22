@@ -234,6 +234,48 @@ func (WorkspaceSuite) TestWorkspaceExportReusesCapturedBase(ctx context.Context,
 	require.Zero(t, counts["reconstruct host git checkout"])
 }
 
+func (WorkspaceSuite) TestWorkspaceExportLiveInputs(ctx context.Context, t *testctx.T) {
+	for _, mode := range []string{"live source", "live source and from", "frozen source and live from"} {
+		t.Run(mode, func(ctx context.Context, t *testctx.T) {
+			for _, target := range []string{"same checkout", "other checkout"} {
+				t.Run(target, func(ctx context.Context, t *testctx.T) {
+					checkout, git := workspaceExportCheckout(ctx, t)
+					destination := checkout
+					if target == "other checkout" {
+						destination = filepath.Join(t.TempDir(), "destination")
+						git("clone", checkout, destination)
+					}
+					c := connect(ctx, t, dagger.WithWorkdir(checkout))
+					base := c.CurrentWorkspace()
+					source := base.WithNewFile("base.txt", "updated").
+						WithNewFile("pending.txt", "pending").
+						WithMountedDirectory("mount", c.Directory().WithNewFile("private", "not exported"))
+					var from *dagger.Workspace
+					if mode != "live source" {
+						from = base
+					}
+					if mode == "frozen source and live from" {
+						source = snapshotWorkspace(ctx, t, c, source)
+					}
+					head := git("rev-parse", "HEAD")
+					require.NoError(t, saveWorkspaceTo(ctx, c, source, from, destination))
+					for name, want := range map[string]string{"base.txt": "updated", "pending.txt": "pending"} {
+						data, err := os.ReadFile(filepath.Join(destination, name))
+						require.NoError(t, err)
+						require.Equal(t, want, string(data))
+					}
+					_, err := os.Stat(filepath.Join(destination, "mount"))
+					require.ErrorIs(t, err, os.ErrNotExist)
+					require.Equal(t, head, git("-C", destination, "rev-parse", "HEAD"))
+					if target == "other checkout" {
+						require.Empty(t, git("status", "--porcelain"), "source checkout is unchanged")
+					}
+				})
+			}
+		})
+	}
+}
+
 func (WorkspaceSuite) TestWorkspaceExportToCheckoutIncrementally(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))

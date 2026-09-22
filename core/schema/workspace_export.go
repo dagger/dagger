@@ -25,12 +25,17 @@ type workspaceSaveArgs struct {
 }
 
 func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.ObjectResult[*core.Workspace], args workspaceExportArgs) error {
-	if !source.Self().IsValueWorkspace() {
-		return fmt.Errorf("export with path requires a frozen source workspace; call snapshot first")
-	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return err
+	}
+	// Capture live inputs at the effectful boundary, just as withCommit does.
+	// The cached save composition below must only receive stable values.
+	if !source.Self().IsValueWorkspace() {
+		source, err = s.freeze(ctx, source)
+		if err != nil {
+			return fmt.Errorf("snapshot export source: %w", err)
+		}
 	}
 	var from dagql.ObjectResult[*core.Workspace]
 	if args.From.Valid {
@@ -39,7 +44,10 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 			return err
 		}
 		if !from.Self().IsValueWorkspace() {
-			return fmt.Errorf("export from requires a frozen workspace")
+			from, err = s.freeze(ctx, from)
+			if err != nil {
+				return fmt.Errorf("snapshot export comparison workspace: %w", err)
+			}
 		}
 		sourceID, err := source.ID()
 		if err != nil {
@@ -49,6 +57,7 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 		if err != nil {
 			return err
 		}
+		args.From = dagql.Opt(dagql.NewID[*core.Workspace](fromID))
 		same := sourceID.IsHandle() && fromID.IsHandle() && sourceID.EngineResultID() == fromID.EngineResultID()
 		if !sourceID.IsHandle() && !fromID.IsHandle() {
 			same = sourceID.Digest() == fromID.Digest()
