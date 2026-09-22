@@ -174,6 +174,10 @@ func (m *Manager) load() error {
 			m.corrupt[traceID] = fmt.Errorf("decode archive manifest %s: %w", file.Name(), err)
 			continue
 		}
+		if manifest.TraceID != traceID {
+			m.corrupt[traceID] = errors.New("archive manifest filename and trace identity differ")
+			continue
+		}
 		if err := validateManifest(manifest); err != nil {
 			m.corrupt[traceID] = fmt.Errorf("invalid archive manifest %s: %w", file.Name(), err)
 			continue
@@ -200,6 +204,15 @@ func validateManifest(manifest Manifest) error {
 	}
 	if manifest.Generation == "" || manifest.MainClientID == "" || manifest.BoundarySpanID == "" {
 		return errors.New("missing immutable identity")
+	}
+	if filepath.Base(manifest.MainClientID) != manifest.MainClientID || manifest.MainClientID == "." || manifest.MainClientID == ".." {
+		return errors.New("invalid archive store identity")
+	}
+	if manifest.Bootstrap.File != "" && manifest.Bootstrap.File != manifest.TraceID+".bootstrap" {
+		return errors.New("invalid bootstrap filename")
+	}
+	if manifest.HighWater.Spans < 0 || manifest.HighWater.Logs < 0 || manifest.HighWater.Metrics < 0 || manifest.SizeBytes < 0 {
+		return errors.New("invalid archive bounds")
 	}
 	switch manifest.State {
 	case StateActive, StateFinalizing, StateClosed, StateInterrupted, StateIncomplete:
@@ -240,6 +253,9 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 		Version: ManifestVersion, Generation: generation, TraceID: traceID,
 		MainClientID: mainClientID, BoundarySpanID: boundary, State: StateActive,
 		StartedAt: now, ExpiresAt: now.Add(m.ttl),
+	}
+	if err := validateManifest(manifest); err != nil {
+		return Manifest{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -403,14 +419,15 @@ func (m *Manager) mutable(traceID, generation string, want State) (*entry, error
 }
 
 type Lease struct {
-	manager *Manager
-	entry   *entry
-	once    sync.Once
+	manager  *Manager
+	entry    *entry
+	manifest Manifest
+	once     sync.Once
 }
 
-func (l *Lease) Manifest() Manifest { return l.entry.manifest }
+func (l *Lease) Manifest() Manifest { return l.manifest }
 func (l *Lease) BootstrapPath() string {
-	return filepath.Join(l.manager.root, l.entry.manifest.Bootstrap.File)
+	return filepath.Join(l.manager.root, l.manifest.Bootstrap.File)
 }
 func (l *Lease) Release() { l.once.Do(func() { l.manager.release(l.entry) }) }
 
@@ -430,8 +447,11 @@ func (m *Manager) Acquire(traceID string) (*Lease, error) {
 	if ent.manifest.State != StateClosed {
 		return nil, &Failure{Kind: FailureState, State: ent.manifest.State}
 	}
+	if ent.leases == 0 && !ent.manifest.ExpiresAt.After(m.now()) {
+		return nil, &Failure{Kind: FailureEvicted}
+	}
 	ent.leases++
-	return &Lease{manager: m, entry: ent}, nil
+	return &Lease{manager: m, entry: ent, manifest: ent.manifest}, nil
 }
 
 func (m *Manager) release(ent *entry) {
@@ -535,7 +555,7 @@ func (m *Manager) GC() (overage int64, err error) {
 	var retained int64
 	var newest *entry
 	for _, ent := range closed {
-		if !ent.manifest.ExpiresAt.After(now) {
+		if ent.leases == 0 && !ent.manifest.ExpiresAt.After(now) {
 			m.markDeletingLocked(ent)
 			continue
 		}
@@ -545,7 +565,7 @@ func (m *Manager) GC() (overage int64, err error) {
 	// Keep the newest non-expired closed archive even when it alone exceeds the
 	// soft quota. Older archives are selected until the target is reached.
 	for _, ent := range closed {
-		if retained <= m.quota || ent.deleting || ent == newest {
+		if retained <= m.quota || ent.deleting || ent == newest || ent.leases > 0 {
 			continue
 		}
 		m.markDeletingLocked(ent)

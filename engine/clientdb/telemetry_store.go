@@ -442,13 +442,14 @@ func (l *logLookup) rowIDsForSpans(ids map[string]struct{}, perSpanTail int) []i
 
 // DB is one client's standalone append-only telemetry store.
 type DB struct {
-	imports importedTraces
-	spans   *logStream[Span]
-	logs    *logStream[Log]
-	metrics *logStream[Metric]
-	lookup  *spanLookup
-	logIdx  *logLookup
-	callIdx *callLookup
+	imports    importedTraces
+	spans      *logStream[Span]
+	logs       *logStream[Log]
+	metrics    *logStream[Metric]
+	lookup     *spanLookup
+	logIdx     *logLookup
+	callIdx    *callLookup
+	archiveIdx *archiveLookup
 
 	clientID string
 	refCount int
@@ -461,10 +462,11 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 	}
 
 	store := &DB{
-		lookup:   newSpanLookup(),
-		logIdx:   newLogLookup(),
-		callIdx:  newCallLookup(),
-		clientID: clientID,
+		lookup:     newSpanLookup(),
+		logIdx:     newLogLookup(),
+		callIdx:    newCallLookup(),
+		archiveIdx: newArchiveLookup(),
+		clientID:   clientID,
 	}
 	defer func() {
 		if rerr != nil {
@@ -498,10 +500,12 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		func(row Log) {
 			store.logIdx.add(row)
 			store.callIdx.addLog(row)
+			store.archiveIdx.add(row)
 		},
 		func(rows []Log) {
 			store.logIdx.addAll(rows)
 			store.callIdx.addLogs(rows)
+			store.archiveIdx.addAll(rows)
 		},
 	)
 	if err != nil {

@@ -139,6 +139,24 @@ type ListOptions struct {
 	ExcludeTraceID string
 }
 
+// Acquire holds retention protection across bootstrap and all remainder
+// requests. Release it when import finishes or the caller exits. Cancellation
+// also releases the server lease; it never keeps a detached background reader.
+func (c *Client) Acquire(ctx context.Context, traceID string) (func(), error) {
+	ctx, cancel := context.WithCancel(ctx)
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), nil, nil, "application/octet-stream", "", 0)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		resp.Body.Close()
+		cancel()
+		return nil, err
+	}
+	return func() { cancel(); _ = resp.Body.Close() }, nil
+}
+
 // List returns one page of archives.
 func (c *Client) List(ctx context.Context, opts ListOptions) (Page, error) {
 	query := make(url.Values)
@@ -405,7 +423,7 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 	for {
 		kind, next, payload, err := enginetel.ReadLiveFrame(streamBody)
 		if err != nil {
-			if errors.Is(err, enginetel.ErrInvalidLiveFrame) {
+			if errors.Is(err, enginetel.ErrInvalidLiveFrame) || errors.Is(err, enginetel.ErrLiveStream) {
 				return cursor, corrupt(err)
 			}
 			return cursor, transient(fmt.Errorf("read archive %s stream: %w", signal, err))

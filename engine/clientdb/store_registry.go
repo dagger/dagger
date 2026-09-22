@@ -210,6 +210,28 @@ func (r *DBs) GC(keep map[string]bool) error {
 	return result
 }
 
+// Remove deletes a store only when no live writer or reader holds a reference.
+// The same per-store lock serializes reopening, so GC cannot unlink a newly
+// reopened archive stream.
+func (r *DBs) Remove(clientID string) (bool, error) {
+	r.perStoreLock.Lock(clientID)
+	defer r.perStoreLock.Unlock(clientID)
+	r.mu.RLock()
+	used := r.open[clientID] != nil
+	r.mu.RUnlock()
+	if used {
+		return false, nil
+	}
+	var result error
+	for _, suffix := range []string{".spans.log", ".logs.log", ".metrics.log"} {
+		err := os.Remove(filepath.Join(r.Root, clientID+suffix))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			result = errors.Join(result, err)
+		}
+	}
+	return result == nil, result
+}
+
 func storeFileClientID(name string) (string, bool) {
 	for _, suffix := range []string{".spans.log", ".logs.log", ".metrics.log"} {
 		if clientID, found := strings.CutSuffix(name, suffix); found && clientID != "" {

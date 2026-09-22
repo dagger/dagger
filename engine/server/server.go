@@ -58,6 +58,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -184,6 +185,7 @@ type Server struct {
 	releasedSessionIDs map[string]struct{}
 	daggerSessionsMu   sync.RWMutex
 	clientDBs          *clientdb.DBs
+	archives           *archive.Manager
 
 	locker *locker.Locker
 
@@ -324,8 +326,26 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// set up client DBs, and the telemetry pub/sub which writes to it
 	//
 
-	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
+	// Telemetry archives survive worker cache resets and engine restart.
+	srv.clientDBDir = filepath.Join(srv.rootDir, "telemetry", "clientdbs")
 	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
+	archiveConfig := archive.Config{Root: filepath.Join(srv.rootDir, "telemetry", "archives"), RemoveStore: srv.clientDBs.Remove}
+	if value := os.Getenv("_EXPERIMENTAL_DAGGER_ARCHIVE_TTL"); value != "" {
+		archiveConfig.TTL, err = time.ParseDuration(value)
+		if err != nil {
+			return nil, fmt.Errorf("archive TTL: %w", err)
+		}
+	}
+	if value := os.Getenv("_EXPERIMENTAL_DAGGER_ARCHIVE_QUOTA_BYTES"); value != "" {
+		archiveConfig.QuotaBytes, err = strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("archive quota: %w", err)
+		}
+	}
+	srv.archives, err = archive.NewManager(archiveConfig)
+	if err != nil {
+		return nil, err
+	}
 	srv.telemetryPubSub = NewPubSub(srv)
 	srv.wcprofSpanCount = newWcprofSpanCounter()
 
@@ -1114,7 +1134,14 @@ func (srv *Server) Locker() *locker.Locker {
 
 func (srv *Server) gcClientDBs() {
 	for range time.NewTicker(time.Minute).C {
-		if err := srv.clientDBs.GC(srv.activeClientIDs()); err != nil {
+		keep := srv.activeClientIDs()
+		if srv.archives != nil {
+			if _, err := srv.archives.GC(); err != nil {
+				slog.Error("failed to GC archives", "error", err)
+			}
+			maps.Copy(keep, srv.archives.KeepSet())
+		}
+		if err := srv.clientDBs.GC(keep); err != nil {
 			slog.Error("failed to GC client DBs", "error", err)
 		}
 	}

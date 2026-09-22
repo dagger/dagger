@@ -33,6 +33,7 @@ type spillFile[Row any] struct {
 	// testWriteHook is a fault-injection seam. Tests install it only while the
 	// single spiller is idle; production always leaves it nil.
 	testWriteHook func([]byte) (int, error)
+	testSyncHook  func() error
 
 	// The fields below are owned by the single writer.
 	writeOffset int64
