@@ -14,36 +14,40 @@ namespace Dagger;
 class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * A unique identifier for this Artifacts.
+     * List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
      */
-    public function id(): Id
+    public function dimensionDefinitions(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionDefinitions');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionDefinitions');
     }
 
     /**
-     * Evaluate the selection in parallel, retaining each result and error.
+     * List keys represented in this selection for the given dimension, sorted with no duplicates.
      */
-    public function values(?bool $failFast = false, ?Json $arguments = null): array
+    public function dimensionKeys(string $dimension): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('values');
-        if (null !== $failFast) {
-        $leafQueryBuilder->setArgument('failFast', $failFast);
-        }
-        if (null !== $arguments) {
-        $leafQueryBuilder->setArgument('arguments', $arguments);
-        }
-        return (array)$this->queryLeaf($leafQueryBuilder, 'values');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
+        $leafQueryBuilder->setArgument('dimension', $dimension);
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
     }
 
     /**
-     * List concrete type definitions represented in this selection, sorted by name with no duplicates.
+     * List dimension identifiers represented in this selection, sorted with no duplicates.
      */
-    public function types(): array
+    public function dimensions(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('types');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'types');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensions');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensions');
+    }
+
+    /**
+     * Select LLM artifacts marked agent.
+     */
+    public function filterAgentCommand(): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterAgentCommand');
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -59,29 +63,23 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Select Changeset artifacts marked generate, using each workspace's generator settings.
+     * Keep artifacts with any listed key in this dimension.
      */
-    public function filterGenerateCommand(): Artifacts
+    public function filterDimensionKeys(string $dimension, array $keys): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterGenerateCommand');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDimensionKeys');
+        $innerQueryBuilder->setArgument('dimension', $dimension);
+        $innerQueryBuilder->setArgument('keys', $keys);
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Select LLM artifacts marked agent.
+     * Keep artifacts selected through any listed dimension.
      */
-    public function filterAgentCommand(): Artifacts
+    public function filterDimensions(array $dimensions): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterAgentCommand');
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Select Service artifacts marked up, using each workspace's service settings.
-     */
-    public function filterUpCommand(): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterUpCommand');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDimensions');
+        $innerQueryBuilder->setArgument('dimensions', $dimensions);
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -91,6 +89,28 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     public function filterDirectives(array $directives, ?bool $exclude = false): Artifacts
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDirectives');
+        $innerQueryBuilder->setArgument('directives', $directives);
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Select Changeset artifacts marked generate, using each workspace's generator settings.
+     */
+    public function filterGenerateCommand(): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterGenerateCommand');
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+     */
+    public function filterParentDirectives(array $directives, ?bool $exclude = false): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterParentDirectives');
         $innerQueryBuilder->setArgument('directives', $directives);
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
@@ -112,35 +132,12 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+     * Match one complete, ordered field sequence exactly.
      */
-    public function filterParentDirectives(array $directives, ?bool $exclude = false): Artifacts
+    public function filterPath(array $path): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterParentDirectives');
-        $innerQueryBuilder->setArgument('directives', $directives);
-        if (null !== $exclude) {
-        $innerQueryBuilder->setArgument('exclude', $exclude);
-        }
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
-     */
-    public function withArtifacts(Artifacts $artifacts): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifacts');
-        $innerQueryBuilder->setArgument('artifacts', $artifacts);
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove artifacts selected by a DAG address.
-     */
-    public function withoutUri(string $uri): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUri');
-        $innerQueryBuilder->setArgument('uri', $uri);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterPath');
+        $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -158,33 +155,11 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Match one complete, ordered field sequence exactly.
+     * Select Service artifacts marked up, using each workspace's service settings.
      */
-    public function filterPath(array $path): Artifacts
+    public function filterUpCommand(): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterPath');
-        $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Keep artifacts selected through any listed dimension.
-     */
-    public function filterDimensions(array $dimensions): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDimensions');
-        $innerQueryBuilder->setArgument('dimensions', $dimensions);
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Keep artifacts with any listed key in this dimension.
-     */
-    public function filterDimensionKeys(string $dimension, array $keys): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDimensionKeys');
-        $innerQueryBuilder->setArgument('dimension', $dimension);
-        $innerQueryBuilder->setArgument('keys', $keys);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterUpCommand');
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -201,22 +176,12 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * List dimension identifiers represented in this selection, sorted with no duplicates.
+     * A unique identifier for this Artifacts.
      */
-    public function dimensions(): array
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensions');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensions');
-    }
-
-    /**
-     * List keys represented in this selection for the given dimension, sorted with no duplicates.
-     */
-    public function dimensionKeys(string $dimension): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
-        $leafQueryBuilder->setArgument('dimension', $dimension);
-        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -238,11 +203,55 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * List concrete type definitions represented in this selection, sorted by name with no duplicates.
+     */
+    public function types(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('types');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'types');
+    }
+
+    /**
      * The DAG address that selects this whole selection: filterUri(uri) selects the same set.
      */
     public function uri(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uri');
         return (string)$this->queryLeaf($leafQueryBuilder, 'uri');
+    }
+
+    /**
+     * Evaluate the selection in parallel, retaining each result and error.
+     */
+    public function values(?bool $failFast = false, ?Json $arguments = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('values');
+        if (null !== $failFast) {
+        $leafQueryBuilder->setArgument('failFast', $failFast);
+        }
+        if (null !== $arguments) {
+        $leafQueryBuilder->setArgument('arguments', $arguments);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'values');
+    }
+
+    /**
+     * Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
+     */
+    public function withArtifacts(Artifacts $artifacts): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifacts');
+        $innerQueryBuilder->setArgument('artifacts', $artifacts);
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove artifacts selected by a DAG address.
+     */
+    public function withoutUri(string $uri): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUri');
+        $innerQueryBuilder->setArgument('uri', $uri);
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

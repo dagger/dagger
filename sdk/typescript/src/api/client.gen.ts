@@ -4241,6 +4241,25 @@ export function WorkspaceCommitPickStatusNameToValue(
       return name as WorkspaceCommitPickStatus
   }
 }
+export type __DirectiveArgsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __FieldArgsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeEnumValuesOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeFieldsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeInputFieldsOpts = {
+  includeDeprecated?: boolean
+}
 
 /**
  * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.

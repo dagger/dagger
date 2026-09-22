@@ -16,6 +16,29 @@ defmodule Dagger.Artifacts do
   @type t() :: %__MODULE__{}
 
   @doc """
+  List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+  """
+  @spec dimension_definitions(t()) :: {:ok, [Dagger.ArtifactDimension.t()]} | {:error, term()}
+  def dimension_definitions(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("dimensionDefinitions") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.ArtifactDimension{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ArtifactDimension"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   List keys represented in this selection for the given dimension, sorted with no duplicates.
   """
   @spec dimension_keys(t(), String.t()) :: {:ok, [String.t()]} | {:error, term()}
