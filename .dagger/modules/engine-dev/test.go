@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"dagger/engine-dev/internal/dagger"
 
@@ -55,7 +56,18 @@ func (dev *EngineDev) Test(
 	// Enable the given ebpf progs in the engine during tests
 	// +optional
 	ebpfProgs []string,
+	// Elapsed times after the test runner starts at which to dump engine goroutines
+	// +optional
+	dumpAfter []string,
 ) error {
+	dumpTimes := make([]time.Duration, len(dumpAfter))
+	for i, after := range dumpAfter {
+		duration, err := time.ParseDuration(after)
+		if err != nil || duration <= 0 {
+			return fmt.Errorf("dumpAfter must contain positive durations: %q", after)
+		}
+		dumpTimes[i] = duration
+	}
 	// FIXME: use the damn standard Go toolchain
 	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
@@ -74,6 +86,7 @@ func (dev *EngineDev) Test(
 		testVerbose:   testVerbose,
 		update:        update,
 		ldflagValues:  ldflagValues,
+		dumpAfter:     dumpTimes,
 	},
 	).Sync(ctx)
 	return err
@@ -148,6 +161,7 @@ type testOpts struct {
 	testVerbose   bool
 	bench         bool
 	ldflagValues  []string
+	dumpAfter     []time.Duration
 }
 
 func (dev *EngineDev) test(
@@ -221,10 +235,76 @@ func (dev *EngineDev) test(
 		args = append(args, "-update")
 	}
 
+	if len(opts.dumpAfter) > 0 {
+		watchArgs := []string{"sh", "-c", engineDumpWatchdog, "engine-dump-watchdog"}
+		for _, after := range opts.dumpAfter {
+			watchArgs = append(watchArgs, fmt.Sprintf("%.9f", after.Seconds()), after.String())
+		}
+		watchArgs = append(watchArgs, "--")
+		args = append(watchArgs, args...)
+	}
+
 	return container.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
 		WithExec(args)
 }
+
+// Use direct HTTP from the runner: asking the engine to execute a dump command
+// would itself need the cache locks we may be trying to diagnose. Each timer is
+// relative to runner startup, independent of earlier requests, and both the
+// timer and an in-flight request are reaped when the tests finish.
+const engineDumpWatchdog = `
+engine_url='http://daggerengine:6060/debug/pprof/goroutine?debug=2'
+runner=
+watchers=
+cleanup() {
+  trap - EXIT
+  if [ -n "$runner" ]; then
+    kill -TERM "$runner" 2>/dev/null || :
+  fi
+  for pid in $watchers; do
+    kill -TERM "$pid" 2>/dev/null || :
+  done
+  wait
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+watch_dump() {
+  child=
+  trap 'if [ -n "$child" ]; then kill -TERM "$child" 2>/dev/null || :; wait "$child" 2>/dev/null || :; fi' EXIT
+  trap 'exit 0' HUP INT TERM
+  sleep "$1" &
+  child=$!
+  wait "$child" || return
+  child=
+  printf '\n=== BEGIN engine goroutine dump after %s: %s ===\n' "$2" "$engine_url" >&2
+  curl --fail --silent --show-error --connect-timeout 5 --max-time 30 "$engine_url" >&2 &
+  child=$!
+  if wait "$child"; then
+    result=0
+  else
+    result=$?
+  fi
+  child=
+  printf '\n=== END engine goroutine dump after %s: %s (curl exit %s) ===\n' "$2" "$engine_url" "$result" >&2
+}
+
+while [ "$1" != "--" ]; do
+  watch_dump "$1" "$2" &
+  watchers="$watchers $!"
+  shift 2
+done
+shift
+"$@" &
+runner=$!
+wait "$runner"
+result=$?
+runner=
+exit "$result"
+`
 
 // Build an ephemeral test environment ready to run core engine tests.
 // (FIXME: do this more cleanly, and reuse the standard Go toolchain)
@@ -273,6 +353,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(6060, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+rand.Text())).
 		WithMountedCache("/run", engineRunVol).
 		AsService(dagger.ContainerAsServiceOpts{
@@ -297,7 +378,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	utilDirPath := "/dagger-dev"
 	goToolchain := dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws,
 		// Exercise real client-managed agents and encrypted key loading.
-		ExtraPackages: []string{"openssh-client"},
+		ExtraPackages: []string{"openssh-client", "curl"},
 	})
 	ldflagValues, err := goToolchain.Values(ctx)
 	if err != nil {
