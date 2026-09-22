@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,7 @@ func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().
 		WithNewFile("src/a.txt", "old-a").WithNewFile("src/b.txt", "old-b").
 		WithNewFile("keep.txt", "untouched"))
@@ -132,7 +133,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 	require.NoError(t, err)
 	require.Equal(t, baseSHA, oldSHA)
 
-	recipe, err := c.LLM().WithWorkspace(dagger.Ref[*dagger.Workspace](c, second.ID)).PortableID(ctx)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(dagger.Ref[*dagger.Workspace](c, second.ID)))
 	require.NoError(t, err)
 	id := new(call.ID)
 	require.NoError(t, id.Decode(string(recipe)))
@@ -164,7 +165,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	git("add", ".")
 	git("commit", "-m", "initial")
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "a.txt"), []byte("new"), 0o644))
-	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: checkout})
 	ws := c.CurrentWorkspace()
 	_, err := ws.ID(ctx)
 	require.NoError(t, err)
@@ -175,7 +176,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	headBefore, statusBefore := git("rev-parse", "HEAD"), git("status", "--porcelain")
 	committed, err := commitWorkspace(ctx, c, ws, "engine commit", nil)
 	require.NoError(t, err)
-	require.Contains(t, workspaceRecipeFields(ctx, t, c, string(committed.ID)), "__gitDir")
+	require.Contains(t, workspaceRecipeFields(ctx, t, c, sink, string(committed.ID)), "__gitDir")
 	require.NotEqual(t, headBefore, committed.Git.Head.Commit)
 	require.Equal(t, "Later Author", committed.Git.Head.TargetCommit.AuthorName)
 	require.Equal(t, "later@example.com", committed.Git.Head.TargetCommit.AuthorEmail)
@@ -447,9 +448,9 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFilteredDirectoryDeletion(ctx conte
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitRestoresWithoutClient(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c)
-	recipe, err := base.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | with-commit --changes $(current-workspace | git | uncommitted) --message "frozen commit" --date "2026-09-05T12:00:00Z") | portable-id`)).Stdout(ctx)
+	recipe, err := sink.captureShellRecipe(ctx, t, base, `llm | with-workspace --workspace $(current-workspace | with-commit --changes $(current-workspace | git | uncommitted) --message "frozen commit" --date "2026-09-05T12:00:00Z")`)
 	require.NoError(t, err)
 	// The CLI's owning client and checkout are gone. Restore the recipe from
 	// the outer client, then create another commit using a new client identity.
@@ -552,7 +553,7 @@ func (*Probe) Committed() error { return nil }
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	before := c.Directory().WithNewFile("base.txt", "base\n").WithNewFile("keep.txt", "keep\n")
 	daemon, url := gitService(ctx, t, c, before)
 	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
@@ -597,7 +598,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context
 			}
 			// External before/after trees are retained in a stable recipe too;
 			// replay must neither sample host state nor rerun the commit boundary.
-			recipe, err := c.LLM().WithWorkspace(got).PortableID(ctx)
+			recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(got))
 			require.NoError(t, err)
 			recipeID := new(call.ID)
 			require.NoError(t, recipeID.Decode(string(recipe)))
