@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -100,18 +101,26 @@ func cliSessionArgs(cfg *Config) []string {
 	return args
 }
 
-func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ EngineConn, rerr error) {
-	args := cliSessionArgs(cfg)
-
-	env := os.Environ()
-
+func cliSessionEnv(inherited []string, cfg *Config) []string {
+	// Copy rather than compacting inherited: callers may retain the input, and
+	// removing a variable must not mutate any process-global environment.
+	env := make([]string, 0, len(inherited)+len(cfg.ExtraEnv)+1)
+	for _, entry := range inherited {
+		key, _, _ := strings.Cut(entry, "=")
+		if slices.Contains(cfg.UnsetEnv, key) {
+			continue
+		}
+		env = append(env, entry)
+	}
 	if cfg.RunnerHost != "" {
 		env = append(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+cfg.RunnerHost)
 	}
+	return append(env, cfg.ExtraEnv...)
+}
 
-	if len(cfg.ExtraEnv) > 0 {
-		env = append(env, cfg.ExtraEnv...)
-	}
+func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ EngineConn, rerr error) {
+	args := cliSessionArgs(cfg)
+	env := cliSessionEnv(os.Environ(), cfg)
 
 	// detect $TRACEPARENT set by 'dagger run'
 	ctx = fallbackSpanContext(ctx)
