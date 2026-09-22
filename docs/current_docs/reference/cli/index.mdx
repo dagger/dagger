@@ -332,7 +332,7 @@ dagger check [--failfast] [FILTERS] [OPTIONS]
       --absolute             Show absolute links (alias: --abs)
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --failfast             Cancel remaining checks on first failure
-      --generated            Include generated-file checks (default: workspace setting) (default true)
+      --generated            Include staleness checks for 'dagger generate' (default true)
   -l, --list                 List available checks
   -m, --load-module string   Use a one-off module (local path or git ref)
       --skip link            Exclude checks selected by this link

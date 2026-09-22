@@ -93,13 +93,47 @@ func artifactCommandFlags(cmd *cobra.Command) string {
 			copy.Usage = "``" + copy.Usage
 		}
 		if flag.Name == "generated" {
-			copy.Name = "generated[=BOOL]"
+			copy.Name = "generated[=true|false]"
 			// The workspace setting supplies the default; the flag's storage
 			// default does not describe it. This copy is only used for help.
 			copy.DefValue = "false"
 		}
 		groups[group].AddFlag(&copy)
 	})
+	filters := pflag.NewFlagSet("filters", pflag.ContinueOnError)
+	filters.SortFlags = false
+	if group := groups["Filters"]; group != nil {
+		group.VisitAll(func(flag *pflag.Flag) {
+			if flag.Name != "generated[=true|false]" && flag.Name != "skip" {
+				filters.AddFlag(flag)
+			}
+		})
+		if generated := group.Lookup("generated[=true|false]"); generated != nil {
+			filters.AddFlag(generated)
+		}
+	}
+	link, target := "LINK...", "artifacts"
+	switch cmd.Name() {
+	case "check":
+		target = "checks"
+	case "generate":
+		target = "generators"
+	case "up":
+		target = "services"
+	case "agent":
+		target = "agents"
+	case "shell":
+		link, target = "LINK", "containers and directories"
+	}
+	// This help-only entry lets pflag align and wrap the positional argument
+	// with the flags. It is never registered on the command.
+	filters.Bool(link, false, "Filter "+target+" by their DAG link. See 'dagger help links'")
+	if group := groups["Filters"]; group != nil {
+		if skip := group.Lookup("skip"); skip != nil {
+			filters.AddFlag(skip)
+		}
+	}
+	groups["Filters"] = filters
 	var out strings.Builder
 	for _, title := range []string{"Filters", "Options", "List options", "Workspace", "Engine", "Progress"} {
 		group := groups[title]
@@ -107,15 +141,15 @@ func artifactCommandFlags(cmd *cobra.Command) string {
 			continue
 		}
 		out.WriteString(toUpperBold(title) + "\n")
-		if title == "Filters" {
-			link := "LINK..."
-			if cmd.Name() == "shell" {
-				link = "LINK"
-			}
-			fmt.Fprintf(&out, "  %s   Select artifacts by DAG link; place links after flags.\n            See 'dagger help links'.\n", link)
-		}
 		if group != nil {
-			usage := flagUsagesWrapped(sortRequiredFlags(group))
+			ordered := group
+			if title != "Filters" {
+				ordered = sortRequiredFlags(group)
+			}
+			usage := flagUsagesWrapped(ordered)
+			if title == "Filters" {
+				usage = strings.Replace(usage, "--"+link+" ", link+"   ", 1)
+			}
 			group.VisitAll(func(flag *pflag.Flag) {
 				name, _ := pflag.UnquoteUsage(flag)
 				if name != "" {

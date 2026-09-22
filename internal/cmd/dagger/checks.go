@@ -28,7 +28,7 @@ func init() {
 	registerArtifactListFlags(checksCmd)
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
-	checksCmd.Flags().BoolVar(&checksGenerated, "generated", true, "Include generated-file checks (default: workspace setting)")
+	checksCmd.Flags().BoolVar(&checksGenerated, "generated", true, "Include staleness checks for 'dagger generate'")
 	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Exclude checks selected by this `link`")
 	checksCmd.Flags().BoolVar(&checksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	checksCmd.Flags().Lookup("scale-out").Hidden = true
