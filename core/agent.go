@@ -559,17 +559,25 @@ func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*
 	}
 
 	ars.mu.Lock()
-	if _, found := ars.entries[key]; found {
-		ars.mu.Unlock()
+	_, found := ars.entries[key]
+	ars.mu.Unlock()
+	if found {
 		return nil, fmt.Errorf("agent %q already has a runtime entry in this session: a restore must happen before anything else addresses the instance", name)
 	}
-	rt := newAgentRuntime(ars, key, agent)
+	// Lease acquisition may enter the client lifecycle registry. Never hold the
+	// agent registry mutex across it: lifecycle callbacks can inspect agents.
 	_, lease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgentTombstone, key)
 	if err != nil {
-		ars.mu.Unlock()
-		return nil, fmt.Errorf("retain restored agent client scope: %w", err)
+		return nil, fmt.Errorf("retain agent client scope: %w", err)
 	}
+	rt := newAgentRuntime(ars, key, agent)
 	rt.clientScopeLease = lease
+	ars.mu.Lock()
+	if _, found := ars.entries[key]; found {
+		ars.mu.Unlock()
+		lease.Release()
+		return nil, fmt.Errorf("agent %q acquired a runtime entry while creation was staging", name)
+	}
 	ars.entries[key] = rt
 	ars.mu.Unlock()
 
