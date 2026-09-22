@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/dagger/dagger/internal/testutil/cachetest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
@@ -135,7 +137,16 @@ func TestPartDelegationRealStore(t *testing.T) {
 				if mode == "ready-parent" || mode == "sync-retry" || mode == "ready-parent-over-chain" || mode == "ordinary-ready-tie" {
 					exact, err := b.LoadResultByResultID(bctx, "", bsrv, parentID)
 					require.NoError(t, err)
-					require.NoError(t, b.EvaluateParts(bctx, exact, ContainerPartFS))
+					prepareCtx := bctx
+					if mode == "sync-retry" {
+						prepareCtx = engine.ContextWithClientMetadata(bctx, &engine.ClientMetadata{ClientID: "parent-preparation", SessionID: "parent-preparation"})
+					}
+					require.NoError(t, b.EvaluateParts(prepareCtx, exact, ContainerPartFS))
+					if mode == "sync-retry" {
+						// Evaluation wakes its caller before the worker drops its parent
+						// hold. Exclude that hold from the child-sync failure baseline.
+						cachetest.ReleaseSessionAndWait(t, prepareCtx, b, "parent-preparation")
+					}
 				}
 				addDonor := func() {
 					ref, _ := bStore.Build(t, nil, "payload", "delegated bytes")
