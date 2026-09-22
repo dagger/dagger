@@ -257,6 +257,19 @@ const engineDumpWatchdog = `
 engine_url='http://daggerengine:6060/debug/pprof/goroutine?debug=2'
 runner=
 watchers=
+spawning=false
+exit_status=
+request_exit() {
+  if "$spawning"; then
+    exit_status=$1
+  else
+    exit "$1"
+  fi
+}
+finish_spawn() {
+  spawning=false
+  if [ -n "$exit_status" ]; then exit "$exit_status"; fi
+}
 cleanup() {
   trap - EXIT
   if [ -n "$runner" ]; then
@@ -268,21 +281,29 @@ cleanup() {
   wait
 }
 trap cleanup EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap 'request_exit 129' HUP
+trap 'request_exit 130' INT
+trap 'request_exit 143' TERM
 
 watch_dump() {
   child=
+  spawning=false
+  exit_status=
   trap 'if [ -n "$child" ]; then kill -TERM "$child" 2>/dev/null || :; wait "$child" 2>/dev/null || :; fi' EXIT
-  trap 'exit 0' HUP INT TERM
-  sleep "$1" &
-  child=$!
+  trap 'request_exit 0' HUP INT TERM
+  start_child() {
+    # A signal may arrive between spawning the child and recording its PID.
+    # Defer exit until the EXIT trap can kill and reap that child.
+    spawning=true
+    "$@" &
+    child=$!
+    finish_spawn
+  }
+  start_child sleep "$1"
   wait "$child" || return
   child=
   printf '\n=== BEGIN engine goroutine dump after %s: %s ===\n' "$2" "$engine_url" >&2
-  curl --fail --silent --show-error --connect-timeout 5 --max-time 30 "$engine_url" >&2 &
-  child=$!
+  start_child curl --fail --silent --show-error --connect-timeout 5 --max-time 30 "$engine_url" >&2
   if wait "$child"; then
     result=0
   else
@@ -293,13 +314,17 @@ watch_dump() {
 }
 
 while [ "$1" != "--" ]; do
+  spawning=true
   watch_dump "$1" "$2" &
   watchers="$watchers $!"
+  finish_spawn
   shift 2
 done
 shift
+spawning=true
 "$@" &
 runner=$!
+finish_spawn
 wait "$runner"
 result=$?
 runner=
