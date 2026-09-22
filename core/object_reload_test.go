@@ -349,14 +349,12 @@ func TestModuleObjectStateRebindIdentity(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, newID.EngineResultID(), sameVersionID.EngineResultID())
 
-	// A version change is not permission to switch object/module origins.
+	// A version change is not permission to switch intrinsic module identity.
 	foreign := *initial.Self()
 	foreignMod := foreign.Module.Self().Clone()
-	foreignSource := foreignMod.Source.Value.Self().Clone()
-	foreignSource.Local = &LocalModuleSource{ContextDirectoryPath: "/other"}
-	foreignMod.Source = dagql.NonNull(newTypeDefAttachedResult(t, ctx, cache, dag, "foreign-source", foreignSource))
+	foreignMod.OriginalName = "Other"
 	foreign.Module = newTypeDefAttachedResult(t, ctx, cache, dag, "foreign-module", foreignMod)
 	foreignObj := newTypeDefAttachedResult(t, ctx, cache, dag, "foreign-object", &foreign)
 	_, err = recomposeToolReceiver(ctx, dag, binding(result, 1), binding(foreignObj, 2))
-	require.ErrorContains(t, err, "module source changed")
+	require.ErrorContains(t, err, "module or object identity changed")
 }

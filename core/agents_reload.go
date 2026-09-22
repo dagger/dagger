@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -48,11 +47,9 @@ func runAgentMiddleware(ctx context.Context, agent *AgentMiddleware, base dagql.
 		return base, err
 	}
 	mod := agent.Node.OriginalModule.Self()
-	origin, err := toolStateModuleOrigin(ctx, mod)
-	if err != nil {
-		return base, fmt.Errorf("middleware owner: %w", err)
-	}
-	owner := fmt.Sprintf("%q/%q/%q", origin, mod.Name(), agent.Node.PathString())
+	// A replacement implementation at the same installation and entrypoint owns
+	// the same contributions, even if its source moved from remote to local.
+	owner := fmt.Sprintf("%q/%q", mod.Name(), agent.Node.PathString())
 	// Keep causal ownership: composing Inner through Outer is distinct from
 	// composing Inner independently. Quoted identity components cannot contain
 	// literal newlines, so this separator unambiguously delimits scope levels.
@@ -159,7 +156,7 @@ func recomposeToolReceiver(ctx context.Context, srv *dagql.Server, previous, can
 	if !oldIsModule || !newIsModule {
 		return nil, fmt.Errorf("cannot reload non-module tool objects; use a fresh composition to replace them explicitly")
 	}
-	if err := sameToolStateOrigin(ctx, oldState, newState); err != nil {
+	if err := sameToolStateIdentity(oldState, newState); err != nil {
 		return nil, err
 	}
 	if previous.Version != candidate.Version {
@@ -188,54 +185,17 @@ func loadRecomposeBinding(ctx context.Context, srv *dagql.Server, binding boundT
 }
 
 // A binding slot is currently a GraphQL type name. Before transferring state,
-// also check installation name, intrinsic type and source lineage. A new commit
-// or workspace overlay is the same lineage; an unrelated source installed under
-// the same alias is not. This prevents accidental migration of capabilities
-// such as Staff's worker handles; selected middleware itself remains trusted
-// code with access to the base conversation.
-func sameToolStateOrigin(ctx context.Context, previous, candidate *ModuleObject) error {
+// also check installation name and intrinsic module/object identity. Source
+// location is deliberately not identity: replacing a remote dependency with a
+// local clone (or a fork) is how middleware can fix itself without losing state.
+// Equivalent cached implementations may also carry a different source's metadata.
+// The selected middleware is trusted code with access to the base conversation;
+// preserveRecomposedTools separately prevents claiming another owner's bindings.
+func sameToolStateIdentity(previous, candidate *ModuleObject) error {
 	oldMod, newMod := previous.Module.Self(), candidate.Module.Self()
 	if oldMod.Name() != newMod.Name() || oldMod.OriginalName != newMod.OriginalName ||
 		previous.TypeDef.OriginalName != candidate.TypeDef.OriginalName {
 		return fmt.Errorf("module or object identity changed")
 	}
-	oldOrigin, err := toolStateModuleOrigin(ctx, oldMod)
-	if err != nil {
-		return err
-	}
-	newOrigin, err := toolStateModuleOrigin(ctx, newMod)
-	if err != nil {
-		return err
-	}
-	if oldOrigin != newOrigin {
-		return fmt.Errorf("module source changed from %q to %q; refusing to transfer state", oldOrigin, newOrigin)
-	}
 	return nil
-}
-
-func toolStateModuleOrigin(ctx context.Context, mod *Module) (string, error) {
-	if !mod.Source.Valid || mod.Source.Value.Self() == nil {
-		return "", fmt.Errorf("module %q has no source identity", mod.Name())
-	}
-	src := mod.Source.Value.Self()
-	if src.Kind == ModuleSourceKindGit && src.Git != nil {
-		return "git:" + GitRefString(src.Git.CloneRef, src.SourceRootSubpath, ""), nil
-	}
-	// Native local sources use the same origin whether loaded by the session's
-	// module registry or through a Workspace overlay. The former need not carry
-	// a Workspace value at all.
-	if src.Kind == ModuleSourceKindLocal && src.Local != nil {
-		return "local:" + filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath), nil
-	}
-	if ws := src.Workspace.Self(); ws != nil {
-		return fmt.Sprintf("workspace:%s:%s:%s", ws.Address, ws.selectedEnv, src.SourceRootSubpath), nil
-	}
-	if src.Kind == ModuleSourceKindDir && src.DirSrc != nil && src.DirSrc.OriginalContextDir.Self() != nil {
-		id, err := src.DirSrc.OriginalContextDir.RecipeDigest(ctx)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("directory:%s:%s", id, src.SourceRootSubpath), nil
-	}
-	return "", fmt.Errorf("module %q has no stable source identity", mod.Name())
 }

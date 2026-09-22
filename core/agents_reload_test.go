@@ -7,13 +7,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestToolStateOrigin(t *testing.T) {
+func TestToolStateIdentity(t *testing.T) {
 	dag := newCoreDagqlServerForTest(t, &Query{})
 	installModuleObjectTestModuleClass(dag)
 	makeObject := func(src *ModuleSource, name, typeName string) *ModuleObject {
-		source := newTypeDefDetachedResult(t, dag, "reload-source", src)
+		var source dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
+		if src != nil {
+			source = dagql.NonNull(newTypeDefDetachedResult(t, dag, "reload-source", src))
+		}
 		mod := newTypeDefDetachedResult(t, dag, "reload-module", &Module{
-			NameField: name, OriginalName: "staff", Source: dagql.NonNull(source),
+			NameField: name, OriginalName: "staff", Source: source,
 		})
 		return &ModuleObject{Module: mod, TypeDef: &ObjectTypeDef{OriginalName: typeName}}
 	}
@@ -24,38 +27,38 @@ func TestToolStateOrigin(t *testing.T) {
 		}
 	}
 	original := makeObject(gitSource("https://github.com/vito/agents", "old", "staff"), "staff", "Staff")
-	t.Run("new revision is same origin", func(t *testing.T) {
-		next := makeObject(gitSource("https://github.com/vito/agents", "new", "staff"), "staff", "Staff")
-		require.NoError(t, sameToolStateOrigin(t.Context(), original, next))
-	})
 	for _, tc := range []struct {
-		name, repo, subpath, alias, object string
+		name string
+		src  *ModuleSource
 	}{
-		{"different repository", "https://github.com/other/agents", "staff", "staff", "Staff"},
-		{"different subdirectory", "https://github.com/vito/agents", "other", "staff", "Staff"},
-		{"different installation", "https://github.com/vito/agents", "staff", "other", "Staff"},
-		{"different object", "https://github.com/vito/agents", "staff", "staff", "Other"},
+		{"new revision", gitSource("https://github.com/vito/agents", "new", "staff")},
+		{"fork", gitSource("https://github.com/other/agents", "new", "staff")},
+		{"different subdirectory", gitSource("https://github.com/vito/agents", "new", "other")},
+		{"local clone", &ModuleSource{Kind: ModuleSourceKindLocal, SourceRootSubpath: "staff", Local: &LocalModuleSource{ContextDirectoryPath: "/clone"}}},
+		{"cached implementation without stable source metadata", &ModuleSource{Kind: ModuleSourceKindDir}},
+		{"absent source metadata", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			next := makeObject(gitSource(tc.repo, "new", tc.subpath), tc.alias, tc.object)
-			require.Error(t, sameToolStateOrigin(t.Context(), original, next))
+			next := makeObject(tc.src, "staff", "Staff")
+			require.NoError(t, sameToolStateIdentity(original, next))
 		})
 	}
-	t.Run("local roots are distinct", func(t *testing.T) {
+	for _, tc := range []struct {
+		name, alias, module, object string
+	}{
+		{"different installation", "other", "staff", "Staff"},
+		{"different intrinsic module", "staff", "other", "Staff"},
+		{"different object", "staff", "staff", "Other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			next := makeObject(nil, tc.alias, tc.object)
+			next.Module.Self().OriginalName = tc.module
+			require.ErrorContains(t, sameToolStateIdentity(original, next), "module or object identity changed")
+		})
+	}
+	t.Run("local roots can move", func(t *testing.T) {
 		old := makeObject(&ModuleSource{Kind: ModuleSourceKindLocal, SourceRootSubpath: "staff", Local: &LocalModuleSource{ContextDirectoryPath: "/one"}}, "staff", "Staff")
 		next := makeObject(&ModuleSource{Kind: ModuleSourceKindLocal, SourceRootSubpath: "staff", Local: &LocalModuleSource{ContextDirectoryPath: "/two"}}, "staff", "Staff")
-		require.ErrorContains(t, sameToolStateOrigin(t.Context(), old, next), "module source changed")
-	})
-	t.Run("local served and overlay sources share an origin", func(t *testing.T) {
-		dag.InstallObject(dagql.NewClass[*Workspace](dag))
-		ws := newTypeDefDetachedResult(t, dag, "reload-workspace", &Workspace{Address: "file:///one", selectedEnv: "dev"})
-		oldSource := &ModuleSource{Kind: ModuleSourceKindLocal, SourceRootSubpath: "staff", Local: &LocalModuleSource{ContextDirectoryPath: "/one"}}
-		newSource := oldSource.Clone()
-		newSource.Workspace = ws
-		require.NoError(t, sameToolStateOrigin(t.Context(), makeObject(oldSource, "staff", "Staff"), makeObject(newSource, "staff", "Staff")))
-	})
-	t.Run("unknown origin is refused", func(t *testing.T) {
-		next := makeObject(&ModuleSource{Kind: ModuleSourceKindDir}, "staff", "Staff")
-		require.ErrorContains(t, sameToolStateOrigin(t.Context(), original, next), "no stable source identity")
+		require.NoError(t, sameToolStateIdentity(old, next))
 	})
 }
