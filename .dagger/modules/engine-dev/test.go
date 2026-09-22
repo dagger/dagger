@@ -181,10 +181,10 @@ func (dev *EngineDev) test(
 		args = append(args, fmt.Sprintf("-parallel=%d", opts.parallel))
 	}
 
-	// Default timeout to 30m
-	// No test suite should take more than 30 minutes to run
+	// Default timeout to 20m: Cloud cancels a job at thirty minutes, so a
+	// package must time out first to leave a goroutine dump behind.
 	if opts.timeout == "" {
-		opts.timeout = "30m"
+		opts.timeout = "20m"
 	}
 	args = append(args, fmt.Sprintf("-timeout=%s", opts.timeout))
 
