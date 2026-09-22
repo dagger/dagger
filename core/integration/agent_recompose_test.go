@@ -653,3 +653,142 @@ func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t
 		require.Contains(t, transcript, "manual file contents survived reload")
 	}
 }
+
+func (LLMSuite) TestRecomposeNestedToolState(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const outerSource = `
+type Outer {
+  agent(base: LLM!, ws: Workspace!): LLM! @agent {
+    ws.agents(include: ["swapper"]).compose(base: base)
+  }
+}
+`
+	initial := fmt.Sprintf(recomposeSource, "")
+	fixture := recomposeFixture(c, initial).
+		WithNewFile("dagger.toml", "[modules.swapper]\nsource = \".dagger/modules/swapper\"\n[modules.outer]\nsource = \"outer\"\n").
+		WithNewFile("outer/dagger.json", `{"name":"outer","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("outer/main.dang", outerSource)
+	ws := fixture.AsWorkspace()
+	script := recomposeRecordingTurn(c.LLM(), "mutate nested", "advance", "readState")
+	script = recomposeRecordingTurn(script, "updated nested", "added")
+	script = recomposeRecordingTurn(script, "reset nested", "added")
+	model := cannedRecordingModel(ctx, t, c, script)
+	llm := ws.Agents(dagger.WorkspaceAgentsOpts{Include: []string{"outer"}}).
+		Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)}).
+		WithPrompt("mutate nested").Loop()
+	transcript, err := llm.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "private counter: 1")
+
+	updated := fmt.Sprintf(recomposeSource, `
+  let addedDefault: String! = "nested default"
+  added: String! { addedDefault + "; counter: " + toString(state) }
+`)
+	ws = ws.WithNewFile(recomposeModulePath, updated)
+	llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
+	require.NoError(t, err)
+	llm = llm.WithPrompt("updated nested").Loop()
+	transcript, err = llm.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "nested default; counter: 1", "the outer recompose must retain its descendant's tool state")
+
+	// A nested binding still owns its explicit version contract after replay.
+	portable, err := llm.PortableID(ctx)
+	require.NoError(t, err)
+	c = connect(ctx, t)
+	llm = dagger.Ref[*dagger.LLM](c, portable)
+	ws = llm.Workspace().WithNewFile(recomposeModulePath,
+		strings.ReplaceAll(updated, "base.withTools(currentNode)", "base.withTools(currentNode, version: 2)"))
+	llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
+	require.NoError(t, err)
+	llm = llm.WithPrompt("reset nested").Loop()
+	transcript, err = llm.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "nested default; counter: 0")
+
+	// Unlike descendant prompts, state-bearing tools cannot silently vanish
+	// when an outer implementation stops composing their middleware.
+	withoutNested := ws.WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource,
+		`ws.agents(include: ["swapper"]).compose(base: base)`, "base"))
+	_, err = recomposeLLM(ctx, c, withoutNested, llm, "outer")
+	require.ErrorContains(t, err, "discard tool state")
+	tools, err := llm.Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, "## added\n", "a failed recompose must not modify the original binding")
+}
+
+func (LLMSuite) TestRecomposeNestedOwnershipIsolation(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const outerSource = `
+type Outer {
+  agent(base: LLM!, ws: Workspace!): LLM! @agent {
+    ws.agents(include: ["inner"]).compose(base: base.withSystemPrompt("outer original"))
+  }
+}
+`
+	const innerSource = `
+type Inner {
+  agent(base: LLM!): LLM! @agent { base.withSystemPrompt("inner original") }
+}
+`
+	fixture := c.Directory().
+		WithNewFile("dagger.toml", "[modules.outer]\nsource = \"outer\"\n[modules.inner]\nsource = \"inner\"\n").
+		WithNewFile("outer/dagger.json", `{"name":"outer","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("outer/main.dang", outerSource).
+		WithNewFile("inner/dagger.json", `{"name":"inner","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("inner/main.dang", innerSource)
+	ws := fixture.AsWorkspace()
+	llm := c.LLM().WithWorkspace(ws).WithSystemPrompt("inner original")
+	// The same Inner is composed both independently and through Outer. Normal
+	// compose must append in both contexts, even when every prompt is identical.
+	for _, name := range []string{"inner", "inner", "outer", "outer"} {
+		llm = ws.Agents(dagger.WorkspaceAgentsOpts{Include: []string{name}}).
+			Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: llm})
+	}
+	require.ElementsMatch(t, []string{
+		"inner original", "inner original", "inner original", "inner original", "inner original",
+		"outer original", "outer original",
+	}, recomposeSystemPrompts(ctx, t, c, llm))
+
+	ws = ws.WithNewFile("inner/main.dang", strings.ReplaceAll(innerSource, "inner original", "inner updated")).
+		WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource, "outer original", "outer updated"))
+	llm, err := recomposeLLM(ctx, c, ws, llm, "outer")
+	require.NoError(t, err)
+	expected := []string{"inner original", "inner original", "inner original", "outer updated", "inner updated"}
+	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm),
+		"Outer must replace only its own nested Inner contributions, not independent Inner or caller prompts")
+
+	// Repeated portable round trips must preserve the distinction between the
+	// independently owned Inner prompts and those nested underneath Outer.
+	for range 2 {
+		portable, err := llm.PortableID(ctx)
+		require.NoError(t, err)
+		c = connect(ctx, t)
+		llm = dagger.Ref[*dagger.LLM](c, portable)
+		ws = llm.Workspace()
+		llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
+		require.NoError(t, err)
+		require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm))
+	}
+
+	// The reverse direction must also be isolated: selecting Inner directly
+	// must not remove the contribution installed through Outer.
+	llm, err = recomposeLLM(ctx, c, ws, llm, "inner")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"inner original", "outer updated", "inner updated", "inner updated"},
+		recomposeSystemPrompts(ctx, t, c, llm))
+
+	// Removing the nested compose from Outer must remove its stale descendant
+	// prompt, while keeping the independent Inner and identical caller prompt.
+	ws = ws.WithNewFile("outer/main.dang", `
+type Outer {
+  agent(base: LLM!): LLM! @agent { base.withSystemPrompt("outer alone") }
+}
+`)
+	for range 2 {
+		llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"inner original", "inner updated", "outer alone"},
+			recomposeSystemPrompts(ctx, t, c, llm))
+	}
+}
