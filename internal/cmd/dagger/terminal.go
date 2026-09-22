@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,8 @@ import (
 var (
 	terminalListMode bool
 	terminalCommand  string
+	terminalCopies   []string
+	terminalInits    []string
 )
 
 //go:embed terminals.graphql
@@ -25,6 +28,8 @@ var loadTerminalsQuery string
 func init() {
 	shellCmd.Flags().BoolVarP(&terminalListMode, "list", "l", false, "List available shells")
 	shellCmd.Flags().StringVarP(&terminalCommand, "command", "c", "", "Run a command in the shell non-interactively, and exit with its exit code")
+	shellCmd.Flags().StringArrayVar(&terminalCopies, "copy", nil, "Copy a directory into the container, as [PATH=]SOURCE. SOURCE is a local path, Git URL, or other address. PATH defaults to the working directory (repeatable)")
+	shellCmd.Flags().StringArrayVar(&terminalInits, "init", nil, "Run a command in the shell before it opens, after --copy. Only its changes to files are kept (repeatable)")
 }
 
 var shellCmd = &cobra.Command{
@@ -46,15 +51,19 @@ Examples:
   dagger sh go:dev                            # Use the short command alias
   dagger shell go:dev -c 'go test ./...'      # Run a command in the go:dev shell
   echo 'go test ./...' | dagger shell go:dev  # Read the command from stdin
+  dagger shell go:dev --copy /src=. --init 'go mod download'
+                                              # Set up the shell before it opens
 `,
 	Args: func(cmd *cobra.Command, args []string) error {
-		if cmd.Flags().Changed("command") {
-			if terminalListMode {
-				return fmt.Errorf("--list and --command cannot be used together")
+		if terminalListMode {
+			for _, flag := range []string{"command", "copy", "init"} {
+				if cmd.Flags().Changed(flag) {
+					return fmt.Errorf("--list and --%s cannot be used together", flag)
+				}
 			}
-			if len(args) == 0 {
-				return fmt.Errorf("--command requires a shell NAME")
-			}
+		}
+		if cmd.Flags().Changed("command") && len(args) == 0 {
+			return fmt.Errorf("--command requires a shell NAME")
 		}
 		return cobra.MaximumNArgs(1)(cmd, args)
 	},
@@ -87,22 +96,45 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			terminals := dag.CurrentWorkspace().Terminals(dagger.WorkspaceTerminalsOpts{Include: args})
-			switch {
-			case terminalListMode:
+			if terminalListMode {
 				return listTerminalTargets(ctx, dag, terminals, cmd)
-			case hasCommand:
-				return execTerminalCommand(ctx, cmd, terminals, command)
-			default:
-				_, err := terminals.Run().ID(ctx)
-				return err
 			}
+			copies := make([]dagger.TerminalCopy, 0, len(terminalCopies))
+			for _, arg := range terminalCopies {
+				path, source, err := parseTerminalCopy(arg)
+				if err != nil {
+					return err
+				}
+				copies = append(copies, dagger.TerminalCopy{Path: path, Source: dag.Address(source).Directory()})
+			}
+			if hasCommand {
+				return execTerminalCommand(ctx, cmd, terminals.Exec(command, dagger.TerminalGroupExecOpts{
+					Copy: copies,
+					Init: terminalInits,
+				}))
+			}
+			_, err := terminals.Run(dagger.TerminalGroupRunOpts{Copy: copies, Init: terminalInits}).ID(ctx)
+			return err
 		},
 	)
 }
 
-func execTerminalCommand(ctx context.Context, cmd *cobra.Command, terminals *dagger.TerminalGroup, command string) error {
+// parseTerminalCopy parses a --copy value, [PATH=]SOURCE. SOURCE can contain
+// '=', for example in a URL query, so split only if PATH has no ':', '?' or '#'.
+func parseTerminalCopy(arg string) (path, source string, _ error) {
+	path, source = ".", arg
+	if before, after, ok := strings.Cut(arg, "="); ok && !strings.ContainsAny(before, ":?#") {
+		path, source = before, after
+	}
+	if path == "" || source == "" {
+		return "", "", fmt.Errorf("invalid --copy %q: expected [PATH=]SOURCE", arg)
+	}
+	return path, source, nil
+}
+
+func execTerminalCommand(ctx context.Context, cmd *cobra.Command, exec *dagger.Container) error {
 	// Sync once: each query of the exec field runs the command again.
-	executed, err := terminals.Exec(command).Sync(ctx)
+	executed, err := exec.Sync(ctx)
 	if err != nil {
 		return err
 	}

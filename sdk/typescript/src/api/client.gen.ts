@@ -3360,6 +3360,46 @@ export type ServiceUpOpts = {
   random?: boolean
 }
 
+export type TerminalCopy = {
+  /**
+   * Location of the copied directory. A relative path is relative to the container's working directory.
+   */
+  path: string
+
+  /**
+   * The directory to copy.
+   */
+  source: Directory
+}
+
+export type TerminalGroupExecOpts = {
+  /**
+   * Directories to copy into the container, in order, before the command runs.
+   */
+  copy?: TerminalCopy[]
+
+  /**
+   * Commands to write, in order, to the standard input of the terminal's command before the command runs.
+   *
+   * Only their changes to the filesystem are kept.
+   */
+  init?: string[]
+}
+
+export type TerminalGroupRunOpts = {
+  /**
+   * Directories to copy into the container, in order, before the command runs.
+   */
+  copy?: TerminalCopy[]
+
+  /**
+   * Commands to write, in order, to the standard input of the terminal's command before the command runs.
+   *
+   * Only their changes to the filesystem are kept.
+   */
+  init?: string[]
+}
+
 export type TypeDefWithEnumOpts = {
   /**
    * A doc string for the enum, if any
@@ -16306,9 +16346,13 @@ export class TerminalGroup extends BaseClient {
   /**
    * Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
    * @param stdin Content to write to the command's standard input. Example: "go test ./..."
+   * @param opts.copy Directories to copy into the container, in order, before the command runs.
+   * @param opts.init Commands to write, in order, to the standard input of the terminal's command before the command runs.
+   *
+   * Only their changes to the filesystem are kept.
    */
-  exec = (stdin: string): Container => {
-    const ctx = this._ctx.select("exec", { stdin })
+  exec = (stdin: string, opts?: TerminalGroupExecOpts): Container => {
+    const ctx = this._ctx.select("exec", { stdin, ...opts })
     return new Container(ctx)
   }
 
@@ -16331,9 +16375,13 @@ export class TerminalGroup extends BaseClient {
 
   /**
    * Open the selected terminal target
+   * @param opts.copy Directories to copy into the container, in order, before the command runs.
+   * @param opts.init Commands to write, in order, to the standard input of the terminal's command before the command runs.
+   *
+   * Only their changes to the filesystem are kept.
    */
-  run = (): TerminalGroup => {
-    const ctx = this._ctx.select("run")
+  run = (opts?: TerminalGroupRunOpts): TerminalGroup => {
+    const ctx = this._ctx.select("run", { ...opts })
     return new TerminalGroup(ctx)
   }
 

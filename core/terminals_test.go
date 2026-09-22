@@ -10,7 +10,7 @@ import (
 
 func TestTerminalGroupRunRequiresOneTarget(t *testing.T) {
 	t.Run("no target", func(t *testing.T) {
-		err := (&TerminalGroup{}).Run(context.Background())
+		err := (&TerminalGroup{}).Run(context.Background(), TerminalSetup{})
 		require.EqualError(t, err, "no terminal targets selected")
 	})
 
@@ -21,7 +21,7 @@ func TestTerminalGroupRunRequiresOneTarget(t *testing.T) {
 			{Node: &ModTreeNode{Parent: root, Name: "second"}},
 		}}
 
-		err := group.Run(context.Background())
+		err := group.Run(context.Background(), TerminalSetup{})
 		require.EqualError(t, err, "terminal selection matched 2 targets: first, second")
 	})
 }

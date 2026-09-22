@@ -542,6 +542,16 @@ class PortForward(Input):
     """Transport layer protocol to use for traffic."""
 
 
+@typecheck
+@dataclass(slots=True)
+class TerminalCopy(Input):
+    path: str
+    """Location of the copied directory. A relative path is relative to the container's working directory."""
+
+    source: "Directory"
+    """The directory to copy."""
+
+
 @runtime_checkable
 class Exportable(Protocol):
     """An object that can be exported to the host.  Calling export writes
@@ -16005,7 +16015,13 @@ class Terminal(Type):
 
 @typecheck
 class TerminalGroup(Type):
-    def exec(self, stdin: str) -> Container:
+    def exec(
+        self,
+        stdin: str,
+        *,
+        copy: list[TerminalCopy] | None = None,
+        init: list[str] | None = None,
+    ) -> Container:
         """Run the selected terminal target's command non-interactively, and
         return the container after execution. Any exit code is allowed.
 
@@ -16014,9 +16030,18 @@ class TerminalGroup(Type):
         stdin:
             Content to write to the command's standard input. Example: "go
             test ./..."
+        copy:
+            Directories to copy into the container, in order, before the
+            command runs.
+        init:
+            Commands to write, in order, to the standard input of the
+            terminal's command before the command runs.
+            Only their changes to the filesystem are kept.
         """
         _args = [
             Arg("stdin", stdin),
+            Arg("copy", [] if copy is None else copy, []),
+            Arg("init", [] if init is None else init, []),
         ]
         _ctx = self._select("exec", _args)
         return Container(_ctx)
@@ -16055,9 +16080,28 @@ class TerminalGroup(Type):
         _ctx = self._select("list", _args)
         return await _ctx.execute_object_list(TerminalTarget)
 
-    def run(self) -> Self:
-        """Open the selected terminal target"""
-        _args: list[Arg] = []
+    def run(
+        self,
+        *,
+        copy: list[TerminalCopy] | None = None,
+        init: list[str] | None = None,
+    ) -> Self:
+        """Open the selected terminal target
+
+        Parameters
+        ----------
+        copy:
+            Directories to copy into the container, in order, before the
+            command runs.
+        init:
+            Commands to write, in order, to the standard input of the
+            terminal's command before the command runs.
+            Only their changes to the filesystem are kept.
+        """
+        _args = [
+            Arg("copy", [] if copy is None else copy, []),
+            Arg("init", [] if init is None else init, []),
+        ]
         _ctx = self._select("run", _args)
         return TerminalGroup(_ctx)
 
@@ -19298,6 +19342,7 @@ __all__ = [
     "Stat",
     "Syncer",
     "Terminal",
+    "TerminalCopy",
     "TerminalGroup",
     "TerminalTarget",
     "TypeDef",

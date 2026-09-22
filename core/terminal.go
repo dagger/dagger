@@ -294,77 +294,63 @@ func (dir *Directory) Terminal(
 	args *TerminalArgs,
 	parent dagql.ObjectResult[*Directory],
 ) error {
-	termCtrRes, err := dir.terminalContainer(ctx, ctr, parent)
-	if err != nil {
-		return err
-	}
-	return termCtrRes.Self().Terminal(ctx, selectedID, selectedDigest, termCtrRes, args)
-}
-
-// terminalContainer returns a new container with dir mounted at /src. If ctr
-// is not set, it uses the default terminal image.
-func (dir *Directory) terminalContainer(
-	ctx context.Context,
-	ctr dagql.ObjectResult[*Container],
-	parent dagql.ObjectResult[*Directory],
-) (res dagql.ObjectResult[*Container], _ error) {
 	var err error
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return res, fmt.Errorf("failed to get dagql server: %w", err)
+		return fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
 	if ctr.Self() == nil {
 		defaultCtr := NewContainer(dir.Platform)
 		ctr, err = defaultCtr.FromRefString(ctx, defaultTerminalImage)
 		if err != nil {
-			return res, fmt.Errorf("failed to create terminal container: %w", err)
+			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
 	}
 
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return res, fmt.Errorf("failed to get cache for terminal container: %w", err)
+		return fmt.Errorf("failed to get cache for terminal container: %w", err)
 	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return res, fmt.Errorf("failed to get client metadata: %w", err)
+		return fmt.Errorf("failed to get client metadata: %w", err)
 	}
 	if clientMetadata.SessionID == "" {
-		return res, fmt.Errorf("directory terminal attach container: empty session ID")
+		return fmt.Errorf("directory terminal attach container: empty session ID")
 	}
 	attachedAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, ctr)
 	if err != nil {
-		return res, fmt.Errorf("failed to attach terminal base container: %w", err)
+		return fmt.Errorf("failed to attach terminal base container: %w", err)
 	}
 	attachedCtr, ok := attachedAny.(dagql.ObjectResult[*Container])
 	if !ok {
-		return res, fmt.Errorf("failed to attach terminal base container: expected %T, got %T", ctr, attachedAny)
+		return fmt.Errorf("failed to attach terminal base container: expected %T, got %T", ctr, attachedAny)
 	}
 	ctr = attachedCtr
 	if err := cache.Evaluate(ctx, ctr); err != nil {
-		return res, fmt.Errorf("failed to evaluate terminal base container: %w", err)
+		return fmt.Errorf("failed to evaluate terminal base container: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return res, err
+		return err
 	}
 	termCtr, err := cloneContainerForTerminal(ctx, query, ctr.Self())
 	if err != nil {
-		return res, fmt.Errorf("failed to clone terminal base container: %w", err)
+		return fmt.Errorf("failed to clone terminal base container: %w", err)
 	}
 	termCtr.Config.WorkingDir = "/src"
 	termCtr, err = termCtr.WithMountedDirectory(ctx, ctr, "/src", parent, "", true)
 	if err != nil {
-		return res, fmt.Errorf("failed to create terminal container: %w", err)
+		return fmt.Errorf("failed to create terminal container: %w", err)
 	}
 	termCtrRes, err := newSyntheticTerminalContainerResult(srv, termCtr, "directory_terminal_container")
 	if err != nil {
-		return res, fmt.Errorf("failed to attach terminal container: %w", err)
+		return fmt.Errorf("failed to attach terminal container: %w", err)
 	}
-	return termCtrRes, nil
+	return termCtr.Terminal(ctx, selectedID, selectedDigest, termCtrRes, args)
 }
 
 func (*Service) Terminal(

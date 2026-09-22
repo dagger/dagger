@@ -139,6 +139,11 @@ pub struct PortForward {
     pub frontend: isize,
     pub protocol: NetworkProtocol,
 }
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct TerminalCopy {
+    pub path: String,
+    pub source: Id,
+}
 /// An object that can be exported to the host.
 /// Calling export writes the object to a path on the host filesystem and returns the path that was written.
 pub trait Exportable {
@@ -15862,6 +15867,26 @@ pub struct TerminalGroup {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct TerminalGroupRunOpts<'a> {
+    /// Directories to copy into the container, in order, before the command runs.
+    #[builder(setter(into, strip_option), default)]
+    pub copy: Option<Vec<TerminalCopy>>,
+    /// Commands to write, in order, to the standard input of the terminal's command before the command runs.
+    /// Only their changes to the filesystem are kept.
+    #[builder(setter(into, strip_option), default)]
+    pub init: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct TerminalGroupExecOpts<'a> {
+    /// Directories to copy into the container, in order, before the command runs.
+    #[builder(setter(into, strip_option), default)]
+    pub copy: Option<Vec<TerminalCopy>>,
+    /// Commands to write, in order, to the standard input of the terminal's command before the command runs.
+    /// Only their changes to the filesystem are kept.
+    #[builder(setter(into, strip_option), default)]
+    pub init: Option<Vec<&'a str>>,
+}
 impl IntoID<Id> for TerminalGroup {
     fn into_id(
         self,
@@ -15909,8 +15934,31 @@ impl TerminalGroup {
             .collect())
     }
     /// Open the selected terminal target
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn run(&self) -> TerminalGroup {
         let query = self.selection.select("run");
+        TerminalGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Open the selected terminal target
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn run_opts<'a>(&self, opts: TerminalGroupRunOpts<'a>) -> TerminalGroup {
+        let mut query = self.selection.select("run");
+        if let Some(copy) = opts.copy {
+            query = query.arg("copy", copy);
+        }
+        if let Some(init) = opts.init {
+            query = query.arg("init", init);
+        }
         TerminalGroup {
             proc: self.proc.clone(),
             selection: query,
@@ -15922,9 +15970,35 @@ impl TerminalGroup {
     /// # Arguments
     ///
     /// * `stdin` - Content to write to the command's standard input. Example: "go test ./..."
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn exec(&self, stdin: impl Into<String>) -> Container {
         let mut query = self.selection.select("exec");
         query = query.arg("stdin", stdin.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
+    ///
+    /// # Arguments
+    ///
+    /// * `stdin` - Content to write to the command's standard input. Example: "go test ./..."
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn exec_opts<'a>(
+        &self,
+        stdin: impl Into<String>,
+        opts: TerminalGroupExecOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("exec");
+        query = query.arg("stdin", stdin.into());
+        if let Some(copy) = opts.copy {
+            query = query.arg("copy", copy);
+        }
+        if let Some(init) = opts.init {
+            query = query.arg("init", init);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,

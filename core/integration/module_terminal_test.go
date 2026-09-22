@@ -123,6 +123,24 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		require.Contains(t, string(out), "woo from stdin\n", stderr.String())
 	})
 
+	t.Run("top-level command with --copy and --init", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-default")
+		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "data"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "data", "hello.txt"), []byte("hello\n"), 0o644))
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "shell", "ctr",
+			"--copy", "data",
+			"--copy", "/opt/data=data",
+			"--init", `echo "$COOLENV" > /init.txt`,
+			"-c", "cat hello.txt /opt/data/hello.txt /init.txt")
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		require.NoError(t, err, stderr.String())
+		require.Equal(t, "hello\nhello\nwoo\n", string(out), stderr.String())
+	})
+
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-default")
 		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")

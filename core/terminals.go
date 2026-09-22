@@ -57,25 +57,44 @@ func (r *TerminalGroup) List() []*TerminalTarget {
 	return r.Terminals
 }
 
+// TerminalCopy is a directory to copy into a terminal container.
+type TerminalCopy struct {
+	Path   string      `doc:"Location of the copied directory. A relative path is relative to the container's working directory."`
+	Source DirectoryID `doc:"The directory to copy."`
+}
+
+func (TerminalCopy) TypeName() string {
+	return "TerminalCopy"
+}
+
+// TerminalSetup changes a terminal container before its command runs.
+type TerminalSetup struct {
+	// Directories to copy into the container, in order.
+	Copies []TerminalCopy
+	// Commands to write, in order, to the standard input of the terminal's
+	// command. Only their changes to the filesystem are kept.
+	Inits []string
+}
+
 // Run opens the selected terminal target. A terminal group must contain one
 // target because interactive terminals cannot run in parallel.
-func (r *TerminalGroup) Run(ctx context.Context) error {
+func (r *TerminalGroup) Run(ctx context.Context, setup TerminalSetup) error {
 	target, err := r.selected()
 	if err != nil {
 		return err
 	}
-	return target.Node.RunTerminal(r.workspaceContext(ctx))
+	return target.Node.RunTerminal(r.workspaceContext(ctx), setup)
 }
 
 // Exec runs the selected terminal target's command non-interactively, with
 // stdin as its standard input, and returns the container after execution. Any
 // exit code is allowed, so the caller can inspect it.
-func (r *TerminalGroup) Exec(ctx context.Context, stdin string) (dagql.ObjectResult[*Container], error) {
+func (r *TerminalGroup) Exec(ctx context.Context, stdin string, setup TerminalSetup) (dagql.ObjectResult[*Container], error) {
 	target, err := r.selected()
 	if err != nil {
 		return dagql.ObjectResult[*Container]{}, err
 	}
-	return target.Node.ExecTerminal(r.workspaceContext(ctx), stdin)
+	return target.Node.ExecTerminal(r.workspaceContext(ctx), stdin, setup)
 }
 
 func (r *TerminalGroup) selected() (*TerminalTarget, error) {
@@ -140,17 +159,13 @@ func supportsTerminal(node *ModTreeNode) bool {
 	}
 }
 
-func (node *ModTreeNode) RunTerminal(ctx context.Context) error {
-	if !supportsTerminal(node) {
-		return fmt.Errorf("%q: unsupported terminal target type", node.PathString())
-	}
-
-	var target dagql.AnyObjectResult
-	if err := node.DagqlValue(ctx, &target); err != nil {
+func (node *ModTreeNode) RunTerminal(ctx context.Context, setup TerminalSetup) error {
+	ctr, err := node.terminalContainer(ctx, setup)
+	if err != nil {
 		return err
 	}
 	var result dagql.AnyObjectResult
-	return node.DagqlServer.Select(dagql.WithNonInternalTelemetry(ctx), target, &result,
+	return node.DagqlServer.Select(dagql.WithNonInternalTelemetry(ctx), ctr, &result,
 		dagql.Selector{Field: "terminal"},
 	)
 }
@@ -158,49 +173,33 @@ func (node *ModTreeNode) RunTerminal(ctx context.Context) error {
 // ExecTerminal runs the command that RunTerminal would open, in the same
 // container, with stdin as its standard input instead of a terminal. Like a
 // terminal, each call runs the command again.
-func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string) (res dagql.ObjectResult[*Container], _ error) {
-	if !supportsTerminal(node) {
-		return res, fmt.Errorf("%q: unsupported terminal target type", node.PathString())
+func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string, setup TerminalSetup) (res dagql.ObjectResult[*Container], _ error) {
+	ctr, err := node.terminalContainer(ctx, setup)
+	if err != nil {
+		return res, err
 	}
 	srv := node.DagqlServer
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return res, err
 	}
+	if err := cache.Evaluate(ctx, ctr); err != nil {
+		return res, err
+	}
 
-	// Get a new synthetic container for each call, so the exec below is
-	// never a cache hit.
-	var ctr dagql.ObjectResult[*Container]
-	switch node.Type.Self().AsObject.Value.Self().Name {
-	case "Container":
-		if err := node.DagqlValue(ctx, &ctr); err != nil {
-			return res, err
-		}
-		// Evaluate first: the default terminal command can be set lazily.
-		if err := cache.Evaluate(ctx, ctr); err != nil {
-			return res, err
-		}
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return res, err
-		}
-		clone, err := cloneContainerForTerminal(ctx, query, ctr.Self())
-		if err != nil {
-			return res, err
-		}
-		ctr, err = newSyntheticTerminalContainerResult(srv, clone, "terminal_exec_container")
-		if err != nil {
-			return res, err
-		}
-	case "Directory":
-		var dir dagql.ObjectResult[*Directory]
-		if err := node.DagqlValue(ctx, &dir); err != nil {
-			return res, err
-		}
-		ctr, err = dir.Self().terminalContainer(ctx, dagql.ObjectResult[*Container]{}, dir)
-		if err != nil {
-			return res, err
-		}
+	// Use a new synthetic copy of the container for each call, so the exec
+	// below is never a cache hit.
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return res, err
+	}
+	clone, err := cloneContainerForTerminal(ctx, query, ctr.Self())
+	if err != nil {
+		return res, err
+	}
+	ctr, err = newSyntheticTerminalContainerResult(srv, clone, "terminal_exec_container")
+	if err != nil {
+		return res, err
 	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -215,25 +214,109 @@ func (node *ModTreeNode) ExecTerminal(ctx context.Context, stdin string) (res da
 		return res, fmt.Errorf("attach terminal container: expected %T, got %T", ctr, attached)
 	}
 
-	// Match the terminal's command, and its fallback to sh.
-	defaults := ctr.Self().DefaultTerminalCmd
-	args := defaults.Args
-	if len(args) == 0 {
-		args = []string{"sh"}
-	}
 	ctx = dagql.WithNonInternalTelemetry(ctx)
-	if err := srv.Select(ctx, ctr, &res, dagql.Selector{
-		Field: "withExec",
-		Args: []dagql.NamedInput{
-			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args...))},
-			{Name: "stdin", Value: dagql.String(stdin)},
-			{Name: "expect", Value: ReturnAny},
-			{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(defaults.ExperimentalPrivilegedNesting.Value.Bool())},
-			{Name: "insecureRootCapabilities", Value: dagql.NewBoolean(defaults.InsecureRootCapabilities.Value.Bool())},
-		},
-	}); err != nil {
+	if err := srv.Select(ctx, ctr, &res, terminalStdinExec(ctr.Self(), stdin, ReturnAny)); err != nil {
 		return res, err
 	}
 	// Run the command now, in the context of the bound workspace.
 	return res, cache.Evaluate(ctx, res)
+}
+
+// terminalContainer returns the container in which the terminal for node
+// opens, after setup.
+func (node *ModTreeNode) terminalContainer(ctx context.Context, setup TerminalSetup) (ctr dagql.ObjectResult[*Container], _ error) {
+	if !supportsTerminal(node) {
+		return ctr, fmt.Errorf("%q: unsupported terminal target type", node.PathString())
+	}
+	srv := node.DagqlServer
+
+	switch node.Type.Self().AsObject.Value.Self().Name {
+	case "Container":
+		if err := node.DagqlValue(ctx, &ctr); err != nil {
+			return ctr, err
+		}
+	case "Directory":
+		// Match Directory.terminal: the directory in the default image.
+		var dir dagql.ObjectResult[*Directory]
+		if err := node.DagqlValue(ctx, &dir); err != nil {
+			return ctr, err
+		}
+		dirID, err := dir.ID()
+		if err != nil {
+			return ctr, err
+		}
+		coreSrv := srv.Canonical()
+		if err := coreSrv.Select(ctx, coreSrv.Root(), &ctr,
+			dagql.Selector{
+				Field: "container",
+				Args:  []dagql.NamedInput{{Name: "platform", Value: dir.Self().Platform}},
+			},
+			dagql.Selector{
+				Field: "from",
+				Args:  []dagql.NamedInput{{Name: "address", Value: dagql.String(defaultTerminalImage)}},
+			},
+			dagql.Selector{
+				Field: "withMountedDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String("/src")},
+					{Name: "source", Value: dagql.NewID[*Directory](dirID)},
+					{Name: "readOnly", Value: dagql.Boolean(true)},
+				},
+			},
+			dagql.Selector{
+				Field: "withWorkdir",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/src")}},
+			},
+		); err != nil {
+			return ctr, err
+		}
+	}
+	if len(setup.Copies) == 0 && len(setup.Inits) == 0 {
+		return ctr, nil
+	}
+
+	// Evaluate first: the default terminal command can be set lazily.
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return ctr, err
+	}
+	if err := cache.Evaluate(ctx, ctr); err != nil {
+		return ctr, err
+	}
+	sels := make([]dagql.Selector, 0, len(setup.Copies)+len(setup.Inits))
+	for _, cp := range setup.Copies {
+		sels = append(sels, dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(cp.Path)},
+				{Name: "source", Value: cp.Source},
+			},
+		})
+	}
+	for _, init := range setup.Inits {
+		sels = append(sels, terminalStdinExec(ctr.Self(), init, ReturnSuccess))
+	}
+	err = srv.Select(dagql.WithNonInternalTelemetry(ctx), ctr, &ctr, sels...)
+	return ctr, err
+}
+
+// terminalStdinExec selects an exec of the terminal command of ctr, with
+// stdin as its standard input.
+func terminalStdinExec(ctr *Container, stdin string, expect ReturnTypes) dagql.Selector {
+	// Match the terminal's command, and its fallback to sh.
+	defaults := ctr.DefaultTerminalCmd
+	args := defaults.Args
+	if len(args) == 0 {
+		args = []string{"sh"}
+	}
+	return dagql.Selector{
+		Field: "withExec",
+		Args: []dagql.NamedInput{
+			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args...))},
+			{Name: "stdin", Value: dagql.String(stdin)},
+			{Name: "expect", Value: expect},
+			{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(defaults.ExperimentalPrivilegedNesting.Value.Bool())},
+			{Name: "insecureRootCapabilities", Value: dagql.NewBoolean(defaults.InsecureRootCapabilities.Value.Bool())},
+		},
+	}
 }

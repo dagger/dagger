@@ -31,14 +31,19 @@ func TestShellCommandFlagValidation(t *testing.T) {
 	parent := shellCmd.Parent()
 	oldListMode := terminalListMode
 	oldCommand := terminalCommand
-	commandFlag := shellCmd.Flags().Lookup("command")
-	listFlag := shellCmd.Flags().Lookup("list")
+	oldCopies := terminalCopies
+	flags := []string{"command", "list", "copy"}
+	resetFlags := func() {
+		for _, name := range flags {
+			shellCmd.Flags().Lookup(name).Changed = false
+		}
+	}
 	t.Cleanup(func() {
 		parent.AddCommand(shellCmd)
 		terminalListMode = oldListMode
 		terminalCommand = oldCommand
-		commandFlag.Changed = false
-		listFlag.Changed = false
+		terminalCopies = oldCopies
+		resetFlags()
 	})
 
 	setupCalled := false
@@ -63,12 +68,13 @@ func TestShellCommandFlagValidation(t *testing.T) {
 		{[]string{"-c", "ls"}, "--command requires a shell NAME"},
 		{[]string{"-l", "-c", "ls"}, "--list and --command cannot be used together"},
 		{[]string{"go:dev", "-l", "-c", "ls"}, "--list and --command cannot be used together"},
+		{[]string{"-l", "--copy", "src"}, "--list and --copy cannot be used together"},
 		{[]string{"go:dev", "ls"}, "accepts at most 1 arg(s), received 2"},
 	} {
 		t.Run(fmt.Sprint(tc.args), func(t *testing.T) {
-			commandFlag.Changed = false
-			listFlag.Changed = false
+			resetFlags()
 			terminalListMode = false
+			terminalCopies = nil
 			setupCalled = false
 			root.SetArgs(append([]string{"shell"}, tc.args...))
 
@@ -81,4 +87,28 @@ func TestShellCommandFlagValidation(t *testing.T) {
 	help := renderHelp(t, shellCmd)
 	require.Contains(t, help, "--command")
 	require.Contains(t, help, "--list")
+}
+
+func TestParseTerminalCopy(t *testing.T) {
+	for _, tc := range []struct {
+		arg, path, source, err string
+	}{
+		{arg: "./src", path: ".", source: "./src"},
+		{arg: "/app=./src", path: "/app", source: "./src"},
+		{arg: "app=https://github.com/dagger/dagger#main", path: "app", source: "https://github.com/dagger/dagger#main"},
+		{arg: "https://example.com/repo?ref=main", path: ".", source: "https://example.com/repo?ref=main"},
+		{arg: "=./src", err: `invalid --copy "=./src": expected [PATH=]SOURCE`},
+		{arg: "/app=", err: `invalid --copy "/app=": expected [PATH=]SOURCE`},
+	} {
+		t.Run(tc.arg, func(t *testing.T) {
+			path, source, err := parseTerminalCopy(tc.arg)
+			if tc.err != "" {
+				require.EqualError(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.path, path)
+			require.Equal(t, tc.source, source)
+		})
+	}
 }

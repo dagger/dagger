@@ -18,10 +18,15 @@ defmodule Dagger.TerminalGroup do
   @doc """
   Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
   """
-  @spec exec(t(), String.t()) :: Dagger.Container.t()
-  def exec(%__MODULE__{} = terminal_group, stdin) do
+  @spec exec(t(), String.t(), [{:copy, [Dagger.TerminalCopy.t()]}, {:init, [String.t()]}]) ::
+          Dagger.Container.t()
+  def exec(%__MODULE__{} = terminal_group, stdin, optional_args \\ []) do
     query_builder =
-      terminal_group.query_builder |> QB.select("exec") |> QB.put_arg("stdin", stdin)
+      terminal_group.query_builder
+      |> QB.select("exec")
+      |> QB.put_arg("stdin", stdin)
+      |> QB.maybe_put_arg("copy", optional_args[:copy])
+      |> QB.maybe_put_arg("init", optional_args[:init])
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -66,10 +71,14 @@ defmodule Dagger.TerminalGroup do
   @doc """
   Open the selected terminal target
   """
-  @spec run(t()) :: Dagger.TerminalGroup.t()
-  def run(%__MODULE__{} = terminal_group) do
+  @spec run(t(), [{:copy, [Dagger.TerminalCopy.t()]}, {:init, [String.t()]}]) ::
+          Dagger.TerminalGroup.t()
+  def run(%__MODULE__{} = terminal_group, optional_args \\ []) do
     query_builder =
-      terminal_group.query_builder |> QB.select("run")
+      terminal_group.query_builder
+      |> QB.select("run")
+      |> QB.maybe_put_arg("copy", optional_args[:copy])
+      |> QB.maybe_put_arg("init", optional_args[:init])
 
     %Dagger.TerminalGroup{
       query_builder: query_builder,
