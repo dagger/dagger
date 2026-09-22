@@ -441,6 +441,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 	source := strings.Replace(collectionGoSource,
 		`if item.Name != "item:a" { panic("excluded parent must stay deferred") }`,
 		`if item.Name == "item:c" { panic("excluded parent must stay deferred") }`, 1)
+	source = strings.Replace(source, "// +get", "// Look up one item.\n// +get", 1)
 	ws, err := goGitBase(t, c).
 		WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).
 		WithWorkdir("/work").Directory("/work").AsWorkspace().ID(ctx)
@@ -448,7 +449,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
     selected: filterUri(uri: "items/parts?item=a&item=b&part=x") {
-      parents: dimensionItems(dimension: "item") { uri(typeAssertion: true) path dimensionKeys { dimension key } }
+      parents: dimensionItems(dimension: "item") { uri(typeAssertion: true) description path dimensionKeys { dimension key } }
       children: dimensionItems(dimension: "part") { uri dimensionKeys { dimension key } }
       keys: dimensionKeys(dimension: "part")
     }
@@ -457,6 +458,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
     fields: filterTypes(types: ["CollectionsItem"]) {
       dimensionItems(dimension: "collections-other") { uri }
     }
+    direct: filterUri(uri: "items?item=a") { items { description } }
     unknown: dimensionItems(dimension: "missing") { uri }
   } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
@@ -464,8 +466,8 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 	require.JSONEq(t, `{"node":{"artifacts":{
   "selected":{
     "parents":[
-      {"uri":"dag+collections-item://items?item=b","path":["items"],"dimensionKeys":[{"dimension":"Collections.items","key":"b"}]},
-      {"uri":"dag+collections-item://items?item=a","path":["items"],"dimensionKeys":[{"dimension":"Collections.items","key":"a"}]}
+      {"uri":"dag+collections-item://items?item=b","description":"Look up one item.","path":["items"],"dimensionKeys":[{"dimension":"Collections.items","key":"b"}]},
+      {"uri":"dag+collections-item://items?item=a","description":"Look up one item.","path":["items"],"dimensionKeys":[{"dimension":"Collections.items","key":"a"}]}
     ],
     "children":[
       {"uri":"dag://items/parts?item=b&part=x","dimensionKeys":[{"dimension":"Collections.items","key":"b"},{"dimension":"CollectionsItem.parts","key":"x"}]},
@@ -476,6 +478,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
   "lazy":{"dimensionItems":[{"uri":"dag://items?item=b","value":{"__typename":"CollectionsItem"}}]},
   "batch":{"dimensionItems":[{"uri":"dag://items?item=b","value":{"__typename":"CollectionsItem"}}]},
   "fields":{"dimensionItems":[{"uri":"dag://other?item=b"},{"uri":"dag://other?item=a"},{"uri":"dag://other?item=c"}]},
+  "direct":{"items":[{"description":"Look up one item."}]},
   "unknown":[]
 }}}`, string(*got))
 }

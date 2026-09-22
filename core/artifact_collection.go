@@ -403,7 +403,7 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			KeyName:        members.Get.Args[0].Self().Name,
 			KeyDescription: members.Get.Args[0].Self().Description,
 		}
-		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType,
+		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType, Description: members.Get.Description,
 			Module: node.Module, OriginalModule: node.OriginalModule, DagqlServer: node.DagqlServer, CollectionDimension: dim, types: node.types}
 		if err := walkArtifactNodes(ctx, item, visit, visiting); err != nil {
 			return err
