@@ -30,7 +30,7 @@ type SdlDiff {
   to update/open the PR. No code from the remote PR is executed.
   """
   @cache(policy: FunctionCachePolicy.Never)
-  updatePR(
+  updateSchemaDiff(
     ws: Workspace!,
     """Full https://github.com/OWNER/REPO/pull/NUMBER URL."""
     pr: String!,
