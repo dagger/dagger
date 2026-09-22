@@ -24,7 +24,35 @@ func (c agentTestConn) Do(req *http.Request) (*http.Response, error) {
 	return c.do(req)
 }
 
-func TestComposeAgentsSnapshotFallback(t *testing.T) {
+func TestTracedResetDoesNotRebindExportBaseline(t *testing.T) {
+	var queries []string
+	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+		var query dagger.Request
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
+		queries = append(queries, query.Query)
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"data":{"node":{"withoutMessageHistory":{"withModel":{"id":"reset"}}}}}`))}, nil
+	}}))
+	require.NoError(t, err)
+	defer dag.Close()
+
+	a := &sessionAgent{
+		session:     &LLMSession{dag: dag, plumbingCtx: t.Context()},
+		tracedReset: dagger.Ref[*dagger.LLM](dag, dagger.ID("traced-snapshot")).WithoutMessageHistory(),
+		model:       "test-model",
+	}
+	// An export is allowed to move comparison bookkeeping, never the reset seed.
+	a.setLastSynced(dagger.Ref[*dagger.Workspace](dag, dagger.ID("exported-baseline")))
+	_, err = a.resetLLM().ID(t.Context())
+	require.NoError(t, err)
+	require.Len(t, queries, 1)
+	require.Contains(t, queries[0], "traced-snapshot")
+	require.Contains(t, queries[0], "withoutMessageHistory")
+	require.Contains(t, queries[0], "test-model")
+	require.NotContains(t, queries[0], "withWorkspace")
+	require.NotContains(t, queries[0], "currentWorkspace")
+	require.NotContains(t, queries[0], "exported-baseline")
+}
+func TestComposeAgentsRequiresSnapshot(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		captureErr string
@@ -89,18 +117,18 @@ func TestComposeAgentsSnapshotFallback(t *testing.T) {
 				require.Empty(t, warnings.String())
 				return
 			}
+			if tc.captureErr != "" {
+				require.ErrorContains(t, err, tc.captureErr)
+				require.ErrorContains(t, err, "capture workspace for agent")
+				require.False(t, composed)
+				require.Zero(t, liveReads)
+				return
+			}
 			require.NoError(t, err)
 			require.Equal(t, "composed-agent", id)
 			require.True(t, composed)
-			if tc.captureErr != "" {
-				require.Equal(t, 1, liveReads)
-				require.Contains(t, warnings.String(), "level=WARN")
-				require.Contains(t, warnings.String(), tc.captureErr)
-				require.Contains(t, warnings.String(), "continuing with the live workspace")
-			} else {
-				require.Zero(t, liveReads)
-				require.Empty(t, warnings.String())
-			}
+			require.Zero(t, liveReads)
+			require.Empty(t, warnings.String())
 		})
 	}
 }
