@@ -444,25 +444,22 @@ func TestCallPayloadBatchProcessorDropsBatchAfterMaxAttempts(t *testing.T) {
 	logger := provider.Logger("test.core")
 	logger.Emit(t.Context(), payloadRecordWithBody("doomed"))
 
-	// Each explicit flush is one attempt, without waiting out the backoff.
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	// A drain retries to completion; exhausted loss remains sticky even once
+	// a later batch succeeds.
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	var err error
-	for range CallPayloadMaxExportAttempts {
-		err = proc.ForceFlush(ctx)
-		require.Error(t, err)
-	}
-	require.ErrorContains(t, err, "dropping 1 call payload records")
+	err := proc.ForceFlush(ctx)
+	require.ErrorContains(t, err, "dropping 1 protected records")
 	attempts, bodies, _ := exp.stats()
 	require.Equal(t, CallPayloadMaxExportAttempts, attempts)
 	require.Empty(t, bodies)
 
 	// The queue is clear: a later record exports on the first try.
 	logger.Emit(t.Context(), payloadRecordWithBody("repaired"))
-	require.NoError(t, proc.ForceFlush(ctx))
+	require.ErrorContains(t, proc.ForceFlush(ctx), "dropping 1 protected records")
 	_, bodies, _ = exp.stats()
 	require.Equal(t, []string{"repaired"}, bodies)
-	require.NoError(t, proc.Shutdown(ctx))
+	require.ErrorContains(t, proc.Shutdown(ctx), "dropping 1 protected records")
 }
 
 // captureLogExporter keeps every record it is handed.

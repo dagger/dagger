@@ -166,16 +166,23 @@ func TestManagerQuotaLeaseAndExpiry(t *testing.T) {
 	if len(removed) != 0 {
 		t.Fatalf("leased store removed early: %v", removed)
 	}
-	if _, err := manager.Acquire(testTraceA); err == nil {
-		t.Fatal("evicted archive remained listed")
+	gapReader, err := manager.Acquire(testTraceA)
+	if err != nil {
+		t.Fatalf("leased archive unavailable between import requests: %v", err)
 	}
+	gapReader.Release()
 	lease.Release()
+	if _, err := manager.GC(); err != nil {
+		t.Fatal(err)
+	}
 	if len(removed) != 1 || removed[0] != "old-client" {
 		t.Fatalf("removed = %v", removed)
 	}
-	if _, err := manager.Acquire(testTraceB); err != nil {
+	newReader, err := manager.Acquire(testTraceB)
+	if err != nil {
 		t.Fatalf("newest archive evicted: %v", err)
 	}
+	newReader.Release()
 
 	now = now.Add(2 * time.Hour)
 	if _, err := manager.GC(); err != nil {

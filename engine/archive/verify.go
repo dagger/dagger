@@ -2,6 +2,7 @@ package archive
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -12,6 +13,8 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -170,7 +173,46 @@ func ValidateBootstrap(ctx context.Context, header BootstrapHeader, batches []Bo
 	}
 	v := &bootstrapVerifier{trace: header.TraceID, calls: map[string]*callpbv1.Call{}}
 	for _, b := range batches {
+		if b.Traces != nil {
+			for _, resource := range b.Traces.GetResourceSpans() {
+				for _, scope := range resource.GetScopeSpans() {
+					for _, span := range scope.GetSpans() {
+						if hex.EncodeToString(span.GetTraceId()) != header.TraceID {
+							return errors.New("foreign bootstrap span")
+						}
+					}
+				}
+			}
+		}
 		if b.Logs != nil {
+			for _, resource := range b.Logs.ResourceLogs {
+				if resource == nil {
+					return errors.New("nil bootstrap log resource")
+				}
+				if resource.Resource == nil {
+					resource.Resource = &resourcepb.Resource{}
+				}
+				for _, scope := range resource.ScopeLogs {
+					if scope == nil {
+						return errors.New("nil bootstrap log scope")
+					}
+					for _, rec := range scope.LogRecords {
+						if rec == nil {
+							return errors.New("nil bootstrap record")
+						}
+						if rec.Body == nil {
+							rec.Body = &commonpb.AnyValue{}
+						}
+						seen := map[string]bool{}
+						for _, kv := range rec.Attributes {
+							if kv == nil || kv.Value == nil || seen[kv.Key] {
+								return errors.New("nil or duplicate bootstrap attribute")
+							}
+							seen[kv.Key] = true
+						}
+					}
+				}
+			}
 			if err := telemetry.ReexportLogsFromPB(ctx, v, b.Logs); err != nil {
 				return err
 			}
@@ -181,14 +223,23 @@ func ValidateBootstrap(ctx context.Context, header BootstrapHeader, batches []Bo
 	}
 	var roots []string
 	for _, a := range v.index.Agents() {
+		if a.Removed {
+			continue
+		}
 		roots = append(roots, a.Digest)
 	}
-	_, err = VerifyClosure(roots, func(d string) (*callpbv1.Call, error) {
+	closure, err := VerifyClosure(roots, func(d string) (*callpbv1.Call, error) {
 		c := v.calls[d]
 		if c == nil {
 			return nil, fmt.Errorf("missing bootstrap call %s", d)
 		}
 		return c, nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if len(closure) != len(v.calls) {
+		return errors.New("bootstrap contains payloads outside required closure")
+	}
+	return nil
 }

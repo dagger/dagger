@@ -31,6 +31,31 @@ func (sess *daggerSession) callPayloadMissingTargets(digest string, targets []st
 	return missing
 }
 
+func TestReportedSpanDoesNotSuppressDurablePayload(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	body, digest := serverCallPayload(t, "lookup", "span-reported")
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
+	require.True(t, store.ClaimCallPayload(digest))
+	store.CallPayloadDelivered(digest)
+	require.False(t, store.ClaimCallPayload(digest), "avoid duplicate ordinary span walks")
+	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(digest, store.targets))
+	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	exporter := sessionLogExporter{sess: sess, ps: NewPubSub(srv)}
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{record}))
+	require.Empty(t, sess.callPayloadMissingTargets(digest, store.targets))
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+}
+
 func TestSessionLogExporterRetriesPayloadAfterStoreFailure(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "store")
 	require.NoError(t, os.WriteFile(root, []byte("temporarily unavailable"), 0600))
