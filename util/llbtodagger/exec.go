@@ -266,7 +266,7 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 	withExecArgs := []*call.Argument{
 		argStringList("args", exec.Meta.Args),
 		// Dockerfile RUN steps must not inherit Dagger API access.
-		argBool("disableNesting", true),
+		argBool("disableDaggerInDagger", true),
 	}
 	if exec.Network == pb.NetMode_NONE {
 		withExecArgs = append(withExecArgs, argBool("noNetwork", true))

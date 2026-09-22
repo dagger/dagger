@@ -511,7 +511,7 @@ sleep 5 # wait for gnome-keyring-daemon to be ready
 	opts := dagger.ContainerWithExecOpts{
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
-		DisableNesting:           true,
+		DisableDaggerInDagger:    true,
 	}
 
 	ctr := c.Container().

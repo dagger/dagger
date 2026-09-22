@@ -656,7 +656,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("redirectStderr").Doc(
 					`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
-				dagql.Arg("disableNesting").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
+				dagql.Arg("disableDaggerInDagger").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
 				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
 					`Provides Dagger access to the executed command.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
@@ -939,7 +939,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Set the default command to invoke for the container's terminal API.`).
 			Args(
 				dagql.Arg("args").Doc(`The args of the command.`),
-				dagql.Arg("disableNesting").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
+				dagql.Arg("disableDaggerInDagger").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
 				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
 					`Provides Dagger access to the executed command.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
@@ -956,7 +956,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			Args(
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("disableNesting").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
+				dagql.Arg("disableDaggerInDagger").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
 				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
 					`Provides Dagger access to the executed command.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
@@ -971,7 +971,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			Args(
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("disableNesting").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
+				dagql.Arg("disableDaggerInDagger").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
 				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
 					`Provides Dagger access to the executed command.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
@@ -1636,7 +1636,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		args.UseEntrypoint = !*args.SkipEntrypoint
 	}
 	if core.Supports(ctx, defaultNestingVersion) {
-		args.ExperimentalPrivilegedNesting = !args.DisableNesting
+		args.ExperimentalPrivilegedNesting = !args.DisableDaggerInDagger
 	}
 
 	var md *engineutil.ExecutionMetadata
@@ -4711,7 +4711,7 @@ func (s *containerSchema) withDefaultTerminalCmd(
 	args containerWithDefaultTerminalCmdArgs,
 ) (*core.Container, error) {
 	if core.Supports(ctx, defaultNestingVersion) {
-		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(!args.DisableNesting))
+		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(!args.DisableDaggerInDagger))
 	}
 	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
@@ -4749,7 +4749,7 @@ func (s *containerSchema) terminal(
 
 	if core.Supports(ctx, defaultNestingVersion) {
 		defaults := ctr.Self().DefaultTerminalCmd.ExperimentalPrivilegedNesting.GetOr(dagql.Boolean(true))
-		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(defaults.Bool() && !args.DisableNesting))
+		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(defaults.Bool() && !args.DisableDaggerInDagger))
 	}
 
 	ctrDig, err := ctr.ContentPreferredDigest(ctx)

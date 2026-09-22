@@ -474,7 +474,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     public function terminal(
         ?Container $container = null,
         ?array $cmd = [],
-        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $disableDaggerInDagger = false,
         ?bool $insecureRootCapabilities = false,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
@@ -484,8 +484,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $cmd) {
         $innerQueryBuilder->setArgument('cmd', $cmd);
         }
-        if (null !== $experimentalPrivilegedNesting) {
-        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        if (null !== $disableDaggerInDagger) {
+        $innerQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);

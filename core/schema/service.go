@@ -31,7 +31,7 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("disableNesting").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
+				dagql.Arg("disableDaggerInDagger").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
 				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
 					`Provides Dagger access to the executed command.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
@@ -75,7 +75,7 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("disableNesting").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
+				dagql.Arg("disableDaggerInDagger").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
 				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
 					`Provides Dagger access to the executed command.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
@@ -288,7 +288,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent dagql.ObjectResult[*core.Container], args core.ContainerAsServiceArgs) (*core.Service, error) {
 	if core.Supports(ctx, defaultNestingVersion) {
-		args.ExperimentalPrivilegedNesting = !args.DisableNesting
+		args.ExperimentalPrivilegedNesting = !args.DisableDaggerInDagger
 	}
 	// A service needs only the container config. The service evaluates the
 	// filesystem when it starts.
@@ -334,7 +334,7 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 	}
 	if core.Supports(ctx, defaultNestingVersion) {
 		inputs = append(inputs, dagql.NamedInput{
-			Name: "disableNesting", Value: dagql.Boolean(args.DisableNesting),
+			Name: "disableDaggerInDagger", Value: dagql.Boolean(args.DisableDaggerInDagger),
 		})
 	} else if args.ExperimentalPrivilegedNesting {
 		inputs = append(inputs, dagql.NamedInput{

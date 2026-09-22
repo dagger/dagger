@@ -657,7 +657,7 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 	// Warm the static core schema first. Its typedef results are deliberately
 	// unpruneable and form the stable engine-lifetime floor for this test.
 	_, err := engineClientContainer(ctx, t, c, devEngine).
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableNesting: true}).
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err)
 	waitForMetrics("warmup session close", 30*time.Second, func(metrics map[string]float64) bool {
@@ -695,7 +695,7 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
   "http://127.0.0.1:$DAGGER_SESSION_PORT/query" >/tmp/response.json
 jq -e '.data != null and (.errors | not)' /tmp/response.json >/dev/null
 sleep 30`,
-		}, dagger.ContainerWithExecOpts{DisableNesting: true})
+		}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
 	workloadDone := make(chan error, 1)
 	go func() {
 		_, err := workloadCtr.Sync(ctx)
@@ -755,7 +755,7 @@ sleep 30`,
 	// A fresh core call verifies that retaining the unpruneable floor was not
 	// merely visible in the gauge; the schema remains usable after the cut.
 	version, err := engineClientContainer(ctx, t, c, devEngine).
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableNesting: true}).
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, strings.TrimSpace(version))
@@ -772,7 +772,7 @@ func (LocalCacheSuite) TestLocalCacheManualMetadataPruneCLI(ctx context.Context,
 			"engine", "local-cache", "prune",
 			"--max-estimated-bytes=4294967296",
 			"--target-estimated-bytes=3221225472",
-		}, dagger.ContainerWithExecOpts{DisableNesting: true}).
+		}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err, "the CLI must accept 64-bit structural thresholds when automatic GC is disabled")
 }

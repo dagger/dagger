@@ -59,20 +59,20 @@ func TestServices(t *testing.T) {
 
 func (ServiceSuite) TestNesting(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
-		name           string
-		disableNesting bool
-		want           string
+		name                  string
+		disableDaggerInDagger bool
+		want                  string
 	}{
 		{name: "default enabled", want: "enabled\n"},
-		{name: "nesting disabled", disableNesting: true, want: "disabled\n"},
+		{name: "nesting disabled", disableDaggerInDagger: true, want: "disabled\n"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			svc := c.Container().From(busyboxImage).
 				WithExposedPort(8080).
 				AsService(dagger.ContainerAsServiceOpts{
-					Args:           []string{"sh", "-c", `mkdir -p /www; if [ -n "$DAGGER_SESSION_PORT" ]; then echo enabled; else echo disabled; fi > /www/index.html; exec httpd -f -p 8080 -h /www`},
-					DisableNesting: tc.disableNesting,
+					Args:                  []string{"sh", "-c", `mkdir -p /www; if [ -n "$DAGGER_SESSION_PORT" ]; then echo enabled; else echo disabled; fi > /www/index.html; exec httpd -f -p 8080 -h /www`},
+					DisableDaggerInDagger: tc.disableDaggerInDagger,
 				})
 			out, err := c.Container().From(alpineImage).
 				WithServiceBinding("nested", svc).

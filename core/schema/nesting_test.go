@@ -113,7 +113,7 @@ func TestNestingExecCallView(t *testing.T) {
 		want bool
 	}{
 		{name: "internal default", want: true},
-		{name: "internal opt-out", arg: []dagql.NamedInput{{Name: "disableNesting", Value: dagql.Boolean(true)}}},
+		{name: "internal opt-out", arg: []dagql.NamedInput{{Name: "disableDaggerInDagger", Value: dagql.Boolean(true)}}},
 		{name: "legacy default", view: "v0.21.0"},
 		{name: "legacy opt-in", view: "v0.21.0", arg: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Boolean(true)}}, want: true},
 	} {
@@ -141,7 +141,7 @@ func TestNestingTerminalDefaultsCallView(t *testing.T) {
 		want bool
 	}{
 		{name: "internal default", want: true},
-		{name: "internal opt-out", arg: []dagql.NamedInput{{Name: "disableNesting", Value: dagql.Boolean(true)}}},
+		{name: "internal opt-out", arg: []dagql.NamedInput{{Name: "disableDaggerInDagger", Value: dagql.Boolean(true)}}},
 		{name: "legacy default", view: "v0.21.0"},
 		{name: "legacy opt-in", view: "v0.21.0", arg: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Opt(dagql.Boolean(true))}}, want: true},
 	} {
@@ -164,10 +164,10 @@ func TestNestingSchemaVersions(t *testing.T) {
 		present string
 		absent  string
 	}{
-		{version: "v0.21.0", present: "experimentalPrivilegedNesting", absent: "disableNesting"},
-		{version: "v1.0.0-beta.11", present: "experimentalPrivilegedNesting", absent: "disableNesting"},
-		{version: "v1.0.0-beta.12", present: "disableNesting", absent: "experimentalPrivilegedNesting"},
-		{version: "v1.0.0", present: "disableNesting", absent: "experimentalPrivilegedNesting"},
+		{version: "v0.21.0", present: "experimentalPrivilegedNesting", absent: "disableDaggerInDagger"},
+		{version: "v1.0.0-beta.11", present: "experimentalPrivilegedNesting", absent: "disableDaggerInDagger"},
+		{version: "v1.0.0-beta.12", present: "disableDaggerInDagger", absent: "experimentalPrivilegedNesting"},
+		{version: "v1.0.0", present: "disableDaggerInDagger", absent: "experimentalPrivilegedNesting"},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
 			_, dag := newNestingTestServer(t, call.View(tc.version))

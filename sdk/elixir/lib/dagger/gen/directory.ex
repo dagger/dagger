@@ -426,7 +426,7 @@ defmodule Dagger.Directory do
   @spec terminal(t(), [
           {:container, Dagger.Container.t() | nil},
           {:cmd, [String.t()]},
-          {:disable_nesting, boolean() | nil},
+          {:disable_dagger_in_dagger, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil}
         ]) :: Dagger.Directory.t()
   def terminal(%__MODULE__{} = directory, optional_args \\ []) do
@@ -438,7 +438,7 @@ defmodule Dagger.Directory do
         if(optional_args[:container], do: Dagger.ID.id!(optional_args[:container]), else: nil)
       )
       |> QB.maybe_put_arg("cmd", optional_args[:cmd])
-      |> QB.maybe_put_arg("disableNesting", optional_args[:disable_nesting])
+      |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
 
     %Dagger.Directory{

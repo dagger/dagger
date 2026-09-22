@@ -70,7 +70,7 @@ type ContainerExecOpts struct {
 	ExperimentalPrivilegedNesting bool `default:"false"`
 
 	// Disable access to the Dagger API from the executed command.
-	DisableNesting bool `default:"false"`
+	DisableDaggerInDagger bool `default:"false"`
 
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
