@@ -918,7 +918,8 @@ source = "dang"
 entrypoint = true`, 1)
 		generated := mixed.WithNewFile("/work/app/dagger.toml", config).
 			WithWorkdir(cwd).
-			With(daggerNonNestedExec("-m", "/work/regular", "generate", "-y"))
+			WithEnvVariable("DAGGER_MODULE", "/work/regular").
+			With(daggerNonNestedExec("generate", "-y"))
 		out, err := generated.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		contents, err := generated.File(cwd + "/regular.txt").Contents(ctx)
