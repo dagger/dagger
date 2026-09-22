@@ -596,8 +596,34 @@ func (GeneratorsSuite) TestSDKModuleClientUpdateRefreshesLockAndRegenerates(ctx 
 	sdkModulePath, err := filepath.Abs("testdata/sdks/module-max-lifecycle")
 	require.NoError(t, err)
 
-	const target = "github.com/dagger/dagger/modules/wolfi@main"
+	// Both updates must resolve the same branch tip. Public main can advance
+	// between them, so serve a repository owned by this test instead.
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().
+		WithNewFile("dagger-module.toml", `name = "wolfi"
+
+[runtime]
+source = "dang"
+`).
+		WithNewFile("main.dang", `type Wolfi {
+  pub hello: String! { "hello" }
+}
+`))
+	gitDaemon, err = gitDaemon.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_, err := gitDaemon.Stop(stopCtx, dagger.ServiceStopOpts{Kill: true})
+		require.NoError(t, err, "stop client-update git fixture")
+	})
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+	// The CLI uses a separate engine session, so its Git resolver does not
+	// inherit the fixture's DNS search domain.
+	gitIP := resolveServiceIP(ctx, t, c, gitHost)
+	target := strings.Replace(repoURL, gitHost, gitIP, 1) + "#main"
 	base := goGitBase(t, c).
+		WithServiceBinding(gitHost, gitDaemon).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		With(nonNestedDevEngine(c)).
 		WithDirectory(".dagger/modules/module-max-lifecycle", c.Host().Directory(sdkModulePath)).
@@ -628,7 +654,7 @@ clients = ["`+target+`"]
 		if resolvedCommit == "" && len(value) == 40 && strings.HasPrefix(entry.Operation, "git") {
 			for _, input := range entry.Inputs {
 				input, ok := input.(string)
-				if ok && strings.Contains(input, "github.com/dagger/dagger") {
+				if ok && strings.Contains(input, gitIP) {
 					resolvedCommit = value
 					value = staleCommit
 					break

@@ -99,32 +99,32 @@ func revealedNames(t *testing.T, fe *frontendPretty) map[string]bool {
 // host's revealed set, so a switch that failed to retract would render both
 // agents' turns at once rather than switching between them.
 func TestLiveTreeFollowsFocusedAgent(t *testing.T) {
-	handler := &focusShellHandler{}
-	fe := focusTestFrontend(t, focusConversationDB(t), handler)
+	runFocusTest(t, func(t *testing.T) {
+		handler := &focusShellHandler{}
+		fe := focusTestFrontend(t, focusConversationDB(t), handler)
 
-	// Unfocused: the whole trace, exactly as before the roster existed.
-	fe.recalculateViewLocked()
-	require.Equal(t, map[string]bool{
-		"chief-said": true, "scout-said": true, "agent failure": true,
-	}, revealedNames(t, fe), "with no agent focused the tree is the whole session")
+		// Unfocused: the whole trace, exactly as before the roster existed.
+		fe.recalculateViewLocked()
+		require.Equal(t, map[string]bool{
+			"chief-said": true, "scout-said": true, "agent failure": true,
+		}, revealedNames(t, fe), "with no agent focused the tree is the whole session")
 
-	// Focus the scout (nav mode's jump key, per §5.1).
-	pressNavKey(t, fe, '2')
-	awaitFocus(t, handler, "agent-scout")
-	fe.tui.Step() // drain the dispatch that settles focus
-	fe.recalculateViewLocked()
-	require.Equal(t, map[string]bool{
-		"scout-said": true, "agent failure": true,
-	}, revealedNames(t, fe),
-		"focusing the failed scout keeps its permanent error and retracts the previous scope")
+		// Focus the scout (nav mode's jump key, per §5.1).
+		pressNavKey(t, fe, '2')
+		awaitFocus(t, fe, handler, "agent-scout")
+		fe.recalculateViewLocked()
+		require.Equal(t, map[string]bool{
+			"scout-said": true, "agent failure": true,
+		}, revealedNames(t, fe),
+			"focusing the failed scout keeps its permanent error and retracts the previous scope")
 
-	// And back: switching again must not leave the scout's turn behind.
-	pressNavKey(t, fe, '1')
-	awaitFocus(t, handler, "agent-scout", "agent-chief")
-	fe.tui.Step()
-	fe.recalculateViewLocked()
-	require.Equal(t, map[string]bool{"chief-said": true}, revealedNames(t, fe),
-		"switching back scopes to the chief alone")
+		// And back: switching again must not leave the scout's turn behind.
+		pressNavKey(t, fe, '1')
+		awaitFocus(t, fe, handler, "agent-scout", "agent-chief")
+		fe.recalculateViewLocked()
+		require.Equal(t, map[string]bool{"chief-said": true}, revealedNames(t, fe),
+			"switching back scopes to the chief alone")
+	})
 }
 
 // TestFocusedAgentFailureRendersAboveInput verifies the durable failure message
@@ -165,16 +165,18 @@ func TestFocusedAgentFailureRendersAboveInput(t *testing.T) {
 // so esc would then silently un-follow the agent the prompt still addresses,
 // and switching would discard wherever they had navigated to.
 func TestFocusDoesNotDisturbZoom(t *testing.T) {
-	handler := &focusShellHandler{}
-	fe := focusTestFrontend(t, focusConversationDB(t), handler)
-	fe.recalculateViewLocked()
+	runFocusTest(t, func(t *testing.T) {
+		handler := &focusShellHandler{}
+		fe := focusTestFrontend(t, focusConversationDB(t), handler)
+		fe.recalculateViewLocked()
 
-	zoomed := fe.ZoomedSpan
-	pressNavKey(t, fe, '2')
-	awaitFocus(t, handler, "agent-scout")
-	fe.recalculateViewLocked()
+		zoomed := fe.ZoomedSpan
+		pressNavKey(t, fe, '2')
+		awaitFocus(t, fe, handler, "agent-scout")
+		fe.recalculateViewLocked()
 
-	require.Equal(t, zoomed, fe.ZoomedSpan, "focusing an agent must not move the zoom")
+		require.Equal(t, zoomed, fe.ZoomedSpan, "focusing an agent must not move the zoom")
+	})
 }
 
 // TestFocusedAgentWithNothingSaidKeepsSession covers the freshly-spawned case:
@@ -182,40 +184,42 @@ func TestFocusDoesNotDisturbZoom(t *testing.T) {
 // set onto a Passthrough host, i.e. blank the screen. Falling back to the
 // session is the honest reading of "no transcript yet".
 func TestFocusedAgentWithNothingSaidKeepsSession(t *testing.T) {
-	db := dagui.NewDB()
-	calls, snapshots := rosterTrace()
-	for digest, call := range calls {
-		db.Calls[digest] = call
-	}
-	root := dagui.SpanSnapshot{
-		ID:        prettyTestSpanID(90),
-		TraceID:   prettyTestTraceID(),
-		Name:      "session",
-		StartTime: time.Unix(99, 0),
-	}
-	for i := range snapshots {
-		if !snapshots[i].ParentID.IsValid() {
-			snapshots[i].ParentID = root.ID
+	runFocusTest(t, func(t *testing.T) {
+		db := dagui.NewDB()
+		calls, snapshots := rosterTrace()
+		for digest, call := range calls {
+			db.Calls[digest] = call
 		}
-	}
-	// Only the chief has spoken; the scout was just spawned.
-	snapshots = append(snapshots, dagui.SpanSnapshot{
-		ID:        prettyTestSpanID(91),
-		TraceID:   prettyTestTraceID(),
-		Name:      "chief-said",
-		StartTime: time.Unix(101, 0),
-		ParentID:  prettyTestSpanID(1),
-		LLMRole:   "assistant",
+		root := dagui.SpanSnapshot{
+			ID:        prettyTestSpanID(90),
+			TraceID:   prettyTestTraceID(),
+			Name:      "session",
+			StartTime: time.Unix(99, 0),
+		}
+		for i := range snapshots {
+			if !snapshots[i].ParentID.IsValid() {
+				snapshots[i].ParentID = root.ID
+			}
+		}
+		// Only the chief has spoken; the scout was just spawned.
+		snapshots = append(snapshots, dagui.SpanSnapshot{
+			ID:        prettyTestSpanID(91),
+			TraceID:   prettyTestTraceID(),
+			Name:      "chief-said",
+			StartTime: time.Unix(101, 0),
+			ParentID:  prettyTestSpanID(1),
+			LLMRole:   "assistant",
+		})
+		db.ImportSnapshots(append([]dagui.SpanSnapshot{root}, snapshots...))
+
+		handler := &focusShellHandler{}
+		fe := focusTestFrontend(t, db, handler)
+
+		pressNavKey(t, fe, '2')
+		awaitFocus(t, fe, handler, "agent-scout")
+		fe.recalculateViewLocked()
+
+		require.Equal(t, map[string]bool{"chief-said": true}, revealedNames(t, fe),
+			"an agent with nothing surfaced yet shows the session, not a blank tree")
 	})
-	db.ImportSnapshots(append([]dagui.SpanSnapshot{root}, snapshots...))
-
-	handler := &focusShellHandler{}
-	fe := focusTestFrontend(t, db, handler)
-
-	pressNavKey(t, fe, '2')
-	awaitFocus(t, handler, "agent-scout")
-	fe.recalculateViewLocked()
-
-	require.Equal(t, map[string]bool{"chief-said": true}, revealedNames(t, fe),
-		"an agent with nothing surfaced yet shows the session, not a blank tree")
 }

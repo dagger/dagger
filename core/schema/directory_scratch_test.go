@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/dagger/dagger/internal/testutil/cachetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -249,12 +250,6 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 			bStore.Manager = observed
 			path := filepath.Join(t.TempDir(), "b.db")
 			ctx, b, srv := scratchTestCache(t, bStore, path, "b")
-			waitSessionRelease := func(session string) {
-				t.Helper()
-				releaseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				defer cancel()
-				require.NoError(t, b.WaitSessionRelease(releaseCtx, session))
-			}
 			var donor *scratchObservedRef
 			switch mode {
 			case "warm":
@@ -369,8 +364,7 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 			require.NoError(t, aStore.Manager.Close())
 			if donor != nil {
 				require.NotSame(t, donor, installed)
-				require.NoError(t, b.ReleaseSession(ctx, "b"))
-				waitSessionRelease("b")
+				cachetest.ReleaseSessionAndWait(t, ctx, b, "b")
 				_, err = b.Prune(ctx, []dagql.CachePrunePolicy{{All: true}})
 				require.NoError(t, err)
 				require.EqualValues(t, 1, donor.releases.Load())
@@ -395,12 +389,10 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 				require.True(t, set)
 				installed = ref.(*scratchObservedRef)
 			}
-			require.NoError(t, b.ReleaseSession(ctx, "b"))
-			require.NoError(t, b.ReleaseSession(ctx, "receiver"))
 			// Completed demands can still be exiting on their worker goroutines.
 			// Drain their session cleanup before pruning the last persisted owner.
-			waitSessionRelease("b")
-			waitSessionRelease("receiver")
+			cachetest.ReleaseSessionAndWait(t, ctx, b, "b")
+			cachetest.ReleaseSessionAndWait(t, ctx, b, "receiver")
 			_, err = b.Prune(ctx, []dagql.CachePrunePolicy{{All: true}})
 			require.NoError(t, err)
 			require.EqualValues(t, 1, installed.releases.Load(), "final row release must release its own accessor")

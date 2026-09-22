@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/internal/testutil/cachetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -149,7 +149,8 @@ func TestReadyPartDonorBackreferenceReleasedBeforeSync(t *testing.T) {
 	require.False(t, retainsDonor)
 	require.NoError(t, c.FinishReadyPart(demandCtx, receipt))
 	require.NoError(t, waitLazyRetryError(t, done, "ready backreference Finish"))
-	require.NoError(t, c.ReleaseSession(demandCtx, "demand"))
+	// Task completion precedes the worker's deferred row release and session cleanup.
+	cachetest.ReleaseSessionAndWait(t, demandCtx, c, "demand")
 	_, err = c.removePersistedEdge(ctx, receiver.cacheSharedResult().id)
 	require.NoError(t, err)
 	c.egraphMu.RLock()
@@ -212,12 +213,9 @@ func TestPartDecodeLosesToInstalledRevision(t *testing.T) {
 	require.EqualValues(t, 2, calls.Load())
 	require.EqualValues(t, 1, losing.Load())
 	require.Zero(t, winning.Load())
-	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
 	// The obtain attempt can still be exiting after it wakes its caller.
 	// Wait for its session cleanup before dropping the last persisted owner.
-	releaseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	require.NoError(t, c.WaitSessionRelease(releaseCtx, "test-session"))
+	cachetest.ReleaseSessionAndWait(t, ctx, c, "test-session")
 	_, err := c.removePersistedEdge(ctx, row.id)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, winning.Load())
