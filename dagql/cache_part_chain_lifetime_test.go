@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/dagger/dagger/internal/testutil/cachetest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
@@ -172,11 +173,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 			// The demand wakes before its worker releases the row. Join both
 			// sessions' cleanup before removing the last persisted owners.
 			for _, sessionID := range []string{"test-session", "demand"} {
-				require.NoError(t, c.ReleaseSession(ctx, sessionID))
-				releaseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				err := c.WaitSessionRelease(releaseCtx, sessionID)
-				cancel()
-				require.NoError(t, err)
+				cachetest.ReleaseSessionAndWait(t, ctx, c, sessionID)
 			}
 			for _, res := range []AnyResult{donor, dependency, receiver} {
 				_, err := c.removePersistedEdge(ctx, res.cacheSharedResult().id)
@@ -296,13 +293,10 @@ func TestPartImportChainRefCleanupHandoff(t *testing.T) {
 				require.False(t, leasePresent())
 				require.Positive(t, manager.syncs.Load())
 			}
-			require.NoError(t, c.ReleaseSession(ctx, "test-session"))
 			// RunLazyTask can return before its worker releases the row and
 			// finishes delegated session cleanup. Wait before removing the final
 			// persisted root so collection and its retained cleanup have finished.
-			releaseCtx, cancelRelease := context.WithTimeout(ctx, 5*time.Second)
-			defer cancelRelease()
-			require.NoError(t, c.WaitSessionRelease(releaseCtx, "test-session"))
+			cachetest.ReleaseSessionAndWait(t, ctx, c, "test-session")
 			_, err = c.removePersistedEdge(ctx, row.id)
 			require.NoError(t, err)
 			require.False(t, leasePresent(), "collection retries retained cleanup without a graph self-hold")
