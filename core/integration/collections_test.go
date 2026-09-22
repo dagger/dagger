@@ -185,7 +185,7 @@ func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
 		require.Regexp(t, `ITEM +PART\n`, out)
 		require.Regexp(t, `(?m)^a +x$`, out)
 		require.Regexp(t, `(?m)^b +x$`, out)
-		require.NotContains(t, out, "LINK")
+		require.NotContains(t, out, "VARIANT")
 	})
 	t.Run("parent listing honors child filters", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("list", "collections-items", "items?item=a&item=b&part=x", "-f=link")).Stdout(ctx)
@@ -452,7 +452,8 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
       children: dimensionItems(dimension: "part") { uri dimensionKeys { dimension key } }
       keys: dimensionKeys(dimension: "part")
     }
-    lazy: filterUri(uri: "items/broken?item=b") { dimensionItems(dimension: "item") { uri } }
+    lazy: filterUri(uri: "items/broken?item=b") { dimensionItems(dimension: "item") { uri value { __typename } } }
+    batch: filterUri(uri: "items/delta-check?item=b") { dimensionItems(dimension: "item") { uri value { __typename } } }
     fields: filterTypes(types: ["CollectionsItem"]) {
       dimensionItems(dimension: "collections-other") { uri }
     }
@@ -472,7 +473,8 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
     ],
     "keys":["x"]
   },
-  "lazy":{"dimensionItems":[{"uri":"dag://items?item=b"}]},
+  "lazy":{"dimensionItems":[{"uri":"dag://items?item=b","value":{"__typename":"CollectionsItem"}}]},
+  "batch":{"dimensionItems":[{"uri":"dag://items?item=b","value":{"__typename":"CollectionsItem"}}]},
   "fields":{"dimensionItems":[{"uri":"dag://other?item=b"},{"uri":"dag://other?item=a"},{"uri":"dag://other?item=c"}]},
   "unknown":[]
 }}}`, string(*got))
