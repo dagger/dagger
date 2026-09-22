@@ -1,0 +1,78 @@
+---
+title: "engine.json"
+slug: /reference/config-files/engine-json
+description: "Engine configuration, including opt-in engine resource metrics."
+---
+
+# engine.json
+
+The Dagger Engine reads `/etc/dagger/engine.json` at startup. For a manually
+started engine container, mount the configuration file at that path. A missing
+file uses the default settings.
+
+The machine-readable schema is published at
+[engine.schema.json](/reference/engine.schema.json).
+
+## Engine resource metrics
+
+Engine resource metrics are disabled by default. Enable them explicitly:
+
+```json
+{
+  "telemetry": {
+    "resourceMetrics": true
+  }
+}
+```
+
+Configure the exporter in the engine process environment:
+
+```sh
+OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=https://collector.example/v1/metrics
+OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf
+```
+
+The metrics endpoint is required. For HTTP, include the full path, such as
+`/v1/metrics`. A generic `OTEL_EXPORTER_OTLP_ENDPOINT` alone does not enable
+engine resource export. If resource metrics are enabled without a metrics
+endpoint, the engine logs a warning and continues without resource export.
+
+The protocol defaults to `http/protobuf`; `grpc` is also supported. The
+metrics-specific protocol setting takes precedence over
+`OTEL_EXPORTER_OTLP_PROTOCOL`. The standard OTel exporter also reads the
+supported environment settings for headers, TLS, compression, and timeouts.
+See [OTLP exporter configuration](https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/).
+
+Collection uses the OTel periodic reader. Its default interval is 60 seconds;
+`OTEL_METRIC_EXPORT_INTERVAL` sets the interval in milliseconds. Each collection
+reads the cgroup files directly. A graceful engine shutdown collects a final
+sample with a bounded timeout; an abrupt termination can lose the last sample.
+
+## Separation from client telemetry
+
+Engine resource metrics use a separate meter provider, reader, and exporter.
+They do not use client telemetry providers or the client telemetry proxy.
+Client and execution metrics, traces, logs, and Prometheus reporting keep their
+existing configuration and routes.
+
+Setting an OTLP endpoint does not enable engine resource metrics on its own.
+In particular, an endpoint injected into a nested engine does not enable this
+feature unless that engine also has `telemetry.resourceMetrics` set to `true`.
+A deliberately enabled nested engine still needs a compatible OTLP receiver;
+the client proxy is not the receiver for this stream.
+
+## Accounting boundary
+
+The engine discovers its unified cgroup from `/proc/self/cgroup`. It reports
+CPU and memory charged to that cgroup, including its descendants. In the
+standard layout, engine processes and helpers are in `/init`, while user
+containers, including nested engines, are in sibling `/buildkit` cgroups.
+Those user workloads are excluded from the parent engine's resource metrics.
+A different layout or a configured execution parent below the engine cgroup
+can include user workloads.
+
+CPU values are cumulative microseconds. Memory values are bytes; memory peak
+is the cgroup-lifetime peak, not an interval maximum. Missing cgroup sources
+are reported through availability metrics and do not prevent engine startup.
+Enabling export does not classify an engine as a managed Daggerland engine or
+change cgroup placement.

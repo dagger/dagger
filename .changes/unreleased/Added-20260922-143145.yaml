@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  Add opt-in engine CPU and memory telemetry from cgroup v2.
+
+  Enable `telemetry.resourceMetrics` in `/etc/dagger/engine.json` and set
+  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` in the engine environment. The new
+  resource metrics use a separate OTLP export path. Client telemetry is
+  unchanged, and engine resource telemetry is disabled by default.
+time: 2026-09-22T14:31:45Z
+custom:
+  Author: matipan
+  PR: ""

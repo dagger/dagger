@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/engine/config"
 )
 
 type target struct {
@@ -20,6 +21,7 @@ type target struct {
 }
 
 var targets = []target{
+	{"engine.schema.json", "./engine/config", &config.Config{}},
 	{"dagger.schema.json", "./core/modules", &modules.LegacyModuleConfigWithUserFields{}},
 	{"dagger-module.schema.json", "./core/modules", &modules.CurrentModuleConfigWithUserFields{}},
 	{"dagger-workspace.schema.json", "./core/workspace", &workspace.Config{}},
