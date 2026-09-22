@@ -391,7 +391,10 @@ func TestOTLPAdmissionBackoffCancellationClosesRejectedBody(t *testing.T) {
 		})
 		done := make(chan error, 1)
 		go func() {
-			_, err := client.openStream(ctx, otlpTraces, "https://cloud.example/v1/traces/id")
+			resp, err := client.openStream(ctx, otlpTraces, "https://cloud.example/v1/traces/id")
+			if resp != nil {
+				resp.Body.Close()
+			}
 			done <- err
 		}()
 		synctest.Wait()
@@ -458,7 +461,10 @@ func TestOTLPAdmissionFallbackBackoff(t *testing.T) {
 					attempts++
 					return testOTLPResponse(http.StatusServiceUnavailable, value, io.NopCloser(strings.NewReader("busy"))), nil
 				})
-				_, err := client.openStream(t.Context(), otlpTraces, "https://cloud.example/v1/traces/id")
+				resp, err := client.openStream(t.Context(), otlpTraces, "https://cloud.example/v1/traces/id")
+				if resp != nil {
+					require.NoError(t, resp.Body.Close())
+				}
 				require.Error(t, err)
 				require.Equal(t, 6, attempts)
 			})
@@ -510,14 +516,17 @@ func TestOTLPAdmissionRetriesAndOAuthRefresh(t *testing.T) {
 }
 
 func TestOTLPAdmissionDoesNotRetryOtherFailures(t *testing.T) {
-	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway} {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			var attempts int
 			client := testOTLPTransportClient(func(*http.Request) (*http.Response, error) {
 				attempts++
 				return testOTLPResponse(status, "0", io.NopCloser(strings.NewReader("not admission"))), nil
 			})
-			_, err := client.openStream(t.Context(), otlpTraces, "https://cloud.example/v1/traces/id")
+			resp, err := client.openStream(t.Context(), otlpTraces, "https://cloud.example/v1/traces/id")
+			if resp != nil {
+				require.NoError(t, resp.Body.Close())
+			}
 			require.ErrorContains(t, err, http.StatusText(status))
 			require.Equal(t, 1, attempts)
 		})
@@ -529,7 +538,10 @@ func TestOTLPAdmissionDoesNotRetryOtherFailures(t *testing.T) {
 			attempts++
 			return nil, failure
 		})
-		_, err := client.openStream(t.Context(), otlpTraces, "https://cloud.example/v1/traces/id")
+		resp, err := client.openStream(t.Context(), otlpTraces, "https://cloud.example/v1/traces/id")
+		if resp != nil {
+			require.NoError(t, resp.Body.Close())
+		}
 		require.ErrorIs(t, err, failure)
 		require.Equal(t, 1, attempts)
 	})
@@ -559,7 +571,10 @@ func TestOTLPAdmissionBudgetCoversBlockedIO(t *testing.T) {
 					}), nil
 				})
 				start := time.Now()
-				_, err := client.openStream(t.Context(), otlpTraces, "https://cloud.example/v1/traces/id")
+				resp, err := client.openStream(t.Context(), otlpTraces, "https://cloud.example/v1/traces/id")
+				if resp != nil {
+					require.NoError(t, resp.Body.Close())
+				}
 				require.ErrorIs(t, err, context.DeadlineExceeded)
 				require.Equal(t, 30*time.Second, time.Since(start))
 				if stage == "first rejection body" {
