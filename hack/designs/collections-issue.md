@@ -362,22 +362,11 @@ In a set, `+<type>` is a filter. On one artifact, it is an assertion: a differen
 ### 5. Use the existing CLI and resolver
 
 ```console
-$ dagger artifact dimensions
-NAME               IDENTIFIER
-app-dependencies   App.dependencies
-go-test            GoModule.tests
-golang-modules     Golang.modules
-
-$ dagger artifact dimensions golang
-NAME        IDENTIFIER
-go-module   Golang.modules
-go-test     GoModule.tests
-
-$ dagger artifact keys go-test golang --go-module=sdk/go
+$ dagger list go-test golang --go-module=sdk/go
 TestConnect
 TestQuery
 
-$ dagger artifact list golang/modules/tests/container --go-module=sdk/go --go-test=TestConnect
+$ dagger list -a golang/modules/tests/container --go-module=sdk/go --go-test=TestConnect
 dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 ```
 
@@ -386,7 +375,7 @@ Keep the dynamic flags from #14178 as `--<dimension>=<key>`. Rename its generic 
 A flag has the same meaning as one query pair, and the two combine. Flags need no shell quotes; an address with `&` does:
 
 ```console
-$ dagger artifact list 'dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect'
+$ dagger list -a 'dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect'
 dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 ```
 

@@ -186,7 +186,8 @@ func init() {
 	apiCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
-	artifactsCmd.GroupID = "toolbox"
+	listCmd.GroupID = "toolbox"
+	listCmd.SetHelpFunc(listHelp)
 
 	versionRoot := versionCmd()
 	versionRoot.GroupID = "utility"
@@ -206,7 +207,7 @@ func init() {
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
-		artifactsCmd,
+		listCmd,
 		moduleCmd,
 		sdkCmd,
 		installAliasCmd,
@@ -1090,7 +1091,7 @@ func Main() {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}
-	if err := prepareArtifactCommands(ctx, rootCmd, commandArgs); err != nil {
+	if err := prepareArtifactCommands(ctx, rootCmd, commandArgs, os.Args[1:]); err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		exitWithCode(1)
 	}

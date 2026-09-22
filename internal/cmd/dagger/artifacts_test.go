@@ -16,11 +16,11 @@ import (
 func TestArtifactDimensionFlags(t *testing.T) {
 	root := &cobra.Command{Use: "dagger"}
 	root.PersistentFlags().String("env", "", "Workspace environment")
-	cmd := newArtifactsCommand()
+	cmd := newListCommand()
 	root.AddCommand(cmd)
 	registerArtifactDimensionFlags(cmd, []string{"go-module", "go-test", "type", "env"})
 
-	child, _, err := cmd.Find([]string{"types"})
+	child, _, err := cmd.Find(nil)
 	require.NoError(t, err)
 	require.NoError(t, child.ParseFlags([]string{
 		"--type=container", "--type=Directory",
@@ -44,8 +44,8 @@ func TestArtifactDimensionFlags(t *testing.T) {
 }
 
 func TestArtifactAddressArguments(t *testing.T) {
-	cmd := newArtifactsCommand()
-	child, _, err := cmd.Find([]string{"list"})
+	cmd := newListCommand()
+	child, _, err := cmd.Find(nil)
 	require.NoError(t, err)
 	registerArtifactDimensionFlags(cmd, []string{"go-test"})
 	require.NoError(t, child.ParseFlags([]string{"--go-test=TestQuery"}))

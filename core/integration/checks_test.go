@@ -463,11 +463,6 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 	c := connect(ctx, t)
 
 	base := workspaceFixture(t, c, "generators-broken")
-	t.Run("failed module type remains inspectable", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("artifact", "types", "bad")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Check   # One deferred check. Reading pass, error, or sync runs it.\n", out)
-	})
 
 	t.Run("generated=true retains load failures", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "--generated=true")).Stdout(ctx)

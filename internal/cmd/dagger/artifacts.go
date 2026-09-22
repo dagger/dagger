@@ -15,60 +15,36 @@ import (
 
 const artifactDimensionFlag = "dagger.io/artifact-dimension"
 
-var artifactsCmd = newArtifactsCommand()
+const artifactDimensionKeyUsage = "Select items with `DIMENSION=KEY` (repeat to select more)"
 
-func newArtifactsCommand() *cobra.Command {
+const artifactListType = "dagger.io/list-type"
+const artifactListDimension = "dagger.io/list-dimension"
+
+var listCmd = newListCommand()
+
+func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "artifact",
-		Aliases: []string{"artifacts"},
-		Short:   "List and filter workspace artifacts",
-		Long: `List artifact addresses without evaluating their values.
-
-An address selects that path and its children. Use / between fields; : is
-also accepted. The dag:// scheme is optional. Glob patterns work as with
-check and up. Quote them to keep the shell from expanding them.
-
-Use --type to select a type in CLI or GraphQL case, such as container or Container.
-Each dimension adds a flag with its name,
-such as --go-module. Repeat a flag to match any of its values. Different filters
-must all match. Use --dimension-key DIMENSION=KEY if a dimension name
-conflicts with an existing flag. A query in the address has the same meaning
-as these flags: dag://<path>?<dimension>=<key>.
-
-Examples:
-  dagger artifact list
-  dagger artifact list engine-dev --type Container
-  dagger artifact list 'go*/**' --type Container --type Directory
-  dagger artifact list 'dag://golang/modules/tests/container?go-module=sdk/go'
-  dagger artifact types
-  dagger artifact dimensions
-  dagger artifact keys go-test --go-module=sdk/go`,
-		Args: cobra.NoArgs,
+		Use:   "list [TYPE | DIMENSION]",
+		Short: "List artifacts or collection values",
+		Long:  "List artifacts by type, or values for a collection dimension. Use -a to list all artifacts.",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			all, _ := cmd.Flags().GetBool("all")
+			if !all {
+				if len(args) > 0 {
+					return fmt.Errorf("unknown list type or dimension %q; see 'dagger list --help'", args[0])
+				}
+				return cmd.Help()
+			}
+			return runArtifacts(cmd, args)
+		},
+		ValidArgsFunction: cobra.NoFileCompletions,
 	}
-	cmd.PersistentFlags().StringArrayP("type", "t", nil, "Keep artifacts of this `type` (CLI or GraphQL case; repeat for alternatives)")
-	cmd.PersistentFlags().StringArray("dimension-key", nil, "Keep a dimension key: DIMENSION=KEY (repeat for alternatives)")
-	for _, child := range []struct{ use, short string }{
-		{"list [address...]", "List matching artifact addresses"},
-		{"types [address...]", "List types of matching artifacts"},
-		{"dimensions [address...]", "List dimensions of matching artifacts"},
-		{"keys DIMENSION [address...]", "List keys in a dimension of matching artifacts"},
-	} {
-		args := cobra.ArbitraryArgs
-		if strings.HasPrefix(child.use, "keys ") {
-			args = cobra.MinimumNArgs(1)
-		}
-		childCmd := &cobra.Command{
-			Use:               child.use,
-			Short:             child.short,
-			Args:              args,
-			RunE:              runArtifacts,
-			ValidArgsFunction: cobra.NoFileCompletions,
-		}
-		if strings.HasPrefix(child.use, "list ") {
-			registerArtifactListFlags(childCmd)
-		}
-		cmd.AddCommand(childCmd)
-	}
+	cmd.AddGroup(&cobra.Group{ID: "types", Title: "Types:"}, &cobra.Group{ID: "dimensions", Title: "Dimensions:"})
+	cmd.Flags().BoolP("all", "a", false, "List all artifacts, optionally filtered by address")
+	cmd.PersistentFlags().StringArrayP("type", "t", nil, "Select artifacts of this `TYPE` (repeat to select more)")
+	cmd.PersistentFlags().StringArray("dimension-key", nil, artifactDimensionKeyUsage)
+	registerArtifactListFlags(cmd)
 	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
 	return cmd
 }
@@ -185,9 +161,6 @@ func selectArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifac
 }
 
 func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-	if cmd.Name() == "keys" && len(args) > 0 {
-		args = args[1:]
-	}
 	addresses, err := parseArtifactAddresses(args)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
@@ -209,10 +182,7 @@ func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]strin
 }
 
 func runArtifacts(cmd *cobra.Command, addresses []string) error {
-	var dimension string
-	if cmd.Name() == "keys" {
-		dimension, addresses = addresses[0], addresses[1:]
-	}
+	dimension := cmd.Annotations[artifactListDimension]
 	parsed, err := parseArtifactAddresses(addresses)
 	if err != nil {
 		return err
@@ -225,21 +195,17 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		var lines []commandListItem
 		for _, addr := range parsed {
 			artifacts := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr})})
+			if typeName := cmd.Annotations[artifactListType]; typeName != "" {
+				artifacts = artifacts.FilterTypes([]string{typeName})
+			}
 			artifacts, err := selectArtifactFilters(cmd, addr, artifacts)
 			if err != nil {
 				return err
 			}
 			var selected []string
-			switch cmd.Name() {
-			case "types":
-				var types []commandListItem
-				types, err = readArtifactTypes(ctx, ec.Dagger(), artifacts)
-				lines = append(lines, types...)
-			case "dimensions":
-				selected, err = artifacts.Dimensions(ctx)
-			case "keys":
+			if dimension != "" {
 				selected, err = artifacts.DimensionKeys(ctx, dimension)
-			default:
+			} else {
 				absolute, _ := cmd.Flags().GetBool("absolute")
 				var items []listedArtifact
 				items, err = readListedArtifacts(ctx, ec.Dagger(), artifacts, absolute)

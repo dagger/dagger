@@ -184,7 +184,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	host := strings.TrimSuffix(strings.TrimPrefix(ref, "http://"), "/repo.git@main")
 	require.Regexp(t, regexp.MustCompile(`^dag://`+regexp.QuoteMeta(host)+`/repo@[0-9a-f]{40}:base$`), uri)
 
-	out, err = base.With(workspaceSelectionDaggerExec("artifact", "list", "dag://"+ref+":base")).Stdout(ctx)
+	out, err = base.With(workspaceSelectionDaggerExec("list", "-a", "dag://"+ref+":base")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "dag://base\n", out)
 	out, err = base.With(workspaceSelectionDaggerExec("check", "-l", "dag://"+ref+":verify")).Stdout(ctx)
@@ -193,7 +193,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	_, err = base.With(workspaceSelectionDaggerExec("check", "dag://"+ref+":verify")).Sync(ctx)
 	require.NoError(t, err)
 	for _, typ := range []string{"LLM", "llm"} {
-		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "artifact", "list", "--type", typ)).Stdout(ctx)
+		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "list", "-a", "--type", typ)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "dag://assistant\n", out)
 	}
@@ -202,13 +202,13 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 		args  []string
 		paths []string
 	}{
-		{[]string{"artifact", "list", "base"}, []string{"base"}},
+		{[]string{"list", "-a", "base"}, []string{"base"}},
 		{[]string{"check", "-l", "verify"}, []string{"verify"}},
 		{[]string{"generate", "-l", "generate"}, []string{"generate"}},
 		{[]string{"up", "-l", "web"}, []string{"web"}},
 		{[]string{"agent", "-l", "assistant"}, []string{"assistant"}},
 		{[]string{"shell", "-l", "base"}, []string{"base"}},
-		{[]string{"workspace", "containers"}, []string{"base", "broken", "consumer/base"}},
+		{[]string{"list", "containers"}, []string{"base", "broken", "consumer/base"}},
 	} {
 		for _, flag := range []string{"--absolute", "--abs"} {
 			t.Run(strings.Join(tc.args, " ")+" "+flag, func(ctx context.Context, t *testctx.T) {
@@ -686,47 +686,35 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		source = strings.Replace(source, "  pub broken:", "  \"\"\"A container that must not run.\nMore details.\"\"\"\n  pub broken:", 1)
 		out, err := base.WithNewFile("/work/selected/provider/main.dang", source).
-			With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifact", "list", "broken", "broken")).Stdout(ctx)
+			With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "broken", "broken")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "dag://broken   # A container that must not run.\n", out)
 	})
-	t.Run("type descriptions", func(ctx context.Context, t *testctx.T) {
-		source, err := base.File("/work/selected/provider/main.dang").Contents(ctx)
-		require.NoError(t, err)
-		source = strings.Replace(source, "type Docs {", "\"\"\"Documentation files.\nMore details.\"\"\"\ntype Docs {", 1)
-		out, err := base.WithNewFile("/work/selected/provider/main.dang", source).
-			With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifact", "types", "--type", "provider-docs", "--type", "container")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Container      # An OCI-compatible container, also known as a Docker container.\nProviderDocs   # Documentation files.\n", out)
-	})
+
 	for _, tc := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"list", "--type", "Container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
-		{[]string{"list", "--type", "container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
-		{[]string{"list", "--type", "ProviderDocs"}, "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
-		{[]string{"list", "--type", "provider-docs"}, "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
-		{[]string{"list", "--type="}, ""},
-		{[]string{"list", "--type=", "--type=container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
-		{[]string{"list", "consumer", "--type", "Container", "--type", "File"}, "dag://consumer/base\ndag://consumer/input\n"},
-		{[]string{"list", "consumer", "--type", "container", "--type", "File"}, "dag://consumer/base\ndag://consumer/input\n"},
-		{[]string{"list", "docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "dag://docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "provider/docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "provider:docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "**/source"}, "dag://docs/source\ndag://other-docs/source\n"},
-		{[]string{"list", "base", "consumer/base"}, "dag://base\ndag://consumer/base\n"},
-		{[]string{"list", "dag+container://consumer"}, "dag://consumer/base\n"},
-		{[]string{"list", "dag://consumer?missing=anything"}, ""},
-		{[]string{"types"}, "Artifact\nArtifacts\nConsumer\nContainer\nDirectory\nFile\nProvider\nProviderDocs\n"},
-		{[]string{"types", "docs"}, "Directory\nProviderDocs\n"},
-		{[]string{"dimensions"}, ""},
-		{[]string{"keys", "go-module"}, ""},
-		{[]string{"list", "--dimension-key", "go-module=sdk/go"}, ""},
+		{[]string{"list", "-a", "--type", "Container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
+		{[]string{"list", "-a", "--type", "container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
+		{[]string{"list", "-a", "--type", "ProviderDocs"}, "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
+		{[]string{"list", "-a", "--type", "provider-docs"}, "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
+		{[]string{"list", "-a", "--type="}, ""},
+		{[]string{"list", "-a", "--type=", "--type=container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
+		{[]string{"list", "-a", "consumer", "--type", "Container", "--type", "File"}, "dag://consumer/base\ndag://consumer/input\n"},
+		{[]string{"list", "-a", "consumer", "--type", "container", "--type", "File"}, "dag://consumer/base\ndag://consumer/input\n"},
+		{[]string{"list", "-a", "docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "-a", "dag://docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "-a", "provider/docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "-a", "provider:docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "-a", "**/source"}, "dag://docs/source\ndag://other-docs/source\n"},
+		{[]string{"list", "-a", "base", "consumer/base"}, "dag://base\ndag://consumer/base\n"},
+		{[]string{"list", "-a", "dag+container://consumer"}, "dag://consumer/base\n"},
+		{[]string{"list", "-a", "dag://consumer?missing=anything"}, ""},
+		{[]string{"list", "-a", "--dimension-key", "go-module=sdk/go"}, ""},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
-			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
+			args := append([]string{"-W", "/work/selected"}, tc.args...)
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
 			if tc.args[0] == "types" {
@@ -735,15 +723,6 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.want, out)
 		})
 	}
-	out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "--help")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "--type")
-	require.Contains(t, out, "--dimension-key")
-	require.Contains(t, out, "List types of matching artifacts")
-	require.Contains(t, out, "List dimensions of matching artifacts")
-	out, err = base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "artifacts", "--type", "Pro")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "ProviderDocs\n")
 
 	reserved := base.
 		WithNewFile("/work/selected/dagger.toml", `[modules.provider]
@@ -753,7 +732,7 @@ entrypoint = true
 		WithNewFile("/work/selected/provider/main.dang", `type Provider {
   pub types: Directory! { directory }
 }`)
-	out, err = reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "artifacts", "list", "types")).Stdout(ctx)
+	out, err := reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "types")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "dag://types\n", out)
 }
@@ -765,15 +744,14 @@ func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T
 		args []string
 		want string
 	}{
-		{[]string{"list", "dag+container://docs", "dag+directory://consumer"}, ""},
-		{[]string{"list", "dag+directory://docs", "dag+container://consumer"}, "dag://consumer/base\ndag://docs/source\n"},
-		{[]string{"list", "dag://docs?missing=value", "consumer/base"}, "dag://consumer/base\n"},
-		{[]string{"list", "docs", "docs/source"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "dag://docs/source\n"},
-		{[]string{"types", "dag+directory://docs", "dag+container://consumer"}, "Container\nDirectory\n"},
+		{[]string{"list", "-a", "dag+container://docs", "dag+directory://consumer"}, ""},
+		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer"}, "dag://consumer/base\ndag://docs/source\n"},
+		{[]string{"list", "-a", "dag://docs?missing=value", "consumer/base"}, "dag://consumer/base\n"},
+		{[]string{"list", "-a", "docs", "docs/source"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
+		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "dag://docs/source\n"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
-			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
+			args := append([]string{"-W", "/work/selected"}, tc.args...)
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
 			if tc.args[0] == "types" {
@@ -797,13 +775,10 @@ source = "./does-not-exist"
 		args []string
 		want string
 	}{
-		{[]string{"list", "provider/docs", "--type", "Directory"}, "dag://provider/docs/source\n"},
-		{[]string{"types", "provider/docs"}, "Directory\nProviderDocs\n"},
-		{[]string{"dimensions", "provider/docs"}, ""},
-		{[]string{"keys", "missing", "provider/docs"}, ""},
+		{[]string{"list", "-a", "provider/docs", "--type", "Directory"}, "dag://provider/docs/source\n"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
-			args := append([]string{"-W", "/work/selected", "artifacts"}, tc.args...)
+			args := append([]string{"-W", "/work/selected"}, tc.args...)
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
 			if tc.args[0] == "types" {
@@ -812,7 +787,7 @@ source = "./does-not-exist"
 			require.Equal(t, tc.want, out)
 		})
 	}
-	out, err := base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "artifacts", "list", "provider/docs", "--type", "Dir")).Stdout(ctx)
+	out, err := base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "list", "-a", "provider/docs", "--type", "Dir")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "Directory\n")
 }
@@ -1601,7 +1576,7 @@ func (ArtifactsSuite) TestUnknownEnvironment(ctx context.Context, t *testctx.T) 
 	base := nativeWorkspaceBase(t, c).
 		WithDirectory(".", artifactSource(c))
 	for _, command := range [][]string{
-		{"artifact", "list"}, {"check", "-l"}, {"generate", "-l"},
+		{"list", "-a"}, {"check", "-l"}, {"generate", "-l"},
 		{"up", "-l"}, {"shell", "-l"}, {"agent", "-l"},
 	} {
 		t.Run(strings.Join(command, " "), func(ctx context.Context, t *testctx.T) {
