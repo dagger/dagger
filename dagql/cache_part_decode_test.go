@@ -150,6 +150,10 @@ func TestReadyPartDonorBackreferenceReleasedBeforeSync(t *testing.T) {
 	require.NoError(t, c.FinishReadyPart(demandCtx, receipt))
 	require.NoError(t, waitLazyRetryError(t, done, "ready backreference Finish"))
 	require.NoError(t, c.ReleaseSession(demandCtx, "demand"))
+	// Task completion precedes the worker's deferred row release and session cleanup.
+	releaseCtx, cancelRelease := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelRelease()
+	require.NoError(t, c.WaitSessionRelease(releaseCtx, "demand"))
 	_, err = c.removePersistedEdge(ctx, receiver.cacheSharedResult().id)
 	require.NoError(t, err)
 	c.egraphMu.RLock()
