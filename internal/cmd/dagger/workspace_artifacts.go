@@ -33,11 +33,12 @@ func workspaceArtifactCommands(types []string) map[string]string {
 }
 
 func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []string) error {
-	completing := len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
+	completing := false
 	helping := false
 	if len(args) > 0 {
 		switch args[0] {
 		case "help", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
+			completing = args[0] != "help"
 			helping = true
 			args = args[1:]
 		}
