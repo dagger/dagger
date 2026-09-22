@@ -708,10 +708,10 @@ func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ 
 			description, _, _ := strings.Cut(generator.Description, "\n")
 			description = strings.TrimRight(strings.TrimSpace(description), ".:;!?")
 			if description == "" {
-				return "", nil
+				return "staleness check", nil
 			}
 			first, size := utf8.DecodeRuneInString(description)
-			return fmt.Sprintf("Did you %q?", string(unicode.ToLower(first))+description[size:]), nil
+			return "staleness check: " + string(unicode.ToLower(first)) + description[size:], nil
 		}
 	}
 	return parent.Node.Description, nil

@@ -1089,8 +1089,8 @@ More details."""
 			require.Contains(t, out, "dag://clean")
 			require.Contains(t, out, "dag://dirty")
 			if command == "check" {
-				require.Contains(t, out, `# Did you "generate clean files"?`)
-				require.Contains(t, out, `# Did you "regenerate dirty files"?`)
+				require.Contains(t, out, `# staleness check: generate clean files`)
+				require.Contains(t, out, `# staleness check: regenerate dirty files`)
 			}
 			require.NotContains(t, out, "edit")
 		})
@@ -1186,7 +1186,7 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 	all := source.AsWorkspace().Artifacts()
 	description, err := all.FilterURI("dag://gen/stale").One().Description(ctx)
 	require.NoError(t, err)
-	require.Equal(t, `Did you "generate assets"?`, description)
+	require.Equal(t, `staleness check: generate assets`, description)
 	uris := func(ctx context.Context, t *testctx.T, selection *dagger.Artifacts) []string {
 		id, err := selection.ID(ctx)
 		require.NoError(t, err)
