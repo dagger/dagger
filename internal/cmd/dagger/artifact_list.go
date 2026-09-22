@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -51,18 +52,9 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	if err != nil {
 		return err
 	}
-	// Keep explicit input filters even if they happen to include every current key.
-	inputKeys, err := artifactKeyFlags(cmd)
+	filtered, err := artifactListHasKeyFilters(cmd)
 	if err != nil {
 		return err
-	}
-	filtered := len(inputKeys) > 0
-	addresses, err := parseArtifactAddresses(cmd.Flags().Args())
-	if err != nil {
-		return err
-	}
-	for _, address := range addresses {
-		filtered = filtered || len(address.Query) > 0
 	}
 	var allArtifacts, targets *dagger.Artifacts
 	var defs artifact.Dimensions
@@ -106,7 +98,6 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		candidates[cacheKey] = listedArtifactIDs(got)
 		return slices.Equal(candidates[cacheKey], listedArtifactIDs(want))
 	}
-	var paths []string
 	groups := map[string][]listedArtifact{}
 	for _, item := range items {
 		addr, err := dagaddress.Parse(item.URI)
@@ -115,17 +106,12 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		}
 		addr.Query = nil
 		path := strings.TrimPrefix(addr.String(), "dag://")
-		if _, exists := groups[path]; !exists {
-			paths = append(paths, path)
-		}
 		groups[path] = append(groups[path], item)
 	}
-	slices.Sort(paths)
+	paths := slices.Sorted(maps.Keys(groups))
 	var lines []commandListItem
-	grouped := false
 	for _, path := range paths {
 		group := groups[path]
-		rows := make([][]listedArtifact, 0, len(group))
 		keys := listedArtifactKeys(group)
 		var pathDefs artifact.Dimensions
 		if len(keys) > 0 {
@@ -135,14 +121,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 				return err
 			}
 		}
-		if !all && len(group) > 1 && (!filtered && matches(path, nil, group) || matches(path, keys, group)) {
-			rows = append(rows, group)
-			grouped = true
-		} else {
-			for _, item := range group {
-				rows = append(rows, []listedArtifact{item})
-			}
-		}
+		rows := artifactListRows(path, group, all, filtered, matches)
 		// If the whole key set identifies this path, each complete key tuple does too.
 		omitPath := !absolute && len(keys) > 0 && matches("", keys, group)
 		for _, row := range rows {
@@ -167,10 +146,45 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	if err := writeCommandList(cmd.OutOrStdout(), lines); err != nil {
 		return err
 	}
-	if grouped {
+	if len(lines) < len(items) {
 		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "# Use --all to list each key combination.")
 	}
 	return err
+}
+
+// Keep explicit input filters even if they include every current key.
+func artifactListHasKeyFilters(cmd *cobra.Command) (bool, error) {
+	keys, err := artifactKeyFlags(cmd)
+	if err != nil {
+		return false, err
+	}
+	addresses, err := parseArtifactAddresses(cmd.Flags().Args())
+	if err != nil {
+		return false, err
+	}
+	for _, address := range addresses {
+		if len(address.Query) > 0 {
+			return true, nil
+		}
+	}
+	return len(keys) > 0, nil
+}
+
+// Collapse a path only when the resulting command selects the same items.
+func artifactListRows(
+	path string,
+	group []listedArtifact,
+	all, filtered bool,
+	matches func(string, []dagaddress.Pair, []listedArtifact) bool,
+) [][]listedArtifact {
+	if !all && len(group) > 1 && (!filtered && matches(path, nil, group) || matches(path, listedArtifactKeys(group), group)) {
+		return [][]listedArtifact{group}
+	}
+	rows := make([][]listedArtifact, 0, len(group))
+	for _, item := range group {
+		rows = append(rows, []listedArtifact{item})
+	}
+	return rows
 }
 
 func artifactListArguments(cmd *cobra.Command, path string, keys []dagaddress.Pair, defs artifact.Dimensions) (string, error) {

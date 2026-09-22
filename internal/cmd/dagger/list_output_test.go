@@ -2,15 +2,15 @@ package daggercmd
 
 import (
 	"bytes"
-	"github.com/dagger/dagger/core/artifact"
-	"github.com/dagger/dagger/core/dagaddress"
-	"github.com/spf13/cobra"
-	"mvdan.cc/sh/v3/interp"
-	"mvdan.cc/sh/v3/syntax"
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/core/artifact"
+	"github.com/dagger/dagger/core/dagaddress"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/interp"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 func TestWriteCommandList(t *testing.T) {
