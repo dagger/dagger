@@ -1153,7 +1153,7 @@ up.skip = ["skipped-service"]
  pub edit: Changeset! { raise "must not run" }
  pub serve: Service! @up { raise "must not run" }
  pub skippedService: Service! @up { raise "must not run" }
- pub assistant: LLM! @agent { raise "must not run" }
+ pub assistant(base: LLM!): LLM! @agent { raise "must not run" }
 }`)
 	all := source.AsWorkspace().Artifacts()
 	id, err := all.ID(ctx)
