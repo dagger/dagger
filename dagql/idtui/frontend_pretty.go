@@ -6688,6 +6688,23 @@ func encodedIDForCallDigest(db *dagui.DB, digest string) (string, error) {
 	return id.Encode()
 }
 
+// WaitForImport is an application barrier, rather than an exporter flush. The
+// marker uses the same ordered dispatch queue as spans, logs, and metrics; when
+// it runs their DB mutations are visible to subsequent restore-plan reads.
+func (fe *frontendPretty) WaitForImport(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	done := make(chan struct{})
+	fe.dispatch(func() { close(done) })
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // AgentRestorePlan projects the imported trace's agents into a restore plan
 // (AgentRestorer, design §5.1's "Reading the DB back").
 //
