@@ -88,6 +88,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args []st
 
 func workspaceHelp(cmd *cobra.Command, args []string) {
 	if cmd == workspaceCmd {
+		applyCommandProgressDefaults(cmd)
 		if err := withEngine(cmd.Context(), client.Params{SkipWorkspaceModules: true}, loadWorkspaceArtifactCommands); err != nil {
 			slog.Debug("skip workspace artifact commands", "error", err)
 		}
