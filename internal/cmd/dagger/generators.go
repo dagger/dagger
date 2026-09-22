@@ -73,7 +73,7 @@ Examples:
 				if err != nil {
 					return err
 				}
-				generators := all.FilterGenerate()
+				generators := all.FilterGenerateCommand()
 				if generateListMode {
 					return listArtifactSelection(ctx, dag, generators, cmd)
 				}
@@ -157,7 +157,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 		sdkGenerators := map[string]bool{}
 		if len(sdkPaths) > 0 {
 			// Discovery resolves the active entrypoint, including -m overrides.
-			selected := dag.CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterGenerate()
+			selected := dag.CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterGenerateCommand()
 			uris, err := artifactURIs(ctx, dag, selected, false)
 			if err != nil {
 				return err

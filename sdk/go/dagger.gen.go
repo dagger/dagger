@@ -1425,23 +1425,23 @@ func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
 }
 
 // Select LLM artifacts marked agent.
-func (r *Artifacts) FilterAgent() *Artifacts {
-	q := r.query.Select("filterAgent")
+func (r *Artifacts) FilterAgentCommand() *Artifacts {
+	q := r.query.Select("filterAgentCommand")
 
 	return &Artifacts{
 		query: q,
 	}
 }
 
-// ArtifactsFilterCheckOpts contains options for Artifacts.FilterCheck
-type ArtifactsFilterCheckOpts struct {
+// ArtifactsFilterCheckCommandOpts contains options for Artifacts.FilterCheckCommand
+type ArtifactsFilterCheckCommandOpts struct {
 	// Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
 	Generated bool
 }
 
 // Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
-func (r *Artifacts) FilterCheck(opts ...ArtifactsFilterCheckOpts) *Artifacts {
-	q := r.query.Select("filterCheck")
+func (r *Artifacts) FilterCheckCommand(opts ...ArtifactsFilterCheckCommandOpts) *Artifacts {
+	q := r.query.Select("filterCheckCommand")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `generated` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Generated) {
@@ -1498,8 +1498,8 @@ func (r *Artifacts) FilterDirectives(directives []string, opts ...ArtifactsFilte
 }
 
 // Select Changeset artifacts marked generate, using each workspace's generator settings.
-func (r *Artifacts) FilterGenerate() *Artifacts {
-	q := r.query.Select("filterGenerate")
+func (r *Artifacts) FilterGenerateCommand() *Artifacts {
+	q := r.query.Select("filterGenerateCommand")
 
 	return &Artifacts{
 		query: q,
@@ -1583,8 +1583,8 @@ func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts
 }
 
 // Select Service artifacts marked up, using each workspace's service settings.
-func (r *Artifacts) FilterUp() *Artifacts {
-	q := r.query.Select("filterUp")
+func (r *Artifacts) FilterUpCommand() *Artifacts {
+	q := r.query.Select("filterUpCommand")
 
 	return &Artifacts{
 		query: q,

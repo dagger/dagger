@@ -228,7 +228,7 @@ export type ArtifactValueOpts = {
   arguments: JSON
 }
 
-export type ArtifactsFilterCheckOpts = {
+export type ArtifactsFilterCheckCommandOpts = {
   /**
    * Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
    */
@@ -5126,8 +5126,8 @@ export class Artifacts extends BaseClient {
   /**
    * Select LLM artifacts marked agent.
    */
-  filterAgent = (): Artifacts => {
-    const ctx = this._ctx.select("filterAgent")
+  filterAgentCommand = (): Artifacts => {
+    const ctx = this._ctx.select("filterAgentCommand")
     return new Artifacts(ctx)
   }
 
@@ -5135,8 +5135,8 @@ export class Artifacts extends BaseClient {
    * Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
    * @param opts.generated Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
    */
-  filterCheck = (opts?: ArtifactsFilterCheckOpts): Artifacts => {
-    const ctx = this._ctx.select("filterCheck", { ...opts })
+  filterCheckCommand = (opts?: ArtifactsFilterCheckCommandOpts): Artifacts => {
+    const ctx = this._ctx.select("filterCheckCommand", { ...opts })
     return new Artifacts(ctx)
   }
 
@@ -5171,8 +5171,8 @@ export class Artifacts extends BaseClient {
   /**
    * Select Changeset artifacts marked generate, using each workspace's generator settings.
    */
-  filterGenerate = (): Artifacts => {
-    const ctx = this._ctx.select("filterGenerate")
+  filterGenerateCommand = (): Artifacts => {
+    const ctx = this._ctx.select("filterGenerateCommand")
     return new Artifacts(ctx)
   }
 
@@ -5226,8 +5226,8 @@ export class Artifacts extends BaseClient {
   /**
    * Select Service artifacts marked up, using each workspace's service settings.
    */
-  filterUp = (): Artifacts => {
-    const ctx = this._ctx.select("filterUp")
+  filterUpCommand = (): Artifacts => {
+    const ctx = this._ctx.select("filterUpCommand")
     return new Artifacts(ctx)
   }
 

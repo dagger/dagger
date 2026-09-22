@@ -40,10 +40,10 @@ defmodule Dagger.Artifacts do
   @doc """
   Select LLM artifacts marked agent.
   """
-  @spec filter_agent(t()) :: Dagger.Artifacts.t()
-  def filter_agent(%__MODULE__{} = artifacts) do
+  @spec filter_agent_command(t()) :: Dagger.Artifacts.t()
+  def filter_agent_command(%__MODULE__{} = artifacts) do
     query_builder =
-      artifacts.query_builder |> QB.select("filterAgent")
+      artifacts.query_builder |> QB.select("filterAgentCommand")
 
     %Dagger.Artifacts{
       query_builder: query_builder,
@@ -54,11 +54,11 @@ defmodule Dagger.Artifacts do
   @doc """
   Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
   """
-  @spec filter_check(t(), [{:generated, boolean() | nil}]) :: Dagger.Artifacts.t()
-  def filter_check(%__MODULE__{} = artifacts, optional_args \\ []) do
+  @spec filter_check_command(t(), [{:generated, boolean() | nil}]) :: Dagger.Artifacts.t()
+  def filter_check_command(%__MODULE__{} = artifacts, optional_args \\ []) do
     query_builder =
       artifacts.query_builder
-      |> QB.select("filterCheck")
+      |> QB.select("filterCheckCommand")
       |> QB.maybe_put_arg("generated", optional_args[:generated])
 
     %Dagger.Artifacts{
@@ -121,10 +121,10 @@ defmodule Dagger.Artifacts do
   @doc """
   Select Changeset artifacts marked generate, using each workspace's generator settings.
   """
-  @spec filter_generate(t()) :: Dagger.Artifacts.t()
-  def filter_generate(%__MODULE__{} = artifacts) do
+  @spec filter_generate_command(t()) :: Dagger.Artifacts.t()
+  def filter_generate_command(%__MODULE__{} = artifacts) do
     query_builder =
-      artifacts.query_builder |> QB.select("filterGenerate")
+      artifacts.query_builder |> QB.select("filterGenerateCommand")
 
     %Dagger.Artifacts{
       query_builder: query_builder,
@@ -202,10 +202,10 @@ defmodule Dagger.Artifacts do
   @doc """
   Select Service artifacts marked up, using each workspace's service settings.
   """
-  @spec filter_up(t()) :: Dagger.Artifacts.t()
-  def filter_up(%__MODULE__{} = artifacts) do
+  @spec filter_up_command(t()) :: Dagger.Artifacts.t()
+  def filter_up_command(%__MODULE__{} = artifacts) do
     query_builder =
-      artifacts.query_builder |> QB.select("filterUp")
+      artifacts.query_builder |> QB.select("filterUpCommand")
 
     %Dagger.Artifacts{
       query_builder: query_builder,

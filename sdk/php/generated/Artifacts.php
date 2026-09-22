@@ -35,18 +35,18 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Select LLM artifacts marked agent.
      */
-    public function filterAgent(): Artifacts
+    public function filterAgentCommand(): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterAgent');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterAgentCommand');
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
      */
-    public function filterCheck(?bool $generated = null): Artifacts
+    public function filterCheckCommand(?bool $generated = null): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterCheck');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterCheckCommand');
         if (null !== $generated) {
         $innerQueryBuilder->setArgument('generated', $generated);
         }
@@ -90,9 +90,9 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Select Changeset artifacts marked generate, using each workspace's generator settings.
      */
-    public function filterGenerate(): Artifacts
+    public function filterGenerateCommand(): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterGenerate');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterGenerateCommand');
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -148,9 +148,9 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Select Service artifacts marked up, using each workspace's service settings.
      */
-    public function filterUp(): Artifacts
+    public function filterUpCommand(): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterUp');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterUpCommand');
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

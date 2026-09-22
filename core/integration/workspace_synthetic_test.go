@@ -205,21 +205,21 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 			require.Contains(t, tools, "## fromGit")
 			require.Contains(t, tools, gitAgentDoc)
 
-			checks, err := ws.Artifacts().FilterCheck().WithoutURI("**/stale").Items(ctx)
+			checks, err := ws.Artifacts().FilterCheckCommand().WithoutURI("**/stale").Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, checks, 1)
 			checkName, err := checks[0].URI(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "dag://git-agent/verify", checkName)
 
-			generators, err := ws.Artifacts().FilterGenerate().Items(ctx)
+			generators, err := ws.Artifacts().FilterGenerateCommand().Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, generators, 1)
 			generatorName, err := generators[0].URI(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "dag://git-agent/generate", generatorName)
 
-			services, err := ws.Artifacts().FilterUp().Items(ctx)
+			services, err := ws.Artifacts().FilterUpCommand().Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, services, 1)
 			serviceName, err := services[0].URI(ctx)
@@ -262,7 +262,7 @@ source = "./modules/bad"
 		AsWorkspace()
 
 	group := ws.Artifacts()
-	generators, err := group.FilterGenerate().Items(ctx)
+	generators, err := group.FilterGenerateCommand().Items(ctx)
 	require.NoError(t, err)
 	require.Len(t, generators, 1)
 	name, err := generators[0].URI(ctx)
@@ -286,7 +286,7 @@ source = "./modules/bad"
 	// checks loads best-effort too, but reports a module it cannot load as a
 	// check that fails rather than as an error (see
 	// TestChecksReportUnloadableModules).
-	checks, err := ws.Artifacts().FilterCheck().Items(ctx)
+	checks, err := ws.Artifacts().FilterCheckCommand().Items(ctx)
 	require.NoError(t, err)
 	checkNames := make([]string, 0, len(checks))
 	for _, check := range checks {
@@ -296,7 +296,7 @@ source = "./modules/bad"
 	}
 	require.Contains(t, checkNames, "dag://bad/load")
 
-	selected, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"good"}}).FilterGenerate().Items(ctx)
+	selected, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"good"}}).FilterGenerateCommand().Items(ctx)
 	require.NoError(t, err)
 	require.Len(t, selected, 1)
 }
@@ -642,15 +642,15 @@ func syntheticWorkspaceGitRef(ctx context.Context, t *testctx.T, c *dagger.Clien
 func assertSyntheticWorkspaceListsAreEmpty(ctx context.Context, t *testctx.T, ws *dagger.Workspace) {
 	t.Helper()
 
-	checks, err := ws.Artifacts().FilterCheck().Items(ctx)
+	checks, err := ws.Artifacts().FilterCheckCommand().Items(ctx)
 	require.NoError(t, err)
 	require.Empty(t, checks)
 
-	generators, err := ws.Artifacts().FilterGenerate().Items(ctx)
+	generators, err := ws.Artifacts().FilterGenerateCommand().Items(ctx)
 	require.NoError(t, err)
 	require.Empty(t, generators)
 
-	services, err := ws.Artifacts().FilterUp().Items(ctx)
+	services, err := ws.Artifacts().FilterUpCommand().Items(ctx)
 	require.NoError(t, err)
 	require.Empty(t, services)
 

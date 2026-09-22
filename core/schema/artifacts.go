@@ -36,10 +36,10 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Artifacts]{
 		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).DoNotCache("Evaluate each value with its own cache policy.").Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
-		dagql.Func("filterCheck", s.filterCheck).Doc("Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.").Args(dagql.Arg("generated").Doc("Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.")),
-		dagql.Func("filterGenerate", s.filterGenerate).Doc("Select Changeset artifacts marked generate, using each workspace's generator settings."),
-		dagql.Func("filterAgent", s.filterAgent).Doc("Select LLM artifacts marked agent."),
-		dagql.Func("filterUp", s.filterUp).Doc("Select Service artifacts marked up, using each workspace's service settings."),
+		dagql.Func("filterCheckCommand", s.filterCheckCommand).Doc("Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.").Args(dagql.Arg("generated").Doc("Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.")),
+		dagql.Func("filterGenerateCommand", s.filterGenerateCommand).Doc("Select Changeset artifacts marked generate, using each workspace's generator settings."),
+		dagql.Func("filterAgentCommand", s.filterAgentCommand).Doc("Select LLM artifacts marked agent."),
+		dagql.Func("filterUpCommand", s.filterUpCommand).Doc("Select Service artifacts marked up, using each workspace's service settings."),
 		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive. Does not filter by type or workspace settings.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterParentTypes", s.filterParentTypes).Doc("Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterParentDirectives", s.filterParentDirectives).Doc("Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
@@ -575,21 +575,21 @@ func (*artifactsSchema) filterDirectives(_ context.Context, parent *core.Artifac
 	return parent.FilterDirectives(args.Directives, args.Exclude), nil
 }
 
-func (*artifactsSchema) filterCheck(ctx context.Context, parent *core.Artifacts, args struct {
+func (*artifactsSchema) filterCheckCommand(ctx context.Context, parent *core.Artifacts, args struct {
 	Generated dagql.Optional[dagql.Boolean]
 }) (*core.Artifacts, error) {
 	return filterArtifactCommand(ctx, parent, "check", "Check", args.Generated)
 }
 
-func (*artifactsSchema) filterGenerate(ctx context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
+func (*artifactsSchema) filterGenerateCommand(ctx context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
 	return filterArtifactCommand(ctx, parent, "generate", "Changeset", dagql.Optional[dagql.Boolean]{})
 }
 
-func (*artifactsSchema) filterUp(ctx context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
+func (*artifactsSchema) filterUpCommand(ctx context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
 	return filterArtifactCommand(ctx, parent, "up", "Service", dagql.Optional[dagql.Boolean]{})
 }
 
-func (*artifactsSchema) filterAgent(_ context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
+func (*artifactsSchema) filterAgentCommand(_ context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
 	return parent.FilterDirectives([]string{"agent"}, false).FilterTypes([]string{"LLM"}, false), nil
 }
 

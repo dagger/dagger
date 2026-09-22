@@ -1290,7 +1290,7 @@ pub struct Artifacts {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ArtifactsFilterCheckOpts {
+pub struct ArtifactsFilterCheckCommandOpts {
     /// Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
     #[builder(setter(into, strip_option), default)]
     pub generated: Option<bool>,
@@ -1367,8 +1367,8 @@ impl Artifacts {
         query.execute(self.graphql_client.clone()).await
     }
     /// Select LLM artifacts marked agent.
-    pub fn filter_agent(&self) -> Artifacts {
-        let query = self.selection.select("filterAgent");
+    pub fn filter_agent_command(&self) -> Artifacts {
+        let query = self.selection.select("filterAgentCommand");
         Artifacts {
             proc: self.proc.clone(),
             selection: query,
@@ -1380,8 +1380,8 @@ impl Artifacts {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn filter_check(&self) -> Artifacts {
-        let query = self.selection.select("filterCheck");
+    pub fn filter_check_command(&self) -> Artifacts {
+        let query = self.selection.select("filterCheckCommand");
         Artifacts {
             proc: self.proc.clone(),
             selection: query,
@@ -1393,8 +1393,8 @@ impl Artifacts {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn filter_check_opts(&self, opts: ArtifactsFilterCheckOpts) -> Artifacts {
-        let mut query = self.selection.select("filterCheck");
+    pub fn filter_check_command_opts(&self, opts: ArtifactsFilterCheckCommandOpts) -> Artifacts {
+        let mut query = self.selection.select("filterCheckCommand");
         if let Some(generated) = opts.generated {
             query = query.arg("generated", generated);
         }
@@ -1486,8 +1486,8 @@ impl Artifacts {
         }
     }
     /// Select Changeset artifacts marked generate, using each workspace's generator settings.
-    pub fn filter_generate(&self) -> Artifacts {
-        let query = self.selection.select("filterGenerate");
+    pub fn filter_generate_command(&self) -> Artifacts {
+        let query = self.selection.select("filterGenerateCommand");
         Artifacts {
             proc: self.proc.clone(),
             selection: query,
@@ -1637,8 +1637,8 @@ impl Artifacts {
         }
     }
     /// Select Service artifacts marked up, using each workspace's service settings.
-    pub fn filter_up(&self) -> Artifacts {
-        let query = self.selection.select("filterUp");
+    pub fn filter_up_command(&self) -> Artifacts {
+        let query = self.selection.select("filterUpCommand");
         Artifacts {
             proc: self.proc.clone(),
             selection: query,

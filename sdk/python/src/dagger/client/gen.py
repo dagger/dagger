@@ -1789,13 +1789,13 @@ class Artifacts(Type):
         _ctx = self._select("dimensions", _args)
         return await _ctx.execute(list[str])
 
-    def filter_agent(self) -> Self:
+    def filter_agent_command(self) -> Self:
         """Select LLM artifacts marked agent."""
         _args: list[Arg] = []
-        _ctx = self._select("filterAgent", _args)
+        _ctx = self._select("filterAgentCommand", _args)
         return Artifacts(_ctx)
 
-    def filter_check(self, *, generated: bool | None = None) -> Self:
+    def filter_check_command(self, *, generated: bool | None = None) -> Self:
         """Select Check artifacts for dagger check, using each workspace's check
         and generator settings. Include stale checks only for Changesets
         marked generate.
@@ -1809,7 +1809,7 @@ class Artifacts(Type):
         _args = [
             Arg("generated", generated, None),
         ]
-        _ctx = self._select("filterCheck", _args)
+        _ctx = self._select("filterCheckCommand", _args)
         return Artifacts(_ctx)
 
     def filter_dimension_keys(self, dimension: str, keys: list[str]) -> Self:
@@ -1851,12 +1851,12 @@ class Artifacts(Type):
         _ctx = self._select("filterDirectives", _args)
         return Artifacts(_ctx)
 
-    def filter_generate(self) -> Self:
+    def filter_generate_command(self) -> Self:
         """Select Changeset artifacts marked generate, using each workspace's
         generator settings.
         """
         _args: list[Arg] = []
-        _ctx = self._select("filterGenerate", _args)
+        _ctx = self._select("filterGenerateCommand", _args)
         return Artifacts(_ctx)
 
     def filter_parent_directives(
@@ -1932,12 +1932,12 @@ class Artifacts(Type):
         _ctx = self._select("filterTypes", _args)
         return Artifacts(_ctx)
 
-    def filter_up(self) -> Self:
+    def filter_up_command(self) -> Self:
         """Select Service artifacts marked up, using each workspace's service
         settings.
         """
         _args: list[Arg] = []
-        _ctx = self._select("filterUp", _args)
+        _ctx = self._select("filterUpCommand", _args)
         return Artifacts(_ctx)
 
     def filter_uri(self, uri: str) -> Self:

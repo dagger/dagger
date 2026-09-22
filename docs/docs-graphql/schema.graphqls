@@ -503,13 +503,13 @@ type Artifacts implements Node {
   dimensions: [String!]!
 
   """Select LLM artifacts marked agent."""
-  filterAgent: Artifacts!
+  filterAgentCommand: Artifacts!
 
   """
   Select Check artifacts for dagger check, using each workspace's check and
   generator settings. Include stale checks only for Changesets marked generate.
   """
-  filterCheck(
+  filterCheckCommand(
     """
     Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
     """
@@ -535,7 +535,7 @@ type Artifacts implements Node {
   """
   Select Changeset artifacts marked generate, using each workspace's generator settings.
   """
-  filterGenerate: Artifacts!
+  filterGenerateCommand: Artifacts!
 
   """
   Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
@@ -571,7 +571,7 @@ type Artifacts implements Node {
   """
   Select Service artifacts marked up, using each workspace's service settings.
   """
-  filterUp: Artifacts!
+  filterUpCommand: Artifacts!
 
   """
   Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.

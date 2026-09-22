@@ -59,7 +59,7 @@ Examples:
 				if err != nil {
 					return err
 				}
-				services := all.FilterUp()
+				services := all.FilterUpCommand()
 				if upListMode {
 					return listArtifactSelection(ctx, dag, services, cmd)
 				}
