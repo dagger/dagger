@@ -6459,6 +6459,25 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// Selecting a file or defining a service must not run container commands.
+// See https://github.com/dagger/dagger/issues/14283.
+func (ContainerSuite) TestFileAndServiceDoNotRunExec(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().From(alpineImage).WithExec([]string{"sh", "-c", "exit 1"})
+
+	file := ctr.Rootfs().File("etc/os-release")
+	_, err := file.ID(ctx)
+	require.NoError(t, err)
+
+	svc := ctr.AsService(dagger.ContainerAsServiceOpts{Args: []string{"sleep", "infinity"}})
+	_, err = svc.ID(ctx)
+	require.NoError(t, err)
+
+	// The command runs when the file is read.
+	_, err = file.Contents(ctx)
+	require.ErrorContains(t, err, "exit code: 1")
+}
+
 func (ContainerSuite) TestContainerCaching(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
