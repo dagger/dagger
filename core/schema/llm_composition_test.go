@@ -38,6 +38,8 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 		{"omitted inherits scope", dagql.Optional[dagql.String]{}, "group-A"},
 		{"explicit empty is unowned", dagql.Opt(dagql.String("")), ""},
 		{"explicit other owner", dagql.Opt(dagql.String("group-B")), "group-B"},
+		{"nested owner", dagql.Opt(dagql.String("group-A\nchild")), "group-A\nchild"},
+		{"owner prefix collision", dagql.Opt(dagql.String("group-AB")), "group-AB"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			promptArgs := []dagql.NamedInput{{Name: "prompt", Value: dagql.String("same prompt")}}
@@ -78,7 +80,7 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			removedRecipe, err := removedPortable.RecipeID(ctx)
 			require.NoError(t, err)
-			if test.want == "group-A" {
+			if test.want == "group-A" || test.want == "group-A\nchild" {
 				require.Len(t, removedPortable.Self().Messages, 1)
 				require.Empty(t, compositionRecipeToolOwners(t, removedRecipe))
 			} else {

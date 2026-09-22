@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
@@ -31,6 +32,12 @@ func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectR
 	return acc, nil
 }
 
+// compositionOwnerWithin reports whether a contribution belongs to a selected
+// scope or one of its nested compositions. Empty owners are always unowned.
+func compositionOwnerWithin(contribution, owner string) bool {
+	return owner != "" && (contribution == owner || strings.HasPrefix(contribution, owner+"\n"))
+}
+
 // Scope ownership on the LLM value passed across the module boundary, not on
 // the Go context: a middleware's nested withTools/withSystemPrompt calls must
 // observe the same owner and record it in their results. Restore any enclosing
@@ -46,6 +53,14 @@ func runAgentMiddleware(ctx context.Context, agent *AgentMiddleware, base dagql.
 		return base, fmt.Errorf("middleware owner: %w", err)
 	}
 	owner := fmt.Sprintf("%q/%q/%q", origin, mod.Name(), agent.Node.PathString())
+	// Keep causal ownership: composing Inner through Outer is distinct from
+	// composing Inner independently. Quoted identity components cannot contain
+	// literal newlines, so this separator unambiguously delimits scope levels.
+	// Clearing Outer also clears descendants it no longer composes; retained
+	// descendant tool state is restored by Outer's preserveRecomposedTools.
+	if parent := base.Self().CompositionOwner(); parent != "" {
+		owner = parent + "\n" + owner
+	}
 	scoped := base
 	if reload {
 		if err := srv.Select(ctx, scoped, &scoped, dagql.Selector{
@@ -101,7 +116,7 @@ func preserveRecomposedTools(ctx context.Context, srv *dagql.Server, previous, c
 		if !exists {
 			return candidate, fmt.Errorf("reload would discard tool state for %q; use a fresh composition to reset it explicitly", old.typeName())
 		}
-		if old.Owner != "" && old.Owner != owner && next.Owner == owner {
+		if old.Owner != "" && !compositionOwnerWithin(old.Owner, owner) && compositionOwnerWithin(next.Owner, owner) {
 			return candidate, fmt.Errorf("reload would replace tool binding %q owned by another middleware", old.typeName())
 		}
 		if stableIDDigest(old.id) == stableIDDigest(next.id) && old.Version == next.Version {

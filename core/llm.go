@@ -2057,19 +2057,19 @@ func (llm *LLM) WithCompositionOwner(owner string) *LLM {
 	return llm
 }
 
-// WithoutComposition removes only system prompts and object tool bindings
-// installed by owner. Unowned state is never removed, even for an empty owner.
-// Conversation history, other owners, skills and other configuration survive.
+// WithoutComposition removes system prompts and object tool bindings installed
+// by owner, including its nested compositions. Unowned state is never removed,
+// even for an empty owner. History, other owners, skills and configuration survive.
 func (llm *LLM) WithoutComposition(owner string) *LLM {
 	llm = llm.Clone()
 	if owner == "" {
 		return llm
 	}
 	llm.Messages = slices.DeleteFunc(llm.Messages, func(msg *LLMMessage) bool {
-		return msg.Role == LLMMessageRoleSystem && msg.CompositionOwner == owner
+		return msg.Role == LLMMessageRoleSystem && compositionOwnerWithin(msg.CompositionOwner, owner)
 	})
 	llm.mcp.boundTools = slices.DeleteFunc(llm.mcp.boundTools, func(binding boundTool) bool {
-		return binding.Owner == owner
+		return compositionOwnerWithin(binding.Owner, owner)
 	})
 	return llm
 }

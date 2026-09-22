@@ -51,6 +51,41 @@ func TestLLMCompositionOwnerPrompts(t *testing.T) {
 	require.Len(t, recomposed.WithoutComposition("group-A").Messages, 5)
 }
 
+func TestLLMCompositionOwnerSubtrees(t *testing.T) {
+	// A quoted identity's escaped newline is not a scope separator.
+	require.False(t, compositionOwnerWithin("outer\\ninner", "outer"))
+	require.False(t, compositionOwnerWithin("outer\ninner\\ngrandchild", "outer\ninner"))
+	base, err := (&Query{}).NewLLM(t.Context(), "test-model", "")
+	require.NoError(t, err)
+	owners := []string{"", "outer", "outer\ninner", "outer\ninner\ngrandchild", "inner", "outerish", "outer\ninnerish", "other\ninner"}
+	for _, owner := range owners {
+		base = base.WithSystemPromptOwner("same text", owner)
+		base.mcp.boundTools = append(base.mcp.boundTools, boundTool{Owner: owner})
+	}
+	for _, tc := range []struct {
+		owner string
+		want  []string
+	}{
+		{"", owners},
+		{"outer", []string{"", "inner", "outerish", "other\ninner"}},
+		{"outer\ninner", []string{"", "outer", "inner", "outerish", "outer\ninnerish", "other\ninner"}},
+		{"outer\ninner\ngrandchild", []string{"", "outer", "outer\ninner", "inner", "outerish", "outer\ninnerish", "other\ninner"}},
+		{"inner", []string{"", "outer", "outer\ninner", "outer\ninner\ngrandchild", "outerish", "outer\ninnerish", "other\ninner"}},
+	} {
+		t.Run(tc.owner, func(t *testing.T) {
+			removed := base.WithoutComposition(tc.owner)
+			var promptOwners []string
+			for _, msg := range removed.Messages {
+				promptOwners = append(promptOwners, msg.CompositionOwner)
+			}
+			require.Equal(t, tc.want, promptOwners)
+			require.Equal(t, tc.want, compositionBindingOwners(removed.mcp.boundTools))
+			require.Len(t, base.Messages, len(owners), "removal must not mutate the base")
+			require.Equal(t, owners, compositionBindingOwners(base.mcp.boundTools))
+		})
+	}
+}
+
 type compositionTestObject struct {
 	Name  string
 	State string
@@ -112,6 +147,35 @@ func TestLLMCompositionOwnerBindingsAndReplay(t *testing.T) {
 	changedOwnerDelta := stateDeltaSelectors(manualRebind.mcp, nil, mustCompositionBindings(t, next.mcp))
 	require.Len(t, changedOwnerDelta, 1)
 	require.Empty(t, compositionSelectorOwner(t, changedOwnerDelta[0]))
+
+	srv.InstallObject(dagql.NewClass[*LLM](srv))
+	// A nested composition must not claim an unrelated binding, including
+	// another independently composed instance of the same middleware. Moving
+	// a binding within the selected subtree remains within the same owner.
+	for _, tc := range []struct {
+		name, previous, candidate string
+		conflict                  bool
+	}{
+		{"independent child", "inner", "outer\ninner", true},
+		{"different ancestor", "other\ninner", "outer\ninner", true},
+		{"prefix collision", "outerish", "outer\ninner", true},
+		{"selected child", "outer\ninner", "outer\ninner", false},
+		{"selected child to parent", "outer\ninner", "outer", false},
+		{"unowned migration", "", "outer\ninner", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			previous := newTypeDefDetachedResult(t, srv, "previous-"+tc.name,
+				base.WithToolsOwner(first, srv.Schema(), nil, tc.previous, 0))
+			candidate := newTypeDefDetachedResult(t, srv, "candidate-"+tc.name,
+				base.WithToolsOwner(first, srv.Schema(), nil, tc.candidate, 0))
+			_, err := preserveRecomposedTools(ctx, srv, previous, candidate, "outer")
+			if tc.conflict {
+				require.ErrorContains(t, err, "owned by another middleware")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 
 	// Recipe recording retains final binding owners, each prompt's owner, and
 	// the active scope of an in-progress composition. Explicit empty owners
