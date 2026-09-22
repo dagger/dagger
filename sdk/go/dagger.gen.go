@@ -236,6 +236,14 @@ type PortForward struct {
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
+type TerminalCopy struct {
+	// Location of the copied directory. A relative path is relative to the container's working directory.
+	Path string `json:"path"`
+
+	// The directory to copy.
+	Source *Directory `json:"source"`
+}
+
 // A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
 type Address struct {
 	query *querybuilder.Selection
@@ -16563,6 +16571,45 @@ func (r *TerminalGroup) WithGraphQLQuery(q *querybuilder.Selection) *TerminalGro
 	}
 }
 
+// TerminalGroupExecOpts contains options for TerminalGroup.Exec
+type TerminalGroupExecOpts struct {
+	// Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+	Args []string
+	// Content to write to the command's standard input.
+	Stdin string
+	// Directories to copy into the container, in order.
+	Copy []TerminalCopy
+	// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+	Init []string
+}
+
+// Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
+func (r *TerminalGroup) Exec(opts ...TerminalGroupExecOpts) *Container {
+	q := r.query.Select("exec")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
+		// `stdin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Stdin) {
+			q = q.Arg("stdin", opts[i].Stdin)
+		}
+		// `copy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Copy) {
+			q = q.Arg("copy", opts[i].Copy)
+		}
+		// `init` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Init) {
+			q = q.Arg("init", opts[i].Init)
+		}
+	}
+
+	return &Container{
+		query: q,
+	}
+}
+
 // A unique identifier for this TerminalGroup.
 func (r *TerminalGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -16636,9 +16683,27 @@ func (r *TerminalGroup) List(ctx context.Context) ([]TerminalTarget, error) {
 	return convert(response), nil
 }
 
+// TerminalGroupRunOpts contains options for TerminalGroup.Run
+type TerminalGroupRunOpts struct {
+	// Directories to copy into the container, in order.
+	Copy []TerminalCopy
+	// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+	Init []string
+}
+
 // Open the selected terminal target
-func (r *TerminalGroup) Run() *TerminalGroup {
+func (r *TerminalGroup) Run(opts ...TerminalGroupRunOpts) *TerminalGroup {
 	q := r.query.Select("run")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `copy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Copy) {
+			q = q.Arg("copy", opts[i].Copy)
+		}
+		// `init` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Init) {
+			q = q.Arg("init", opts[i].Init)
+		}
+	}
 
 	return &TerminalGroup{
 		query: q,

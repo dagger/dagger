@@ -916,7 +916,7 @@ func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, 
 
 // RollupTerminals walks the tree and returns non-null Container and Directory values.
 func (node *ModTreeNode) RollupTerminals(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
-	return node.RollupNodes(ctx, supportsTerminal, include, exclude)
+	return node.RollupNodes(ctx, func(node *ModTreeNode) bool { return terminalType(node) != "" }, include, exclude)
 }
 
 // Walk the tree and return all up (service) nodes, with include and exclude filters applied.
@@ -1026,12 +1026,21 @@ func (node *ModTreeNode) PathString() string {
 // CommandPath is the path users type to select this target.
 func (node *ModTreeNode) CommandPath() ModTreePath {
 	path := node.Path()
-	for parent := node; parent != nil; parent = parent.Parent {
-		if parent.WorkspaceEntrypoint && len(path) > 0 {
-			return path[1:]
-		}
+	if node.inWorkspaceEntrypoint() && len(path) > 0 {
+		return path[1:]
 	}
 	return path
+}
+
+// inWorkspaceEntrypoint reports whether node is in the workspace entrypoint
+// module.
+func (node *ModTreeNode) inWorkspaceEntrypoint() bool {
+	for parent := node; parent != nil; parent = parent.Parent {
+		if parent.WorkspaceEntrypoint {
+			return true
+		}
+	}
+	return false
 }
 
 func (node *ModTreeNode) CommandName() string {

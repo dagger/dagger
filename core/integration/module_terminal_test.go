@@ -11,11 +11,14 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Netflix/go-expect"
@@ -90,6 +93,53 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 		go console.ExpectEOF()
 		require.NoError(t, cmd.Wait())
+	})
+
+	t.Run("top-level command without terminal", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-default")
+		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "data"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "data", "hello.txt"), []byte("hello\n"), 0o644))
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
+
+		shell := func(stdin string, args ...string) (string, int) {
+			cmd := hostDaggerCommandRaw(ctx, t, modDir, append([]string{"shell"}, args...)...)
+			cmd.Stdin = strings.NewReader(stdin)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			out, err := cmd.Output()
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				return string(out), exitErr.ExitCode()
+			}
+			require.NoError(t, err, stderr.String())
+			return string(out), 0
+		}
+
+		// Without a pattern, select the only container. With -c, the command
+		// reads stdin. Like a terminal, each call runs the command again.
+		script := `echo "$COOLENV in $PWD"; cat; cat /proc/sys/kernel/random/uuid; exit 3`
+		out1, code := shell("from stdin\n", "-c", script)
+		require.Equal(t, 3, code)
+		require.Contains(t, out1, "woo in /coolworkdir\nfrom stdin\n")
+		out2, _ := shell("from stdin\n", "-c", script)
+		require.NotEqual(t, out1, out2)
+
+		// Without -c, stdin is the script.
+		out, code := shell(`echo "$COOLENV from script"`, "ctr")
+		require.Equal(t, 0, code)
+		require.Equal(t, "woo from script\n", out)
+
+		// Set up a directory target, in its writable working directory.
+		out, code = shell("", "src",
+			"--copy", "data",
+			"--copy", "/opt/data=data",
+			"--init", "echo init > init.txt",
+			"-c", "cat src.txt hello.txt /opt/data/hello.txt init.txt")
+		require.Equal(t, 0, code)
+		require.Equal(t, "src\nhello\nhello\ninit\n", out)
+
+		_, code = shell("", "ctr", "--init", "exit 7", "-c", "true")
+		require.NotEqual(t, 0, code, "a failed init must fail the command")
 	})
 
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {

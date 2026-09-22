@@ -6077,6 +6077,16 @@ type Terminal implements Node & Syncer {
   sync: ID! @expectedType(name: "Terminal")
 }
 
+input TerminalCopy {
+  """
+  Location of the copied directory. A relative path is relative to the container's working directory.
+  """
+  path: String!
+
+  """The directory to copy."""
+  source: ID! @expectedType(name: "Directory")
+}
+
 type TerminalGroup implements Node {
   """A unique identifier for this TerminalGroup."""
   id: ID!
@@ -6085,7 +6095,37 @@ type TerminalGroup implements Node {
   list: [TerminalTarget!]!
 
   """Open the selected terminal target"""
-  run: TerminalGroup!
+  run(
+    """Directories to copy into the container, in order."""
+    copy: [TerminalCopy!] = []
+
+    """
+    Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+    """
+    init: [String!] = []
+  ): TerminalGroup!
+
+  """
+  Run the selected terminal target's command non-interactively, and return the
+  container after execution. Any exit code is allowed.
+  """
+  exec(
+    """
+    Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+    """
+    args: [String!] = []
+
+    """Content to write to the command's standard input."""
+    stdin: String = ""
+
+    """Directories to copy into the container, in order."""
+    copy: [TerminalCopy!] = []
+
+    """
+    Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+    """
+    init: [String!] = []
+  ): Container!
 }
 
 type TerminalTarget implements Node {
