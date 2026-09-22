@@ -466,7 +466,17 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			if err != nil {
 				return nil, err
 			}
+			sdkName := sdk.Self().Name
+			if displayName := map[string]string{
+				"go": "Go", "python": "Python", "typescript": "TypeScript",
+				"php": "PHP", "dang": "Dang", "java": "Java", "elixir": "Elixir",
+			}[sdkName]; displayName != "" {
+				sdkName = displayName
+			}
 			for _, target := range targets {
+				if target.Parent == root && target.Name == "generate" {
+					target.Description = fmt.Sprintf("re-generate modules and clients managed by the %s SDK", sdkName)
+				}
 				if target != root {
 					nodes = append(nodes, target)
 				}
