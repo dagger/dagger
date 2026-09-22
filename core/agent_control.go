@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
@@ -18,18 +19,40 @@ import (
 // finished. The runtime's tombstone lease is held until its publisher drains.
 // State-only revisions share this capture; a new conversation never does.
 type agentCapture struct {
-	ctx    context.Context
-	value  dagql.ObjectResult[*LLM]
-	once   sync.Once
-	digest string
-	err    error
+	ctx     context.Context
+	emitCtx context.Context
+	value   dagql.ObjectResult[*LLM]
+	once    sync.Once
+	digest  string
+	err     error
+	lease   *engine.ClientLifecycleLease
+	refs    atomic.Int64
+}
+
+func (capture *agentCapture) retain() { capture.refs.Add(1) }
+func (capture *agentCapture) release() {
+	if capture != nil && capture.refs.Add(-1) == 0 {
+		capture.lease.Release()
+	}
 }
 
 func (capture *agentCapture) resolve() (string, error) {
 	capture.once.Do(func() {
-		defer func() { capture.ctx = nil; capture.value = dagql.ObjectResult[*LLM]{} }()
+		defer func() { capture.ctx = nil; capture.value = dagql.ObjectResult[*LLM]{}; capture.lease.Release() }()
+		if capture.err != nil {
+			return
+		}
 		if capture.value.Self() == nil {
 			capture.err = errors.New("no committed conversation")
+			return
+		}
+		srv, err := CurrentDagqlServer(capture.ctx)
+		if err != nil {
+			capture.err = err
+			return
+		}
+		if err := capture.value.Self().validateAgentBindings(capture.ctx, srv); err != nil {
+			capture.err = err
 			return
 		}
 		// Retain internal flattening until all raw binding paths have proven
@@ -39,12 +62,28 @@ func (capture *agentCapture) resolve() (string, error) {
 			capture.err = err
 			return
 		}
-		digest, err := recipe.RecipeDigest(capture.ctx)
+		id, err := recipe.RecipeID(capture.ctx)
 		if err != nil {
 			capture.err = err
 			return
 		}
-		capture.digest = digest.String()
+		if err := validateAgentRecipe(srv, id); err != nil {
+			capture.err = err
+			return
+		}
+		var persisted func(string) bool
+		if q, err := CurrentQuery(capture.ctx); err == nil {
+			if store, err := q.CallPayloadSeenKeyStore(capture.emitCtx); err == nil {
+				if durable, ok := store.(interface{ CallPayloadPersisted(string) bool }); ok {
+					persisted = durable.CallPayloadPersisted
+				}
+			}
+		}
+		if err := emitAgentCapturePayloads(capture.emitCtx, id, persisted); err != nil {
+			capture.err = err
+			return
+		}
+		capture.digest = id.Digest().String()
 	})
 	return capture.digest, capture.err
 }
@@ -86,9 +125,14 @@ func agentTelemetryContext(ctx context.Context) context.Context {
 }
 
 func (p *agentControlPublisher) enqueue(job agentControlJob) {
+	job.capture.retain()
 	p.mu.Lock()
+	old := p.pending
 	p.pending = &job
 	p.mu.Unlock()
+	if old != nil {
+		old.capture.release()
+	}
 	select {
 	case p.wake <- struct{}{}:
 	default:
@@ -122,6 +166,7 @@ func (p *agentControlPublisher) drain() {
 				a.Digest = digest
 			}
 			telemetry.Logger(p.ctx, AgentInstrumentationScope).Emit(p.ctx, a.Record())
+			job.capture.release()
 		}
 		for _, edge := range edges {
 			telemetry.Logger(p.ctx, AgentInstrumentationScope).Emit(p.ctx, edge.Record())
@@ -197,7 +242,19 @@ func (rt *AgentRuntime) publishControlLocked() {
 }
 
 func (rt *AgentRuntime) captureConversationLocked(ctx context.Context) {
-	rt.controlCapture = &agentCapture{ctx: context.WithoutCancel(ctx), value: rt.last}
+	emitCtx := rt.spanCtx
+	if rt.control != nil {
+		emitCtx = rt.control.ctx
+	}
+	// Detach the scope itself, not just its cancellation. Without this the
+	// queued context still carries a request lease that expires before recipe
+	// selection can acquire shared work after the resolver returns.
+	captureCtx, lease, err := engine.DetachClientScope(ctx, engine.ClientLeaseSharedWork, "agent-capture:"+rt.key)
+	capture := &agentCapture{ctx: captureCtx, emitCtx: emitCtx, value: rt.last, lease: lease, err: err}
+	capture.refs.Store(1) // runtime's current committed conversation
+	old := rt.controlCapture
+	rt.controlCapture = capture
+	old.release()
 	rt.controlActivity = time.Now().UTC()
 }
 
@@ -292,6 +349,10 @@ func (ars *AgentRuntimes) DiscardRestore(ctx context.Context, agent dagql.Object
 // Success is not a persistence acknowledgment: providers must still drain and
 // archives must verify the selected recipe closure.
 func (ars *AgentRuntimes) CloseControl(ctx context.Context) (map[string]agentcontrol.Expectation, error) {
+	return ars.closeControl(ctx, nil)
+}
+
+func (ars *AgentRuntimes) closeControl(ctx context.Context, cause error) (map[string]agentcontrol.Expectation, error) {
 	ars.closeMu.Lock()
 	defer ars.closeMu.Unlock()
 	ars.mu.Lock()
@@ -306,12 +367,14 @@ func (ars *AgentRuntimes) CloseControl(ctx context.Context) (map[string]agentcon
 	// not enqueue new work and change another agent's pre-teardown state.
 	for _, rt := range entries {
 		rt.mu.Lock()
-		if rt.preTeardownState == "" { rt.preTeardownState = rt.stateLocked() }
+		if rt.preTeardownState == "" {
+			rt.preTeardownState = rt.stateLocked()
+		}
 		rt.closing = true
 		rt.mu.Unlock()
 	}
 	for _, rt := range entries {
-		if err := rt.Stop(ctx, true, nil, AgentStopSession); err != nil {
+		if err := rt.Stop(ctx, true, cause, AgentStopSession); err != nil {
 			errs = errors.Join(errs, err)
 		}
 	}
