@@ -228,14 +228,20 @@ type ArtifactDimension implements Node {
   identifier: String!
   name: String!
   qualifiedName: String!
+  collectionType: String!
+  itemType: String!
+  keyName: String!
+  keyDescription: String!
 }
 ```
 
 `dimensionDefinitions` lists dimensions on the selected schema paths. It does not read collection values. Empty collections still appear here. The CLI uses this metadata to register dimension flags.
 
+The key name and description come from the argument of the author's `@get` function. Flag help uses an uppercase argument placeholder and the item type name. An argument description appears on a second line. The discovery hint names the actual collection type: `--go-test NAME` points to `dagger list go-tests`.
+
 `pathDefinitions(absolute: Boolean = false): [ArtifactPath!]!` lists schema paths with their addresses, descriptions, and dimension identifiers. It does not construct collections or resolve dimension-key filters. Empty collections still have paths. Each path appears once, sorted by address.
 
-Command lists such as `check -l`, `up -l`, and `shell -l` use these paths by default. They show one hint when dimensions are present: `Use --all to list each key combination.` With `--all` or an explicit key filter, they enumerate runtime items. `artifact list` always enumerates runtime items.
+Command lists such as `check -l`, `up -l`, and `shell -l` use these paths by default. They show one hint when dimensions are present: `Use --all to list each key combination.` With `--all` or an explicit key filter, they enumerate runtime items. `list -a` always enumerates runtime items.
 
 The container for one test has this address:
 
