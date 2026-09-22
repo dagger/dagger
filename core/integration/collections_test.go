@@ -185,7 +185,7 @@ func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
 		require.Regexp(t, `ITEM +PART\n`, out)
 		require.Regexp(t, `(?m)^a +x$`, out)
 		require.Regexp(t, `(?m)^b +x$`, out)
-		require.NotContains(t, out, "VARIANT")
+		require.NotContains(t, out, "LINK")
 	})
 	t.Run("parent listing honors child filters", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("list", "collections-items", "items?item=a&item=b&part=x", "-f=link")).Stdout(ctx)
@@ -197,6 +197,15 @@ func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "ITEM\na\nb\n", out)
 	})
+	t.Run("collection cli filters remain unambiguous without a path", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("list", "collections-items", "items?item=b", "-f=cli")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "--collections-items=b\n", out)
+		replayed, err := base.With(daggerExec(append([]string{"list", "containers", "-f=link"}, strings.Fields(out)...)...)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dag+container://items/broken?item=b\n", replayed)
+	})
+
 	t.Run("cli output can select the same container", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("list", "containers", "items/broken?item=b", "-f=cli")).Stdout(ctx)
 		require.NoError(t, err)

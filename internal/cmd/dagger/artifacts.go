@@ -319,6 +319,12 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 				rows = append(rows, items...)
 			}
 		}
+		if format == "cli" && collectionType != "" && len(rows) > 0 {
+			names, err = prepareCollectionCLI(ctx, ec.Dagger(), cmd, rows)
+			if err != nil {
+				return err
+			}
+		}
 		return writeArtifactList(cmd, rows, names)
 	})
 }
