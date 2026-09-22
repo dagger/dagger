@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
@@ -11,7 +12,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func artifactTypeCommands(types []string) map[string]string {
+func collectionTypeCommands(types []string) map[string]string {
 	byName := map[string][]string{}
 	for _, typeName := range types {
 		name := cliName(typeName)
@@ -131,44 +132,31 @@ func loadListCommands(ctx context.Context, ec *client.Client) error {
 		return err
 	}
 	artifacts := dagger.Ref[*dagger.Artifacts](dag, id)
-	types, err := readArtifactTypes(ctx, dag, artifacts)
-	if err != nil {
-		return err
-	}
 	dimensions, err := artifactDimensions(ctx, dag, artifacts)
 	if err != nil {
 		return err
 	}
-	collectionTypes := map[string]bool{}
+	var collectionTypes []string
 	for _, dimension := range dimensions {
-		collectionTypes[dimension.CollectionType] = true
+		if !slices.Contains(collectionTypes, dimension.CollectionType) {
+			collectionTypes = append(collectionTypes, dimension.CollectionType)
+		}
 	}
 	registerArtifactDimensionHelp(listCmd, dimensions)
-	for name, typeName := range artifactTypeCommands(artifactTypeNames(types)) {
-		if collectionTypes[typeName] {
-			addListCommand(name, "List "+typeName+" keys", "dimensions", artifactListCollection, typeName)
-			continue
-		}
-		short := "List " + typeName + " artifacts"
-		for _, typ := range types {
-			if typ.Name == typeName && typ.Comment != "" {
-				short = typ.Comment
-				break
-			}
-		}
-		addListCommand(name, short, "types", artifactListType, typeName)
+	for name, typeName := range collectionTypeCommands(collectionTypes) {
+		addListCollectionCommand(name, typeName)
 	}
 	return nil
 }
 
-func addListCommand(name, short, group, key, value string) {
+func addListCollectionCommand(name, typeName string) {
 	cmd := &cobra.Command{
 		Use:               name + " [address...]",
-		Short:             short,
-		GroupID:           group,
+		Short:             "List " + typeName + " keys",
+		GroupID:           "collections",
 		Args:              cobra.ArbitraryArgs,
 		RunE:              runArtifacts,
-		Annotations:       map[string]string{key: value},
+		Annotations:       map[string]string{artifactListCollection: typeName},
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
 	registerArtifactListFlags(cmd)

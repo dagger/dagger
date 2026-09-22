@@ -18,22 +18,21 @@ import (
 const artifactDimensionFlag = "dagger.io/artifact-dimension"
 const artifactDimensionKeyUsage = "Select items with `DIMENSION=KEY` (repeat to select more)"
 
-const artifactListType = "dagger.io/list-type"
 const artifactListCollection = "dagger.io/list-collection"
 
 var listCmd = newListCommand()
 
 func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list [TYPE]",
+		Use:   "list [COLLECTION]",
 		Short: "List artifacts or collection values",
-		Long:  "List artifacts by type, or keys by collection type. Use -a to list all artifacts.",
+		Long:  "List collection keys. Use -a to list artifacts.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			all, _ := cmd.Flags().GetBool("all")
 			if !all {
 				if len(args) > 0 {
-					return fmt.Errorf("unknown list type %q; see 'dagger list --help'", args[0])
+					return fmt.Errorf("unknown collection %q; see 'dagger list --help'", args[0])
 				}
 				return cmd.Help()
 			}
@@ -41,7 +40,7 @@ func newListCommand() *cobra.Command {
 		},
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
-	cmd.AddGroup(&cobra.Group{ID: "types", Title: "Types:"}, &cobra.Group{ID: "dimensions", Title: "Collections:"})
+	cmd.AddGroup(&cobra.Group{ID: "collections", Title: "Collections:"})
 	cmd.Flags().BoolP("all", "a", false, "List all artifacts, optionally filtered by address")
 	cmd.PersistentFlags().StringArrayP("type", "t", nil, "Select artifacts of this `TYPE` (repeat to select more)")
 	registerArtifactListFlags(cmd)
@@ -295,9 +294,6 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 				if err := bindArtifactDimensions(addr.Query, pathDefs); err != nil {
 					return err
 				}
-			}
-			if typeName := cmd.Annotations[artifactListType]; typeName != "" {
-				artifacts = artifacts.FilterTypes([]string{typeName})
 			}
 			artifacts = applyArtifactFilters(cmd, addr, flags, artifacts)
 			var selected []string

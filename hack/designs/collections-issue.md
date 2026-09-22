@@ -237,7 +237,7 @@ type ArtifactDimension implements Node {
 
 `dimensionDefinitions` lists dimensions on the selected schema paths. It does not read collection values. Empty collections still appear here. The CLI uses this metadata to register dimension flags.
 
-The key name and description come from the argument of the author's `@get` function. Flag help uses an uppercase argument placeholder and the item type name. An argument description appears on a second line. The discovery hint names the actual collection type: `--go-test NAME` points to `dagger list go-tests`.
+The key name and description come from the argument of the author's `@get` function. Flag help uses an uppercase argument placeholder and the item type name. An argument description appears on a second line. The discovery hint names the actual collection type: `--go-test NAME` points to `dagger list go-tests`. `dagger list` accepts collection type names, not item type names. Use `dagger list -a --type=go-test` to list artifacts by item type.
 
 `pathDefinitions(absolute: Boolean = false): [ArtifactPath!]!` lists schema paths with their addresses, descriptions, and dimension identifiers. It does not construct collections or resolve dimension-key filters. Empty collections still have paths. Each path appears once, sorted by address.
 
