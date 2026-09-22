@@ -10,8 +10,10 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
@@ -157,5 +159,53 @@ func (m *Caller) Message(ctx context.Context, address string) (string, error) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hi from hello", out)
+	})
+}
+
+// A generated client records a readable version query and the commit its lock
+// resolved. serveModule must keep loading that commit after a newer tag starts
+// matching the query, while moduleSource still requires the two to agree.
+func (ModuleLoadingSuite) TestServeModulePinnedVersionQuery(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	repo := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init", "-b", "main"}).
+		WithNewFile("dagger-module.toml", serveModuleHelloManifest).
+		WithNewFile("main.dang", strings.ReplaceAll(serveModuleHelloSource, "hi from hello", "hi from v1.0.0")).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "v1.0.0"}).
+		WithExec([]string{"git", "tag", "v1.0.0"}).
+		WithNewFile("main.dang", strings.ReplaceAll(serveModuleHelloSource, "hi from hello", "hi from v1.0.1")).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "v1.0.1"}).
+		WithExec([]string{"git", "tag", "v1.0.1"})
+	remote := newRemoteWorkspace(ctx, t, c, repo.Directory("/src"))
+	pinned, err := c.Git(remote.repoURL).Tag("v1.0.0").CommitSHA(ctx)
+	require.NoError(t, err)
+	latest, err := c.Git(remote.repoURL).Tag("v1.0.1").CommitSHA(ctx)
+	require.NoError(t, err)
+	address := remote.repoURL + "@v1"
+
+	t.Run("serveModule loads the pinned commit", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t, dagger.WithWorkdir(t.TempDir()))
+		require.NoError(t, c.ServeModule(ctx, address, dagger.ServeModuleOpts{RefPin: pinned}))
+
+		res, err := testutil.QueryWithClient[struct {
+			Hello struct {
+				Message string
+			}
+		}](c, t, `{hello{message}}`, nil)
+		require.NoError(t, err)
+		require.Equal(t, "hi from v1.0.0", res.Hello.Message)
+	})
+
+	t.Run("moduleSource still requires the query and the pin to agree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t, dagger.WithWorkdir(t.TempDir()))
+		_, err := c.ModuleSource(address, dagger.ModuleSourceOpts{RefPin: pinned}).Digest(ctx)
+		require.ErrorContains(t, err, `version query "v1" resolved to Git ref`)
+		require.ErrorContains(t, err, fmt.Sprintf("at commit %q, but the requested pin is %q", latest, pinned))
 	})
 }
