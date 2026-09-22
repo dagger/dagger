@@ -462,6 +462,9 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 			return nil, fmt.Errorf("build schema for %s.%s: %w", typeName, field.Name, err)
 		}
 		retType := field.Type.Name()
+		withMCP := func(m *MCP) LLMToolFunc {
+			return m.callObjectMethod(srv, typeName, field)
+		}
 		tools = append(tools, LLMTool{
 			Name:        field.Name,
 			Field:       field,
@@ -481,7 +484,8 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 				retType != llmTypeName,
 			ReturnsChangeset: retType == "Changeset",
 			ReturnsLLM:       retType == llmTypeName,
-			Call:             m.callObjectMethod(srv, typeName, field),
+			Call:             withMCP(m),
+			withMCP:          withMCP,
 			Server:           typeName,
 		})
 	}
@@ -772,10 +776,10 @@ func argTypeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error
 }
 
 // callObjectMethod returns the tool implementation for one method of a bound
-// object. It selects the method on the CURRENT bound object (so an earlier
-// same-batch state update is visible), relying on the bound Workspace already
-// threaded into ctx by MCP.Call so Workspace-typed args auto-inject, then routes
-// the result by type.
+// object. It selects the method on this MCP's bound object: writes see earlier
+// same-batch state updates, while reads use CallBatch's initial snapshot. The
+// bound Workspace is already threaded into ctx by MCP.Call so Workspace-typed
+// args auto-inject, then the result is routed by type.
 func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.FieldDefinition) LLMToolFunc {
 	return func(ctx context.Context, rawArgs any) (any, error) {
 		args, ok := rawArgs.(map[string]any)

@@ -242,6 +242,49 @@ func (LLMSuite) TestParallelChangesetToolsMergeResults(ctx context.Context, t *t
 	require.Contains(t, out, "SECOND.txt")
 }
 
+// TestMixedToolBatchReadsInitialWorkspace covers both workspace replacement and
+// changeset overlays: reads in the writing turn see the initial workspace, and
+// a read in the next turn sees the committed edit.
+func (LLMSuite) TestMixedToolBatchReadsInitialWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	for _, tc := range []struct {
+		name, returnType, body string
+	}{
+		{"workspace", "Workspace!", `ws.withNewFile("state.txt", "after")`},
+		{"changeset", "Changeset!", `ws.directory("/").withNewFile("state.txt", "after").changes(ws.directory("/"))`},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			base := workspaceFixture(t, c, "workspace-tool-return").
+				WithNewFile("state.txt", "before").
+				WithNewFile(".dagger/modules/swapper/main.dang", fmt.Sprintf(`
+type Swapper {
+  write(ws: Workspace!): %s { %s }
+  read(ws: Workspace!): String! { "observed: " + ws.file("state.txt").contents }
+}
+`, tc.returnType, tc.body))
+			model := cannedRecordingModel(ctx, t, c, c.LLM().
+				WithPrompt("write and read, then read again").
+				WithResponse([]dagger.LLMContentBlockInput{
+					{Kind: dagger.LLMContentBlockKindToolCall, CallID: "write", ToolName: "write"},
+					{Kind: dagger.LLMContentBlockKindToolCall, CallID: "read_before", ToolName: "read"},
+				}).
+				WithToolResult("write", "", false).
+				WithToolResult("read_before", "", false).
+				WithResponse([]dagger.LLMContentBlockInput{
+					{Kind: dagger.LLMContentBlockKindToolCall, CallID: "read_after", ToolName: "read"},
+				}).
+				WithToolResult("read_after", "", false).
+				WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+			out, err := base.With(daggerShell(fmt.Sprintf(
+				`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "write and read, then read again" | loop | transcript`, model,
+			))).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 1, strings.Count(out, "observed: before"), out)
+			require.Equal(t, 1, strings.Count(out, "observed: after"), out)
+		})
+	}
+}
+
 // TestWorkspaceToolSummaryPayloads checks the actual tool result and telemetry,
 // including changes with few paths but potentially large or binary patches.
 func (LLMSuite) TestWorkspaceToolSummaryPayloads(ctx context.Context, t *testctx.T) {

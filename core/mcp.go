@@ -70,6 +70,10 @@ type LLMTool struct {
 	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
 	Call LLMToolFunc `json:"-"`
+	// withMCP rebinds implementations that capture mutable MCP state. Read-only
+	// object tools use it to execute against CallBatch's initial snapshot rather
+	// than observing concurrent workspace or bound-object replacements.
+	withMCP func(*MCP) LLMToolFunc
 }
 
 type LLMToolFunc = func(context.Context, any) (any, error)
@@ -1810,8 +1814,6 @@ func guardToolResult(res string) string {
 	})
 }
 
-// CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
-// grouping calls by destructiveness and server to avoid workspace conflicts
 // toolCallCtx returns the display span context a tool call's arguments streamed
 // into, so the tool's execution nests beneath it. Every provider — including
 // the recorded-response provider — builds one display span per tool call (see
@@ -1843,9 +1845,12 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 	}
 }
 
+// CallBatch runs reads concurrently with writes. Workspace and bound-object
+// reads use the state at batch entry; dependent reads must be issued in a later
+// batch. External MCP servers and other live services are not snapshot-isolated.
+// Writes retain their ordering and merge rules to avoid workspace conflicts.
 func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
 	// Group tool calls by their characteristics
-	readOnlyMCPCalls := make(map[string][]*LLMToolCall)    // server -> read-only calls
 	destructiveMCPCalls := make(map[string][]*LLMToolCall) // server -> destructive calls
 	regularCalls := make([]*LLMToolCall, 0)
 	changesetCalls := make([]*LLMToolCall, 0)
@@ -1878,10 +1883,31 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 
 		// This is an MCP tool call - check if it's read-only using the stored field
 		if tool.ReadOnly {
-			readOnlyMCPCalls[tool.Server] = append(readOnlyMCPCalls[tool.Server], toolCall)
+			regularCalls = append(regularCalls, toolCall)
 		} else {
 			destructiveMCPCalls[tool.Server] = append(destructiveMCPCalls[tool.Server], toolCall)
 		}
+	}
+
+	// Capture before starting any writes. Cloning the MCP alone is insufficient:
+	// generated object-tool closures also need to resolve their receiver and
+	// implicit conversation arguments from the snapshot, not from the live MCP.
+	reads := pool.New()
+	var readResults []*LLMMessage
+	if len(regularCalls) > 0 {
+		snapshot := m.Clone()
+		// Clone normally clears per-step state; these reads still belong to the
+		// current step and must receive its conversation for implicit LLM args.
+		snapshot.selfLLM = m.selfLLM
+		readTools := slices.Clone(tools)
+		for i, tool := range readTools {
+			if tool.ReadOnly && tool.withMCP != nil {
+				readTools[i].Call = tool.withMCP(snapshot)
+			}
+		}
+		reads.Go(func() {
+			readResults = snapshot.callBatchRegular(ctx, readTools, regularCalls, toolCallDisplays)
+		})
 	}
 
 	var allResults []*LLMMessage
@@ -1907,21 +1933,8 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		allResults = append(allResults, serverResults...)
 	}
 
-	// 4. Execute all regular read-only (non-MCP) calls in parallel
-	if len(regularCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls, toolCallDisplays)...)
-	}
-
-	// 5. Execute all read-only MCP calls in parallel (safe across servers)
-	var readOnlyToolCalls []*LLMToolCall
-	for _, calls := range readOnlyMCPCalls {
-		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
-	}
-	if len(readOnlyToolCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls, toolCallDisplays)...)
-	}
-
-	return allResults
+	reads.Wait()
+	return append(allResults, readResults...)
 }
 
 // callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
