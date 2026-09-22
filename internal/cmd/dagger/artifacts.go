@@ -315,7 +315,7 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 			} else {
 				absolute, _ := cmd.Flags().GetBool("absolute")
 				var items []listedArtifact
-				items, err = readListedArtifacts(ctx, ec.Dagger(), artifacts, absolute)
+				items, err = readListedArtifacts(ctx, ec.Dagger(), artifacts, absolute, false)
 				for _, item := range items {
 					lines = append(lines, commandListItem{Name: item.URI, Comment: firstDescriptionLine(item.Description)})
 				}
@@ -413,7 +413,7 @@ func artifactTypeNames(types []commandListItem) []string {
 
 // artifactURIs prints one address per artifact, in the form filterUri accepts.
 func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts, absolute bool) ([]string, error) {
-	items, err := readListedArtifacts(ctx, dag, artifacts, absolute)
+	items, err := readListedArtifacts(ctx, dag, artifacts, absolute, false)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +430,7 @@ type listedArtifact struct {
 	DimensionKeys    []struct{ Dimension, Key string }
 }
 
-func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, absolute bool) ([]listedArtifact, error) {
+func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, absolute, typed bool) ([]listedArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -438,8 +438,8 @@ func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *dag
 	var response struct {
 		Node struct{ Items []listedArtifact }
 	}
-	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
-  node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute) description dimensionKeys { dimension key } } } }
- }`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!, $typeAssertion: Boolean!) {
+  node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute, typeAssertion: $typeAssertion) description dimensionKeys { dimension key } } } }
+ }`, Variables: map[string]any{"id": id, "absolute": absolute, "typeAssertion": typed}}, &dagger.Response{Data: &response})
 	return response.Node.Items, err
 }

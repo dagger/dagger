@@ -188,11 +188,11 @@ func (item *Item) Verify() error {
 		args []string
 		want string
 	}{
-		{"query", []string{"dag://items/verify?item=a&item=b"}, "items/verify --item=a\nitems/verify --item=b\n"},
-		{"dimension flag", []string{"items/verify", "--item=a", "--item=b"}, "items/verify --item=a\nitems/verify --item=b\n"},
-		{"generic flag", []string{"items/verify", "--dimension-key=item=a", "--dimension-key=item=b"}, "items/verify --item=a\nitems/verify --item=b\n"},
-		{"query and flag", []string{"items/verify?item=a", "--collections-items=b"}, "items/verify --item=a\nitems/verify --item=b\n"},
-		{"separate addresses", []string{"items/verify?item=a", "other/verify?item=b"}, "items/verify --item=a\nother/verify --item=b\n"},
+		{"query", []string{"dag://items/verify?item=a&item=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://items/verify\n"},
+		{"dimension flag", []string{"items/verify", "--item=a", "--item=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://items/verify\n"},
+		{"generic flag", []string{"items/verify", "--dimension-key=item=a", "--dimension-key=item=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://items/verify\n"},
+		{"query and flag", []string{"items/verify?item=a", "--collections-items=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://items/verify\n"},
+		{"separate addresses", []string{"items/verify?item=a", "other/verify?item=b"}, "--item=a dag+check://items/verify\n--item=b dag+check://other/verify\n"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(daggerExec(append([]string{"check", "-l", "--all"}, tc.args...)...)).Stdout(ctx)
@@ -217,8 +217,8 @@ func (item *Item) Verify() error {
 	t.Run("shell flags leave unrelated collections deferred", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("shell", "-l", "-a", "items/broken?item=a")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "--collections-items=a\n", out)
-		replay, err := base.With(daggerExec("shell", "-l", "-a", strings.TrimSpace(out))).Stdout(ctx)
+		require.Equal(t, "--item=a dag+container://items/broken\n", out)
+		replay, err := base.With(daggerExec(append([]string{"shell", "-l", "-a"}, strings.Fields(strings.TrimSpace(out))...)...)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out, replay)
 	})
@@ -231,10 +231,10 @@ func (item *Item) Verify() error {
 		require.Equal(t, 1, strings.Count(combined, "# Use --all to list each key combination."))
 		out, err = base.With(daggerExec("check", "-l", "items/verify?item=a&item=b&item=c")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "items/verify --item=b --item=a --item=c\n", out)
+		require.Equal(t, "--item=b --item=a --item=c dag+check://items/verify\n", out)
 		out, err = base.With(daggerExec("check", "-l", "items/verify?item=a&item=b")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "items/verify --item=b --item=a\n", out)
+		require.Equal(t, "--item=b --item=a dag+check://items/verify\n", out)
 		// Replay each printed row. Item c fails if grouping loses the filter.
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			if strings.HasPrefix(line, "#") {
@@ -269,8 +269,8 @@ func (*Part) Verify() error { return nil }
 `
 	source = strings.Replace(source, `if item.Name != "item:a" { panic("excluded parent must stay deferred") }`, "", 1)
 	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
-	for _, tc := range []struct{ command, path string }{
-		{"shell", "items/broken"}, {"up", "items/serve"}, {"generate", "items/write"}, {"agent", "items/assistant"},
+	for _, tc := range []struct{ command, path, typ string }{
+		{"shell", "items/broken", "container"}, {"up", "items/serve", "service"}, {"generate", "items/write", "changeset"}, {"agent", "items/assistant", "llm"},
 	} {
 		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(daggerExec(tc.command, "-l", tc.path)).Stdout(ctx)
@@ -278,8 +278,8 @@ func (*Part) Verify() error { return nil }
 			require.Equal(t, tc.path+"\n", out)
 			out, err = base.With(daggerExec(tc.command, "-l", "-a", tc.path, "--item=a")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "--collections-items=a\n", out)
-			replay, err := base.With(daggerExec(tc.command, "-l", "-a", strings.TrimSpace(out))).Stdout(ctx)
+			require.Equal(t, "--item=a dag+"+tc.typ+"://"+tc.path+"\n", out)
+			replay, err := base.With(daggerExec(append([]string{tc.command, "-l", "-a"}, strings.Fields(strings.TrimSpace(out))...)...)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, out, replay)
 		})
@@ -287,7 +287,7 @@ func (*Part) Verify() error { return nil }
 	t.Run("keep path when another check matches the keys", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "-a", "items/verify", "--item=a")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "items/verify --item=a\n", out)
+		require.Equal(t, "--item=a dag+check://items/verify\n", out)
 	})
 	t.Run("keep correlated keys separate", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "items/parts/verify?item=a&part=x", "items/parts/verify?item=b&part=")).Stdout(ctx)

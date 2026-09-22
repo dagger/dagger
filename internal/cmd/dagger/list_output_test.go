@@ -51,7 +51,7 @@ func TestArtifactListArguments(t *testing.T) {
 	require.Equal(t, "--go-test=TestFoo --dimension-key=all=./app/bar", args)
 	for _, key := range []string{"a b", "$(echo injected)", "x; echo injected", "a'b", "a\nb", "!history", "a'b!c", "", "*.go"} {
 		t.Run(key, func(t *testing.T) {
-			args, err := artifactListArguments(cmd, "go/tests", []dagaddress.Pair{{Dimension: "Go.tests", Key: key}}, defs)
+			args, err := artifactListArguments(cmd, "dag+check://go/tests", []dagaddress.Pair{{Dimension: "Go.tests", Key: key}}, defs)
 			require.NoError(t, err)
 			require.NotContains(t, args, "\n")
 			// printf receives arguments only. Shell syntax in a key must stay literal.
@@ -61,7 +61,7 @@ func TestArtifactListArguments(t *testing.T) {
 			shell, err := interp.New(interp.StdIO(nil, &out, nil))
 			require.NoError(t, err)
 			require.NoError(t, shell.Run(t.Context(), program))
-			require.Equal(t, "go/tests\x00--go-test="+key+"\x00", out.String())
+			require.Equal(t, "--go-test="+key+"\x00dag+check://go/tests\x00", out.String())
 		})
 	}
 }

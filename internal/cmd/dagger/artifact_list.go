@@ -55,12 +55,11 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	if !all && !filtered {
 		return listArtifactPaths(ctx, dag, selection, cmd, absolute)
 	}
-	items, err := readListedArtifacts(ctx, dag, selection, absolute)
+	items, err := readListedArtifacts(ctx, dag, selection, absolute, true)
 	if err != nil {
 		return err
 	}
 	var allArtifacts, targets *dagger.Artifacts
-	var defs artifact.Dimensions
 	if len(listedArtifactKeys(items)) > 0 {
 		// Resolve discovery once. Every formatting query must use this same set,
 		// since currentWorkspace has a new identity on each call.
@@ -69,18 +68,13 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 			return err
 		}
 		allArtifacts = dagger.Ref[*dagger.Artifacts](dag, id)
-		defs, err = artifactDimensions(ctx, dag, allArtifacts)
-		if err != nil {
-			return err
-		}
 		targets, err = commandArtifactTargets(dag, cmd, allArtifacts)
 		if err != nil {
 			return err
 		}
 	}
 	candidates := map[string][]string{}
-	// Read only candidate paths and keys. Do not enumerate the whole workspace
-	// just to decide whether a line can omit its path.
+	// Read only candidate paths and keys to check whether rows can be grouped.
 	matches := func(path string, keys []dagaddress.Pair, want []listedArtifact) bool {
 		encoded, _ := json.Marshal(keys)
 		cacheKey := path + string(encoded)
@@ -94,7 +88,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		address.Absolute = false
 		address.Query = keys
 		candidate := targets.FilterURI(address.String())
-		got, err := readListedArtifacts(ctx, dag, candidate, false)
+		got, err := readListedArtifacts(ctx, dag, candidate, false, false)
 		if err != nil {
 			return false
 		}
@@ -108,7 +102,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 			return err
 		}
 		addr.Query = nil
-		path := strings.TrimPrefix(addr.String(), "dag://")
+		path := addr.String()
 		groups[path] = append(groups[path], item)
 	}
 	paths := slices.Sorted(maps.Keys(groups))
@@ -125,15 +119,9 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 			}
 		}
 		rows := artifactListRows(path, group, all, filtered, matches)
-		// If the whole key set identifies this path, each complete key tuple does too.
-		omitPath := !absolute && len(keys) > 0 && matches("", keys, group)
 		for _, row := range rows {
 			keys := listedArtifactKeys(row)
-			rowPath, rowDefs := path, pathDefs
-			if !absolute && len(keys) > 0 && (omitPath || matches("", keys, row)) {
-				rowPath, rowDefs = "", defs
-			}
-			args, err := artifactListArguments(cmd, rowPath, keys, rowDefs)
+			args, err := artifactListArguments(cmd, path, keys, pathDefs)
 			if err != nil {
 				return err
 			}
@@ -227,13 +215,6 @@ func artifactListRows(
 
 func artifactListArguments(cmd *cobra.Command, path string, keys []dagaddress.Pair, defs artifact.Dimensions) (string, error) {
 	var args []string
-	if path != "" {
-		quoted, err := quoteArtifactArgument(path)
-		if err != nil {
-			return "", err
-		}
-		args = append(args, quoted)
-	}
 	for _, key := range keys {
 		name := key.Dimension
 		for _, def := range defs {
@@ -265,6 +246,13 @@ func artifactListArguments(cmd *cobra.Command, path string, keys []dagaddress.Pa
 			}
 			args = append(args, "--skip="+quoted)
 		}
+	}
+	if path != "" {
+		quoted, err := quoteArtifactArgument(path)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, quoted)
 	}
 	return strings.Join(args, " "), nil
 }
