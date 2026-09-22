@@ -17,7 +17,7 @@ type SchemaResolvers interface {
 
 // Nesting is opt-out starting with this API version. Older views retain the
 // experimentalPrivilegedNesting opt-in argument and behavior.
-const defaultNestingVersion = "v1.0.0-beta.12"
+const defaultNestingVersion = "v1.0.0-beta.15"
 
 func Syncer[T dagql.Typed]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {

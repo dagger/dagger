@@ -165,8 +165,8 @@ func TestNestingSchemaVersions(t *testing.T) {
 		absent  string
 	}{
 		{version: "v0.21.0", present: "experimentalPrivilegedNesting", absent: "disableDaggerInDagger"},
-		{version: "v1.0.0-beta.11", present: "experimentalPrivilegedNesting", absent: "disableDaggerInDagger"},
-		{version: "v1.0.0-beta.12", present: "disableDaggerInDagger", absent: "experimentalPrivilegedNesting"},
+		{version: "v1.0.0-beta.14", present: "experimentalPrivilegedNesting", absent: "disableDaggerInDagger"},
+		{version: "v1.0.0-beta.15", present: "disableDaggerInDagger", absent: "experimentalPrivilegedNesting"},
 		{version: "v1.0.0", present: "disableDaggerInDagger", absent: "experimentalPrivilegedNesting"},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
