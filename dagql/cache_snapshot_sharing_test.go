@@ -690,6 +690,7 @@ func TestSnapshotSharingReleaseThenExternalFinish(t *testing.T) {
 		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
 		map[string]sharePartState{"fs": {}},
 	)
+	attemptReleased := armLazyAttemptReleased(c)
 	donorRow := donor.cacheSharedResult()
 	c.egraphMu.RLock()
 	donorBefore := donorRow.incomingOwnershipCount
@@ -710,6 +711,7 @@ func TestSnapshotSharingReleaseThenExternalFinish(t *testing.T) {
 	// successor pass follows and takes its own member holds. Wait for it to
 	// drain before comparing the balance.
 	require.Equal(t, 0, barrier.awaitPass(t), "the completion trigger queued an empty successor")
+	waitLazyAttemptReleased(t, attemptReleased)
 	c.egraphMu.RLock()
 	after := donorRow.incomingOwnershipCount
 	c.egraphMu.RUnlock()
@@ -1143,6 +1145,7 @@ func TestSnapshotSharingAbortReportsAfterCleanup(t *testing.T) {
 		map[string]sharePartState{"fs": {}},
 	)
 	donorHolds := shareTestHolds(c, donor)
+	attemptReleased := armLazyAttemptReleased(c)
 	releasing, resume := make(chan struct{}), make(chan struct{})
 	unblock := sync.OnceFunc(func() { close(resume) })
 	defer unblock()
@@ -1160,6 +1163,7 @@ func TestSnapshotSharingAbortReportsAfterCleanup(t *testing.T) {
 	require.Greater(t, shareTestHolds(c, donor), donorHolds, "member release waits for the abort's cleanup")
 	unblock()
 	require.Equal(t, 1, barrier.awaitPass(t))
+	waitLazyAttemptReleased(t, attemptReleased)
 	require.False(t, shareTestHasLink(receiver, "fs-snap"))
 	require.Equal(t, manager.pins.Load(), manager.released.Load())
 	require.Equal(t, donorHolds, shareTestHolds(c, donor))
@@ -1183,6 +1187,7 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	c.egraphMu.Unlock()
 	partTestEquivalent(t, c, receiver, donor)
 	receiverHolds := shareTestHolds(c, receiver)
+	attemptReleased := armLazyAttemptReleased(c)
 
 	// Commit's last act, after every lock is released, is its fixture event.
 	// Holding the fixture's mutex parks the Body between publication and its
@@ -1217,6 +1222,8 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	require.True(t, publishedInTime, "the slot never published")
 	require.False(t, completedEarly, "the pass completed while its Body still held an undelivered receipt")
 	require.Equal(t, 1, barrier.awaitPass(t))
+	// The pass joins the launcher, not the worker's deferred receiver release.
+	waitLazyAttemptReleased(t, attemptReleased)
 
 	key, _ := partAddressKey(PersistedPartAddress{Part: "fs"})
 	gate := row.partGate.gate.Load()
@@ -1242,6 +1249,7 @@ func TestSnapshotSharingFailedFinishLastOwner(t *testing.T) {
 		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
 		map[string]sharePartState{"fs": {}},
 	)
+	attemptReleased := armLazyAttemptReleased(c)
 	row := receiver.cacheSharedResult()
 	attachErr := errors.New("attach lease failed")
 	manager.attachErr.Store(&attachErr)
@@ -1273,6 +1281,7 @@ func TestSnapshotSharingFailedFinishLastOwner(t *testing.T) {
 
 	resumeFinish()
 	require.Equal(t, 1, barrier.awaitPass(t))
+	waitLazyAttemptReleased(t, attemptReleased)
 	select {
 	case <-released:
 	case <-time.After(10 * time.Second):
