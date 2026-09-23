@@ -51,22 +51,26 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
-With --trace, a past session is restored from the trace it published to Dagger
-Cloud: every agent it ran comes back under the same identity, with the
-conversation and lifecycle state it had, and the old session's whole progress
-view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
-agents are still running FORKS them — the restored instances are new runtimes
-in this session, not a hand-off of the live ones. And messages that were
-enqueued but never consumed are not in the trace at all, so they are not
-restored; anything a turn actually consumed is part of its conversation and is.
+With --trace, a verified archive restores every agent, its committed conversation,
+Workspace, tools, lifecycle state, and notification subscriptions. No destination
+agent modules are composed. The prompt becomes usable before unrelated historical
+telemetry finishes loading; original telemetry supplies scrollback.
+
+Restore forks new inert runtimes; it does not hand off a live session or start a
+model turn. Pending messages not committed to a conversation are not recovered.
+Legacy local JSON session files and -r/--resume are no longer supported.
+This initial restore path requires a retained engine archive. Cloud-only traces
+remain viewable with dagger trace, but cannot yet supply verified restore finality.
+
+Use --list-archives to discover retained archives without restoring. If a trace
+belongs to multiple source sessions, select both --source-session and --generation
+from that list; restoration never silently chooses a different archive.
 
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                 # Resume a saved session (interactive picker)
-  dagger agent -r=&lt;session&gt;       # Resume a specific saved session
-  dagger agent --trace &lt;id&gt;       # Restore a past session from its Dagger Cloud trace
+  dagger agent --trace &lt;id&gt;       # Restore a verified trace archive
 
 
 ```
@@ -76,11 +80,12 @@ dagger agent [options] [name...]
 ### Options
 
 ```
-      --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
-  -l, --list                      List available agents
-      --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
-  -r, --resume session[=picker]   Resume a saved session (interactive picker if no id given)
-      --trace string              Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback
+      --agent string            With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
+      --generation string       With --trace and --source-session, select the exact archive generation
+  -l, --list                    List available agents
+      --list-archives           List retained engine archives without restoring; --trace filters the list
+      --source-session string   With --trace and --generation, select the archive's source session
+      --trace string            Restore agents and their Workspaces from a verified trace archive; load scrollback in the background
 ```
 
 ### Options inherited from parent commands
