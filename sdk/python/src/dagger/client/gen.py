@@ -1594,18 +1594,22 @@ class AgentMiddlewareGroup(Type):
 
     def recompose(self, base: "LLM") -> "LLM":
         """Recompose the selected agent middlewares onto an existing LLM,
-        replacing their owned system prompts and tool bindings while
-        preserving tool object state.
+        replacing their modules' owned system prompts, skills, and tool
+        bindings while preserving tool object state.
 
-        Ownership follows the installed module name and middleware path, not
-        its source location. Moving a module between remote, local, or forked
-        sources preserves compatible state when its installation name and
-        intrinsic module and object identities stay the same.
+        Contributions belong to the installed module calling withSystemPrompt,
+        withSkills, or withTools, independently of the bound object's module
+        or middleware entrypoint. Ownership follows the installed module name,
+        not its source location. Moving a module between remote, local, or
+        forked sources preserves compatible state when its installation name
+        and intrinsic module and object identities stay the same.
 
-        Caller-added prompts and unrelated middleware contributions are
-        retained. Prompts without ownership metadata are never removed
-        automatically. Other middleware effects retain compose semantics; this
-        is not a general rollback of arbitrary middleware changes.
+        Contributions from selected modules are removed once before running
+        the selected entrypoints. Unowned contributions and contributions from
+        other modules are retained. Nested modules own their own
+        contributions; use recompose explicitly to refresh them. Other
+        middleware effects retain compose semantics; this is not a general
+        rollback of arbitrary middleware changes.
 
         Existing field values win over new defaults; fields added by the new
         revision take its defaults. Changing a binding's withTools version
