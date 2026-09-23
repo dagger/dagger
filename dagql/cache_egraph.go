@@ -558,8 +558,8 @@ func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
 		if res == nil {
 			continue
 		}
-		if res.indexed != nil {
-			// An indexed row keeps its class's terms until its engine removes
+		if res.remote != nil {
+			// A remote entry keeps its class's terms until its engine removes
 			// it, expired or not: it is never served, and its identity is
 			// what the cache holds it for.
 			return true
@@ -621,8 +621,8 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		if res.attachmentState() == resultAttachmentFailed {
 			continue
 		}
-		// Indexed rows have no value to serve.
-		if res.indexed != nil {
+		// Remote entries have no value to serve.
+		if res.remote != nil {
 			continue
 		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
@@ -649,7 +649,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 			if res.attachmentState() == resultAttachmentFailed {
 				continue
 			}
-			if res.indexed != nil {
+			if res.remote != nil {
 				continue
 			}
 			if c.resultExpiredAtLocked(res, nowUnix) {
@@ -1926,10 +1926,10 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	if res == nil {
 		return
 	}
-	if res.indexed != nil {
-		delete(c.indexedRows, res.indexed.key)
+	if res.remote != nil {
+		delete(c.remoteEntries, res.remote.key)
 	}
-	if (len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0) && len(c.indexedRows) == 0 {
+	if (len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0) && len(c.remoteEntries) == 0 {
 		c.maybeResetEgraphLocked()
 		return
 	}
@@ -1999,9 +1999,9 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 }
 
 func (c *Cache) maybeResetEgraphLocked() {
-	// Indexed rows can hold classes without terms (restored rows), and each
+	// Remote entries can hold classes without terms (restored entries), and each
 	// stays until its own engine removes it.
-	if len(c.egraphTerms) != 0 || len(c.indexedRows) != 0 {
+	if len(c.egraphTerms) != 0 || len(c.remoteEntries) != 0 {
 		return
 	}
 
@@ -2023,7 +2023,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
-	c.indexedRows = nil
+	c.remoteEntries = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs

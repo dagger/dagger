@@ -12,73 +12,73 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-// Indexed rows let a cache built from other engines' cache facts hold those
-// engines' results as rows that have identity, equivalence and dependencies
+// Remote entries let a cache built from other engines' cache facts hold those
+// engines' results as entries that have identity, equivalence and dependencies
 // but no value. They join classes through the ordinary e-graph code, exactly
 // as the emitting engine's results did, and are never served as cache hits.
 
-// RowKey names one result of one engine: the engine instance and the
+// RemoteEntryKey names one result of one engine: the engine instance and the
 // engine-local result number its facts use.
-type RowKey struct {
+type RemoteEntryKey struct {
 	Engine string
 	ID     uint64
 }
 
-func compareRowKeys(a, b RowKey) int {
+func compareRemoteEntryKeys(a, b RemoteEntryKey) int {
 	return cmp.Or(cmp.Compare(a.Engine, b.Engine), cmp.Compare(a.ID, b.ID))
 }
 
-// ErrUnknownIndexedRow is returned for a fact about a row the cache does not
-// hold.
-var ErrUnknownIndexedRow = errors.New("unknown indexed row")
+// ErrUnknownRemoteEntry is returned for a fact about an entry the cache does
+// not hold.
+var ErrUnknownRemoteEntry = errors.New("unknown remote entry")
 
-// errIndexedRowHasNoValue refuses to load an indexed row by its result number.
-var errIndexedRowHasNoValue = errors.New("indexed row has no value")
+// errRemoteEntryHasNoValue refuses to load a remote entry by its result number.
+var errRemoteEntryHasNoValue = errors.New("remote entry has no value")
 
-// indexedRowState marks a sharedResult as an indexed row. Guarded by egraphMu.
-type indexedRowState struct {
-	key      RowKey
+// remoteEntryState marks a sharedResult as a remote entry. Guarded by egraphMu.
+type remoteEntryState struct {
+	key      RemoteEntryKey
 	origin   cachefact.Origin
 	typeName string
 	// unknownDeps are dependencies a fact named that the cache does not hold.
 	unknownDeps map[uint64]struct{}
-	// removed records that the row's own ownership unit was released: its
+	// removed records that the entry's own ownership unit was released: its
 	// engine removed it. Dependents can still hold it.
 	removed bool
 }
 
-// indexedRowsLocked requires egraphMu.
-func (c *Cache) indexedRowLocked(key RowKey) *sharedResult {
-	id, ok := c.indexedRows[key]
+// remoteEntriesLocked requires egraphMu.
+func (c *Cache) remoteEntryLocked(key RemoteEntryKey) *sharedResult {
+	id, ok := c.remoteEntries[key]
 	if !ok {
 		return nil
 	}
 	return c.resultsByID[id]
 }
 
-// UpsertIndexedRow registers the row a result fact of engine announces, and
+// UpsertRemoteEntry registers the entry a result fact of engine announces, and
 // applies the fact's digests and terms through the engine's own identity
-// step, once per term. A restored row instead joins the classes its
+// step, once per term. A restored entry instead joins the classes its
 // representative digests name, with broad postings, as a boot restore does.
-// Dependencies the fact names (imported and restored rows) are attached; the
+// Dependencies the fact names (imported and restored entries) are attached; the
 // numbers the cache does not hold are returned. Applying the same fact again
 // changes nothing.
-func (c *Cache) UpsertIndexedRow(ctx context.Context, engine string, fact cachefact.Result) ([]uint64, error) {
+func (c *Cache) UpsertRemoteEntry(ctx context.Context, engine string, fact cachefact.Result) ([]uint64, error) {
 	if engine == "" || fact.ID == 0 {
-		return nil, fmt.Errorf("upsert indexed row: empty key")
+		return nil, fmt.Errorf("upsert remote entry: empty key")
 	}
-	key := RowKey{Engine: engine, ID: fact.ID}
+	key := RemoteEntryKey{Engine: engine, ID: fact.ID}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	c.initEgraphLocked()
-	if c.indexedRows == nil {
-		c.indexedRows = make(map[RowKey]sharedResultID)
+	if c.remoteEntries == nil {
+		c.remoteEntries = make(map[RemoteEntryKey]sharedResultID)
 	}
-	res := c.indexedRowLocked(key)
+	res := c.remoteEntryLocked(key)
 	if res == nil {
 		res = &sharedResult{
 			id:                c.nextSharedResultID,
-			indexed:           &indexedRowState{key: key, origin: fact.Origin, typeName: fact.TypeName},
+			remote:            &remoteEntryState{key: key, origin: fact.Origin, typeName: fact.TypeName},
 			expiresAtUnix:     fact.ExpiresAtUnix,
 			createdAtUnixNano: fact.CreatedAtUnixNano,
 			recordType:        fact.RecordType,
@@ -86,49 +86,49 @@ func (c *Cache) UpsertIndexedRow(ctx context.Context, engine string, fact cachef
 		}
 		c.nextSharedResultID++
 		c.resultsByID[res.id] = res
-		c.indexedRows[key] = res.id
-		// The row's own ownership unit, released when its engine removes it.
+		c.remoteEntries[key] = res.id
+		// The entry's own ownership unit, released when its engine removes it.
 		c.incrementIncomingOwnershipLocked(ctx, res)
 	}
 	if fact.Origin == cachefact.OriginRestored {
 		c.joinRestoredClassesLocked(ctx, res, fact.Digests)
 	} else {
-		c.applyIndexedIdentityLocked(ctx, res, fact.Field, fact.Digests, fact.Terms)
+		c.applyRemoteIdentityLocked(ctx, res, fact.Field, fact.Digests, fact.Terms)
 	}
-	return c.addIndexedDepsLocked(ctx, res, fact.Deps), nil
+	return c.addRemoteDepsLocked(ctx, res, fact.Deps), nil
 }
 
-// TeachIndexedRowIdentity applies an identity fact of engine to its row:
+// TeachRemoteEntryIdentity applies an identity fact of engine to its entry:
 // the digests it posted and the term it used, through the engine's identity
 // step, which replays its reuse, association or creation of the term.
-func (c *Cache) TeachIndexedRowIdentity(ctx context.Context, engine string, fact cachefact.Identity) error {
+func (c *Cache) TeachRemoteEntryIdentity(ctx context.Context, engine string, fact cachefact.Identity) error {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	res := c.indexedRowLocked(RowKey{Engine: engine, ID: fact.ID})
+	res := c.remoteEntryLocked(RemoteEntryKey{Engine: engine, ID: fact.ID})
 	if res == nil {
-		return fmt.Errorf("%w: %s/%d", ErrUnknownIndexedRow, engine, fact.ID)
+		return fmt.Errorf("%w: %s/%d", ErrUnknownRemoteEntry, engine, fact.ID)
 	}
-	c.applyIndexedIdentityLocked(ctx, res, res.description, fact.Digests, []cachefact.Term{fact.Term})
+	c.applyRemoteIdentityLocked(ctx, res, res.description, fact.Digests, []cachefact.Term{fact.Term})
 	res.expiresAtUnix = fact.ExpiresAtUnix
 	return nil
 }
 
-// SetIndexedRowDeps attaches the dependencies a deps fact of engine names,
+// SetRemoteEntryDeps attaches the dependencies a deps fact of engine names,
 // with dependency ownership, so the engine's collection rules hold. Sets only
 // grow. The numbers the cache does not hold are returned.
-func (c *Cache) SetIndexedRowDeps(ctx context.Context, engine string, fact cachefact.Deps) ([]uint64, error) {
+func (c *Cache) SetRemoteEntryDeps(ctx context.Context, engine string, fact cachefact.Deps) ([]uint64, error) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	res := c.indexedRowLocked(RowKey{Engine: engine, ID: fact.ID})
+	res := c.remoteEntryLocked(RemoteEntryKey{Engine: engine, ID: fact.ID})
 	if res == nil {
-		return nil, fmt.Errorf("%w: %s/%d", ErrUnknownIndexedRow, engine, fact.ID)
+		return nil, fmt.Errorf("%w: %s/%d", ErrUnknownRemoteEntry, engine, fact.ID)
 	}
-	return c.addIndexedDepsLocked(ctx, res, fact.Deps), nil
+	return c.addRemoteDepsLocked(ctx, res, fact.Deps), nil
 }
 
-// UpsertIndexedClass merges the digests of a restored class into one class,
+// UpsertRemoteClass merges the digests of a restored class into one class,
 // with their labels.
-func (c *Cache) UpsertIndexedClass(ctx context.Context, fact cachefact.Class) error {
+func (c *Cache) UpsertRemoteClass(ctx context.Context, fact cachefact.Class) error {
 	if len(fact.Digests) == 0 {
 		return nil
 	}
@@ -159,12 +159,12 @@ func (c *Cache) UpsertIndexedClass(ctx context.Context, fact cachefact.Class) er
 	return nil
 }
 
-// UpsertIndexedTerm inserts a restored term over the classes of its input
-// digests, producing the class of its output digest, with no row attached.
+// UpsertRemoteTerm inserts a restored term over the classes of its input
+// digests, producing the class of its output digest, with no entry attached.
 // A congruent term that already exists has its output merged instead.
-func (c *Cache) UpsertIndexedTerm(ctx context.Context, fact cachefact.TermFact) error {
+func (c *Cache) UpsertRemoteTerm(ctx context.Context, fact cachefact.TermFact) error {
 	if fact.Self == "" || fact.Output == "" {
-		return fmt.Errorf("upsert indexed term: empty self or output")
+		return fmt.Errorf("upsert remote term: empty self or output")
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
@@ -182,57 +182,58 @@ func (c *Cache) UpsertIndexedTerm(ctx context.Context, fact cachefact.TermFact) 
 	return nil
 }
 
-// RemoveIndexedRow releases the row's own ownership unit: its engine removed
-// the result. When nothing else owns the row it is collected, as the engine
+// RemoveRemoteEntry releases the entry's own ownership unit: its engine removed
+// the result. When nothing else owns the entry it is collected, as the engine
 // collects results, and its dependencies are released in turn.
-func (c *Cache) RemoveIndexedRow(ctx context.Context, key RowKey) error {
+func (c *Cache) RemoveRemoteEntry(ctx context.Context, key RemoteEntryKey) error {
 	c.egraphMu.Lock()
-	res := c.indexedRowLocked(key)
-	if res == nil || res.indexed.removed {
+	res := c.remoteEntryLocked(key)
+	if res == nil || res.remote.removed {
 		c.egraphMu.Unlock()
 		return nil
 	}
-	res.indexed.removed = true
+	res.remote.removed = true
 	queue, err := c.decrementIncomingOwnershipLocked(ctx, res, nil)
 	releases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	c.egraphMu.Unlock()
 	return errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases))
 }
 
-// EquivalentRows returns the indexed rows in the class of digest.
-func (c *Cache) EquivalentRows(dig string) []RowKey {
+// EquivalentRemoteEntries returns the remote entries in the class of digest.
+func (c *Cache) EquivalentRemoteEntries(dig string) []RemoteEntryKey {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	classID, ok := c.egraphDigestToClass[dig]
 	if !ok {
 		return nil
 	}
-	var keys []RowKey
+	var keys []RemoteEntryKey
 	for id := range c.outputEqClassResults[c.eqClassRootLocked(classID)] {
-		if res := c.resultsByID[id]; res != nil && res.indexed != nil {
-			keys = append(keys, res.indexed.key)
+		if res := c.resultsByID[id]; res != nil && res.remote != nil {
+			keys = append(keys, res.remote.key)
 		}
 	}
-	slices.SortFunc(keys, compareRowKeys)
+	slices.SortFunc(keys, compareRemoteEntryKeys)
 	return keys
 }
 
-// RowClosure returns the row and every row it depends on, transitively.
-func (c *Cache) RowClosure(key RowKey) []RowKey {
+// RemoteEntryClosure returns the entry and every entry it depends on,
+// transitively.
+func (c *Cache) RemoteEntryClosure(key RemoteEntryKey) []RemoteEntryKey {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	root := c.indexedRowLocked(key)
+	root := c.remoteEntryLocked(key)
 	if root == nil {
 		return nil
 	}
 	seen := map[sharedResultID]bool{root.id: true}
 	queue := []*sharedResult{root}
-	var keys []RowKey
+	var keys []RemoteEntryKey
 	for len(queue) > 0 {
 		res := queue[0]
 		queue = queue[1:]
-		if res.indexed != nil {
-			keys = append(keys, res.indexed.key)
+		if res.remote != nil {
+			keys = append(keys, res.remote.key)
 		}
 		for depID := range res.deps {
 			if dep := c.resultsByID[depID]; dep != nil && !seen[depID] {
@@ -241,51 +242,51 @@ func (c *Cache) RowClosure(key RowKey) []RowKey {
 			}
 		}
 	}
-	slices.SortFunc(keys, compareRowKeys)
+	slices.SortFunc(keys, compareRemoteEntryKeys)
 	return keys
 }
 
-// IndexedRowInfo describes one indexed row.
-type IndexedRowInfo struct {
-	Key               RowKey
+// RemoteEntryInfo describes one remote entry.
+type RemoteEntryInfo struct {
+	Key               RemoteEntryKey
 	Origin            cachefact.Origin
 	Field             string
 	TypeName          string
 	RecordType        string
 	CreatedAtUnixNano int64
 	ExpiresAtUnix     int64
-	// Digests are the digests the row is posted under.
+	// Digests are the digests the entry is posted under.
 	Digests []string
-	// ClassDigests are every digest of the row's equivalence classes.
+	// ClassDigests are every digest of the entry's equivalence classes.
 	ClassDigests []string
-	// Terms are the terms producing the row's classes, each over its inputs'
+	// Terms are the terms producing the entry's classes, each over its inputs'
 	// class representatives (the smallest digest of each input class, as boot
 	// facts name classes) with their provenance, sorted.
 	Terms       []cachefact.Term
-	Deps        []RowKey
+	Deps        []RemoteEntryKey
 	UnknownDeps []uint64
-	// Removed reports that the row's engine removed it; rows that depend on
+	// Removed reports that the entry's engine removed it; entries that depend on
 	// it keep it in the cache.
 	Removed bool
 }
 
-// RowInfo returns what the cache holds for one indexed row.
-func (c *Cache) RowInfo(key RowKey) (IndexedRowInfo, bool) {
+// RemoteEntryInfo returns what the cache holds for one remote entry.
+func (c *Cache) RemoteEntryInfo(key RemoteEntryKey) (RemoteEntryInfo, bool) {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	res := c.indexedRowLocked(key)
+	res := c.remoteEntryLocked(key)
 	if res == nil {
-		return IndexedRowInfo{}, false
+		return RemoteEntryInfo{}, false
 	}
-	info := IndexedRowInfo{
+	info := RemoteEntryInfo{
 		Key:               key,
-		Origin:            res.indexed.origin,
+		Origin:            res.remote.origin,
 		Field:             res.description,
-		TypeName:          res.indexed.typeName,
+		TypeName:          res.remote.typeName,
 		RecordType:        res.recordType,
 		CreatedAtUnixNano: res.createdAtUnixNano,
 		ExpiresAtUnix:     res.expiresAtUnix,
-		Removed:           res.indexed.removed,
+		Removed:           res.remote.removed,
 	}
 	digests := map[string]struct{}{}
 	for _, dig := range c.resultIndexedDigests[res.id] {
@@ -310,12 +311,12 @@ func (c *Cache) RowInfo(key RowKey) (IndexedRowInfo, bool) {
 	info.ClassDigests = sortedKeys(classDigests)
 	slices.SortFunc(info.Terms, compareTerms)
 	for depID := range res.deps {
-		if dep := c.resultsByID[depID]; dep != nil && dep.indexed != nil {
-			info.Deps = append(info.Deps, dep.indexed.key)
+		if dep := c.resultsByID[depID]; dep != nil && dep.remote != nil {
+			info.Deps = append(info.Deps, dep.remote.key)
 		}
 	}
-	slices.SortFunc(info.Deps, compareRowKeys)
-	for id := range res.indexed.unknownDeps {
+	slices.SortFunc(info.Deps, compareRemoteEntryKeys)
+	for id := range res.remote.unknownDeps {
 		info.UnknownDeps = append(info.UnknownDeps, id)
 	}
 	slices.Sort(info.UnknownDeps)
@@ -386,12 +387,12 @@ func factTermInputs(inputs []cachefact.TermInput) ([]digest.Digest, []egraphInpu
 	return digests, provenance
 }
 
-// applyIndexedIdentityLocked posts digests for the row and applies each term
+// applyRemoteIdentityLocked posts digests for the entry and applies each term
 // through applyPreparedResultIdentityLocked. The frame it passes carries only
 // the field name and the non-recipe digests, which that function reads as the
 // request's extra digests; each recipe digest is applied as a request digest.
 // Requires egraphMu for writing.
-func (c *Cache) applyIndexedIdentityLocked(ctx context.Context, res *sharedResult, field string, digests []cachefact.Digest, terms []cachefact.Term) {
+func (c *Cache) applyRemoteIdentityLocked(ctx context.Context, res *sharedResult, field string, digests []cachefact.Digest, terms []cachefact.Term) {
 	var (
 		recipes []digest.Digest
 		extras  []call.ExtraDigest
@@ -431,7 +432,7 @@ func (c *Cache) applyIndexedIdentityLocked(ctx context.Context, res *sharedResul
 	}
 }
 
-// joinRestoredClassesLocked makes the row an output of the classes its
+// joinRestoredClassesLocked makes the entry an output of the classes its
 // representative digests name, and posts every digest of those classes for
 // it broadly, as a boot restore does. Requires egraphMu for writing.
 func (c *Cache) joinRestoredClassesLocked(ctx context.Context, res *sharedResult, reps []cachefact.Digest) {
@@ -452,16 +453,16 @@ func (c *Cache) joinRestoredClassesLocked(ctx context.Context, res *sharedResult
 	}
 }
 
-// addIndexedDepsLocked requires egraphMu for writing.
-func (c *Cache) addIndexedDepsLocked(ctx context.Context, res *sharedResult, deps []uint64) []uint64 {
+// addRemoteDepsLocked requires egraphMu for writing.
+func (c *Cache) addRemoteDepsLocked(ctx context.Context, res *sharedResult, deps []uint64) []uint64 {
 	var unknown []uint64
 	for _, depNum := range deps {
-		dep := c.indexedRowLocked(RowKey{Engine: res.indexed.key.Engine, ID: depNum})
+		dep := c.remoteEntryLocked(RemoteEntryKey{Engine: res.remote.key.Engine, ID: depNum})
 		if dep == nil {
-			if res.indexed.unknownDeps == nil {
-				res.indexed.unknownDeps = make(map[uint64]struct{})
+			if res.remote.unknownDeps == nil {
+				res.remote.unknownDeps = make(map[uint64]struct{})
 			}
-			res.indexed.unknownDeps[depNum] = struct{}{}
+			res.remote.unknownDeps[depNum] = struct{}{}
 			unknown = append(unknown, depNum)
 			continue
 		}
@@ -478,7 +479,7 @@ func (c *Cache) addIndexedDepsLocked(ctx context.Context, res *sharedResult, dep
 		res.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(res, dep)
 		c.incrementIncomingOwnershipLocked(ctx, dep)
-		delete(res.indexed.unknownDeps, depNum)
+		delete(res.remote.unknownDeps, depNum)
 	}
 	return unknown
 }
@@ -490,7 +491,7 @@ func (c *Cache) insertTermLocked(ctx context.Context, self digest.Digest, inputE
 	c.nextEgraphTermID++
 	term := newEgraphTerm(termID, self, inputEqIDs, outputEqID)
 	c.egraphTerms[termID] = term
-	c.traceTermCreated(ctx, "indexed", "", term)
+	c.traceTermCreated(ctx, "remote", "", term)
 	digestTerms := c.egraphTermsByTermDigest[term.termDigest]
 	if digestTerms == nil {
 		digestTerms = newEgraphTermIDSet()
