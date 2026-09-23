@@ -2950,6 +2950,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 				key.NewBinding(key.WithKeys("ctrl+1"), key.WithHelp("ctrl+1…9", "focus agent")),
 				key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
 					KeyEnabled(fe.lastFocusedAgent != "")),
+				key.NewBinding(key.WithKeys("alt+[", "alt+]"), key.WithHelp("alt+[/]", "prev/next agent"),
+					KeyEnabled(fe.addressableAgentCount() > 1)),
 			)
 		}
 		if fe.acceptsPromptImages() {
@@ -4249,7 +4251,7 @@ func (fe *frontendPretty) focusAgentIndex(n int) bool {
 // focusLastAgent toggles back to the previously focused agent -- tmux's
 // last-window, because the two-agent ping-pong is the common case and a
 // next/prev cycle is the wrong verb for it. (Nav mode does bind a cycle as
-// well; see navCycleAgent for why that does not make this key redundant.)
+// well; see cycleAgent for why that does not make this key redundant.)
 // Returns focusAgent's (claimed, moved) pair.
 func (fe *frontendPretty) focusLastAgent() (claimed, moved bool) {
 	if fe.lastFocusedAgent == "" {
@@ -4310,17 +4312,14 @@ func (fe *frontendPretty) navFocusAgent(n int) bool {
 	return claimed
 }
 
-// navCycleAgent moves focus one step along the roster -- delta +1 for the
+// cycleAgent moves focus one step along the roster -- delta +1 for the
 // next entry, -1 for the previous -- wrapping around at the ends. Reports
 // whether there was anywhere to go, so a session with nobody else to talk to
 // leaves the key unclaimed instead of miming a switch that never happened.
 //
-// Unlike the digits and the toggle this does NOT hand the prompt back, and
-// that split is the whole design of the key: a cycle is a survey verb, meant
-// to be tapped until you land on the one you want, and a key that dropped you
-// into the prompt on the first press would type its own second press into the
-// input. The strip's * marker is the feedback instead, and `i` is one
-// keystroke away once you have arrived.
+// cycleAgent preserves the current input mode: [/] stays in navigation,
+// while alt+[/] stays in insert mode. Repeated presses can walk the roster
+// without either switching modes or typing brackets into the draft.
 //
 // §5.1 argues a next/prev cycle is the wrong verb for the two-agent
 // ping-pong, and it still is: the last-focused toggle answers that, and nav
@@ -4336,7 +4335,7 @@ func (fe *frontendPretty) navFocusAgent(n int) bool {
 // entry is only PROVEN unaddressable by a rebuild that failed, so the cycle
 // can still walk onto one the first time and report it; from then on the
 // strip has it marked and the cycle passes it by.
-func (fe *frontendPretty) navCycleAgent(delta int) bool {
+func (fe *frontendPretty) cycleAgent(delta int) bool {
 	entries := fe.navRosterEntries()
 	n := len(entries)
 	if n == 0 {
@@ -4396,7 +4395,7 @@ func (fe *frontendPretty) navFocusLastAgent() bool {
 
 // returnToPromptAfterFocus hands the prompt back after a roster key NAMED an
 // agent from nav mode -- a digit or the last-focused toggle, never the cycle
-// (see navCycleAgent).
+// (see cycleAgent).
 //
 // Naming an agent is a prelude to typing at it -- that is the entire point of
 // the per-agent draft, saved on blur and restored on focus (§5.1), which only
@@ -5546,6 +5545,14 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.enterNavMode()
 		fe.syncPrompt()
 		return true
+	case "alt+[", "alt+]":
+		// Match nav mode's brackets without leaving insert mode. Use Alt:
+		// Ctrl+[ is indistinguishable from Esc on legacy terminals.
+		delta := 1
+		if keyStr == "alt+[" {
+			delta = -1
+		}
+		return fe.cycleAgent(delta)
 	case "alt++", "alt+=":
 		fe.Verbosity++
 		fe.renderVersion++
@@ -5881,7 +5888,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		if keyStr == "[" {
 			delta = -1
 		}
-		if fe.navCycleAgent(delta) {
+		if fe.cycleAgent(delta) {
 			return
 		}
 	case "t":
