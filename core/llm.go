@@ -25,7 +25,6 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
@@ -2676,7 +2675,7 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 	}
 	slices.Reverse(newMessages)
 	for _, msg := range newMessages {
-		emitMessageSpan(ctx, msg, llmCallDigest, nil, nil)
+		emitMessageSpan(ctx, msg, llmCallDigest)
 	}
 }
 
@@ -2999,18 +2998,15 @@ func (llm *LLM) allowed(ctx context.Context) error {
 	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
-// emitMessageSpan creates a telemetry span for a single LLM message. This is
-// used both during live step() execution and during history emission.
+// emitMessageSpan creates telemetry for a live LLM message.
+// Restored history comes from imported telemetry, never newly emitted spans.
 // callDigest is the DAG digest enabling TUI branching from that point.
-// resultTokens maps a tool call's ID to the estimated token size of the result
-// it produced, while replayedResults carries the authoritative result content so
-// history emission can reproduce the same result logs as the live call.
-func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]*LLMContentBlock) {
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
 	switch msg.Role {
 	case LLMMessageRoleUser, LLMMessageRoleSystem:
 		emitUserMessageSpan(ctx, msg, callDigest)
 	case LLMMessageRoleAssistant:
-		emitAssistantMessageSpan(ctx, msg, callDigest, resultTokens, replayedResults)
+		emitAssistantMessageSpan(ctx, msg, callDigest)
 	}
 }
 
@@ -3073,7 +3069,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	}
 }
 
-func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]*LLMContentBlock) {
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
 	// Each content block gets its own span, matching the provider streaming
 	// behavior: thinking, text (LLM response), and tool calls each appear
 	// separately. Contiguous runs of the same non-tool-call type are grouped.
@@ -3139,15 +3135,6 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 					attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
-				// Mirror the live tool-call span's result-size badge: the result
-				// itself lives in a later user (tool-result) message, so history
-				// emission looks it up by call ID from the pre-scanned
-				// conversation.
-				if tokens := resultTokens[block.CallID]; tokens > 0 {
-					extraAttrs = append(extraAttrs,
-						attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens),
-					)
-				}
 			default:
 				name = "LLM response"
 				contentType = "text/markdown"
@@ -3185,40 +3172,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 					fmt.Fprintln(stdio.Stdout, string(block.Arguments))
 				}
 			}
-			if g.kind == LLMContentToolCall {
-				block := g.blocks[0]
-				if result, ok := replayedResults[block.CallID]; ok {
-					if result.Errored {
-						span.SetStatus(codes.Error, result.ContentText())
-					}
-					emitToolResultLogs(spanCtx, result)
-				}
-			}
 		}()
-	}
-}
-
-// EmitHistory re-emits telemetry spans for all messages in the conversation
-// history.
-// This allows the TUI to display the conversation after loading a saved session.
-func (llm *LLM) EmitHistory(ctx context.Context) {
-	// Pre-scan tool results, keyed by call ID, so the assistant tool-call span
-	// can carry the same result-size badge, status, and model-visible output as
-	// the live path even though the result is stored in a later user message.
-	resultTokens := map[string]int64{}
-	replayedResults := map[string]*LLMContentBlock{}
-	for _, msg := range llm.Messages {
-		for _, block := range msg.Content {
-			if block.Kind == LLMContentToolResult && block.CallID != "" {
-				resultTokens[block.CallID] = estimateTextTokens(len(block.ContentText()))
-				replayedResults[block.CallID] = block
-			}
-		}
-	}
-	for _, msg := range llm.Messages {
-		// We don't have per-message call digests for history emission, so pass empty.
-		// The TUI will still display the messages, just without branch support.
-		emitMessageSpan(ctx, msg, "", resultTokens, replayedResults)
 	}
 }
 
@@ -3496,7 +3450,8 @@ func (llm *LLM) messageRecipeSelectors() ([]dagql.Selector, error) {
 
 // PortableRecipe materializes the conversation as a flat, self-contained
 // recipe (see recipeSelectors) rooted at Query.llm, suitable for persisting
-// and restoring in a later session. Backs LLM.portableID.
+// and restoring in a later session. Kept internal to agent capture until safe
+// raw committed recipe reconstruction is proven across all binding paths.
 func (llm *LLM) PortableRecipe(ctx context.Context) (res dagql.ObjectResult[*LLM], _ error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
