@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -778,6 +779,22 @@ func (AgentRestoreSuite) TestCLIArchiveResumeIgnoresDestination(ctx context.Cont
 		}
 		cmd.Env = append(cmd.Env, entry)
 	}
+	// Discovery and exact selection must also ignore the broken destination.
+	// The listing is metadata-only and must not initialize an interactive LLM.
+	listCmd := exec.CommandContext(ctx, bin, "agent", "--list-archives", "--trace", traceID)
+	listCmd.Dir, listCmd.Env = destination, slices.Clone(cmd.Env)
+	listing, err := listCmd.Output()
+	require.NoError(t, err)
+	var generation string
+	for _, line := range strings.Split(string(listing), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 4 && fields[0] == traceID && fields[1] == node.Control.Session {
+			generation = fields[2]
+			require.Equal(t, "closed", fields[3])
+		}
+	}
+	require.NotEmpty(t, generation, "archive not discoverable: %s", listing)
+	cmd.Args = append(cmd.Args, "--source-session", node.Control.Session, "--generation", generation)
 	cmd.Env = append(cmd.Env, "DAGGER_TUI_CONSOLE="+address, "DAGGER_PROGRESS=tty", "XDG_STATE_HOME="+state)
 	logFile, err := os.CreateTemp(t.TempDir(), "cli-output")
 	require.NoError(t, err)
