@@ -13,6 +13,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -26,6 +27,21 @@ func (c agentTestConn) Host() string { return "agent-test" }
 func (c agentTestConn) Close() error { return nil }
 func (c agentTestConn) Do(req *http.Request) (*http.Response, error) {
 	return c.do(req)
+}
+
+func TestRestoreSessionInitializationNeedsNoProvider(t *testing.T) {
+	// A nil engine client makes any destination LLM/workspace query a failure.
+	// Restoring client plumbing must not evaluate either before bootstrap.
+	h := newShellCallHandler(nil, &idtui.FrontendMock{})
+	h.llmModel = "destination-provider-does-not-exist"
+	s, err := h.initLLMSession(t.Context(), nil, true)
+	require.NoError(t, err)
+	require.NotNil(t, s.Target())
+	require.Nil(t, s.Target().llm)
+	require.Nil(t, s.Target().initialLLM)
+	require.Nil(t, s.Target().lastSynced())
+	require.Empty(t, s.Target().model)
+	require.Nil(t, s.Target().runtime())
 }
 
 func TestTracedResetDoesNotRebindExportBaseline(t *testing.T) {

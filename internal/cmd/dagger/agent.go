@@ -64,14 +64,11 @@ var agentCmd = &cobra.Command{
 				// a stable baseline when possible, then open the prompt. A module
 				// function returning LLM already lands in prompt mode today.
 				//
-				// Trace restore deliberately starts from an unbound base instead:
-				// the restored recipes carry their own frozen workspaces and must not
-				// read or load modules from the destination checkout.
+				// Trace restore initializes only inert client plumbing. Its archived
+				// anchors, not a destination base LLM, own the provider and workspace.
 				var llmID string
 				var err error
-				if agentTrace != "" {
-					llmID, err = freshAgentBase(ctx, dag)
-				} else {
+				if agentTrace == "" {
 					llmID, err = composeAgents(ctx, dag, args, cmd)
 				}
 				if err != nil {
@@ -104,27 +101,6 @@ func init() {
 		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
 	agentCmd.Flags().BoolVar(&agentPartial, "partial", false, "Unsupported: restore requires a complete verified agent graph")
 	_ = agentCmd.Flags().MarkHidden("partial")
-}
-
-const freshAgentBaseQuery = `query AgentBase {
-  llm {
-    id
-  }
-}`
-
-func freshAgentBase(ctx context.Context, dag *dagger.Client) (string, error) {
-	var res struct {
-		LLM struct {
-			ID string
-		}
-	}
-	if err := dag.Do(ctx, &dagger.Request{
-		Query:  freshAgentBaseQuery,
-		OpName: "AgentBase",
-	}, &dagger.Response{Data: &res}); err != nil {
-		return "", err
-	}
-	return res.LLM.ID, nil
 }
 
 func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) (string, error) {
