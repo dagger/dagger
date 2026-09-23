@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -324,4 +325,50 @@ func TestScaleOutTelemetryFollowsTheSession(t *testing.T) {
 	require.Empty(t, params.CloudURL)
 	require.Equal(t, silentRoot.spanExporter, params.EngineTrace)
 	require.Nil(t, params.EngineTraceWithoutCloud)
+}
+
+// Every telemetry stream of a session carries the session's one answer, a
+// reconnect's included: confirmed when the main client asked and the session
+// built its Cloud exporters, absent otherwise, including when building them
+// failed.
+func TestTelemetryStreamsConfirmCloudPublishing(t *testing.T) {
+	t.Parallel()
+	receiver := newCloudReceiver(t, false)
+	for _, tc := range []struct {
+		name string
+		md   *engine.ClientMetadata
+		want string
+	}{
+		{name: "publishing", want: engine.CloudTelemetryPublisherEngine, md: &engine.ClientMetadata{
+			CloudAuth: basicCloudAuth("dag_test_token"), CloudURL: receiver.URL,
+			CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+		}},
+		{name: "not asked", md: &engine.ClientMetadata{
+			CloudAuth: basicCloudAuth("dag_test_token"), CloudURL: receiver.URL,
+		}},
+		{name: "exporter setup failed", md: &engine.ClientMetadata{
+			CloudAuth: basicCloudAuth("dag_test_token"), CloudURL: "http://[::1]:namedport",
+			CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sess, root := newCloudTestSession(t, &Server{}, tc.md)
+			t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
+			shutdownCh := make(chan struct{})
+			close(shutdownCh)
+			root.shutdownCh = shutdownCh
+			for _, cursor := range []string{"", "3"} {
+				req := httptest.NewRequest(http.MethodGet, "/v1/traces", nil)
+				req.Header.Set("Accept", enginetel.LiveContentType)
+				if cursor != "" {
+					req.Header.Set(enginetel.LiveCursorHeader, cursor)
+				}
+				resp := httptest.NewRecorder()
+				require.NoError(t, sess.telemetryPubSub.TracesSubscribeHandler(resp, req, root.clientRecord))
+				require.Equal(t, http.StatusOK, resp.Code)
+				require.Equal(t, tc.want, resp.Header().Get(engine.CloudTelemetryPublisherHeader), "cursor %q", cursor)
+			}
+		})
+	}
 }

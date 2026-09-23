@@ -998,6 +998,9 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	defer db.Close()
 
 	w.Header().Set("Cache-Control", "no-cache")
+	if sess := record.daggerSession; sess != nil && sess.publishesToCloud() {
+		w.Header().Set(engine.CloudTelemetryPublisherHeader, engine.CloudTelemetryPublisherEngine)
+	}
 	if binary {
 		w.Header().Set("Content-Type", enginetel.LiveContentType)
 	} else {

@@ -66,6 +66,14 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 	sess.cloudMetrics = boundedCloudMetricExporter{Exporter: metrics, bound: sess.cloudBound}
 }
 
+// publishesToCloud reports whether the session publishes its telemetry to
+// Cloud. It is decided once, when the session's telemetry initializes and
+// before any client can open a telemetry stream, so every stream of the
+// session is confirmed alike and a client's forwarding never flips midway.
+func (sess *daggerSession) publishesToCloud() bool {
+	return sess.cloudSpanProcessor != nil && sess.cloudLogProcessor != nil && sess.cloudMetrics != nil
+}
+
 // refreshSessionCloudToken refreshes the main client's expired OAuth token
 // from the credentials file on the client's host, and writes the refreshed
 // token back there, since refreshing invalidates the old one.
@@ -199,15 +207,15 @@ func (sess *daggerSession) flushSessionCloudTelemetry(ctx context.Context) {
 // scaleOutTelemetryParams routes a scale-out engine's telemetry stream, which
 // the parent client receives, into the session's client routing. When this
 // session publishes to Cloud, the remote engine is asked to publish its own
-// session with the same credential; if it does not, the parent publishes the
-// stream through this session's Cloud processors instead. When this session
+// session with the same credential; on streams the remote does not confirm,
+// the parent publishes them through this session's Cloud processors instead. When this session
 // does not publish, the remote is not asked either, and the stream reaches
 // Cloud once, through the client that forwards this session's telemetry.
 func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params *engineclient.Params) {
 	params.EngineTrace = parent.spanExporter
 	params.EngineLogs = parent.logExporter
 	params.EngineMetrics = []sdkmetric.Exporter{parent.metricExporter}
-	if sess.cloudSpanProcessor == nil || sess.cloudLogProcessor == nil || sess.cloudMetrics == nil {
+	if !sess.publishesToCloud() {
 		return
 	}
 	md := parent.clientMetadata

@@ -958,6 +958,18 @@ type otlpConsumer struct {
 	reconnectDelay time.Duration
 	// connectAttempts overrides telemetryConnectAttempts; zero uses the default.
 	connectAttempts int
+
+	// enginePublishes records whether the engine confirmed, on the stream's
+	// first response, that it publishes the session's telemetry to Cloud.
+	// Reconnects keep that answer, so forwarding never flips midway. Only
+	// the consuming goroutine touches it after the first connect.
+	enginePublishes bool
+}
+
+// confirmsEnginePublishing reports whether a telemetry stream's response
+// confirms that the engine publishes the session's telemetry to Cloud.
+func confirmsEnginePublishing(resp *http.Response) bool {
+	return resp.Header.Get(engine.CloudTelemetryPublisherHeader) == engine.CloudTelemetryPublisherEngine
 }
 
 const (
@@ -996,6 +1008,8 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 	if err != nil {
 		return fmt.Errorf("connect to OTLP stream: %w", err)
 	}
+	c.enginePublishes = confirmsEnginePublishing(resp)
+	span.SetAttributes(attribute.Bool("dagger.io/telemetry.engine_publishes", c.enginePublishes))
 
 	c.eg.Go(func() error {
 		cursor := int64(0)
@@ -1025,6 +1039,9 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			}
 			if err != nil {
 				return fmt.Errorf("reconnect to OTLP stream: %w", err)
+			}
+			if confirmsEnginePublishing(resp) != c.enginePublishes {
+				logger.Warn("engine changed its Cloud telemetry publishing on reconnect; keeping the first answer", "enginePublishes", c.enginePublishes)
 			}
 		}
 	})
@@ -1223,6 +1240,36 @@ func unmarshalLiveTelemetry(data []byte, encoding liveTelemetryEncoding, message
 	return proto.Unmarshal(data, message)
 }
 
+// forwardsWithoutCloud reports whether a stream's telemetry goes everywhere
+// but this client's Cloud exporters: this client asked the engine to publish
+// to Cloud, and the engine confirmed on the stream. Otherwise, for an older
+// engine, or one that could not set up its Cloud exporters, this client
+// forwards it to Cloud as before.
+func (c *Client) forwardsWithoutCloud(confirmed bool) bool {
+	return confirmed && c.EngineCloudTelemetry
+}
+
+func (c *Client) engineTrace(confirmed bool) sdktrace.SpanExporter {
+	if c.forwardsWithoutCloud(confirmed) && c.EngineTraceWithoutCloud != nil {
+		return c.EngineTraceWithoutCloud
+	}
+	return c.EngineTrace
+}
+
+func (c *Client) engineLogs(confirmed bool) sdklog.Exporter {
+	if c.forwardsWithoutCloud(confirmed) && c.EngineLogsWithoutCloud != nil {
+		return c.EngineLogsWithoutCloud
+	}
+	return c.EngineLogs
+}
+
+func (c *Client) engineMetrics(confirmed bool) []sdkmetric.Exporter {
+	if c.forwardsWithoutCloud(confirmed) && c.EngineMetricsWithoutCloud != nil {
+		return c.EngineMetricsWithoutCloud
+	}
+	return c.EngineMetrics
+}
+
 func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/traces",
@@ -1246,7 +1293,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 			slog.ExtraDebug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
 		}
 
-		if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
+		if err := c.engineTrace(exp.enginePublishes).ExportSpans(ctx, spans); err != nil {
 			return fmt.Errorf("export %d spans: %w", len(spans), err)
 		}
 
@@ -1268,7 +1315,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
-		if err := telemetry.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
+		if err := telemetry.ReexportLogsFromPB(ctx, c.engineLogs(exp.enginePublishes), &req); err != nil {
 			return fmt.Errorf("re-export logs: %w", err)
 		}
 		return nil
@@ -1289,7 +1336,7 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal metrics: %w", err)
 		}
-		if err := enginetel.ReexportMetricsFromPB(ctx, c.EngineMetrics, &req); err != nil {
+		if err := enginetel.ReexportMetricsFromPB(ctx, c.engineMetrics(exp.enginePublishes), &req); err != nil {
 			return fmt.Errorf("re-export metrics: %w", err)
 		}
 		return nil

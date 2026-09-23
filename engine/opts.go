@@ -249,9 +249,18 @@ func ClientMetadataFromHTTPHeaders(h http.Header) (*ClientMetadata, error) {
 	return m, nil
 }
 
-// CloudTelemetryPublisherEngine is the ClientMetadata.CloudTelemetryPublisher
-// value that asks the engine to publish the session's telemetry to Cloud.
-const CloudTelemetryPublisherEngine = "engine"
+const (
+	// CloudTelemetryPublisherEngine is the ClientMetadata.CloudTelemetryPublisher
+	// value that asks the engine to publish the session's telemetry to Cloud.
+	CloudTelemetryPublisherEngine = "engine"
+
+	// CloudTelemetryPublisherHeader, set to CloudTelemetryPublisherEngine on a
+	// telemetry stream's response, confirms that the engine publishes the
+	// session's telemetry to Cloud, so the client must not forward it there.
+	// An engine decides once per session, before any stream opens, and answers
+	// every stream of the session alike, reconnects included.
+	CloudTelemetryPublisherHeader = "X-Dagger-Cloud-Telemetry-Publisher"
+)
 
 func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
 	h = h.Clone()
