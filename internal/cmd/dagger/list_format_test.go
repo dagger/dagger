@@ -49,6 +49,29 @@ func TestArtifactListFormats(t *testing.T) {
 		require.Contains(t, out, "dag+test://go/modules/tests")
 		require.Contains(t, out, "dag+test://other/tests")
 	})
+	t.Run("different matrices keep links even with disjoint keys", func(t *testing.T) {
+		other := items[1]
+		other.URI = "dag+test://other/tests?go-module=.%2Fworker&go-test=TestWorker"
+		other.DimensionKeys = []struct{ Dimension, Key string }{{"Go.modules", "./worker"}, {"GoModule.tests", "TestWorker"}}
+		out := render(t, "table", []listedArtifact{items[0], other})
+		require.Contains(t, out, "LINK")
+		require.Contains(t, out, "dag+test://go/modules/tests")
+		require.Contains(t, out, "dag+test://other/tests")
+	})
+	t.Run("absolute tables retain workspace and revision", func(t *testing.T) {
+		item := items[0]
+		item.URI = "dag+test://github.com/acme/project@abc:go/modules/tests?go-test=TestHealth"
+		out := render(t, "table", []listedArtifact{item})
+		require.Contains(t, out, "LINK")
+		require.Contains(t, out, "dag+test://github.com/acme/project@abc:go/modules/tests")
+	})
+	t.Run("collection CLI scope does not change link output", func(t *testing.T) {
+		item := items[0]
+		item.CollectionItem = true
+		require.Equal(t, item.URI+"\n", render(t, "link", []listedArtifact{item}))
+		require.Equal(t, "--go-module=./api --go-test=TestHealth dag://go/modules/tests   # Check health\n", render(t, "cli", []listedArtifact{item}))
+	})
+
 	t.Run("static artifacts need a link", func(t *testing.T) {
 		out := render(t, "table", []listedArtifact{{URI: "dag+container://dev", Description: "Development"}})
 		require.Regexp(t, `DESCRIPTION +LINK\nDevelopment +dag\+container://dev\n`, out)

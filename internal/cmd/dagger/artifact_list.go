@@ -2,31 +2,15 @@ package daggercmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dagaddress"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 )
-
-// Compare canonical keys, since dimension aliases depend on the selected scope.
-func listedArtifactIDs(items []listedArtifact) []string {
-	ids := make([]string, 0, len(items))
-	for _, item := range items {
-		addr, _ := dagaddress.Parse(item.URI)
-		keys := slices.Clone(item.DimensionKeys)
-		slices.SortFunc(keys, func(a, b struct{ Dimension, Key string }) int { return strings.Compare(a.Dimension, b.Dimension) })
-		encoded, _ := json.Marshal(keys)
-		ids = append(ids, addr.Path+string(encoded))
-	}
-	slices.Sort(ids)
-	return slices.Compact(ids)
-}
 
 func listedArtifactKeys(items []listedArtifact) []dagaddress.Pair {
 	var keys []dagaddress.Pair
@@ -57,7 +41,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	if err != nil {
 		return err
 	}
-	var allArtifacts, targets *dagger.Artifacts
+	var paths []artifactListPath
 	names := map[string]string{}
 	if len(listedArtifactKeys(items)) > 0 {
 		// Resolve discovery once. Every formatting query must use this same set,
@@ -66,7 +50,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		if err != nil {
 			return err
 		}
-		allArtifacts = dagger.Ref[*dagger.Artifacts](dag, id)
+		allArtifacts := dagger.Ref[*dagger.Artifacts](dag, id)
 		defs, err := artifactDimensions(ctx, dag, allArtifacts)
 		if err != nil {
 			return err
@@ -74,32 +58,15 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		for _, def := range defs {
 			names[def.Identifier] = artifactDimensionFlagName(cmd, defs, def)
 		}
-		targets, err = commandArtifactTargets(dag, cmd, allArtifacts)
+		targets, err := commandArtifactTargets(dag, cmd, allArtifacts)
 		if err != nil {
 			return err
 		}
-	}
-	candidates := map[string][]string{}
-	// Read only candidate paths and keys to check whether rows can be grouped.
-	matches := func(path string, keys []dagaddress.Pair, want []listedArtifact) bool {
-		encoded, _ := json.Marshal(keys)
-		cacheKey := path + string(encoded)
-		if got, ok := candidates[cacheKey]; ok {
-			return slices.Equal(got, listedArtifactIDs(want))
-		}
-		address, err := dagaddress.Parse(path)
+		schema, err := readArtifactListSchema(ctx, dag, targets)
 		if err != nil {
-			return false
+			return err
 		}
-		address.Absolute = false
-		address.Query = keys
-		candidate := targets.FilterURI(address.String())
-		got, err := readListedArtifacts(ctx, dag, candidate, false, false)
-		if err != nil {
-			return false
-		}
-		candidates[cacheKey] = listedArtifactIDs(got)
-		return slices.Equal(candidates[cacheKey], listedArtifactIDs(want))
+		paths = schema.PathDefinitions
 	}
 	groups := map[string][]listedArtifact{}
 	for _, item := range items {
@@ -111,16 +78,19 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		path := addr.String()
 		groups[path] = append(groups[path], item)
 	}
-	paths := slices.Sorted(maps.Keys(groups))
+	groupPaths := slices.Sorted(maps.Keys(groups))
 	var output []listedArtifact
-	for _, path := range paths {
-		for _, row := range artifactListRows(path, groups[path], all, filtered, matches) {
+	for _, path := range groupPaths {
+		for _, row := range artifactListRows(groups[path], all) {
 			item := listedArtifact{URI: path, Description: row[0].Description}
 			for _, key := range listedArtifactKeys(row) {
 				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
 			}
 			output = append(output, item)
 		}
+	}
+	if err := projectArtifactLinks(output, paths); err != nil {
+		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -186,14 +156,9 @@ func artifactListHasKeyFilters(cmd *cobra.Command) (bool, error) {
 	return len(keys) > 0, nil
 }
 
-// Collapse a path only when the resulting command selects the same items.
-func artifactListRows(
-	path string,
-	group []listedArtifact,
-	all, filtered bool,
-	matches func(string, []dagaddress.Pair, []listedArtifact) bool,
-) [][]listedArtifact {
-	if !all && len(group) > 1 && (!filtered && matches(path, nil, group) || matches(path, listedArtifactKeys(group), group)) {
+// Collapse only products that can be expressed with repeated dimension flags.
+func artifactListRows(group []listedArtifact, all bool) [][]listedArtifact {
+	if !all && len(group) > 1 && artifactRowsFormProduct(group) {
 		return [][]listedArtifact{group}
 	}
 	rows := make([][]listedArtifact, 0, len(group))

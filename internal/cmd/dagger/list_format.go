@@ -49,6 +49,7 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	var dimensions []string
 	var rows [][]string
 	described, needsLink := false, false
+	baseLinks := map[string]bool{}
 	for _, item := range items {
 		for _, key := range item.DimensionKeys {
 			if !slices.Contains(dimensions, key.Dimension) {
@@ -77,8 +78,12 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 			values = append(values, firstDescriptionLine(item.Description))
 		}
 		addr.Query = nil
+		baseLinks[addr.String()] = true
+		needsLink = needsLink || addr.Absolute
 		rows = append(rows, append(values, addr.String()))
 	}
+	// Different matrices need their links even when their current keys differ.
+	needsLink = needsLink || len(baseLinks) > 1
 	columns := artifactTableColumns(items, dimensions, rows)
 	var header []string
 	for _, i := range columns {
@@ -161,6 +166,10 @@ func artifactCLIArguments(item listedArtifact, names map[string]string, options 
 			return "", err
 		}
 		addr.Query = nil
+		if item.CollectionItem {
+			// Item filters must also reach operations below the collection.
+			addr.Types = nil
+		}
 		link, err := quoteArtifactArgument(addr.String())
 		if err != nil {
 			return "", err

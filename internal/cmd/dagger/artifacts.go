@@ -98,10 +98,19 @@ func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions artifact.Dimen
 
 }
 
-// Choose a dimension alias that is unambiguous and does not hide a command flag.
+// Use one name across artifact commands. A collection row printed by list
+// must not turn into a command option when copied to check, shell, or a peer.
 func artifactDimensionFlagName(cmd *cobra.Command, dimensions artifact.Dimensions, dimension *artifact.Dimension) string {
 	for _, name := range []string{dimension.Name, dimension.QualifiedName} {
-		if flag := cmd.Flag(name); flag != nil && len(flag.Annotations[artifactDimensionFlag]) == 0 {
+		peers := append([]*cobra.Command{cmd}, cmd.Root().Commands()...)
+		reserved := slices.ContainsFunc(peers, func(peer *cobra.Command) bool {
+			if peer != cmd && !slices.Contains([]string{"list", "check", "generate", "up", "shell", "agent"}, peer.Name()) {
+				return false
+			}
+			flag := peer.Flag(name)
+			return flag != nil && len(flag.Annotations[artifactDimensionFlag]) == 0
+		})
+		if reserved {
 			continue
 		}
 		if id, err := dimensions.Resolve(name); err == nil && id == dimension.Identifier {
@@ -422,6 +431,7 @@ func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Art
 
 type listedArtifact struct {
 	CLIFlagsOnly     bool `json:"-"`
+	CollectionItem   bool `json:"-"`
 	URI, Description string
 	DimensionKeys    []struct{ Dimension, Key string }
 }
@@ -453,5 +463,8 @@ func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection
     items: dimensionItems(dimension: $dimension) { uri(absolute: $absolute, typeAssertion: true) description dimensionKeys { dimension key } }
   } }
  }`, Variables: map[string]any{"id": id, "dimension": dimension, "absolute": absolute}}, &dagger.Response{Data: &response})
+	for i := range response.Node.Items {
+		response.Node.Items[i].CollectionItem = true
+	}
 	return response.Node.Items, err
 }
