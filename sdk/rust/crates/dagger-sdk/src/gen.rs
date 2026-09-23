@@ -994,6 +994,73 @@ impl Node for AgentMessage {
     }
 }
 #[derive(Clone)]
+pub struct AgentMiddleware {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for AgentMiddleware {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for AgentMiddleware {
+    fn graphql_type() -> &'static str {
+        "AgentMiddleware"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl AgentMiddleware {
+    /// A unique identifier for this AgentMiddleware.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The agent function's name.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The agent function's description.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The agent function's path within its module.
+    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The module that defines the agent function.
+    pub fn original_module(&self) -> Module {
+        let query = self.selection.select("originalModule");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for AgentMiddleware {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct Artifact {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -1351,6 +1418,74 @@ impl Artifacts {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware.
+    pub async fn as_agent_middlewares(&self) -> Result<Vec<AgentMiddleware>, DaggerError> {
+        let query = self.selection.select("asAgentMiddlewares");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| AgentMiddleware {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("AgentMiddleware"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+    pub async fn as_checks(&self) -> Result<Vec<Check>, DaggerError> {
+        let query = self.selection.select("asChecks");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Check {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Check"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+    pub async fn as_changesets(&self) -> Result<Vec<Changeset>, DaggerError> {
+        let query = self.selection.select("asChangesets");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Changeset {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Changeset"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+    pub async fn as_services(&self) -> Result<Vec<Service>, DaggerError> {
+        let query = self.selection.select("asServices");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Service {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Service"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// Evaluate the selection in parallel, retaining each result and error.
     ///
@@ -2356,6 +2491,86 @@ impl Node for Cloud {
     }
 }
 #[derive(Clone)]
+pub struct Command {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Command {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Command {
+    fn graphql_type() -> &'static str {
+        "Command"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Command {
+    /// A unique identifier for this Command.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The command arguments.
+    pub async fn args(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("args");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Environment variable overrides. Other variables come from the container.
+    pub async fn env(&self) -> Result<Vec<EnvVariable>, DaggerError> {
+        let query = self.selection.select("env");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| EnvVariable {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("EnvVariable"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Working directory override. If unset, use the container's working directory.
+    pub async fn workdir(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("workdir");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the command has access to Dagger.
+    pub async fn privileged_nesting(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("privilegedNesting");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the command has all root capabilities.
+    pub async fn insecure_root_capabilities(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("insecureRootCapabilities");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Command {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct Container {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -2824,7 +3039,9 @@ pub struct ContainerWithoutExposedPortOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultTerminalCmdOpts {
-    /// Provides Dagger access to the executed command.
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -2832,11 +3049,47 @@ pub struct ContainerWithDefaultTerminalCmdOpts {
     pub insecure_root_capabilities: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithShellOpts<'a> {
+    /// Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".
+    #[builder(setter(into, strip_option), default)]
+    pub batch: Option<Vec<&'a str>>,
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
+    /// Give the shell all root capabilities. Use only with trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_root_capabilities: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerShellOpts {
+    /// Return the batch command instead of the interactive command.
+    #[builder(setter(into, strip_option), default)]
+    pub batch: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithRunOpts<'a> {
+    /// Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
+    /// Override whether the shell has all root capabilities.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_root_capabilities: Option<bool>,
+    /// Override the batch shell arguments. Example: ["bash", "-c"].
+    #[builder(setter(into, strip_option), default)]
+    pub shell: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
-    /// Provides Dagger access to the executed command.
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -2849,10 +3102,12 @@ pub struct ContainerAsServiceOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -2872,10 +3127,12 @@ pub struct ContainerUpOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -4615,6 +4872,9 @@ impl Container {
         if let Some(expect) = opts.expect {
             query = query.arg("expect", expect);
         }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
                 "experimentalPrivilegedNesting",
@@ -5239,6 +5499,148 @@ impl Container {
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
+        }
+        if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
+            query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
+        }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the shell used by terminal() and withRun().
+    ///
+    /// # Arguments
+    ///
+    /// * `interactive` - Command arguments for interactive use. Example: ["sh"].
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_shell(&self, interactive: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withShell");
+        query = query.arg(
+            "interactive",
+            interactive
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the shell used by terminal() and withRun().
+    ///
+    /// # Arguments
+    ///
+    /// * `interactive` - Command arguments for interactive use. Example: ["sh"].
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_shell_opts<'a>(
+        &self,
+        interactive: Vec<impl Into<String>>,
+        opts: ContainerWithShellOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withShell");
+        query = query.arg(
+            "interactive",
+            interactive
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        if let Some(batch) = opts.batch {
+            query = query.arg("batch", batch);
+        }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
+        }
+        if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
+            query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
+        }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return the configured shell command. Defaults to ["sh"].
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn shell(&self) -> Command {
+        let query = self.selection.select("shell");
+        Command {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return the configured shell command. Defaults to ["sh"].
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn shell_opts(&self, opts: ContainerShellOpts) -> Command {
+        let mut query = self.selection.select("shell");
+        if let Some(batch) = opts.batch {
+            query = query.arg("batch", batch);
+        }
+        Command {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Execute a script with the configured batch shell and return the modified container.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - Script to append to the shell command as one argument.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_run(&self, command: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withRun");
+        query = query.arg("command", command.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Execute a script with the configured batch shell and return the modified container.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - Script to append to the shell command as one argument.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_run_opts<'a>(
+        &self,
+        command: impl Into<String>,
+        opts: ContainerWithRunOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withRun");
+        query = query.arg("command", command.into());
+        if let Some(shell) = opts.shell {
+            query = query.arg("shell", shell);
+        }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
                 "experimentalPrivilegedNesting",
@@ -5276,6 +5678,9 @@ impl Container {
         let mut query = self.selection.select("terminal");
         if let Some(cmd) = opts.cmd {
             query = query.arg("cmd", cmd);
+        }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
         }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
@@ -5353,6 +5758,9 @@ impl Container {
         if let Some(use_entrypoint) = opts.use_entrypoint {
             query = query.arg("useEntrypoint", use_entrypoint);
         }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
                 "experimentalPrivilegedNesting",
@@ -5403,6 +5811,9 @@ impl Container {
         }
         if let Some(use_entrypoint) = opts.use_entrypoint {
             query = query.arg("useEntrypoint", use_entrypoint);
+        }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
         }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
@@ -5870,7 +6281,9 @@ pub struct DirectoryTerminalOpts<'a> {
     /// If set, override the default container used for the terminal.
     #[builder(setter(into, strip_option), default)]
     pub container: Option<Id>,
-    /// Provides Dagger access to the executed command.
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -6814,6 +7227,9 @@ impl Directory {
         }
         if let Some(cmd) = opts.cmd {
             query = query.arg("cmd", cmd);
+        }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
         }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
@@ -11480,6 +11896,36 @@ impl Llm {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.
+    ///
+    /// # Arguments
+    ///
+    /// * `agents` - The agent middleware to run. Each reference retains its source workspace.
+    pub fn compose(&self, agents: Vec<Id>) -> Llm {
+        let mut query = self.selection.select("compose");
+        query = query.arg("agents", agents);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.
+    /// Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+    /// A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
+    ///
+    /// # Arguments
+    ///
+    /// * `agents` - The agent middleware to run. Each reference retains its source workspace.
+    pub fn recompose(&self, agents: Vec<Id>) -> Llm {
+        let mut query = self.selection.select("recompose");
+        query = query.arg("agents", agents);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The model the conversation is running against, after resolving any configured default.
     pub async fn model(&self) -> Result<String, DaggerError> {
