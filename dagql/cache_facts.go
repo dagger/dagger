@@ -98,10 +98,18 @@ func (c *Cache) EmitFact(body cachefact.Body) {
 	c.egraphMu.Unlock()
 }
 
-// postingRecorder collects the exact digest postings one mutation adds to a
-// result, with their labels. A nil recorder records nothing.
+// postingRecorder collects the labelled digests one mutation teaches a
+// result: every new exact posting, and every label the result's output
+// classes did not yet carry for a digest. A nil recorder records nothing.
 type postingRecorder struct {
 	digests []cachefact.Digest
+}
+
+func (rec *postingRecorder) add(d cachefact.Digest) {
+	if slices.Contains(rec.digests, d) {
+		return
+	}
+	rec.digests = append(rec.digests, d)
 }
 
 func (c *Cache) newPostingRecorder() *postingRecorder {
@@ -111,14 +119,31 @@ func (c *Cache) newPostingRecorder() *postingRecorder {
 	return &postingRecorder{}
 }
 
-// addLabeledResultDigestPostingLocked adds an exact posting and records it
-// when it is new for the result. Requires egraphMu.
+// addLabeledResultDigestPostingLocked adds an exact posting and records the
+// labelled digest when the posting is new for the result, or when none of the
+// result's output classes carries that label for the digest yet. Callers add
+// the labels to the classes after posting. Requires egraphMu.
 func (c *Cache) addLabeledResultDigestPostingLocked(resID sharedResultID, dig, label string, rec *postingRecorder) {
 	before := len(c.resultIndexedDigests[resID])
 	c.addResultDigestPostingLocked(resID, dig, resultDigestPostingExact)
-	if rec != nil && len(c.resultIndexedDigests[resID]) > before {
-		rec.digests = append(rec.digests, cachefact.Digest{Digest: dig, Label: label})
+	if rec == nil || dig == "" {
+		return
 	}
+	pair := cachefact.Digest{Digest: dig, Label: label}
+	if len(c.resultIndexedDigests[resID]) > before {
+		rec.add(pair)
+		return
+	}
+	if label == cachefact.LabelRecipe {
+		return
+	}
+	extra := call.ExtraDigest{Digest: digest.Digest(dig), Label: label}
+	for classID := range c.outputEqClassesForResultLocked(resID) {
+		if _, ok := c.eqClassExtraDigests[classID][extra]; ok {
+			return
+		}
+	}
+	rec.add(pair)
 }
 
 // addFramePostingsLocked posts a frame's recipe digest and extra digests for

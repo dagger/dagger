@@ -93,13 +93,14 @@ func factKinds(facts []cachefact.Fact) []cachefact.Kind {
 // factModel is what a consumer knows from one engine's facts alone.
 type factModel struct {
 	lastSeq uint64
-	classes map[string][]string // representative digest -> class digests
+	classes map[string][]cachefact.Digest // representative digest -> class digests
 	rows    map[uint64]*factRow
 }
 
 type factRow struct {
 	origin        cachefact.Origin
 	digests       map[string]bool
+	pairs         map[cachefact.Digest]bool
 	deps          []uint64
 	expiresAtUnix int64
 	retained      bool
@@ -110,7 +111,7 @@ type factRow struct {
 
 func replayFacts(t *testing.T, facts []cachefact.Fact) *factModel {
 	t.Helper()
-	m := &factModel{classes: map[string][]string{}, rows: map[uint64]*factRow{}}
+	m := &factModel{classes: map[string][]cachefact.Digest{}, rows: map[uint64]*factRow{}}
 	row := func(f cachefact.Fact, id uint64) *factRow {
 		t.Helper()
 		r := m.rows[id]
@@ -129,14 +130,12 @@ func replayFacts(t *testing.T, facts []cachefact.Fact) *factModel {
 		switch body := f.Body.(type) {
 		case cachefact.EngineStart, cachefact.EngineAlive, cachefact.EngineStop:
 		case cachefact.Class:
-			digests := make([]string, 0, len(body.Digests))
+			require.NotEmpty(t, body.Digests)
+			rep := body.Digests[0].Digest
 			for _, d := range body.Digests {
-				digests = append(digests, d.Digest)
+				rep = min(rep, d.Digest)
 			}
-			slices.Sort(digests)
-			digests = slices.Compact(digests)
-			require.NotEmpty(t, digests)
-			m.classes[digests[0]] = digests
+			m.classes[rep] = body.Digests
 		case cachefact.TermFact:
 			require.Contains(t, m.classes, body.Output, "term output names an announced class")
 			for _, in := range body.Inputs {
@@ -144,16 +143,18 @@ func replayFacts(t *testing.T, facts []cachefact.Fact) *factModel {
 			}
 		case cachefact.Result:
 			require.NotContains(t, m.rows, body.ID, "result %d announced twice", body.ID)
-			r := &factRow{origin: body.Origin, digests: map[string]bool{}, deps: body.Deps, expiresAtUnix: body.ExpiresAtUnix, retained: body.Retained, edgeExpires: body.RetentionExpiresAtUnix, unpruneable: body.Unpruneable}
+			r := &factRow{origin: body.Origin, digests: map[string]bool{}, pairs: map[cachefact.Digest]bool{}, deps: body.Deps, expiresAtUnix: body.ExpiresAtUnix, retained: body.Retained, edgeExpires: body.RetentionExpiresAtUnix, unpruneable: body.Unpruneable}
 			for _, d := range body.Digests {
 				if body.Origin == cachefact.OriginRestored {
 					require.Contains(t, m.classes, d.Digest, "restored result names an announced class")
-					for _, dig := range m.classes[d.Digest] {
-						r.digests[dig] = true
+					for _, classDigest := range m.classes[d.Digest] {
+						r.digests[classDigest.Digest] = true
+						r.pairs[classDigest] = true
 					}
 					continue
 				}
 				r.digests[d.Digest] = true
+				r.pairs[d] = true
 			}
 			if body.Origin == cachefact.OriginComputed {
 				require.NotEmpty(t, body.Terms, "a computed result names its terms")
@@ -169,6 +170,7 @@ func replayFacts(t *testing.T, facts []cachefact.Fact) *factModel {
 			r := row(f, body.ID)
 			for _, d := range body.Digests {
 				r.digests[d.Digest] = true
+				r.pairs[d] = true
 			}
 			r.expiresAtUnix = body.ExpiresAtUnix
 		case cachefact.Retention:
@@ -227,6 +229,16 @@ func requireFactsMatchSnapshot(t *testing.T, c *Cache, rec *factRecorder) *factM
 			want[dig] = true
 		}
 		require.Equal(t, want, row.digests, "digest postings of result %d (%s)", res.SharedResultID, res.Description)
+		// The labels the snapshot exposes: the frame's recipe digest and its
+		// labelled extra digests.
+		if row.origin != cachefact.OriginRestored && res.ResultCallRecipeDigest != "" {
+			require.Contains(t, row.pairs, cachefact.Digest{Digest: res.ResultCallRecipeDigest, Label: cachefact.LabelRecipe}, "recipe digest of result %d", res.SharedResultID)
+		}
+		if res.ResultCall != nil {
+			for _, extra := range res.ResultCall.ExtraDigests {
+				require.Contains(t, row.pairs, cachefact.Digest{Digest: extra.Digest.String(), Label: extra.Label}, "labelled digest of result %d", res.SharedResultID)
+			}
+		}
 		deps := slices.Clone(res.ExplicitDeps)
 		if deps == nil {
 			deps = []uint64{}
@@ -589,6 +601,50 @@ func BenchmarkCacheFactsRegister(b *testing.B) {
 			}
 		})
 	}
+}
+
+// A digest taught with several labels, or given another label later, carries
+// every label in the facts, as the engine's classes carry them.
+func TestCacheFactsLabelsOnPostedDigests(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	rec := newFactRecorder(t)
+	c, err := NewCache(ctx, "", nil, nil, WithFactSink(rec))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	publish := func(field string) AnyResult {
+		frame := cacheTestIntCall(field)
+		res, err := c.GetOrInitCall(ctx, "s", noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, 1), nil
+		})
+		require.NoError(t, err)
+		return res
+	}
+
+	// Content and remote-cache labels on one digest in one teach, as the git
+	// paths do.
+	both := publish("both-labels")
+	content := digest.FromString("labels-both")
+	before := rec.lastSeq()
+	require.NoError(t, c.TeachContentDigest(ctx, both, content, call.ExtraDigestLabelRemoteCache))
+	identities := factsOfKind[cachefact.Identity](rec.since(before))
+	require.Len(t, identities, 1)
+	require.ElementsMatch(t, []cachefact.Digest{
+		{Digest: content.String(), Label: call.ExtraDigestLabelContent},
+		{Digest: content.String(), Label: call.ExtraDigestLabelRemoteCache},
+	}, identities[0].Digests)
+	requireFactsMatchSnapshot(t, c, rec)
+
+	// A label added later to a digest already posted.
+	later := publish("later-label")
+	laterContent := digest.FromString("labels-later")
+	require.NoError(t, c.TeachContentDigest(ctx, later, laterContent))
+	before = rec.lastSeq()
+	require.NoError(t, c.TeachContentDigest(ctx, later, laterContent, call.ExtraDigestLabelRemoteCache))
+	identities = factsOfKind[cachefact.Identity](rec.since(before))
+	require.Len(t, identities, 1)
+	require.Equal(t, []cachefact.Digest{{Digest: laterContent.String(), Label: call.ExtraDigestLabelRemoteCache}}, identities[0].Digests)
+	requireFactsMatchSnapshot(t, c, rec)
 }
 
 // A part installed from an offer whose owner names a session resource makes
