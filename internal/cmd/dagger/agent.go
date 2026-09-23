@@ -3,10 +3,12 @@ package daggercmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
@@ -76,6 +78,7 @@ var agentCmd = &cobra.Command{
 					return err
 				}
 				restore := traceRestore{
+					source:  archive.NewClient(client.EngineConn(engineClient)).WithStallTimeout(30 * time.Second),
 					traceID: agentTrace,
 					agent:   agentFocus,
 					partial: agentPartial,

@@ -119,7 +119,7 @@ func (llm *LLM) validateAgentBindings(ctx context.Context, srv *dagql.Server) er
 		}
 	}
 	for _, dir := range llm.mcp.skillDirs {
-		if err := validate("skills", dir); err != nil {
+		if err := validate("skills", dir.Directory); err != nil {
 			return err
 		}
 	}
