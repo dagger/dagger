@@ -61,7 +61,7 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 		headers["X-Dagger-Org"] = cloudAuth.Org.ID
 	}
 	var tokenSource oauth2.TokenSource
-	if cloudAuth.Token.TokenType == "Basic" || cloudAuth.Token.TokenType == "OIDC" {
+	if cloudAuthHasStaticHeader(cloudAuth) {
 		headers["Authorization"] = cloudAuthHeader(cloudAuth)
 	} else {
 		tokenSource = oauth2.StaticTokenSource(cloudAuth.Token)
@@ -108,6 +108,13 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 		&sequencedLogExporter{sequencer: logSequencer, exporter: logExporter},
 		&sequencedMetricExporter{sequencer: metricSequencer, exporter: metricExporter},
 		nil
+}
+
+// cloudAuthHasStaticHeader reports whether the credential is sent as a fixed
+// Authorization header: an engine token or an OIDC token. Otherwise it is an
+// OAuth access token that expires.
+func cloudAuthHasStaticHeader(ca *auth.Cloud) bool {
+	return ca.Token.TokenType == "Basic" || ca.Token.TokenType == "OIDC"
 }
 
 // cloudAuthHeader converts a Cloud credential into an HTTP Authorization
