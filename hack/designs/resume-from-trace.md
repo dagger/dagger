@@ -1,5 +1,11 @@
 # Resume from trace
 
+> Historical design. [Trace-native agent resume](trace-native-agent-resume.md)
+> supersedes conflicting requirements below, including whole-history-before-prompt
+> startup, destination-checkout dependence, omission of notification subscriptions,
+> and continued local JSON persistence. This document is retained because existing
+> code references its sections; its implementation-status notes are historical.
+
 `dagger agent --trace <TRACE_ID>` — restore everything a past session did,
 from the trace it published: its agents, their conversations, and the whole
 TUI view of the run, into the session in front of you.
