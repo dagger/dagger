@@ -389,8 +389,8 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	return report, nil
 }
 
-func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}, mode pruneSnapshotMode, directResultBytes int64) pruneSnapshot {
-	snapshot, _ := c.snapshotPruneStateCancelable(activeRoots, mode, directResultBytes, nil)
+func (c *Cache) snapshotPruneState(mode pruneSnapshotMode, directResultBytes int64) pruneSnapshot {
+	snapshot, _ := c.snapshotPruneStateCancelable(nil, mode, directResultBytes, nil)
 	return snapshot
 }
 
@@ -424,19 +424,39 @@ func (c *Cache) snapshotPruneStateCancelable(
 		c.egraphMu.RLock()
 		defer c.egraphMu.RUnlock()
 	}
+	identities, err := c.pruneUsageIdentitiesLocked(usage)
+	if err != nil {
+		return pruneSnapshot{}, err
+	}
+	return c.snapshotPruneStateLocked(activeRoots, mode, directResultBytes, checker, identities)
+}
+
+// pruneUsageIdentitiesLocked removes measurement holds and rejects an incomplete
+// identity population before any graph or ownership counts are copied.
+func (c *Cache) pruneUsageIdentitiesLocked(usage *cacheUsageSnapshot) (map[sharedResultID][]string, error) {
 	identities := make(map[sharedResultID][]string)
-	if usage != nil {
-		usage.releaseLocked(context.Background())
-		for _, input := range usage.inputs {
-			if input.validLocked(c) {
-				identities[input.resultID] = input.identities
-			}
+	if usage == nil {
+		return identities, nil
+	}
+	usage.releaseLocked(context.Background())
+	for _, input := range usage.inputs {
+		if input.validLocked(c) {
+			identities[input.resultID] = input.identities
 		}
 	}
-	if usage != nil && (len(identities) != len(usage.inputs) || len(identities) != len(c.resultsByID)) {
-		return pruneSnapshot{}, errCacheUsageChanged
+	if len(identities) != len(usage.inputs) || len(identities) != len(c.resultsByID) {
+		return nil, errCacheUsageChanged
 	}
+	return identities, nil
+}
 
+func (c *Cache) snapshotPruneStateLocked(
+	activeRoots map[sharedResultID]struct{},
+	mode pruneSnapshotMode,
+	directResultBytes int64,
+	checker *pruneCancellationChecker,
+	identities map[sharedResultID][]string,
+) (pruneSnapshot, error) {
 	snapshot := pruneSnapshot{
 		results:         make(map[sharedResultID]pruneSnapshotResult, len(c.resultsByID)),
 		owners:          make(map[offerOwnerID]pruneSnapshotOwner, len(c.offerOwners)),

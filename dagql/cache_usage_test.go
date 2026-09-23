@@ -276,9 +276,13 @@ func TestCacheUsageIdentityDoesNotStallPublication(t *testing.T) {
 			var graphOnce sync.Once
 			resumeGraph := func() { graphOnce.Do(func() { close(needGraph) }) }
 			operationDone := make(chan struct{})
+			var operationResultCount int
 			go func() {
 				<-needGraph
+				// Model an operation that needs the graph while holding the
+				// provider mutex; the completion signal publishes this read.
 				c.egraphMu.Lock()
+				operationResultCount = len(c.resultsByID)
 				c.egraphMu.Unlock()
 				release()
 				close(operationDone)
@@ -302,7 +306,7 @@ func TestCacheUsageIdentityDoesNotStallPublication(t *testing.T) {
 						t.Error(err)
 					}
 				} else {
-					c.snapshotPruneState(nil, pruneSnapshotDisk, 0)
+					c.snapshotPruneState(pruneSnapshotDisk, 0)
 				}
 				close(measurementDone)
 			}()
@@ -330,6 +334,9 @@ func TestCacheUsageIdentityDoesNotStallPublication(t *testing.T) {
 			}
 			release()
 			await(operationDone, "operational graph acquisition after cleanup")
+			if operationResultCount == 0 {
+				t.Error("operational graph read did not observe the registered provider")
+			}
 			await(measurementDone, "usage collection")
 			select {
 			case err := <-publicationDone:

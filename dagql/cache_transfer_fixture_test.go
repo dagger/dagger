@@ -150,7 +150,7 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 			require.NoError(t, err)
 		}
 		require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-		snapshot := c.snapshotPruneState(nil, pruneSnapshotMetadata, 10)
+		snapshot := c.snapshotPruneState(pruneSnapshotMetadata, 10)
 		require.Contains(t, pruneActiveClosure(snapshot, nil), old.cacheSharedResult().id)
 		c.egraphMu.RLock()
 		ownerCount := len(c.offerOwners)
