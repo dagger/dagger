@@ -265,12 +265,16 @@ func saveToken(token *oauth2.Token) error {
 		return err
 	}
 
-	return writeFile(credentialsFile, data, 0o600)
+	return writeFile(credentialsFile, data)
 }
 
+// credentialsFileMode is the mode of the files writeFile writes: they hold
+// credentials, so only their owner may read them.
+const credentialsFileMode = 0o600
+
 // writeFile writes data to the named file with locking to prevent race conditions
-func writeFile(filename string, data []byte, perm os.FileMode) error {
-	return writeFileWith(filename, data, perm, replacefile.Rename, runtime.GOOS == "windows")
+func writeFile(filename string, data []byte) error {
+	return writeFileWith(filename, data, replacefile.Rename, runtime.GOOS == "windows")
 }
 
 // writeFileWith replaces the file with rename; with inPlaceFallback, when the
@@ -279,7 +283,7 @@ func writeFile(filename string, data []byte, perm os.FileMode) error {
 // did before, under the lock it holds, so `dagger login` does not fail. An
 // engine's write-back, which does not take the lock, may interleave with that
 // fallback write; the engine's own write-back never falls back.
-func writeFileWith(filename string, data []byte, perm os.FileMode, rename func(string, string) error, inPlaceFallback bool) error {
+func writeFileWith(filename string, data []byte, rename func(string, string) error, inPlaceFallback bool) error {
 	fileLock := flock.New(filename + ".lock")
 
 	locked, err := fileLock.TryLockContext(context.Background(), 3*time.Second)
@@ -300,7 +304,7 @@ func writeFileWith(filename string, data []byte, perm os.FileMode, rename func(s
 		return err
 	}
 	defer os.Remove(tmp.Name()) // after a successful rename, a no-op
-	if err := tmp.Chmod(perm); err != nil {
+	if err := tmp.Chmod(credentialsFileMode); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -315,7 +319,7 @@ func writeFileWith(filename string, data []byte, perm os.FileMode, rename func(s
 		if !inPlaceFallback {
 			return err
 		}
-		return os.WriteFile(filename, data, perm)
+		return os.WriteFile(filename, data, credentialsFileMode)
 	}
 	return nil
 }
@@ -368,7 +372,7 @@ func SetCurrentOrg(org *Org) error {
 		return err
 	}
 
-	return writeFile(orgFile, data, 0o600)
+	return writeFile(orgFile, data)
 }
 
 var (

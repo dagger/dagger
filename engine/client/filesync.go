@@ -316,22 +316,13 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	if opts.FileMode == 0 {
 		opts.FileMode = 0o600
 	}
-	writePath := finalDestPath
-	var destF *os.File
-	if opts.ReplaceAtomically {
-		destF, err = os.CreateTemp(destParentDir, "."+filepath.Base(finalDestPath)+".*.tmp")
-		if err == nil {
-			writePath = destF.Name()
-			defer os.Remove(writePath) // after a successful rename, a no-op
-			err = destF.Chmod(opts.FileMode)
-		}
-	} else {
-		destF, err = os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, opts.FileMode)
-	}
+	destF, removeTemp, err := createSyncTargetFile(destParentDir, finalDestPath, opts.ReplaceAtomically, opts.FileMode)
 	if err != nil {
-		return fmt.Errorf("failed to create synctarget dest file %s: %w", writePath, err)
+		return fmt.Errorf("failed to create synctarget dest file %s: %w", finalDestPath, err)
 	}
+	defer removeTemp() // after a successful rename, a no-op
 	defer destF.Close()
+	writePath := destF.Name()
 	if runtime.GOOS != "windows" {
 		if err := destF.Chown(int(t.uid), int(t.gid)); err != nil {
 			return fmt.Errorf("failed to chown synctarget dest file %s: %w", writePath, err)
@@ -359,6 +350,28 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 			return err
 		}
 	}
+}
+
+// createSyncTargetFile opens the file DiffCopy writes into. With
+// replaceAtomically it is a temp file beside finalDestPath, to be renamed over
+// it once complete, and removeTemp removes it; otherwise it is finalDestPath
+// itself, truncated, and removeTemp does nothing.
+func createSyncTargetFile(destParentDir, finalDestPath string, replaceAtomically bool, mode os.FileMode) (_ *os.File, removeTemp func(), _ error) {
+	if !replaceAtomically {
+		f, err := os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		return f, func() {}, err
+	}
+	f, err := os.CreateTemp(destParentDir, "."+filepath.Base(finalDestPath)+".*.tmp")
+	if err != nil {
+		return nil, nil, err
+	}
+	removeTemp = func() { os.Remove(f.Name()) }
+	if err := f.Chmod(mode); err != nil {
+		f.Close()
+		removeTemp()
+		return nil, nil, err
+	}
+	return f, removeTemp, nil
 }
 
 func safeLocalExportRemovePath(absRoot, removePath string) (string, error) {

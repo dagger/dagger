@@ -180,7 +180,7 @@ func TestGetCloudAuthAllowsMissingOrgFile(t *testing.T) {
 func TestWriteFileReplacesAtomically(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "credentials.json")
-	require.NoError(t, writeFile(path, []byte(`{"access_token":"seed"}`), 0o600))
+	require.NoError(t, writeFile(path, []byte(`{"access_token":"seed"}`)))
 	tokens := []string{
 		`{"access_token":"short"}`,
 		`{"access_token":"a-much-longer-token-than-the-other-one-written-concurrently"}`,
@@ -190,7 +190,7 @@ func TestWriteFileReplacesAtomically(t *testing.T) {
 	for _, token := range tokens {
 		writers.Go(func() {
 			for range 200 {
-				require.NoError(t, writeFile(path, []byte(token), 0o600))
+				require.NoError(t, writeFile(path, []byte(token)))
 			}
 		})
 	}
@@ -234,12 +234,12 @@ func TestWriteFileFallsBackInPlace(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`{"access_token":"old"}`), 0o600))
 	failing := func(string, string) error { return errors.New("sharing violation") }
 
-	require.Error(t, writeFileWith(path, []byte(`{"access_token":"new"}`), 0o600, failing, false))
+	require.Error(t, writeFileWith(path, []byte(`{"access_token":"new"}`), failing, false))
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, `{"access_token":"old"}`, string(got), "no fallback: the file is untouched")
 
-	require.NoError(t, writeFileWith(path, []byte(`{"access_token":"new"}`), 0o600, failing, true))
+	require.NoError(t, writeFileWith(path, []byte(`{"access_token":"new"}`), failing, true))
 	got, err = os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, `{"access_token":"new"}`, string(got), "the fallback writes in place")

@@ -592,7 +592,7 @@ func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params
 // the remote engine, which publishes them itself when it confirmed.
 
 func (sess *daggerSession) postedSpanExporter(origin string) sdktrace.SpanExporter {
-	var next sdktrace.SpanExporter = sess.spanExporter
+	next := sess.spanExporter
 	if sess.publishesToCloud() {
 		next = enginetel.MultiSpanExporter{
 			sess.spanExporter,
@@ -603,7 +603,7 @@ func (sess *daggerSession) postedSpanExporter(origin string) sdktrace.SpanExport
 }
 
 func (sess *daggerSession) postedLogExporter(origin string) sdklog.Exporter {
-	var next sdklog.Exporter = sess.logExporter
+	next := sess.logExporter
 	if sess.publishesToCloud() {
 		next = enginetel.MultiLogExporter{
 			sess.logExporter,
