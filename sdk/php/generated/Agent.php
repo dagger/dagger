@@ -180,6 +180,32 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Restore a lifecycle subscription without announcing the current state or starting work.
+     *
+     * Both agents must have been restored with a supplied spawn handle and never activated. An empty state set removes the subscription.
+     */
+    public function restoreNotify(Agent $subscriber, array $on): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('restoreNotify');
+        $leafQueryBuilder->setArgument('subscriber', $subscriber);
+        $leafQueryBuilder->setArgument('on', $on);
+        $id = $this->queryLeaf($leafQueryBuilder, 'restoreNotify');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Discard a restored runtime during failed graph installation.
+     *
+     * Refuses fresh or already activated agents. Removes its notification edges and preserves a telemetry removal tombstone for archive verification.
+     */
+    public function discardRestore(): Agent
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('discardRestore');
+        $id = $this->queryLeaf($leafQueryBuilder, 'discardRestore');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
      * Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
      */
     public function stop(?bool $kill = false): Agent
