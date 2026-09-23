@@ -229,7 +229,7 @@ func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
 	if removeAttempts != 1 {
 		t.Fatalf("remove attempts = %d, want 1", removeAttempts)
 	}
-	if _, err := os.Stat(filepath.Join(root, testTraceA+".json")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, manifestKey(manifest)+".json")); err != nil {
 		t.Fatalf("pending manifest removed before store: %v", err)
 	}
 	if _, err := manager.Acquire(testTraceA); err == nil {
@@ -243,7 +243,7 @@ func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
 	if removeAttempts != 2 {
 		t.Fatalf("remove attempts = %d, want 2", removeAttempts)
 	}
-	for _, name := range []string{testTraceA + ".json", testTraceA + ".bootstrap"} {
+	for _, name := range []string{manifestKey(manifest) + ".json", manifestKey(manifest) + ".bootstrap"} {
 		if _, err := os.Stat(filepath.Join(root, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("%s remains after retry: %v", name, err)
 		}
@@ -257,13 +257,84 @@ func testBootstrap(t *testing.T, manifest Manifest, cut HighWater, sealAt time.T
 		signals = []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: []byte("otlp"), Records: records}}
 	}
 	data, _, err := BuildBootstrap(BootstrapHeader{
-		Generation: manifest.Generation, TraceID: manifest.TraceID,
+		Generation: manifest.Generation, TraceID: manifest.TraceID, SourceSession: manifest.SourceSession,
 		SealAt: sealAt.UTC().Format(time.RFC3339Nano), HighWater: cut,
 	}, signals, BootstrapExclusions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestManagerSameTraceIndependentSourceSessions(t *testing.T) {
+	root := t.TempDir()
+	manager, err := NewManager(Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifests []Manifest
+	for _, source := range []string{"one", "two"} {
+		m, err := manager.RegisterSession(testTraceA, source, "client-"+source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.UpdateTitle(testTraceA, m.Generation, source); err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.BeginFinalizing(testTraceA, m.Generation); err != nil {
+			t.Fatal(err)
+		}
+		seal := time.Now().UTC()
+		m, err = manager.Finalize(testTraceA, m.Generation, FinalizeInput{SealAt: seal, BootstrapBytes: testBootstrap(t, m, HighWater{}, seal, 0)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifests = append(manifests, m)
+	}
+	manager, err = NewManager(Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Acquire(testTraceA); err == nil {
+		t.Fatal("ambiguous trace selected an arbitrary source")
+	} else {
+		var failure *Failure
+		if !errors.As(err, &failure) || failure.Kind != FailureAmbiguous {
+			t.Fatalf("ambiguity: %v", err)
+		}
+	}
+	first := manager.List("", "", 1)
+	second := manager.List(first.Next, "", 1)
+	if len(first.Archives) != 1 || len(second.Archives) != 1 || first.Next == "" || first.Archives[0].SourceSession == second.Archives[0].SourceSession {
+		t.Fatalf("pagination lost a source: %+v %+v", first, second)
+	}
+	for _, m := range manifests {
+		lease, err := manager.AcquireSource(testTraceA, m.Generation, m.SourceSession)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lease.Manifest().Title != m.SourceSession {
+			t.Fatal("source metadata mixed")
+		}
+		lease.Release()
+	}
+	if _, err := manager.AcquireSource(testTraceA, manifests[0].Generation, manifests[1].SourceSession); err == nil {
+		t.Fatal("mismatched selector fell back")
+	}
+	if _, err := manager.RegisterSession(testTraceB, "other", manifests[0].MainClientID); err == nil {
+		t.Fatal("reused source DB accepted")
+	}
+	if page := manager.List("", manifests[0].Generation, 10); len(page.Archives) != 1 || page.Archives[0].Generation != manifests[1].Generation {
+		t.Fatalf("generation exclusion hid sibling source: %+v", page)
+	}
+	if err := manager.Discard(testTraceA, manifests[0].Generation); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := manager.AcquireSource(testTraceA, manifests[1].Generation, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease.Release()
 }
 
 func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {
