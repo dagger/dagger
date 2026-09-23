@@ -298,7 +298,7 @@ func terminalExec(ctr *Container, args []string, stdin string, expect ReturnType
 			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(cmd...))},
 			{Name: "stdin", Value: dagql.String(stdin)},
 			{Name: "expect", Value: expect},
-			{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(term.ExperimentalPrivilegedNesting.Value.Bool())},
+			{Name: "disableDaggerInDagger", Value: dagql.NewBoolean(!term.ExperimentalPrivilegedNesting.GetOr(true).Bool())},
 			{Name: "insecureRootCapabilities", Value: dagql.NewBoolean(term.InsecureRootCapabilities.Value.Bool())},
 		},
 	}

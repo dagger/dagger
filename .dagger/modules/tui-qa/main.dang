@@ -247,7 +247,7 @@ type TuiQa {
       runner
         .asService(
           args: ["dagger"] + args,
-          experimentalPrivilegedNesting: nesting,
+          disableDaggerInDagger: !nesting,
         )
         .start
     } rescue {
@@ -256,7 +256,7 @@ type TuiQa {
           .withExec(
             ["dagger"] + args,
             expect: ReturnType.ANY,
-            experimentalPrivilegedNesting: nesting,
+            disableDaggerInDagger: !nesting,
           ).{{exitCode, combinedOutput}}
         print(`Command exited immediately (exit code ${ran.exitCode}).`)
         print("")
