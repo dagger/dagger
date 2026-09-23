@@ -590,3 +590,61 @@ func BenchmarkCacheFactsRegister(b *testing.B) {
 		})
 	}
 }
+
+// A part installed from an offer whose owner names a session resource makes
+// that resource a direct dependency of the receiver: the grown set is
+// announced.
+func TestCacheFactsPartInstallGrowsDeps(t *testing.T) {
+	t.Parallel()
+	chain := newChainFixture(t, "facts-part-deps")
+	f := newExhaustionFixture(t, chain)
+	c := f.cache
+	socket := persistedListTestResult(t, f.ctx, c, f.srv, "socket", String("socket"))
+	rec := newFactRecorder(t)
+	c.egraphMu.Lock()
+	socket.cacheSharedResult().sessionResourceHandle = "socket"
+	_, err := c.recomputeRequiredSessionResourcesLocked(socket.cacheSharedResult())
+	// The fixture's rows exist already: announce them as a boot would.
+	c.factSink = rec
+	c.announceBootLocked()
+	c.egraphMu.Unlock()
+	require.NoError(t, err)
+
+	offer := exhaustionOffer(chain, "", true)
+	socketID := uint64(socket.cacheSharedResult().id)
+	offer.Value.Services = []TransferredServiceBinding{{ServiceResultID: socketID, Hostname: "svc"}}
+	offer.Owner.DependencyIDs = []uint64{socketID}
+	out, err := c.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{offer})
+	require.NoError(t, err)
+	require.Equal(t, OfferAccepted, out[0].Outcome)
+	session, err := partSession(f.ctx)
+	require.NoError(t, err)
+	require.NoError(t, c.BindSessionResource(f.ctx, session, "client", "socket", new(int)))
+	require.NoError(t, f.run())
+	require.True(t, f.installed())
+
+	receiverID := uint64(f.receiver.cacheSharedResult().id)
+	var receiverDeps []cachefact.Deps
+	for _, deps := range factsOfKind[cachefact.Deps](rec.all()) {
+		if deps.ID == receiverID {
+			receiverDeps = append(receiverDeps, deps)
+		}
+	}
+	require.NotEmpty(t, receiverDeps, "the installed part's dependency is announced")
+	require.Contains(t, receiverDeps[len(receiverDeps)-1].Deps, socketID)
+	requireFactDepsMatchSnapshot(t, c, rec)
+}
+
+// requireFactDepsMatchSnapshot compares only the replayed dependency sets
+// with the snapshot, for caches whose rows were announced after the fact.
+func requireFactDepsMatchSnapshot(t *testing.T, c *Cache, rec *factRecorder) {
+	t.Helper()
+	snap := cacheFactsDebugSnapshot(t, c)
+	model := replayFacts(t, rec.all())
+	require.Equal(t, model.lastSeq, snap.FactSeq)
+	for _, res := range snap.Results {
+		row := model.rows[res.SharedResultID]
+		require.NotNil(t, row, "result %d was never announced", res.SharedResultID)
+		require.ElementsMatch(t, res.ExplicitDeps, row.deps, "dependencies of result %d", res.SharedResultID)
+	}
+}
