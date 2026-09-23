@@ -170,15 +170,6 @@ type TuiQa {
     back to the default (outer engine, inherited auth) for CLI-only checks.
     """
     engineAddress: String! = "",
-    """
-    An auto-saved LLM session file to make resumable inside the runner. The
-    CLI resolves sessions as $XDG_STATE_HOME/dagger/llm-sessions/<uuid>.json
-    (see getSessionDir in internal/cmd/dagger/llm.go), so the file MUST keep
-    its <uuid>.json name — it is mounted under that directory verbatim, with
-    XDG_STATE_HOME pointed at /state. Resume it by starting with
-    args: ["agent", "-r=<uuid>"].
-    """
-    session: File = null,
   ): TuiQa! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): starting a service is a side effect that must actually run
     # every invocation, not be served stale from the dagql session cache.
@@ -232,19 +223,11 @@ type TuiQa {
       .withEnvVariable("PPROF", ":" + toString(port + 1))
       .withExposedPort(port + 1)
 
-    # Resume support: mount an auto-saved LLM session where getSessionDir
-    # (internal/cmd/dagger/llm.go) will look for it, keyed by its filename.
-    let resumable = if (session == null) {
-      base2
-    } else {
-      base2
-        .withEnvVariable("XDG_STATE_HOME", "/state")
-        .withMountedFile("/state/dagger/llm-sessions/" + session.name, session)
-    }
-
     # Cloud auth: forwarded from the configured `cloudCredentials` secret so
     # the CLI under test is logged in (no-op when none is configured).
-    let runner = withCredentials(resumable, cloudCredentials, daggerConfig)
+    # Resume uses args: ["agent", "--trace", id] against an engine that holds
+    # the verified archive, never a mounted local JSON session file.
+    let runner = withCredentials(base2, cloudCredentials, daggerConfig)
 
     # run the command under test as a persistent service serving the console.
     # Short-lived commands (e.g. ["version"]) exit before the console port's
