@@ -77,6 +77,90 @@ func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace
 	return got, nil
 }
 
+// A commit retains both repositories in the engine. Reading their histories
+// must borrow those objects, not fetch them into another repository per log.
+func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to inspect history call structure")
+	}
+	checkout, hostGit := workspaceExportCheckout(ctx, t)
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout))...)
+	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	baseSHA, err := base.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	commit := func(message string) *dagger.Workspace {
+		t.Helper()
+		state, err := commitWorkspace(ctx, c, base.WithNewFile("base.txt", message).
+			WithNewFile("pending.txt", "keep pending"), message, []string{"base.txt"})
+		require.NoError(t, err)
+		require.Equal(t, []string{"pending.txt"}, state.Git.Uncommitted.AddedPaths)
+		return dagger.Ref[*dagger.Workspace](c, state.ID)
+	}
+	next, side := commit("next"), commit("side")
+	for _, tc := range []struct {
+		name string
+		head *dagger.GitRef
+		opts dagger.GitRefLogOpts
+		want []string
+	}{
+		{name: "ahead", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Base: base.Git().Head(), Limit: 101}, want: []string{"next"}},
+		{name: "behind", head: base.Git().Head(), opts: dagger.GitRefLogOpts{Base: next.Git().Head(), Limit: 101}},
+		{name: "divergent", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Base: side.Git().Head()}, want: []string{"next"}},
+		{name: "reverse divergent", head: side.Git().Head(), opts: dagger.GitRefLogOpts{Base: next.Git().Head()}, want: []string{"side"}},
+		{name: "path filter", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Base: base.Git().Head(), Paths: []string{"base.txt"}}, want: []string{"next"}},
+		{name: "pending is not history", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Paths: []string{"pending.txt"}}},
+	} {
+		commits, err := tc.head.Log(ctx, tc.opts)
+		require.NoError(t, err, tc.name)
+		var messages []string
+		for _, commit := range commits {
+			message, err := commit.Message(ctx)
+			require.NoError(t, err, tc.name)
+			messages = append(messages, strings.TrimSpace(message))
+		}
+		require.Equal(t, tc.want, messages, tc.name)
+	}
+	ancestor, err := next.Git().Head().CommonAncestor(side.Git().Head()).CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, ancestor)
+	require.Equal(t, baseSHA, hostGit("rev-parse", "HEAD"), "history reads and commits must leave the host alone")
+	require.Empty(t, hostGit("status", "--porcelain"))
+	require.NoError(t, c.Close()) // Drain telemetry before asserting absence.
+
+	// Inspect only history-query descendants: creating the fixture and the
+	// commits may still materialize checkouts, independently of reading logs.
+	traces, _ := sink.capture()
+	parents, names := map[string]string{}, map[string]string{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano < span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+				}
+			}
+		}
+	}
+	var walks int
+	for id, name := range names {
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if names[parent] != "GitRef.log" && names[parent] != "GitRef.commonAncestor" {
+				continue
+			}
+			require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "history query fetched objects: %s", name)
+			if strings.HasPrefix(name, "git rev-list") || strings.HasPrefix(name, "git merge-base") {
+				walks++
+			}
+			break
+		}
+	}
+	require.GreaterOrEqual(t, walks, 7, "must observe the six real log walks and merge-base, not an empty trace")
+}
+
 func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().
