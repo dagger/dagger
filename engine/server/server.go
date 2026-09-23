@@ -47,6 +47,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/throttle"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
 	wlabel "github.com/dagger/dagger/internal/buildkit/worker/label"
+	"github.com/google/uuid"
 	"github.com/moby/locker"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
@@ -65,6 +66,12 @@ import (
 type Server struct {
 	controlapi.UnimplementedControlServer
 	engineName string
+	// engineInstanceID names this engine process: a random ID created once at
+	// startup. It names the engine in the dagql cache's facts.
+	engineInstanceID string
+	// cacheFacts receives the dagql cache's facts; nil when the engine emits
+	// none.
+	cacheFacts *cacheFactEmitter
 
 	//
 	// state directory/db paths
@@ -189,6 +196,12 @@ type NewServerOpts struct {
 	BuildkitConfig *bkconfig.Config
 	// RemoteCacheIntegration is nil, and remote cache renewal off, by default.
 	RemoteCacheIntegration *RemoteCacheIntegrationConfig
+	// EngineInstanceID names this engine process. NewServer creates a random
+	// one when it is empty.
+	EngineInstanceID string
+	// EmitCacheFacts makes the dagql cache emit its bookkeeping facts as OTel
+	// log records through the logger provider of NewServer's context.
+	EmitCacheFacts bool
 }
 
 const (
@@ -204,8 +217,13 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	bkcfg := opts.BuildkitConfig
 	ociCfg := bkcfg.Workers.OCI
 
+	engineInstanceID := opts.EngineInstanceID
+	if engineInstanceID == "" {
+		engineInstanceID = uuid.NewString()
+	}
 	srv := &Server{
-		engineName: opts.Name,
+		engineName:       opts.Name,
+		engineInstanceID: engineInstanceID,
 
 		rootDir: bkcfg.Root,
 
@@ -224,6 +242,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		releasedSessionIDs: make(map[string]struct{}),
 
 		locker: locker.New(),
+	}
+	if opts.EmitCacheFacts {
+		srv.cacheFacts = newCacheFactEmitter(ctx)
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
@@ -653,7 +674,11 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		slog.Debug("containerd garbage collect after dagql prune", "stats", stats)
 		return nil
 	}
-	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC)
+	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID)}
+	if srv.cacheFacts != nil {
+		cacheOpts = append(cacheOpts, dagql.WithFactSink(srv.cacheFacts))
+	}
+	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC, cacheOpts...)
 	if err != nil {
 		return localCacheStateResetDagqlOpenFailed, fmt.Errorf("failed to create dagql cache: %w", err)
 	}
@@ -826,6 +851,11 @@ func (srv *Server) EngineName() string {
 	return srv.engineName
 }
 
+// EngineInstanceID returns the random ID naming this engine process.
+func (srv *Server) EngineInstanceID() string {
+	return srv.engineInstanceID
+}
+
 func (srv *Server) Clients() []string {
 	// Snapshot the session pointers under daggerSessionsMu, then read each
 	// session's liveness and identity WITHOUT any per-session lock: state is
@@ -915,6 +945,13 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		if closeErr := srv.engineCache.CloseWithShutdownError(ctx, adapterStopErr); closeErr != nil {
 			slog.Error("failed to close base dagql cache", "error", closeErr)
 			err = errors.Join(err, closeErr)
+		}
+	}
+	if srv.cacheFacts != nil {
+		// Hand every queued fact to the process logger provider; its own
+		// flush at process exit delivers them.
+		if closeErr := srv.cacheFacts.Close(ctx); closeErr != nil {
+			slog.Warn("cache facts not drained before shutdown", "error", closeErr, "dropped", srv.cacheFacts.Dropped())
 		}
 	}
 
