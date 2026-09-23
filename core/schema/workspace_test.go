@@ -308,12 +308,6 @@ func TestWorkspaceExportBaseCandidate(t *testing.T) {
 func TestWorkspaceExportCompositionSkipsReconstruction(t *testing.T) {
 	for _, remote := range []bool{false, true} {
 		for _, reuse := range []bool{false, true} {
-			if !remote && !reuse {
-				// Local capture now consumes PackGitCheckout directly instead of
-				// retaining a Host.__gitDir selection. Its cold reconstruction is
-				// covered by TestCheckpointLocalGitRecipeAfterSourceDisappears.
-				continue
-			}
 			t.Run(fmt.Sprintf("remote=%t/reuse=%t", remote, reuse), func(t *testing.T) {
 				ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "caller", SessionID: "export-test"})
 				cache, err := dagql.NewCache(ctx, "", nil, nil)
@@ -366,8 +360,10 @@ func TestWorkspaceExportCompositionSkipsReconstruction(t *testing.T) {
 					require.Zero(t, hostPacks, "must not invoke Host.__gitDir/PackGitCheckout")
 					require.Zero(t, remoteLoads, "must not resolve/fetch the remote")
 					require.Equal(t, 1, bundleImports, "captured bundle remains authoritative")
-				} else {
+				} else if remote {
 					require.Equal(t, 1, remoteLoads)
+				} else {
+					require.Equal(t, 1, hostPacks)
 				}
 			})
 		}

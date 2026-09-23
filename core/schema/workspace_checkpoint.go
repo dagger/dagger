@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"os"
 	"path"
 	"slices"
 	"strconv"
@@ -269,8 +267,8 @@ func (s *workspaceSchema) checkpointCapturedGitComposition(
 	return s.checkpointCapturedGitCompositionWithBase(ctx, srv, captured, metadata, bundleBytes, workspaceEnv, dagql.ObjectResult[*core.GitRepository]{})
 }
 
-// Export may supply an already-owned base. Otherwise a local checkout's history
-// is packed while its owner is connected and embedded into the resulting recipe.
+// Only export supplies an already-owned base. Snapshot and all other capture
+// callers retain their original reconstruction and client-routing behavior.
 func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -300,7 +298,6 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	defer func() { phase.End() }()
 
 	prerequisiteRef := metadata.RemoteRef
-	originURL := metadata.RemoteUrl
 	// A local filesystem remote is available only to the capturing client,
 	// just like a repository with no remote at all.
 	_, remoteErr := gitutil.ParseURL(metadata.RemoteUrl)
@@ -311,29 +308,19 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 		prerequisiteRef = ""
 	} else if metadata.RemoteUrl == "" || remoteErr != nil {
 		prerequisiteRef = ""
-		query, err := core.CurrentQuery(ctx)
-		if err != nil {
-			return inst, err
+		var gitDir dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, srv.Root(), &gitDir,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{Field: "__gitDir", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(captured.HostPath())},
+				{Name: "stateDigest", Value: dagql.NewString(metadata.CheckoutStateDigest)},
+				{Name: "validateState", Value: dagql.NewBoolean(true)},
+			}},
+		); err != nil {
+			return inst, fmt.Errorf("reconstruct session checkpoint: %w", err)
 		}
-		bk, err := query.Engine(ctx)
-		if err != nil {
-			return inst, err
-		}
-		// Do not put Host.__gitDir in the recipe. Even a cached result can
-		// require the original client when replayed after an engine restart.
-		if metadata.CheckoutStateDigest == "" {
-			return inst, fmt.Errorf("workspace snapshot capture is missing checkout state")
-		}
-		pack, err := bk.PackGitCheckout(ctx, captured.HostPath(), metadata.CheckoutStateDigest)
-		if err != nil {
-			return inst, fmt.Errorf("pack workspace snapshot history: %w", err)
-		}
-		defer func() { _ = pack.Close() }()
-		// Capture can omit an unreachable origin from its fetch prerequisites.
-		// Preserve that origin as sanitized metadata, never as a content source.
-		originURL = hostCheckoutOriginURL(ctx, bk, captured.HostPath())
-		repo, err = checkpointLocalGitPackComposition(ctx, srv, metadata, pack)
-		if err != nil {
+		// __gitDir returns the .git contents. asGit accepts a bare repository.
+		if err := srv.Select(ctx, gitDir, &repo, dagql.Selector{Field: "asGit"}); err != nil {
 			return inst, err
 		}
 	} else if err := srv.Select(ctx, srv.Root(), &repo, dagql.Selector{
@@ -345,20 +332,45 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 
 	if len(bundleBytes) > 0 {
 		nextPhase("checkpoint import captured bundle")
-		var err error
-		repo, err = checkpointImportGitBundle(ctx, srv, repo, bundleBytes, "workspace-checkpoint.bundle", prerequisiteRef)
-		if err != nil {
-			return inst, err
+		var file dagql.ObjectResult[*core.File]
+		if err := srv.Select(ctx, srv.Root(), &file, dagql.Selector{
+			Field: "blob",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString("workspace-checkpoint.bundle")},
+				{Name: "contents", Value: dagql.Bytes(bundleBytes)},
+				{Name: "permissions", Value: dagql.NewInt(0o600)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("embed workspace snapshot bundle: %w", err)
 		}
+		var bundle dagql.ObjectResult[*core.GitBundle]
+		if err := srv.Select(ctx, file, &bundle, dagql.Selector{Field: "asGitBundle"}); err != nil {
+			return inst, fmt.Errorf("parse workspace snapshot bundle: %w", err)
+		}
+		bundleID, err := bundle.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace snapshot bundle identity: %w", err)
+		}
+		var imported dagql.ObjectResult[*core.GitRepository]
+		if err := srv.Select(ctx, repo, &imported, dagql.Selector{
+			Field: "withBundle",
+			Args: []dagql.NamedInput{
+				{Name: "bundle", Value: dagql.NewID[*core.GitBundle](bundleID)},
+				{Name: "prerequisiteRef", Value: dagql.NewString(prerequisiteRef)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("import workspace snapshot bundle: %w", err)
+		}
+		repo = imported
 	}
 
 	nextPhase("checkpoint construct HEAD workspace")
-	if originURL != "" || metadata.RemotePushUrl != "" {
+	if metadata.RemotePushUrl != "" {
 		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
 			Field: "withRemote",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.NewString("origin")},
-				{Name: "url", Value: dagql.NewString(originURL)},
+				{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)},
 				{Name: "pushUrl", Value: dagql.NewString(metadata.RemotePushUrl)},
 			},
 		}); err != nil {
@@ -434,107 +446,6 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 
 	nextPhase("checkpoint compose metadata")
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, captured, workspaceEnv)
-}
-
-// checkpointLocalGitPackComposition consumes the capture-time pack. The returned
-// recipe contains only literal Git initialization data and bundle bytes, never
-// the pack's temporary filename or a host checkout reference.
-func checkpointLocalGitPackComposition(
-	ctx context.Context,
-	srv *dagql.Server,
-	metadata *gitsession.CaptureGitMetadata,
-	pack *engineutil.GitCheckoutPack,
-) (repo dagql.ObjectResult[*core.GitRepository], _ error) {
-	if metadata == nil || pack == nil || metadata.CheckoutStateDigest == "" || pack.StateDigest != metadata.CheckoutStateDigest {
-		return repo, fmt.Errorf("workspace snapshot history does not match captured checkout state")
-	}
-	if metadata.HeadSha == "" || pack.HeadSHA != metadata.HeadSha {
-		return repo, fmt.Errorf("workspace snapshot history does not match captured HEAD")
-	}
-	config := "[core]\n\trepositoryformatversion = 0\n\tbare = true\n"
-	switch pack.ObjectFormat {
-	case "", "sha1":
-	case "sha256":
-		config = "[core]\n\trepositoryformatversion = 1\n\tbare = true\n[extensions]\n\tobjectformat = sha256\n"
-	default:
-		return repo, fmt.Errorf("unsupported workspace snapshot object format %q", pack.ObjectFormat)
-	}
-	file, err := os.Open(pack.BundlePath)
-	if err != nil {
-		return repo, fmt.Errorf("open workspace snapshot history: %w", err)
-	}
-	defer file.Close()
-	// The pack RPC has its own transport bound; the smaller bundle import
-	// bound also limits the literal we are about to put in the trace recipe.
-	data, err := io.ReadAll(io.LimitReader(file, core.MaxGitBundleBytes+1))
-	if err != nil {
-		return repo, fmt.Errorf("read workspace snapshot history: %w", err)
-	}
-	if len(data) == 0 || int64(len(data)) > core.MaxGitBundleBytes {
-		return repo, fmt.Errorf("workspace snapshot history bundle size %d is outside supported range 1..%d", len(data), core.MaxGitBundleBytes)
-	}
-
-	// A minimal empty bare repository is ordinary Directory composition, not
-	// an imported .git directory with hooks, alternates, or runtime handles.
-	// withBundle verifies the pack's format and complete object connectivity.
-	var empty dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, srv.Root(), &empty,
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString("HEAD")},
-			{Name: "contents", Value: dagql.NewString("ref: refs/heads/main\n")},
-		}},
-		dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString("config")},
-			{Name: "contents", Value: dagql.NewString(config)},
-		}},
-		dagql.Selector{Field: "withNewDirectory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString("objects")}}},
-		dagql.Selector{Field: "withNewDirectory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString("refs")}}},
-	); err != nil {
-		return repo, fmt.Errorf("initialize workspace snapshot history: %w", err)
-	}
-	if err := srv.Select(ctx, empty, &repo, dagql.Selector{Field: "asGit"}); err != nil {
-		return repo, err
-	}
-	return checkpointImportGitBundle(ctx, srv, repo, data, "workspace-history.bundle", "")
-}
-
-func checkpointImportGitBundle(
-	ctx context.Context,
-	srv *dagql.Server,
-	repo dagql.ObjectResult[*core.GitRepository],
-	data []byte,
-	name, prerequisiteRef string,
-) (imported dagql.ObjectResult[*core.GitRepository], _ error) {
-	var file dagql.ObjectResult[*core.File]
-	if err := srv.Select(ctx, srv.Root(), &file, dagql.Selector{
-		Field: "blob",
-		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.NewString(name)},
-			{Name: "contents", Value: dagql.Bytes(data)},
-			{Name: "permissions", Value: dagql.NewInt(0o600)},
-		},
-	}); err != nil {
-		return imported, fmt.Errorf("embed workspace snapshot bundle: %w", err)
-	}
-	var bundle dagql.ObjectResult[*core.GitBundle]
-	if err := srv.Select(ctx, file, &bundle, dagql.Selector{Field: "asGitBundle"}); err != nil {
-		return imported, fmt.Errorf("parse workspace snapshot bundle: %w", err)
-	}
-	bundleID, err := bundle.ID()
-	if err != nil {
-		return imported, fmt.Errorf("workspace snapshot bundle identity: %w", err)
-	}
-	if err := srv.Select(ctx, repo, &imported, dagql.Selector{
-		Field: "withBundle",
-		Args: []dagql.NamedInput{
-			{Name: "bundle", Value: dagql.NewID[*core.GitBundle](bundleID)},
-			{Name: "prerequisiteRef", Value: dagql.NewString(prerequisiteRef)},
-		},
-	}); err != nil {
-		return imported, fmt.Errorf("import workspace snapshot bundle: %w", err)
-	}
-	return imported, nil
 }
 
 func checkpointWorkspaceMetadataComposition(
