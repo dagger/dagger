@@ -203,16 +203,16 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 			for attempt := 0; attempt < 3; attempt++ {
 				switch signal {
 				case enginetel.ArchiveSpans:
-					opts.Cursor, err = source.Traces(ctx, traceID, opts, func(_ int64, batch *coltracepb.ExportTraceServiceRequest) error {
-						return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Spans: batch})
+					opts.Cursor, err = source.Traces(ctx, traceID, opts, func(cursor int64, batch *coltracepb.ExportTraceServiceRequest) error {
+						return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Spans: batch, Cursor: cursor})
 					})
 				case enginetel.ArchiveLogs:
-					opts.Cursor, err = source.Logs(ctx, traceID, opts, func(_ int64, batch *collogspb.ExportLogsServiceRequest) error {
-						return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Logs: batch})
+					opts.Cursor, err = source.Logs(ctx, traceID, opts, func(cursor int64, batch *collogspb.ExportLogsServiceRequest) error {
+						return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Logs: batch, Cursor: cursor})
 					})
 				case enginetel.ArchiveMetrics:
-					opts.Cursor, err = source.Metrics(ctx, traceID, opts, func(_ int64, batch *colmetricspb.ExportMetricsServiceRequest) error {
-						return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Metrics: batch})
+					opts.Cursor, err = source.Metrics(ctx, traceID, opts, func(cursor int64, batch *colmetricspb.ExportMetricsServiceRequest) error {
+						return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Metrics: batch, Cursor: cursor})
 					})
 				}
 				if err == nil || ctx.Err() != nil || !errors.Is(err, archive.ErrTransient) {
