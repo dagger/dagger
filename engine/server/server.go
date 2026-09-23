@@ -329,24 +329,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// set up client DBs, and the telemetry pub/sub which writes to it
 	//
 
-	// Telemetry archives survive worker cache resets and engine restart.
-	srv.clientDBDir = filepath.Join(srv.rootDir, "telemetry", "clientdbs")
-	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
-	archiveConfig := archive.Config{Root: filepath.Join(srv.rootDir, "telemetry", "archives"), RemoveStore: srv.clientDBs.Remove}
-	if value := os.Getenv("_EXPERIMENTAL_DAGGER_ARCHIVE_TTL"); value != "" {
-		archiveConfig.TTL, err = time.ParseDuration(value)
-		if err != nil {
-			return nil, fmt.Errorf("archive TTL: %w", err)
-		}
-	}
-	if value := os.Getenv("_EXPERIMENTAL_DAGGER_ARCHIVE_QUOTA_BYTES"); value != "" {
-		archiveConfig.QuotaBytes, err = strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("archive quota: %w", err)
-		}
-	}
-	srv.archives, err = archive.NewManager(archiveConfig)
-	if err != nil {
+	if err := srv.initArchives(); err != nil {
 		return nil, err
 	}
 	srv.telemetryPubSub = NewPubSub(srv)

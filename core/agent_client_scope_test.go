@@ -138,7 +138,7 @@ func TestAgentCreateLeaseOutsideRegistryLock(t *testing.T) {
 			// Lifecycle callbacks must be able to inspect the registry, including
 			// while two constructors for the same handle are staging.
 			registry.mu.Lock()
-			registry.mu.Unlock()
+			registry.mu.Unlock() //nolint:staticcheck // Acquiring the lock is the reentrancy assertion.
 			entered <- struct{}{}
 			<-proceed
 			acquired.Add(1)

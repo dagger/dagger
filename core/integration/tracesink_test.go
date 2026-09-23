@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -238,7 +239,7 @@ func (sink *agentTraceSink) committedRecipe(ctx context.Context, handle string) 
 		}
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("capture committed recipe %q: %w (last closure error: %v)", handle, ctx.Err(), lastErr)
+			return "", fmt.Errorf("capture committed recipe %q: %w", handle, errors.Join(ctx.Err(), lastErr))
 		case <-ticker.C:
 		}
 	}

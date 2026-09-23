@@ -134,8 +134,12 @@ func (idx *archiveLookup) addAll(rows []Log) {
 			idx.failures[row.TraceID.String] = fmt.Errorf("call body is not bytes")
 			continue
 		}
-		if err := proto.Unmarshal(rec.Body().AsBytes(), &call); err != nil || call.Digest == "" {
-			idx.failures[row.TraceID.String] = fmt.Errorf("invalid call payload: %v", err)
+		if err := proto.Unmarshal(rec.Body().AsBytes(), &call); err != nil {
+			idx.failures[row.TraceID.String] = fmt.Errorf("invalid call payload: %w", err)
+			continue
+		}
+		if call.Digest == "" {
+			idx.failures[row.TraceID.String] = fmt.Errorf("call payload has no digest")
 			continue
 		}
 		calls := idx.calls[row.TraceID.String]
@@ -151,8 +155,8 @@ func (idx *archiveLookup) addAll(rows []Log) {
 
 // ControlRows selects only final received projections. Verification compares
 // them with a separately supplied, quiesced producer witness.
-func (db *DB) ControlRows(ctx context.Context, traceID string, through int64, want agentcontrol.Expectation) ([]Log, error) {
-	idx := db.archiveIdx
+func (s *DB) ControlRows(ctx context.Context, traceID string, through int64, want agentcontrol.Expectation) ([]Log, error) {
+	idx := s.archiveIdx
 	idx.mu.RLock()
 	if err := idx.failures[traceID]; err != nil {
 		idx.mu.RUnlock()
@@ -177,7 +181,7 @@ func (db *DB) ControlRows(ctx context.Context, traceID string, through int64, wa
 		if id > through {
 			return nil, fmt.Errorf("control row %d is beyond fixed cut", id)
 		}
-		row, ok, err := db.logs.readID(ctx, id)
+		row, ok, err := s.logs.readID(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -199,15 +203,15 @@ func (db *DB) ControlRows(ctx context.Context, traceID string, through int64, wa
 	return rows, nil
 }
 
-func (db *DB) CallPayload(ctx context.Context, traceID, digest string, through int64) (Log, error) {
-	idx := db.archiveIdx
+func (s *DB) CallPayload(ctx context.Context, traceID, digest string, through int64) (Log, error) {
+	idx := s.archiveIdx
 	idx.mu.RLock()
 	id := idx.calls[traceID][digest]
 	idx.mu.RUnlock()
 	if id == 0 || id > through {
 		return Log{}, fmt.Errorf("missing persisted call %s at cut %d", digest, through)
 	}
-	row, ok, err := db.logs.readID(ctx, id)
+	row, ok, err := s.logs.readID(ctx, id)
 	if err != nil {
 		return Log{}, err
 	}
