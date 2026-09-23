@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,14 +13,19 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
+	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/proto"
 
@@ -369,6 +376,132 @@ func TestTelemetryStreamsConfirmCloudPublishing(t *testing.T) {
 				require.Equal(t, http.StatusOK, resp.Code)
 				require.Equal(t, tc.want, resp.Header().Get(engine.CloudTelemetryPublisherHeader), "cursor %q", cursor)
 			}
+		})
+	}
+}
+
+// postTelemetry posts one span, one log record and one metric point to the
+// engine's OTLP handlers as a process in one of the client's containers does.
+func postTelemetry(t *testing.T, ps *PubSub, sessionID, clientID string) {
+	t.Helper()
+	resourcePB := telemetry.ResourcePtrToPB(resource.NewSchemaless(attribute.String("service.name", "posting-sdk")))
+	span := tracetest.SpanStub{
+		Name: "posted-span",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{7}, SpanID: trace.SpanID{7}, TraceFlags: trace.FlagsSampled,
+		}),
+		StartTime: time.Now(),
+		EndTime:   time.Now(),
+		Resource:  resource.NewSchemaless(attribute.String("service.name", "posting-sdk")),
+	}.Snapshot()
+	now := uint64(time.Now().UnixNano())
+	for path, msg := range map[string]proto.Message{
+		"/v1/traces": &coltracepb.ExportTraceServiceRequest{ResourceSpans: telemetry.SpansToPB([]sdktrace.ReadOnlySpan{span})},
+		"/v1/logs": &collogspb.ExportLogsServiceRequest{ResourceLogs: []*otlplogsv1.ResourceLogs{{
+			Resource: resourcePB,
+			ScopeLogs: []*otlplogsv1.ScopeLogs{{LogRecords: []*otlplogsv1.LogRecord{{
+				TimeUnixNano: now,
+				Body:         &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: "posted-log"}},
+			}}}},
+		}}},
+		"/v1/metrics": &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: []*otlpmetricsv1.ResourceMetrics{{
+			Resource: resourcePB,
+			ScopeMetrics: []*otlpmetricsv1.ScopeMetrics{{Metrics: []*otlpmetricsv1.Metric{{
+				Name: "posted.metric",
+				Data: &otlpmetricsv1.Metric_Gauge{Gauge: &otlpmetricsv1.Gauge{DataPoints: []*otlpmetricsv1.NumberDataPoint{{
+					TimeUnixNano: now,
+					Value:        &otlpmetricsv1.NumberDataPoint_AsInt{AsInt: 1},
+				}}}},
+			}}}},
+		}}},
+	} {
+		body, err := proto.Marshal(msg)
+		require.NoError(t, err)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		req.Header.Set("X-Dagger-Session-ID", sessionID)
+		req.Header.Set("X-Dagger-Client-ID", clientID)
+		resp := httptest.NewRecorder()
+		ps.ServeHTTP(resp, req)
+		require.Equal(t, http.StatusCreated, resp.Code, "%s: %s", path, resp.Body.String())
+	}
+}
+
+// Telemetry a process in a container posts reaches the client routing once
+// and, when the session publishes, Cloud once: posted telemetry never passes
+// the session's providers, where the Cloud processors sit.
+func TestPostedTelemetryReachesCloudOnce(t *testing.T) {
+	t.Parallel()
+	for _, publishing := range []bool{true, false} {
+		t.Run(fmt.Sprintf("publishing=%v", publishing), func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			receiver := newCloudReceiver(t, false)
+			md := &engine.ClientMetadata{CloudAuth: basicCloudAuth("dag_test_token"), CloudURL: receiver.URL}
+			if publishing {
+				md.CloudTelemetryPublisher = engine.CloudTelemetryPublisherEngine
+			}
+			srv := &Server{}
+			sess, root := newCloudTestSession(t, srv, md)
+			require.Equal(t, publishing, sess.publishesToCloud())
+			sess.state.Store(sessionStateInitialized)
+			srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
+
+			postTelemetry(t, srv.telemetryPubSub, sess.sessionID, root.clientID)
+			require.NoError(t, sess.FlushTelemetry(ctx, "test"))
+			sess.flushSessionCloudTelemetry(ctx)
+
+			db, err := srv.clientDBs.Open(ctx, root.clientID)
+			require.NoError(t, err)
+			spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{Limit: 100})
+			require.NoError(t, err)
+			logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{Limit: 100})
+			require.NoError(t, err)
+			metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{Limit: 100})
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
+			var clientSpans, clientLogs, clientMetrics int
+			for _, span := range spans {
+				if span.Name == "posted-span" {
+					clientSpans++
+				}
+			}
+			for _, row := range logs {
+				if bytes.Contains(row.Body, []byte("posted-log")) {
+					clientLogs++
+				}
+			}
+			for _, rm := range clientdb.MetricsToPB(metrics) {
+				for _, sm := range rm.GetScopeMetrics() {
+					for _, m := range sm.GetMetrics() {
+						if m.GetName() == "posted.metric" {
+							clientMetrics++
+						}
+					}
+				}
+			}
+			require.Equal(t, 1, clientSpans, "client span delivery")
+			require.Equal(t, 1, clientLogs, "client log delivery")
+			require.Equal(t, 1, clientMetrics, "client metric delivery")
+
+			require.NoError(t, sess.shutdownTelemetry(ctx))
+			_, cloudSpans, cloudLogs, cloudMetrics := receiver.snapshot()
+			count := func(names []string, name string) int {
+				n := 0
+				for _, got := range names {
+					if got == name {
+						n++
+					}
+				}
+				return n
+			}
+			want := 0
+			if publishing {
+				want = 1
+			}
+			require.Equal(t, want, count(cloudSpans, "posted-span"), "Cloud span delivery")
+			require.Equal(t, want, count(cloudLogs, "posted-log"), "Cloud log delivery")
+			require.Equal(t, want, count(cloudMetrics, "posted.metric"), "Cloud metric delivery")
 		})
 	}
 }

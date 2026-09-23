@@ -455,7 +455,8 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 }
 
 // telemetrySplitMarkerModule is a module whose function, run as a nested
-// client, prints a marker assembled inside its exec.
+// client, opens a span of its own, which the SDK posts to the engine from
+// inside its container, and prints a marker assembled inside its exec.
 func telemetrySplitMarkerModule(c *dagger.Client) *dagger.Directory {
 	return c.Directory().
 		WithNewFile("dagger.json", `{"name": "marker", "sdk": "go", "source": "."}`).
@@ -466,6 +467,9 @@ import "context"
 type Marker struct{}
 
 func (m *Marker) Emit(ctx context.Context, prefix string, id string) error {
+	// A span the SDK posts to the engine from inside the runtime container.
+	ctx, span := Tracer().Start(ctx, "posted-span-"+id)
+	defer span.End()
 	_, err := dag.Container().
 		From(%q).
 		WithEnvVariable("MARKER_PREFIX", prefix).
@@ -494,7 +498,8 @@ func markerExecArgs(prefix, id string) []string {
 
 // TestEngineTelemetryToCloud (from #13339): the engine publishes the
 // session's telemetry, the main client's and a nested client's (a module
-// function), with the credential and Cloud URL the client provides, over all
+// function), including a span the module's SDK posts from inside its
+// container, with the credential and Cloud URL the client provides, over all
 // three signals.
 func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
@@ -521,6 +526,18 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 		output := got.output(t, marker)
 		require.False(t, cliLogWriters[output.Writer], "the engine publishes the %s's output", name)
 	}
+
+	// Telemetry posted from inside a container reaches the engine's client
+	// routing, not its providers; the engine publishes it too.
+	cliWriters := got.cliWriters(t)
+	var posted int
+	for _, span := range got.spans {
+		if span.Name == "posted-span-"+nestedID {
+			posted++
+			require.False(t, cliWriters[span.Writer], "the engine publishes the span the SDK posted")
+		}
+	}
+	require.Positive(t, posted, "the span the SDK posted reaches Cloud")
 
 	// Each signal has its own writers: an engine resource's metrics that
 	// the client forwarded would carry one of the client's metric writers.

@@ -239,6 +239,43 @@ func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params
 	}
 }
 
+// Telemetry a process in one of the session's containers posts to the
+// engine (an SDK, a nested CLI) reaches the client routing directly, never
+// the session's providers, so the session's Cloud processors do not see it.
+// The posted* exporters stamp the origin once and send the telemetry both to
+// the client routing and, when the session publishes, to Cloud. A scale-out
+// engine's returned stream does not come this way: its own containers post to
+// the remote engine, which publishes them itself when it confirmed.
+
+func (sess *daggerSession) postedSpanExporter(origin string) sdktrace.SpanExporter {
+	var next sdktrace.SpanExporter = sess.spanExporter
+	if sess.publishesToCloud() {
+		next = enginetel.MultiSpanExporter{
+			sess.spanExporter,
+			sessionCloudSpanForwarder{telemetry.SpanForwarder{Processors: []sdktrace.SpanProcessor{sess.cloudSpanProcessor}}},
+		}
+	}
+	return originSpanExporter{origin: origin, next: next}
+}
+
+func (sess *daggerSession) postedLogExporter(origin string) sdklog.Exporter {
+	var next sdklog.Exporter = sess.logExporter
+	if sess.publishesToCloud() {
+		next = enginetel.MultiLogExporter{
+			sess.logExporter,
+			sessionCloudLogForwarder{telemetry.LogForwarder{Processors: []sdklog.Processor{sess.cloudLogProcessor}}},
+		}
+	}
+	return originLogExporter{origin: origin, next: next}
+}
+
+func (sess *daggerSession) postedMetricExporters(client sdkmetric.Exporter) []sdkmetric.Exporter {
+	if !sess.publishesToCloud() {
+		return []sdkmetric.Exporter{client}
+	}
+	return []sdkmetric.Exporter{client, enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics}}
+}
+
 // sessionCloudSpanForwarder and sessionCloudLogForwarder feed the session's
 // Cloud processors, which the session shuts down itself.
 type sessionCloudSpanForwarder struct{ telemetry.SpanForwarder }
