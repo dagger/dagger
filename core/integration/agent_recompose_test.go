@@ -684,9 +684,13 @@ type Inner {
 		var err error
 		llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
 		require.NoError(t, err)
+		expected = append(expected, "inner prompt")
 		require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm),
-			"recomposing the same middleware must not accumulate its nested composition's prompts")
+			"nested compose is append-only; Inner contributions do not belong to Outer")
 	}
+	llm, err := recomposeLLM(ctx, c, ws, llm, "inner")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"outer prompt", "inner prompt"}, recomposeSystemPrompts(ctx, t, c, llm))
 }
 
 func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t *testctx.T) {
@@ -767,13 +771,16 @@ type Outer {
   let addedDefault: String! = "nested default"
   added: String! { addedDefault + "; counter: " + toString(state) }
 `)
-	ws = ws.WithNewFile(recomposeModulePath, updated)
+	// Refreshing nested tool state is explicit: Outer asks Swapper to
+	// recompose its own contributions rather than appending another binding.
+	ws = ws.WithNewFile(recomposeModulePath, updated).
+		WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource, ".compose(base: base)", ".recompose(base: base)"))
 	llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
 	require.NoError(t, err)
 	llm = llm.WithPrompt("updated nested").Loop()
 	transcript, err = llm.Transcript(ctx)
 	require.NoError(t, err)
-	require.Contains(t, transcript, "nested default; counter: 1", "the outer recompose must retain its descendant's tool state")
+	require.Contains(t, transcript, "nested default; counter: 1", "explicit nested recompose must retain Swapper's tool state")
 
 	// A nested binding still owns its explicit version contract after replay.
 	portable, err := llm.PortableID(ctx)
@@ -789,15 +796,15 @@ type Outer {
 	require.NoError(t, err)
 	require.Contains(t, transcript, "nested default; counter: 0")
 
-	// Unlike descendant prompts, state-bearing tools cannot silently vanish
-	// when an outer implementation stops composing their middleware.
+	// Removing the nested call does not select Swapper: its independently
+	// owned binding survives rather than being discarded as an Outer subtree.
 	withoutNested := ws.WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource,
 		`ws.agents(include: ["swapper"]).compose(base: base)`, "base"))
-	_, err = recomposeLLM(ctx, c, withoutNested, llm, "outer")
-	require.ErrorContains(t, err, "discard tool state")
+	llm, err = recomposeLLM(ctx, c, withoutNested, llm, "outer")
+	require.NoError(t, err)
 	tools, err := llm.Tools(ctx)
 	require.NoError(t, err)
-	require.Contains(t, tools, "## added\n", "a failed recompose must not modify the original binding")
+	require.Contains(t, tools, "## added\n", "unselected Swapper tools remain bound")
 }
 
 func (LLMSuite) TestRecomposeNestedOwnershipIsolation(ctx context.Context, t *testctx.T) {
@@ -837,12 +844,11 @@ type Inner {
 		WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource, "outer original", "outer updated"))
 	llm, err := recomposeLLM(ctx, c, ws, llm, "outer")
 	require.NoError(t, err)
-	expected := []string{"inner original", "inner original", "inner original", "outer updated", "inner updated"}
+	expected := []string{"inner original", "inner original", "inner original", "inner original", "inner original", "outer updated", "inner updated"}
 	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm),
-		"Outer must replace only its own nested Inner contributions, not independent Inner or caller prompts")
+		"Outer replaces only Outer prompts; nested compose appends an Inner prompt")
 
-	// Repeated portable round trips must preserve the distinction between the
-	// independently owned Inner prompts and those nested underneath Outer.
+	// Portable recipes retain flat module ownership, not composition ancestry.
 	for range 2 {
 		portable, err := llm.PortableID(ctx)
 		require.NoError(t, err)
@@ -851,18 +857,18 @@ type Inner {
 		ws = llm.Workspace()
 		llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
 		require.NoError(t, err)
+		expected = append(expected, "inner updated")
 		require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm))
 	}
 
-	// The reverse direction must also be isolated: selecting Inner directly
-	// must not remove the contribution installed through Outer.
+	// Selecting Inner removes every Inner-owned contribution, including calls
+	// made from Outer, but not the identical unowned main-client prompt.
 	llm, err = recomposeLLM(ctx, c, ws, llm, "inner")
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"inner original", "outer updated", "inner updated", "inner updated"},
+	require.ElementsMatch(t, []string{"inner original", "outer updated", "inner updated"},
 		recomposeSystemPrompts(ctx, t, c, llm))
 
-	// Removing the nested compose from Outer must remove its stale descendant
-	// prompt, while keeping the independent Inner and identical caller prompt.
+	// Removing the nested compose leaves Inner's contribution alone.
 	ws = ws.WithNewFile("outer/main.dang", `
 type Outer {
   agent(base: LLM!): LLM! @agent { base.withSystemPrompt("outer alone") }
@@ -874,4 +880,159 @@ type Outer {
 		require.ElementsMatch(t, []string{"inner original", "inner updated", "outer alone"},
 			recomposeSystemPrompts(ctx, t, c, llm))
 	}
+}
+
+func (LLMSuite) TestRecomposeDirectCallerSkills(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const shared = "Identical caller prompt."
+	const original = `
+  contribute(base: LLM!, skills: Directory!): LLM! {
+    base.withSystemPrompt("Identical caller prompt.").withSkills(skills)
+  }
+`
+	fixture := c.Directory().WithNewFile("dagger.toml", "[modules.owner]\nsource = \"owner\"\n[modules.owner-extra]\nsource = \"owner-extra\"\n")
+	for _, module := range []struct{ name, typ string }{{"owner", "Owner"}, {"owner-extra", "OwnerExtra"}} {
+		fixture = fixture.
+			WithNewFile(module.name+"/dagger.json", fmt.Sprintf(`{"name":%q,"engineVersion":"v1.0.0-0","sdk":"dang"}`, module.name)).
+			WithNewFile(module.name+"/main.dang", "type "+module.typ+" {"+original+"}")
+	}
+	ws := fixture.AsWorkspace()
+	for _, name := range []string{"owner", "owner-extra"} {
+		require.NoError(t, ws.ModuleSource(name).AsModule().Serve(ctx))
+	}
+	manual := c.Directory().WithNewFile("manual/SKILL.md", "---\ndescription: Main client skill.\n---\nmanual")
+	oldSkills := c.Directory().WithNewFile("old-owned/SKILL.md", "---\ndescription: Old module skill.\n---\nold")
+	base := c.LLM().WithWorkspace(ws).WithSystemPrompt(shared).WithSkills(manual)
+	baseID, err := base.ID(ctx)
+	require.NoError(t, err)
+	skillsID, err := oldSkills.ID(ctx)
+	require.NoError(t, err)
+	seeds := map[string]*dagger.LLM{}
+	for _, caller := range []string{"owner", "ownerExtra"} {
+		var res struct {
+			Caller struct{ Contribute struct{ ID string } }
+		}
+		// No @agent entrypoint is involved. Both callers make identical core
+		// calls on the same base with the same explicit arguments.
+		require.NoError(t, c.Do(ctx, &dagger.Request{
+			Query: fmt.Sprintf(`query($base: ID!, $skills: ID!) {
+				caller: %s { contribute(base: $base, skills: $skills) { id } }
+			}`, caller),
+			Variables: map[string]any{"base": baseID, "skills": skillsID},
+		}, &dagger.Response{Data: &res}))
+		seeds[caller] = dagger.Ref[*dagger.LLM](c, dagger.ID(res.Caller.Contribute.ID))
+		require.ElementsMatch(t, []string{shared, shared}, recomposeSystemPrompts(ctx, t, c, seeds[caller]))
+		require.Contains(t, skillIndex(ctx, t, seeds[caller]), "old-owned")
+	}
+	seeds["main"] = base.WithSystemPrompt(shared).WithSkills(oldSkills)
+
+	// Introduce two entrypoints in Owner. Filtering must happen once per
+	// module, not before each entrypoint (which would erase the first one's
+	// contributions). OwnerExtra shares a name prefix but is not selected.
+	const updated = `
+type Owner {
+  first(base: LLM!): LLM! @agent {
+    base.withSystemPrompt("first replacement").withSkills(directory.withNewFile("current/SKILL.md", "---\ndescription: Current module skill.\n---\ncurrent"))
+  }
+  second(base: LLM!): LLM! @agent {
+    base.withSystemPrompt("second replacement").withSkills(directory.withNewFile("second/SKILL.md", "---\ndescription: Second entrypoint skill.\n---\nsecond"))
+  }
+}
+`
+	ws = ws.WithNewFile("owner/main.dang", updated)
+	for _, caller := range []string{"owner", "ownerExtra", "main"} {
+		llm := seeds[caller]
+		client := c
+		refreshedWS := ws
+		for round := range 2 {
+			llm, err = recomposeLLM(ctx, client, refreshedWS, llm, "owner")
+			require.NoError(t, err)
+			expected := []string{shared, "first replacement", "second replacement"}
+			if caller != "owner" {
+				expected = append(expected, shared)
+			}
+			require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, client, llm), "caller %s, round %d", caller, round)
+			skills := skillIndex(ctx, t, llm)
+			require.Equal(t, "Main client skill.", skills["manual"])
+			if round == 0 {
+				require.Equal(t, "Current module skill.", skills["current"])
+			} else {
+				require.NotContains(t, skills, "current", "removed skills must not accumulate across edits")
+				require.Equal(t, "Current module skill.", skills["next"])
+			}
+			require.Equal(t, "Second entrypoint skill.", skills["second"])
+			if caller == "owner" {
+				require.NotContains(t, skills, "old-owned", "direct module skills must not accumulate after refresh")
+			} else {
+				require.Contains(t, skills, "old-owned", "other callers' identical calls must retain their own ownership")
+			}
+			portable, err := llm.PortableID(ctx)
+			require.NoError(t, err)
+			client = connect(ctx, t)
+			llm = dagger.Ref[*dagger.LLM](client, portable)
+			require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, client, llm))
+			require.Equal(t, skills, skillIndex(ctx, t, llm))
+			refreshedWS = llm.Workspace().WithNewFile("owner/main.dang", strings.ReplaceAll(updated, "current/SKILL.md", "next/SKILL.md"))
+		}
+	}
+}
+
+func (LLMSuite) TestRecomposeDirectCallerOwnsForeignTools(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture := c.Directory().
+		WithNewFile("dagger.toml", "[modules.owner]\nsource = \"owner\"\n[modules.donor]\nsource = \"owner/donor\"\n").
+		WithNewFile("owner/dagger.json", `{"name":"owner","engineVersion":"v1.0.0-0","sdk":"dang","dependencies":[{"name":"donor","source":"donor"}]}`).
+		WithNewFile("owner/main.dang", `
+type Owner {
+  contribute(base: LLM!): LLM! { base.withTools(donor) }
+}
+`).
+		WithNewFile("owner/donor/dagger.json", `{"name":"donor","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("owner/donor/main.dang", `
+type Donor {
+  agent(base: LLM!): LLM! @agent { base }
+  ping: String! { "foreign tool" }
+}
+`)
+	ws := fixture.AsWorkspace()
+	require.NoError(t, ws.ModuleSource("owner").AsModule().Serve(ctx))
+	baseID, err := c.LLM().WithWorkspace(ws).ID(ctx)
+	require.NoError(t, err)
+	var res struct {
+		Owner struct{ Contribute struct{ ID string } }
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($base: ID!) { owner { contribute(base: $base) { id } } }`,
+		Variables: map[string]any{"base": baseID},
+	}, &dagger.Response{Data: &res}))
+	llm := dagger.Ref[*dagger.LLM](c, dagger.ID(res.Owner.Contribute.ID))
+	tools, err := llm.Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, "## ping\n")
+
+	// The bound object's defining module is not the caller. Selecting Donor
+	// must leave the binding installed by a direct call inside Owner alone.
+	llm, err = recomposeLLM(ctx, c, ws, llm, "donor")
+	require.NoError(t, err)
+	tools, err = llm.Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, "## ping\n")
+	portable, err := llm.PortableID(ctx)
+	require.NoError(t, err)
+	c = connect(ctx, t)
+	llm = dagger.Ref[*dagger.LLM](c, portable)
+
+	// Owner did not need to be middleware when it installed the binding.
+	// Once selected for refresh, dropping its foreign tool must be rejected
+	// rather than silently treating the binding as unowned or Donor-owned.
+	ws = llm.Workspace().WithNewFile("owner/main.dang", `
+type Owner {
+  agent(base: LLM!): LLM! @agent { base }
+}
+`)
+	_, err = recomposeLLM(ctx, c, ws, llm, "owner")
+	require.ErrorContains(t, err, "discard tool state")
+	tools, err = llm.Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, "## ping\n", "failed refresh leaves the old binding usable")
 }
