@@ -467,7 +467,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
     fields: filterTypes(types: ["CollectionsItem"]) {
       dimensionItems(dimension: "collections-other") { uri }
     }
-    direct: filterUri(uri: "items?item=a") { items { description } }
+    direct: filterUri(uri: "items?item=a") { filterTypes(types: ["CollectionsItem"]) { items { description } } }
     unknown: dimensionItems(dimension: "missing") { uri }
   } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
@@ -487,7 +487,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
   "lazy":{"dimensionItems":[{"uri":"dag://items?item=b","value":{"__typename":"CollectionsItem"}}]},
   "batch":{"dimensionItems":[{"uri":"dag://items?item=b","value":{"__typename":"CollectionsItem"}}]},
   "fields":{"dimensionItems":[{"uri":"dag://other?item=b"},{"uri":"dag://other?item=a"},{"uri":"dag://other?item=c"}]},
-  "direct":{"items":[{"description":"Look up one item."}]},
+  "direct":{"filterTypes":{"items":[{"description":"Look up one item."}]}},
   "unknown":[]
 }}}`, string(*got))
 }
