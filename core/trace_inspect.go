@@ -57,49 +57,53 @@ func findSpans(ctx context.Context, query, root string, limit int) (string, erro
 		return "", err
 	}
 	defer clientDB.Close()
-	return findSpansIn(ctx, clientDB.Read(), query, root, limit)
+	stores := clientDB.InspectionStores()
+	if root != "" {
+		return findSpansIn(ctx, inspectionStoreForSpan(clientDB, root), query, root, limit)
+	}
+	return findSpansIn(ctx, clientDB, query, root, limit, stores[1:]...)
 }
 
 // findSpansIn is findSpans against an already-open store.
-func findSpansIn(ctx context.Context, read *clientdb.DB, query, root string, limit int) (string, error) {
-	var seed map[string]struct{}
-	if root != "" {
-		if !read.HasSpan(root) {
-			return "", fmt.Errorf("no span %q in this trace", root)
+func findSpansIn(ctx context.Context, read *clientdb.DB, query, root string, limit int, extra ...*clientdb.DB) (string, error) {
+	primary := read
+	db := dagui.NewDB()
+	searched := 0
+	for _, read := range append([]*clientdb.DB{read}, extra...) {
+		var seed map[string]struct{}
+		if root != "" {
+			if !read.HasSpan(root) {
+				return "", fmt.Errorf("no span %q in this trace", root)
+			}
+			seed = read.SpanLogScope(root)
+		} else {
+			seed = read.SpanIDs()
 		}
-		seed = read.SpanLogScope(root)
-	} else {
-		seed = read.SpanIDs()
-	}
-	rows, err := read.SelectSpansLatest(ctx, seed)
-	if err != nil {
-		return "", fmt.Errorf("select spans: %w", err)
-	}
-	needle := []byte(query)
-	scope := make(map[string]struct{})
-	for _, row := range rows {
-		if query != "" && !strings.Contains(row.Name, query) && !bytes.Contains(row.Attributes, needle) {
-			continue
+		rows, err := read.SelectSpansLatest(ctx, seed)
+		if err != nil {
+			return "", fmt.Errorf("select spans: %w", err)
 		}
-		scope[row.SpanID] = struct{}{}
-		for _, linked := range read.CausalChildren(row.SpanID) {
-			scope[linked] = struct{}{}
+		needle := []byte(query)
+		scope := make(map[string]struct{})
+		for _, row := range rows {
+			if query != "" && !strings.Contains(row.Name, query) && !bytes.Contains(row.Attributes, needle) {
+				continue
+			}
+			scope[row.SpanID] = struct{}{}
+			for _, linked := range read.CausalChildren(row.SpanID) {
+				scope[linked] = struct{}{}
+			}
+		}
+		searched += len(rows)
+		if len(scope) > 0 {
+			if err := ingestInspectionSpanScope(ctx, primary, read, db, scope); err != nil {
+				return "", err
+			}
 		}
 	}
-	listing := ""
-	if len(scope) > 0 {
-		db := dagui.NewDB()
-		if err := ingestSpanScope(ctx, read, db, scope); err != nil {
-			return "", err
-		}
-		// The cause-linked children were loaded for status only; when they
-		// don't match the query themselves the renderer's filter drops them.
-		// With an empty query they're part of the subtree anyway (a cause
-		// link is a containment edge), or -- session-wide -- of the session.
-		listing = idtui.RenderSpanList(db, query, limit)
-	}
+	listing := idtui.RenderSpanList(db, query, limit)
 	if listing == "" {
-		return findSpansEmpty(query, root, len(rows)), nil
+		return findSpansEmpty(query, root, searched), nil
 	}
 	return listing, nil
 }
@@ -126,7 +130,7 @@ func inspectSpan(ctx context.Context, spanID string) (string, error) {
 		return "", err
 	}
 	defer clientDB.Close()
-	return inspectSpanIn(ctx, clientDB.Read(), spanID)
+	return inspectSpanIn(ctx, inspectionStoreForSpan(clientDB, spanID), spanID)
 }
 
 // inspectSpanIn is inspectSpan against an already-open store.
@@ -164,7 +168,7 @@ func spanTimings(ctx context.Context, root string, minDuration time.Duration, li
 		return "", err
 	}
 	defer clientDB.Close()
-	return spanTimingsIn(ctx, clientDB.Read(), root, minDuration, limit, time.Now())
+	return spanTimingsIn(ctx, inspectionStoreForSpan(clientDB, root), root, minDuration, limit, time.Now())
 }
 
 // spanTimingsIn is spanTimings against an already-open store.

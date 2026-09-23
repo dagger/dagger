@@ -2296,6 +2296,7 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 		return out, err
 	}
 	defer q.Close()
+	q = inspectionStoreForSpan(q, spanID)
 
 	// segments accumulates log bodies in arrival order — one per record, each
 	// tagged with its provenance; lines are assembled from them afterwards,
@@ -2668,6 +2669,21 @@ func (m *MCP) toolErrorResponse(ctx context.Context, err error) string {
 
 func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
+		Name: "LoadTrace",
+		Description: "Load a historical trace from Dagger Cloud into this session for inspection. Use this when asked to investigate a trace ID, Cloud trace URL, or `dagger trace <id>`; do not run the interactive CLI.\n" +
+			"Uses the connecting client's Cloud authentication. No recipes are executed or agents restored. Returns root span IDs for ReadTrace and ReadLogs; FindSpans, FindCalls and InspectCall also see loaded traces. Repeated loads reuse the snapshot; failed loads import nothing.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"trace": map[string]any{"type": "string", "description": "Trace ID (32 hex characters), a pasted dagger trace <id> command, or a Dagger Cloud trace URL."},
+			},
+			"required":             []string{"trace"},
+			"additionalProperties": false,
+		},
+		Call: m.loadTraceTool(srv),
+	})
+	allTools.Add(LLMTool{
 		Name: "ReadLogs",
 		Description: "Read the logs beneath a span: exec output, service logs, prints. Can filter with grep pattern or read the last N lines." + "\n" +
 			"Span IDs come from tool results, ListServices, or [traceparent:traceID-spanID] markers in errors (pasting the whole marker works).",
@@ -2702,7 +2718,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
-		Description: "Read the trace of this session at a span, check, or test, in one of three views." + "\n" +
+		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, check, or test, in one of three views." + "\n" +
 			"- report (default): the trace report -- the span tree plus the CHECKS and TESTS sections, exactly as they appear at the end of a run. Tool results are abridged; this is how you see the full detail behind one." + "\n" +
 			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
 			"- timings: the span's subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included. Use it to see where the time went." + "\n" +
@@ -2748,7 +2764,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "FindSpans",
-		Description: "Find spans in this session's trace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest first, with running services tagged by hostname." + "\n" +
+		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest first, with running services tagged by hostname." + "\n" +
 			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call. Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
 			"Matching is a substring test on the span name (and a service's hostname); an empty query lists everything in scope. Only the newest `limit` matches are returned.",
 		ReadOnly: true,
@@ -2778,7 +2794,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "InspectCall",
-		Description: "Inspect the recipe (dagql call ID) behind a call in this session: the whole chain of API calls that produced a value, rebuilt from telemetry." + "\n" +
+		Description: "Inspect the recipe (dagql call ID) behind a call in this session or a trace imported with LoadTrace: the whole chain of API calls that produced a value, rebuilt from telemetry." + "\n" +
 			"Pass the call digest (xxh3:...) named by an engine error, a FindCalls line, or ReadTrace's inspect view -- or the span ID of the call. Views:" + "\n" +
 			"- chain (default): every selector on the receiver chain, as the TUI renders it." + "\n" +
 			"- tree: the chain with ID-valued arguments expanded inline (each withDirectory/withTools/... argument hangs a whole other chain), numbered, with digests." + "\n" +
@@ -2826,7 +2842,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "FindCalls",
-		Description: "Content-search every dagql call made in this session: one line per match -- \"<digest>  field(args) -> Type  recv=<receiver digest>\" -- with argument literals untruncated, sorted." + "\n" +
+		Description: "Content-search every dagql call in this session and traces imported with LoadTrace: one line per match -- \"<digest>  field(args) -> Type  recv=<receiver digest>\" -- with argument literals untruncated, sorted." + "\n" +
 			"This is how you find which call references a path, image, module or value, and how you walk a chain: grep for the digest another line names as its receiver or argument, then InspectCall it." + "\n" +
 			"`query` is a regexp over the rendered line.",
 		ReadOnly: true,
@@ -3094,34 +3110,12 @@ func isHexID(s string, length int) bool {
 // telemetry, so an empty ReadLogs capture can distinguish a quiet span from a
 // mistyped one.
 func (m *MCP) spanKnown(ctx context.Context, spanID string) (bool, error) {
-	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	if !traceID.IsValid() {
-		// no trace to check against; treat the span as plausible
-		return true, nil
-	}
-	root, err := CurrentQuery(ctx)
+	store, err := traceReportClientDB(ctx)
 	if err != nil {
 		return false, err
 	}
-	mainMeta, err := root.MainClientCallerMetadata(ctx)
-	if err != nil {
-		return false, fmt.Errorf("get main client caller metadata: %w", err)
-	}
-	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
-	if err != nil {
-		return false, err
-	}
-	defer q.Close()
-	if _, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
-		TraceID: traceID.String(),
-		SpanID:  spanID,
-	}); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
+	defer store.Close()
+	return inspectionStoreForSpan(store, spanID).HasSpan(spanID), nil
 }
 
 // renderReadLogs shapes captured log lines into a ReadLogs result: trims the
@@ -3286,11 +3280,12 @@ func (m *MCP) inspectCallTool(srv *dagql.Server) LLMToolFunc {
 				return nil, err
 			}
 			defer clientDB.Close()
-			digest, err = spanCallDigest(ctx, clientDB.Read(), span)
+			read := inspectionStoreForSpan(clientDB, span)
+			digest, err = spanCallDigest(ctx, read, span)
 			if err != nil {
 				return nil, err
 			}
-			return inspectCallIn(ctx, clientDB.Read(), digest, opts)
+			return inspectCallIn(ctx, clientDB, digest, opts)
 		}
 		return inspectCall(ctx, digest, opts)
 	})

@@ -44,29 +44,28 @@ func resolveTraceTarget(ctx context.Context, target traceTarget) (string, error)
 		return "", err
 	}
 	defer clientDB.Close()
-	read := clientDB.Read()
-
-	var scope map[string]struct{}
-	switch {
-	case target.empty():
-		// Nothing to load; resolveTraceTargetIn renders the usage error.
-	case target.Span != "":
-		// An invalid or unknown ID loads nothing, and resolveTraceTargetIn
-		// renders the matching error against the empty DB.
-		if read.HasSpan(target.Span) {
-			scope = map[string]struct{}{target.Span: {}}
-		}
-	case target.Check != "":
-		scope, _ = read.CheckTestSpanIDs()
-	default:
-		_, tests := read.CheckTestSpanIDs()
-		scope = read.AncestorClosure(tests)
-	}
-
 	db := dagui.NewDB()
-	if len(scope) > 0 {
-		if err := ingestSpanScope(ctx, read, db, scope); err != nil {
-			return "", err
+	for _, read := range clientDB.InspectionStores() {
+		var scope map[string]struct{}
+		switch {
+		case target.empty():
+		case target.Span != "":
+			if read.HasSpan(target.Span) {
+				scope = map[string]struct{}{target.Span: {}}
+			}
+		case target.Check != "":
+			scope, _ = read.CheckTestSpanIDs()
+		default:
+			_, tests := read.CheckTestSpanIDs()
+			scope = read.AncestorClosure(tests)
+		}
+		if len(scope) > 0 {
+			if err := ingestInspectionSpanScope(ctx, clientDB, read, db, scope); err != nil {
+				return "", err
+			}
+			if target.Span != "" {
+				break
+			}
 		}
 	}
 	return resolveTraceTargetIn(db, target)

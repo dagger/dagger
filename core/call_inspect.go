@@ -163,16 +163,19 @@ func rawIDBytes(encoded string) int {
 func loadCallClosure(ctx context.Context, read *clientdb.DB, db *dagui.DB, digest string) error {
 	pending := map[string]struct{}{digest: {}}
 	visited := map[string]struct{}{}
+	stores := read.InspectionStores()
 	for len(pending) > 0 {
 		for d := range pending {
 			visited[d] = struct{}{}
 		}
-		frames, err := read.SelectCallFrames(ctx, pending)
-		if err != nil {
-			return fmt.Errorf("select call frames: %w", err)
-		}
-		if err := ingestCallFrames(ctx, db, frames); err != nil {
-			return err
+		for _, source := range stores {
+			frames, err := source.SelectCallFrames(ctx, pending)
+			if err != nil {
+				return fmt.Errorf("select call frames: %w", err)
+			}
+			if err := ingestCallFrames(ctx, db, frames); err != nil {
+				return err
+			}
 		}
 		next := map[string]struct{}{}
 		for d := range pending {
@@ -198,15 +201,18 @@ func loadCallClosure(ctx context.Context, read *clientdb.DB, db *dagui.DB, diges
 func ingestCallFrames(ctx context.Context, db *dagui.DB, frames []clientdb.CallFrame) error {
 	var spans []clientdb.Span
 	for _, frame := range frames {
+		// Inspection may combine live and imported captures. A frame already
+		// loaded from the live store wins over a historical copy.
+		if _, present := db.Calls[frame.Digest]; present {
+			continue
+		}
 		switch {
 		case frame.Log != nil:
 			decoded, err := clientdb.CallPayloadBody(*frame.Log)
 			if err != nil {
 				return fmt.Errorf("decode call payload for %s: %w", frame.Digest, err)
 			}
-			if _, present := db.Calls[frame.Digest]; !present {
-				db.Calls[frame.Digest] = decoded
-			}
+			db.Calls[frame.Digest] = decoded
 		case frame.Span != nil:
 			spans = append(spans, *frame.Span)
 		}
@@ -290,19 +296,20 @@ func findCalls(ctx context.Context, re *regexp.Regexp, limit int) (string, error
 // session-wide -- one row per distinct call, seeded from the call index --
 // transient and linear in the number of calls rather than retained.
 func findCallsIn(ctx context.Context, read *clientdb.DB, re *regexp.Regexp, limit int) (string, error) {
-	digests := read.CallDigests()
-	if len(digests) == 0 {
-		return "(no calls in this session)", nil
-	}
-	frames, err := read.SelectCallFrames(ctx, digests)
-	if err != nil {
-		return "", fmt.Errorf("select call frames: %w", err)
-	}
 	db := dagui.NewDB()
-	for start := 0; start < len(frames); start += traceReportBatchSize {
-		if err := ingestCallFrames(ctx, db, frames[start:min(start+traceReportBatchSize, len(frames))]); err != nil {
-			return "", err
+	for _, source := range read.InspectionStores() {
+		frames, err := source.SelectCallFrames(ctx, source.CallDigests())
+		if err != nil {
+			return "", fmt.Errorf("select call frames: %w", err)
 		}
+		for start := 0; start < len(frames); start += traceReportBatchSize {
+			if err := ingestCallFrames(ctx, db, frames[start:min(start+traceReportBatchSize, len(frames))]); err != nil {
+				return "", err
+			}
+		}
+	}
+	if len(db.Calls) == 0 {
+		return "(no calls in this session)", nil
 	}
 	lines := db.GrepCalls(re, limit)
 	if len(lines) == 0 {

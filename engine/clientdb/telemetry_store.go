@@ -442,6 +442,7 @@ func (l *logLookup) rowIDsForSpans(ids map[string]struct{}, perSpanTail int) []i
 
 // DB is one client's standalone append-only telemetry store.
 type DB struct {
+	imports importedTraces
 	spans   *logStream[Span]
 	logs    *logStream[Log]
 	metrics *logStream[Metric]
@@ -794,7 +795,7 @@ func (s *DB) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpa
 }
 
 func (s *DB) closeStreams() error {
-	streams := []func() error{}
+	streams := []func() error{s.closeImports}
 	if s.spans != nil {
 		streams = append(streams, s.spans.close)
 	}
