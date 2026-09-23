@@ -57,6 +57,28 @@ func TestCanonicalDormantRosterAndHistoryIsolation(t *testing.T) {
 	require.Len(t, projections, 2, "source and destination revisions remain independently indexed")
 }
 
+func TestCanonicalCaptureFailuresStayOutOfOutput(t *testing.T) {
+	db := NewDB()
+	a := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "runtime"}, Handle: "local"}, Name: "local", CaptureError: "agent capture depends on originating client via Host.__gitDir"}
+	for revision := int64(1); revision <= 20; revision++ {
+		a.Revision = revision
+		a.State = "IDLE"
+		if revision%2 == 0 {
+			a.State = "RUNNING"
+		}
+		renderable := db.ingestLogs([]sdklog.Record{controlRecord(a.Record())}, true)
+		require.Empty(t, renderable, "capture availability is control state, not a repeated warning")
+		nodes := db.Agents()
+		require.Len(t, nodes, 1)
+		require.Equal(t, a.State, nodes[0].State, "capture failure must not replace normal runtime state")
+		require.Empty(t, nodes[0].Control.Failure, "capture failure is not a model-loop failure")
+	}
+	_, _, err := db.AgentControl()
+	require.NoError(t, err, "an unavailable capture is valid telemetry")
+	_, err = a.RestoreState()
+	require.ErrorContains(t, err, "Host.__gitDir", "an explicit restore still explains why it cannot proceed")
+}
+
 func TestCanonicalRemovalAndMalformedRecords(t *testing.T) {
 	db := NewDB()
 	a := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "generation"}, Handle: "a"}, Revision: 1, State: "IDLE", Digest: "xxh3:anchor"}
