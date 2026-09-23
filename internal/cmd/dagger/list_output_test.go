@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core/artifact"
-	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/interp"
@@ -43,15 +42,19 @@ func TestArtifactListArguments(t *testing.T) {
 		{Identifier: "Go.tests", Name: "go-test", QualifiedName: "go-tests"},
 		{Identifier: "Go.all", Name: "all", QualifiedName: "go-all"},
 	}
-	args, err := artifactListArguments(cmd, "", []dagaddress.Pair{
+	names := map[string]string{}
+	for _, def := range defs {
+		names[def.Identifier] = artifactDimensionFlagName(cmd, defs, def)
+	}
+	args, err := artifactCLIArguments(listedArtifact{DimensionKeys: []struct{ Dimension, Key string }{
 		{Dimension: "Go.tests", Key: "TestFoo"},
 		{Dimension: "Go.all", Key: "./app/bar"},
-	}, defs)
+	}}, names, nil)
 	require.NoError(t, err)
 	require.Equal(t, "--go-test=TestFoo --go-all=./app/bar", args)
 	for _, key := range []string{"a b", "$(echo injected)", "x; echo injected", "a'b", "a\nb", "!history", "a'b!c", "", "*.go"} {
 		t.Run(key, func(t *testing.T) {
-			args, err := artifactListArguments(cmd, "dag+check://go/tests", []dagaddress.Pair{{Dimension: "Go.tests", Key: key}}, defs)
+			args, err := artifactCLIArguments(listedArtifact{URI: "dag+check://go/tests", DimensionKeys: []struct{ Dimension, Key string }{{Dimension: "Go.tests", Key: key}}}, names, nil)
 			require.NoError(t, err)
 			require.NotContains(t, args, "\n")
 			// printf receives arguments only. Shell syntax in a key must stay literal.

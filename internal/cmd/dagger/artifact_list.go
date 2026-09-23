@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
@@ -59,6 +58,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		return err
 	}
 	var allArtifacts, targets *dagger.Artifacts
+	names := map[string]string{}
 	if len(listedArtifactKeys(items)) > 0 {
 		// Resolve discovery once. Every formatting query must use this same set,
 		// since currentWorkspace has a new identity on each call.
@@ -67,6 +67,13 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 			return err
 		}
 		allArtifacts = dagger.Ref[*dagger.Artifacts](dag, id)
+		defs, err := artifactDimensions(ctx, dag, allArtifacts)
+		if err != nil {
+			return err
+		}
+		for _, def := range defs {
+			names[def.Identifier] = artifactDimensionFlagName(cmd, defs, def)
+		}
 		targets, err = commandArtifactTargets(dag, cmd, allArtifacts)
 		if err != nil {
 			return err
@@ -105,36 +112,24 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		groups[path] = append(groups[path], item)
 	}
 	paths := slices.Sorted(maps.Keys(groups))
-	var lines []commandListItem
+	var output []listedArtifact
 	for _, path := range paths {
-		group := groups[path]
-		keys := listedArtifactKeys(group)
-		var pathDefs artifact.Dimensions
-		if len(keys) > 0 {
-			addr, _ := dagaddress.Parse(path)
-			pathDefs, err = artifactDimensions(ctx, dag, allArtifacts.FilterURI(addr.Path))
-			if err != nil {
-				return err
+		for _, row := range artifactListRows(path, groups[path], all, filtered, matches) {
+			item := listedArtifact{URI: path, Description: row[0].Description}
+			for _, key := range listedArtifactKeys(row) {
+				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
 			}
-		}
-		rows := artifactListRows(path, group, all, filtered, matches)
-		for _, row := range rows {
-			keys := listedArtifactKeys(row)
-			args, err := artifactListArguments(cmd, path, keys, pathDefs)
-			if err != nil {
-				return err
-			}
-			lines = append(lines, commandListItem{Name: args, Comment: firstDescriptionLine(row[0].Description)})
+			output = append(output, item)
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := writeCommandList(cmd.OutOrStdout(), lines); err != nil {
+	if err := writeArtifactCLI(cmd.OutOrStdout(), output, names, artifactListReplayArgs(cmd)); err != nil {
 		return err
 	}
-	if len(lines) < len(items) {
-		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "# Use --all to list each key combination.")
+	if len(output) < len(items) {
+		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "# Use --all to expand collections and list each item.")
 	}
 	return err
 }
@@ -153,26 +148,22 @@ func listArtifactPaths(ctx context.Context, dag *dagger.Client, selection *dagge
 		}
 	}
 	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
-  node(id: $id) { ... on Artifacts { pathDefinitions(absolute: $absolute) { uri description dimensions } } }
+  node(id: $id) { ... on Artifacts { pathDefinitions(absolute: $absolute, typeAssertion: true) { uri description dimensions } } }
  }`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
 	if err != nil {
 		return err
 	}
-	var lines []commandListItem
+	var items []listedArtifact
 	hasDimensions := false
 	for _, path := range response.Node.PathDefinitions {
-		args, err := artifactListArguments(cmd, strings.TrimPrefix(path.URI, "dag://"), nil, nil)
-		if err != nil {
-			return err
-		}
-		lines = append(lines, commandListItem{Name: args, Comment: firstDescriptionLine(path.Description)})
+		items = append(items, listedArtifact{URI: path.URI, Description: path.Description})
 		hasDimensions = hasDimensions || len(path.Dimensions) > 0
 	}
-	if err := writeCommandList(cmd.OutOrStdout(), lines); err != nil {
+	if err := writeArtifactCLI(cmd.OutOrStdout(), items, nil, artifactListReplayArgs(cmd)); err != nil {
 		return err
 	}
 	if hasDimensions {
-		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "# Use --all to list each key combination.")
+		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "# Use --all to expand collections and list each item.")
 	}
 	return err
 }
@@ -210,45 +201,4 @@ func artifactListRows(
 		rows = append(rows, []listedArtifact{item})
 	}
 	return rows
-}
-
-func artifactListArguments(cmd *cobra.Command, path string, keys []dagaddress.Pair, defs artifact.Dimensions) (string, error) {
-	var args []string
-	for _, key := range keys {
-		name := key.Dimension
-		for _, def := range defs {
-			if def.Identifier == name {
-				name = artifactDimensionFlagName(cmd, defs, def)
-				break
-			}
-		}
-		prefix := "--" + name + "="
-		value, err := quoteArtifactArgument(key.Key)
-		if err != nil {
-			return "", err
-		}
-		args = append(args, prefix+value)
-	}
-	// Keep explicit check policy options when the line is copied into a new command.
-	if cmd.Name() == "check" {
-		if cmd.Flags().Changed("generated") {
-			args = append(args, "--generated="+cmd.Flag("generated").Value.String())
-		}
-		skip, _ := cmd.Flags().GetStringArray("skip")
-		for _, pattern := range skip {
-			quoted, err := quoteArtifactArgument(pattern)
-			if err != nil {
-				return "", err
-			}
-			args = append(args, "--skip="+quoted)
-		}
-	}
-	if path != "" {
-		quoted, err := quoteArtifactArgument(path)
-		if err != nil {
-			return "", err
-		}
-		args = append(args, quoted)
-	}
-	return strings.Join(args, " "), nil
 }

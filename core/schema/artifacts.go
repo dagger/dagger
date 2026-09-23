@@ -42,7 +42,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
 		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services."),
-		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit.")),
+		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme.")),
 		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		// Each invocation gets a new cache key. Retain its results so SDK clients can load their IDs.
 		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
@@ -224,11 +224,12 @@ func (*artifactsSchema) dimensionDefinitions(_ context.Context, parent *core.Art
 }
 
 func (s *artifactsSchema) pathDefinitions(ctx context.Context, parent *core.Artifacts, args struct {
-	Absolute bool `default:"false"`
+	Absolute      bool `default:"false"`
+	TypeAssertion bool `default:"false"`
 }) ([]*core.ArtifactPath, error) {
 	paths := map[string]*core.ArtifactPath{}
 	for _, entry := range parent.Entries {
-		uri, err := entry.URI(core.ArtifactURIOpts{Absolute: args.Absolute})
+		uri, err := entry.URI(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion})
 		if err != nil {
 			return nil, err
 		}
