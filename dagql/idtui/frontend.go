@@ -675,7 +675,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 	var elideArgs map[string]struct{}
 	if r.Verbosity < dagui.ShowDigestsVerbosity {
 		// Use the DSL to render field calls
-		if title, elidedArgs, isSpecial := r.renderFieldCall(call, out, prefix, depth); isSpecial {
+		if title, elidedArgs, isSpecial := r.renderFieldCall(call, out); isSpecial {
 			fmt.Fprint(out, title)
 			specialTitle = isSpecial
 			elideArgs = elidedArgs

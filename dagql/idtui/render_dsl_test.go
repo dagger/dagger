@@ -33,7 +33,7 @@ func TestRenderDSLSource(t *testing.T) {
 					// A nil DB makes any attempt to expand source fail immediately.
 					r := &renderer{}
 					out := termenv.NewOutput(io.Discard, termenv.WithProfile(termenv.Ascii))
-					title, elided, special := r.renderFieldCall(call, out, "", 0)
+					title, elided, special := r.renderFieldCall(call, out)
 					if callSource {
 						require.False(t, special, "call-valued source must use generic rendering")
 						require.Empty(t, title)
@@ -65,7 +65,7 @@ func TestRenderDSLUnknownCallArgument(t *testing.T) {
 	// Unknown arguments are ignored without consulting the (nil) DB.
 	r := &renderer{}
 	out := termenv.NewOutput(io.Discard, termenv.WithProfile(termenv.Ascii))
-	title, elided, special := r.renderFieldCall(call, out, "", 0)
+	title, elided, special := r.renderFieldCall(call, out)
 	require.True(t, special)
 	require.Equal(t, "withExec echo hello", title)
 	require.Equal(t, map[string]struct{}{"args": {}}, elided)

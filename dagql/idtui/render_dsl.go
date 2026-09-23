@@ -244,7 +244,7 @@ func callArgsToJSON(call *callpbv1.Call) ([]byte, error) {
 }
 
 // renderFieldCall renders a field call using the registered renderer
-func (r *renderer) renderFieldCall(call *callpbv1.Call, out TermOutput, prefix string, depth int) (title string, elidedArgs map[string]struct{}, specialTitle bool) {
+func (r *renderer) renderFieldCall(call *callpbv1.Call, out TermOutput) (title string, elidedArgs map[string]struct{}, specialTitle bool) {
 	rendererFactory, exists := FieldRendererRegistry[call.Field]
 	if !exists {
 		return "", nil, false
