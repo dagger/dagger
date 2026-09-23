@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -1017,24 +1018,35 @@ func TestSnapshotSharingTypedReceiverFillsOnePartPerPass(t *testing.T) {
 // preparing one inside it would leave the worker waiting for a lock it holds,
 // and every later cache operation waiting for the worker.
 func TestSnapshotSharingSelectsRestoredFrame(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
-	barrier := newSharePassBarrier(c)
-	parent := persistedListTestResult(t, ctx, c, srv, "share-parent", String("parent"))
-	donor, receiver := shareTestPair(t, ctx, c, srv,
-		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
-		map[string]sharePartState{"fs": {}})
-	shareTestUnite(t, ctx, c, "restored-frame", donor, receiver)
-	require.Equal(t, 1, barrier.awaitPass(t), "the live frame shares as usual")
-	require.Equal(t, 0, barrier.awaitPass(t), "and its completion finds nothing left")
+	synctest.Test(t, func(t *testing.T) {
+		ctx, c, srv, _ := shareTestCache(t)
+		barrier := newSharePassBarrier(c)
+		parent := persistedListTestResult(t, ctx, c, srv, "share-parent", String("parent"))
+		donor, receiver := shareTestPair(t, ctx, c, srv,
+			map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+			map[string]sharePartState{"fs": {}})
+		shareTestUnite(t, ctx, c, "restored-frame", donor, receiver)
+		require.Equal(t, 1, barrier.awaitPass(t), "the live frame shares as usual")
+		require.Equal(t, 0, barrier.awaitPass(t), "and its completion finds nothing left")
 
-	row := receiver.cacheSharedResult()
-	restored := row.loadResultCall().clone()
-	restored.Receiver = &ResultCallRef{ResultID: uint64(parent.cacheSharedResult().id)}
-	row.storeResultCall(restored)
-	c.notifySnapshotShareCompletion(ctx, row)
-	require.Equal(t, 0, barrier.awaitPass(t), "the restored frame is resolved and the pass ends")
-	pending, _ := shareTestQueueDepth(c)
-	require.Zero(t, pending, "the graph lock is free again")
+		// A pass can finish before its lazy attempt queues completion work.
+		// Drain setup before replacing the frame so no old pass can satisfy
+		// the restored-frame wait below.
+		synctest.Wait()
+		for range len(barrier.passes) {
+			require.Zero(t, barrier.awaitPass(t), "remaining setup passes have no slots")
+		}
+
+		row := receiver.cacheSharedResult()
+		restored := row.loadResultCall().clone()
+		restored.Receiver = &ResultCallRef{ResultID: uint64(parent.cacheSharedResult().id)}
+		row.storeResultCall(restored)
+		c.notifySnapshotShareCompletion(ctx, row)
+		require.Equal(t, 0, barrier.awaitPass(t), "the restored frame is resolved and the pass ends")
+		synctest.Wait()
+		pending, _ := shareTestQueueDepth(c)
+		require.Zero(t, pending, "the graph lock is free again")
+	})
 }
 
 // A slot runs as the ordinary obtain task of its address, so an ordinary
