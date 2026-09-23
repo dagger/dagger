@@ -28,8 +28,11 @@ const (
 	InstrumentationScopeName = "dagger.io/engine"
 
 	// cacheFactExportQueueSize bounds the fact records waiting for export to
-	// Cloud, matching the engine's own fact queue.
-	cacheFactExportQueueSize = 65536
+	// Cloud. The processor blocks the engine's fact drain while it is full,
+	// so the engine's own counted fact queue is the one place facts drop.
+	cacheFactExportQueueSize = 4096
+	// cacheFactExportBatchSize bounds the fact records of one export.
+	cacheFactExportBatchSize = 512
 	// cacheFactShutdownTimeout bounds the final export of facts at shutdown.
 	cacheFactShutdownTimeout = 30 * time.Second
 )
@@ -132,10 +135,8 @@ func newCacheFactExport(ctx context.Context, otelResource *resource.Resource) *c
 	}
 	// Other engine code emits on this provider too, for example snapshot
 	// progress outside any session; only cache facts go to Cloud.
-	processor := enginetel.OnlyScope(cachefact.ScopeName, sdklog.NewBatchProcessor(logs,
-		sdklog.WithExportInterval(telemetry.NearlyImmediate),
-		sdklog.WithMaxQueueSize(cacheFactExportQueueSize),
-	))
+	processor := enginetel.OnlyScope(cachefact.ScopeName, enginetel.NewBlockingLogProcessor(logs,
+		cacheFactExportQueueSize, cacheFactExportBatchSize, telemetry.NearlyImmediate))
 	return &cacheFactExport{provider: sdklog.NewLoggerProvider(
 		sdklog.WithResource(otelResource),
 		sdklog.WithProcessor(processor),

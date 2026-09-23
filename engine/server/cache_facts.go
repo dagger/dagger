@@ -27,7 +27,8 @@ type queuedCacheFact struct {
 // cacheFactEmitter is the engine's dagql.FactSink. The cache calls Emit with
 // its graph lock held, so Emit never blocks: it queues the fact, or drops it
 // and counts the drop when the queue is full. The logger provider it emits
-// through can drop records of its own that this count does not see. One goroutine drains the queue,
+// through must not drop records itself (the engine's Cloud fact export blocks
+// the drain instead), so that this count is the whole loss. One goroutine drains the queue,
 // encodes each fact and emits it as one OTel log record through the logger
 // provider of the context it was started with: the engine's process
 // telemetry, never a session's.

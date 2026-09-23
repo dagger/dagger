@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
@@ -15,6 +16,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/engine"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -155,4 +157,50 @@ func TestCacheFactsEngineLifecycle(t *testing.T) {
 	require.Equal(t, cachefact.EngineStart{EngineVersion: engine.Version, EngineName: "engine-a", Boot: cachefact.BootFresh}, facts[0].Body)
 	require.Contains(t, facts, cachefact.Fact{Seq: facts[len(facts)-2].Seq, Body: cachefact.EngineAlive{}}, "liveness reports no drops")
 	require.Equal(t, cachefact.EngineStop{PersistedResults: 1, Clean: true}, facts[len(facts)-1].Body)
+}
+
+type stalledFactExporter struct {
+	cacheFactTestExporter
+	release chan struct{}
+	once    sync.Once
+}
+
+func (e *stalledFactExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	e.once.Do(func() {
+		select {
+		case <-e.release:
+		case <-ctx.Done():
+		}
+	})
+	return e.cacheFactTestExporter.Export(ctx, records)
+}
+
+// A burst of facts far larger than the export processor's queue, against a
+// stalled exporter, arrives whole: the processor holds the drain back instead
+// of overwriting records, so the emitter's counted queue is the only place a
+// fact could drop, and none does.
+func TestCacheFactBurstThroughBlockingExport(t *testing.T) {
+	t.Parallel()
+	ctx := boundedContext(t)
+	exporter := &stalledFactExporter{release: make(chan struct{})}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(enginetel.OnlyScope(cachefact.ScopeName, enginetel.NewBlockingLogProcessor(exporter, 16, 8, time.Millisecond))))
+	e := newCacheFactEmitter(telemetry.WithLoggerProvider(ctx, provider))
+
+	const burst = 5000
+	for seq := uint64(1); seq <= burst; seq++ {
+		e.Emit(cachefact.Fact{Seq: seq, Body: cachefact.EngineAlive{}})
+	}
+	close(exporter.release)
+	require.NoError(t, e.Close(ctx))
+	require.NoError(t, provider.Shutdown(ctx))
+	require.Zero(t, e.Dropped())
+
+	exporter.mu.Lock()
+	defer exporter.mu.Unlock()
+	require.Len(t, exporter.records, burst)
+	for i, rec := range exporter.records {
+		fact, err := cachefact.Decode([]byte(rec.Body().AsString()))
+		require.NoError(t, err)
+		require.Equal(t, uint64(i+1), fact.Seq)
+	}
 }
