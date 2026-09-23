@@ -261,9 +261,10 @@ func TestSessionWithoutPublisherStaysSilent(t *testing.T) {
 }
 
 // Against a Cloud that accepts requests and never answers, the main client's
-// whole shutdown (the Cloud flush, then the providers' and every client's
-// metric flush) waits on Cloud for one bound in total, not one per wait, and
-// the final span still reaches the client's stream. The session's teardown
+// whole shutdown request (the Cloud flush, the providers' and every client's
+// metric flush, and the cleanup that reclaims the client when its last lease
+// goes) waits on Cloud for one bound in total, not one per wait, and the
+// final span still reaches the client's stream. The session's teardown
 // afterwards is bounded as well.
 func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 	t.Parallel()
@@ -287,8 +288,12 @@ func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 	final.End()
 	require.NoError(t, sess.FlushTelemetry(ctx, "client shutdown"))
 	stopBudget()
+	// The request's cleanup: releasing the main client's last lease reclaims
+	// its runtime, which flushes and shuts down its metric provider, Cloud
+	// reader included, on the goroutine that has yet to send the response.
+	sess.finishClientRuntimeReclamation(clientRuntimeReclamation{runtime: root})
 	elapsed := time.Since(start)
-	require.Less(t, elapsed, bound+250*time.Millisecond, "one bound for the whole shutdown request, not one per wait")
+	require.Less(t, elapsed, bound+250*time.Millisecond, "one bound for the whole shutdown request, its cleanup included, not one per wait")
 
 	db, err := sess.telemetryPubSub.srv.clientDBs.Open(ctx, root.clientID)
 	require.NoError(t, err)
