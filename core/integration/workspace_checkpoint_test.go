@@ -46,24 +46,6 @@ func snapshotWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, ws *
 	return dagger.Ref[*dagger.Workspace](c, id)
 }
 
-// workspaceRecipeFields inspects the persisted composition for client-bound
-// inputs that cannot be restored without the originating checkout.
-func workspaceRecipeFields(ctx context.Context, t *testctx.T, c *dagger.Client, sink *agentTraceSink, workspaceID string) []string {
-	t.Helper()
-	ws := dagger.Ref[*dagger.Workspace](c, dagger.ID(workspaceID))
-	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(ws))
-	require.NoError(t, err)
-	var id call.ID
-	require.NoError(t, id.Decode(string(recipe)))
-	dag, err := id.ToProto()
-	require.NoError(t, err)
-	var fields []string
-	for _, vertex := range dag.GetRecipe().CallsByDigest {
-		fields = append(fields, vertex.Field)
-	}
-	return fields
-}
-
 func (WorkspaceSuite) TestWorkspaceSnapshotContentOnlyTreesPreserveHistory(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	write := func(name, contents string) {
@@ -142,9 +124,10 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	require.NoError(t, err)
 	require.Equal(t, "dirty", contents)
 	frozen := snapshotWorkspace(ctx, t, c, live)
-	frozenID, err := frozen.ID(ctx)
+	_, err = frozen.ID(ctx)
 	require.NoError(t, err)
-	require.NotContains(t, workspaceRecipeFields(ctx, t, c, sink, string(frozenID)), "__gitDir", "snapshot must not retain the source client's Git directory")
+	_, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(frozen))
+	require.ErrorContains(t, err, "Host.__gitDir", "local history remains session-dependent")
 	modified, err := frozen.Git().Uncommitted().ModifiedPaths(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"tracked.txt"}, modified)
@@ -186,17 +169,18 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	require.NoError(t, err)
 	require.Equal(t, "untracked bytes", contents)
 
-	// A filesystem remote must not reintroduce a live client dependency.
+	// Filesystem remotes remain session-local.
 	remotePath := filepath.Join(t.TempDir(), "origin.git")
 	git("clone", "--bare", workdir, remotePath)
 	git("remote", "add", "origin", remotePath)
 	localRemote := snapshotWorkspace(ctx, t, c, live)
-	id, err := localRemote.ID(ctx)
+	_, err = localRemote.ID(ctx)
 	require.NoError(t, err)
 	contents, err = localRemote.File("tracked.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "later", contents)
-	require.NotContains(t, workspaceRecipeFields(ctx, t, c, sink, string(id)), "__gitDir", "a local remote must not make the snapshot client-dependent")
+	_, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(localRemote))
+	require.ErrorContains(t, err, "Host.__gitDir", "filesystem remote history remains session-dependent")
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotWithoutGitBaseline(ctx context.Context, t *testctx.T) {
