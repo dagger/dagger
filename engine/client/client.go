@@ -107,6 +107,15 @@ type Params struct {
 	EngineLogs    sdklog.Exporter
 	EngineMetrics []sdkmetric.Exporter
 
+	// EngineTraceWithoutCloud, EngineLogsWithoutCloud and
+	// EngineMetricsWithoutCloud replace EngineTrace, EngineLogs and
+	// EngineMetrics when the engine publishes the session's telemetry to Dagger
+	// Cloud itself (EngineCloudTelemetry): the same destinations, without this
+	// client's Cloud exporters.
+	EngineTraceWithoutCloud   sdktrace.SpanExporter
+	EngineLogsWithoutCloud    sdklog.Exporter
+	EngineMetricsWithoutCloud []sdkmetric.Exporter
+
 	// Log level (0 = INFO)
 	LogLevel slog.Level
 
@@ -155,6 +164,11 @@ type Params struct {
 
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
+
+	// EngineCloudTelemetry asks the engine to publish the session's telemetry
+	// to Dagger Cloud itself, with CloudAuth, instead of this client
+	// forwarding it.
+	EngineCloudTelemetry bool
 
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
 	Profile bool
@@ -1709,6 +1723,11 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
 		Profile:                        c.Profile,
+	}
+	if c.EngineCloudTelemetry && c.CloudAuth != nil {
+		md.CloudTelemetryPublisher = engine.CloudTelemetryPublisherEngine
+		md.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
+		md.CredentialsPath = auth.CredentialsFile()
 	}
 
 	if c.Module != "" {

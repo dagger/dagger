@@ -73,7 +73,7 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg := engineTelemetryConfigWithCloud(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg, _ := engineTelemetryConfigWithCloud(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
 	})
 
@@ -112,7 +112,7 @@ func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg := engineTelemetryConfigWithCloud(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg, _ := engineTelemetryConfigWithCloud(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
 	})
 
@@ -177,12 +177,12 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	ctx := context.Background()
 
 	skipSharedTelemetryExporters = false
-	if cfg := engineTelemetryConfig(ctx); !cfg.Detect {
+	if cfg, _ := engineTelemetryConfig(ctx); !cfg.Detect {
 		t.Fatal("expected Detect to be enabled for a normal session")
 	}
 
 	skipSharedTelemetryExporters = true
-	if cfg := engineTelemetryConfig(ctx); cfg.Detect {
+	if cfg, _ := engineTelemetryConfig(ctx); cfg.Detect {
 		t.Fatal("expected Detect to be disabled for an internal silent session")
 	}
 }

@@ -209,6 +209,11 @@ func RefreshToken(ctx context.Context, token *oauth2.Token) (*oauth2.Token, erro
 	return refreshed, nil
 }
 
+// CredentialsFile is the path of the `dagger login` credentials file.
+func CredentialsFile() string {
+	return credentialsFile
+}
+
 func Token(ctx context.Context) (*oauth2.Token, error) {
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
