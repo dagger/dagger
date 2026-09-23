@@ -2,17 +2,37 @@ package schema
 
 import (
 	"context"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/engineutil"
-	gitsession "github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/stretchr/testify/require"
 )
+
+func checkpointTestGit(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", root}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=Snapshot Test", "GIT_AUTHOR_EMAIL=snapshot@example.com", "GIT_COMMITTER_NAME=Snapshot Test", "GIT_COMMITTER_EMAIL=snapshot@example.com")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	return strings.TrimSpace(string(out))
+}
+
+func checkpointTestServer(t *testing.T, session string) (context.Context, *dagql.Server) {
+	t.Helper()
+	ctx, _, srv := scratchTestCache(t, testutil.NewStore(t), "", session)
+	(&directorySchema{}).Install(srv)
+	(&fileSchema{}).Install(srv)
+	(&gitSchema{}).Install(srv)
+	(&workspaceSchema{}).Install(srv)
+	return ctx, srv
+}
 
 func TestWorkspaceCommitCapturesIncomingChanges(t *testing.T) {
 	testutil.RequireNativeMount(t)
@@ -25,22 +45,47 @@ func TestWorkspaceCommitCapturesIncomingChanges(t *testing.T) {
 			}
 			checkpointTestGit(t, source, "add", ".")
 			checkpointTestGit(t, source, "commit", "-m", "baseline")
-			for _, name := range []string{"selected", "pending"} {
-				require.NoError(t, os.WriteFile(filepath.Join(source, name), []byte(name+"\n"), 0o644))
-			}
-			capture := new(checkpointCaptureStream)
-			require.NoError(t, gitsession.GitAttachable{}.CaptureGit(&gitsession.CaptureGitRequest{CheckoutPath: source, Policy: &gitsession.CaptureGitPolicy{}}, capture))
-			require.Nil(t, capture.metadata.Error)
-			packed := new(checkpointPackStream)
-			require.NoError(t, gitsession.GitAttachable{}.PackCheckout(&gitsession.PackCheckoutRequest{CheckoutPath: source, ExpectedStateDigest: capture.metadata.CheckoutStateDigest}, packed))
-			require.Nil(t, packed.metadata.Error)
-			pack := &engineutil.GitCheckoutPack{HeadSHA: packed.metadata.HeadSha, ObjectFormat: packed.metadata.ObjectFormat, StateDigest: packed.metadata.StateDigest, BundlePath: filepath.Join(t.TempDir(), "history.bundle")}
-			require.NoError(t, os.WriteFile(pack.BundlePath, packed.bundle, 0o600))
 			ctx, srv := checkpointTestServer(t, "commit-source")
-			repo, err := checkpointLocalGitPackComposition(ctx, srv, capture.metadata, pack)
-			require.NoError(t, err)
-			ws, err := (&workspaceSchema{}).checkpointCapturedGitCompositionWithBase(ctx, srv, &core.Workspace{Cwd: "/"}, capture.metadata, capture.bundle, "", repo)
-			require.NoError(t, err)
+			// Build an explicit immutable fixture repository through ordinary
+			// Directory composition. No production host-history capture is involved.
+			var gitDir dagql.ObjectResult[*core.Directory]
+			require.NoError(t, srv.Select(ctx, srv.Root(), &gitDir, dagql.Selector{Field: "directory"}))
+			require.NoError(t, filepath.WalkDir(filepath.Join(source, ".git"), func(path string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if entry.IsDir() {
+					return nil
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				rel, err := filepath.Rel(filepath.Join(source, ".git"), path)
+				if err != nil {
+					return err
+				}
+				var file dagql.ObjectResult[*core.File]
+				if err := srv.Select(ctx, srv.Root(), &file, dagql.Selector{Field: "blob", Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.NewString(entry.Name())}, {Name: "contents", Value: dagql.Bytes(data)},
+				}}); err != nil {
+					return err
+				}
+				id, err := file.ID()
+				if err != nil {
+					return err
+				}
+				return srv.Select(ctx, gitDir, &gitDir, dagql.Selector{Field: "withFile", Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(filepath.ToSlash(rel))}, {Name: "source", Value: dagql.NewID[*core.File](id)},
+				}})
+			}))
+			var ws dagql.ObjectResult[*core.Workspace]
+			require.NoError(t, srv.Select(ctx, gitDir, &ws, dagql.Selector{Field: "asGit"}, dagql.Selector{Field: "head"}, dagql.Selector{Field: "asWorkspace"}))
+			for _, name := range []string{"selected", "pending"} {
+				require.NoError(t, srv.Select(ctx, ws, &ws, dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(name)}, {Name: "contents", Value: dagql.NewString(name + "\n")},
+				}}))
+			}
 			var base dagql.ObjectResult[*core.Directory]
 			require.NoError(t, srv.Select(ctx, ws, &base,
 				dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"},
@@ -79,7 +124,6 @@ func TestWorkspaceCommitCapturesIncomingChanges(t *testing.T) {
 				require.NotEqual(t, "__liveCommitBase", call.Field)
 			}
 			require.NoError(t, os.RemoveAll(source))
-			require.NoError(t, pack.Close())
 			freshCtx, fresh := checkpointTestServer(t, "commit-restore")
 			restored, err := dagql.NewID[*core.Workspace](id).Load(freshCtx, fresh)
 			require.NoError(t, err)

@@ -237,17 +237,13 @@ func (WorkspaceSuite) TestWorkspaceGitDirectoryOriginCredentials(ctx context.Con
 			root, git := workspaceExportCheckout(ctx, t)
 			git("remote", "add", "origin", tc.origin)
 			c := connect(ctx, t, dagger.WithWorkdir(root))
-			live := c.CurrentWorkspace()
-			frozen := snapshotWorkspace(ctx, t, c, live)
-			for _, ws := range []*dagger.Workspace{live, frozen} {
-				config, err := ws.Git().Directory().File("config").Contents(ctx)
-				require.NoError(t, err)
-				require.NotContains(t, config, "FAKE_REVIEW_TOKEN")
-				if tc.keep {
-					require.Contains(t, config, "url = "+tc.origin)
-				} else {
-					require.NotContains(t, config, `[remote "origin"]`)
-				}
+			config, err := c.CurrentWorkspace().Git().Directory().File("config").Contents(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, config, "FAKE_REVIEW_TOKEN")
+			if tc.keep {
+				require.Contains(t, config, "url = "+tc.origin)
+			} else {
+				require.NotContains(t, config, `[remote "origin"]`)
 			}
 			// Omitting reconstruction metadata never changes the host's routing.
 			require.Equal(t, tc.origin, git("config", "--get", "remote.origin.url"))

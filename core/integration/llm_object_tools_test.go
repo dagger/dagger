@@ -423,9 +423,10 @@ type Editor {
 // the empty directory while keeping the file beside it.
 func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	// Strict agent capture requires a snapshot-backed workspace. Give the
-	// fixture a HEAD so snapshot does not retain an unborn live checkout.
-	base := workspaceFixture(t, c, "workspace-tool-return").
+	// Use the existing remote-backed snapshot contract, not session-local Git
+	// history, when asserting portable normalization of the tool's changeset.
+	base := checkpointCheckoutBase(ctx, t, c).
+		With(withWorkspaceFixture(t, c, ".", "workspaces/workspace-tool-return")).
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "fixture"})
 

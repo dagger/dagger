@@ -7,6 +7,22 @@ replacing [#14193](https://github.com/dagger/dagger/pull/14193) and
 implemented and verified work. The numbered sections retain the approved design
 and historical investigation; they are requirements, not a blanket completion claim.
 
+## Scope correction
+
+Repository-history embedding is rolled back in a follow-up commit, without
+rewriting the implementation history. `Workspace.snapshot` again retains
+`Host.__gitDir` for no-usable-remote/local-filesystem-remote captures, matching
+upstream's session-dependent behavior. It no longer puts every local branch and
+tag's history into literal trace payloads. The associated origin-metadata fix and
+fresh-server full-history tests are removed. Remote-backed capture is unchanged.
+
+`Workspace.withCommit` patch normalization is retained: the selected merged delta
+and pending remainder no longer replay their original Changeset producers. This
+does not make a client-dependent base repository portable. Tests now distinguish
+that boundary. Earlier local-history portability results below are historical,
+not current guarantees; this scope decision supersedes conflicting requirements
+in the historical design sections.
+
 ## Implementation checkpoint
 
 Commit references in the original checklist name the pre-rebase implementation
@@ -46,12 +62,10 @@ race run outside the engine harness failed because it lacked a `dagger` executab
   lookup (`7dec76e`). Actual `TestCLIArchiveResumeIgnoresDestination` passes:
   missing destination module, no destination provider configuration, continued
   prompt turn, no implicit export, and untouched legacy JSON sentinel (`79a467b`).
-- [x] Immutable local/no-remote Git snapshot capture through blob-backed bundles
-  (`0cc698c`). Original source-session-and-checkout-disappearance acceptance passes
-  with frozen files and pending edits. Producer fresh-server tests passed four
-  no-remote/local-filesystem-remote × symbolic/detached-HEAD variants after source,
-  local remote and spool deletion, checking dirty worktree and ancestor contents,
-  plus existing export reuse; no new public API was required.
+- [x] Repository-history embedding from `0cc698c` has been rolled back. Existing
+  session-local snapshots remain usable while the source session is connected;
+  strict agent capture reports their `Host.__gitDir` dependency as unsupported.
+  No all-repository-history portability guarantee is made.
 - [x] Local JSON persistence/picker/restore and public `portableID`/`emitHistory`
   removed (`4fbfde7`, `1176673`); obsolete TUI QA JSON mount removed (`df25dc7`).
   Public GraphQL schema and Go, Python, TypeScript, Rust, PHP, Elixir SDKs generated
@@ -83,11 +97,9 @@ race run outside the engine harness failed because it lacked a `dagger` executab
   showed they used the hosting engine's older API (including removed LLM methods)
   and rewrote local dependencies to remote SHA URLs. That output was discarded;
   successful execution is not evidence of correct module SDK generation.
-- [x] Re-ran the two existing local-Git capture/commit tests after DNS recovered;
-  their three obsolete positive `__gitDir` assertions were replaced with
-  absence-of-live-dependency checks (`ac1191e`).
-  `TestWorkspaceSnapshotFreezesLocalCheckout` passes, including the local-remote
-  case. The engine build and tests now run; the earlier DNS blocker is resolved.
+- [x] Local-Git capture/commit tests retain frozen-file/history/author assertions
+  and now assert that strict capture rejects their session-local history rather
+  than requiring its conversion into a portable bundle.
 - [x] Committed-local-Workspace capture no longer retains the original live
   incoming Changeset in either the commit recipe or pending remainder (`3db0f6c`).
   Capture materializes the selected resolved delta after the original eager
@@ -95,8 +107,9 @@ race run outside the engine harness failed because it lacked a `dagger` executab
   Actual engine tests pass for `TestWorkspaceWithCommitFreezesHostAndAuthor`,
   `TestWorkspaceWithCommitIncomingChanges` (clean and unrelated-dirt cases),
   `TestWorkspaceWithCommitMergeConflicts` (all three variants), and
-  `TestWorkspaceWithCommitScopedHistory`. The strict no-`Host.__gitDir` assertion
-  remains in place; producer fresh-server partial/all-commit tests also passed.
+  `TestWorkspaceWithCommitScopedHistory`. Producer partial/all-commit tests use
+  an explicit immutable fixture base and preserve the absence-of-producer-call
+  assertion, independently of local snapshot portability.
 - [ ] Broader acceptance/performance work in §13 remains. No constant-time startup,
   crash-completeness, Cloud finality parity, or end-to-end latency claim is made.
   Internal recipe flattening remains; unsupported live dependencies fail capture.
