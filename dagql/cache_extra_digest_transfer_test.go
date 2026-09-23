@@ -68,13 +68,13 @@ func TestRemoteCacheExtraDigestMetadata(t *testing.T) {
 			assertExtras := func(c *Cache, result AnyResult) {
 				t.Helper()
 				c.egraphMu.RLock()
-				defer c.egraphMu.RUnlock()
 				seen := map[call.ExtraDigest]struct{}{}
 				for eqID := range c.outputEqClassesForResultLocked(result.cacheSharedResult().id) {
 					for extra := range c.eqClassExtraDigests[c.findEqClassLocked(eqID)] {
 						seen[extra] = struct{}{}
 					}
 				}
+				c.egraphMu.RUnlock()
 				require.Contains(t, seen, call.ExtraDigest{Digest: first, Label: call.ExtraDigestLabelContent})
 				require.Contains(t, seen, call.ExtraDigest{Digest: second, Label: call.ExtraDigestLabelContent})
 				if mode == "unmarked" {

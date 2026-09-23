@@ -2,10 +2,12 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 )
@@ -32,6 +34,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
+		dagql.Func("__withoutComposition", func(_ context.Context, llm *core.LLM, args struct {
+			Owner string
+		}) (*core.LLM, error) {
+			return llm.WithoutComposition(args.Owner), nil
+		}).View(AfterVersion("v1.0.0-0")),
 		dagql.Func("model", s.model).
 			Doc("The model the conversation is running against, after resolving any configured default."),
 		dagql.Func("provider", s.provider).
@@ -117,7 +124,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("file").Doc("The file to read the prompt from"),
 			),
-		dagql.Func("withSystemPrompt", s.withSystemPrompt).
+		withLLMCallerOwner(dagql.Func("withSystemPrompt", s.withSystemPrompt)).
 			Doc("Add a system prompt, instructing the model across the whole conversation.").
 			Args(
 				dagql.Arg("prompt").Doc("The system prompt to send"),
@@ -142,7 +149,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
 				dagql.Arg("blocks").Doc("Ordered text and media returned by the tool"),
 			),
-		dagql.Func("withTools", s.withTools).
+		withLLMCallerOwner(dagql.Func("withTools", s.withTools)).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.").
 			Args(
@@ -159,6 +166,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					// no longer be reproducible).
 					LazyRef(),
 				dagql.Arg("except").Doc("Method names to exclude from the toolset (e.g. constructors, entrypoints)."),
+				dagql.Arg("version").Doc("Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply."),
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
@@ -168,7 +176,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("The name of the MCP server"),
 				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
 			),
-		dagql.Func("withSkills", s.withSkills).
+		withLLMCallerOwner(dagql.Func("withSkills", s.withSkills)).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. " +
 				"Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. " +
@@ -465,10 +473,36 @@ func (s *llmSchema) withContentFile(ctx context.Context, llm *core.LLM, args str
 	return llm.WithContent([]*core.LLMContentBlock{block}, nil), nil
 }
 
+// withLLMCallerOwner records the installing module before cache lookup. Ownership
+// is a property of each contribution, not ambient state on the LLM or the bound
+// object. Explicit stamps (including empty ones) survive replay by another caller.
+func withLLMCallerOwner(field dagql.Field[*core.LLM]) dagql.Field[*core.LLM] {
+	field.Spec.GetDynamicInput = func(ctx context.Context, _ dagql.AnyResult, _ map[string]dagql.Input, _ call.View, req *dagql.CallRequest) error {
+		if owner := req.Arg("owner"); owner != nil && owner.Value != nil && owner.Value.Kind != dagql.ResultCallLiteralKindNull {
+			return nil
+		}
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		mod, err := query.CurrentModule(ctx)
+		if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
+			return fmt.Errorf("resolve LLM contribution owner: %w", err)
+		}
+		owner := ""
+		if mod.Self() != nil {
+			owner = mod.Self().Name()
+		}
+		return req.SetArgInput(ctx, "owner", dagql.Opt(dagql.String(owner)), false)
+	}
+	return field
+}
+
 func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args struct {
 	Prompt string
+	Owner  dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.LLM, error) {
-	return llm.WithSystemPrompt(args.Prompt), nil
+	return llm.WithSystemPromptOwner(args.Prompt, string(args.Owner.Value)), nil
 }
 
 func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct {
@@ -510,9 +544,12 @@ func (s *llmSchema) withToolResult(ctx context.Context, llm *core.LLM, args stru
 }
 
 func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
-	Object dagql.AnyID
-	Except []string `default:"[]"`
+	Object  dagql.AnyID
+	Except  []string                     `default:"[]"`
+	Version int                          `default:"0"`
+	Owner   dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.LLM, error) {
+	owner := string(args.Owner.Value)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -534,7 +571,7 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 			return nil, err
 		}
 		if ok {
-			return llm.WithLazyTools(id, objType, definingServer.Schema(), args.Except), nil
+			return llm.WithLazyToolsOwner(id, objType, definingServer.Schema(), args.Except, owner, args.Version), nil
 		}
 	}
 	// Fall back to eager loading if the type isn't resolvable structurally. This
@@ -564,7 +601,7 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, fmt.Errorf("bind object to its defining type: %w", err)
 	}
-	return llm.WithTools(obj, definingServer.Schema(), args.Except), nil
+	return llm.WithToolsOwner(obj, definingServer.Schema(), args.Except, owner, args.Version), nil
 }
 
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
@@ -588,6 +625,7 @@ func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struc
 
 func (s *llmSchema) withSkills(ctx context.Context, llm *core.LLM, args struct {
 	Directory core.DirectoryID
+	Owner     dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.LLM, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -597,7 +635,7 @@ func (s *llmSchema) withSkills(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithSkills(dir), nil
+	return llm.WithSkillsOwner(dir, string(args.Owner.Value)), nil
 }
 
 func (s *llmSchema) skills(ctx context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMSkill, error) {

@@ -14,13 +14,27 @@ var _ SchemaResolvers = &terminalsSchema{}
 func (s terminalsSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.TerminalGroup](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.TerminalTarget](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.MustInputSpec(core.TerminalCopy{}).Install(srv, AfterVersion("v1.0.0-0"))
+
+	setupArgs := []dagql.Argument{
+		dagql.Arg("copy").Doc("Directories to copy into the container, in order."),
+		dagql.Arg("init").Doc("Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept."),
+	}
 
 	dagql.Fields[*core.TerminalGroup]{
 		dagql.Func("list", s.list).
 			Doc("Return the selected terminal targets and their details"),
 		dagql.NodeFunc("run", s.run).
 			DoNotCache("Opens an interactive terminal and then returns the original group.").
-			Doc("Open the selected terminal target"),
+			Doc("Open the selected terminal target").
+			Args(setupArgs...),
+		dagql.NodeFunc("exec", s.exec).
+			DoNotCache("Runs the command again on each call, like a terminal.").
+			Doc("Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.").
+			Args(append([]dagql.Argument{
+				dagql.Arg("args").Doc(`Arguments to append to the terminal command. Example: ["-c", "go test ./..."]`),
+				dagql.Arg("stdin").Doc(`Content to write to the command's standard input.`),
+			}, setupArgs...)...),
 	}.Install(srv)
 
 	dagql.Fields[*core.TerminalTarget]{
@@ -39,8 +53,18 @@ func (s terminalsSchema) list(_ context.Context, parent *core.TerminalGroup, _ s
 	return parent.List(), nil
 }
 
-func (s terminalsSchema) run(ctx context.Context, parent dagql.ObjectResult[*core.TerminalGroup], _ struct{}) (dagql.ObjectResult[*core.TerminalGroup], error) {
-	return parent, parent.Self().Run(ctx)
+func (s terminalsSchema) run(ctx context.Context, parent dagql.ObjectResult[*core.TerminalGroup], args core.TerminalSetupArgs) (dagql.ObjectResult[*core.TerminalGroup], error) {
+	return parent, parent.Self().Run(ctx, args)
+}
+
+type terminalExecArgs struct {
+	Args  []string `default:"[]"`
+	Stdin string   `default:""`
+	core.TerminalSetupArgs
+}
+
+func (s terminalsSchema) exec(ctx context.Context, parent dagql.ObjectResult[*core.TerminalGroup], args terminalExecArgs) (dagql.ObjectResult[*core.Container], error) {
+	return parent.Self().Exec(ctx, args.Args, args.Stdin, args.TerminalSetupArgs)
 }
 
 func (s terminalsSchema) name(_ context.Context, parent *core.TerminalTarget, _ struct{}) (string, error) {

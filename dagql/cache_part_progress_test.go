@@ -293,9 +293,11 @@ func chainLoopFixture(t *testing.T, demand *PartDemandState, arm func(c *Cache, 
 		Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(dependency.cacheSharedResult().id)}}}
 	c.egraphMu.Lock()
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
-	require.NoError(t, err)
-	require.NoError(t, c.attachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner}))
+	if err == nil {
+		err = c.attachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
+	}
 	c.egraphMu.Unlock()
+	require.NoError(t, err)
 	captured, err := c.CapturePersistedRecord(ctx, receiver)
 	require.NoError(t, err)
 	row := receiver.cacheSharedResult()

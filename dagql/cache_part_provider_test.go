@@ -75,10 +75,14 @@ func TestPartOfferReplacementNotExhausted(t *testing.T) {
 	replace := func() {
 		c.egraphMu.Lock()
 		owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
-		require.NoError(t, err)
-		queue, err := c.replacePartOfferLocked(ctx, receiver.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
-		require.NoError(t, err)
-		callbacks, err := c.collectUnownedResultsLocked(ctx, queue)
+		var callbacks []OnReleaseFunc
+		if err == nil {
+			var queue []*sharedResult
+			queue, err = c.replacePartOfferLocked(ctx, receiver.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
+			if err == nil {
+				callbacks, err = c.collectUnownedResultsLocked(ctx, queue)
+			}
+		}
 		c.egraphMu.Unlock()
 		require.NoError(t, err)
 		require.NoError(t, runOnReleaseFuncs(ctx, callbacks))

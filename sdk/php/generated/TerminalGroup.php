@@ -31,9 +31,36 @@ class TerminalGroup extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Open the selected terminal target
      */
-    public function run(): TerminalGroup
+    public function run(?array $copy = null, ?array $init = []): TerminalGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
+        if (null !== $copy) {
+        $innerQueryBuilder->setArgument('copy', $copy);
+        }
+        if (null !== $init) {
+        $innerQueryBuilder->setArgument('init', $init);
+        }
         return new \Dagger\TerminalGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
+     */
+    public function exec(?array $args = [], ?string $stdin = '', ?array $copy = null, ?array $init = []): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('exec');
+        if (null !== $args) {
+        $innerQueryBuilder->setArgument('args', $args);
+        }
+        if (null !== $stdin) {
+        $innerQueryBuilder->setArgument('stdin', $stdin);
+        }
+        if (null !== $copy) {
+        $innerQueryBuilder->setArgument('copy', $copy);
+        }
+        if (null !== $init) {
+        $innerQueryBuilder->setArgument('init', $init);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

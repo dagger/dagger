@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"dagger/engine-dev/internal/dagger"
 
@@ -55,7 +56,18 @@ func (dev *EngineDev) Test(
 	// Enable the given ebpf progs in the engine during tests
 	// +optional
 	ebpfProgs []string,
+	// Elapsed times after the test runner starts at which to dump engine goroutines
+	// +optional
+	dumpAfter []string,
 ) error {
+	dumpTimes := make([]time.Duration, len(dumpAfter))
+	for i, after := range dumpAfter {
+		duration, err := time.ParseDuration(after)
+		if err != nil || duration <= 0 {
+			return fmt.Errorf("dumpAfter must contain positive durations: %q", after)
+		}
+		dumpTimes[i] = duration
+	}
 	// FIXME: use the damn standard Go toolchain
 	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
@@ -74,6 +86,7 @@ func (dev *EngineDev) Test(
 		testVerbose:   testVerbose,
 		update:        update,
 		ldflagValues:  ldflagValues,
+		dumpAfter:     dumpTimes,
 	},
 	).Sync(ctx)
 	return err
@@ -148,6 +161,7 @@ type testOpts struct {
 	testVerbose   bool
 	bench         bool
 	ldflagValues  []string
+	dumpAfter     []time.Duration
 }
 
 func (dev *EngineDev) test(
@@ -181,10 +195,10 @@ func (dev *EngineDev) test(
 		args = append(args, fmt.Sprintf("-parallel=%d", opts.parallel))
 	}
 
-	// Default timeout to 30m
-	// No test suite should take more than 30 minutes to run
+	// Default timeout to 20m: Cloud cancels a job at thirty minutes, so a
+	// package must time out first to leave a goroutine dump behind.
 	if opts.timeout == "" {
-		opts.timeout = "30m"
+		opts.timeout = "20m"
 	}
 	args = append(args, fmt.Sprintf("-timeout=%s", opts.timeout))
 
@@ -221,10 +235,103 @@ func (dev *EngineDev) test(
 		args = append(args, "-update")
 	}
 
+	if len(opts.dumpAfter) > 0 {
+		watchArgs := []string{"sh", "-c", engineDumpWatchdog, "engine-dump-watchdog"}
+		for _, after := range opts.dumpAfter {
+			watchArgs = append(watchArgs, fmt.Sprintf("%.9f", after.Seconds()), after.String())
+		}
+		watchArgs = append(watchArgs, "--")
+		args = append(watchArgs, args...)
+	}
+
 	return container.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
 		WithExec(args)
 }
+
+// Use direct HTTP from the runner: asking the engine to execute a dump command
+// would itself need the cache locks we may be trying to diagnose. Each timer is
+// relative to runner startup, independent of earlier requests, and both the
+// timer and an in-flight request are reaped when the tests finish.
+//
+//nolint:gosec // G101: this constant is a shell script, not a credential.
+const engineDumpWatchdog = `
+engine_url='http://daggerengine:6060/debug/pprof/goroutine?debug=2'
+runner=
+watchers=
+spawning=false
+exit_status=
+request_exit() {
+  if "$spawning"; then
+    exit_status=$1
+  else
+    exit "$1"
+  fi
+}
+finish_spawn() {
+  spawning=false
+  if [ -n "$exit_status" ]; then exit "$exit_status"; fi
+}
+cleanup() {
+  trap - EXIT
+  if [ -n "$runner" ]; then
+    kill -TERM "$runner" 2>/dev/null || :
+  fi
+  for pid in $watchers; do
+    kill -TERM "$pid" 2>/dev/null || :
+  done
+  wait
+}
+trap cleanup EXIT
+trap 'request_exit 129' HUP
+trap 'request_exit 130' INT
+trap 'request_exit 143' TERM
+
+watch_dump() {
+  child=
+  spawning=false
+  exit_status=
+  trap 'if [ -n "$child" ]; then kill -TERM "$child" 2>/dev/null || :; wait "$child" 2>/dev/null || :; fi' EXIT
+  trap 'request_exit 0' HUP INT TERM
+  start_child() {
+    # A signal may arrive between spawning the child and recording its PID.
+    # Defer exit until the EXIT trap can kill and reap that child.
+    spawning=true
+    "$@" &
+    child=$!
+    finish_spawn
+  }
+  start_child sleep "$1"
+  wait "$child" || return
+  child=
+  printf '\n=== BEGIN engine goroutine dump after %s: %s ===\n' "$2" "$engine_url" >&2
+  start_child curl --fail --silent --show-error --connect-timeout 5 --max-time 30 "$engine_url" >&2
+  if wait "$child"; then
+    result=0
+  else
+    result=$?
+  fi
+  child=
+  printf '\n=== END engine goroutine dump after %s: %s (curl exit %s) ===\n' "$2" "$engine_url" "$result" >&2
+}
+
+while [ "$1" != "--" ]; do
+  spawning=true
+  watch_dump "$1" "$2" &
+  watchers="$watchers $!"
+  finish_spawn
+  shift 2
+done
+shift
+spawning=true
+"$@" &
+runner=$!
+finish_spawn
+wait "$runner"
+result=$?
+runner=
+exit "$result"
+`
 
 // Build an ephemeral test environment ready to run core engine tests.
 // (FIXME: do this more cleanly, and reuse the standard Go toolchain)
@@ -273,6 +380,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(6060, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+rand.Text())).
 		WithMountedCache("/run", engineRunVol).
 		AsService(dagger.ContainerAsServiceOpts{
@@ -297,7 +405,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	utilDirPath := "/dagger-dev"
 	goToolchain := dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws,
 		// Exercise real client-managed agents and encrypted key loading.
-		ExtraPackages: []string{"openssh-client"},
+		ExtraPackages: []string{"openssh-client", "curl"},
 	})
 	ldflagValues, err := goToolchain.Values(ctx)
 	if err != nil {

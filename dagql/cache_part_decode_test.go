@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/internal/testutil/cachetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -79,15 +79,17 @@ func TestPartDecodeBeforeExternalFinish(t *testing.T) {
 	gate := row.partGate.gate.Load()
 	key, _ := partAddressKey(address)
 	gate.mu.Lock()
-	require.Equal(t, PartOutputInstalled, gate.outputs[key].phase)
-	require.Same(t, receipt.task, gate.outputs[key].task)
+	output := gate.outputs[key]
 	gate.mu.Unlock()
+	require.Equal(t, PartOutputInstalled, output.phase)
+	require.Same(t, receipt.task, output.task)
 	require.False(t, receipt.task.settled.Load())
 	require.NoError(t, c.FinishReadyPart(ctx, receipt))
 	require.NoError(t, <-done)
 	gate.mu.Lock()
-	require.Equal(t, PartComplete, gate.outputs[key].phase)
+	phase := gate.outputs[key].phase
 	gate.mu.Unlock()
+	require.Equal(t, PartComplete, phase)
 	encoded, err := c.CapturePersistedRecord(ctx, loaded)
 	require.NoError(t, err)
 	require.JSONEq(t, string(json.RawMessage(`{"text":"snapshot"}`)), string(encoded.Envelope.ObjectJSON))
@@ -140,17 +142,21 @@ func TestReadyPartDonorBackreferenceReleasedBeforeSync(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, released.Load(), "Ready donor must collect before receiver bookkeeping despite donor-to-receiver backreference")
 	c.egraphMu.RLock()
-	require.Nil(t, c.resultsByID[donor.cacheSharedResult().id])
-	require.NotContains(t, receiver.cacheSharedResult().deps, donor.cacheSharedResult().id)
+	donorCollected := c.resultsByID[donor.cacheSharedResult().id] == nil
+	_, retainsDonor := receiver.cacheSharedResult().deps[donor.cacheSharedResult().id]
 	c.egraphMu.RUnlock()
+	require.True(t, donorCollected)
+	require.False(t, retainsDonor)
 	require.NoError(t, c.FinishReadyPart(demandCtx, receipt))
 	require.NoError(t, waitLazyRetryError(t, done, "ready backreference Finish"))
-	require.NoError(t, c.ReleaseSession(demandCtx, "demand"))
+	// Task completion precedes the worker's deferred row release and session cleanup.
+	cachetest.ReleaseSessionAndWait(t, demandCtx, c, "demand")
 	_, err = c.removePersistedEdge(ctx, receiver.cacheSharedResult().id)
 	require.NoError(t, err)
 	c.egraphMu.RLock()
-	require.Nil(t, c.resultsByID[receiver.cacheSharedResult().id])
+	receiverCollected := c.resultsByID[receiver.cacheSharedResult().id] == nil
 	c.egraphMu.RUnlock()
+	require.True(t, receiverCollected)
 }
 
 func TestPartDecodeLosesToInstalledRevision(t *testing.T) {
@@ -207,12 +213,9 @@ func TestPartDecodeLosesToInstalledRevision(t *testing.T) {
 	require.EqualValues(t, 2, calls.Load())
 	require.EqualValues(t, 1, losing.Load())
 	require.Zero(t, winning.Load())
-	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
 	// The obtain attempt can still be exiting after it wakes its caller.
 	// Wait for its session cleanup before dropping the last persisted owner.
-	releaseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	require.NoError(t, c.WaitSessionRelease(releaseCtx, "test-session"))
+	cachetest.ReleaseSessionAndWait(t, ctx, c, "test-session")
 	_, err := c.removePersistedEdge(ctx, row.id)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, winning.Load())

@@ -33,6 +33,10 @@ type SnapshotManagerOpt struct {
 	Applier       diff.Applier
 	Differ        diff.Comparer
 	MountPoolRoot string
+	// BuiltinContent is the engine's builtin image store, consulted by
+	// chain imports for a layer blob before the chain's provider. Nil means
+	// no such store.
+	BuiltinContent content.InfoReaderProvider
 }
 
 type ImportedImage struct {
@@ -41,6 +45,24 @@ type ImportedImage struct {
 	ConfigDesc   ocispecs.Descriptor
 	Layers       []ocispecs.Descriptor
 	Nonlayers    []ocispecs.Descriptor
+}
+
+// BuiltinContent is the builtin image store chain imports consult, nil
+// when there is none.
+func (cm *snapshotManager) BuiltinContent() content.InfoReaderProvider {
+	return cm.builtinContent
+}
+
+// Blobs lists every blob of the image: manifest, config, layers and the
+// non-layer descriptors.
+func (img *ImportedImage) Blobs() []ocispecs.Descriptor {
+	if img == nil {
+		return nil
+	}
+	blobs := []ocispecs.Descriptor{img.ManifestDesc, img.ConfigDesc}
+	blobs = append(blobs, img.Layers...)
+	blobs = append(blobs, img.Nonlayers...)
+	return blobs
 }
 
 type ImportImageOpts struct {
@@ -71,6 +93,7 @@ type SnapshotManager interface {
 	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
 	RemoveLease(ctx context.Context, leaseID string) error
+	PinContent(ctx context.Context, leaseID string, descs []ocispecs.Descriptor) error
 	LoadPersistentMetadata(rows PersistentMetadataRows) error
 	PersistentMetadataRows() PersistentMetadataRows
 	DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error
@@ -92,6 +115,8 @@ type snapshotManager struct {
 	Applier       diff.Applier
 	Differ        diff.Comparer
 	metadataStore *metadataStore
+	// builtinContent is SnapshotManagerOpt.BuiltinContent.
+	builtinContent content.InfoReaderProvider
 
 	snapshotContentDigests map[string]map[digest.Digest]struct{}
 	importedLayerByBlob    map[ImportedLayerBlobKey]string
@@ -111,6 +136,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		LeaseManager:           opt.LeaseManager,
 		Applier:                opt.Applier,
 		Differ:                 opt.Differ,
+		builtinContent:         opt.BuiltinContent,
 		metadataStore:          newMetadataStore(),
 		records:                make(map[string]*cacheRecord),
 		snapshotContentDigests: make(map[string]map[digest.Digest]struct{}),

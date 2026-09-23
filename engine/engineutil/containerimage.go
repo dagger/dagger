@@ -267,7 +267,7 @@ func (c *Client) ExportContainerImage(
 	tarExport bool,
 	_ string,
 	useOCIMediaTypes bool,
-) (*imageexport.ExportResponse, error) {
+) (_ *imageexport.ExportResponse, rerr error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -302,7 +302,12 @@ func (c *Client) ExportContainerImage(
 	}
 
 	if imageWriter.Tarball != nil {
-		defer imageWriter.Tarball.Close()
+		closed := false
+		defer func() {
+			if !closed {
+				rerr = errors.Join(rerr, imageWriter.Tarball.Close())
+			}
+		}()
 
 		exported, err := c.imageExportWriter.Assemble(ctx, req, commitOpts)
 		if err != nil {
@@ -311,6 +316,12 @@ func (c *Client) ExportContainerImage(
 		defer exported.Release(context.WithoutCancel(ctx))
 		if err := archiveexporter.Export(ctx, exported.Provider, imageWriter.Tarball, archiveexporter.WithManifest(exported.RootDesc)); err != nil {
 			return nil, err
+		}
+		// Close waits for the client to load and tag the image, not just for
+		// the tarball upload to finish. Its acknowledgment can still fail.
+		closed = true
+		if err := imageWriter.Tarball.Close(); err != nil {
+			return nil, fmt.Errorf("load exported image: %w", err)
 		}
 		return &imageexport.ExportResponse{
 			RootDesc:  exported.RootDesc,

@@ -262,6 +262,10 @@ func (p *Go) Env(
 	platform dagger.Platform,
 ) *dagger.Container {
 	return p.Base.
+		// Go's module index keys imports by path, size and mtime, so normalized
+		// Git trees can alias across builds sharing GOCACHE. Keep the compiled
+		// artifact cache, but read imports from source (dagger/dagger#8031).
+		WithEnvVariable("GODEBUG", "${GODEBUG},goindex=0", dagger.ContainerWithEnvVariableOpts{Expand: true}).
 		// Configure CGO
 		WithEnvVariable("CGO_ENABLED", func() string {
 			if p.Cgo {

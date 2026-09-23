@@ -269,6 +269,13 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
 
+	// Opened before the local cache state: the snapshot manager takes the
+	// builtin store at construction, for chain imports of builtin layers.
+	srv.builtinContentStore, err = openBuiltinOCIStore()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open builtin content store: %w", err)
+	}
+
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
 		return nil, err
 	}
@@ -342,11 +349,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		}
 	}
 	srv.registryHosts = newRegistryHosts(registries)
-
-	srv.builtinContentStore, err = openBuiltinOCIStore()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open builtin content store: %w", err)
-	}
 
 	//
 	// setup worker+executor
@@ -586,6 +588,9 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 }
 
 func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) (localCacheStateResetReason, error) {
+	if srv.builtinContentStore == nil {
+		return localCacheStateResetNone, errors.New("builtin content store must be opened before the local cache state")
+	}
 	if err := srv.mkdirBaseDirs(); err != nil {
 		return localCacheStateResetNone, err
 	}
@@ -629,6 +634,9 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		Applier:       winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
 		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
 		MountPoolRoot: srv.buildkitMountPoolDir,
+		// Chain imports take a builtin image's layers from the engine's own
+		// files rather than the remote cache.
+		BuiltinContent: srv.builtinContentStore,
 	})
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create snapshot manager: %w", err)
@@ -910,11 +918,6 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		}
 	}
 
-	// FIXME: Keep this join for now. It looks unused only because GracefulStop
-	// currently drops earlier shutdown errors and later returns only the async
-	// DB-close path. When GracefulStop is fixed, it should return those earlier
-	// errors instead of deleting this assignment.
-	//nolint:ineffassign,staticcheck // FIXME: see comment above
 	err = errors.Join(err, srv.engineUtilOpts.Close())
 
 	// Shutdown the global namespace worker pool
@@ -936,7 +939,9 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		return nil
 	})
 
-	doneClosingCh := make(chan error)
+	// Buffered, so the closing goroutine can finish after GracefulStop returns
+	// through ctx.Done().
+	doneClosingCh := make(chan error, 1)
 	go func() {
 		defer close(doneClosingCh)
 
@@ -964,9 +969,9 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 
 	select {
 	case dbCloseErr := <-doneClosingCh:
-		return errors.Join(adapterStopErr, dbCloseErr)
+		return errors.Join(err, adapterStopErr, dbCloseErr)
 	case <-ctx.Done():
-		return errors.Join(adapterStopErr, ctx.Err())
+		return errors.Join(err, adapterStopErr, ctx.Err())
 	}
 }
 

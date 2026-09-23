@@ -14,24 +14,6 @@ namespace Dagger;
 class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Input tokens served from the provider's prompt cache.
-     */
-    public function cachedTokenReads(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cachedTokenReads');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'cachedTokenReads');
-    }
-
-    /**
-     * Input tokens written to the provider's prompt cache.
-     */
-    public function cachedTokenWrites(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cachedTokenWrites');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'cachedTokenWrites');
-    }
-
-    /**
      * A unique identifier for this LLMTokenUsage.
      */
     public function id(): Id
@@ -56,6 +38,24 @@ class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('outputTokens');
         return (int)$this->queryLeaf($leafQueryBuilder, 'outputTokens');
+    }
+
+    /**
+     * Input tokens served from the provider's prompt cache.
+     */
+    public function cachedTokenReads(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cachedTokenReads');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'cachedTokenReads');
+    }
+
+    /**
+     * Input tokens written to the provider's prompt cache.
+     */
+    public function cachedTokenWrites(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cachedTokenWrites');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'cachedTokenWrites');
     }
 
     /**

@@ -338,13 +338,19 @@ func TestCachePersistenceSnapshotKeepsOnlyCompletePersistedRootClosures(t *testi
 		assert.NilError(t, restarted.Close(context.Background()))
 	}()
 	restarted.egraphMu.RLock()
-	assert.Equal(t, 2, len(restarted.resultsByID))
-	assert.Assert(t, restarted.resultsByID[keptRoot.cacheSharedResult().id] != nil)
-	assert.Assert(t, restarted.resultsByID[keptDep.cacheSharedResult().id] != nil)
-	assert.Assert(t, restarted.resultsByID[droppedRoot.cacheSharedResult().id] == nil)
-	assert.Assert(t, restarted.resultsByID[dirtyDep.cacheSharedResult().id] == nil)
-	assert.Assert(t, restarted.resultsByID[sessionOnly.cacheSharedResult().id] == nil)
+	resultCount := len(restarted.resultsByID)
+	keptRootPresent := restarted.resultsByID[keptRoot.cacheSharedResult().id] != nil
+	keptDepPresent := restarted.resultsByID[keptDep.cacheSharedResult().id] != nil
+	droppedRootAbsent := restarted.resultsByID[droppedRoot.cacheSharedResult().id] == nil
+	dirtyDepAbsent := restarted.resultsByID[dirtyDep.cacheSharedResult().id] == nil
+	sessionOnlyAbsent := restarted.resultsByID[sessionOnly.cacheSharedResult().id] == nil
 	restarted.egraphMu.RUnlock()
+	assert.Equal(t, 2, resultCount)
+	assert.Assert(t, keptRootPresent)
+	assert.Assert(t, keptDepPresent)
+	assert.Assert(t, droppedRootAbsent)
+	assert.Assert(t, dirtyDepAbsent)
+	assert.Assert(t, sessionOnlyAbsent)
 	assertCacheOwnershipExact(t, restarted)
 }
 

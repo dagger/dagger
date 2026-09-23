@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path"
 	"slices"
 	"strings"
@@ -867,6 +866,12 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
+	// Do not evaluate a lazy parent: it can run container commands. Such a
+	// file has no content digest, so its cache key is its recipe.
+	if dagql.HasPendingLazyComputation(parent) {
+		return fileResult, nil
+	}
+
 	if lazy := fileResult.Self().LazyEvalFunc(); lazy != nil {
 		if err := lazy(ctx); err != nil {
 			return inst, err
@@ -1692,31 +1697,27 @@ type dirDockerBuildArgs struct {
 	SSH        dagql.Optional[core.SocketID]
 }
 
-func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*core.Directory], filename string) ([]byte, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
+// optionalFileContents returns nil if the file does not exist. It checks
+// first, because a lazy Directory.file does not report a missing file.
+func optionalFileContents(ctx context.Context, srv *dagql.Server, dir dagql.ObjectResult[*core.Directory], filePath string) ([]byte, error) {
+	var exists dagql.Boolean
+	if err := srv.Select(ctx, dir, &exists, dagql.Selector{
+		Field: "exists",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(filePath)}},
+	}); err != nil {
 		return nil, err
 	}
-	var file dagql.ObjectResult[*core.File]
-	err = srv.Select(ctx, parent, &file, dagql.Selector{
-		Field: "file",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(filename)},
-		},
-	})
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
+	if !exists {
+		return nil, nil
+	}
+	var contents dagql.String
+	if err := srv.Select(ctx, dir, &contents,
+		dagql.Selector{Field: "file", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(filePath)}}},
+		dagql.Selector{Field: "contents"},
+	); err != nil {
 		return nil, err
 	}
-
-	var content dagql.String
-	if err := srv.Select(ctx, file, &content, dagql.Selector{Field: "contents"}); err != nil {
-		return nil, err
-	}
-
-	return []byte(content), nil
+	return []byte(contents), nil
 }
 
 func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*core.Directory], dockerfile string) (dagql.ObjectResult[*core.Directory], error) {
@@ -1725,14 +1726,14 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Obje
 	// use dockerfile specific .dockerfile if that exists
 	// https://docs.docker.com/build/concepts/context/#filename-and-location
 	specificDockerIgnoreFile := dockerfile + ".dockerignore"
-	dockerIgnoreContents, err := getDockerIgnoreFileContent(ctx, parent, specificDockerIgnoreFile)
+	dockerIgnoreContents, err := optionalFileContents(ctx, srv, parent, specificDockerIgnoreFile)
 	if err != nil {
 		return buildctxDir, err
 	}
 
 	// fallback on default .dockerignore file
 	if len(dockerIgnoreContents) == 0 {
-		dockerIgnoreContents, err = getDockerIgnoreFileContent(ctx, parent, ".dockerignore")
+		dockerIgnoreContents, err = optionalFileContents(ctx, srv, parent, ".dockerignore")
 		if err != nil {
 			return buildctxDir, err
 		}

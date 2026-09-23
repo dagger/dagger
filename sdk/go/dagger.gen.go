@@ -236,6 +236,14 @@ type PortForward struct {
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
+type TerminalCopy struct {
+	// Location of the copied directory. A relative path is relative to the container's working directory.
+	Path string `json:"path"`
+
+	// The directory to copy.
+	Source *Directory `json:"source"`
+}
+
 // A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
 type Address struct {
 	query *querybuilder.Selection
@@ -1174,6 +1182,25 @@ func (r *AgentMiddlewareGroup) List(ctx context.Context) ([]AgentMiddleware, err
 	}
 
 	return convert(response), nil
+}
+
+// Recompose the selected agent middlewares onto an existing LLM, replacing their modules' owned system prompts, skills, and tool bindings while preserving tool object state.
+//
+// Contributions belong to the installed module calling withSystemPrompt, withSkills, or withTools, independently of the bound object's module or middleware entrypoint. Ownership follows the installed module name, not its source location. Moving a module between remote, local, or forked sources preserves compatible state when its installation name and intrinsic module and object identities stay the same.
+//
+// Contributions from selected modules are removed once before running the selected entrypoints. Unowned contributions and contributions from other modules are retained. Nested modules own their own contributions; use recompose explicitly to refresh them. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+//
+// Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or changed module or object identities are errors regardless of version. Ownership checks still apply. The base workspace is preserved.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMiddlewareGroup) Recompose(base *LLM) *LLM {
+	assertNotNil("base", base)
+	q := r.query.Select("recompose")
+	q = q.Arg("base", base)
+
+	return &LLM{
+		query: q,
+	}
 }
 
 // AsNode returns this AgentMiddlewareGroup as a Node.
@@ -11740,6 +11767,8 @@ func (r *LLM) WithToolResult(callId string, content string, errored bool, opts .
 type LLMWithToolsOpts struct {
 	// Method names to exclude from the toolset (e.g. constructors, entrypoints).
 	Except []string
+	// Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply.
+	Version int
 }
 
 // Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
@@ -11749,6 +11778,10 @@ func (r *LLM) WithTools(object Node, opts ...LLMWithToolsOpts) *LLM {
 		// `except` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Except) {
 			q = q.Arg("except", opts[i].Except)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("object", object)
@@ -16563,6 +16596,45 @@ func (r *TerminalGroup) WithGraphQLQuery(q *querybuilder.Selection) *TerminalGro
 	}
 }
 
+// TerminalGroupExecOpts contains options for TerminalGroup.Exec
+type TerminalGroupExecOpts struct {
+	// Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+	Args []string
+	// Content to write to the command's standard input.
+	Stdin string
+	// Directories to copy into the container, in order.
+	Copy []TerminalCopy
+	// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+	Init []string
+}
+
+// Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
+func (r *TerminalGroup) Exec(opts ...TerminalGroupExecOpts) *Container {
+	q := r.query.Select("exec")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
+		// `stdin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Stdin) {
+			q = q.Arg("stdin", opts[i].Stdin)
+		}
+		// `copy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Copy) {
+			q = q.Arg("copy", opts[i].Copy)
+		}
+		// `init` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Init) {
+			q = q.Arg("init", opts[i].Init)
+		}
+	}
+
+	return &Container{
+		query: q,
+	}
+}
+
 // A unique identifier for this TerminalGroup.
 func (r *TerminalGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -16636,9 +16708,27 @@ func (r *TerminalGroup) List(ctx context.Context) ([]TerminalTarget, error) {
 	return convert(response), nil
 }
 
+// TerminalGroupRunOpts contains options for TerminalGroup.Run
+type TerminalGroupRunOpts struct {
+	// Directories to copy into the container, in order.
+	Copy []TerminalCopy
+	// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+	Init []string
+}
+
 // Open the selected terminal target
-func (r *TerminalGroup) Run() *TerminalGroup {
+func (r *TerminalGroup) Run(opts ...TerminalGroupRunOpts) *TerminalGroup {
 	q := r.query.Select("run")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `copy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Copy) {
+			q = q.Arg("copy", opts[i].Copy)
+		}
+		// `init` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Init) {
+			q = q.Arg("init", opts[i].Init)
+		}
+	}
 
 	return &TerminalGroup{
 		query: q,
@@ -17876,17 +17966,19 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 
 // WorkspaceExportOpts contains options for Workspace.Export
 type WorkspaceExportOpts struct {
-	// Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
+	// Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to use the calling client's current local workspace root.
 	Path string
-	// Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
+	// Earlier workspace state to compare against. For Git integration, live inputs are snapshotted at export time; use a snapshot to retain the baseline of a previous export.
 	From *Workspace
 }
 
 // Write this workspace's commits and pending changes to a checkout on the calling client.
 //
-// With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+// Path selects the destination; omitting it uses the calling client's current local workspace root, including when exporting a snapshot or committed workspace. Exported file paths are relative to the workspace root regardless of its working directory. This writes only to the client making the call, never the source's client.
 //
-// Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
+// A live workspace exported to its own checkout applies only its overlay edits, without capturing the whole checkout. This also applies with an explicit path. Pass from with the same live base to apply only changes since that overlay state.
+//
+// Other exports integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. Live inputs are snapshotted automatically; capturing untracked source files requires interactive approval. Stable inputs retain their baseline. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
 func (r *Workspace) Export(ctx context.Context, opts ...WorkspaceExportOpts) error {
 	if r.export != nil {
 		return nil

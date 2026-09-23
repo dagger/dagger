@@ -128,6 +128,9 @@ The engine shutdown path matters here.
 `GracefulStop` joins the integration's stop error into what it returns,
 together with the final database close result.
 
+`GracefulStop` returns the errors collected along the way, joined with the
+final database close result.
+
 The session removal part is critical. Before persistence, the engine tries to
 get rid of session-owned state first so the retained graph is in a steady state.
 

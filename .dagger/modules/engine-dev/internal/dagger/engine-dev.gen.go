@@ -366,6 +366,8 @@ type EngineDevTestOpts struct {
 	Update bool
 	// Enable the given ebpf progs in the engine during tests
 	EbpfProgs []string
+	// Elapsed times after the test runner starts at which to dump engine goroutines
+	DumpAfter []string
 }
 
 // Run core engine tests
@@ -422,6 +424,10 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 		// `ebpfProgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
 			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+		// `dumpAfter` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DumpAfter) {
+			q = q.Arg("dumpAfter", opts[i].DumpAfter)
 		}
 	}
 

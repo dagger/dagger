@@ -17,21 +17,21 @@ namespace Dagger;
 class InputTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Static fields defined on this input object, if any.
-     */
-    public function fields(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fields');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
-    }
-
-    /**
      * A unique identifier for this InputTypeDef.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Static fields defined on this input object, if any.
+     */
+    public function fields(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fields');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
     }
 
     /**

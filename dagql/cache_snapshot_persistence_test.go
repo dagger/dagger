@@ -7,12 +7,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 
+	"github.com/docker/docker/pkg/idtools"
+
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/docker/docker/pkg/idtools"
 )
 
 type persistSnapshotValue struct {
@@ -206,6 +209,10 @@ func (m *fakeSnapshotManager) LoadPersistentMetadata(rows bkcache.PersistentMeta
 
 func (m *fakeSnapshotManager) PersistentMetadataRows() bkcache.PersistentMetadataRows {
 	return m.persistentRows
+}
+
+func (m *fakeSnapshotManager) PinContent(context.Context, string, []ocispecs.Descriptor) error {
+	return nil
 }
 
 func (m *fakeSnapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error {

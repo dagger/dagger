@@ -8,6 +8,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	cerrdefs "github.com/containerd/errdefs"
@@ -15,6 +16,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/converter"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
+	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
@@ -26,7 +28,84 @@ type ensureExportBlobResult struct {
 	hasLayer bool
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+// snapshotBlobGCLabel is the label on a layer snapshot that names the blob
+// its content was applied from, or was last diffed into. It is the durable
+// record of which blob belongs to a snapshot: AttachLease reads it when a
+// lease takes a snapshot chain, and adds the blob as a content resource of
+// that lease, so every lease that names a snapshot names its blob too,
+// including after a restart. The label alone protects the blob only from a
+// non-flat lease, since containerd's collector skips label references of
+// snapshots held by flat leases, which the engine's owner leases and pins
+// are; that is why the content resource is added. A snapshot has one blob
+// at a time; a new diff replaces the label.
+const snapshotBlobGCLabel = "containerd.io/gc.ref.content.blob"
+
+// labelSnapshotBlob binds blob to the snapshot for garbage collection.
+func (cm *snapshotManager) labelSnapshotBlob(ctx context.Context, snapshotID string, blob digest.Digest) error {
+	if snapshotID == "" || blob == "" {
+		return nil
+	}
+	_, err := cm.Snapshotter.Update(ctx, snapshots.Info{
+		Name:   snapshotID,
+		Labels: map[string]string{snapshotBlobGCLabel: blob.String()},
+	}, "labels."+snapshotBlobGCLabel)
+	if err != nil {
+		return errors.Wrapf(err, "label snapshot %s with blob %s", snapshotID, blob)
+	}
+	return nil
+}
+
+// restoreRecordedBlobFromLabel reads the snapshot's blob label and, when
+// the blob is still in the content store with its stored descriptor,
+// re-queues the ref's blob metadata from it and returns the digest. An
+// unlabeled snapshot, or one whose blob is gone, returns "" so the caller
+// diffs as before.
+func (cm *snapshotManager) restoreRecordedBlobFromLabel(ctx context.Context, ref *immutableRef) (digest.Digest, error) {
+	info, err := cm.Snapshotter.Stat(ctx, ref.SnapshotID())
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return "", nil
+		}
+		return "", errors.Wrapf(err, "stat snapshot %s for its blob label", ref.SnapshotID())
+	}
+	labeled := info.Labels[snapshotBlobGCLabel]
+	if labeled == "" {
+		return "", nil
+	}
+	blob := digest.Digest(labeled)
+	if err := blob.Validate(); err != nil {
+		return "", errors.Wrapf(err, "blob label of snapshot %s", ref.SnapshotID())
+	}
+	desc, err := getBlobDesc(ctx, cm.ContentStore, blob)
+	if cerrdefs.IsNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	diffID, err := diffIDFromDescriptor(desc)
+	if err != nil {
+		return "", err
+	}
+	ref.mu.Lock()
+	defer ref.mu.Unlock()
+	for _, queue := range []error{
+		ref.md.queueDiffID(diffID),
+		ref.md.queueBlob(desc.Digest),
+		ref.md.queueMediaType(desc.MediaType),
+		ref.md.queueBlobSize(desc.Size),
+		ref.md.queueBlobOnly(false),
+		ref.md.appendURLs(desc.URLs),
+		ref.md.commitMetadata(),
+	} {
+		if queue != nil {
+			return "", queue
+		}
+	}
+	return desc.Digest, nil
+}
+
+//nolint:gocyclo // Keep blob reuse, diff computation and metadata commit in one export flow.
 func (cm *snapshotManager) ensureExportBlob(
 	ctx context.Context,
 	parentSnapshotID string,
@@ -45,7 +124,18 @@ func (cm *snapshotManager) ensureExportBlob(
 	}
 	defer unlock()
 	result, err := func() (_ ensureExportBlobResult, err error) {
-		if blobDigest := ref.md.getBlob(); blobDigest != "" {
+		blobDigest := ref.md.getBlob()
+		if blobDigest == "" {
+			// A ref reopened after a restart is rehydrated with no blob
+			// record; the snapshot's label is the durable record. Restore
+			// the metadata from it and the blob's stored descriptor.
+			restored, err := cm.restoreRecordedBlobFromLabel(ctx, ref)
+			if err != nil {
+				return ensureExportBlobResult{}, err
+			}
+			blobDigest = restored
+		}
+		if blobDigest != "" {
 			present, err := cm.pinContent(ctx, ocispecs.Descriptor{Digest: blobDigest})
 			if err != nil {
 				return ensureExportBlobResult{}, err
@@ -60,6 +150,15 @@ func (cm *snapshotManager) ensureExportBlob(
 					if err != nil {
 						return ensureExportBlobResult{}, err
 					}
+				}
+				// Reuse repairs the label, so an update that failed after the
+				// metadata was committed is not left missing. The label names
+				// the recorded blob, not the compression variant a forced
+				// export may have returned: the variant is a separate blob
+				// linked to the recorded one, and the next ordinary export
+				// asks for the recorded one.
+				if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), blobDigest); err != nil {
+					return ensureExportBlobResult{}, err
 				}
 				if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
 					return ensureExportBlobResult{}, err
@@ -203,6 +302,11 @@ func (cm *snapshotManager) ensureExportBlob(
 
 		diffID, err := diffIDFromDescriptor(desc)
 		if err != nil {
+			return ensureExportBlobResult{}, err
+		}
+		// Before the blob metadata is committed: a failed label leaves no
+		// reusable blob behind, and the next export diffs again.
+		if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), desc.Digest); err != nil {
 			return ensureExportBlobResult{}, err
 		}
 		ref.mu.Lock()

@@ -155,6 +155,7 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 	}
 
 	snapshotIDs := []string{}
+	labeledBlobs := map[string]digest.Digest{}
 	for currentSnapshotID := snapshotID; currentSnapshotID != ""; {
 		info, err := cm.Snapshotter.Stat(ctx, currentSnapshotID)
 		if err != nil {
@@ -164,6 +165,9 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			return pkgerrors.Wrapf(err, "stat snapshot %s for owner lease %s", currentSnapshotID, leaseID)
 		}
 		snapshotIDs = append(snapshotIDs, currentSnapshotID)
+		if blob := info.Labels[snapshotBlobGCLabel]; blob != "" {
+			labeledBlobs[currentSnapshotID] = digest.Digest(blob)
+		}
 		currentSnapshotID = info.Parent
 	}
 
@@ -176,7 +180,24 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			return pkgerrors.Wrapf(err, "attach snapshot %s to owner lease %s", currentSnapshotID, leaseID)
 		}
 
+		// The snapshot's blobs: those recorded in this process, and the one
+		// its label names, which survives a restart. The lease is flat, so
+		// the collector will not follow the label itself; the resource is
+		// what keeps the blob.
+		blobs := map[digest.Digest]struct{}{}
 		for dgst := range cm.snapshotContentDigests[currentSnapshotID] {
+			blobs[dgst] = struct{}{}
+		}
+		if dgst, ok := labeledBlobs[currentSnapshotID]; ok {
+			blobs[dgst] = struct{}{}
+			// Recorded again in memory, so SnapshotSize sees the blob after
+			// a restart as it does within the process that wrote it.
+			if cm.snapshotContentDigests[currentSnapshotID] == nil {
+				cm.snapshotContentDigests[currentSnapshotID] = make(map[digest.Digest]struct{})
+			}
+			cm.snapshotContentDigests[currentSnapshotID][dgst] = struct{}{}
+		}
+		for dgst := range blobs {
 			err = cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
 				ID:   dgst.String(),
 				Type: "content",

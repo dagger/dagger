@@ -107,6 +107,15 @@ func TestRemoteCacheFixture(t *testing.T) {
 	require.Len(t, first, 1)
 	require.Len(t, second, 1)
 	require.NotEqual(t, first[0].ResultID, second[0].ResultID)
+	values, err := srv.Query(ctx, `query($ids:[ID!]!){_remoteCacheFixture(operation:"evaluate",ids:$ids)}`, map[string]any{"ids": []any{first[0].Handle}})
+	require.NoError(t, err)
+	evaluatedJSON, err := json.Marshal(values["_remoteCacheFixture"])
+	require.NoError(t, err)
+	var evaluatedText string
+	require.NoError(t, json.Unmarshal(evaluatedJSON, &evaluatedText))
+	var evaluated bool
+	require.NoError(t, json.Unmarshal([]byte(evaluatedText), &evaluated))
+	require.True(t, evaluated)
 	var bundle dagql.ValueBundle
 	bundleRaw, err := os.ReadFile(filepath.Join(root, "bundles", "value.json"))
 	require.NoError(t, err)
@@ -169,7 +178,7 @@ func TestRemoteCacheFixture(t *testing.T) {
 		_, err := runRemoteCacheFixture(ctx, q, root, remoteCacheFixtureArgs{Operation: "import", Path: path})
 		require.Error(t, err)
 	}
-	for _, args := range []remoteCacheFixtureArgs{{Operation: "export", Path: "valid"}, {Operation: "report", Path: "valid"}, {Operation: "recordBody", Path: "valid"}, {Operation: "unknown"}} {
+	for _, args := range []remoteCacheFixtureArgs{{Operation: "export", Path: "valid"}, {Operation: "report", Path: "valid"}, {Operation: "evaluate"}, {Operation: "evaluate", Path: "valid"}, {Operation: "recordBody", Path: "valid"}, {Operation: "unknown"}} {
 		_, err := runRemoteCacheFixture(ctx, q, root, args)
 		require.Error(t, err)
 	}

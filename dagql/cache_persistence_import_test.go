@@ -1317,17 +1317,24 @@ func newPersistResourceScopedTestServer(handle SessionResourceHandle) *Server {
 // requirement derived from its own handle and its dependency closure.
 func assertCacheRequiredSessionResourcesExact(t *testing.T, c *Cache) {
 	t.Helper()
+	err := cacheRequiredSessionResourcesError(c)
+	assert.NilError(t, err)
+}
+
+func cacheRequiredSessionResourcesError(c *Cache) error {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 
 	derived := make(map[sharedResultID]map[SessionResourceHandle]struct{}, len(c.resultsByID))
 	visiting := make(map[sharedResultID]bool, len(c.resultsByID))
-	var derive func(res *sharedResult) map[SessionResourceHandle]struct{}
-	derive = func(res *sharedResult) map[SessionResourceHandle]struct{} {
+	var derive func(res *sharedResult) (map[SessionResourceHandle]struct{}, error)
+	derive = func(res *sharedResult) (map[SessionResourceHandle]struct{}, error) {
 		if handles, done := derived[res.id]; done {
-			return handles
+			return handles, nil
 		}
-		assert.Assert(t, !visiting[res.id], "dependency cycle through result %d", res.id)
+		if visiting[res.id] {
+			return nil, fmt.Errorf("dependency cycle through result %d", res.id)
+		}
 		visiting[res.id] = true
 		handles := map[SessionResourceHandle]struct{}{}
 		if res.sessionResourceHandle != "" {
@@ -1335,17 +1342,25 @@ func assertCacheRequiredSessionResourcesExact(t *testing.T, c *Cache) {
 		}
 		for depID := range res.deps {
 			dep := c.resultsByID[depID]
-			assert.Assert(t, dep != nil, "result %d references missing dep %d", res.id, depID)
-			for handle := range derive(dep) {
+			if dep == nil {
+				return nil, fmt.Errorf("result %d references missing dep %d", res.id, depID)
+			}
+			depHandles, err := derive(dep)
+			if err != nil {
+				return nil, err
+			}
+			for handle := range depHandles {
 				handles[handle] = struct{}{}
 			}
 		}
 		visiting[res.id] = false
 		derived[res.id] = handles
-		return handles
+		return handles, nil
 	}
 	for _, res := range c.resultsByID {
-		derive(res)
+		if _, err := derive(res); err != nil {
+			return err
+		}
 	}
 	for resultID, res := range c.resultsByID {
 		want := derived[resultID]
@@ -1357,13 +1372,18 @@ func assertCacheRequiredSessionResourcesExact(t *testing.T, c *Cache) {
 		}
 		for handle := range want {
 			_, found := stored[handle]
-			assert.Assert(t, found, "result %d stored required set is missing %s", resultID, handle)
+			if !found {
+				return fmt.Errorf("result %d stored required set is missing %s", resultID, handle)
+			}
 		}
 		for handle := range stored {
 			_, found := want[handle]
-			assert.Assert(t, found, "result %d stored required set has extra %s", resultID, handle)
+			if !found {
+				return fmt.Errorf("result %d stored required set has extra %s", resultID, handle)
+			}
 		}
 	}
+	return nil
 }
 
 func TestCachePersistenceImportRecomputesRequiredDepsFirst(t *testing.T) {

@@ -16,6 +16,15 @@ namespace Dagger;
 class AgentMessage extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * A unique identifier for this AgentMessage.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
      * How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
      *
      * Blocks until provider or native lifecycle evidence is conclusive. Once recorded, the result or cancellation error is immutable.
@@ -24,15 +33,6 @@ class AgentMessage extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('delivery');
         return \Dagger\AgentMessageDelivery::from((string)$this->queryLeaf($leafQueryBuilder, 'delivery'));
-    }
-
-    /**
-     * A unique identifier for this AgentMessage.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

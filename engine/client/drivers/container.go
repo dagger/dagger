@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/adrg/xdg"
 	telemetry "github.com/dagger/otel-go"
@@ -155,6 +156,7 @@ func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *Driv
 		backend: d.backend,
 		host:    target.Host,
 		values:  target.Query(),
+		warm:    newWarmTunnels(),
 	}, nil
 }
 
@@ -166,6 +168,43 @@ type containerConnector struct {
 	host    string
 	values  url.Values
 	backend containerBackend
+
+	// warm holds tunnels dialed ahead of the clients that will ask for
+	// them; see Connect.
+	warm *warmTunnels
+}
+
+// A command opens a few connections to the engine, one per client library
+// (gRPC control, session, telemetry, API), and each one dials when its
+// library is created, one after the other. Through the exec tunnel a dial
+// is a runc exec, ~40ms. So once the engine has answered on the first
+// tunnel, the connector dials this many more at once and hands them out
+// as clients ask: a later client waits for its own dial only, not for
+// the ones before it. Anything past them dials on demand. Tunnels no
+// client asked for end with the process.
+const warmTunnelCount = 3
+
+// warmTunnels holds one channel per warm dial; a dial that failed delivers
+// nil. A client takes a channel to wait on, and gives it back if it stops
+// waiting, so the tunnel goes to the next client instead of leaking.
+type warmTunnels struct {
+	once    sync.Once
+	pending chan chan net.Conn
+}
+
+func newWarmTunnels() *warmTunnels {
+	return &warmTunnels{pending: make(chan chan net.Conn, warmTunnelCount)}
+}
+
+// start dials the warm tunnels in the background, the first time only.
+func (w *warmTunnels) start(dial func() net.Conn) {
+	w.once.Do(func() {
+		for range warmTunnelCount {
+			ch := make(chan net.Conn, 1)
+			w.pending <- ch
+			go func() { ch <- dial() }()
+		}
+	})
 }
 
 // imageDriver connects to a container directly
@@ -182,6 +221,7 @@ func (d *containerDriver) Provision(ctx context.Context, target *url.URL, opts *
 		backend: d.backend,
 		host:    target.Host,
 		values:  target.Query(),
+		warm:    newWarmTunnels(),
 	}, nil
 }
 
@@ -190,6 +230,52 @@ func (d *containerDriver) ImageLoader(ctx context.Context) imageload.Backend {
 }
 
 func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
+	select {
+	case ch := <-d.warm.pending:
+		select {
+		case conn := <-ch:
+			if conn != nil {
+				return conn, nil
+			}
+			// the warm dial failed: dial fresh below, which reports its own error
+		case <-ctx.Done():
+			d.warm.pending <- ch
+			return nil, ctx.Err()
+		}
+	default:
+	}
+	conn, err := d.dial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// A dial succeeds as soon as the exec process starts, whether or not
+	// the engine behind it answers: into a still-booting or paused engine
+	// the tunnel opens and then reads EOF. So the warm tunnels are dialed
+	// only once this one has delivered a byte, which is the engine talking.
+	return &answeredConn{Conn: conn, answered: func() {
+		d.warm.start(func() net.Conn {
+			conn, _ := d.dial(ctx)
+			return conn
+		})
+	}}, nil
+}
+
+// answeredConn calls answered the first time a Read returns data.
+type answeredConn struct {
+	net.Conn
+	once     sync.Once
+	answered func()
+}
+
+func (c *answeredConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if n > 0 {
+		c.once.Do(c.answered)
+	}
+	return n, err
+}
+
+func (d containerConnector) dial(ctx context.Context) (net.Conn, error) {
 	args := []string{}
 	if context := d.values.Get("context"); context != "" {
 		args = append(args, "--context="+context)
@@ -249,6 +335,22 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		}
 		// run the container using that id in the name
 		containerName = containerNamePrefix + id
+	}
+
+	// The common case is an engine that already exists: look it up by name
+	// and start it (a no-op when it already runs), instead of listing every
+	// container on the host first. The listing grows with the host and was
+	// most of a command's connect time. Leftovers from older versions are
+	// still swept, in the background. Only when the engine is missing does
+	// the command list before running a new one.
+	if exists, err := d.backend.ContainerExists(ctx, containerName); err == nil && exists {
+		if err := d.backend.ContainerStart(ctx, containerName); err != nil {
+			return nil, fmt.Errorf("failed to start container: %w", err)
+		}
+		go d.sweepLeftoverEngines(context.WithoutCancel(ctx), opts.cleanup, containerName)
+		return &url.URL{Host: containerName}, nil
+	} else if errors.Is(err, context.Canceled) {
+		return nil, err
 	}
 
 	leftoverEngines, err := d.collectLeftoverEngines(ctx, containerName)
@@ -337,6 +439,22 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	d.garbageCollectEngines(ctx, opts.cleanup, nil, leftoverEngines)
 
 	return &url.URL{Host: containerName}, nil
+}
+
+// sweepLeftoverEngines removes engines of other versions, sparing current.
+// It runs in the background once the engine is known to exist, so a command
+// does not wait for the listing; a sweep cut short by the process exiting
+// is finished by a later command.
+func (d *imageDriver) sweepLeftoverEngines(ctx context.Context, cleanup bool, current string) {
+	if !cleanup {
+		return
+	}
+	leftoverEngines, err := d.collectLeftoverEngines(ctx)
+	if err != nil {
+		slog.SpanLogger(ctx, InstrumentationLibrary).Warn("failed to list containers", "error", err)
+		return
+	}
+	d.garbageCollectEngines(ctx, cleanup, []string{current}, leftoverEngines)
 }
 
 func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, preserveNames, engines []string) {

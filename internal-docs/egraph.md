@@ -259,6 +259,57 @@ explicit content digest, `ContentPreferredDigest` returns it; otherwise, it
 hashes the call shape while recursively preferring content identity for
 referenced results. It does not replace the authoritative recipe digest.
 
+## Content-preferred telemetry identity
+
+Completed API spans carry `dagger.io/dag.content_preferred_digest` alongside
+`dagger.io/dag.digest`. The cloud backend can use the additional string attribute
+to identify repeated work across different recipes that depend on the same
+recorded content.
+
+`ResultCall.ContentPreferredDigestForTelemetry` implements this identity:
+
+- Use the operation's recorded content digest when available.
+- Otherwise use the exact recipe byte encoding, substituting each result input's
+  recursively computed content-preferred digest. This includes the receiver,
+  explicit arguments (including refs inside lists and objects), implicit inputs,
+  and module provenance.
+- With no recorded content in the graph, the value equals the recipe digest.
+  Other extra-digest labels do not participate.
+
+The span completion hook prefers content recorded on the returned result,
+including a cached result. Without output content it hashes the request frame,
+so returning an unrelated recipe does not silently substitute that recipe.
+Derivation is best effort: an unavailable input omits the attribute and logs a
+warning without failing the operation. Recording-disabled spans do no work.
+
+Lazy evaluation emits the attribute again on its completion span, after newly
+learned content is available. The earlier pending API span remains an observation
+of what was known when it ended. Existing recipe attributes, span relationships,
+cache decisions, and metric attributes are unchanged. The digest does not force
+evaluation, compute file checksums, or traverse e-graph equivalence classes.
+
+The historical `ContentPreferredDigest` helper remains unchanged because core
+uses it for runtime identities such as service hostnames. Its byte layout lacks
+one recipe delimiter, and its permanent frame memo can retain an observation
+made before an input learned content. The telemetry method deliberately shares
+the recipe encoder and uses a fresh traversal memo instead. It reads each shared
+result's frame once per observation and hashes each distinct visited frame once;
+content digests stop recursion. Cost is proportional to the visited graph and
+literal bytes, not constant across arbitrarily large operations.
+
+This identity does not capture all cache equivalences. For example, no-op
+`withoutFile` and `withNewDirectory` can teach equality with their parent without
+recording content. Different content schemes can also describe identical files
+with different digests: remote Git tree identity includes source URL and checkout
+metadata, while HTTP file identity includes filename, permissions, Last-Modified,
+and checksum options. Equality discovered only in the e-graph, content never
+recorded on a referenced frame, or content learned after a span ends can still
+produce different observations for repeat work. The attribute is an identity
+hint, not a cache-hit decision or a guarantee of equal file bytes across all
+source types. The `content` label names a registered semantic identity, not
+necessarily a byte checksum: host sockets, for example, use their resource handle
+as a content digest.
+
 ## Main Entry Points Into The E-Graph
 
 These are the functions that really matter when reading the system.

@@ -539,11 +539,13 @@ func TestInstallSpanLookupWalksClosureOwnersUpward(t *testing.T) {
 	c.resultsByID[leaf.id] = leaf
 
 	c.egraphMu.Lock()
-	assert.NilError(t, c.addExplicitDependencyLocked(ctx, moduleReturn, chained, "test"))
-	assert.NilError(t, c.addExplicitDependencyLocked(ctx, chained, leaf, "test"))
+	moduleErr := c.addExplicitDependencyLocked(ctx, moduleReturn, chained, "test")
+	chainErr := c.addExplicitDependencyLocked(ctx, chained, leaf, "test")
 	moduleReturnAncestors := c.installAncestorIDsLocked(moduleReturn.id)
 	leafAncestors := c.installAncestorIDsLocked(leaf.id)
 	c.egraphMu.Unlock()
+	assert.NilError(t, moduleErr)
+	assert.NilError(t, chainErr)
 
 	assert.DeepEqual(t, moduleReturnAncestors, []sharedResultID(nil))
 	assert.DeepEqual(t, leafAncestors, []sharedResultID{chained.id, moduleReturn.id})
@@ -4686,26 +4688,29 @@ func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testin
 
 	c.egraphMu.Lock()
 	outputEqClasses := c.outputEqClassesForResultLocked(shared.id)
-	assert.Assert(t, len(outputEqClasses) > 0)
+	outputClassCount := len(outputEqClasses)
 
 	var outputEqID eqClassID
 	for eqID := range outputEqClasses {
 		outputEqID = eqID
 		break
 	}
-	assert.Assert(t, outputEqID != 0)
+	initialOutputEqID := outputEqID
 
 	foreignEqID := c.ensureEqClassForDigestLocked(ctxA, foreignDigest.String())
 	outputEqID = c.mergeEqClassesLocked(ctxA, outputEqID, foreignEqID)
-	assert.Assert(t, outputEqID != 0)
-	assert.Assert(t, c.eqClassToDigests[outputEqID] != nil)
+	digestsPresent := c.eqClassToDigests[outputEqID] != nil
 	_, ok := c.eqClassToDigests[outputEqID][foreignDigest.String()]
-	assert.Assert(t, ok)
 
 	// Removal covers production-recorded exact postings and broad imported
 	// postings, not arbitrary white-box mutations that bypass bookkeeping.
 	c.addResultDigestPostingLocked(shared.id, foreignDigest.String(), resultDigestPostingExact)
 	c.egraphMu.Unlock()
+	assert.Assert(t, outputClassCount > 0)
+	assert.Assert(t, initialOutputEqID != 0)
+	assert.Assert(t, outputEqID != 0)
+	assert.Assert(t, digestsPresent)
+	assert.Assert(t, ok)
 
 	assert.NilError(t, c.ReleaseSession(ctxA, "release-eq-class-a"))
 
@@ -5875,12 +5880,14 @@ func TestCacheLatePersistableJoinCommitsBeforeHandoffRelease(t *testing.T) {
 			// publication handoff before the test selects the final waiter.
 			c.callsMu.Lock()
 			oc := c.ongoingCalls[callConcKeys]
-			assert.Assert(t, oc != nil)
-			oc.isPersistable.Store(true)
-			oc.waiters += tc.lateWaiters
 			expectedExpiry := time.Now().Unix() + 3600
-			oc.persistedEdgeExpiresAtUnix = expectedExpiry
+			if oc != nil {
+				oc.isPersistable.Store(true)
+				oc.waiters += tc.lateWaiters
+				oc.persistedEdgeExpiresAtUnix = expectedExpiry
+			}
 			c.callsMu.Unlock()
+			assert.Assert(t, oc != nil)
 
 			close(allowPublicationToFinish)
 			var leaderRes AnyResult
@@ -5898,10 +5905,11 @@ func TestCacheLatePersistableJoinCommitsBeforeHandoffRelease(t *testing.T) {
 			assert.Equal(t, 42, unwrapValue(leaderRes))
 
 			c.callsMu.Lock()
-			assert.Assert(t, oc.needsPersistedEdge)
-			assert.Equal(t, tc.lateWaiters, oc.waiters)
+			needsPersistedEdge, waiters := oc.needsPersistedEdge, oc.waiters
 			_, ongoing := c.ongoingCalls[callConcKeys]
 			c.callsMu.Unlock()
+			assert.Assert(t, needsPersistedEdge)
+			assert.Equal(t, tc.lateWaiters, waiters)
 			assert.Assert(t, !ongoing)
 
 			if tc.canceledFinalWaiter {
@@ -6427,10 +6435,12 @@ func TestCachePruneThresholdTargetSpace(t *testing.T) {
 	cacheTestReleaseSession(t, c, ctx)
 
 	now := time.Now()
+	for _, res := range results {
+		assert.Assert(t, res.cacheSharedResult() != nil)
+	}
 	c.egraphMu.Lock()
 	for i, res := range results {
 		shared := res.cacheSharedResult()
-		assert.Assert(t, shared != nil)
 		ts := now.Add(time.Duration(-3+i) * time.Hour).UnixNano()
 		shared.lastUsedAtUnixNano = ts
 		shared.createdAtUnixNano = ts
@@ -6685,11 +6695,12 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 	assert.Equal(t, cacheTestSharedResultEntryID(prunableRes), report.Entries[0].ID)
 
 	c.egraphMu.RLock()
-	assert.Assert(t, len(c.egraphParents) < bloatedSlots)
-	assert.Assert(t, len(c.egraphParents) >= 2)
+	compactedSlots := len(c.egraphParents)
 	_, activePresent := c.resultsByID[activeShared.id]
 	_, prunablePresent := c.resultsByID[prunableShared.id]
 	c.egraphMu.RUnlock()
+	assert.Assert(t, compactedSlots < bloatedSlots)
+	assert.Assert(t, compactedSlots >= 2)
 	assert.Assert(t, activePresent)
 	assert.Assert(t, !prunablePresent)
 

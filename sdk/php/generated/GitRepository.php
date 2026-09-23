@@ -14,17 +14,31 @@ namespace Dagger;
 class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
-     *
-     * Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
+     * A unique identifier for this GitRepository.
      */
-    public function asWorkspace(?string $cwd = '/'): Workspace
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
-        if (null !== $cwd) {
-        $innerQueryBuilder->setArgument('cwd', $cwd);
-        }
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Returns details for HEAD.
+     */
+    public function head(): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('head');
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns details of a ref.
+     */
+    public function ref(string $name): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -35,6 +49,52 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('branch');
         $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns details of a tag.
+     */
+    public function tag(string $name): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tag');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns details of a commit.
+     */
+    public function commit(string $id): GitCommit
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return the latest stable release tag, falling back to HEAD when no release exists.
+     *
+     * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+     */
+    public function latest(?string $version = ''): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latest');
+        if (null !== $version) {
+        $innerQueryBuilder->setArgument('version', $version);
+        }
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * tags that match any of the given glob patterns.
+     */
+    public function tags(?array $patterns = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('tags');
+        if (null !== $patterns) {
+        $leafQueryBuilder->setArgument('patterns', $patterns);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'tags');
     }
 
     /**
@@ -63,98 +123,6 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Returns details of a commit.
-     */
-    public function commit(string $id): GitCommit
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Returns details for HEAD.
-     */
-    public function head(): GitRef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('head');
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * A unique identifier for this GitRepository.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Return the latest stable release tag, falling back to HEAD when no release exists.
-     *
-     * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
-     */
-    public function latest(?string $version = ''): GitRef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latest');
-        if (null !== $version) {
-        $innerQueryBuilder->setArgument('version', $version);
-        }
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Returns details of a ref.
-     */
-    public function ref(string $name): GitRef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Returns details of a tag.
-     */
-    public function tag(string $name): GitRef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tag');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * tags that match any of the given glob patterns.
-     */
-    public function tags(?array $patterns = null): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('tags');
-        if (null !== $patterns) {
-        $leafQueryBuilder->setArgument('patterns', $patterns);
-        }
-        return (array)$this->queryLeaf($leafQueryBuilder, 'tags');
-    }
-
-    /**
-     * Returns the changeset of uncommitted changes in the git repository.
-     */
-    public function uncommitted(): Changeset
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('uncommitted');
-        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The URL of the git repository.
-     */
-    public function url(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('url');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'url');
-    }
-
-    /**
      * Import a Git bundle after fetching and verifying all of its prerequisites.
      */
     public function withBundle(GitBundle $bundle, ?string $prerequisiteRef = ''): GitRepository
@@ -164,20 +132,6 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $prerequisiteRef) {
         $innerQueryBuilder->setArgument('prerequisiteRef', $prerequisiteRef);
         }
-        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
-     *
-     * Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
-     *
-     * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
-     */
-    public function withContents(Directory $directory): GitRepository
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContents');
-        $innerQueryBuilder->setArgument('directory', $directory);
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -197,5 +151,51 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('pushUrl', $pushUrl);
         }
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+     *
+     * Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+     *
+     * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+     */
+    public function withContents(Directory $directory): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContents');
+        $innerQueryBuilder->setArgument('directory', $directory);
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the changeset of uncommitted changes in the git repository.
+     */
+    public function uncommitted(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('uncommitted');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+     *
+     * Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
+     */
+    public function asWorkspace(?string $cwd = '/'): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
+        if (null !== $cwd) {
+        $innerQueryBuilder->setArgument('cwd', $cwd);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The URL of the git repository.
+     */
+    public function url(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('url');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'url');
     }
 }

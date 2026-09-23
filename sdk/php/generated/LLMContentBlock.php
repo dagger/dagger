@@ -14,51 +14,6 @@ namespace Dagger;
 class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
-     */
-    public function arguments(): Json
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('arguments');
-        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'arguments'));
-    }
-
-    /**
-     * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
-     */
-    public function callId(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('callId');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'callId');
-    }
-
-    /**
-     * Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
-     */
-    public function content(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('content');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'content');
-    }
-
-    /**
-     * Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
-     */
-    public function data(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('data');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'data');
-    }
-
-    /**
-     * Whether the tool call resulted in an error (for TOOL_RESULT kind).
-     */
-    public function errored(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('errored');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'errored');
-    }
-
-    /**
      * A unique identifier for this LLMContentBlock.
      */
     public function id(): Id
@@ -77,24 +32,6 @@ class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
-     * The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds).
-     */
-    public function mimeType(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('mimeType');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'mimeType');
-    }
-
-    /**
-     * Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
-     */
-    public function signature(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('signature');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'signature');
-    }
-
-    /**
      * Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
      */
     public function text(): string
@@ -104,11 +41,74 @@ class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
+     * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+     */
+    public function callId(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('callId');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'callId');
+    }
+
+    /**
      * The name of the tool called (for TOOL_CALL kind).
      */
     public function toolName(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('toolName');
         return (string)$this->queryLeaf($leafQueryBuilder, 'toolName');
+    }
+
+    /**
+     * The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+     */
+    public function arguments(): Json
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('arguments');
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'arguments'));
+    }
+
+    /**
+     * Whether the tool call resulted in an error (for TOOL_RESULT kind).
+     */
+    public function errored(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('errored');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'errored');
+    }
+
+    /**
+     * The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds).
+     */
+    public function mimeType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('mimeType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'mimeType');
+    }
+
+    /**
+     * Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+     */
+    public function data(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('data');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'data');
+    }
+
+    /**
+     * Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
+     */
+    public function content(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('content');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'content');
+    }
+
+    /**
+     * Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
+     */
+    public function signature(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('signature');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'signature');
     }
 }

@@ -14,105 +14,12 @@ namespace Dagger;
 class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
-     * Reconstruct a spawned agent from its runtime handle.
-     *
-     * This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
-     */
-    public function agent(string $handle, string $name): Agent
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agent');
-        $innerQueryBuilder->setArgument('handle', $handle);
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Agent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
-     */
-    public function contextTokens(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contextTokens');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'contextTokens');
-    }
-
-    /**
-     * The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
-     */
-    public function contextWindow(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contextWindow');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'contextWindow');
-    }
-
-    /**
-     * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-     */
-    public function emitHistory(): LLM
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('emitHistory');
-        $id = $this->queryLeaf($leafQueryBuilder, 'emitHistory');
-        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
-    }
-
-    /**
-     * Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
-     */
-    public function fork(string $label): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('fork');
-        $innerQueryBuilder->setArgument('label', $label);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.
-     */
-    public function hasPending(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hasPending');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'hasPending');
-    }
-
-    /**
      * A unique identifier for this LLM.
      */
     public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * The text of the model's most recent reply.
-     */
-    public function lastReply(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('lastReply');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'lastReply');
-    }
-
-    /**
-     * Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
-     */
-    public function loop(?int $maxSteps = null, ?int $maxTokens = null): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loop');
-        if (null !== $maxSteps) {
-        $innerQueryBuilder->setArgument('maxSteps', $maxSteps);
-        }
-        if (null !== $maxTokens) {
-        $innerQueryBuilder->setArgument('maxTokens', $maxTokens);
-        }
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The full message history, as structured messages.
-     */
-    public function messages(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('messages');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'messages');
     }
 
     /**
@@ -125,21 +32,107 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-     */
-    public function portableID(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('portableID');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'portableID'));
-    }
-
-    /**
      * The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
      */
     public function provider(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('provider');
         return (string)$this->queryLeaf($leafQueryBuilder, 'provider');
+    }
+
+    /**
+     * The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
+     */
+    public function contextWindow(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contextWindow');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'contextWindow');
+    }
+
+    /**
+     * The full message history, as structured messages.
+     */
+    public function messages(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('messages');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'messages');
+    }
+
+    /**
+     * The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+     */
+    public function transcript(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('transcript');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'transcript');
+    }
+
+    /**
+     * Clear the message history, keeping only the system prompts.
+     */
+    public function withoutMessageHistory(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutMessageHistory');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Clear the user-added system prompts, keeping only the default system prompt.
+     */
+    public function withoutSystemPrompts(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSystemPrompts');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The text of the model's most recent reply.
+     */
+    public function lastReply(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('lastReply');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'lastReply');
+    }
+
+    /**
+     * Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
+     */
+    public function withWorkspace(Workspace $workspace): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspace');
+        $innerQueryBuilder->setArgument('workspace', $workspace);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return the workspace the LLM is bound to.
+     */
+    public function workspace(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
+     */
+    public function withModel(string $model, ?string $provider = null): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModel');
+        $innerQueryBuilder->setArgument('model', $model);
+        if (null !== $provider) {
+        $innerQueryBuilder->setArgument('provider', $provider);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model.
+     */
+    public function withSmallModel(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSmallModel');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -152,93 +145,26 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+     * Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
      */
-    public function skills(): array
+    public function withReasoningEffort(string $effort): LLM
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('skills');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'skills');
-    }
-
-    /**
-     * Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
-     *
-     * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
-     *
-     * The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.
-     *
-     * With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.
-     */
-    public function spawn(
-        ?string $name = null,
-        ?string $handle = null,
-        ?AgentState $state = null,
-        ?string $error = '',
-    ): Agent {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('spawn');
-        if (null !== $name) {
-        $leafQueryBuilder->setArgument('name', $name);
-        }
-        if (null !== $handle) {
-        $leafQueryBuilder->setArgument('handle', $handle);
-        }
-        if (null !== $state) {
-        $leafQueryBuilder->setArgument('state', $state);
-        }
-        if (null !== $error) {
-        $leafQueryBuilder->setArgument('error', $error);
-        }
-        $id = $this->queryLeaf($leafQueryBuilder, 'spawn');
-        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
-    }
-
-    /**
-     * Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
-     */
-    public function step(?int $maxTokens = null): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('step');
-        if (null !== $maxTokens) {
-        $innerQueryBuilder->setArgument('maxTokens', $maxTokens);
-        }
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReasoningEffort');
+        $innerQueryBuilder->setArgument('effort', $effort);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
+     * Queue a user prompt, to be sent to the model on the next step or loop.
      */
-    public function sync(): LLM
+    public function withPrompt(string $prompt, ?LLMMessageOriginInput $origin = null): LLM
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
-        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
-    }
-
-    /**
-     * The cumulative token usage, summed across every API call in the conversation.
-     */
-    public function tokenUsage(): LLMTokenUsage
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tokenUsage');
-        return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Render documentation for the tools currently exposed to the model.
-     */
-    public function tools(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('tools');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'tools');
-    }
-
-    /**
-     * The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
-     */
-    public function transcript(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('transcript');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'transcript');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPrompt');
+        $innerQueryBuilder->setArgument('prompt', $prompt);
+        if (null !== $origin) {
+        $innerQueryBuilder->setArgument('origin', $origin);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -268,43 +194,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Add an external MCP server to the LLM
-     */
-    public function withMCPServer(string $name, Service $service): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMCPServer');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('service', $service);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
-     */
-    public function withModel(string $model, ?string $provider = null): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModel');
-        $innerQueryBuilder->setArgument('model', $model);
-        if (null !== $provider) {
-        $innerQueryBuilder->setArgument('provider', $provider);
-        }
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Queue a user prompt, to be sent to the model on the next step or loop.
-     */
-    public function withPrompt(string $prompt, ?LLMMessageOriginInput $origin = null): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPrompt');
-        $innerQueryBuilder->setArgument('prompt', $prompt);
-        if (null !== $origin) {
-        $innerQueryBuilder->setArgument('origin', $origin);
-        }
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Queue a file's contents as a user prompt, like withPrompt.
      */
     public function withPromptFile(File $file): LLM
@@ -315,12 +204,12 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+     * Add a system prompt, instructing the model across the whole conversation.
      */
-    public function withReasoningEffort(string $effort): LLM
+    public function withSystemPrompt(string $prompt): LLM
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReasoningEffort');
-        $innerQueryBuilder->setArgument('effort', $effort);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSystemPrompt');
+        $innerQueryBuilder->setArgument('prompt', $prompt);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -356,35 +245,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
-     */
-    public function withSkills(Directory $directory): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSkills');
-        $innerQueryBuilder->setArgument('directory', $directory);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model.
-     */
-    public function withSmallModel(): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSmallModel');
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Add a system prompt, instructing the model across the whole conversation.
-     */
-    public function withSystemPrompt(string $prompt): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSystemPrompt');
-        $innerQueryBuilder->setArgument('prompt', $prompt);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Append the result of a tool call to the message history.
      */
     public function withToolResult(string $callId, string $content, bool $errored, ?array $blocks = null): LLM
@@ -402,23 +262,16 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
      */
-    public function withTools(Node $object, ?array $except = []): LLM
+    public function withTools(Node $object, ?array $except = [], ?int $version = 0): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withTools');
         $innerQueryBuilder->setArgument('object', $object);
         if (null !== $except) {
         $innerQueryBuilder->setArgument('except', $except);
         }
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
-     */
-    public function withWorkspace(Workspace $workspace): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspace');
-        $innerQueryBuilder->setArgument('workspace', $workspace);
+        if (null !== $version) {
+        $innerQueryBuilder->setArgument('version', $version);
+        }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -432,29 +285,179 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Clear the message history, keeping only the system prompts.
+     * Add an external MCP server to the LLM
      */
-    public function withoutMessageHistory(): LLM
+    public function withMCPServer(string $name, Service $service): LLM
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutMessageHistory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMCPServer');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('service', $service);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Clear the user-added system prompts, keeping only the default system prompt.
+     * Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
      */
-    public function withoutSystemPrompts(): LLM
+    public function withSkills(Directory $directory): LLM
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSystemPrompts');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSkills');
+        $innerQueryBuilder->setArgument('directory', $directory);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Return the workspace the LLM is bound to.
+     * The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
      */
-    public function workspace(): Workspace
+    public function skills(): array
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
-        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('skills');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'skills');
+    }
+
+    /**
+     * Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
+     */
+    public function sync(): LLM
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        $id = $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
+    }
+
+    /**
+     * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
+     */
+    public function portableID(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('portableID');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'portableID'));
+    }
+
+    /**
+     * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
+     */
+    public function emitHistory(): LLM
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('emitHistory');
+        $id = $this->queryLeaf($leafQueryBuilder, 'emitHistory');
+        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
+    }
+
+    /**
+     * Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
+     */
+    public function loop(?int $maxSteps = null, ?int $maxTokens = null): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loop');
+        if (null !== $maxSteps) {
+        $innerQueryBuilder->setArgument('maxSteps', $maxSteps);
+        }
+        if (null !== $maxTokens) {
+        $innerQueryBuilder->setArgument('maxTokens', $maxTokens);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
+     */
+    public function step(?int $maxTokens = null): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('step');
+        if (null !== $maxTokens) {
+        $innerQueryBuilder->setArgument('maxTokens', $maxTokens);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+     *
+     * Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
+     *
+     * The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.
+     *
+     * With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.
+     */
+    public function spawn(
+        ?string $name = null,
+        ?string $handle = null,
+        ?AgentState $state = null,
+        ?string $error = '',
+    ): Agent {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('spawn');
+        if (null !== $name) {
+        $leafQueryBuilder->setArgument('name', $name);
+        }
+        if (null !== $handle) {
+        $leafQueryBuilder->setArgument('handle', $handle);
+        }
+        if (null !== $state) {
+        $leafQueryBuilder->setArgument('state', $state);
+        }
+        if (null !== $error) {
+        $leafQueryBuilder->setArgument('error', $error);
+        }
+        $id = $this->queryLeaf($leafQueryBuilder, 'spawn');
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
+     * Reconstruct a spawned agent from its runtime handle.
+     *
+     * This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+     */
+    public function agent(string $handle, string $name): Agent
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agent');
+        $innerQueryBuilder->setArgument('handle', $handle);
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Agent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.
+     */
+    public function hasPending(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hasPending');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'hasPending');
+    }
+
+    /**
+     * Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
+     */
+    public function fork(string $label): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('fork');
+        $innerQueryBuilder->setArgument('label', $label);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Render documentation for the tools currently exposed to the model.
+     */
+    public function tools(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('tools');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'tools');
+    }
+
+    /**
+     * The cumulative token usage, summed across every API call in the conversation.
+     */
+    public function tokenUsage(): LLMTokenUsage
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tokenUsage');
+        return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
+     */
+    public function contextTokens(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contextTokens');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'contextTokens');
     }
 }

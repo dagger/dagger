@@ -869,6 +869,11 @@ type directoryAsModuleArgs struct {
 type directoryAsModuleSourceArgs struct {
 	SourceRootPath string `default:"."`
 
+	// Workspace retains source lineage for a workspace module loaded from a
+	// materialized directory (including an overlay). It is explicit in the
+	// selector so source identity and dependency loading survive recipe replay.
+	Workspace dagql.Optional[dagql.ID[*core.Workspace]] `internal:"true"`
+
 	// AllowNotExists tolerates a directory holding no dagger config file at
 	// the source root, returning a context-only source (ConfigExists=false)
 	// instead of erroring. Used when the directory is needed purely as a
@@ -922,6 +927,16 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
 		},
+	}
+	if args.Workspace.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		dirSrc.Workspace, err = args.Workspace.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load module source workspace: %w", err)
+		}
 	}
 	if dirSrc.SourceRootSubpath == "" {
 		dirSrc.SourceRootSubpath = "."
@@ -2688,24 +2703,12 @@ func (s *moduleSourceSchema) runCodegen(
 	// update .gitattributes in the generated context directory
 	if len(generatedCode.VCSGeneratedPaths) > 0 {
 		gitAttrsPath := filepath.Join(srcInst.Self().SourceSubpath, ".gitattributes")
-		var gitAttrsContents []byte
-		var gitAttrsFile dagql.ObjectResult[*core.File]
-		err = dag.Select(ctx, srcInst.Self().ContextDirectory, &gitAttrsFile, dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(gitAttrsPath)},
-			},
-		})
-		if err == nil {
-			var contents dagql.String
-			err = dag.Select(ctx, gitAttrsFile, &contents, dagql.Selector{Field: "contents"})
-			if err != nil {
-				return res, fmt.Errorf("failed to get git attributes file contents: %w", err)
-			}
-			gitAttrsContents = []byte(contents)
-			if !bytes.HasSuffix(gitAttrsContents, []byte("\n")) {
-				gitAttrsContents = append(gitAttrsContents, []byte("\n")...)
-			}
+		gitAttrsContents, err := optionalFileContents(ctx, dag, srcInst.Self().ContextDirectory, gitAttrsPath)
+		if err != nil {
+			return res, fmt.Errorf("failed to get git attributes file contents: %w", err)
+		}
+		if len(gitAttrsContents) > 0 && !bytes.HasSuffix(gitAttrsContents, []byte("\n")) {
+			gitAttrsContents = append(gitAttrsContents, []byte("\n")...)
 		}
 		for _, fileName := range generatedCode.VCSGeneratedPaths {
 			if bytes.Contains(gitAttrsContents, []byte(fileName)) {
@@ -2748,24 +2751,12 @@ func (s *moduleSourceSchema) runCodegen(
 	}
 	if writeGitignore && len(vcsIgnoredPaths) > 0 {
 		gitIgnorePath := filepath.Join(srcInst.Self().SourceSubpath, ".gitignore")
-		var gitIgnoreContents []byte
-		var gitIgnoreFile dagql.ObjectResult[*core.File]
-		err = dag.Select(ctx, srcInst.Self().ContextDirectory, &gitIgnoreFile, dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(gitIgnorePath)},
-			},
-		})
-		if err == nil {
-			var contents dagql.String
-			err = dag.Select(ctx, gitIgnoreFile, &contents, dagql.Selector{Field: "contents"})
-			if err != nil {
-				return res, fmt.Errorf("failed to get .gitignore file contents: %w", err)
-			}
-			gitIgnoreContents = []byte(contents)
-			if !bytes.HasSuffix(gitIgnoreContents, []byte("\n")) {
-				gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
-			}
+		gitIgnoreContents, err := optionalFileContents(ctx, dag, srcInst.Self().ContextDirectory, gitIgnorePath)
+		if err != nil {
+			return res, fmt.Errorf("failed to get .gitignore file contents: %w", err)
+		}
+		if len(gitIgnoreContents) > 0 && !bytes.HasSuffix(gitIgnoreContents, []byte("\n")) {
+			gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
 		}
 		for _, fileName := range vcsIgnoredPaths {
 			if bytes.Contains(gitIgnoreContents, []byte(fileName)) {

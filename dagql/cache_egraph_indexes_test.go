@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -18,45 +19,89 @@ import (
 func assertCacheDerivedIndexesConsistent(t testing.TB, c *Cache) {
 	t.Helper()
 	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
-	assertCacheDerivedIndexesConsistentLocked(t, c)
+	err := cacheDerivedIndexesErrorLocked(c)
+	c.egraphMu.Unlock()
+	assert.NilError(t, err)
 }
 
-func assertCacheDerivedIndexesConsistentLocked(t testing.TB, c *Cache) {
-	t.Helper()
-	assert.Assert(t, len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) > 0,
-		"e-graph has %d terms but no result/output eq-class associations", len(c.egraphTerms))
+// cacheDerivedIndexesErrorLocked checks every derived index family in
+// order and returns the first inconsistency it finds.
+func cacheDerivedIndexesErrorLocked(c *Cache) error {
+	if err := cacheOutputEqClassForwardErrorLocked(c); err != nil {
+		return err
+	}
+	if err := cacheOutputEqClassInverseErrorLocked(c); err != nil {
+		return err
+	}
+	if err := cacheOutputEqClassSurvivorErrorLocked(c, time.Now().Unix()); err != nil {
+		return err
+	}
+	exactDigestsByResult, err := cacheExactDigestIndexErrorLocked(c)
+	if err != nil {
+		return err
+	}
+	if err := cacheBroadDigestMarkerErrorLocked(c); err != nil {
+		return err
+	}
+	return cacheDigestPostingErrorLocked(c, exactDigestsByResult)
+}
+
+// cacheOutputEqClassForwardErrorLocked checks the result → output eq-class
+// associations: every association names a root, once, with its inverse
+// membership present.
+func cacheOutputEqClassForwardErrorLocked(c *Cache) error {
+	if len(c.egraphTerms) != 0 && len(c.resultOutputEqClasses) == 0 {
+		return fmt.Errorf("e-graph has %d terms but no result/output eq-class associations", len(c.egraphTerms))
+	}
 
 	for resID, outputEqIDs := range c.resultOutputEqClasses {
 		seenRoots := make(map[eqClassID]struct{}, len(outputEqIDs))
 		for outputEqID := range outputEqIDs {
 			root := c.findEqClassLocked(outputEqID)
-			assert.Equal(t, outputEqID, root,
-				"result %d has non-root output eq class %d (root %d)", resID, outputEqID, root)
+			if outputEqID != root {
+				return fmt.Errorf("result %d has non-root output eq class %d (root %d)", resID, outputEqID, root)
+			}
 			_, duplicateRoot := seenRoots[root]
-			assert.Assert(t, !duplicateRoot,
-				"result %d has duplicate associations for output eq-class root %d", resID, root)
+			if duplicateRoot {
+				return fmt.Errorf("result %d has duplicate associations for output eq-class root %d", resID, root)
+			}
 			seenRoots[root] = struct{}{}
 			results := c.outputEqClassResults[root]
 			_, found := results[resID]
-			assert.Assert(t, found,
-				"result %d output eq class %d is missing inverse membership", resID, root)
+			if !found {
+				return fmt.Errorf("result %d output eq class %d is missing inverse membership", resID, root)
+			}
 		}
 	}
+	return nil
+}
 
+// cacheOutputEqClassInverseErrorLocked checks the output eq-class → results
+// map: every key is a root and every member exists with its forward
+// membership present.
+func cacheOutputEqClassInverseErrorLocked(c *Cache) error {
 	for outputEqID, results := range c.outputEqClassResults {
 		root := c.findEqClassLocked(outputEqID)
-		assert.Equal(t, outputEqID, root,
-			"inverse output eq-class key %d is not a root (root %d)", outputEqID, root)
+		if outputEqID != root {
+			return fmt.Errorf("inverse output eq-class key %d is not a root (root %d)", outputEqID, root)
+		}
 		for resID := range results {
-			assert.Assert(t, c.resultsByID[resID] != nil,
-				"inverse output eq class %d references missing result %d", outputEqID, resID)
+			if c.resultsByID[resID] == nil {
+				return fmt.Errorf("inverse output eq class %d references missing result %d", outputEqID, resID)
+			}
 			_, found := c.resultOutputEqClasses[resID][root]
-			assert.Assert(t, found,
-				"inverse output eq class %d result %d is missing forward membership", root, resID)
+			if !found {
+				return fmt.Errorf("inverse output eq class %d result %d is missing forward membership", root, resID)
+			}
 		}
 	}
-	nowUnix := time.Now().Unix()
+	return nil
+}
+
+// cacheOutputEqClassSurvivorErrorLocked checks that the survivor predicate
+// of every live output eq-class root agrees with the digest-posting
+// semantics at nowUnix.
+func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 	liveOutputRoots := make(map[eqClassID]struct{}, len(c.outputEqClassToTerms)+len(c.outputEqClassResults))
 	for outputEqID := range c.outputEqClassToTerms {
 		root := c.findEqClassLocked(outputEqID)
@@ -88,48 +133,69 @@ func assertCacheDerivedIndexesConsistentLocked(t testing.TB, c *Cache) {
 				break
 			}
 		}
-		assert.Equal(t,
-			oldSemanticsHasUnexpiredResult,
-			c.hasUnexpiredResultForOutputEqClassLocked(root, nowUnix),
-			"output eq-class root %d survivor predicate differs from digest-posting semantics", root,
-		)
+		if oldSemanticsHasUnexpiredResult != c.hasUnexpiredResultForOutputEqClassLocked(root, nowUnix) {
+			return fmt.Errorf("output eq-class root %d survivor predicate differs from digest-posting semantics", root)
+		}
 	}
+	return nil
+}
 
+// cacheExactDigestIndexErrorLocked checks the exact digest index: every
+// indexed result exists, lists each digest once, and has its posting. It
+// returns the digests listed per result for the posting check.
+func cacheExactDigestIndexErrorLocked(c *Cache) (map[sharedResultID]map[string]struct{}, error) {
 	exactDigestsByResult := make(map[sharedResultID]map[string]struct{}, len(c.resultIndexedDigests))
 	for resID, digests := range c.resultIndexedDigests {
-		assert.Assert(t, c.resultsByID[resID] != nil,
-			"exact digest index references missing result %d", resID)
+		if c.resultsByID[resID] == nil {
+			return nil, fmt.Errorf("exact digest index references missing result %d", resID)
+		}
 		seen := make(map[string]struct{}, len(digests))
 		for _, dig := range digests {
 			_, duplicate := seen[dig]
-			assert.Assert(t, !duplicate,
-				"result %d exact digest index contains duplicate %q", resID, dig)
+			if duplicate {
+				return nil, fmt.Errorf("result %d exact digest index contains duplicate %q", resID, dig)
+			}
 			seen[dig] = struct{}{}
 			posting := c.egraphResultsByDigest[dig]
-			assert.Assert(t, posting != nil && posting.Contains(resID),
-				"result %d exact digest %q is missing its posting", resID, dig)
+			if posting == nil || !posting.Contains(resID) {
+				return nil, fmt.Errorf("result %d exact digest %q is missing its posting", resID, dig)
+			}
 		}
 		exactDigestsByResult[resID] = seen
 	}
+	return exactDigestsByResult, nil
+}
 
+// cacheBroadDigestMarkerErrorLocked checks that every broadly indexed
+// result exists.
+func cacheBroadDigestMarkerErrorLocked(c *Cache) error {
 	for resID := range c.broadlyIndexedResults {
-		assert.Assert(t, c.resultsByID[resID] != nil,
-			"broad digest marker references missing result %d", resID)
+		if c.resultsByID[resID] == nil {
+			return fmt.Errorf("broad digest marker references missing result %d", resID)
+		}
 	}
+	return nil
+}
 
+// cacheDigestPostingErrorLocked checks the digest postings: every member
+// exists and is either exact-listed for that digest or broadly indexed.
+func cacheDigestPostingErrorLocked(c *Cache, exactDigestsByResult map[sharedResultID]map[string]struct{}) error {
 	for dig, posting := range c.egraphResultsByDigest {
 		if posting == nil {
 			continue
 		}
 		for resID := range posting.Items() {
-			assert.Assert(t, c.resultsByID[resID] != nil,
-				"digest posting %q references missing result %d", dig, resID)
+			if c.resultsByID[resID] == nil {
+				return fmt.Errorf("digest posting %q references missing result %d", dig, resID)
+			}
 			_, exact := exactDigestsByResult[resID][dig]
 			_, broad := c.broadlyIndexedResults[resID]
-			assert.Assert(t, exact || broad,
-				"digest posting %q result %d is neither exact-listed nor broad", dig, resID)
+			if !exact && !broad {
+				return fmt.Errorf("digest posting %q result %d is neither exact-listed nor broad", dig, resID)
+			}
 		}
 	}
+	return nil
 }
 
 func cacheTestSessionContext(ctx context.Context, sessionID string) context.Context {
@@ -263,12 +329,13 @@ func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 
 	c.egraphMu.Lock()
 	classes := c.outputEqClassesForResultLocked(sharedA.id)
-	assert.Equal(t, 1, len(classes))
+	classCount := len(classes)
 	var outputEqID eqClassID
 	for outputEqID = range classes {
 	}
 	termCount := len(c.outputEqClassToTerms[outputEqID])
 	c.egraphMu.Unlock()
+	assert.Equal(t, 1, classCount)
 	assert.Assert(t, termCount > 0)
 
 	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-mixed-a"))
@@ -276,11 +343,13 @@ func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 	c.egraphMu.Lock()
 	_, removedPresent := c.outputEqClassResults[outputEqID][sharedA.id]
 	_, survivorPresent := c.outputEqClassResults[outputEqID][sharedB.id]
+	survivingTermCount := len(c.outputEqClassToTerms[outputEqID])
+	indexErr := cacheDerivedIndexesErrorLocked(c)
+	c.egraphMu.Unlock()
 	assert.Assert(t, !removedPresent)
 	assert.Assert(t, survivorPresent)
-	assert.Equal(t, termCount, len(c.outputEqClassToTerms[outputEqID]))
-	assertCacheDerivedIndexesConsistentLocked(t, c)
-	c.egraphMu.Unlock()
+	assert.Equal(t, termCount, survivingTermCount)
+	assert.NilError(t, indexErr)
 
 	assert.NilError(t, c.ReleaseSession(ctxB, "inverse-mixed-b"))
 	assert.Equal(t, 0, c.Size())
@@ -306,7 +375,7 @@ func TestCacheOutputEqClassInverseExpiredOnlyDoesNotSurvive(t *testing.T) {
 	sharedB := resB.cacheSharedResult()
 	c.egraphMu.Lock()
 	classes := c.outputEqClassesForResultLocked(sharedA.id)
-	assert.Equal(t, 1, len(classes))
+	classCount := len(classes)
 	var outputEqID eqClassID
 	for outputEqID = range classes {
 	}
@@ -316,17 +385,24 @@ func TestCacheOutputEqClassInverseExpiredOnlyDoesNotSurvive(t *testing.T) {
 	}
 	sharedB.expiresAtUnix = time.Now().Add(-time.Hour).Unix()
 	c.egraphMu.Unlock()
+	assert.Equal(t, 1, classCount)
 	assert.Assert(t, len(removedTermIDs) > 0)
 
 	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-expired-a"))
 
 	c.egraphMu.Lock()
-	assert.Assert(t, c.resultsByID[sharedB.id] == sharedB)
+	survivorPresent := c.resultsByID[sharedB.id] == sharedB
+	removedTerms := make(map[egraphTermID]bool, len(removedTermIDs))
 	for _, termID := range removedTermIDs {
-		assert.Assert(t, c.egraphTerms[termID] == nil, "expired-only output term %d was retained", termID)
+		removedTerms[termID] = c.egraphTerms[termID] == nil
 	}
-	assertCacheDerivedIndexesConsistentLocked(t, c)
+	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
+	assert.Assert(t, survivorPresent)
+	for termID, removed := range removedTerms {
+		assert.Assert(t, removed, "expired-only output term %d was retained", termID)
+	}
+	assert.NilError(t, indexErr)
 
 	assert.NilError(t, c.ReleaseSession(ctxB, "inverse-expired-b"))
 	assert.NilError(t, c.ReleaseSession(ctxKeeper, "inverse-expired-keeper"))
@@ -347,23 +423,29 @@ func TestCacheOutputEqClassInverseMergeThenRemoval(t *testing.T) {
 	c.egraphMu.Lock()
 	classesA := c.outputEqClassesForResultLocked(sharedA.id)
 	classesB := c.outputEqClassesForResultLocked(sharedB.id)
-	assert.Equal(t, 1, len(classesA))
-	assert.Equal(t, 1, len(classesB))
+	classCountA, classCountB := len(classesA), len(classesB)
 	var rootA, rootB eqClassID
 	for rootA = range classesA {
 	}
 	for rootB = range classesB {
 	}
-	assert.Assert(t, rootA != rootB)
+	distinctRoots := rootA != rootB
 	// Exercise the idempotent result-already-in-both-roots merge case.
 	c.addResultOutputEqClassLocked(sharedA.id, rootB)
 	mergedRoot := c.mergeEqClassesLocked(baseCtx, rootA, rootB)
-	assert.Assert(t, mergedRoot != 0)
-	assert.DeepEqual(t, c.resultOutputEqClasses[sharedA.id], map[eqClassID]struct{}{mergedRoot: {}})
-	assert.DeepEqual(t, c.resultOutputEqClasses[sharedB.id], map[eqClassID]struct{}{mergedRoot: {}})
-	assert.Equal(t, 2, len(c.outputEqClassResults[mergedRoot]))
-	assertCacheDerivedIndexesConsistentLocked(t, c)
+	mergedA := maps.Clone(c.resultOutputEqClasses[sharedA.id])
+	mergedB := maps.Clone(c.resultOutputEqClasses[sharedB.id])
+	mergedCount := len(c.outputEqClassResults[mergedRoot])
+	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
+	assert.Equal(t, 1, classCountA)
+	assert.Equal(t, 1, classCountB)
+	assert.Assert(t, distinctRoots)
+	assert.Assert(t, mergedRoot != 0)
+	assert.DeepEqual(t, mergedA, map[eqClassID]struct{}{mergedRoot: {}})
+	assert.DeepEqual(t, mergedB, map[eqClassID]struct{}{mergedRoot: {}})
+	assert.Equal(t, 2, mergedCount)
+	assert.NilError(t, indexErr)
 
 	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-merge-a"))
 	assertCacheDerivedIndexesConsistent(t, c)
@@ -385,21 +467,26 @@ func TestCacheOutputEqClassInverseForcedCompactionAndReset(t *testing.T) {
 		c.ensureEqClassForDigestLocked(baseCtx, fmt.Sprintf("inverse-compact-dead-%d", i))
 	}
 	changed, oldSlots, newSlots := c.compactEqClassesLocked(true)
+	indexErr := cacheDerivedIndexesErrorLocked(c)
+	c.egraphMu.Unlock()
 	assert.Assert(t, changed)
 	assert.Assert(t, oldSlots > newSlots)
-	assertCacheDerivedIndexesConsistentLocked(t, c)
-	c.egraphMu.Unlock()
+	assert.NilError(t, indexErr)
 
 	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-compact-a"))
 	assertCacheDerivedIndexesConsistent(t, c)
 	assert.NilError(t, c.ReleaseSession(ctxB, "inverse-compact-b"))
 
 	c.egraphMu.Lock()
-	assert.Assert(t, c.outputEqClassResults == nil)
-	assert.Assert(t, c.resultOutputEqClasses == nil)
-	assert.Assert(t, c.resultIndexedDigests == nil)
-	assert.Assert(t, c.broadlyIndexedResults == nil)
+	outputEqClassResultsNil := c.outputEqClassResults == nil
+	resultOutputEqClassesNil := c.resultOutputEqClasses == nil
+	resultIndexedDigestsNil := c.resultIndexedDigests == nil
+	broadlyIndexedResultsNil := c.broadlyIndexedResults == nil
 	c.egraphMu.Unlock()
+	assert.Assert(t, outputEqClassResultsNil)
+	assert.Assert(t, resultOutputEqClassesNil)
+	assert.Assert(t, resultIndexedDigestsNil)
+	assert.Assert(t, broadlyIndexedResultsNil)
 }
 
 func TestCacheReleaseCascadePreservesCallbacksAndCleansDerivedIndexes(t *testing.T) {
@@ -429,17 +516,20 @@ func TestCacheReleaseCascadePreservesCallbacksAndCleansDerivedIndexes(t *testing
 	assert.NilError(t, c.AddExplicitDependency(ctxParent, parent, child, "derived-index-cascade"))
 
 	c.egraphMu.Lock()
-	assert.Equal(t, int64(2), child.cacheSharedResult().incomingOwnershipCount)
-	assertCacheDerivedIndexesConsistentLocked(t, c)
+	childOwners := child.cacheSharedResult().incomingOwnershipCount
+	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
+	assert.Equal(t, int64(2), childOwners)
+	assert.NilError(t, indexErr)
 	assert.NilError(t, c.ReleaseSession(ctxChild, "inverse-cascade-child"))
 	assert.NilError(t, c.ReleaseSession(ctxParent, "inverse-cascade-parent"))
 
 	assert.Assert(t, slices.Equal(callbacks, []string{"parent", "child"}), "callback order: %v", callbacks)
 	assert.Equal(t, 0, c.Size())
 	c.egraphMu.Lock()
-	assert.Assert(t, c.outputEqClassResults == nil)
+	outputEqClassResultsNil := c.outputEqClassResults == nil
 	c.egraphMu.Unlock()
+	assert.Assert(t, outputEqClassResultsNil)
 }
 
 func TestCacheExactDigestPostingRemoval(t *testing.T) {
@@ -483,22 +573,28 @@ func TestCacheExactDigestPostingRemoval(t *testing.T) {
 		c.addResultDigestPostingLocked(shared.id, dig, resultDigestPostingExact)
 		c.addResultDigestPostingLocked(shared.id, dig, resultDigestPostingExact)
 	}
-	assert.Equal(t, before, len(c.resultIndexedDigests[shared.id]))
-	assert.Equal(t, len(expectedDigests), before)
-	assertCacheDerivedIndexesConsistentLocked(t, c)
+	after := len(c.resultIndexedDigests[shared.id])
+	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
+	assert.Equal(t, before, after)
+	assert.Equal(t, len(expectedDigests), before)
+	assert.NilError(t, indexErr)
 
 	assert.NilError(t, c.ReleaseSession(ctxTarget, "exact-posting-target"))
 	c.egraphMu.Lock()
 	_, reversePresent := c.resultIndexedDigests[shared.id]
-	assert.Assert(t, !reversePresent)
+	removedPostings := make(map[string]bool, len(expectedDigests))
 	for _, dig := range expectedDigests {
 		posting := c.egraphResultsByDigest[dig]
-		assert.Assert(t, posting == nil || !posting.Contains(shared.id),
-			"removed result %d remains posted under %q", shared.id, dig)
+		removedPostings[dig] = posting == nil || !posting.Contains(shared.id)
 	}
-	assertCacheDerivedIndexesConsistentLocked(t, c)
+	indexErr = cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
+	assert.Assert(t, !reversePresent)
+	for dig, removed := range removedPostings {
+		assert.Assert(t, removed, "removed result %d remains posted under %q", shared.id, dig)
+	}
+	assert.NilError(t, indexErr)
 
 	assert.NilError(t, c.ReleaseSession(ctxKeeper, "exact-posting-keeper"))
 }
@@ -509,11 +605,14 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	defer f.close(t)
 
 	f.cache.egraphMu.Lock()
+	type importedState struct {
+		broad      bool
+		exactCount int
+	}
+	imported := make(map[sharedResultID]importedState, len(f.cache.resultsByID))
 	for resultID := range f.cache.resultsByID {
 		_, broad := f.cache.broadlyIndexedResults[resultID]
-		assert.Assert(t, broad, "imported result %d is not marked broad", resultID)
-		assert.Equal(t, 0, len(f.cache.resultIndexedDigests[resultID]),
-			"imported result %d duplicated broad postings into the exact index", resultID)
+		imported[resultID] = importedState{broad, len(f.cache.resultIndexedDigests[resultID])}
 	}
 	// A broad imported result may later gain an exact runtime posting. The broad
 	// marker remains authoritative while the new posting is recorded exactly.
@@ -521,25 +620,42 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	mixedDigest := digest.FromString("broad-imported-later-exact").String()
 	f.cache.addResultDigestPostingLocked(mixedID, mixedDigest, resultDigestPostingExact)
 	_, stillBroad := f.cache.broadlyIndexedResults[mixedID]
-	assert.Assert(t, stillBroad)
-	assert.DeepEqual(t, f.cache.resultIndexedDigests[mixedID], []string{mixedDigest})
+	mixedDigests := slices.Clone(f.cache.resultIndexedDigests[mixedID])
+	type fixtureState struct {
+		present, persisted bool
+		owners             int64
+		deps               int
+	}
+	fixtures := make(map[sharedResultID]fixtureState, len(f.allResultIDs))
 	for _, resultID := range f.allResultIDs {
 		res := f.cache.resultsByID[resultID]
-		assert.Assert(t, res != nil, "fixture result %d is missing after import", resultID)
 		_, persisted := f.cache.persistedEdgesByResult[resultID]
-		assert.Assert(t, persisted, "fixture result %d has no persisted edge", resultID)
-		assert.Equal(t, int64(1), res.incomingOwnershipCount,
-			"fixture result %d does not have exactly one persisted owner", resultID)
-		assert.Equal(t, 0, len(res.deps),
-			"fixture result %d unexpectedly owns dependency edges", resultID)
+		state := fixtureState{present: res != nil, persisted: persisted}
+		if res != nil {
+			state.owners, state.deps = res.incomingOwnershipCount, len(res.deps)
+		}
+		fixtures[resultID] = state
 	}
 	for i := range 8 {
 		f.cache.ensureEqClassForDigestLocked(f.ctx, fmt.Sprintf("broad-imported-dead-%d", i))
 	}
 	changed, oldSlots, newSlots := f.cache.compactEqClassesLocked(true)
-	assert.Assert(t, changed, "forced compaction did not run: %d -> %d", oldSlots, newSlots)
-	assertCacheDerivedIndexesConsistentLocked(t, f.cache)
+	indexErr := cacheDerivedIndexesErrorLocked(f.cache)
 	f.cache.egraphMu.Unlock()
+	for resultID, state := range imported {
+		assert.Assert(t, state.broad, "imported result %d is not marked broad", resultID)
+		assert.Equal(t, 0, state.exactCount, "imported result %d duplicated broad postings into the exact index", resultID)
+	}
+	assert.Assert(t, stillBroad)
+	assert.DeepEqual(t, mixedDigests, []string{mixedDigest})
+	for resultID, state := range fixtures {
+		assert.Assert(t, state.present, "fixture result %d is missing after import", resultID)
+		assert.Assert(t, state.persisted, "fixture result %d has no persisted edge", resultID)
+		assert.Equal(t, int64(1), state.owners, "fixture result %d does not have exactly one persisted owner", resultID)
+		assert.Equal(t, 0, state.deps, "fixture result %d unexpectedly owns dependency edges", resultID)
+	}
+	assert.Assert(t, changed, "forced compaction did not run: %d -> %d", oldSlots, newSlots)
+	assert.NilError(t, indexErr)
 
 	pruneCtx := withMetadataPruneContext(f.ctx)
 	for i, resultID := range f.allResultIDs {
@@ -548,24 +664,32 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 		assert.Assert(t, removed, "persisted edge for result %d was not removed", resultID)
 
 		f.cache.egraphMu.Lock()
-		assert.Assert(t, f.cache.resultsByID[resultID] == nil,
-			"result %d survived removal of its only owner", resultID)
-		assert.Equal(t, len(f.allResultIDs)-i-1, len(f.cache.resultsByID),
-			"cutting result %d collected an unexpected result set", resultID)
+		collected := f.cache.resultsByID[resultID] == nil
+		resultCount := len(f.cache.resultsByID)
+		removedPostings := make(map[string]bool, len(f.cache.egraphResultsByDigest))
 		for dig, posting := range f.cache.egraphResultsByDigest {
-			assert.Assert(t, posting == nil || !posting.Contains(resultID),
-				"removed broad result %d remains posted under %q", resultID, dig)
+			removedPostings[dig] = posting == nil || !posting.Contains(resultID)
 		}
-		assertCacheDerivedIndexesConsistentLocked(t, f.cache)
+		indexErr := cacheDerivedIndexesErrorLocked(f.cache)
 		f.cache.egraphMu.Unlock()
+		assert.Assert(t, collected, "result %d survived removal of its only owner", resultID)
+		assert.Equal(t, len(f.allResultIDs)-i-1, resultCount, "cutting result %d collected an unexpected result set", resultID)
+		for dig, removed := range removedPostings {
+			assert.Assert(t, removed, "removed broad result %d remains posted under %q", resultID, dig)
+		}
+		assert.NilError(t, indexErr)
 	}
 
 	f.cache.egraphMu.Lock()
-	assert.Assert(t, f.cache.egraphResultsByDigest == nil)
-	assert.Assert(t, f.cache.resultIndexedDigests == nil)
-	assert.Assert(t, f.cache.broadlyIndexedResults == nil)
-	assert.Assert(t, f.cache.outputEqClassResults == nil)
+	egraphResultsByDigestNil := f.cache.egraphResultsByDigest == nil
+	resultIndexedDigestsNil := f.cache.resultIndexedDigests == nil
+	broadlyIndexedResultsNil := f.cache.broadlyIndexedResults == nil
+	outputEqClassResultsNil := f.cache.outputEqClassResults == nil
 	f.cache.egraphMu.Unlock()
+	assert.Assert(t, egraphResultsByDigestNil)
+	assert.Assert(t, resultIndexedDigestsNil)
+	assert.Assert(t, broadlyIndexedResultsNil)
+	assert.Assert(t, outputEqClassResultsNil)
 }
 
 func TestCachePersistedFreshPruneCleansDerivedIndexes(t *testing.T) {
@@ -574,23 +698,35 @@ func TestCachePersistedFreshPruneCleansDerivedIndexes(t *testing.T) {
 	defer f.close(t)
 
 	f.cache.egraphMu.Lock()
-	for resultID := range f.cache.resultsByID {
-		assert.Assert(t, len(f.cache.resultIndexedDigests[resultID]) > 0,
-			"persisted-fresh result %d has no exact digest postings", resultID)
-		_, broad := f.cache.broadlyIndexedResults[resultID]
-		assert.Assert(t, !broad, "persisted-fresh result %d is marked broad", resultID)
+	type freshState struct {
+		exactCount int
+		broad      bool
 	}
-	assertCacheDerivedIndexesConsistentLocked(t, f.cache)
+	fresh := make(map[sharedResultID]freshState, len(f.cache.resultsByID))
+	for resultID := range f.cache.resultsByID {
+		_, broad := f.cache.broadlyIndexedResults[resultID]
+		fresh[resultID] = freshState{len(f.cache.resultIndexedDigests[resultID]), broad}
+	}
+	indexErr := cacheDerivedIndexesErrorLocked(f.cache)
 	f.cache.egraphMu.Unlock()
+	for resultID, state := range fresh {
+		assert.Assert(t, state.exactCount > 0, "persisted-fresh result %d has no exact digest postings", resultID)
+		assert.Assert(t, !state.broad, "persisted-fresh result %d is marked broad", resultID)
+	}
+	assert.NilError(t, indexErr)
 
 	report, err := f.cache.PruneMetadataEstimate(f.ctx, 2, 1)
 	assert.NilError(t, err)
 	assert.Assert(t, report.Triggered)
 	assert.Equal(t, len(f.allResultIDs), report.RemovedPersistedRootCount)
 	f.cache.egraphMu.Lock()
-	assert.Assert(t, f.cache.egraphResultsByDigest == nil)
-	assert.Assert(t, f.cache.resultIndexedDigests == nil)
-	assert.Assert(t, f.cache.broadlyIndexedResults == nil)
-	assert.Assert(t, f.cache.outputEqClassResults == nil)
+	egraphResultsByDigestNil := f.cache.egraphResultsByDigest == nil
+	resultIndexedDigestsNil := f.cache.resultIndexedDigests == nil
+	broadlyIndexedResultsNil := f.cache.broadlyIndexedResults == nil
+	outputEqClassResultsNil := f.cache.outputEqClassResults == nil
 	f.cache.egraphMu.Unlock()
+	assert.Assert(t, egraphResultsByDigestNil)
+	assert.Assert(t, resultIndexedDigestsNil)
+	assert.Assert(t, broadlyIndexedResultsNil)
+	assert.Assert(t, outputEqClassResultsNil)
 }

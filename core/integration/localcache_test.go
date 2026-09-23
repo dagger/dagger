@@ -554,6 +554,11 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 		// starts after the active observation, the 7s pressure-monitor sleep and
 		// the protection check. Leave room for that sleep and session teardown.
 		workloadCloseTimeout = 60 * time.Second
+		// Before the workload counts as active it installs curl and jq in its
+		// container, starts a session and runs its query; only then do the
+		// metrics show the client connected and the estimate grown. Leave room
+		// for that install and session start under load.
+		workloadActiveTimeout = 90 * time.Second
 	)
 
 	engine := devEngineContainer(c,
@@ -697,7 +702,7 @@ sleep 30`,
 		workloadDone <- err
 	}()
 
-	active := waitForMetrics("active metadata workload", 30*time.Second, func(metrics map[string]float64) bool {
+	active := waitForMetrics("active metadata workload", workloadActiveTimeout, func(metrics map[string]float64) bool {
 		return metrics["dagger_connected_clients"] == 1 &&
 			metrics["dagger_dagql_cache_metadata_estimated_bytes"] >= baselineEstimate+minimumGrowthBytes
 	})

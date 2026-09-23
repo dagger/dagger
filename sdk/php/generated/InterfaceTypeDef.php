@@ -14,12 +14,12 @@ namespace Dagger;
 class InterfaceTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * The doc string for the interface, if any.
+     * A unique identifier for this InterfaceTypeDef.
      */
-    public function description(): string
+    public function id(): Id
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -32,21 +32,21 @@ class InterfaceTypeDef extends Client\AbstractObject implements Client\IdAble, N
     }
 
     /**
-     * A unique identifier for this InterfaceTypeDef.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
      * The name of the interface.
      */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The doc string for the interface, if any.
+     */
+    public function description(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**

@@ -32,20 +32,20 @@ class Secret extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The value of this secret.
-     */
-    public function plaintext(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('plaintext');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'plaintext');
-    }
-
-    /**
      * The URI of this secret.
      */
     public function uri(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uri');
         return (string)$this->queryLeaf($leafQueryBuilder, 'uri');
+    }
+
+    /**
+     * The value of this secret.
+     */
+    public function plaintext(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('plaintext');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'plaintext');
     }
 }

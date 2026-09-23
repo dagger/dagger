@@ -14,6 +14,24 @@ namespace Dagger;
 class Address extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * A unique identifier for this Address.
+     */
+    public function id(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The address value
+     */
+    public function value(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'value');
+    }
+
+    /**
      * Load a container from the address.
      */
     public function container(): Container
@@ -91,15 +109,6 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * A unique identifier for this Address.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
      * Load a secret from the address.
      */
     public function secret(): Secret
@@ -124,15 +133,6 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('socket');
         return new \Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The address value
-     */
-    public function value(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'value');
     }
 
     /**

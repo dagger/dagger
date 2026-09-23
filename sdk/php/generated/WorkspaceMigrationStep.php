@@ -14,12 +14,12 @@ namespace Dagger;
 class WorkspaceMigrationStep extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Filesystem changes for this step.
+     * A unique identifier for this WorkspaceMigrationStep.
      */
-    public function changes(): Changeset
+    public function id(): Id
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
-        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -41,20 +41,20 @@ class WorkspaceMigrationStep extends Client\AbstractObject implements Client\IdA
     }
 
     /**
-     * A unique identifier for this WorkspaceMigrationStep.
-     */
-    public function id(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
      * Non-fatal warnings raised while planning this step.
      */
     public function warnings(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('warnings');
         return (array)$this->queryLeaf($leafQueryBuilder, 'warnings');
+    }
+
+    /**
+     * Filesystem changes for this step.
+     */
+    public function changes(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

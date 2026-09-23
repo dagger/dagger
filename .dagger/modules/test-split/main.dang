@@ -1,7 +1,19 @@
 """
-Test suites to run
+Test suites to run.
+
+Diagnostics are off by default to avoid verbose log and goroutine dump overhead.
+Set the module's diagnostics option to enable verbose test output and dev-engine
+stacks at 15 and 25 minutes, for example:
+`dagger api call test-split --diagnostics test-workspaces`.
 """
 type TestSplit {
+  """
+  Enable verbose test output and engine goroutine dumps at 15 and 25 minutes
+  """
+  diagnostics: Boolean! = false
+
+  let dumpAfter: [String!]! = if (self.diagnostics) { ["15m", "25m"] } else { [] }
+
   """
   Workspace
   """
@@ -15,8 +27,9 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
+    timeout: String,
   ): Void {
-    engineDev(ws: self.ws).test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    engineDev(ws: self.ws).test(timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   let testCliEngineSpecific(
@@ -30,7 +43,7 @@ type TestSplit {
         "minFreeSpace = \"30%\"",
         "maxUsedSpace = \"50%\"",
       ].join("\n"))
-      .test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+      .test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   let testSkip(
@@ -39,7 +52,7 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
   ): Void {
-    engineDev(ws: self.ws).test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    engineDev(ws: self.ws).test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   """

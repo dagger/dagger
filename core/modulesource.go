@@ -1896,34 +1896,27 @@ func (src *ModuleSource) LoadContextFile(
 			return inst, fmt.Errorf("failed to select file: %w", err)
 		}
 
-	case ModuleSourceKindGit:
-		slog.Debug("moduleSource.LoadContext: loading contextual file from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
-
-		if !filepath.IsAbs(path) {
-			path = filepath.Join("/", src.SourceRootSubpath, path)
-		}
-
-		// Use the Git context directory without module config includes applied.
-		ctxDir := src.Git.UnfilteredContextDir
-		if err := dag.Select(ctx, ctxDir, &inst,
-			dagql.Selector{
-				Field: "file",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(path)},
-				},
-			},
-		); err != nil {
-			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
-		}
-
-	case ModuleSourceKindDir:
-		if !filepath.IsAbs(path) {
-			path = filepath.Join("/", src.SourceRootSubpath, path)
-		}
-
-		// Use the Dir context directory.
+	case ModuleSourceKindGit, ModuleSourceKindDir:
 		ctxDir := src.ContextDirectory
+		if src.Kind == ModuleSourceKindGit {
+			slog.Debug("moduleSource.LoadContext: loading contextual file from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
+			// Use the Git context directory without module config includes applied.
+			ctxDir = src.Git.UnfilteredContextDir
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join("/", src.SourceRootSubpath, path)
+		}
 
+		// The file becomes a function argument, so it needs its content
+		// digest now. Evaluate the context so that Directory.file hashes the
+		// file (and reports a missing file) at once.
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return inst, err
+		}
+		if err := cache.Evaluate(ctx, ctxDir); err != nil {
+			return inst, fmt.Errorf("failed to evaluate context directory: %w", err)
+		}
 		if err := dag.Select(ctx, ctxDir, &inst,
 			dagql.Selector{
 				Field: "file",

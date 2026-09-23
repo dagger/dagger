@@ -18,7 +18,7 @@ import (
 // and no evaluation of its Lazy operation - and it keeps that ownership
 // across a restart.
 //
-// The install may come from an early sharing pass or from the later ordinary
+// The install may come from an early sharing pass or from the exact-row fixture
 // demand in this test; both emit installed-ready and neither downloads. The
 // assertions therefore never wait for an asynchronous pass, and the report is
 // never re-read to let one finish.
@@ -34,17 +34,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		client           *dagger.Client
 	}
 	stop := func(e *running) {
-		if e.client != nil {
-			require.NoError(t, e.client.Close())
-		}
-		if e.upstream != nil {
-			_, err := e.upstream.Stop(context.WithoutCancel(ctx))
-			require.NoError(t, err)
-		}
-		if e.tunnel != nil {
-			_, err := e.tunnel.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
-		}
+		require.NoError(t, stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
 	}
 	start := func(state string, volume *dagger.CacheVolume, workdir string) *running {
 		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
@@ -103,8 +93,11 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Equal(t, "Directory", imported[0].Type.NamedType)
 	handle, rowID := imported[0].Handle, imported[0].ResultID
 
-	// An ordinary read through the exact imported reference. Whether the
-	// early pass or this demand installed the part, the bytes are local.
+	// Demand the exact imported row: an ordinary handle read may select B's
+	// earlier donor instead. Either sharing or this demand installs its part.
+	var evaluated bool
+	require.NoError(t, transferFixture(ctx, b.client, "evaluate", "", []string{handle}, &evaluated))
+	require.True(t, evaluated)
 	entries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(handle)).Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, entries, "notes.txt")
@@ -146,7 +139,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Len(t, installedRow.SnapshotLinks, 1, "the receiver owns its own snapshot link")
 	require.Equal(t, donorRef, installedRow.SnapshotLinks[0].RefKey, "it is the donor's exact snapshot, owned independently")
 
-	// Restart B: ownership survives, and reading through the saved handle
+	// Restart B: ownership survives, and demanding the exact restored row
 	// installs, downloads, evaluates and settles nothing for that row.
 	stop(b)
 	b = start(bState, bVolume, bDir)
@@ -160,6 +153,8 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Len(t, restoredRow.SnapshotLinks, 1)
 	require.Equal(t, donorRef, restoredRow.SnapshotLinks[0].RefKey, "its owner link survived the restart")
 
+	require.NoError(t, transferFixture(ctx, b.client, "evaluate", "", []string{handle}, &evaluated))
+	require.True(t, evaluated)
 	restoredEntries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(handle)).Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, restoredEntries, "notes.txt")
