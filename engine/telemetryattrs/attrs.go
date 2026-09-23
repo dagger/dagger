@@ -20,6 +20,12 @@ const (
 	// DB. (string)
 	TelemetryOriginClientIDAttr = "dagger.io/telemetry.origin_client_id"
 
+	// TelemetrySessionIDAttr marks resources sent over an engine's live
+	// telemetry subscriptions. Nested clients may forward them through their
+	// inherited OTLP exporter; the originating session must not ingest that
+	// telemetry again, since it already fans out to ancestor clients. (string)
+	TelemetrySessionIDAttr = "dagger.io/telemetry.session_id"
+
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
 	// Dagger Cloud's /v1/traces stream stamps these on every span it emits

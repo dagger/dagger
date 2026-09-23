@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -420,6 +422,45 @@ func (ps *PubSub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ps.mux.ServeHTTP(w, r)
 }
 
+// withoutTelemetryReflections removes subscription data forwarded back through
+// a nested client's inherited OTLP exporter. The session has already routed it
+// to the origin and its ancestors; ingesting it again would duplicate logs and
+// metric deltas, and could replay stale live span snapshots over completed spans.
+// This is not content deduplication: unmarked telemetry (including identical log
+// records) and telemetry from other sessions must still be routed normally.
+func withoutTelemetryReflections[T interface{ GetResource() *resourcepb.Resource }](groups []T, sessionID string) []T {
+	if sessionID == "" {
+		return groups
+	}
+	return slices.DeleteFunc(groups, func(group T) bool {
+		for _, attr := range group.GetResource().GetAttributes() {
+			if attr.GetKey() == telemetryattrs.TelemetrySessionIDAttr && attr.GetValue().GetStringValue() == sessionID {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// withTelemetrySession stamps a freshly encoded subscription resource, not its
+// stored source. Resource attributes survive the CLI's OTLP decoding/forwarding
+// for all three signals, including older clients and the legacy SSE transport.
+func withTelemetrySession(resource *resourcepb.Resource, sessionID string) *resourcepb.Resource {
+	if resource == nil {
+		resource = new(resourcepb.Resource)
+	}
+	resource.Attributes = slices.DeleteFunc(resource.Attributes, func(attr *otlpcommonv1.KeyValue) bool {
+		return attr.GetKey() == telemetryattrs.TelemetrySessionIDAttr
+	})
+	resource.Attributes = append(resource.Attributes, &otlpcommonv1.KeyValue{
+		Key: telemetryattrs.TelemetrySessionIDAttr,
+		Value: &otlpcommonv1.AnyValue{
+			Value: &otlpcommonv1.AnyValue_StringValue{StringValue: sessionID},
+		},
+	})
+	return resource
+}
+
 func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
@@ -444,6 +485,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.ResourceSpans = withoutTelemetryReflections(req.ResourceSpans, sessionID)
 	spans := telemetry.SpansFromPB(req.ResourceSpans)
 	slog.Debug("exporting spans", "spans", len(spans), "origin", clientID)
 
@@ -485,6 +527,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.ResourceLogs = withoutTelemetryReflections(req.ResourceLogs, sessionID)
 	slog.Debug("exporting logs", "origin", clientID)
 
 	start := time.Now()
@@ -525,6 +568,7 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.ResourceMetrics = withoutTelemetryReflections(req.ResourceMetrics, sessionID)
 	slog.Debug("exporting metrics", "origin", clientID)
 
 	start := time.Now()
@@ -592,8 +636,12 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 			roSpans[i] = span.ReadOnly()
 			since = span.ID
 		}
+		resources := telemetry.SpansToPB(roSpans)
+		for _, group := range resources {
+			group.Resource = withTelemetrySession(group.Resource, record.daggerSession.sessionID)
+		}
 		return since, &coltracepb.ExportTraceServiceRequest{
-			ResourceSpans: telemetry.SpansToPB(roSpans),
+			ResourceSpans: resources,
 		}, len(spans), nil
 	})
 }
@@ -611,8 +659,12 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, r
 			return since, nil, 0, nil
 		}
 		since = logs[len(logs)-1].ID
+		resources := clientdb.LogsToPB(logs)
+		for _, group := range resources {
+			group.Resource = withTelemetrySession(group.Resource, record.daggerSession.sessionID)
+		}
 		return since, &collogspb.ExportLogsServiceRequest{
-			ResourceLogs: clientdb.LogsToPB(logs),
+			ResourceLogs: resources,
 		}, len(logs), nil
 	})
 }
@@ -630,8 +682,12 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 			return since, nil, 0, nil
 		}
 		since = metrics[len(metrics)-1].ID
+		resources := clientdb.MetricsToPB(metrics)
+		for _, group := range resources {
+			group.Resource = withTelemetrySession(group.Resource, record.daggerSession.sessionID)
+		}
 		return since, &colmetricspb.ExportMetricsServiceRequest{
-			ResourceMetrics: clientdb.MetricsToPB(metrics),
+			ResourceMetrics: resources,
 		}, len(metrics), nil
 	})
 }
