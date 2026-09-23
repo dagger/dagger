@@ -331,7 +331,8 @@ func TestClientQueryEncoding(t *testing.T) {
 	}
 }
 
-func TestCPUReport(t *testing.T) {
+func cpuFixture(t *testing.T) string {
+	t.Helper()
 	file := filepath.Join(t.TempDir(), "cpu.pprof")
 	f, err := os.Create(file)
 	if err != nil {
@@ -350,6 +351,11 @@ func TestCPUReport(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
+	return file
+}
+
+func TestCPUReport(t *testing.T) {
+	file := cpuFixture(t)
 	for _, view := range []string{"cum", "flat"} {
 		text, err := cpuReport(t.Context(), file, view, "", 35)
 		if err != nil {
@@ -380,6 +386,136 @@ func TestCPUReport(t *testing.T) {
 	p.handler().ServeHTTP(rec, httptest.NewRequest("GET", "/report?sample=latest&view=cum", nil))
 	if rec.Code != 200 {
 		t.Fatalf("latest successful: %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCaptureAndSavedReports(t *testing.T) {
+	data, err := os.ReadFile(cpuFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/profile") {
+			w.Write(data)
+		} else {
+			successfulEndpoint(w, r)
+		}
+	}))
+	defer endpoint.Close()
+	dir := t.TempDir()
+	if err := run(t.Context(), []string{"capture", "--endpoint", endpoint.URL + "/debug/pprof", "--seconds", "1", "--dir", dir}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 || !sampleID.MatchString(entries[0].Name()) {
+		t.Fatalf("capture directory: %v, %v", entries, err)
+	}
+	id := entries[0].Name()
+	endpoint.Close() // Saved reports need neither the target nor a profiler service.
+	for _, view := range []string{"cum", "flat", "list", "goroutines-before", "goroutines-after"} {
+		name, focus := "cpu.pprof", ""
+		if strings.HasPrefix(view, "goroutines-") {
+			name = view + ".txt"
+		}
+		if view == "list" {
+			focus = "cpuFixture"
+		}
+		if err := run(t.Context(), []string{"report", "--root", dir, "--file", id + "/" + name, "--view", view, "--focus", focus, "--url", "http://127.0.0.1:1"}); err != nil {
+			t.Fatalf("saved %s: %v", view, err)
+		}
+	}
+	// Exercise a monitor export, shut down its HTTP service, then use only files.
+	p, err := newProfiler(endpoint.URL, dir, 1, 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := httptest.NewServer(p.handler())
+	exported := t.TempDir()
+	if err := run(t.Context(), []string{"export", "--url", service.URL, "--dir", exported}); err != nil {
+		service.Close()
+		t.Fatal(err)
+	}
+	service.Close()
+	for _, name := range []string{"cpu.pprof", "goroutines-after.txt"} {
+		view := "cum"
+		if name != "cpu.pprof" {
+			view = "goroutines-after"
+		}
+		text, err := localReport(t.Context(), exported, id+"/"+name, view, "")
+		if err != nil || text == "" {
+			t.Fatalf("exported %s: %v\n%s", name, err, text)
+		}
+	}
+	original, err := os.ReadFile(filepath.Join(dir, id, "cpu.pprof"))
+	if err != nil || !bytes.Equal(original, data) {
+		t.Fatal("analysis modified the source profile")
+	}
+}
+
+func TestCaptureCommandFailures(t *testing.T) {
+	for _, cpuFails := range []bool{false, true} {
+		t.Run(fmt.Sprint(cpuFails), func(t *testing.T) {
+			_, endpoint := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/profile") == cpuFails {
+					http.Error(w, "profiling already in use", 500)
+					return
+				}
+				successfulEndpoint(w, r)
+			}, 1)
+			dir := t.TempDir()
+			err := run(t.Context(), []string{"capture", "--endpoint", endpoint.URL, "--seconds", "1", "--dir", dir})
+			if err == nil || !strings.Contains(err.Error(), "profiling already in use") || !strings.Contains(err.Error(), "diagnostics=") {
+				t.Fatalf("expected capture diagnostics, got %v", err)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("capture directory: %v %v", entries, err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, entries[0].Name(), "metadata.json")); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestSavedReportValidation(t *testing.T) {
+	dir := t.TempDir()
+	for name, contents := range map[string]string{"invalid.pprof": "not a profile", "empty.pprof": "", "dump.txt": "goroutine 1 [running]:\nmain.main()\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(cpuFixture(t), filepath.Join(dir, "outside.pprof")); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"", "../outside.pprof", "a/../dump.txt", "/etc/passwd", "a\\dump.txt", "./dump.txt", "outside.pprof", "missing.pprof", "invalid.pprof", "empty.pprof", "."} {
+		if _, err := localReport(t.Context(), dir, file, "cum", ""); err == nil {
+			t.Fatalf("accepted invalid profile %q", file)
+		}
+	}
+	for _, options := range [][2]string{{"invalid", ""}, {"list", ""}, {"cum", "["}, {"goroutines-after", "focus"}, {"cum", strings.Repeat("a", 4097)}} {
+		if _, err := localReport(t.Context(), dir, "dump.txt", options[0], options[1]); err == nil {
+			t.Fatalf("accepted report options %v", options)
+		}
+	}
+	if _, err := localReport(t.Context(), dir, "invalid.pprof", "goroutines-after", ""); err == nil {
+		t.Fatal("accepted non-goroutine text")
+	}
+	for _, args := range [][]string{
+		{"report", "--file", "dump.txt", "--sample", "20260101T010101.123456789Z"},
+		{"report", "--file", "dump.txt", "unexpected"},
+		{"report", "--file", ""},
+		{"export", "--file", "dump.txt"},
+	} {
+		if err := run(t.Context(), args); err == nil {
+			t.Fatalf("accepted arguments %v", args)
+		}
+	}
+	p, _ := fixture(t, successfulEndpoint, 1)
+	rec := httptest.NewRecorder()
+	p.handler().ServeHTTP(rec, httptest.NewRequest("GET", "/report?file=dump.txt", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatal("HTTP reporting accepted local file selection")
 	}
 }
 

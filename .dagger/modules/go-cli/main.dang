@@ -49,7 +49,39 @@ type GoCli {
   }
 
   """
-  Continuously sample a remote Go pprof endpoint in the background. Captures a
+  Capture one CPU profile with before/after goroutine dumps and metadata into
+  path/<sample ID>/ in the workspace. No background service is needed or started.
+  Use profileReport(file: "<saved path>/cpu.pprof") to analyze it later, including
+  after this session ends. Failed or partial captures return their diagnostics.
+
+  endpoint must be a container-reachable pprof base URL including /debug/pprof/.
+  Only one CPU profiler can run on a process: stop any monitor on this target
+  before capturing. This tool never stops or replaces an existing monitor.
+  """
+  profileCapture(
+    ws: Workspace!,
+    endpoint: String!,
+    """CPU sample duration, 1–60 seconds."""
+    seconds: Int! = 15,
+    """Workspace-relative destination for a new timestamped capture directory."""
+    path: String! = "tmp/go-profiles",
+  ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
+    let destination = profilePath(path)
+    let result = profiler
+      .withEnvVariable("PROFILE_NONCE", UUID.v7)
+      .withExec([
+        "go-profiler", "capture", "--endpoint", endpoint,
+        "--seconds", toString(seconds), "--dir", "/profiles",
+      ])
+    let id = result.stdout
+    print("Saved profile capture to " + destination + "/" + id + "/. Use profileReport(file: \"" + destination + "/" + id + "/cpu.pprof\") to analyze it.")
+    let before = ws.directory("/")
+    before.withDirectory(destination, result.directory("/profiles")).changes(before)
+  }
+
+  """
+  Optionally sample continuously in the background; prefer profileCapture for a
+  single window and profileReport(file: ...) for saved files. Captures a
   CPU profile and goroutine dumps before/after each window, retaining a bounded
   history. Returns immediately; profileStatus lists completed sample IDs and
   failures, profileReport analyzes them, and profileSave preserves the raw files.
@@ -101,24 +133,43 @@ type GoCli {
   }
 
   """
-  Analyze a retained sample without profiling the target again. Views: cum
-  (cumulative CPU top), flat (self CPU top), list (source lines; requires focus),
-  goroutines-before, goroutines-after. CPU reports default to the latest successful
-  sample. Use explicit sample IDs from profileStatus to compare windows.
+  Analyze a saved workspace file without a service or any target connection.
+  Pass file for a CPU .pprof or a goroutine text dump from profileCapture or
+  profileSave. Omit file to analyze a retained sample in the optional monitor.
+  file cannot be combined with a non-default sample ID.
 
-  focus is an optional Go regexp selecting CPU stacks/functions; list uses the
-  workspace source at monitor start, which may differ from the profiled binary.
-  Goroutine output is bounded; save profiles to read the full dump with file tools.
+  Views: cum (cumulative CPU top), flat (self CPU top), list (source lines;
+  requires focus), goroutines-before, goroutines-after (read the supplied dump).
+  Live CPU reports default to the latest successful sample; explicit sample IDs
+  from profileStatus compare windows. focus is a Go regexp for CPU views only.
+  list uses current workspace source for files, or the source at monitor start
+  for live samples; either may differ from the profiled binary. Output is bounded.
   """
   profileReport(
+    ws: Workspace!,
     sample: String! = "latest",
     view: String! = "cum",
     focus: String! = "",
+    """Workspace-relative saved profile or goroutine dump; no monitor required."""
+    file: String! = "",
   ): String! @cache(policy: FunctionCachePolicy.Never) {
-    profileExec([
-      "report", "--url", profileURL, "--sample", sample,
-      "--view", view, "--focus", focus,
-    ]).stdout
+    if (file != "") {
+      if (sample != "latest") {
+        raise "Choose a saved file or a monitor sample ID, not both."
+      }
+      profiler
+        .withMountedDirectory("/workspace", ws.directory("/"))
+        .withEnvVariable("PROFILE_NONCE", UUID.v7)
+        .withExec([
+          "go-profiler", "report", "--file", profilePath(file),
+          "--view", view, "--focus", focus,
+        ]).stdout
+    } else {
+      profileExec([
+        "report", "--url", profileURL, "--sample", sample,
+        "--view", view, "--focus", focus,
+      ]).stdout
+    }
   }
 
   """
@@ -131,13 +182,11 @@ type GoCli {
     ws: Workspace!,
     path: String! = "tmp/go-profiles",
   ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
-    if (path == "" or path.hasPrefix("/") or path.split("/").contains("..")) {
-      raise "Profile destination must be a nonempty workspace-relative path without '..'."
-    }
+    let destination = profilePath(path)
     let captured = profileExec(["export", "--url", profileURL, "--dir", "/profile-export"])
       .directory("/profile-export")
     let before = ws.directory("/")
-    before.withDirectory(path, captured).changes(before)
+    before.withDirectory(destination, captured).changes(before)
   }
 
   """
@@ -153,6 +202,13 @@ type GoCli {
     self.profileURL = ""
     print("Stopped background profiling; remote process left running.")
     self
+  }
+
+  let profilePath(path: String!): String! {
+    if (path == "" or path.hasPrefix("/") or path.contains("\\") or path.split("/").contains("..") or path.split("/").contains(".")) {
+      raise "Profile path must be workspace-relative, without '.', '..', or backslashes."
+    }
+    path
   }
 
   let profileExec(args: [String!]!): Container! {

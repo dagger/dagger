@@ -297,6 +297,101 @@ func cpuReport(ctx context.Context, file, view, focus string, count int) (string
 	return out.String(), err
 }
 
+func validateView(view, focus string) error {
+	goroutines := view == "goroutines-before" || view == "goroutines-after"
+	if goroutines && focus != "" {
+		return errors.New("focus is only supported for CPU views")
+	}
+	if !goroutines && view != "cum" && view != "flat" && view != "list" {
+		return errors.New("invalid view")
+	}
+	if len(focus) > 4096 {
+		return errors.New("focus is too long")
+	}
+	if _, err := regexp.Compile(focus); err != nil {
+		return errors.New("invalid focus regex")
+	}
+	if view == "list" && focus == "" {
+		return errors.New("list requires focus")
+	}
+	return nil
+}
+
+// Both saved files and retained samples use the same bounded report path.
+func fileReport(ctx context.Context, file, view, focus string) (string, error) {
+	if err := validateView(view, focus); err != nil {
+		return "", err
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > maxBody {
+		return "", errors.New("profile must be a regular file of 1..32 MiB")
+	}
+	if view != "goroutines-before" && view != "goroutines-after" {
+		return cpuReport(ctx, file, view, focus, 35)
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	out := &limitedText{}
+	if _, err := io.Copy(out, io.LimitReader(f, maxText+1)); err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(string(out.data), "goroutine ") {
+		return "", errors.New("expected a debug=2 goroutine text dump")
+	}
+	return out.String(), nil
+}
+
+func localReport(ctx context.Context, dir, file, view, focus string) (string, error) {
+	if !filepath.IsLocal(file) || strings.Contains(file, "\\") || slices.Contains(strings.Split(file, "/"), "..") || slices.Contains(strings.Split(file, "/"), ".") {
+		return "", errors.New("profile path must be workspace-relative, without '.', '..', or backslashes")
+	}
+	if err := validateView(view, focus); err != nil {
+		return "", err
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	f, err := root.Open(file)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > maxBody {
+		return "", errors.New("profile must be a regular file of 1..32 MiB")
+	}
+	// Copy through the confined root: pprof must not follow a workspace symlink
+	// outside it, interpret a filename as a URL/flag, or modify the source file.
+	tmp, err := os.CreateTemp("", "go-profiler-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(tmp.Name())
+	n, copyErr := io.Copy(tmp, io.LimitReader(f, maxBody+1))
+	closeErr := tmp.Close()
+	if copyErr != nil {
+		return "", copyErr
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	if n > maxBody {
+		return "", errors.New("profile exceeds 32 MiB")
+	}
+	return fileReport(ctx, tmp.Name(), view, focus)
+}
+
 func (p *profiler) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok\n") })
@@ -356,27 +451,11 @@ func (p *profiler) report(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid sample ID", 400)
 		return
 	}
+	if err := validateView(view, focus); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	goroutines := view == "goroutines-before" || view == "goroutines-after"
-	if goroutines && focus != "" {
-		http.Error(w, "focus is only supported for CPU views", 400)
-		return
-	}
-	if !goroutines && view != "cum" && view != "flat" && view != "list" {
-		http.Error(w, "invalid view", 400)
-		return
-	}
-	if len(focus) > 4096 {
-		http.Error(w, "focus is too long", 400)
-		return
-	}
-	if _, err := regexp.Compile(focus); err != nil {
-		http.Error(w, "invalid focus regex", 400)
-		return
-	}
-	if view == "list" && focus == "" {
-		http.Error(w, "list requires focus", 400)
-		return
-	}
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	var selected *sample
@@ -392,30 +471,20 @@ func (p *profiler) report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	name := "cpu.pprof"
 	if goroutines {
-		name := view + ".txt"
-		f, err := os.Open(filepath.Join(p.dir, selected.ID, name))
-		if err != nil {
-			http.Error(w, "snapshot unavailable: "+selected.Errors[name], 404)
-			return
-		}
-		defer f.Close()
-		out := &limitedText{}
-		_, err = io.Copy(out, io.LimitReader(f, maxText+1))
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		io.WriteString(w, out.String())
+		name = view + ".txt"
+	} else if !selected.CPU {
+		http.Error(w, "CPU profile unavailable: "+selected.Errors[name], 404)
 		return
 	}
-	if !selected.CPU {
-		http.Error(w, "CPU profile unavailable: "+selected.Errors["cpu.pprof"], 404)
-		return
-	}
-	text, err := cpuReport(r.Context(), filepath.Join(p.dir, selected.ID, "cpu.pprof"), view, focus, 35)
+	text, err := fileReport(r.Context(), filepath.Join(p.dir, selected.ID, name), view, focus)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("pprof: %v\n%s", err, text), 500)
+		status := http.StatusInternalServerError
+		if errors.Is(err, os.ErrNotExist) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, fmt.Sprintf("report: %v\n%s\n%s", err, text, selected.Errors[name]), status)
 		return
 	}
 	io.WriteString(w, text)
@@ -562,8 +631,12 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 		if args[0] == "capture" {
-			_, err := p.capture(ctx)
-			return err
+			s, err := p.capture(ctx)
+			if err != nil || len(s.Errors) > 0 {
+				return fmt.Errorf("capture %s (%s): %v; diagnostics=%v; ensure no other CPU profiler is running on the target", s.ID, s.State, err, s.Errors)
+			}
+			fmt.Print(s.ID)
+			return nil
 		}
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -596,7 +669,23 @@ func run(ctx context.Context, args []string) error {
 		id := flags.String("sample", "latest", "sample ID or latest")
 		view := flags.String("view", "cum", "cum, flat, list, goroutines-before, goroutines-after")
 		focus := flags.String("focus", "", "pprof focus regex (required for list)")
+		file := flags.String("file", "", "saved workspace-relative profile; report only")
+		root := flags.String("root", ".", "workspace root for saved-file reports")
 		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		fileSet := false
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name == "file" {
+				fileSet = true
+			}
+		})
+		if fileSet {
+			if args[0] != "report" || flags.NArg() != 0 || *id != "latest" {
+				return errors.New("file requires report and cannot be combined with a sample ID or positional arguments")
+			}
+			text, err := localReport(ctx, *root, *file, *view, *focus)
+			fmt.Print(text)
 			return err
 		}
 		path := "/archive"
