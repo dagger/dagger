@@ -255,6 +255,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 
 	defer func() {
 		if rerr != nil {
+			c.closeRequests(errors.New("Connect failed"))
 			c.internalCancel(errors.New("Connect failed"))
 		}
 	}()
@@ -298,6 +299,20 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 				return nil, fmt.Errorf("parse DAGGER_ENGINE_NUM_CPU: %w", err)
 			}
 			c.numCPU = numCPU
+		}
+		// The exec's bootstrap attachables serve SDKs, but cannot handle a CLI's
+		// interactive prompts. Give an interactive CLI its own channel before
+		// init seals its logical client to the bootstrap channel. Do not do this
+		// for `dagger run` proxies, which share the outer client's attachables.
+		if c.PromptHandler != nil && os.Getenv(engine.NestedClientIDEnv) != "" {
+			if err := c.startSession(connectCtx); err != nil {
+				return nil, fmt.Errorf("start nested session: %w", err)
+			}
+			defer func() {
+				if rerr != nil {
+					c.sessionSrv.Stop()
+				}
+			}()
 		}
 		c.httpClient = c.newHTTPClient()
 		if err := c.init(connectCtx); err != nil {

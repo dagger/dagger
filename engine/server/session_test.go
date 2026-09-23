@@ -213,6 +213,28 @@ func TestNestedTransportRegistrationBindsExactExecAttachables(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, bootstrapCaller, caller)
 
+	// Interactive nested CLIs register a fresh identity's own channel. That
+	// must not replace the exec bootstrap, an existing identity, or a channel
+	// that a logical SDK client was already sealed to.
+	cliMetadata := nestedTransportTestMetadata("interactive-cli")
+	cli, err := srv.RegisterNestedClientTransportForExec(ctx, cliMetadata, parent.clientID, cliMetadata.ClientID)
+	require.NoError(t, err)
+	defer cli.Close()
+	cliRecord := sess.clientRecords[cliMetadata.ClientID]
+	require.Equal(t, cliMetadata.ClientID, cliRecord.attachablesClientID)
+	cliCaller := &sessionAttachableCaller{ctx: context.Background()}
+	sess.attachables.callers[cliMetadata.ClientID] = cliCaller
+	caller, err = srv.clientAttachableCaller(ctx, sess.sessionID, cliMetadata.ClientID, true)
+	require.NoError(t, err)
+	require.Same(t, cliCaller, caller)
+	_, err = srv.RegisterNestedClientTransportForExec(ctx, cliMetadata, parent.clientID, cliMetadata.ClientID)
+	require.ErrorContains(t, err, "already registered")
+	req := httptest.NewRequest(http.MethodGet, engine.SessionAttachablesEndpoint, nil)
+	err = srv.serveSessionAttachables(httptest.NewRecorder(), req, cliRecord)
+	require.ErrorContains(t, err, "already exist")
+	err = srv.serveSessionAttachables(httptest.NewRecorder(), req, logicalRecord)
+	require.ErrorContains(t, err, "cannot register another channel")
+
 	missing := nestedTransportTestMetadata("missing-carrier")
 	_, err = srv.RegisterNestedClientTransportForExec(ctx, missing, parent.clientID, "absent")
 	require.ErrorContains(t, err, `attachables client "absent" not found`)

@@ -6,13 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session/prompt"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/go-sse/sse"
@@ -20,8 +25,150 @@ import (
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+type nestedPromptHandler struct {
+	boolPrompts int
+	forms       int
+}
+
+func (h *nestedPromptHandler) HandlePrompt(_ context.Context, _, _ string, dest any) error {
+	h.boolPrompts++
+	*dest.(*bool) = false
+	return nil
+}
+
+func (h *nestedPromptHandler) HandleForm(_ context.Context, _ *huh.Form) error {
+	h.forms++
+	return errors.New("user canceled selection")
+}
+
+func TestNestedClientServesLocalPromptsBeforeInit(t *testing.T) {
+	// Exercise Connect and the HTTP-to-gRPC reverse connection, not just the
+	// Prompt service in isolation. Init represents startup workspace capture.
+	for _, failInit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("init failure=%t", failInit), func(t *testing.T) {
+			handler := &nestedPromptHandler{}
+			connections := make(chan *grpc.ClientConn, 1)
+			initDone := make(chan struct{})
+			var promptConn *grpc.ClientConn
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case engine.SessionAttachablesEndpoint:
+					metadata, err := engine.ClientMetadataFromHTTPHeaders(r.Header)
+					require.NoError(t, err)
+					require.Equal(t, "interactive-cli", metadata.ClientID)
+					require.Contains(t, r.Header.Values(engine.SessionMethodNameMetaKey), "/dagger.prompt.Prompt/PromptSelect")
+					conn, _, err := w.(http.Hijacker).Hijack()
+					require.NoError(t, err)
+					_, err = io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n")
+					require.NoError(t, err)
+					_, err = io.ReadFull(conn, make([]byte, 1))
+					require.NoError(t, err)
+					var dialed bool
+					cc, err := grpc.NewClient("passthrough:///nested-prompts",
+						grpc.WithTransportCredentials(insecure.NewCredentials()),
+						grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+							if dialed {
+								return nil, errors.New("attachable channel closed")
+							}
+							dialed = true
+							return conn, nil
+						}))
+					require.NoError(t, err)
+					connections <- cc
+				case engine.InitEndpoint:
+					defer close(initDone)
+					select {
+					case promptConn = <-connections:
+					case <-r.Context().Done():
+						return
+					}
+					prompts := prompt.NewPromptClient(promptConn)
+					answer, err := prompts.PromptBool(r.Context(), &prompt.BoolRequest{Prompt: "Include untracked files?", Default: true})
+					require.NoError(t, err)
+					require.False(t, answer.Response, "the CLI's No must override the default")
+					_, err = prompts.PromptSelect(r.Context(), &prompt.SelectRequest{
+						Prompt: "Include untracked files?", DefaultChoice: "skip",
+						Choices: []*prompt.SelectChoice{{Id: "include", Label: "Include"}, {Id: "skip", Label: "Skip"}},
+					})
+					require.ErrorContains(t, err, "user canceled selection")
+					if failInit {
+						panic(http.ErrAbortHandler)
+					}
+				case engine.ShutdownEndpoint:
+				default:
+					t.Errorf("unexpected request: %s", r.URL.Path)
+				}
+			}))
+			server.Config.Protocols = new(http.Protocols)
+			server.Config.Protocols.SetHTTP1(true)
+			server.Config.Protocols.SetUnencryptedHTTP2(true)
+			server.Start()
+			defer server.Close()
+			t.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(server.Listener.Addr().(*net.TCPAddr).Port))
+			t.Setenv("DAGGER_SESSION_TOKEN", "nested-token")
+			t.Setenv(engine.NestedClientIDEnv, "bootstrap")
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			c, err := Connect(ctx, Params{ID: "interactive-cli", PromptHandler: handler})
+			if failInit {
+				require.ErrorContains(t, err, "initialize nested client")
+			} else {
+				require.NoError(t, err)
+				require.NoError(t, c.Close())
+			}
+			select {
+			case <-initDone:
+			case <-ctx.Done():
+				t.Fatal("init did not reach the nested prompt channel")
+			}
+			require.NotNil(t, promptConn)
+			defer promptConn.Close()
+			require.Eventually(t, func() bool { return promptConn.GetState() != connectivity.Ready }, time.Second, time.Millisecond,
+				"both close and failed Connect must stop the reverse attachable channel")
+			require.Equal(t, 1, handler.boolPrompts)
+			require.Equal(t, 1, handler.forms)
+		})
+	}
+}
+
+func TestNestedClientPreservesBootstrapWithoutLocalPrompt(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		execID  string
+		handler prompt.PromptHandler
+	}{
+		{name: "headless exec", execID: "bootstrap"},
+		{name: "dagger run", handler: &nestedPromptHandler{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case engine.InitEndpoint, engine.ShutdownEndpoint:
+				default:
+					t.Errorf("must retain outer attachables, got %s", r.URL.Path)
+					w.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			server.Config.Protocols = new(http.Protocols)
+			server.Config.Protocols.SetHTTP1(true)
+			server.Config.Protocols.SetUnencryptedHTTP2(true)
+			server.Start()
+			defer server.Close()
+			t.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(server.Listener.Addr().(*net.TCPAddr).Port))
+			t.Setenv(engine.NestedClientIDEnv, test.execID)
+			c, err := Connect(t.Context(), Params{PromptHandler: test.handler})
+			require.NoError(t, err)
+			require.Nil(t, c.sessionSrv)
+			require.NoError(t, c.Close())
+		})
+	}
+}
 
 func TestTelemetryContextUsesClientLifetime(t *testing.T) {
 	t.Parallel()
