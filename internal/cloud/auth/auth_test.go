@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -221,5 +222,30 @@ func TestWriteFileReplacesAtomically(t *testing.T) {
 		info, err := os.Stat(path)
 		require.NoError(t, err)
 		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+}
+
+// When the rename keeps failing, as on Windows while another process holds
+// the file open, the CLI's write falls back to writing it in place; without
+// the fallback it fails and leaves the file untouched.
+func TestWriteFileFallsBackInPlace(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"access_token":"old"}`), 0o600))
+	failing := func(string, string) error { return errors.New("sharing violation") }
+
+	require.Error(t, writeFileWith(path, []byte(`{"access_token":"new"}`), 0o600, failing, false))
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, `{"access_token":"old"}`, string(got), "no fallback: the file is untouched")
+
+	require.NoError(t, writeFileWith(path, []byte(`{"access_token":"new"}`), 0o600, failing, true))
+	got, err = os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, `{"access_token":"new"}`, string(got), "the fallback writes in place")
+	entries, err := os.ReadDir(filepath.Dir(path))
+	require.NoError(t, err)
+	for _, entry := range entries {
+		require.NotContains(t, entry.Name(), ".tmp", "no temporary file left behind")
 	}
 }

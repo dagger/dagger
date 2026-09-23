@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -269,6 +270,16 @@ func saveToken(token *oauth2.Token) error {
 
 // writeFile writes data to the named file with locking to prevent race conditions
 func writeFile(filename string, data []byte, perm os.FileMode) error {
+	return writeFileWith(filename, data, perm, replacefile.Rename, runtime.GOOS == "windows")
+}
+
+// writeFileWith replaces the file with rename; with inPlaceFallback, when the
+// rename keeps failing (on Windows, while another process such as a scanner
+// holds the file open), it writes the file in place instead, as writeFile
+// did before, under the lock it holds, so `dagger login` does not fail. An
+// engine's write-back, which does not take the lock, may interleave with that
+// fallback write; the engine's own write-back never falls back.
+func writeFileWith(filename string, data []byte, perm os.FileMode, rename func(string, string) error, inPlaceFallback bool) error {
 	fileLock := flock.New(filename + ".lock")
 
 	locked, err := fileLock.TryLockContext(context.Background(), 3*time.Second)
@@ -300,7 +311,13 @@ func writeFile(filename string, data []byte, perm os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return replacefile.Rename(tmp.Name(), filename)
+	if err := rename(tmp.Name(), filename); err != nil {
+		if !inPlaceFallback {
+			return err
+		}
+		return os.WriteFile(filename, data, perm)
+	}
+	return nil
 }
 
 type Org struct {
