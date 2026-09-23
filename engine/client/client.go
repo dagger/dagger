@@ -129,6 +129,8 @@ type Params struct {
 	Module   string
 	Function string
 	ExecCmd  []string
+	// SingleTenant requests a dedicated Cloud engine for this client.
+	SingleTenant bool
 
 	EagerRuntime bool
 
@@ -487,6 +489,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		Module:           params.Module,
 		Function:         params.Function,
 		ExecCmd:          params.ExecCmd,
+		SingleTenant:     params.SingleTenant,
 		ClientID:         c.ID,
 		CloudAuth:        params.CloudAuth,
 	})
