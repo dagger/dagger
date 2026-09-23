@@ -103,15 +103,9 @@ func (e *cacheFactExport) shutdownAtExit(ctx context.Context) {
 	}
 }
 
-// InitTelemetry sets up the engine process's telemetry. Its resource names
-// the engine instance.
-//
-// With _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT and DAGGER_CLOUD_TOKEN both set,
-// it also returns the export of the dagql cache's facts to Dagger Cloud at
-// DAGGER_CLOUD_URL, under that token. The export has its own logger provider,
-// so nothing else emitted in the process reaches Cloud. Otherwise the engine
-// exports no facts.
-func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Context, *cacheFactExport) {
+// InitTelemetry sets up the engine process's telemetry and returns its
+// resource, which names the engine instance, for newCacheFactExport.
+func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Context, *resource.Resource) {
 	otelResource, err := resource.New(ctx,
 		resource.WithHost(),
 		resource.WithAttributes(
@@ -130,15 +124,22 @@ func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Contex
 		Resource: otelResource,
 	})
 
-	return ctx, newCacheFactExport(ctx, otelResource)
+	return ctx, otelResource
 }
 
 // envCacheFactsExport enables the export of cache facts. The token alone does
 // not: clients forward DAGGER_CLOUD_TOKEN into every engine they provision.
 const envCacheFactsExport = "_EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT"
 
-func newCacheFactExport(ctx context.Context, otelResource *resource.Resource) *cacheFactExport {
-	if os.Getenv(envCacheFactsExport) == "" || os.Getenv("DAGGER_CLOUD_TOKEN") == "" {
+// newCacheFactExport returns the export of the dagql cache's facts to Dagger
+// Cloud at DAGGER_CLOUD_URL, under DAGGER_CLOUD_TOKEN, when that token is set
+// and either _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT or the engine config's
+// telemetry.cacheFacts enables it. The export has its own logger provider, so
+// nothing else emitted in the process reaches Cloud. Otherwise the engine
+// exports no facts.
+func newCacheFactExport(ctx context.Context, otelResource *resource.Resource, cfg config.TelemetryConfig) *cacheFactExport {
+	enabled := os.Getenv(envCacheFactsExport) != "" || cfg.CacheFacts
+	if !enabled || os.Getenv("DAGGER_CLOUD_TOKEN") == "" || otelResource == nil {
 		return nil
 	}
 	cloudAuth, err := auth.GetCloudAuth(ctx)

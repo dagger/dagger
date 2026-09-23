@@ -64,7 +64,8 @@ func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
 	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
 	t.Setenv("DAGGER_CLOUD_URL", srv.URL)
 
-	ctx, export := InitTelemetry(t.Context(), "instance-a")
+	ctx, res := InitTelemetry(t.Context(), "instance-a")
+	export := newCacheFactExport(ctx, res, config.TelemetryConfig{})
 	require.True(t, export.Enabled())
 	require.NotSame(t, export.provider, telemetry.LoggerProvider(ctx), "the process context keeps its own logger provider")
 
@@ -106,7 +107,7 @@ func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
 func TestCacheFactExportDisabledWithoutToken(t *testing.T) {
 	t.Setenv(envCacheFactsExport, "1")
 	t.Setenv("DAGGER_CLOUD_TOKEN", "")
-	export := newCacheFactExport(t.Context(), resource.Empty())
+	export := newCacheFactExport(t.Context(), resource.Empty(), config.TelemetryConfig{CacheFacts: true})
 	require.False(t, export.Enabled())
 	require.NoError(t, export.Shutdown(t.Context()))
 	require.Nil(t, serverCacheFactExport(export), "the server gets no export, not a nil pointer")
@@ -130,7 +131,8 @@ func TestCacheFactExportDisabledWithTokenAlone(t *testing.T) {
 	t.Setenv("DAGGER_CLOUD_TOKEN", "forwarded-token")
 	t.Setenv("DAGGER_CLOUD_URL", srv.URL)
 
-	ctx, export := InitTelemetry(t.Context(), "instance-a")
+	ctx, res := InitTelemetry(t.Context(), "instance-a")
+	export := newCacheFactExport(ctx, res, config.TelemetryConfig{})
 	require.False(t, export.Enabled())
 	require.Nil(t, serverCacheFactExport(export), "the server gets no export, so it creates no emitter")
 
@@ -144,6 +146,25 @@ func TestCacheFactExportDisabledWithTokenAlone(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	require.Zero(t, requests, "nothing is sent to Cloud")
+}
+
+// The engine config's telemetry.cacheFacts enables the export like the
+// environment variable does, and like it, only with DAGGER_CLOUD_TOKEN.
+func TestCacheFactExportEnabledByEngineConfig(t *testing.T) {
+	t.Setenv(envCacheFactsExport, "")
+	enabled := config.TelemetryConfig{CacheFacts: true}
+
+	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
+	t.Setenv("DAGGER_CLOUD_URL", "http://127.0.0.1:1")
+	export := newCacheFactExport(t.Context(), resource.Empty(), enabled)
+	require.True(t, export.Enabled(), "config and token")
+	require.NoError(t, export.Shutdown(t.Context()))
+
+	require.False(t, newCacheFactExport(t.Context(), resource.Empty(), config.TelemetryConfig{}).Enabled(),
+		"token without either switch")
+
+	t.Setenv("DAGGER_CLOUD_TOKEN", "")
+	require.False(t, newCacheFactExport(t.Context(), resource.Empty(), enabled).Enabled(), "config without token")
 }
 
 func TestEngineTelemetry(t *testing.T) {

@@ -16,9 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql/cachefact"
+	"github.com/dagger/dagger/engine/config"
 )
 
-// An engine given _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT, DAGGER_CLOUD_URL and
+// An engine given telemetry.cacheFacts in its engine.json, DAGGER_CLOUD_URL and
 // DAGGER_CLOUD_TOKEN exports its dagql cache facts to Dagger Cloud itself,
 // under its own token and as one writer: every fact of the instance arrives,
 // in one dense sequence from engine.start to engine.stop, even though the fake
@@ -32,10 +33,13 @@ func (ClientSuite) TestEngineCacheFactsToCloud(ctx context.Context, t *testctx.T
 	eventsID := identity.NewID()
 	base, fakeCloud := cacheFactsFakeCloud(c, code)
 
-	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	enableFacts := engineWithConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg config.Config) config.Config {
+		cfg.Telemetry.CacheFacts = true
+		return cfg
+	})
+	devEngine := devEngineContainerAsService(devEngineContainer(c, enableFacts, func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithServiceBinding("cloud", fakeCloud).
-			WithEnvVariable(envCacheFactsExport, "1").
 			WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
 			WithEnvVariable("DAGGER_CLOUD_TOKEN", "test")
 	}))

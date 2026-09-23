@@ -206,6 +206,11 @@
           "type": "boolean",
           "description": "ResourceMetrics enables cgroup v2 resource metrics for the engine process. It is disabled by default. Export requires OTEL_EXPORTER_OTLP_METRICS_ENDPOINT in the engine environment. Other OTLP settings use the standard environment variables. This does not change client or execution metric collection and export.",
           "default": false
+        },
+        "cacheFacts": {
+          "type": "boolean",
+          "description": "CacheFacts enables the export of the engine's cache facts to Dagger Cloud. It is disabled by default. Export requires DAGGER_CLOUD_TOKEN in the engine environment, the credential it is sent under. The _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT environment variable enables it too.",
+          "default": false
         }
       },
       "additionalProperties": false,

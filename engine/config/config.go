@@ -44,6 +44,12 @@ type TelemetryConfig struct {
 	// in the engine environment. Other OTLP settings use the standard environment variables.
 	// This does not change client or execution metric collection and export.
 	ResourceMetrics bool `json:"resourceMetrics,omitempty" jsonschema:"default=false"`
+
+	// CacheFacts enables the export of the engine's cache facts to Dagger Cloud.
+	// It is disabled by default. Export requires DAGGER_CLOUD_TOKEN in the engine
+	// environment, the credential it is sent under. The
+	// _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT environment variable enables it too.
+	CacheFacts bool `json:"cacheFacts,omitempty" jsonschema:"default=false"`
 }
 
 type LogLevel string

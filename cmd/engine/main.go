@@ -40,6 +40,7 @@ import (
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -353,7 +354,8 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		ctx, factExport = InitTelemetry(ctx, engineInstanceID)
+		var processResource *resource.Resource
+		ctx, processResource = InitTelemetry(ctx, engineInstanceID)
 
 		bklog.G(ctx).Debug("loading buildkit config file")
 		bkcfg, err := bkconfig.LoadFile(c.GlobalString("config"))
@@ -367,6 +369,7 @@ func main() { //nolint:gocyclo
 			return err
 		}
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
+		factExport = newCacheFactExport(ctx, processResource, cfg.Telemetry)
 
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancelCause(context.Background())
