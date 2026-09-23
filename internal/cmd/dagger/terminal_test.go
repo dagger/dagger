@@ -14,7 +14,8 @@ func TestShellCommandFlagValidation(t *testing.T) {
 	oldListMode := terminalListMode
 	oldCommand := terminalCommand
 	oldCopies := terminalCopies
-	flags := []string{"command", "list", "copy"}
+	oldInits := terminalInits
+	flags := []string{"command", "list", "copy", "init"}
 	resetFlags := func() {
 		for _, name := range flags {
 			shellCmd.Flags().Lookup(name).Changed = false
@@ -25,6 +26,7 @@ func TestShellCommandFlagValidation(t *testing.T) {
 		terminalListMode = oldListMode
 		terminalCommand = oldCommand
 		terminalCopies = oldCopies
+		terminalInits = oldInits
 		resetFlags()
 	})
 
@@ -49,6 +51,7 @@ func TestShellCommandFlagValidation(t *testing.T) {
 	}{
 		{[]string{"-l", "-c", "ls"}, "--list and --command cannot be used together"},
 		{[]string{"-l", "--copy", "src"}, "--list and --copy cannot be used together"},
+		{[]string{"-l", "--init", "echo hello"}, "--list and --init cannot be used together"},
 		{[]string{"go:dev", "ls"}, "accepts at most 1 arg(s), received 2"},
 	} {
 		t.Run(fmt.Sprint(tc.args), func(t *testing.T) {
