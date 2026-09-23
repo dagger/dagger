@@ -176,7 +176,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	headBefore, statusBefore := git("rev-parse", "HEAD"), git("status", "--porcelain")
 	committed, err := commitWorkspace(ctx, c, ws, "engine commit", nil)
 	require.NoError(t, err)
-	require.Contains(t, workspaceRecipeFields(ctx, t, c, sink, string(committed.ID)), "__gitDir")
+	require.NotContains(t, workspaceRecipeFields(ctx, t, c, sink, string(committed.ID)), "__gitDir", "a committed workspace must not depend on the source client's Git directory")
 	require.NotEqual(t, headBefore, committed.Git.Head.Commit)
 	require.Equal(t, "Later Author", committed.Git.Head.TargetCommit.AuthorName)
 	require.Equal(t, "later@example.com", committed.Git.Head.TargetCommit.AuthorEmail)
