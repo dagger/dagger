@@ -9,12 +9,24 @@ and historical investigation; they are requirements, not a blanket completion cl
 
 ## Implementation checkpoint
 
-Commit references below name the aggregate branch's commits.
+Commit references in the original checklist name the pre-rebase implementation
+commits; the continuation commits are listed in the session handoff below.
 
 Session handoff: draft [PR #14298](https://github.com/dagger/dagger/pull/14298)
-contains this implementation. Its CI load is currently blocked by merge conflicts
-with upstream `main`. Rebasing and any force-with-lease publication are explicitly
-deferred to a new session; no history rewrite was performed in this session.
+was rebased onto upstream `main` at `0ceaef6`, preserving upstream OAuth refresh
+while resolving the two CLI conflicts, and published with an approved exact lease.
+The former CI load conflict is resolved. Continuation commits add archive discovery
+and exact selection (`df0e920`), fix rebased lint failures (`5c2a72d`), and preserve
+sanitized Git origin metadata in immutable local snapshots (`abe79fb`).
+
+Post-rebase validation: the complete `test-split:test-llm` and
+`test-split:test-workspaces` check groups pass locally, as do `golangci-lint:lint-all`,
+`golang:generate-all:up-to-date`, and Markdown lint/fix checks. The actual engine
+restart, CLI restore, and four workspace commit cases pass again. CLI discovery
+and selected-generation restoration also pass with a broken destination module.
+Focused CLI/archive/control/server/storage race tests pass. A full CLI package
+race run outside the engine harness failed because it lacked a `dagger` executable
+(and the release download returned 403); this is not a full-suite pass claim.
 
 - [x] Canonical typed, revisioned agent/subscription control, creation publication,
   retained capture leases, strict dependency checks, independent close witness,
@@ -56,13 +68,21 @@ deferred to a new session; no history rewrite was performed in this session.
 - [ ] Same **runtime session with agents created under multiple trace roots** is
   still unsupported for strict restoration. Composite archive identity does not
   solve this separate registry/graph/history problem; do not infer completeness.
-- [ ] Minimal CLI generation selection/listing for ambiguous trace IDs remains a
-  follow-up; generation selection is currently available through archive APIs.
-- [ ] Refresh remaining module SDK snapshots and final CLI reference help.
-  `go-sdk:generate` / `dang-sdk:generate` attempted broad generation but failed
-  resolving `modules/wolfi`'s remote dependency at an unpublished local commit
-  SHA. The seven public API/reference generators above succeeded; this failure
-  must not be represented as complete whole-repository generation.
+- [x] Minimal CLI generation selection/listing: `--list-archives` reads retained
+  metadata, optionally filtered by `--trace`; `--source-session` and `--generation`
+  select an exact cut together. Invalid combinations fail before engine work;
+  ambiguous reads guide the user to discovery. Unit race coverage includes
+  pagination, safe title rendering, selection, and errors; actual CLI discovery
+  and selected restore pass without loading the destination module or provider.
+- [x] Final CLI reference help regenerated with the from-source docs generator;
+  `golang:generate-all` and its up-to-date check pass. `docs:references` also
+  succeeds after the rebase with no schema drift.
+- [ ] Refresh remaining module SDK snapshots against the from-source engine.
+  Publishing the rebased SHA fixed the earlier unresolved remote-dependency error,
+  and `go-sdk:generate` / `dang-sdk:generate` then ran successfully, but inspection
+  showed they used the hosting engine's older API (including removed LLM methods)
+  and rewrote local dependencies to remote SHA URLs. That output was discarded;
+  successful execution is not evidence of correct module SDK generation.
 - [x] Re-ran the two existing local-Git capture/commit tests after DNS recovered;
   their three obsolete positive `__gitDir` assertions were replaced with
   absence-of-live-dependency checks (`ac1191e`).
