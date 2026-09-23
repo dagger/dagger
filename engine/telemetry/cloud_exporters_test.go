@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -296,4 +297,29 @@ func TestSharedTokenSourceRefreshesOnce(t *testing.T) {
 	inflight := source.inflight
 	source.mu.Unlock()
 	require.Nil(t, inflight, "the one refresh goroutine ended at its bound; callers started none")
+}
+
+// A refreshed token shorter-lived than oauth2's 10s expiry margin is still
+// used for part of its lifetime, instead of being refreshed on every export.
+func TestSharedTokenSourceUsesShortLivedTokens(t *testing.T) {
+	t.Parallel()
+	var refreshes atomic.Int32
+	source := &sharedTokenSource{
+		token: &oauth2.Token{AccessToken: "expired", Expiry: time.Now().Add(-time.Hour)},
+		refresh: func(context.Context) (*oauth2.Token, error) {
+			n := refreshes.Add(1)
+			return &oauth2.Token{AccessToken: fmt.Sprintf("fresh-%d", n), TokenType: "Bearer", Expiry: time.Now().Add(time.Second)}, nil
+		},
+	}
+	for range 50 {
+		token, err := source.Token(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, "fresh-1", token.AccessToken)
+	}
+	require.Equal(t, int32(1), refreshes.Load(), "one refresh for 50 exports within the token's first half-life")
+
+	require.Eventually(t, func() bool {
+		token, err := source.Token(t.Context())
+		return err == nil && token.AccessToken == "fresh-2"
+	}, 3*time.Second, 50*time.Millisecond, "refreshed again as it nears expiry")
 }

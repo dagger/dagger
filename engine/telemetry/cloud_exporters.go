@@ -160,17 +160,34 @@ const cloudRefreshBackoff = time.Second
 type sharedTokenSource struct {
 	refresh func(context.Context) (*oauth2.Token, error)
 
-	mu       sync.Mutex
-	token    *oauth2.Token
-	inflight chan struct{} // closed when the refresh in flight ends
-	failed   time.Time
-	err      error
+	mu          sync.Mutex
+	token       *oauth2.Token
+	refreshedAt time.Time     // when token came from refresh; zero for the initial one
+	inflight    chan struct{} // closed when the refresh in flight ends
+	failed      time.Time
+	err         error
+}
+
+// usableLocked reports whether the current token can be sent. A token this
+// source refreshed is used until its expiry less the smaller of oauth2's 10s
+// margin and half its lifetime: with a lifetime under that margin,
+// oauth2.Token.Valid would reject every token as soon as it arrives and each
+// export would refresh again. Requires s.mu.
+func (s *sharedTokenSource) usableLocked() bool {
+	if s.token == nil {
+		return false
+	}
+	if s.refreshedAt.IsZero() || s.token.Expiry.IsZero() {
+		return s.token.Valid()
+	}
+	margin := min(10*time.Second, s.token.Expiry.Sub(s.refreshedAt)/2)
+	return s.token.AccessToken != "" && time.Until(s.token.Expiry) > margin
 }
 
 func (s *sharedTokenSource) Token(ctx context.Context) (*oauth2.Token, error) {
 	for {
 		s.mu.Lock()
-		if s.refresh == nil || s.token.Valid() {
+		if s.refresh == nil || s.usableLocked() {
 			token := s.token
 			s.mu.Unlock()
 			return token, nil
@@ -193,7 +210,7 @@ func (s *sharedTokenSource) Token(ctx context.Context) (*oauth2.Token, error) {
 				token, err := s.refresh(context.Background())
 				s.mu.Lock()
 				if err == nil {
-					s.token, s.failed, s.err = token, time.Time{}, nil
+					s.token, s.refreshedAt, s.failed, s.err = token, time.Now(), time.Time{}, nil
 				} else {
 					s.failed, s.err = time.Now(), err
 				}
