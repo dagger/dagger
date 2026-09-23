@@ -140,7 +140,9 @@ type daggerSession struct {
 	cloudSpans   sdktrace.SpanExporter
 	cloudLogs    sdklog.Exporter
 	cloudMetrics sdkmetric.Exporter
-	// cloudFlushers flush the session's Cloud processors, bounded.
+	// cloudBound bounds every flush, shutdown and metric export of the Cloud
+	// exporters; cloudFlushers flush the session's Cloud processors.
+	cloudBound    cloudFlushBound
 	cloudFlushers []func(context.Context) error
 
 	// informed when a client goes away to prevent hanging on drain
@@ -863,7 +865,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
 	spanProcessors, logProcessors := 4, 3
-	bound := cloudFlushBound{sessionID: sess.sessionID}
+	bound := sess.cloudBound
 	if sess.cloudSpans != nil {
 		// The engine publishes the session's telemetry to Cloud itself: every
 		// span, and every record including call payloads, as the client used

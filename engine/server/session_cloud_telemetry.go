@@ -56,9 +56,12 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 		slog.Warn("session telemetry not published to Cloud: cannot configure the Cloud exporters", "session", sess.sessionID, "error", err)
 		return
 	}
-	bound := cloudFlushBound{sessionID: sess.sessionID}
+	sess.cloudBound = cloudFlushBound{sessionID: sess.sessionID, timeout: sessionTelemetryFlushTimeout}
+	if srv.sessionCloudFlushTimeout > 0 {
+		sess.cloudBound.timeout = srv.sessionCloudFlushTimeout
+	}
 	sess.cloudSpans, sess.cloudLogs = spans, logs
-	sess.cloudMetrics = boundedCloudMetricExporter{Exporter: metrics, bound: bound}
+	sess.cloudMetrics = boundedCloudMetricExporter{Exporter: metrics, bound: sess.cloudBound}
 }
 
 // refreshSessionCloudToken refreshes the main client's expired OAuth token
@@ -110,15 +113,16 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 }
 
 // cloudFlushBound is a session's Cloud telemetry processor behind a bound: a
-// flush or shutdown gives up after sessionTelemetryFlushTimeout and logs its
-// error instead of returning it, so a Cloud outage costs telemetry and never
-// the command, and never holds the client's shutdown.
+// flush or shutdown gives up after the timeout and logs its error instead of
+// returning it, so a Cloud outage costs telemetry and never the command, and
+// never holds the client's shutdown.
 type cloudFlushBound struct {
 	sessionID string
+	timeout   time.Duration
 }
 
 func (b cloudFlushBound) bounded(ctx context.Context, what string, op func(context.Context) error) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sessionTelemetryFlushTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), b.timeout)
 	defer cancel()
 	if err := op(ctx); err != nil {
 		slog.Warn("session telemetry not fully published to Cloud", "session", b.sessionID, "op", what, "error", err)

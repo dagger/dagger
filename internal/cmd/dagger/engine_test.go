@@ -73,11 +73,16 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg, _ := engineTelemetryConfigWithCloud(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg, cloud := engineTelemetryConfigWithCloud(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
 	})
 
 	require.True(t, cfg.Detect)
+	require.Equal(t, cloudTelemetryIndexes{spans: 0, logs: 1, metrics: 1}, cloud,
+		"the indexes locate the Cloud exporters, so engine telemetry can be forwarded without them")
+	require.Equal(t, []sdklog.Exporter{localLogs}, withoutIndex(cfg.LiveLogExporters, cloud.logs))
+	require.Equal(t, []sdkmetric.Exporter{localMetrics}, withoutIndex(cfg.LiveMetricExporters, cloud.metrics))
+	require.Empty(t, withoutIndex(cfg.SpanProcessors, cloud.spans))
 	require.Len(t, frontend.SpanExporterCalls(), 1)
 	require.Len(t, frontend.LogExporterCalls(), 1)
 	require.Len(t, frontend.MetricExporterCalls(), 1)
@@ -182,8 +187,8 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	}
 
 	skipSharedTelemetryExporters = true
-	if cfg, _ := engineTelemetryConfig(ctx); cfg.Detect {
-		t.Fatal("expected Detect to be disabled for an internal silent session")
+	if cfg, cloud := engineTelemetryConfig(ctx); cfg.Detect || cloud.configured() {
+		t.Fatal("expected Detect and Cloud to be disabled for an internal silent session")
 	}
 }
 

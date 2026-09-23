@@ -79,6 +79,9 @@ type Server struct {
 	cacheFactAliveStop      chan struct{}
 	cacheFactAliveStopped   chan struct{}
 	cacheFactShutdownBudget time.Duration
+	// sessionCloudFlushTimeout overrides sessionTelemetryFlushTimeout when
+	// set, for tests.
+	sessionCloudFlushTimeout time.Duration
 
 	//
 	// state directory/db paths
