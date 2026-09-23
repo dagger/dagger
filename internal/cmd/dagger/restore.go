@@ -22,10 +22,11 @@ import (
 
 // traceRestore describes a verified source archive, not a local session file.
 type traceRestore struct {
-	traceID string
-	agent   string
-	partial bool
-	source  archiveRestoreSource
+	traceID    string
+	generation string
+	agent      string
+	partial    bool
+	source     archiveRestoreSource
 }
 
 // agentRestoreSource is the frontend seam the plan is read through

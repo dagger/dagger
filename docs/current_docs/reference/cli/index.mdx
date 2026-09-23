@@ -52,15 +52,16 @@ dagger agent [FILTERS] [OPTIONS]
 ### Options
 
 ```
-      --absolute                  Show absolute links (alias: --abs)
-      --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
-  -a, --all                       Expand collections and list each item
-  -f, --format FORMAT             Output FORMAT: table, link, or cli (requires --list) (default "table")
-  -l, --list                      List available agents
-      --module NAME               Select artifacts from module NAME
-      --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
-  -r, --resume session[=picker]   Resume a saved session (interactive picker if no id given)
-      --trace string              Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback
+      --absolute                Show absolute links (alias: --abs)
+      --agent string            With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
+  -a, --all                     Expand collections and list each item
+  -f, --format FORMAT           Output FORMAT: table, link, or cli (requires --list) (default "table")
+      --generation string       With --trace and --source-session, select the exact archive generation
+  -l, --list                    List available agents
+      --list-archives           List retained engine archives without restoring; --trace filters the list
+      --module NAME             Select artifacts from module NAME
+      --source-session string   With --trace and --generation, select the archive's source session
+      --trace string            Restore agents and their Workspaces from a verified trace archive; load scrollback in the background
 ```
 
 ### Options inherited from parent commands

@@ -20,7 +20,7 @@ import (
 // archiveRestoreSource keeps source selection separate from graph restoration.
 // A future Cloud source must supply the same verified finality and fixed cut.
 type archiveRestoreSource interface {
-	Acquire(context.Context, string) (func(), error)
+	AcquireGeneration(context.Context, string, string) (func(), error)
 	Bootstrap(context.Context, string, string, func(archive.BootstrapHeader, archive.BootstrapBatch) error) (archive.BootstrapResult, error)
 	Traces(context.Context, string, archive.StreamOptions, func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error)
 	Logs(context.Context, string, archive.StreamOptions, func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error)
@@ -108,7 +108,7 @@ func archiveCut(header archive.BootstrapHeader) (enginetel.ArchiveCut, error) {
 // restoreArchive keeps the reader lease from before bootstrap through remainder
 // completion. The returned cleanup cancels and joins background import on exit.
 func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, target restoreTarget, req traceRestore) (cleanup func(), rerr error) {
-	release, err := source.Acquire(ctx, req.traceID)
+	release, err := source.AcquireGeneration(ctx, req.traceID, req.generation)
 	if err != nil {
 		return nil, archiveRestoreError(req.traceID, err)
 	}
@@ -120,7 +120,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 
 	var importer *enginetel.ArchiveTraceImporter
 	var cut enginetel.ArchiveCut
-	result, err := source.Bootstrap(ctx, req.traceID, "", func(header archive.BootstrapHeader, batch archive.BootstrapBatch) error {
+	result, err := source.Bootstrap(ctx, req.traceID, req.generation, func(header archive.BootstrapHeader, batch archive.BootstrapBatch) error {
 		if importer == nil {
 			var err error
 			cut, err = archiveCut(header)
@@ -162,6 +162,10 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 }
 
 func archiveRestoreError(traceID string, err error) error {
+	var requestErr *archive.RequestError
+	if errors.As(err, &requestErr) && requestErr.Failure == archive.FailureAmbiguous {
+		return fmt.Errorf("restore engine archive %s: %w; list choices with dagger agent --list-archives --trace %s, then select --source-session <session> --generation <generation>", traceID, err, traceID)
+	}
 	if archive.IsCleanMiss(err) {
 		return fmt.Errorf("trace %s has no retained engine archive: %w; Cloud does not yet provide verified finality for strict restore; use dagger trace %s to view historical telemetry", traceID, err, traceID)
 	}

@@ -1,8 +1,12 @@
 package daggercmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,15 +61,19 @@ type restoreTestArchive struct {
 	acquireErr, bootstrapErr error
 	released                 atomic.Int32
 	history                  chan string
+	acquiredGeneration       string
+	bootstrapGeneration      string
 }
 
-func (s *restoreTestArchive) Acquire(context.Context, string) (func(), error) {
+func (s *restoreTestArchive) AcquireGeneration(_ context.Context, _ string, generation string) (func(), error) {
+	s.acquiredGeneration = generation
 	if s.acquireErr != nil {
 		return nil, s.acquireErr
 	}
 	return func() { s.released.Add(1) }, nil
 }
-func (s *restoreTestArchive) Bootstrap(_ context.Context, _, _ string, consume func(archive.BootstrapHeader, archive.BootstrapBatch) error) (archive.BootstrapResult, error) {
+func (s *restoreTestArchive) Bootstrap(_ context.Context, _ string, generation string, consume func(archive.BootstrapHeader, archive.BootstrapBatch) error) (archive.BootstrapResult, error) {
+	s.bootstrapGeneration = generation
 	if s.bootstrapErr != nil {
 		return archive.BootstrapResult{}, s.bootstrapErr
 	}
@@ -130,6 +138,88 @@ func canonicalArchive() (*restoreTestArchive, agentcontrol.Agent, agentcontrol.A
 		header: archive.BootstrapHeader{TraceID: ns.Trace, Generation: "fixed-cut", SealAt: time.Unix(20, 0).UTC().Format(time.RFC3339Nano), Completion: archive.Witness(want)},
 		logs:   controlLogs(chief.Record(), worker.Record(), edge.Record()), history: make(chan string, 3),
 	}, chief, worker, edge
+}
+
+func TestArchiveSelectionFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name, trace, source, generation, focus string
+		listArchives, listAgents               bool
+		args                                   []string
+		invalid                                bool
+	}{
+		{name: "compose"},
+		{name: "restore", trace: "trace"},
+		{name: "selected", trace: "trace", source: "source", generation: "cut"},
+		{name: "list all", listArchives: true},
+		{name: "list trace", listArchives: true, trace: "trace"},
+		{name: "missing trace", source: "source", generation: "cut", invalid: true},
+		{name: "missing generation", trace: "trace", source: "source", invalid: true},
+		{name: "missing source", trace: "trace", generation: "cut", invalid: true},
+		{name: "focus without trace", focus: "chief", invalid: true},
+		{name: "list agents and trace", listAgents: true, trace: "trace", invalid: true},
+		{name: "list and names", listArchives: true, args: []string{"editor"}, invalid: true},
+		{name: "list and list", listArchives: true, listAgents: true, invalid: true},
+		{name: "list and focus", listArchives: true, focus: "chief", invalid: true},
+		{name: "list and selection", listArchives: true, trace: "trace", source: "source", generation: "cut", invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateArchiveFlags(tc.trace, tc.source, tc.generation, tc.focus, tc.listArchives, tc.listAgents, tc.args)
+			if tc.invalid {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestArchiveDiscoveryIsReadOnlyAndPaginated(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/v1/telemetry/archives", r.URL.Path)
+		requests = append(requests, r.URL.Query().Get("after"))
+		page := archive.Page{Archives: []archive.Manifest{{TraceID: "wanted", SourceSession: "one", Generation: "cut-one", State: archive.StateClosed, Title: "title\n\x1b[31m"}}, Next: "next"}
+		if r.URL.Query().Get("after") == "next" {
+			page = archive.Page{Archives: []archive.Manifest{
+				{TraceID: "other", SourceSession: "hidden", Generation: "hidden"},
+				{TraceID: "wanted", SourceSession: "two", Generation: "cut-two", State: archive.StateIncomplete},
+			}}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(page))
+	}))
+	defer server.Close()
+	source, err := archive.NewClientWithURL(server.Client(), server.URL)
+	require.NoError(t, err)
+	var out bytes.Buffer
+	require.NoError(t, listAgentArchives(t.Context(), source, "wanted", &out))
+	require.Equal(t, []string{"", "next"}, requests)
+	require.Contains(t, out.String(), "cut-one")
+	require.Contains(t, out.String(), "cut-two")
+	require.Contains(t, out.String(), "incomplete")
+	require.NotContains(t, out.String(), "hidden")
+	require.NotContains(t, out.String(), "\x1b")
+	require.Contains(t, out.String(), `title\n\x1b[31m`)
+}
+
+func TestArchiveRestorePinsSelectedGeneration(t *testing.T) {
+	source, _, _, _ := canonicalArchive()
+	req := restoreRequest()
+	req.generation = source.header.Generation
+	cleanup, err := restoreArchive(t.Context(), source, newRestoreTestFrontend(), newFakeRestoreTarget(), req)
+	require.NoError(t, err)
+	defer cleanup()
+	require.Equal(t, req.generation, source.acquiredGeneration)
+	require.Equal(t, req.generation, source.bootstrapGeneration)
+}
+
+func TestArchiveAmbiguityGuidesSelection(t *testing.T) {
+	cause := &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureAmbiguous}
+	err := archiveRestoreError("trace", cause)
+	require.ErrorIs(t, err, cause)
+	require.Contains(t, err.Error(), "--list-archives --trace trace")
+	require.Contains(t, err.Error(), "--source-session <session> --generation <generation>")
 }
 
 func TestArchivePromptDoesNotWaitForHistory(t *testing.T) {
