@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -255,8 +257,7 @@ func (imp *TraceImporter) seal(ctx context.Context, fixed uint64) error {
 	if fixed != 0 {
 		sealAt = fixed
 	}
-	order, unfinished := imp.order, imp.unfinished
-	imp.order, imp.unfinished = nil, map[string]*unfinishedSpan{}
+	order, unfinished := slices.Clone(imp.order), maps.Clone(imp.unfinished)
 	imp.mu.Unlock()
 
 	if sealAt == 0 || len(unfinished) == 0 {
@@ -311,7 +312,19 @@ func (imp *TraceImporter) seal(ctx context.Context, fixed uint64) error {
 	if len(groups) == 0 {
 		return nil
 	}
-	return imp.sinks.Spans.ExportSpans(ctx, telemetry.SpansFromPB(groups))
+	if err := imp.sinks.Spans.ExportSpans(ctx, telemetry.SpansFromPB(groups)); err != nil {
+		// Keep the unfinished set for a retry; enqueue failure is not sealing.
+		return err
+	}
+	imp.mu.Lock()
+	for key, entry := range unfinished {
+		if imp.unfinished[key] == entry {
+			delete(imp.unfinished, key)
+		}
+	}
+	imp.order = slices.DeleteFunc(imp.order, func(key string) bool { return imp.unfinished[key] == nil })
+	imp.mu.Unlock()
+	return nil
 }
 
 // pbSpanRunning reports whether a span was still running when the capture was
