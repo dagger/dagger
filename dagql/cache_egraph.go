@@ -1789,7 +1789,9 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			// (which is the merged eq class containing all input req digests + return val digests)
 			// is associated as the output eq class for this term; doing a merge+replair if needed.
 			c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
-			factTermUses = append(factTermUses, cachefact.TermUseReused)
+			if c.factsEnabled() {
+				factTermUses = append(factTermUses, cachefact.TermUseReused)
+			}
 			continue
 		}
 		if existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest]); existingTerm != nil {
@@ -1798,10 +1800,14 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			// a new term
 			c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance)
 			c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
-			factTermUses = append(factTermUses, cachefact.TermUseAssociated)
+			if c.factsEnabled() {
+				factTermUses = append(factTermUses, cachefact.TermUseAssociated)
+			}
 			continue
 		}
-		factTermUses = append(factTermUses, cachefact.TermUseCreated)
+		if c.factsEnabled() {
+			factTermUses = append(factTermUses, cachefact.TermUseCreated)
+		}
 
 		// no existing term with this digest, create a new one and associate it with this result; also merge the output eq class as needed
 

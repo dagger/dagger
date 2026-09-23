@@ -704,3 +704,65 @@ func requireFactDepsMatchSnapshot(t *testing.T, c *Cache, rec *factRecorder) {
 		require.ElementsMatch(t, res.ExplicitDeps, row.deps, "dependencies of result %d", res.SharedResultID)
 	}
 }
+
+// A snapshot taken while a publication's attachment runs sees the row's
+// dependency edges before its deps fact: a mutation in flight can be visible
+// before its fact. The bound that holds is one way: every fact up to fact_seq
+// describes a mutation present in the snapshot.
+func TestCacheFactsSnapshotDuringAttachment(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	rec := newFactRecorder(t)
+	c, err := NewCache(ctx, "", nil, nil, WithFactSink(rec))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+
+	leafFrame := cacheTestIntCall("attach-leaf")
+	leaf, err := c.GetOrInitCall(ctx, "s", noopTypeResolver{}, &CallRequest{ResultCall: leafFrame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(leafFrame, 1), nil
+	})
+	require.NoError(t, err)
+	leafID := uint64(leaf.cacheSharedResult().id)
+
+	rootFrame := &ResultCall{Kind: ResultCallKindField, Field: "attach-root", Type: NewResultCallType(Int(0).Type()), Receiver: &ResultCallRef{ResultID: leafID}}
+	var inFlight CacheDebugSnapshot
+	var inFlightFacts []cachefact.Fact
+	root, err := c.GetOrInitCall(ctx, "s", noopTypeResolver{}, &CallRequest{ResultCall: rootFrame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestDetachedResult(rootFrame, cacheTestLeaseCheckedInt{Int: NewInt(2), onAttach: func(context.Context) error {
+			inFlight = cacheFactsDebugSnapshot(t, c)
+			inFlightFacts = rec.all()
+			return nil
+		}}), nil
+	})
+	require.NoError(t, err)
+	rootID := uint64(root.cacheSharedResult().id)
+
+	var bounded []cachefact.Fact
+	for _, f := range inFlightFacts {
+		if f.Seq <= inFlight.FactSeq {
+			bounded = append(bounded, f)
+		}
+	}
+	require.Len(t, bounded, len(inFlightFacts), "no fact above fact_seq existed when the snapshot was taken")
+	model := replayFacts(t, bounded)
+	snapRows := map[uint64]CacheDebugResult{}
+	for _, res := range inFlight.Results {
+		snapRows[res.SharedResultID] = res
+	}
+	for id, row := range model.rows {
+		res, ok := snapRows[id]
+		require.True(t, ok, "announced result %d is in the snapshot", id)
+		for dig := range row.digests {
+			require.Contains(t, res.IndexedDigests, dig)
+		}
+		for _, dep := range row.deps {
+			require.Contains(t, res.ExplicitDeps, dep)
+		}
+	}
+	require.Contains(t, model.rows, rootID, "the root's result fact precedes the attachment")
+	require.Empty(t, model.rows[rootID].deps, "its deps fact comes after the attachment")
+	require.Contains(t, snapRows[rootID].ExplicitDeps, leafID, "while its edge to the leaf is already visible")
+
+	// At quiescence the two agree in both directions.
+	requireFactsMatchSnapshot(t, c, rec)
+}

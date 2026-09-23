@@ -41,9 +41,12 @@ type EGraphDebugSnapshot struct {
 //
 // EngineInstance names the engine instance whose cache facts describe this
 // cache, when the cache was given one. FactSeq is the sequence number of the
-// last cache fact emitted when the snapshot was taken: every fact with a
+// last cache fact emitted when the snapshot was taken. Every fact with a
 // sequence at most FactSeq describes a mutation the snapshot contains, and no
-// later one does.
+// such fact describes a later mutation. The converse does not hold while work
+// is in flight: a mutation can be visible before its fact is emitted, for
+// example a publication's dependency edges before its deps fact. Compare a
+// snapshot with the facts up to FactSeq only when the cache is quiescent.
 type CacheDebugSnapshot struct {
 	OfferOwners             []CacheDebugOfferOwner        `json:"offer_owners,omitempty"`
 	TraceFormatVersion      int                           `json:"trace_format_version"`

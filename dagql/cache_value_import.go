@@ -370,9 +370,15 @@ func (c *Cache) ImportValues(ctx context.Context, input ValueBundle) ([]Imported
 	for _, root := range bundle.Roots {
 		c.upsertPersistedEdgeNoFactLocked(ctx, private.resultsByID[sharedResultID(firstID+uint64(root.Ordinal)-1)], root.ExpiresAtUnix, false)
 	}
-	identities := make([]cachefact.Identity, len(plans))
+	var identities []cachefact.Identity
+	if c.factsEnabled() {
+		identities = make([]cachefact.Identity, len(plans))
+	}
 	for i, plan := range plans {
-		identities[i], _ = c.applyPreparedResultIdentityLocked(ctx, plan.row, plan.row.loadResultCall(), plan.recipe, plan.self, plan.inputs, plan.provenance, plan.recipe)
+		identity, _ := c.applyPreparedResultIdentityLocked(ctx, plan.row, plan.row.loadResultCall(), plan.recipe, plan.self, plan.inputs, plan.provenance, plan.recipe)
+		if identities != nil {
+			identities[i] = identity
+		}
 	}
 	if c.factsEnabled() {
 		// Bundle order is dependencies first.

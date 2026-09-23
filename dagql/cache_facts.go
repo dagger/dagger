@@ -175,11 +175,12 @@ func sortedResultIDs(ids map[sharedResultID]struct{}) []uint64 {
 	return out
 }
 
-// factResultDescription fills the descriptive fields of a result fact.
+// factResultDescription fills the descriptive fields of a result fact. The
+// caller must not hold the result's payloadMu.
 func factResultDescription(res *sharedResult, fact *cachefact.Result) {
 	fact.ID = uint64(res.id)
 	fact.RecordType = res.recordType
-	fact.CreatedAtUnixNano = res.createdAtUnixNano
+	fact.CreatedAtUnixNano = res.loadPayloadState().createdAtUnixNano
 	fact.ExpiresAtUnix = res.expiresAtUnix
 	if frame := res.loadResultCall(); frame != nil {
 		fact.Field = frame.Field
