@@ -94,7 +94,7 @@ func recomposeRecordingTurn(llm *dagger.LLM, prompt string, tools ...string) *da
 }
 
 func (LLMSuite) TestRecomposePrivateStateAndReplay(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	initial := fmt.Sprintf(recomposeSource, "")
 	updated := strings.ReplaceAll(fmt.Sprintf(recomposeSource, `
   let addedDefault: String! = "new field default"
@@ -153,7 +153,7 @@ func (LLMSuite) TestRecomposePrivateStateAndReplay(ctx context.Context, t *testc
 		llm, err = recomposeLLM(ctx, c, ws, llm)
 		require.NoError(t, err)
 	}
-	portable, err := llm.PortableID(ctx)
+	portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	target := connect(ctx, t)
 	llm = dagger.Ref[*dagger.LLM](target, portable).WithPrompt("restored").Loop()
@@ -187,7 +187,7 @@ type Extra {
 }
 
 func (LLMSuite) TestRecomposeRemoteToLocalStateAndReplay(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	const remotePrompt = "The remote swapper prompt."
 	const localPrompt = "The locally installed swapper prompt."
 	initial := strings.ReplaceAll(fmt.Sprintf(recomposeSource, `
@@ -252,7 +252,7 @@ func (LLMSuite) TestRecomposeRemoteToLocalStateAndReplay(ctx context.Context, t 
 	require.NoError(t, err)
 	require.ElementsMatch(t, expectedPrompts, recomposeSystemPrompts(ctx, t, c, llm))
 	model = cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(llm, "replay local", "advance", "added", "readState"))
-	portable, err := llm.WithModel(model).PortableID(ctx)
+	portable, err := sink.captureLLMRecipe(ctx, t, c, llm.WithModel(model))
 	require.NoError(t, err)
 	target := connect(ctx, t)
 	llm = dagger.Ref[*dagger.LLM](target, portable)
@@ -584,7 +584,7 @@ func recomposeSystemPrompts(ctx context.Context, t *testctx.T, c *dagger.Client,
 }
 
 func (LLMSuite) TestRecomposeOwnedPrompts(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	const shared = "Caller and module deliberately use identical prompt text."
 	const replacement = "The edited swapper prompt."
 	const callerTail = "Caller prompt appended after composition."
@@ -642,7 +642,7 @@ type Other {
 	transcript, err = llm.Transcript(ctx)
 	require.NoError(t, err)
 	require.Contains(t, transcript, "private counter: 2")
-	portable, err := llm.PortableID(ctx)
+	portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	target := connect(ctx, t)
 	llm = dagger.Ref[*dagger.LLM](target, portable)
@@ -738,7 +738,7 @@ func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t
 }
 
 func (LLMSuite) TestRecomposeNestedToolState(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	const outerSource = `
 type Outer {
   agent(base: LLM!, ws: Workspace!): LLM! @agent {
@@ -783,7 +783,7 @@ type Outer {
 	require.Contains(t, transcript, "nested default; counter: 1", "explicit nested recompose must retain Swapper's tool state")
 
 	// A nested binding still owns its explicit version contract after replay.
-	portable, err := llm.PortableID(ctx)
+	portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	c = connect(ctx, t)
 	llm = dagger.Ref[*dagger.LLM](c, portable)
@@ -808,7 +808,7 @@ type Outer {
 }
 
 func (LLMSuite) TestRecomposeNestedOwnershipIsolation(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	const outerSource = `
 type Outer {
   agent(base: LLM!, ws: Workspace!): LLM! @agent {
@@ -850,9 +850,9 @@ type Inner {
 
 	// Portable recipes retain flat module ownership, not composition ancestry.
 	for range 2 {
-		portable, err := llm.PortableID(ctx)
+		portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 		require.NoError(t, err)
-		c = connect(ctx, t)
+		c, sink = connectWithTrace(ctx, t)
 		llm = dagger.Ref[*dagger.LLM](c, portable)
 		ws = llm.Workspace()
 		llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
@@ -883,7 +883,7 @@ type Outer {
 }
 
 func (LLMSuite) TestRecomposeDirectCallerSkills(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	const shared = "Identical caller prompt."
 	const original = `
   contribute(base: LLM!, skills: Directory!): LLM! {
@@ -944,6 +944,7 @@ type Owner {
 	for _, caller := range []string{"owner", "ownerExtra", "main"} {
 		llm := seeds[caller]
 		client := c
+		captureSink := sink
 		refreshedWS := ws
 		for round := range 2 {
 			llm, err = recomposeLLM(ctx, client, refreshedWS, llm, "owner")
@@ -972,9 +973,9 @@ type Owner {
 			} else {
 				require.Contains(t, skills, "old-owned", "other callers' identical calls must retain their own ownership")
 			}
-			portable, err := llm.PortableID(ctx)
+			portable, err := captureSink.captureLLMRecipe(ctx, t, client, llm)
 			require.NoError(t, err)
-			client = connect(ctx, t)
+			client, captureSink = connectWithTrace(ctx, t)
 			llm = dagger.Ref[*dagger.LLM](client, portable)
 			require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, client, llm))
 			require.Equal(t, skills, skillIndex(ctx, t, llm))
@@ -984,7 +985,7 @@ type Owner {
 }
 
 func (LLMSuite) TestRecomposeDirectCallerOwnsForeignTools(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	fixture := c.Directory().
 		WithNewFile("dagger.toml", "[modules.owner]\nsource = \"owner\"\n[modules.donor]\nsource = \"owner/donor\"\n").
 		WithNewFile("owner/dagger.json", `{"name":"owner","engineVersion":"v1.0.0-0","sdk":"dang","dependencies":[{"name":"donor","source":"donor"}]}`).
@@ -1023,7 +1024,7 @@ type Donor {
 	tools, err = llm.Tools(ctx)
 	require.NoError(t, err)
 	require.Contains(t, tools, "## ping\n")
-	portable, err := llm.PortableID(ctx)
+	portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	c = connect(ctx, t)
 	llm = dagger.Ref[*dagger.LLM](c, portable)
