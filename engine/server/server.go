@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -217,13 +218,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	bkcfg := opts.BuildkitConfig
 	ociCfg := bkcfg.Workers.OCI
 
-	engineInstanceID := opts.EngineInstanceID
-	if engineInstanceID == "" {
-		engineInstanceID = uuid.NewString()
-	}
 	srv := &Server{
 		engineName:       opts.Name,
-		engineInstanceID: engineInstanceID,
+		engineInstanceID: cmp.Or(opts.EngineInstanceID, uuid.NewString()),
 
 		rootDir: bkcfg.Root,
 
