@@ -387,7 +387,10 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 				gitutil.WithWorkTree(checkoutDir),
 				gitutil.WithGitDir(checkoutDirGit),
 			)
-			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir)
+			if discardGitDir {
+				return doLocalGitTreeCheckout(ctx, git, checkoutGit, checkoutRemotes, gitURL, ref.Ref)
+			}
+			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, false)
 		})
 	})
 	if err != nil {
@@ -407,6 +410,40 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	dir.SetPath("/")
 	dir.SetSnapshot(snap)
 	return dir, nil
+}
+
+// doLocalGitTreeCheckout borrows the mounted source's objects while creating a
+// tree without .git. No history is copied or fetched: depth and tag selection
+// cannot affect the resulting worktree. The source must remain mounted until
+// this returns, including submodule materialization and removal of .git (and
+// the temporary alternates file). Retained checkouts still use doGitCheckout
+// so that they are self-contained after the source mount is released.
+func doLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCLI, remotes []GitRemote, cloneURL string, ref *gitutil.Ref) error {
+	format, err := source.Run(ctx, "rev-parse", "--show-object-format")
+	if err != nil {
+		return fmt.Errorf("read local git object format: %w", err)
+	}
+	// Resolve through Git, not .git/objects: linked worktrees keep objects in
+	// their common directory. Git also follows any source alternates itself.
+	objects, err := source.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	if err != nil {
+		return fmt.Errorf("resolve local git objects: %w", err)
+	}
+	if _, err := checkout.Run(ctx, "-c", "init.defaultBranch=main", "init", "--object-format="+strings.TrimSpace(string(format))); err != nil {
+		return err
+	}
+	gitDir, err := checkout.GitDir(ctx)
+	if err != nil {
+		return err
+	}
+	// Alternates uses one C-quoted path per line, including paths with spaces,
+	// newlines, quotes or backslashes. Remove only Git's output terminator.
+	objectPath := strings.TrimSuffix(string(objects), "\n")
+	quotedPath := `"` + strings.NewReplacer("\\", "\\\\", `"`, `\"`, "\n", `\n`).Replace(objectPath) + "\"\n"
+	if err := os.WriteFile(filepath.Join(gitDir, "objects", "info", "alternates"), []byte(quotedPath), 0600); err != nil {
+		return fmt.Errorf("write local git checkout alternates: %w", err)
+	}
+	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "")
 }
 
 const persistedDirectoryLazyKindGitCleaned = "gitCleaned"
