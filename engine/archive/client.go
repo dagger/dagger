@@ -37,9 +37,10 @@ type HTTPDoer interface {
 
 // Client reads telemetry archives through a connected engine's HTTP transport.
 type Client struct {
-	http         HTTPDoer
-	baseURL      *url.URL
-	stallTimeout time.Duration
+	http          HTTPDoer
+	baseURL       *url.URL
+	stallTimeout  time.Duration
+	sourceSession string
 }
 
 // NewClient creates an archive client for the connected engine transport.
@@ -60,6 +61,14 @@ func NewClientWithURL(httpClient HTTPDoer, baseURL string) (*Client, error) {
 		return nil, errors.New("archive base URL must include scheme and host")
 	}
 	return &Client{http: httpClient, baseURL: parsed}, nil
+}
+
+// WithSourceSession selects one source namespace when a trace was propagated
+// through multiple independent sessions. It never falls back to a sibling.
+func (c *Client) WithSourceSession(source string) *Client {
+	clone := *c
+	clone.sourceSession = source
+	return &clone
 }
 
 // WithStallTimeout returns a shallow clone whose finite bootstrap and signal
@@ -143,8 +152,13 @@ type ListOptions struct {
 // requests. Release it when import finishes or the caller exits. Cancellation
 // also releases the server lease; it never keeps a detached background reader.
 func (c *Client) Acquire(ctx context.Context, traceID string) (func(), error) {
+	return c.AcquireGeneration(ctx, traceID, "")
+}
+
+// AcquireGeneration binds the reader lifetime to exactly the listed archive.
+func (c *Client) AcquireGeneration(ctx context.Context, traceID, generation string) (func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), nil, nil, "application/octet-stream", "", 0)
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), nil, nil, "application/octet-stream", generation, 0)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -153,6 +167,11 @@ func (c *Client) Acquire(ctx context.Context, traceID string) (func(), error) {
 		resp.Body.Close()
 		cancel()
 		return nil, err
+	}
+	if _, err := responseGeneration(resp, generation); err != nil {
+		resp.Body.Close()
+		cancel()
+		return nil, corrupt(err)
 	}
 	return func() { cancel(); _ = resp.Body.Close() }, nil
 }
@@ -278,6 +297,9 @@ func (c *Client) Bootstrap(ctx context.Context, traceID, expectedGeneration stri
 	var batches []BootstrapBatch
 	var traceRecords, logRecords int64
 	header, terminal, err := DecodeBootstrap(streamBody, func(header BootstrapHeader) error {
+		if c.sourceSession != "" && header.SourceSession != c.sourceSession {
+			return errors.New("bootstrap source session differs from selector")
+		}
 		if err := validateBootstrapHeader(header, traceID, generation); err != nil {
 			return err
 		}
@@ -505,6 +527,12 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if c == nil || c.http == nil || c.baseURL == nil {
 		return nil, transient(errors.New("archive HTTP client is not configured"))
 	}
+	if c.sourceSession != "" {
+		if query == nil {
+			query = make(url.Values)
+		}
+		query.Set("source_session", c.sourceSession)
+	}
 	target := *c.baseURL
 	target.Path = strings.TrimRight(target.Path, "/") + path
 	target.RawQuery = query.Encode()
@@ -579,6 +607,9 @@ func expectContentType(resp *http.Response, want string) error {
 }
 
 func validateBootstrapHeader(header BootstrapHeader, traceID, generation string) error {
+	if header.SourceSession == "" {
+		return errors.New("bootstrap source session is missing")
+	}
 	if header.TraceID != traceID {
 		return fmt.Errorf("bootstrap trace ID %q does not match requested trace %q", header.TraceID, traceID)
 	}

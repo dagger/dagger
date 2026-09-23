@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -35,6 +36,7 @@ func TestArchiveRegistrationFailureDoesNotDropControl(t *testing.T) {
 	srv, _, _, _ := archiveFixture(t)
 	other := &daggerSession{sessionID: "other-session", mainClientCallerID: "other", clientRecords: map[string]*clientRecord{}}
 	other.telemetryPubSub = NewPubSub(srv)
+	other.archiveRegisterErr = fmt.Errorf("injected archive registration failure")
 	other.clientRecords["other"] = &clientRecord{daggerSession: other, clientID: "other"}
 	a := archiveAgent()
 	a.Session = other.sessionID
