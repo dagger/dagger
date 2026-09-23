@@ -555,7 +555,7 @@ func (LLMSuite) TestToolFindSpans(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithMountedDirectory(".", c.Host().Directory(srcPath))
 
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
 			"\n"+
@@ -611,7 +611,7 @@ func (LLMSuite) TestToolInspectCall(ctx context.Context, t *testctx.T) {
 		WithMountedDirectory(".", c.Host().Directory(srcPath))
 
 	buster := identity.NewID()
-	model := cannedReplayModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
 			"\n"+
