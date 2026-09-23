@@ -14,9 +14,11 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/dagger/dagger/engine"
+	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
+	telemetry "github.com/dagger/otel-go"
 )
 
 // sessionTelemetryFlushTimeout bounds the main client's shutdown-time
@@ -193,3 +195,48 @@ func (sess *daggerSession) flushSessionCloudTelemetry(ctx context.Context) {
 		_ = flush(ctx)
 	}
 }
+
+// scaleOutTelemetryParams routes a scale-out engine's telemetry stream, which
+// the parent client receives, into the session's client routing. When this
+// session publishes to Cloud, the remote engine is asked to publish its own
+// session with the same credential; if it does not, the parent publishes the
+// stream through this session's Cloud processors instead. When this session
+// does not publish, the remote is not asked either, and the stream reaches
+// Cloud once, through the client that forwards this session's telemetry.
+func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params *engineclient.Params) {
+	params.EngineTrace = parent.spanExporter
+	params.EngineLogs = parent.logExporter
+	params.EngineMetrics = []sdkmetric.Exporter{parent.metricExporter}
+	if sess.cloudSpanProcessor == nil || sess.cloudLogProcessor == nil || sess.cloudMetrics == nil {
+		return
+	}
+	md := parent.clientMetadata
+	params.EngineCloudTelemetry = true
+	params.CloudURL = md.CloudURL
+	params.CloudCredentialsPath = md.CredentialsPath
+	params.EngineTraceWithoutCloud = params.EngineTrace
+	params.EngineLogsWithoutCloud = params.EngineLogs
+	params.EngineMetricsWithoutCloud = params.EngineMetrics
+	params.EngineTrace = enginetel.MultiSpanExporter{
+		parent.spanExporter,
+		sessionCloudSpanForwarder{telemetry.SpanForwarder{Processors: []sdktrace.SpanProcessor{sess.cloudSpanProcessor}}},
+	}
+	params.EngineLogs = enginetel.MultiLogExporter{
+		parent.logExporter,
+		sessionCloudLogForwarder{telemetry.LogForwarder{Processors: []sdklog.Processor{sess.cloudLogProcessor}}},
+	}
+	params.EngineMetrics = []sdkmetric.Exporter{
+		parent.metricExporter,
+		enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics},
+	}
+}
+
+// sessionCloudSpanForwarder and sessionCloudLogForwarder feed the session's
+// Cloud processors, which the session shuts down itself.
+type sessionCloudSpanForwarder struct{ telemetry.SpanForwarder }
+
+func (sessionCloudSpanForwarder) Shutdown(context.Context) error { return nil }
+
+type sessionCloudLogForwarder struct{ telemetry.LogForwarder }
+
+func (sessionCloudLogForwarder) Shutdown(context.Context) error { return nil }

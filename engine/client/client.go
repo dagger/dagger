@@ -166,9 +166,12 @@ type Params struct {
 	EnableCloudScaleOut bool
 
 	// EngineCloudTelemetry asks the engine to publish the session's telemetry
-	// to Dagger Cloud itself, with CloudAuth, instead of this client
-	// forwarding it.
+	// to Dagger Cloud itself, with CloudAuth, at CloudURL, instead of this
+	// client forwarding it. The engine refreshes an expiring OAuth token from
+	// CloudCredentialsPath on this client's host and writes it back there.
 	EngineCloudTelemetry bool
+	CloudURL             string
+	CloudCredentialsPath string
 
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
 	Profile bool
@@ -1726,8 +1729,8 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.EngineCloudTelemetry && c.CloudAuth != nil {
 		md.CloudTelemetryPublisher = engine.CloudTelemetryPublisherEngine
-		md.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
-		md.CredentialsPath = auth.CredentialsFile()
+		md.CloudURL = c.CloudURL
+		md.CredentialsPath = c.CloudCredentialsPath
 	}
 
 	if c.Module != "" {

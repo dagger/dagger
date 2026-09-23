@@ -12,6 +12,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -19,6 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine"
+	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	telemetry "github.com/dagger/otel-go"
@@ -138,6 +143,8 @@ func newCloudTestSession(t *testing.T, srv *Server, md *engine.ClientMetadata) (
 	root.daggerSession = sess
 	installTestClientRecords(sess)
 	srv.initializeSessionTelemetry(sess, md)
+	root.spanExporter = originSpanExporter{origin: root.clientID, next: sess.spanExporter}
+	root.logExporter = originLogExporter{origin: root.clientID, next: sess.logExporter}
 	srv.initializeClientMetrics(root)
 	return sess, root
 }
@@ -258,4 +265,63 @@ func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 	// Span and log flushes, then client metrics, span and log shutdowns and
 	// the metric exporter's shutdown: each gives up at the bound.
 	require.Less(t, time.Since(start), 10*bound+5*time.Second)
+}
+
+// A publishing session asks its scale-out engine to publish too, with its
+// main client's Cloud URL and credentials path. If the remote does not, the
+// client uses EngineTrace and EngineLogs, which reach Cloud through the
+// session's processors; the WithoutCloud ones do not. A session that does
+// not publish does not ask.
+func TestScaleOutTelemetryFollowsTheSession(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	receiver := newCloudReceiver(t, false)
+	sess, root := newCloudTestSession(t, &Server{}, &engine.ClientMetadata{
+		CloudAuth:               basicCloudAuth("dag_test_token"),
+		CloudURL:                receiver.URL,
+		CredentialsPath:         "/home/user/.config/dagger/credentials.json",
+		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+	})
+	var params engineclient.Params
+	sess.scaleOutTelemetryParams(root, &params)
+	require.True(t, params.EngineCloudTelemetry)
+	require.Equal(t, receiver.URL, params.CloudURL)
+	require.Equal(t, "/home/user/.config/dagger/credentials.json", params.CloudCredentialsPath)
+	require.Equal(t, root.spanExporter, params.EngineTraceWithoutCloud)
+	require.Equal(t, root.logExporter, params.EngineLogsWithoutCloud)
+
+	remote := tracetest.SpanStub{
+		Name: "remote-span",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, TraceFlags: trace.FlagsSampled,
+		}),
+		StartTime: time.Now(),
+		EndTime:   time.Now(),
+	}
+	require.NoError(t, params.EngineTraceWithoutCloud.ExportSpans(ctx, []sdktrace.ReadOnlySpan{
+		tracetest.SpanStub{Name: "not-to-cloud", SpanContext: remote.SpanContext, StartTime: remote.StartTime, EndTime: remote.EndTime}.Snapshot(),
+	}))
+	require.NoError(t, params.EngineTrace.ExportSpans(ctx, []sdktrace.ReadOnlySpan{remote.Snapshot()}))
+	var rec sdklog.Record
+	rec.SetBody(otellog.StringValue("remote-log"))
+	require.NoError(t, params.EngineLogs.Export(ctx, []sdklog.Record{rec}))
+	sess.flushSessionCloudTelemetry(ctx)
+	require.NoError(t, sess.shutdownTelemetry(ctx))
+
+	_, spans, logs, _ := receiver.snapshot()
+	require.Equal(t, []string{"remote-span"}, spans)
+	require.Equal(t, []string{"remote-log"}, logs)
+
+	silent, silentRoot := newCloudTestSession(t, &Server{}, &engine.ClientMetadata{
+		CloudAuth: basicCloudAuth("dag_test_token"),
+		CloudURL:  receiver.URL,
+	})
+	t.Cleanup(func() { require.NoError(t, silent.shutdownTelemetry(context.Background())) })
+	params = engineclient.Params{}
+	silent.scaleOutTelemetryParams(silentRoot, &params)
+	require.False(t, params.EngineCloudTelemetry)
+	require.Empty(t, params.CloudURL)
+	require.Equal(t, silentRoot.spanExporter, params.EngineTrace)
+	require.Nil(t, params.EngineTraceWithoutCloud)
 }

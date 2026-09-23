@@ -193,6 +193,8 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		// Ask the engine to publish the session's telemetry to Cloud itself,
 		// and have what it would send us forwarded everywhere else.
 		params.EngineCloudTelemetry = true
+		params.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
+		params.CloudCredentialsPath = auth.CredentialsFile()
 		params.EngineTraceWithoutCloud = telemetry.SpanForwarder{
 			Processors: withoutIndex(telemetry.SpanProcessors, cloud.spans),
 		}

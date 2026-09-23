@@ -144,6 +144,11 @@ type daggerSession struct {
 	// exporters; cloudFlushers flush the session's Cloud processors.
 	cloudBound    cloudFlushBound
 	cloudFlushers []func(context.Context) error
+	// cloudSpanProcessor and cloudLogProcessor carry the session's telemetry
+	// to Cloud; a scale-out engine that does not publish its own stream sends
+	// it through them.
+	cloudSpanProcessor sdktrace.SpanProcessor
+	cloudLogProcessor  sdklog.Processor
 
 	// informed when a client goes away to prevent hanging on drain
 	telemetryPubSub *PubSub
@@ -872,6 +877,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		// to forward them.
 		processor := boundedCloudSpanProcessor{SpanProcessor: enginetel.NewLargeQueueLiveSpanProcessor(sess.cloudSpans), bound: bound}
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(processor))
+		sess.cloudSpanProcessor = processor
 		sess.cloudFlushers = append(sess.cloudFlushers, processor.ForceFlush)
 		spanProcessors++
 	}
@@ -879,6 +885,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		processor := boundedCloudLogProcessor{Processor: sdklog.NewBatchProcessor(sess.cloudLogs,
 			sdklog.WithExportInterval(telemetry.NearlyImmediate)), bound: bound}
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(processor))
+		sess.cloudLogProcessor = processor
 		sess.cloudFlushers = append(sess.cloudFlushers, processor.ForceFlush)
 		logProcessors++
 	}
@@ -3815,25 +3822,24 @@ func (srv *Server) CloudEngineClient(
 
 	// TODO: cloud support for "run on yourself", return (nil, false, nil) in that case
 
+	params := engineclient.Params{
+		RunnerHost: engine.DefaultCloudRunnerHost,
+
+		Module:   module,
+		Function: function,
+		ExecCmd:  execCmd,
+
+		CloudAuth: parentClient.clientMetadata.CloudAuth,
+
+		// FIXME: for now, disable recursive scale out to prevent any
+		// surprise "fork-bomb" scenarios. Eventually this should be
+		// permitted.
+		EnableCloudScaleOut: false,
+	}
+	parentClient.daggerSession.scaleOutTelemetryParams(parentClient, &params)
+
 	engineClient, err := engineclient.ConnectEngineToEngine(ctx, engineclient.EngineToEngineParams{
-		Params: engineclient.Params{
-			RunnerHost: engine.DefaultCloudRunnerHost,
-
-			Module:   module,
-			Function: function,
-			ExecCmd:  execCmd,
-
-			CloudAuth: parentClient.clientMetadata.CloudAuth,
-
-			EngineTrace:   parentClient.spanExporter,
-			EngineLogs:    parentClient.logExporter,
-			EngineMetrics: []sdkmetric.Exporter{parentClient.metricExporter},
-
-			// FIXME: for now, disable recursive scale out to prevent any
-			// surprise "fork-bomb" scenarios. Eventually this should be
-			// permitted.
-			EnableCloudScaleOut: false,
-		},
+		Params:            params,
 		CallerSessionConn: parentSession.Conn(),
 		Labels:            enginetel.NewLabels(parentClient.clientMetadata.Labels, nil, nil),
 		StableClientID:    parentClient.clientMetadata.ClientStableID,
