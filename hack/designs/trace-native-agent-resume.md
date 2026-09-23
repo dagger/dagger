@@ -34,6 +34,31 @@ corruption, incomplete local archives, and failures after bootstrap begins do no
 silently switch sources. `--source-session` can disambiguate either source;
 `--generation` is an optional engine-only pin and requires `--source-session`.
 
+## Latest scope-correction validation
+
+- Repository-history rollback: `4edd6e0`; Cloud fallback: `85a57b8`; supported
+  remote-backed portability fixtures: `416530a`; quiet capture-error regression:
+  `f78651d`. All are additive commits; prior implementation history is preserved.
+- Complete `test-split:test-llm` and `test-split:test-workspaces` pass after the
+  rollback and fixture correction, as does `golangci-lint:lint-all`.
+- The real from-source CLI passes both local selected-archive resume and Cloud
+  fallback through a Cloud-protocol HTTP fixture serving actual canonical
+  telemetry. A continued recorded turn succeeds with a broken destination
+  module and untouched local files. No live hosted-Cloud acceptance run is claimed.
+- Cloud source/error/closure and archive unit suites pass under the race detector.
+  Older/unavailable archive endpoint statuses 404/405/501/503 are covered;
+  ambiguous sources, corrupt/missing payloads, incomplete graphs and exact
+  generation pins do not silently choose another source.
+- Repeated unavailable-capture revisions do not become UI output or loop errors;
+  the canonical frontend test passes under the race detector. There is no user
+  acknowledgement API: these attributes are consumed before text rendering,
+  while explicit restore reports the unsupported dependency.
+- `TestWorkspaceCommitCapturesIncomingChanges` still checks producer-free recipe
+  reconstruction on an explicit immutable base. Its adapted fixture compiles,
+  but this environment skipped execution because native bind mounts are denied.
+  The actual engine commit incoming-change/merge/scoped-history coverage is in
+  the passing workspace group; do not count the native test as a new pass.
+
 ## Implementation checkpoint
 
 Commit references in the original checklist name the pre-rebase implementation
