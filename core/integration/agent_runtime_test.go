@@ -1710,6 +1710,7 @@ func (sink *agentTraceSink) awaitAgent(t *testctx.T, state string) *dagui.AgentN
 func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dagui.AgentNode {
 	t.Helper()
 	byName := map[string]*dagui.AgentNode{}
+	var captureErr error
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
 		clear(byName)
 		sink.read(func(db *dagui.DB) {
@@ -1718,6 +1719,10 @@ func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dag
 				return
 			}
 			for _, agent := range agents {
+				if agent.Control != nil && agent.Control.CaptureError != "" {
+					captureErr = fmt.Errorf("agent %q capture failed: %s", agent.Name, agent.Control.CaptureError)
+					return
+				}
 				if !assert.NotEmpty(ct, agent.CallDigest, "agent %q has no call digest", agent.Name) ||
 					!assert.NotEmpty(ct, agent.SnapshotDigest, "agent %q has no resume anchor", agent.Name) {
 					return
@@ -1726,6 +1731,7 @@ func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dag
 			}
 		})
 	}, 60*time.Second, 100*time.Millisecond)
+	require.NoError(t, captureErr)
 	return byName
 }
 

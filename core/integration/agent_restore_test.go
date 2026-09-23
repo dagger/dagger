@@ -32,6 +32,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -41,6 +42,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -632,6 +634,93 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 	require.Equal(t, "worker", out.Get("snapshot.messages.0.origin.agentName").String())
 	require.Equal(t, "IDLE", restoredRemoved.state(ctx, t))
 	require.Empty(t, restoredRemoved.mustRun(ctx, t, "snapshot { messages { role } }").Get("snapshot.messages").Array())
+}
+
+// TestArchiveSurvivesEngineRestart seals a real source session, stops the actual
+// engine process, and starts a different process over the same state volume.
+// No historical stream is downloaded before restoring and executing a new turn.
+func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
+	defer cancel()
+	host := connect(ctx, t)
+	engine := devEngineContainer(host)
+	startEngine := func(ctr *dagger.Container) (*dagger.Service, *dagger.Service, string) {
+		t.Helper()
+		service, err := devEngineContainerAsService(ctr).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true}) })
+		tunnel, err := host.Host().Tunnel(service).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = tunnel.Stop(context.WithoutCancel(ctx)) })
+		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		require.NoError(t, err)
+		return service, tunnel, endpoint
+	}
+	first, tunnel, endpoint := startEngine(engine)
+	provider := sdktrace.NewTracerProvider()
+	defer provider.Shutdown(context.WithoutCancel(ctx))
+	sourceCtx, sourceSpan := provider.Tracer("archive-acceptance").Start(ctx, "archive source", trace.WithNewRoot())
+	defer sourceSpan.End()
+	source, sourceSink := connectWithTrace(sourceCtx, t, engineconn.Config{RunnerHost: endpoint})
+	model := cannedRecordingModel(sourceCtx, t, source, source.LLM().
+		WithPrompt("before restart").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "remembered before restart"}}).
+		WithPrompt("after restart").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "continued after restart"}}))
+	original := spawnAgent(sourceCtx, t, source, spawnOpts{model: model, name: "archive-worker"})
+	_, reply, err := original.sendAndWait(sourceCtx, t, "before restart")
+	require.NoError(t, err)
+	require.Equal(t, "remembered before restart", reply)
+	node := sourceSink.awaitRestorable(t, 1)["archive-worker"]
+	require.NotNil(t, node.Control)
+	traceID := node.Control.Trace
+	require.NoError(t, source.Close(), "graceful close must finish durable finalization")
+	sourceSpan.End()
+	_, err = tunnel.Stop(ctx)
+	require.NoError(t, err)
+	_, err = first.Stop(ctx)
+	require.NoError(t, err)
+	// A different service identity makes this a process restart, not a second
+	// connection to a still-running engine. The mounted state cache is unchanged.
+	_, _, endpoint = startEngine(engine.WithEnvVariable("ARCHIVE_RESTART", identity.NewID()))
+	targetCtx, targetSpan := provider.Tracer("archive-acceptance").Start(ctx, "archive destination", trace.WithNewRoot())
+	defer targetSpan.End()
+	target, targetSink := connectWithTrace(targetCtx, t, engineconn.Config{RunnerHost: endpoint})
+	client := archive.NewClient(targetSink.conn)
+	// First authenticated request: no executable GraphQL query has primed the
+	// destination client. Archive access must establish authorization itself.
+	manifests, err := client.ListAll(targetCtx, archive.ListOptions{})
+	require.NoError(t, err)
+	var manifest *archive.Manifest
+	for _, candidate := range manifests {
+		if candidate.TraceID == traceID {
+			manifest = &candidate
+		}
+	}
+	require.NotNil(t, manifest, "archive disappeared across engine restart")
+	require.Equal(t, archive.StateClosed, manifest.State, "archive failure: %s", manifest.Failure)
+	release, err := client.Acquire(targetCtx, traceID)
+	require.NoError(t, err)
+	defer release()
+	db := restoringDB(t)
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+	result, err := client.Bootstrap(targetCtx, traceID, manifest.Generation, func(_ archive.BootstrapHeader, batch archive.BootstrapBatch) error {
+		if batch.Traces != nil {
+			return importer.ImportSpans(targetCtx, batch.Traces)
+		}
+		return importer.ImportLogs(targetCtx, batch.Logs)
+	})
+	require.NoError(t, err)
+	require.Equal(t, manifest.Generation, result.Header.Generation)
+	plan := db.RestorePlan()
+	require.Len(t, plan, 1)
+	require.Equal(t, "archive-worker", plan[0].Name)
+	require.Equal(t, "IDLE", plan[0].State)
+	restored := restoreAgent(targetCtx, t, target, db, plan[0])
+	transcript, _ := restored.snapshot(targetCtx, t)
+	require.Contains(t, transcript, "remembered before restart")
+	_, reply, err = restored.sendAndWait(targetCtx, t, "after restart")
+	require.NoError(t, err)
+	require.Equal(t, "continued after restart", reply)
+	require.NoError(t, target.Close())
 }
 
 // withoutSpanCallPayloads strips the dagger.io/dag.call attribute from every
