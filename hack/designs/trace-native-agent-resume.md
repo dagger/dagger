@@ -32,7 +32,8 @@ Commit references below name the aggregate branch's commits.
 - [x] Immutable local/no-remote Git snapshot capture through blob-backed bundles
   (`0cc698c`). Original source-session-and-checkout-disappearance acceptance passes
   with frozen files and pending edits. Producer fresh-server tests passed four
-  root/subdirectory/overlay variants after source, remote and spool deletion,
+  no-remote/local-filesystem-remote × symbolic/detached-HEAD variants after source,
+  local remote and spool deletion, checking dirty worktree and ancestor contents,
   plus existing export reuse; no new public API was required.
 - [x] Local JSON persistence/picker/restore and public `portableID`/`emitHistory`
   removed (`4fbfde7`, `1176673`); obsolete TUI QA JSON mount removed (`df25dc7`).
@@ -43,8 +44,10 @@ Commit references below name the aggregate branch's commits.
   selected bootstrap/lease APIs avoid mixing sessions (`de6e598`). Registration
   failures cannot suppress live canonical telemetry (`f6bacfb`). Producer
   ambiguity, pagination, reopening and lease tests passed under the race detector.
-- [ ] Apply the completed cursor-aware history retry importer and wire actual
-  callback cursors in CLI imports; targeted retry validation is the next slice.
+- [x] Cursor-aware history retry importer (`df7ead8`) and actual span/log/metric
+  callback cursors wired through the CLI (`8166a10`). Targeted importer retry,
+  seal retry, CLI bootstrap barrier and background-history tests pass under the
+  race detector; acknowledgment retries do not enqueue duplicate history.
 - [ ] Same **runtime session with agents created under multiple trace roots** is
   still unsupported for strict restoration. Composite archive identity does not
   solve this separate registry/graph/history problem; do not infer completeness.
