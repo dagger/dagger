@@ -252,14 +252,17 @@ func TestSessionWithoutPublisherStaysSilent(t *testing.T) {
 	}
 }
 
-// Against a Cloud that never answers, the shutdown-time flush and the
-// session's telemetry shutdown return at their bound without error.
+// Against a Cloud that accepts requests and never answers, the main client's
+// whole shutdown (the Cloud flush, then the providers' and every client's
+// metric flush) waits on Cloud for one bound in total, not one per wait, and
+// the final span still reaches the client's stream. The session's teardown
+// afterwards is bounded as well.
 func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	receiver := newCloudReceiver(t, true)
-	const bound = 200 * time.Millisecond
+	const bound = 300 * time.Millisecond
 	sess, root := newCloudTestSession(t, &Server{sessionCloudFlushTimeout: bound}, &engine.ClientMetadata{
 		CloudAuth:               basicCloudAuth("dag_test_token"),
 		CloudURL:                receiver.URL,
@@ -267,12 +270,32 @@ func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 	})
 	emitCloudTestTelemetry(t, sess, root)
 
+	// serveShutdown's Cloud steps for the main client, in order.
 	start := time.Now()
+	stopBudget := sess.startCloudShutdownBudget()
 	sess.flushSessionCloudTelemetry(ctx)
+	spanCtx := engine.ContextWithClientMetadata(ctx, root.clientMetadata)
+	_, final := sess.tracerProvider.Tracer("test").Start(spanCtx, "final-span")
+	final.End()
+	require.NoError(t, sess.FlushTelemetry(ctx, "client shutdown"))
+	stopBudget()
+	elapsed := time.Since(start)
+	require.Less(t, elapsed, bound+250*time.Millisecond, "one bound for the whole shutdown request, not one per wait")
+
+	db, err := sess.telemetryPubSub.srv.clientDBs.Open(ctx, root.clientID)
+	require.NoError(t, err)
+	spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	var names []string
+	for _, span := range spans {
+		names = append(names, span.Name)
+	}
+	require.Contains(t, names, "final-span", "the final span reaches the client's stream")
+
+	start = time.Now()
 	require.NoError(t, sess.shutdownTelemetry(ctx))
-	// Span and log flushes, then client metrics, span and log shutdowns and
-	// the metric exporter's shutdown: each gives up at the bound.
-	require.Less(t, time.Since(start), 10*bound+5*time.Second)
+	require.Less(t, time.Since(start), 4*bound+time.Second, "teardown waits one bound per exporter at most")
 }
 
 // A publishing session asks its scale-out engine to publish too, with its

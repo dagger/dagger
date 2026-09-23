@@ -143,7 +143,7 @@ type daggerSession struct {
 	// cloudBound bounds every flush, shutdown and metric export of the Cloud
 	// exporters; cloudFlushers flush the session's Cloud processors.
 	cloudBound    cloudFlushBound
-	cloudFlushers []func(context.Context) error
+	cloudFlushers []func(context.Context)
 	// cloudSpanProcessor and cloudLogProcessor carry the session's telemetry
 	// to Cloud; a scale-out engine that does not publish its own stream sends
 	// it through them.
@@ -878,7 +878,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		processor := boundedCloudSpanProcessor{SpanProcessor: enginetel.NewLargeQueueLiveSpanProcessor(sess.cloudSpans), bound: bound}
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(processor))
 		sess.cloudSpanProcessor = processor
-		sess.cloudFlushers = append(sess.cloudFlushers, processor.ForceFlush)
+		sess.cloudFlushers = append(sess.cloudFlushers, processor.flush)
 		spanProcessors++
 	}
 	if sess.cloudLogs != nil {
@@ -886,7 +886,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 			sdklog.WithExportInterval(telemetry.NearlyImmediate)), bound: bound}
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(processor))
 		sess.cloudLogProcessor = processor
-		sess.cloudFlushers = append(sess.cloudFlushers, processor.ForceFlush)
+		sess.cloudFlushers = append(sess.cloudFlushers, processor.flush)
 		logProcessors++
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
@@ -2741,6 +2741,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 
 	if client.clientID == sess.mainClientCallerID {
 		slog.Info("main client is shutting down")
+		// Every wait on Cloud from here until the request returns shares
+		// one deadline, well within the client's own shutdown limit.
+		defer sess.startCloudShutdownBudget()()
 		err := drainPhase("flush workspace locks", func() error {
 			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
 		})

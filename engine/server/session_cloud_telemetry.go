@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -21,10 +22,11 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-// sessionTelemetryFlushTimeout bounds the main client's shutdown-time
-// telemetry flush. The client gives the engine 10s to shut down before it
-// fails the command, and one export to a hanging Cloud endpoint can take 10s
-// by itself, so at 5s a Cloud outage costs telemetry, never the build.
+// sessionTelemetryFlushTimeout bounds each wait on Cloud, and all of them
+// together while the main client's shutdown request runs. The client gives
+// the engine 10s to shut down before it fails the command, and one export to
+// a hanging Cloud endpoint can take 10s by itself, so at 5s a Cloud outage
+// costs telemetry, never the build.
 const sessionTelemetryFlushTimeout = 5 * time.Second
 
 // cloudTokenRefreshTimeout bounds one refresh of the session's OAuth token.
@@ -58,7 +60,7 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 		slog.Warn("session telemetry not published to Cloud: cannot configure the Cloud exporters", "session", sess.sessionID, "error", err)
 		return
 	}
-	sess.cloudBound = cloudFlushBound{sessionID: sess.sessionID, timeout: sessionTelemetryFlushTimeout}
+	sess.cloudBound = cloudFlushBound{sessionID: sess.sessionID, timeout: sessionTelemetryFlushTimeout, budget: &cloudShutdownBudget{}}
 	if srv.sessionCloudFlushTimeout > 0 {
 		sess.cloudBound.timeout = srv.sessionCloudFlushTimeout
 	}
@@ -122,35 +124,96 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 	return refreshed, nil
 }
 
-// cloudFlushBound is a session's Cloud telemetry processor behind a bound: a
-// flush or shutdown gives up after the timeout and logs its error instead of
-// returning it, so a Cloud outage costs telemetry and never the command, and
-// never holds the client's shutdown.
+// cloudShutdownBudget is the one deadline for Cloud while the main client's
+// shutdown request runs, set when it starts and cleared when it returns, so
+// the waits on Cloud during the request add up to at most one bound.
+type cloudShutdownBudget struct {
+	mu       sync.Mutex
+	deadline time.Time
+}
+
+func (b *cloudShutdownBudget) start(timeout time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.deadline.IsZero() {
+		b.deadline = time.Now().Add(timeout)
+	}
+}
+
+func (b *cloudShutdownBudget) end() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.deadline = time.Time{}
+}
+
+func (b *cloudShutdownBudget) current() (time.Time, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.deadline, !b.deadline.IsZero()
+}
+
+// cloudFlushBound bounds every wait on the session's Cloud exporters: at the
+// earliest of its own timeout, the caller's deadline and the shutdown budget.
+// It logs errors instead of returning them, so a Cloud outage costs telemetry
+// and never the command, and never holds the client's shutdown.
 type cloudFlushBound struct {
 	sessionID string
 	timeout   time.Duration
+	budget    *cloudShutdownBudget
 }
 
-func (b cloudFlushBound) bounded(ctx context.Context, what string, op func(context.Context) error) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), b.timeout)
+// bounded runs op within the bound. With nothing left of it, op is skipped;
+// a release (a shutdown) still runs, with an expired context, so the
+// exporter frees its resources without waiting on Cloud.
+func (b cloudFlushBound) bounded(ctx context.Context, what string, release bool, op func(context.Context) error) {
+	deadline := time.Now().Add(b.timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if b.budget != nil {
+		if d, ok := b.budget.current(); ok && d.Before(deadline) {
+			deadline = d
+		}
+	}
+	if !time.Now().Before(deadline) && !release {
+		slog.Warn("session telemetry not fully published to Cloud: no time left", "session", b.sessionID, "op", what)
+		return
+	}
+	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
 	defer cancel()
 	if err := op(ctx); err != nil {
 		slog.Warn("session telemetry not fully published to Cloud", "session", b.sessionID, "op", what, "error", err)
 	}
 }
 
+// startCloudShutdownBudget starts the one Cloud deadline of the main client's
+// shutdown request; the returned func clears it when the request returns.
+func (sess *daggerSession) startCloudShutdownBudget() func() {
+	if sess.cloudBound.budget == nil {
+		return func() {}
+	}
+	sess.cloudBound.budget.start(sess.cloudBound.timeout)
+	return sess.cloudBound.budget.end
+}
+
+// boundedCloudSpanProcessor and boundedCloudLogProcessor carry the session's
+// telemetry to Cloud. Their ForceFlush returns at once: the processors export
+// on their own, and the session's provider flushes (any client's shutdown,
+// the telemetry APIs) must not wait on Cloud. The main client's shutdown
+// flushes them once, through flushSessionCloudTelemetry, within the budget.
 type boundedCloudSpanProcessor struct {
 	sdktrace.SpanProcessor
 	bound cloudFlushBound
 }
 
-func (p boundedCloudSpanProcessor) ForceFlush(ctx context.Context) error {
-	p.bound.bounded(ctx, "flush spans", p.SpanProcessor.ForceFlush)
-	return nil
+func (boundedCloudSpanProcessor) ForceFlush(context.Context) error { return nil }
+
+func (p boundedCloudSpanProcessor) flush(ctx context.Context) {
+	p.bound.bounded(ctx, "flush spans", false, p.SpanProcessor.ForceFlush)
 }
 
 func (p boundedCloudSpanProcessor) Shutdown(ctx context.Context) error {
-	p.bound.bounded(ctx, "shutdown spans", p.SpanProcessor.Shutdown)
+	p.bound.bounded(ctx, "shutdown spans", true, p.SpanProcessor.Shutdown)
 	return nil
 }
 
@@ -159,13 +222,14 @@ type boundedCloudLogProcessor struct {
 	bound cloudFlushBound
 }
 
-func (p boundedCloudLogProcessor) ForceFlush(ctx context.Context) error {
-	p.bound.bounded(ctx, "flush logs", p.Processor.ForceFlush)
-	return nil
+func (boundedCloudLogProcessor) ForceFlush(context.Context) error { return nil }
+
+func (p boundedCloudLogProcessor) flush(ctx context.Context) {
+	p.bound.bounded(ctx, "flush logs", false, p.Processor.ForceFlush)
 }
 
 func (p boundedCloudLogProcessor) Shutdown(ctx context.Context) error {
-	p.bound.bounded(ctx, "shutdown logs", p.Processor.Shutdown)
+	p.bound.bounded(ctx, "shutdown logs", true, p.Processor.Shutdown)
 	return nil
 }
 
@@ -178,39 +242,42 @@ type boundedCloudMetricExporter struct {
 }
 
 func (e boundedCloudMetricExporter) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
-	e.bound.bounded(ctx, "export metrics", func(ctx context.Context) error {
+	e.bound.bounded(ctx, "export metrics", false, func(ctx context.Context) error {
 		return e.Exporter.Export(ctx, metrics)
 	})
 	return nil
 }
 
 func (e boundedCloudMetricExporter) ForceFlush(ctx context.Context) error {
-	e.bound.bounded(ctx, "flush metrics", e.Exporter.ForceFlush)
+	e.bound.bounded(ctx, "flush metrics", false, e.Exporter.ForceFlush)
 	return nil
 }
 
 func (e boundedCloudMetricExporter) Shutdown(ctx context.Context) error {
-	e.bound.bounded(ctx, "shutdown metrics", e.Exporter.Shutdown)
+	e.bound.bounded(ctx, "shutdown metrics", true, e.Exporter.Shutdown)
 	return nil
 }
 
-// flushSessionCloudTelemetry flushes the session's Cloud processors, bounded.
-// The main client's shutdown calls it before the session's attachables close,
-// because refreshing an OAuth token reads the client's credentials file
-// through them.
+// flushSessionCloudTelemetry flushes the session's Cloud span and log
+// processors concurrently, within the bound. The main client's shutdown calls
+// it once, before the session's attachables close, because refreshing an
+// OAuth token reads the client's credentials file through them.
 func (sess *daggerSession) flushSessionCloudTelemetry(ctx context.Context) {
+	var wg sync.WaitGroup
 	for _, flush := range sess.cloudFlushers {
-		_ = flush(ctx)
+		wg.Go(func() { flush(ctx) })
 	}
+	wg.Wait()
 }
 
 // scaleOutTelemetryParams routes a scale-out engine's telemetry stream, which
 // the parent client receives, into the session's client routing. When this
 // session publishes to Cloud, the remote engine is asked to publish its own
 // session with the same credential; on streams the remote does not confirm,
-// the parent publishes them through this session's Cloud processors instead. When this session
-// does not publish, the remote is not asked either, and the stream reaches
-// Cloud once, through the client that forwards this session's telemetry.
+// the parent publishes them through this session's Cloud processors instead.
+// When this session does not publish, the remote is not asked either, and the
+// stream reaches Cloud once, through the client that forwards this session's
+// telemetry.
 func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params *engineclient.Params) {
 	params.EngineTrace = parent.spanExporter
 	params.EngineLogs = parent.logExporter

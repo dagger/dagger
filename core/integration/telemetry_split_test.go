@@ -619,9 +619,12 @@ func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *
 }
 
 // TestEngineTelemetryCloudOutage (from #13339): a Cloud that accepts
-// requests and never answers costs telemetry, never the build. The client
-// gives the engine 10s to shut down; the engine's Cloud flush gives up well
-// within that.
+// requests and never answers costs telemetry, never the build. The fake
+// Cloud's /hang/ paths read each request and then sit on it for 60s, longer
+// than any exporter timeout: a hanging Cloud, not a refusing one. The client
+// fails the command if the engine takes over 10s to answer /shutdown, so the
+// command's success shows that all of the engine's waits on Cloud during
+// shutdown stayed within that.
 func (ClientSuite) TestEngineTelemetryCloudOutage(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	cloud := newTelemetrySplitCloud(t, c)
