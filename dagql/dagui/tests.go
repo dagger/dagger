@@ -357,6 +357,11 @@ type TestIndex struct {
 	testsByAncestor    map[SpanID]map[SpanID]struct{}
 	ancestorIDsByTest  map[SpanID][]SpanID
 
+	// spanStructure records only tests and their real ancestors. Propagated
+	// status/activity updates do not change these local signatures, so they
+	// must not recheck every test beneath a shared ancestor.
+	spanStructure map[SpanID]testSpanStructure
+
 	cachedView   *TestView
 	version      uint64
 	builtVersion uint64
@@ -372,6 +377,29 @@ type TestIndex struct {
 
 	initialScanCount       int
 	structuralRebuildCount int
+	structureCheckCount    int
+	ancestorReindexCount   int
+}
+
+// ParentID and ParentSpan are separate: integrateSpan notifies the index both
+// before and after wiring the parent. Neither notification may hide the other.
+// Received is not structural: placeholders participate in the real chain too.
+type testSpanStructure struct {
+	parentID    SpanID
+	parent      *Span
+	boundary    bool
+	encapsulate bool
+	hasNode     bool
+}
+
+func testStructure(span *Span) testSpanStructure {
+	return testSpanStructure{
+		parentID:    span.ParentID,
+		parent:      span.ParentSpan,
+		boundary:    span.Boundary,
+		encapsulate: span.Encapsulate,
+		hasNode:     testSpanHasNode(span),
+	}
 }
 
 func (db *DB) TestView() *TestView {
@@ -507,10 +535,12 @@ func (idx *TestIndex) spanUpdated(span *Span) {
 		delete(idx.knownTestSpans, span.ID)
 		delete(idx.globalIncluded, span.ID)
 		delete(idx.globalParentBySpan, span.ID)
+		delete(idx.spanStructure, span.ID)
 		if wasIncluded {
 			idx.markStructureDirty()
 		}
-		return
+		// Still check descendants if this was a contained test: removing its
+		// metadata can coincide with removing a containment flag or reparenting.
 	}
 
 	if idx.structureDirty {
@@ -538,27 +568,17 @@ func (idx *TestIndex) spanUpdated(span *Span) {
 		return
 	}
 
-	nearest := nearestTestAncestor(span, idx.nodesBySpan)
-	if node.Parent != nil && node.Parent.Kind == TestNodeVirtualSuite {
-		if nearest != nil {
-			idx.markStructureDirty()
-			return
-		}
-	} else if node.Parent != nil && node.Parent.Kind == TestNodeSuite && node.Kind == TestNodeCase && nearest == nil && node.suiteName == node.Parent.suiteName {
-		// The case is synthetically grouped under a real suite with the same
-		// test.suite.name even though the spans are not parented together.
-	} else if nearest != node.Parent {
-		idx.markStructureDirty()
-		return
-	}
-
+	// Parentage was checked by globalTestStructureChanged only when a local
+	// structural signature changed. Synthetic suite parents need no separate
+	// check here: metadata changes above already invalidate their grouping.
 	idx.markAggregateDirty(span.ID)
 }
 
 // globalTestStructureChanged compares containment and nearest-parent signatures
 // only for tests affected by updated: the span itself when it is a test, plus
-// tests whose indexed real parent chain contains its ID. Unrelated span updates
-// are O(1), while placeholder fills and ancestor reparenting remain visible.
+// tests whose indexed real parent chain contains its ID. Status-only updates
+// are O(1), even on a shared ancestor of many tests. Placeholder fills and
+// ancestor reparenting still recheck the affected tests after linkage changes.
 func (idx *TestIndex) globalTestStructureChanged(updated *Span) bool {
 	if updated == nil {
 		return false
@@ -568,6 +588,12 @@ func (idx *TestIndex) globalTestStructureChanged(updated *Span) bool {
 	if !updatedIsTest && len(affected) == 0 {
 		return false
 	}
+	structure := testStructure(updated)
+	if previous, ok := idx.spanStructure[updated.ID]; ok && previous == structure {
+		return false
+	}
+	idx.spanStructure[updated.ID] = structure
+
 	targets := make(map[SpanID]struct{}, len(affected)+1)
 	if updatedIsTest {
 		targets[updated.ID] = struct{}{}
@@ -580,6 +606,7 @@ func (idx *TestIndex) globalTestStructureChanged(updated *Span) bool {
 		if span == nil {
 			continue
 		}
+		idx.structureCheckCount++
 		included := spanMayRollUp(span, nil, nil)
 		previous, signed := idx.globalIncluded[id]
 		if !signed {
@@ -618,7 +645,25 @@ func (idx *TestIndex) globalTestStructureChanged(updated *Span) bool {
 }
 
 func (idx *TestIndex) indexTestAncestors(testID SpanID, span *Span) {
-	for _, ancestorID := range idx.ancestorIDsByTest[testID] {
+	previous := idx.ancestorIDsByTest[testID]
+	if span != nil {
+		idx.rememberSpanStructure(span)
+		// Containment or metadata changes can leave the real ancestry intact.
+		// Compare without allocating or churning the shared reverse-index maps.
+		parent := span.ParentSpan
+		matched := 0
+		for parent != nil && matched < len(previous) && parent.ID == previous[matched] {
+			matched++
+			parent = parent.ParentSpan
+		}
+		if parent == nil && matched == len(previous) {
+			return
+		}
+	} else if len(previous) == 0 {
+		return
+	}
+	idx.ancestorReindexCount++
+	for _, ancestorID := range previous {
 		delete(idx.testsByAncestor[ancestorID], testID)
 		if len(idx.testsByAncestor[ancestorID]) == 0 {
 			delete(idx.testsByAncestor, ancestorID)
@@ -629,11 +674,20 @@ func (idx *TestIndex) indexTestAncestors(testID SpanID, span *Span) {
 		return
 	}
 	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+		idx.rememberSpanStructure(parent)
 		if idx.testsByAncestor[parent.ID] == nil {
 			idx.testsByAncestor[parent.ID] = make(map[SpanID]struct{})
 		}
 		idx.testsByAncestor[parent.ID][testID] = struct{}{}
 		idx.ancestorIDsByTest[testID] = append(idx.ancestorIDsByTest[testID], parent.ID)
+	}
+}
+
+func (idx *TestIndex) rememberSpanStructure(span *Span) {
+	// Do not overwrite a previously observed signature while indexing another
+	// test: that could consume a change before spanUpdated handles it.
+	if _, ok := idx.spanStructure[span.ID]; !ok {
+		idx.spanStructure[span.ID] = testStructure(span)
 	}
 }
 
@@ -659,6 +713,7 @@ func (idx *TestIndex) rebuildStructure() {
 	idx.globalParentBySpan = make(map[SpanID]SpanID, len(idx.knownTestSpans))
 	idx.testsByAncestor = make(map[SpanID]map[SpanID]struct{})
 	idx.ancestorIDsByTest = make(map[SpanID][]SpanID, len(idx.knownTestSpans))
+	idx.spanStructure = make(map[SpanID]testSpanStructure)
 	for id, span := range idx.knownTestSpans {
 		idx.indexTestAncestors(id, span)
 		included := spanMayRollUp(span, nil, nil)
