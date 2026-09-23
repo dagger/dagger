@@ -58,6 +58,11 @@ Commit references below name the aggregate branch's commits.
   resolving `modules/wolfi`'s remote dependency at an unpublished local commit
   SHA. The seven public API/reference generators above succeeded; this failure
   must not be represented as complete whole-repository generation.
+- [ ] Re-run the two existing local-Git capture/commit tests whose three obsolete
+  positive `__gitDir` assertions were replaced with absence-of-live-dependency
+  checks (`ac1191e`). Compilation passes; the targeted engine run was blocked
+  before tests started by a `ghcr.io` DNS timeout. Earlier source-disappearance
+  acceptance and producer capture/export tests passed as recorded above.
 - [ ] Broader acceptance/performance work in §13 remains. No constant-time startup,
   crash-completeness, Cloud finality parity, or end-to-end latency claim is made.
   Internal recipe flattening remains; unsupported live dependencies fail capture.
