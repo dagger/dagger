@@ -30,13 +30,21 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (sess *daggerSession) ensureArchive(traceID string) error {
+func (sess *daggerSession) ensureArchive(traceID string) (rerr error) {
 	srv := sess.telemetryPubSub.srv
 	if srv.archives == nil {
 		return nil
 	}
 	sess.archiveMu.Lock()
 	defer sess.archiveMu.Unlock()
+	defer func() {
+		if rerr != nil {
+			sess.archiveRegisterErr = rerr
+		}
+	}()
+	if sess.archiveRegisterErr != nil {
+		return sess.archiveRegisterErr
+	}
 	if sess.archiveManifest != nil {
 		if sess.archiveManifest.TraceID != traceID {
 			return errors.New("agent control crossed archive trace boundary")
@@ -92,16 +100,17 @@ func (sess *daggerSession) closeArchiveControl(ctx context.Context) error {
 func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSession, drainErr error) (rerr error) {
 	sess.archiveMu.Lock()
 	manifest := sess.archiveManifest
+	registrationErr := sess.archiveRegisterErr
 	sess.archiveMu.Unlock()
 	if manifest == nil || srv.archives == nil {
-		return nil
+		return registrationErr
 	}
 	defer func() {
 		if rerr != nil {
 			_ = srv.archives.MarkIncomplete(manifest.TraceID, manifest.Generation, rerr)
 		}
 	}()
-	if err := errors.Join(drainErr, sess.archiveCloseErr); err != nil {
+	if err := errors.Join(drainErr, sess.archiveCloseErr, registrationErr); err != nil {
 		return err
 	}
 	if sess.archiveExpected.Agents == nil {

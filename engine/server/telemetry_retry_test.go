@@ -31,6 +31,25 @@ func (sess *daggerSession) callPayloadMissingTargets(digest string, targets []st
 	return missing
 }
 
+func TestArchiveRegistrationFailureDoesNotDropControl(t *testing.T) {
+	srv, _, _, _ := archiveFixture(t)
+	other := &daggerSession{sessionID: "other-session", mainClientCallerID: "other", clientRecords: map[string]*clientRecord{}}
+	other.telemetryPubSub = NewPubSub(srv)
+	other.clientRecords["other"] = &clientRecord{daggerSession: other, clientID: "other"}
+	a := archiveAgent()
+	a.Session = other.sessionID
+	rec := controlTestRecord(t, a.Record())
+	rec.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "other"))
+	exp := sessionLogExporter{sess: other, ps: other.telemetryPubSub}
+	require.NoError(t, exp.Export(t.Context(), []sdklog.Record{rec}))
+	db, err := srv.clientDBs.Open(t.Context(), "other")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "archive registration must not gate live persistence")
+}
+
 func TestReportedSpanDoesNotSuppressDurablePayload(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
 	srv := &Server{clientDBs: dbs}

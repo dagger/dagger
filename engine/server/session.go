@@ -71,6 +71,7 @@ type daggerSession struct {
 	archiveManifest    *archive.Manifest
 	archiveExpected    agentcontrol.Expectation
 	archiveCloseErr    error
+	archiveRegisterErr error
 	mainClientCallerID string
 
 	// wcprofEnabled means this session opted into wall-clock profiling
