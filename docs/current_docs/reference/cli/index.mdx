@@ -60,8 +60,8 @@ dagger agent [FILTERS] [OPTIONS]
   -l, --list                    List available agents
       --list-archives           List retained engine archives without restoring; --trace filters the list
       --module NAME             Select artifacts from module NAME
-      --source-session string   With --trace and --generation, select the archive's source session
-      --trace string            Restore agents and their Workspaces from a verified trace archive; load scrollback in the background
+      --source-session string   With --trace, select the source session in an engine archive or Cloud trace
+      --trace string            Restore agents from a retained engine archive, falling back to their Dagger Cloud trace
 ```
 
 ### Options inherited from parent commands

@@ -101,6 +101,8 @@ func controlLogs(records ...log.Record) *collogspb.ExportLogsServiceRequest {
 	var value func(log.Value) *commonpb.AnyValue
 	value = func(v log.Value) *commonpb.AnyValue {
 		switch v.Kind() {
+		case log.KindBytes:
+			return &commonpb.AnyValue{Value: &commonpb.AnyValue_BytesValue{BytesValue: v.AsBytes()}}
 		case log.KindString:
 			return &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: v.AsString()}}
 		case log.KindInt64:
@@ -118,7 +120,7 @@ func controlLogs(records ...log.Record) *collogspb.ExportLogsServiceRequest {
 		}
 	}
 	for _, rec := range records {
-		entry := &logspb.LogRecord{TimeUnixNano: uint64(rec.Timestamp().UnixNano())}
+		entry := &logspb.LogRecord{TimeUnixNano: uint64(rec.Timestamp().UnixNano()), Body: value(rec.Body())}
 		rec.WalkAttributes(func(kv log.KeyValue) bool {
 			entry.Attributes = append(entry.Attributes, &commonpb.KeyValue{Key: kv.Key, Value: value(kv.Value)})
 			return true
@@ -153,7 +155,7 @@ func TestArchiveSelectionFlags(t *testing.T) {
 		{name: "list all", listArchives: true},
 		{name: "list trace", listArchives: true, trace: "trace"},
 		{name: "missing trace", source: "source", generation: "cut", invalid: true},
-		{name: "missing generation", trace: "trace", source: "source", invalid: true},
+		{name: "source selection", trace: "trace", source: "source"},
 		{name: "missing source", trace: "trace", generation: "cut", invalid: true},
 		{name: "focus without trace", focus: "chief", invalid: true},
 		{name: "list agents and trace", listAgents: true, trace: "trace", invalid: true},
@@ -290,7 +292,7 @@ func TestArchiveBootstrapFailureNeverCreatesRuntime(t *testing.T) {
 			require.Empty(t, target.calls)
 			require.EqualValues(t, 1, source.released.Load())
 			if errors.Is(fail, archive.ErrCleanMiss) {
-				require.ErrorContains(t, err, "Cloud does not yet provide verified finality")
+				require.ErrorContains(t, err, "no retained engine archive")
 			}
 		})
 	}

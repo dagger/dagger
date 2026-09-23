@@ -87,11 +87,12 @@ var agentCmd = &cobra.Command{
 					return err
 				}
 				restore := traceRestore{
-					source:     source,
-					traceID:    agentTrace,
-					generation: agentGeneration,
-					agent:      agentFocus,
-					partial:    agentPartial,
+					source:        source,
+					traceID:       agentTrace,
+					generation:    agentGeneration,
+					sourceSession: agentSourceSession,
+					agent:         agentFocus,
+					partial:       agentPartial,
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
 					restore:              restore,
@@ -109,11 +110,11 @@ func init() {
 	agentCmd.Flags().Lookup("resume").NoOptDefVal = "removed"
 	_ = agentCmd.Flags().MarkHidden("resume")
 	agentCmd.Flags().StringVar(&agentTrace, "trace", "",
-		"Restore agents and their Workspaces from a verified trace archive; load scrollback in the background")
+		"Restore agents from a retained engine archive, falling back to their Dagger Cloud trace")
 	agentCmd.Flags().BoolVar(&agentListArchives, "list-archives", false,
 		"List retained engine archives without restoring; --trace filters the list")
 	agentCmd.Flags().StringVar(&agentSourceSession, "source-session", "",
-		"With --trace and --generation, select the archive's source session")
+		"With --trace, select the source session in an engine archive or Cloud trace")
 	agentCmd.Flags().StringVar(&agentGeneration, "generation", "",
 		"With --trace and --source-session, select the exact archive generation")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
@@ -135,8 +136,8 @@ func validateArchiveFlags(traceID, source, generation, focus string, listArchive
 	if traceID == "" && (source != "" || generation != "" || focus != "") {
 		return fmt.Errorf("--source-session, --generation, and --agent require --trace")
 	}
-	if (source == "") != (generation == "") {
-		return fmt.Errorf("--source-session and --generation must be supplied together; discover choices with --list-archives")
+	if generation != "" && source == "" {
+		return fmt.Errorf("--generation requires --source-session; discover engine cuts with --list-archives")
 	}
 	return nil
 }

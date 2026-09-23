@@ -32,8 +32,9 @@ type archiveFrontend interface {
 	idtui.Frontend
 }
 
-// appliedRestorePlan is a frozen, verified selection from the applied canonical
-// frontend projection, not an alternate checkpoint representation.
+// appliedRestorePlan is a frozen selection from the applied canonical frontend
+// projection. Local archives additionally verify it against an independent cut;
+// Cloud selections validate only the records and recipe closure they observed.
 type appliedRestorePlan struct {
 	plan    []dagui.AgentRestore
 	rebuild func(string) (string, error)
@@ -105,12 +106,16 @@ func archiveCut(header archive.BootstrapHeader) (enginetel.ArchiveCut, error) {
 	}, nil
 }
 
+type archiveAcquireError struct{ error }
+
+func (e *archiveAcquireError) Unwrap() error { return e.error }
+
 // restoreArchive keeps the reader lease from before bootstrap through remainder
 // completion. The returned cleanup cancels and joins background import on exit.
 func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, target restoreTarget, req traceRestore) (cleanup func(), rerr error) {
 	release, err := source.AcquireGeneration(ctx, req.traceID, req.generation)
 	if err != nil {
-		return nil, archiveRestoreError(req.traceID, err)
+		return nil, &archiveAcquireError{archiveRestoreError(req.traceID, err)}
 	}
 	defer func() {
 		if rerr != nil {
@@ -167,7 +172,7 @@ func archiveRestoreError(traceID string, err error) error {
 		return fmt.Errorf("restore engine archive %s: %w; list choices with dagger agent --list-archives --trace %s, then select --source-session <session> --generation <generation>", traceID, err, traceID)
 	}
 	if archive.IsCleanMiss(err) {
-		return fmt.Errorf("trace %s has no retained engine archive: %w; Cloud does not yet provide verified finality for strict restore; use dagger trace %s to view historical telemetry", traceID, err, traceID)
+		return fmt.Errorf("trace %s has no retained engine archive: %w", traceID, err)
 	}
 	return fmt.Errorf("restore engine archive %s: %w", traceID, err)
 }
