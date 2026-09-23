@@ -126,11 +126,17 @@ type ParsedLocalRefString struct {
 // the dagql-aware GitRef resolution that needs the engine schema.
 type ParsedGitRefString struct {
 	gitref.Parsed
+
+	// PinOverridesVersion loads a commit pin as is, even when the version query
+	// now resolves to a newer commit. Query.serveModule sets it: a generated
+	// client records the commit its lock resolved, and must keep loading that
+	// commit after a newer matching tag appears.
+	PinOverridesVersion bool
 }
 
 func ParseGitRefString(ctx context.Context, refString string) (ParsedGitRefString, error) {
 	parsed, err := gitref.Parse(ctx, refString)
-	return ParsedGitRefString{parsed}, err
+	return ParsedGitRefString{Parsed: parsed}, err
 }
 
 // SetVersion sets a separate version query on a parsed Git module reference.
@@ -180,6 +186,13 @@ func (p *ParsedGitRefString) GitRef(
 
 	refSelector := moduleGitDefaultRefSelector(ctx, p)
 	switch {
+	case versionQuery != "" && pinIsSHA && p.PinOverridesVersion:
+		refSelector = dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(pinCommitRef)},
+			},
+		}
 	case versionQuery != "":
 		args := []dagql.NamedInput{
 			{Name: "version", Value: dagql.String(versionQuery)},

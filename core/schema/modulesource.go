@@ -322,6 +322,8 @@ type moduleSourceArgs struct {
 	DisableFindUp  bool   `default:"false"`
 	AllowNotExists bool   `default:"false"`
 	RequireKind    dagql.Optional[core.ModuleSourceKind]
+
+	PinOverridesVersion bool `internal:"true" default:"false"`
 }
 
 func (s *moduleSourceSchema) moduleSource(
@@ -372,6 +374,7 @@ func (s *moduleSourceSchema) moduleSource(
 			return inst, err
 		}
 	case core.ModuleSourceKindGit:
+		parsedRef.Git.PinOverridesVersion = args.PinOverridesVersion
 		inst, err = s.gitModuleSource(ctx, query, parsedRef.Git, args.RefPin, !args.DisableFindUp, args.AllowNotExists)
 		if err != nil {
 			return inst, fmt.Errorf("resolve remote module %q: %w", gitref.DisplayRef(args.RefString), err)
