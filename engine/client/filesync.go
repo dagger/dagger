@@ -32,6 +32,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/internal/replacefile"
 	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/dagger/dagger/util/grpcutil"
 )
@@ -349,7 +350,7 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 			if err := destF.Close(); err != nil {
 				return fmt.Errorf("failed to write synctarget dest file %s: %w", writePath, err)
 			}
-			if err := os.Rename(writePath, finalDestPath); err != nil {
+			if err := replacefile.Rename(writePath, finalDestPath); err != nil {
 				return fmt.Errorf("failed to replace synctarget dest file %s: %w", finalDestPath, err)
 			}
 			return nil

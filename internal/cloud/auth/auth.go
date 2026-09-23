@@ -18,6 +18,8 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/pkg/browser"
 	"golang.org/x/oauth2"
+
+	"github.com/dagger/dagger/internal/replacefile"
 )
 
 const (
@@ -298,7 +300,7 @@ func writeFile(filename string, data []byte, perm os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), filename)
+	return replacefile.Rename(tmp.Name(), filename)
 }
 
 type Org struct {

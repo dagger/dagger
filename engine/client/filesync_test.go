@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/dagger/dagger/engine"
@@ -195,27 +196,38 @@ func exportFileStream(t *testing.T, opts engine.LocalExportOpts, chunks ...strin
 // temporary file is left behind. Without it the file is rewritten in place.
 func TestFileStreamExportReplacesAtomically(t *testing.T) {
 	t.Parallel()
+	// On Windows a file held open cannot be renamed over (the export then
+	// falls back to rewriting it), and modes are not Unix permissions, so
+	// only the contents are checked there.
+	unix := runtime.GOOS != "windows"
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "credentials.json")
 	require.NoError(t, os.WriteFile(dest, []byte(`{"old":"token"}`), 0o600))
-	held, err := os.Open(dest)
-	require.NoError(t, err)
-	defer held.Close()
+	var held *os.File
+	if unix {
+		var err error
+		held, err = os.Open(dest)
+		require.NoError(t, err)
+		defer held.Close()
+	}
 
 	exportFileStream(t, engine.LocalExportOpts{Path: dest, IsFileStream: true, FileMode: 0o600, ReplaceAtomically: true},
 		`{"new":`, `"token"}`)
 	got, err := os.ReadFile(dest)
 	require.NoError(t, err)
 	require.Equal(t, `{"new":"token"}`, string(got))
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "no temporary file left behind")
+	if !unix {
+		return
+	}
 	old, err := io.ReadAll(held)
 	require.NoError(t, err)
 	require.Equal(t, `{"old":"token"}`, string(old), "the old file was replaced, not rewritten")
 	info, err := os.Stat(dest)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
-	entries, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	require.Len(t, entries, 1, "no temporary file left behind")
 
 	inPlace, err := os.Open(dest)
 	require.NoError(t, err)
