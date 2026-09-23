@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestAgentClientScopeLifetime(t *testing.T) {
@@ -60,6 +62,22 @@ func TestAgentClientScopeLifetime(t *testing.T) {
 	require.Equal(t, 1, held(engine.ClientLeaseAgentTombstone), "the stopped snapshot remains addressable")
 	require.NoError(t, registry.KillAll(t.Context(), nil))
 	require.Zero(t, held(engine.ClientLeaseAgentTombstone))
+}
+
+func TestAgentTelemetryContextDoesNotRetainResolver(t *testing.T) {
+	type resolverKey struct{}
+	_, ctx := stateRecorderCtx(t)
+	ctx = context.WithValue(ctx, resolverKey{}, new([1024]byte))
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{SessionID: "session", ClientID: "client"})
+	span := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}})
+	ctx = trace.ContextWithSpanContext(ctx, span)
+	compact := agentTelemetryContext(ctx)
+	require.Nil(t, compact.Value(resolverKey{}), "tombstone telemetry must not retain the resolver graph")
+	require.Equal(t, span, trace.SpanContextFromContext(compact))
+	require.Same(t, telemetry.LoggerProvider(ctx), telemetry.LoggerProvider(compact))
+	md, err := engine.ClientMetadataFromContext(compact)
+	require.NoError(t, err)
+	require.Equal(t, "client", md.ClientID)
 }
 
 func TestAgentCaptureRetainsExecutableScope(t *testing.T) {
