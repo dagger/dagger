@@ -46,6 +46,8 @@ type cloudReceiver struct {
 	*httptest.Server
 	hold    bool
 	release chan struct{}
+	// entered receives a value as each request arrives, when there is room.
+	entered chan struct{}
 
 	mu             sync.Mutex
 	auths          []string
@@ -56,7 +58,7 @@ type cloudReceiver struct {
 }
 
 func newCloudReceiver(t *testing.T, hold bool) *cloudReceiver {
-	r := &cloudReceiver{hold: hold, release: make(chan struct{})}
+	r := &cloudReceiver{hold: hold, release: make(chan struct{}), entered: make(chan struct{}, 16)}
 	r.Server = httptest.NewServer(http.HandlerFunc(r.serve))
 	t.Cleanup(func() {
 		close(r.release)
@@ -66,6 +68,10 @@ func newCloudReceiver(t *testing.T, hold bool) *cloudReceiver {
 }
 
 func (r *cloudReceiver) serve(w http.ResponseWriter, req *http.Request) {
+	select {
+	case r.entered <- struct{}{}:
+	default:
+	}
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -768,24 +774,47 @@ func TestCloudMetricQueueCopiesCollections(t *testing.T) {
 	require.Equal(t, []float64{10}, point.GetExplicitBounds())
 }
 
-// Against a Cloud that never answers, shutting the queue down, with one
-// export in flight and another queued, takes one bound in all: draining, the
-// export in flight and releasing the exporter.
+func gaugeMetrics(value int64) *metricdata.ResourceMetrics {
+	return &metricdata.ResourceMetrics{
+		Resource: resource.NewSchemaless(attribute.String("service.name", "test")),
+		ScopeMetrics: []metricdata.ScopeMetrics{{Metrics: []metricdata.Metrics{{
+			Name: "test.gauge",
+			Data: metricdata.Gauge[int64]{DataPoints: []metricdata.DataPoint[int64]{{Time: time.Now(), Value: value}}},
+		}}}},
+	}
+}
+
+// Against a Cloud that never answers, shutting the queue down takes one
+// bound in all, draining, the exports in flight and the release: the first
+// export waits on Cloud until its own bound, before the drain deadline, and
+// the second then starts and is cancelled at that deadline.
 func TestCloudMetricQueueShutdownIsBounded(t *testing.T) {
 	t.Parallel()
 	receiver := newCloudReceiver(t, true)
 	_, _, metrics, err := enginetel.NewCloudExporters(t.Context(), basicCloudAuth("dag_test_token"), nil, receiver.URL)
 	require.NoError(t, err)
-	const bound = 200 * time.Millisecond
+	const bound = 300 * time.Millisecond
 	q := newCloudMetricQueue(metrics, cloudFlushBound{sessionID: "session", timeout: bound})
-	require.NoError(t, q.Export(t.Context(), histogramMetrics([]uint64{1, 2}, []float64{10})))
-	require.NoError(t, q.Export(t.Context(), histogramMetrics([]uint64{3, 4}, []float64{10})))
-	// The first export has started and waits on Cloud.
-	time.Sleep(bound * 3 / 4)
+	require.NoError(t, q.Export(t.Context(), gaugeMetrics(1)))
+	require.NoError(t, q.Export(t.Context(), gaugeMetrics(2)))
+	select {
+	case <-receiver.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first export never reached Cloud")
+	}
+	// Shut down a little after the first export started, so that it reaches
+	// its own bound, and the second export starts, before the drain
+	// deadline.
+	time.Sleep(bound / 3)
 
 	start := time.Now()
 	require.NoError(t, q.Shutdown(t.Context()))
-	require.Less(t, time.Since(start), bound+100*time.Millisecond, "one bound for draining, the export in flight and the release")
+	require.Less(t, time.Since(start), bound+150*time.Millisecond, "one bound for draining, the exports in flight and the release")
+	select {
+	case <-receiver.entered:
+	default:
+		t.Fatal("the second export never started before the drain deadline")
+	}
 	select {
 	case <-q.drained:
 	default:
