@@ -11,6 +11,11 @@ and historical investigation; they are requirements, not a blanket completion cl
 
 Commit references below name the aggregate branch's commits.
 
+Session handoff: draft [PR #14298](https://github.com/dagger/dagger/pull/14298)
+contains this implementation. Its CI load is currently blocked by merge conflicts
+with upstream `main`. Rebasing and any force-with-lease publication are explicitly
+deferred to a new session; no history rewrite was performed in this session.
+
 - [x] Canonical typed, revisioned agent/subscription control, creation publication,
   retained capture leases, strict dependency checks, independent close witness,
   and protected payload/control delivery (`4255c9a`, `51aa5a7`, `158b585`,
