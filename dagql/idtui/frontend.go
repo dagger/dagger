@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -222,6 +223,8 @@ type AgentRestorer interface {
 	// WaitForEventLoop acknowledges application of all previously enqueued telemetry,
 	// not just its delivery to the exporters. Call from outside the UI event loop.
 	WaitForEventLoop(context.Context) error
+	// AgentControl returns the canonical projections, including removal witnesses.
+	AgentControl() ([]agentcontrol.Agent, []agentcontrol.Subscription, error)
 	// AgentRestorePlan projects the imported trace's agents into what the
 	// restore needs to re-hydrate them, live-session agents excluded
 	// (dagui.DB.RestorePlan).

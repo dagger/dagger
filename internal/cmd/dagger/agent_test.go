@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,6 +56,45 @@ func TestTracedResetDoesNotRebindExportBaseline(t *testing.T) {
 	require.NotContains(t, queries[0], "currentWorkspace")
 	require.NotContains(t, queries[0], "exported-baseline")
 }
+func (DaggerCMDSuite) TestTracePromptIgnoresBrokenDestinationModule(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	// A real module lookup at this path must fail. Trace startup should use only
+	// core client facilities, without even attempting to parse this definition.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dagger.json"), []byte("not valid JSON"), 0600))
+	dag, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer dag.Close()
+	h := newInteractivePromptHandler(dag, interactivePromptModeOpts{restore: restoreRequest()})
+	h.moduleURL = dir
+	require.NoError(t, h.Initialize(ctx))
+	ordinary := newInteractivePromptHandler(dag, interactivePromptModeOpts{})
+	ordinary.moduleURL = dir
+	ordinary.noModule = false
+	require.Error(t, ordinary.Initialize(ctx), "control: loading the destination definition must fail")
+}
+
+func (DaggerCMDSuite) TestTraceRestoreRuntimeQueries(ctx context.Context, t *testctx.T) {
+	dag, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer dag.Close()
+	id, err := dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithSystemPrompt("traced configuration").ID(ctx)
+	require.NoError(t, err)
+	target := &sessionRestore{dag: dag}
+	chief, err := target.Rehydrate(ctx, dagui.AgentRestore{ID: "cli-restore-chief", Name: "chief", State: "IDLE"}, string(id))
+	require.NoError(t, err)
+	worker, err := target.Rehydrate(ctx, dagui.AgentRestore{ID: "cli-restore-worker", Name: "worker", ParentAgentID: "cli-restore-chief", State: "FAILED", Error: "original failure"}, string(id))
+	require.NoError(t, err)
+	require.NoError(t, target.Subscribe(ctx, worker, chief, []string{"FAILED", "IDLE"}))
+	chiefState, err := dagger.Ref[*dagger.Agent](dag, dagger.ID(chief)).State(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.AgentStateIdle, chiefState, "restoreNotify must not wake a subscriber")
+	workerError, err := dagger.Ref[*dagger.Agent](dag, dagger.ID(worker)).Error(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "original failure", workerError)
+	require.NoError(t, target.Discard(ctx, worker))
+	require.NoError(t, target.Discard(ctx, chief))
+}
+
 func TestComposeAgentsRequiresSnapshot(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

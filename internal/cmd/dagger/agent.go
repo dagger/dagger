@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
@@ -39,6 +41,8 @@ telemetry finishes loading; original telemetry supplies scrollback.
 Restore forks new inert runtimes; it does not hand off a live session or start a
 model turn. Pending messages not committed to a conversation are not recovered.
 Legacy local JSON session files and -r/--resume are no longer supported.
+This initial restore path requires a retained engine archive. Cloud-only traces
+remain viewable with dagger trace, but cannot yet supply verified restore finality.
 
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
@@ -103,6 +107,7 @@ Examples:
 					return err
 				}
 				restore := traceRestore{
+					source:  archive.NewClient(client.EngineConn(engineClient)).WithStallTimeout(30 * time.Second),
 					traceID: agentTrace,
 					agent:   agentFocus,
 					partial: agentPartial,

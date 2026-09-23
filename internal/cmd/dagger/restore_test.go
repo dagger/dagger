@@ -295,6 +295,9 @@ func TestRestoreInstallsGraphBeforeAttachment(t *testing.T) {
 	// Archive order need not be parent-first.
 	src.plan[0], src.plan[2] = src.plan[2], src.plan[0]
 	ns := agentcontrol.Namespace{Session: "source", Trace: restoreRequest().traceID, Incarnation: "generation"}
+	for i := range src.plan {
+		src.plan[i].Source = agentcontrol.Key{Namespace: ns, Handle: src.plan[i].ID}
+	}
 	edges := []agentcontrol.Subscription{
 		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-scout", Subscriber: "agent-chief"}, Revision: 2, States: []string{"IDLE", "FAILED"}},
 		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-tests", Subscriber: "agent-scout"}, Revision: 1, States: []string{"PAUSED"}},
