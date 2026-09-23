@@ -71,11 +71,11 @@ func TestPromptSlashCommandCompletion(t *testing.T) {
 	all := labels("/", 1)
 	require.NotEmpty(t, all)
 	require.Contains(t, all, "/help")
-	require.Contains(t, all, "/resume")
+	require.NotContains(t, all, "/resume")
 
 	// A prefix narrows the suggestions and keeps them sorted.
 	re := labels("/re", 3)
-	require.Contains(t, re, "/resume")
+	require.NotContains(t, re, "/resume")
 	require.Contains(t, re, "/refresh")
 	require.True(t, sortedStrings(re), "completions should be sorted: %v", re)
 	for _, l := range re {
@@ -91,6 +91,21 @@ func TestPromptSlashCommandCompletion(t *testing.T) {
 
 	// Ordinary prompt words yield no completions (only "/" and "$" do).
 	require.Empty(t, labels("hello", 5))
+}
+
+func TestRemovedResumeCommandExplainsTraceReplacement(t *testing.T) {
+	h := newSlashTestHandler(t)
+	for _, cmd := range h.llmBuiltins() {
+		if cmd.Use == ".resume [session]" {
+			require.True(t, cmd.Hidden)
+			err := cmd.Run(t.Context(), cmd, []string{"old-file-uuid"}, nil)
+			require.ErrorContains(t, err, "local JSON session resume is no longer supported")
+			require.ErrorContains(t, err, "dagger agent --trace")
+			require.Nil(t, h.llmSession, "removed command must not start an LLM")
+			return
+		}
+	}
+	t.Fatal("removed resume invocation must return an explicit error, not become a model prompt")
 }
 
 func sortedStrings(s []string) bool {
