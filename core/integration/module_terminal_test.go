@@ -59,8 +59,8 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 		out, err := hostDaggerExecRaw(ctx, t, modDir, "shell", "-l")
 		require.NoError(t, err)
-		require.Contains(t, string(out), "dag://ctr")
-		require.NotContains(t, string(out), "dag://test/ctr")
+		require.Contains(t, string(out), "dag+container://ctr")
+		require.NotContains(t, string(out), "dag+container://test/ctr")
 
 		console, err := newTUIConsole(t, 60*time.Second)
 		require.NoError(t, err)
@@ -503,7 +503,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 		out, err := hostDaggerExecRaw(ctx, t, modDir, "sh", "-l")
 		require.NoError(t, err)
-		require.Equal(t, "dag://dir", string(bytes.TrimSpace(out)))
+		require.Equal(t, "dag+directory://dir", string(bytes.TrimSpace(out)))
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)

@@ -184,31 +184,31 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	host := strings.TrimSuffix(strings.TrimPrefix(ref, "http://"), "/repo.git@main")
 	require.Regexp(t, regexp.MustCompile(`^dag://`+regexp.QuoteMeta(host)+`/repo@[0-9a-f]{40}:base$`), uri)
 
-	out, err = base.With(workspaceSelectionDaggerExec("list", "-a", "dag://"+ref+":base")).Stdout(ctx)
+	out, err = base.With(workspaceSelectionDaggerExec("list", "-a", "-f=link", "dag://"+ref+":base")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag://base\n", out)
+	require.Equal(t, "dag+container://base\n", out)
 	out, err = base.With(workspaceSelectionDaggerExec("check", "-l", "dag://"+ref+":verify")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag://verify\n", out)
+	require.Equal(t, "dag+check://verify\n", out)
 	_, err = base.With(workspaceSelectionDaggerExec("check", "dag://"+ref+":verify")).Sync(ctx)
 	require.NoError(t, err)
 	for _, typ := range []string{"LLM", "llm"} {
-		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "list", "-a", "--type", typ)).Stdout(ctx)
+		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "list", "-a", "-f=link", "--type", typ)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag://assistant\n", out)
+		require.Equal(t, "dag+llm://assistant\n", out)
 	}
 
 	for _, tc := range []struct {
 		args  []string
 		paths []string
 	}{
-		{[]string{"list", "-a", "base"}, []string{"base"}},
+		{[]string{"list", "-a", "-f=link", "base"}, []string{"base"}},
 		{[]string{"check", "-l", "verify"}, []string{"verify"}},
 		{[]string{"generate", "-l", "generate"}, []string{"generate"}},
 		{[]string{"up", "-l", "web"}, []string{"web"}},
 		{[]string{"agent", "-l", "assistant"}, []string{"assistant"}},
 		{[]string{"shell", "-l", "base"}, []string{"base"}},
-		{[]string{"list", "containers"}, []string{"base", "broken", "consumer/base"}},
+		{[]string{"list", "containers", "-f=link"}, []string{"base", "broken", "consumer/base"}},
 	} {
 		for _, flag := range []string{"--absolute", "--abs"} {
 			t.Run(strings.Join(tc.args, " ")+" "+flag, func(ctx context.Context, t *testctx.T) {
@@ -217,8 +217,10 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 				out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 				require.NoError(t, err)
 				var want []string
+				typ := map[string]string{"list": "container", "check": "check", "generate": "changeset", "up": "service", "agent": "llm", "shell": "container"}[tc.args[0]]
 				for _, path := range tc.paths {
-					want = append(want, strings.TrimSuffix(uri, "base")+path)
+					address := strings.Replace(strings.TrimSuffix(uri, "base")+path, "dag://", "dag+"+typ+"://", 1)
+					want = append(want, address)
 				}
 				require.Equal(t, strings.Join(want, "\n")+"\n", out)
 			})
