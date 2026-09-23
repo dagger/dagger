@@ -1,16 +1,21 @@
 // Package cgroupmetrics reports resource use for the cgroup that contains the
 // Dagger engine process.
 //
-// Cgroup v2 accounting includes processes in descendant cgroups. The standard
-// engine layout expects the engine cgroup to have no cgroup descendants. CPU
-// values are cumulative since cgroup creation, and the total value reported by
-// the kernel is the accounting source; user and system values are diagnostic
-// components. Memory peak is the peak for the cgroup lifetime. Memory
-// breakdown fields are diagnostic and can overlap. These metrics do not imply
-// attribution to a Dagger client or organization. In the standard layout,
-// /init and /buildkit are siblings: user execution cgroups are not included.
-// A different layout (including an engine at the namespace root) can include
-// user workloads. This package observes that boundary; it does not enforce it.
+// CPU usage and memory accounting include processes in descendant cgroups.
+// The standard engine layout expects the engine cgroup to have no cgroup
+// descendants. CPU usage values are cumulative since cgroup creation, and the
+// total value reported by the kernel is the accounting source; user and system
+// values are diagnostic components. Memory peak is the peak for the cgroup
+// lifetime. Memory breakdown fields are diagnostic and can overlap. These
+// metrics do not imply attribution to a Dagger client or organization. In the
+// standard layout, /init and /buildkit are siblings: user execution cgroups are
+// not included. A different layout (including an engine at the namespace root)
+// can include user workloads. This package observes that boundary; it does not
+// enforce it.
+//
+// CPU quota enforcement counters report only this cgroup's own quota. They
+// exclude throttling caused by ancestor cgroups. Zero does not mean that the
+// engine was not throttled.
 package cgroupmetrics
 
 import (
@@ -184,14 +189,14 @@ func newInstruments(meter metric.Meter) (instruments, error) {
 	}
 	inst.cpuThrottledTime, err = meter.Int64ObservableCounter(CPUThrottledTimeName,
 		metric.WithUnit("us"),
-		metric.WithDescription("Cumulative time that the engine process cgroup was throttled since cgroup creation."),
+		metric.WithDescription("Cumulative CPU throttling time from the engine process cgroup's own CPU quota since cgroup creation. Excludes throttling caused by ancestor cgroups; zero does not mean the engine was not throttled."),
 	)
 	if err != nil {
 		return inst, err
 	}
 	inst.cpuPeriods, err = meter.Int64ObservableCounter(CPUPeriodsName,
 		metric.WithUnit("1"),
-		metric.WithDescription("Cumulative CPU scheduling periods for the engine process cgroup since cgroup creation."),
+		metric.WithDescription("Cumulative CPU quota enforcement periods for the engine process cgroup's own quota since cgroup creation; cpu.period=throttled counts throttled periods. Excludes ancestor cgroup quota enforcement."),
 	)
 	if err != nil {
 		return inst, err

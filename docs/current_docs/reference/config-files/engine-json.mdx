@@ -71,8 +71,32 @@ Those user workloads are excluded from the parent engine's resource metrics.
 A different layout or a configured execution parent below the engine cgroup
 can include user workloads.
 
-CPU values are cumulative microseconds. Memory values are bytes; memory peak
-is the cgroup-lifetime peak, not an interval maximum. Missing cgroup sources
-are reported through availability metrics and do not prevent engine startup.
-Enabling export does not classify an engine as a managed Daggerland engine or
-change cgroup placement.
+CPU time values are cumulative microseconds. Memory values are bytes; memory
+peak is the cgroup-lifetime peak, not an interval maximum. Missing cgroup
+sources are reported through availability metrics and do not prevent engine
+startup. Enabling export does not classify an engine as a managed Daggerland
+engine or change cgroup placement.
+
+### CPU throttling
+
+`dagger.engine.cpu.throttled.time` and `dagger.engine.cpu.periods` report
+CPU quota enforcement statistics from the engine process cgroup's `cpu.stat`.
+The period metric counts total and throttled quota enforcement periods, not
+general CPU scheduling periods. These counters apply only to this cgroup's
+own quota. They exclude throttling caused by ancestor cgroups.
+
+For example, a container CPU limit can apply at the parent of both `/init`
+and `/buildkit`:
+
+```text
+Engine container cgroup (CPU quota)
+├── /init (engine metrics)
+└── /buildkit (user workloads)
+```
+
+That parent quota can prevent `/init` from running while `/init/cpu.stat`
+still reports zero throttling. **A zero value does not mean that the engine
+was not throttled.** CPU usage still reports the CPU time actually consumed
+by the observed cgroup and its descendants.
+
+See the [Linux cgroup v2 CPU interface documentation](https://docs.kernel.org/admin-guide/cgroup-v2.html#cpu-interface-files).
