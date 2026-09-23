@@ -1776,33 +1776,24 @@ func (sink *agentTraceSink) awaitAgentState(t *testctx.T, name, state string) {
 }
 
 // rebuild turns a roster entry back into a handle the way a frontend would:
-// find the span carrying the advertised call digest, rebuild the ID from the
-// call payloads the client has ingested — Span.CallID walks receiver
-// digests, argument literals and module frames through the DB
-// (dagql/dagui/extract.go), so it closes only if every frame's span reached
-// this client — and encode it. Returns the handle and the rebuilt chain.
+// rebuild the advertised digest from call payloads, without requiring a
+// diagnostic span. Control records can arrive before the recipe closure, so
+// wait for every dependency before encoding the ID. Returns the handle and
+// the rebuilt chain.
 func (sink *agentTraceSink) rebuild(t *testctx.T, c *dagger.Client, node *dagui.AgentNode) (*agentHandle, *call.ID) {
 	t.Helper()
 	var callID *call.ID
-	var encoded string
-	sink.read(func(db *dagui.DB) {
-		var match *dagui.Span
-		for _, span := range db.Spans.Map {
-			if span.CallDigest == node.CallDigest {
-				match = span
-				break
-			}
-		}
-		require.NotNil(t, match, "no span carries the advertised call digest")
-		require.Equal(t, "agent", match.Call().Field,
-			"the digest must name the pinned agent(handle:, name:) lookup")
-
-		var err error
-		callID, err = match.CallID()
-		require.NoError(t, err)
-		encoded, err = callID.Encode()
-		require.NoError(t, err)
-	})
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			var err error
+			callID, err = db.CallIDForDigest(node.CallDigest)
+			assert.NoError(ct, err, "agent %q's handle does not rebuild yet", node.Name)
+		})
+	}, 60*time.Second, 100*time.Millisecond)
+	require.Equal(t, "agent", callID.Field(),
+		"the digest must name the pinned agent(handle:, name:) lookup")
+	encoded, err := callID.Encode()
+	require.NoError(t, err)
 	return &agentHandle{c: c, agentID: encoded}, callID
 }
 
@@ -1813,13 +1804,11 @@ func (sink *agentTraceSink) rebuild(t *testctx.T, c *dagger.Client, node *dagui.
 // unreachable — which is the capability a Query.agents namespace would have
 // provided, and which telemetry is supposed to provide instead.
 //
-// The path is the one branch-from-message already uses: the loop span's
-// dagger.io/agent.call.digest names a dagql call; the client finds the span
-// carrying that call digest, rebuilds the ID from the call payloads it has
-// ingested (Span.CallID walks receiver digests through the DB), encodes it,
-// and loads it. The digest names spawn's internal Select of the pure
-// agent(handle:, name:) lookup — a span the UI hides as internal, but which
-// carries its call payload like any other, which is what makes this work.
+// The client rebuilds the advertised call digest directly from ingested
+// payloads, including receiver and argument dependencies. The digest names
+// spawn's pure agent(handle:, name:) lookup, not the composition that produced
+// the conversation. Diagnostic spans may arrive later or be deduplicated;
+// they are not required to address the agent.
 //
 // The identity assertions are deliberately ones a freshly derived agent
 // value could never satisfy. Re-deriving the composition yields a value with
