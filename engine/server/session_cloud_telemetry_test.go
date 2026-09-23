@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -876,6 +877,98 @@ func TestCloudLogPipelineRetriesPayloads(t *testing.T) {
 	require.NoError(t, pipeline.Shutdown(ctx))
 	payloads, _ := exporter.received()
 	require.Equal(t, []string{"xxh3:retried"}, payloads)
+}
+
+// concurrencyLogExporter records the most exports it saw in flight at once,
+// and the call-payload exports in flight. Unless open is nil, each export
+// waits until open is closed or its context ends.
+type concurrencyLogExporter struct {
+	open             chan struct{}
+	inFlight         atomic.Int32
+	payloadsInFlight atomic.Int32
+	maxSeen          atomic.Int32
+	exports          atomic.Int32
+}
+
+func (e *concurrencyLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	n := e.inFlight.Add(1)
+	defer e.inFlight.Add(-1)
+	if len(records) > 0 {
+		if _, payload, _ := classifyCallPayloadRecord(records[0]); payload {
+			e.payloadsInFlight.Add(1)
+			defer e.payloadsInFlight.Add(-1)
+		}
+	}
+	e.exports.Add(1)
+	for {
+		seen := e.maxSeen.Load()
+		if n <= seen || e.maxSeen.CompareAndSwap(seen, n) {
+			break
+		}
+	}
+	if e.open != nil {
+		select {
+		case <-e.open:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	time.Sleep(time.Millisecond) // widen the window a concurrent export would use
+	return nil
+}
+
+func (*concurrencyLogExporter) Shutdown(context.Context) error   { return nil }
+func (*concurrencyLogExporter) ForceFlush(context.Context) error { return nil }
+
+// The payload path and the batch processor share one exporter, which must not
+// export concurrently: the pipeline hands it one export at a time.
+func TestCloudLogPipelineSerializesExports(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	exporter := &concurrencyLogExporter{}
+	pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
+	logger := cloudTestLogger(pipeline)
+
+	var wg sync.WaitGroup
+	for g := range 4 {
+		wg.Go(func() {
+			for i := range 300 {
+				logger.Emit(ctx, cloudPayloadRecordValue(fmt.Sprintf("xxh3:%d-%d", g, i)))
+				logger.Emit(ctx, cloudOtherRecord(g*1000+i))
+			}
+		})
+	}
+	wg.Wait()
+	require.NoError(t, pipeline.ForceFlush(ctx))
+	require.NoError(t, pipeline.Shutdown(ctx))
+	require.Greater(t, exporter.exports.Load(), int32(1))
+	require.Equal(t, int32(1), exporter.maxSeen.Load(), "one export at a time")
+}
+
+// With a payload export holding the exporter and another record waiting its
+// turn, the pipeline's shutdown still ends within its bound, and no payload
+// export outlives it. (The SDK batch processor's own export, run on the SDK's
+// export timeout, can outlive a shutdown that ran out of time, as before.)
+func TestCloudLogPipelineShutdownIsBounded(t *testing.T) {
+	t.Parallel()
+	exporter := &concurrencyLogExporter{open: make(chan struct{})}
+	defer close(exporter.open)
+	pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
+	logger := cloudTestLogger(pipeline)
+	logger.Emit(t.Context(), cloudPayloadRecordValue("xxh3:held"))
+	require.Eventually(t, func() bool { return exporter.payloadsInFlight.Load() > 0 },
+		5*time.Second, time.Millisecond, "a payload export holds the exporter")
+	logger.Emit(t.Context(), cloudOtherRecord(0))
+
+	const bound = 300 * time.Millisecond
+	ctx, cancel := context.WithTimeout(t.Context(), bound)
+	defer cancel()
+	start := time.Now()
+	_ = pipeline.Shutdown(ctx)
+	require.Less(t, time.Since(start), bound+time.Second)
+	require.Zero(t, exporter.payloadsInFlight.Load(), "no payload export outlives the shutdown")
+	require.Equal(t, int32(1), exporter.maxSeen.Load(), "one export at a time")
 }
 
 func histogramMetrics(counts []uint64, bounds []float64) *metricdata.ResourceMetrics {

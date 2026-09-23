@@ -660,8 +660,9 @@ func (p *cloudPayloadOnce) OnEmit(ctx context.Context, rec *sdklog.Record) error
 // (enginetel.CallPayloadBatchProcessor); every other record takes the batch
 // processor, whose queue drops its oldest record when full. A payload lost
 // there would never reach Cloud: cloudPayloadOnce suppresses every later copy.
-// Both share the Cloud exporter, which the batch processor's Shutdown shuts
-// down, so the payload path stops first.
+// Both share the Cloud exporter through serialLogExporter, since an exporter
+// must not export concurrently; the batch processor's Shutdown shuts it down,
+// so the payload path stops first.
 type cloudLogPipeline struct {
 	payloads *enginetel.CallPayloadBatchProcessor
 	records  *sdklog.BatchProcessor
@@ -669,6 +670,7 @@ type cloudLogPipeline struct {
 }
 
 func newCloudLogPipeline(exporter sdklog.Exporter) *cloudLogPipeline {
+	exporter = newSerialLogExporter(exporter)
 	records := sdklog.NewBatchProcessor(exporter, sdklog.WithExportInterval(telemetry.NearlyImmediate))
 	return &cloudLogPipeline{
 		payloads: enginetel.NewCallPayloadBatchProcessor(exporter),
@@ -693,9 +695,45 @@ func (p *cloudLogPipeline) ForceFlush(ctx context.Context) error {
 
 // Shutdown stops the payload path while flushing the other records, both
 // within ctx, then shuts the batch processor and with it the exporter down.
+// The payload path's Shutdown returns only once its worker has stopped.
 func (p *cloudLogPipeline) Shutdown(ctx context.Context) error {
 	err := bothWithin(ctx, p.payloads.Shutdown, p.records.ForceFlush)
 	return errors.Join(err, p.records.Shutdown(ctx))
+}
+
+// serialLogExporter lets one Export at a time reach the exporter it wraps.
+// A caller waits its turn only as long as its context allows.
+type serialLogExporter struct {
+	next sdklog.Exporter
+	turn chan struct{}
+}
+
+func newSerialLogExporter(next sdklog.Exporter) *serialLogExporter {
+	return &serialLogExporter{next: next, turn: make(chan struct{}, 1)}
+}
+
+func (e *serialLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	select {
+	case e.turn <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-e.turn }()
+	return e.next.Export(ctx, records)
+}
+
+// Shutdown waits for the export in flight, within ctx, and shuts down.
+func (e *serialLogExporter) Shutdown(ctx context.Context) error {
+	select {
+	case e.turn <- struct{}{}:
+		defer func() { <-e.turn }()
+	case <-ctx.Done():
+	}
+	return e.next.Shutdown(ctx)
+}
+
+func (e *serialLogExporter) ForceFlush(ctx context.Context) error {
+	return e.next.ForceFlush(ctx)
 }
 
 func bothWithin(ctx context.Context, a, b func(context.Context) error) error {

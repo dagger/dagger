@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -633,4 +634,77 @@ func TestCallPayloadBatchProcessorLosslessWhileExporterBlocked(t *testing.T) {
 			"lossless ingress must still use bounded exporter batches")
 	}
 	require.NoError(t, proc.Shutdown(ctx))
+}
+
+// Shutdown retries a failed batch after its backoff for as long as its
+// context allows, rather than giving up after one failed pass, and returns
+// with the worker stopped.
+func TestCallPayloadBatchProcessorShutdownRetriesWithinItsContext(t *testing.T) {
+	t.Parallel()
+
+	exp := &flakyLogExporter{failures: 2}
+	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	provider.Logger("test.core").Emit(t.Context(), payloadRecordWithBody("kept"))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, proc.Shutdown(ctx))
+	attempts, bodies, _ := exp.stats()
+	require.Equal(t, []string{"kept"}, bodies, "the payload lands on a retry within the shutdown's time")
+	require.Equal(t, 3, attempts)
+	select {
+	case <-proc.done:
+	default:
+		t.Fatal("Shutdown returned before the worker stopped")
+	}
+}
+
+// ctxBlockingLogExporter holds every export until its context ends and
+// counts the exports in flight.
+type ctxBlockingLogExporter struct {
+	entered  chan struct{}
+	once     sync.Once
+	inFlight atomic.Int32
+}
+
+func (e *ctxBlockingLogExporter) Export(ctx context.Context, _ []sdklog.Record) error {
+	e.inFlight.Add(1)
+	defer e.inFlight.Add(-1)
+	e.once.Do(func() { close(e.entered) })
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (*ctxBlockingLogExporter) Shutdown(context.Context) error   { return nil }
+func (*ctxBlockingLogExporter) ForceFlush(context.Context) error { return nil }
+
+// An export the worker started on its own, still running when Shutdown's
+// time ends, is cancelled, and Shutdown returns only once the worker stopped,
+// so no export outlives it.
+func TestCallPayloadBatchProcessorShutdownEndsActiveExport(t *testing.T) {
+	t.Parallel()
+
+	exp := &ctxBlockingLogExporter{entered: make(chan struct{})}
+	proc := NewCallPayloadBatchProcessor(exp)
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+	provider.Logger("test.core").Emit(t.Context(), payloadRecordWithBody("stuck"))
+	select {
+	case <-exp.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the worker did not start its export")
+	}
+
+	const bound = 200 * time.Millisecond
+	ctx, cancel := context.WithTimeout(t.Context(), bound)
+	defer cancel()
+	start := time.Now()
+	require.ErrorIs(t, proc.Shutdown(ctx), context.DeadlineExceeded)
+	require.Less(t, time.Since(start), bound+time.Second)
+	select {
+	case <-proc.done:
+	default:
+		t.Fatal("Shutdown returned before the worker stopped")
+	}
+	require.Zero(t, exp.inFlight.Load(), "no export outlives Shutdown")
 }
