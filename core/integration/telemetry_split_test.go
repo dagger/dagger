@@ -89,6 +89,7 @@ type telemetrySplitSpan struct {
 
 type telemetrySplitRecord struct {
 	Writer   string `json:"writer"`
+	Service  string `json:"service"`
 	Instance string `json:"instance"`
 	Scope    string `json:"scope"`
 	Body     string `json:"body"`
@@ -134,6 +135,20 @@ func (got telemetrySplitReceived) cliWriters(t *testctx.T) map[string]bool {
 		}
 	}
 	require.Len(t, writers, 1, "the client's own spans reach Cloud from the client")
+	return writers
+}
+
+// cliLogWriters are the writers of the client's own log records. Every
+// exporter set has one writer per signal, so log records are only ever
+// compared with log writers.
+func (got telemetrySplitReceived) cliLogWriters(t *testctx.T) map[string]bool {
+	writers := map[string]bool{}
+	for _, rec := range got.records {
+		if rec.Service == "dagger-cli" {
+			writers[rec.Writer] = true
+		}
+	}
+	require.NotEmpty(t, writers, "the client's own log records reach Cloud from the client")
 	return writers
 }
 
@@ -242,7 +257,7 @@ func (ClientSuite) TestTelemetrySplitPublishesOnce(ctx context.Context, t *testc
 			cliWriters := got.cliWriters(t)
 			output := got.output(t, marker+"-out")
 			enginePublishes := !tc.releasedCLI && !tc.releasedEngine
-			require.Equal(t, !enginePublishes, cliWriters[output.Writer],
+			require.Equal(t, !enginePublishes, got.cliLogWriters(t)[output.Writer],
 				"the output is published by the engine exactly when both sides have the split")
 			var execSpans int
 			for _, span := range got.spans {
@@ -406,32 +421,33 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 
 			got := readTelemetrySplit(ctx, t, fakeCloud)
 			got.requireSpansFromOneWriter(t)
-			cliWriters := got.cliWriters(t)
+			cliLogWriters := got.cliLogWriters(t)
 			parentInstances := map[string]bool{}
-			parentWriters := map[string]bool{}
+			parentLogWriters := map[string]bool{}
 			for _, span := range got.spans {
 				if span.Name == "connect to cloud engine" {
 					parentInstances[span.Instance] = true
 				}
 			}
 			require.NotEmpty(t, parentInstances, "the check was scaled out")
-			for _, span := range got.spans {
-				if parentInstances[span.Instance] {
-					parentWriters[span.Writer] = true
+			for _, rec := range got.records {
+				if parentInstances[rec.Instance] {
+					parentLogWriters[rec.Writer] = true
 				}
 			}
+			require.NotEmpty(t, parentLogWriters, "the parent engine's own log records reach Cloud")
 			output := got.output(t, marker+"-out")
 			require.False(t, parentInstances[output.Instance], "the check ran on the remote engine")
 
 			switch {
 			case tc.releasedCLI:
-				require.True(t, cliWriters[output.Writer], "the client forwards everything")
+				require.True(t, cliLogWriters[output.Writer], "the client forwards everything")
 			case tc.releasedRemote:
-				require.False(t, cliWriters[output.Writer])
-				require.True(t, parentWriters[output.Writer], "the parent publishes an unconfirmed remote's stream")
+				require.False(t, cliLogWriters[output.Writer])
+				require.True(t, parentLogWriters[output.Writer], "the parent publishes an unconfirmed remote's stream")
 			default:
-				require.False(t, cliWriters[output.Writer])
-				require.False(t, parentWriters[output.Writer], "the remote publishes its own session")
+				require.False(t, cliLogWriters[output.Writer])
+				require.False(t, parentLogWriters[output.Writer], "the remote publishes its own session")
 			}
 		})
 	}

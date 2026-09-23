@@ -191,6 +191,7 @@ func spanLines(r *http.Request, req *coltracepb.ExportTraceServiceRequest) []str
 // fake cloud received it.
 type logRecordLine struct {
 	Writer   string `json:"writer"`
+	Service  string `json:"service"`
 	Instance string `json:"instance"`
 	Scope    string `json:"scope"`
 	Body     string `json:"body"`
@@ -203,7 +204,9 @@ func logRecordLines(r *http.Request, body []byte) []string {
 	}
 	var lines []string
 	for _, resourceLogs := range req.ResourceLogs {
-		instance := resourceAttr(resourceLogs.GetResource().GetAttributes(), "dagger.io/engine.instance")
+		attrs := resourceLogs.GetResource().GetAttributes()
+		service := resourceAttr(attrs, "service.name")
+		instance := resourceAttr(attrs, "dagger.io/engine.instance")
 		for _, scopeLogs := range resourceLogs.ScopeLogs {
 			if scopeLogs.GetScope().GetName() == "dagger.io/cache" {
 				continue
@@ -215,6 +218,7 @@ func logRecordLines(r *http.Request, body []byte) []string {
 				}
 				lines = append(lines, jsonLine(logRecordLine{
 					Writer:   exportWriter(r),
+					Service:  service,
 					Instance: instance,
 					Scope:    scopeLogs.GetScope().GetName(),
 					Body:     body,
