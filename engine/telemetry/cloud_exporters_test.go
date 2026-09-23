@@ -3,8 +3,11 @@ package telemetry
 import (
 	"context"
 	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -15,7 +18,9 @@ import (
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	"golang.org/x/oauth2"
+	"google.golang.org/protobuf/proto"
 )
 
 func cloudExporterTestServer(t *testing.T) (*httptest.Server, chan *http.Request) {
@@ -147,4 +152,66 @@ func TestOnlyScope(t *testing.T) {
 	}
 	require.NoError(t, provider.Shutdown(t.Context()))
 	require.Equal(t, []string{"dagger.io/cache"}, next.scopes)
+}
+
+// A Cloud response that never comes cannot hold the export forever: the
+// request times out, the export is retried, and every record still arrives,
+// in order, without a shutdown.
+func TestCloudLogExportStalledRequestTimesOut(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	var (
+		mu     sync.Mutex
+		calls  int
+		bodies []string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		mu.Lock()
+		calls++
+		first := calls == 1
+		mu.Unlock()
+		if first {
+			// Withhold the response until the client gives up. The server
+			// notices the closed connection only once the body is read.
+			<-r.Context().Done()
+			return
+		}
+		var req collogspb.ExportLogsServiceRequest
+		require.NoError(t, proto.Unmarshal(body, &req))
+		mu.Lock()
+		defer mu.Unlock()
+		for _, resourceLogs := range req.ResourceLogs {
+			for _, scopeLogs := range resourceLogs.ScopeLogs {
+				for _, rec := range scopeLogs.LogRecords {
+					bodies = append(bodies, rec.Body.GetStringValue())
+				}
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	_, logs, _, err := newCloudExporters(ctx, &auth.Cloud{
+		Token: &oauth2.Token{AccessToken: "engine-token", TokenType: "Basic"},
+	}, nil, srv.URL, 300*time.Millisecond)
+	require.NoError(t, err)
+	p := NewBlockingLogProcessor(logs, 4, 2, time.Millisecond)
+	const records = 20
+	for i := range records {
+		require.NoError(t, p.OnEmit(ctx, blockingTestRecord(i)))
+	}
+	require.NoError(t, p.ForceFlush(ctx))
+
+	mu.Lock()
+	got := slices.Clone(bodies)
+	stalled := calls > 1
+	mu.Unlock()
+	require.True(t, stalled, "the first request stalled and was retried")
+	require.Len(t, got, records)
+	for i, body := range got {
+		require.Equal(t, strconv.Itoa(i), body)
+	}
+	require.NoError(t, p.Shutdown(ctx))
 }

@@ -29,8 +29,18 @@ import (
 // refreshed through tokenRefreshFn when it is non-nil.
 //
 // Each exporter stamps the X-Dagger-Export sequence of its own writer, and
-// uploads use the private Cloud export transport.
+// uploads use the private Cloud export transport. Every request is bounded by
+// CloudExportTimeout: the OTLP exporters apply their own default timeout only
+// to a client they build themselves.
 func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error), cloudURL string) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, error) {
+	return newCloudExporters(ctx, cloudAuth, tokenRefreshFn, cloudURL, CloudExportTimeout)
+}
+
+// CloudExportTimeout bounds one request of a Cloud exporter, the OTLP HTTP
+// exporters' own default.
+const CloudExportTimeout = 10 * time.Second
+
+func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error), cloudURL string, requestTimeout time.Duration) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, error) {
 	if cloudAuth == nil || cloudAuth.Token == nil {
 		return nil, nil, nil, fmt.Errorf("no cloud auth provided")
 	}
@@ -61,10 +71,9 @@ func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 	}
 	httpClient := func(sequencer *exportSequencer) *http.Client {
 		client := sequencer.httpClient()
+		client.Timeout = requestTimeout
 		if tokenSource != nil {
 			client.Transport = &oauth2.Transport{Source: tokenSource, Base: client.Transport}
-			// the same timeout the exporters' default client uses
-			client.Timeout = 10 * time.Second
 		}
 		return client
 	}
