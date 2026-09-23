@@ -73,7 +73,7 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 		client := sequencer.httpClient()
 		client.Timeout = requestTimeout
 		if tokenSource != nil {
-			client.Transport = &oauth2.Transport{Source: tokenSource, Base: client.Transport}
+			client.Transport = cloudTokenTransport{source: tokenSource, base: client.Transport}
 		}
 		return client
 	}
@@ -128,6 +128,64 @@ func cloudAuthHeader(ca *auth.Cloud) string {
 		return "Bearer " + ca.Token.AccessToken
 	default:
 		return ca.Token.Type() + " " + ca.Token.AccessToken
+	}
+}
+
+// CloudTokenRefreshTimeout bounds one refresh of an expired OAuth token.
+const CloudTokenRefreshTimeout = 5 * time.Second
+
+// BoundedTokenRefresh bounds each call of a token refresh callback by
+// CloudTokenRefreshTimeout, on a context of its own, since exports refresh
+// from background goroutines long after any request.
+func BoundedTokenRefresh(refresh func(context.Context) (*oauth2.Token, error)) func(context.Context) (*oauth2.Token, error) {
+	return boundedTokenRefresh(refresh, CloudTokenRefreshTimeout)
+}
+
+func boundedTokenRefresh(refresh func(context.Context) (*oauth2.Token, error), timeout time.Duration) func(context.Context) (*oauth2.Token, error) {
+	return func(context.Context) (*oauth2.Token, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		return refresh(ctx)
+	}
+}
+
+// cloudTokenTransport sets the current OAuth token on each request, like
+// oauth2.Transport, but waits for a refresh only as long as the request's
+// context allows, so an export's timeout or cancellation ends the wait while
+// a refresh stalls. The refresh itself carries its own bound.
+type cloudTokenTransport struct {
+	source oauth2.TokenSource
+	base   http.RoundTripper
+}
+
+func (t cloudTokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	type result struct {
+		token *oauth2.Token
+		err   error
+	}
+	got := make(chan result, 1)
+	go func() {
+		token, err := t.source.Token()
+		got <- result{token, err}
+	}()
+	closeBody := func() {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+	}
+	select {
+	case r := <-got:
+		if r.err != nil {
+			closeBody()
+			return nil, r.err
+		}
+		authorized := req.Clone(req.Context())
+		authorized.Header = req.Header.Clone()
+		r.token.SetAuthHeader(authorized)
+		return t.base.RoundTrip(authorized)
+	case <-req.Context().Done():
+		closeBody()
+		return nil, context.Cause(req.Context())
 	}
 }
 

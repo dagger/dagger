@@ -29,11 +29,6 @@ import (
 // costs telemetry, never the build.
 const sessionTelemetryFlushTimeout = 5 * time.Second
 
-// cloudTokenRefreshTimeout bounds one refresh of the session's OAuth token.
-// A refresh runs on an uncancellable context, because exports run on
-// background goroutines long after the request that created the session.
-const cloudTokenRefreshTimeout = 5 * time.Second
-
 // sessionPublishesToCloud reports whether the session's main client asked the
 // engine to publish the session's telemetry to Dagger Cloud, with the
 // credential the client provides.
@@ -50,11 +45,9 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 	if !sessionPublishesToCloud(md) {
 		return
 	}
-	tokenRefresh := func(context.Context) (*oauth2.Token, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), cloudTokenRefreshTimeout)
-		defer cancel()
+	tokenRefresh := enginetel.BoundedTokenRefresh(func(ctx context.Context) (*oauth2.Token, error) {
 		return srv.refreshSessionCloudToken(ctx, sess, md.CredentialsPath)
-	}
+	})
 	spans, logs, metrics, err := enginetel.NewCloudExporters(context.Background(), md.CloudAuth, tokenRefresh, md.CloudURL)
 	if err != nil {
 		slog.Warn("session telemetry not published to Cloud: cannot configure the Cloud exporters", "session", sess.sessionID, "error", err)

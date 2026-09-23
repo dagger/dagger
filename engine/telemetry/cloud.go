@@ -38,7 +38,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 			return
 		}
 
-		spans, logs, metrics, err := NewCloudExporters(ctx, cloudAuth, auth.Token, "")
+		spans, logs, metrics, err := NewCloudExporters(ctx, cloudAuth, BoundedTokenRefresh(auth.Token), "")
 		if err != nil {
 			slog.Warn("failed to configure cloud exporters", "error", err)
 			return
