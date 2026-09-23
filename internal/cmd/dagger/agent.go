@@ -37,20 +37,21 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
-With --trace, a verified archive restores every agent, its committed conversation,
-Workspace, tools, lifecycle state, and notification subscriptions. No destination
-agent modules are composed. The prompt becomes usable before unrelated historical
-telemetry finishes loading; original telemetry supplies scrollback.
+With --trace, restore agents, committed conversations, Workspaces, tools, lifecycle
+state, and notification subscriptions. No destination agent modules are composed.
+A retained engine archive provides a verified bootstrap before background history
+loading. If no local archive is retained, the CLI transparently fetches the trace
+from Dagger Cloud and validates its observed canonical records and recipe closure.
+Cloud restore waits for the whole trace and cannot prove that later records or
+entirely absent agents were not lost; it does not invent an archive finality seal.
 
 Restore forks new inert runtimes; it does not hand off a live session or start a
 model turn. Pending messages not committed to a conversation are not recovered.
 Legacy local JSON session files and -r/--resume are no longer supported.
-This initial restore path requires a retained engine archive. Cloud-only traces
-remain viewable with dagger trace, but cannot yet supply verified restore finality.
 
-Use --list-archives to discover retained archives without restoring. If a trace
-belongs to multiple source sessions, select both --source-session and --generation
-from that list; restoration never silently chooses a different archive.
+Use --list-archives to discover retained engine archives without restoring. Use
+--source-session when a trace belongs to multiple source sessions. Add --generation
+to pin an exact engine archive cut; explicit generations never fall back to Cloud.
 
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
@@ -119,11 +120,12 @@ Examples:
 					return err
 				}
 				restore := traceRestore{
-					source:     source,
-					traceID:    agentTrace,
-					generation: agentGeneration,
-					agent:      agentFocus,
-					partial:    agentPartial,
+					source:        source,
+					traceID:       agentTrace,
+					generation:    agentGeneration,
+					sourceSession: agentSourceSession,
+					agent:         agentFocus,
+					partial:       agentPartial,
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
 					restore:              restore,
@@ -140,11 +142,11 @@ func init() {
 	agentCmd.Flags().Lookup("resume").NoOptDefVal = "removed"
 	_ = agentCmd.Flags().MarkHidden("resume")
 	agentCmd.Flags().StringVar(&agentTrace, "trace", "",
-		"Restore agents and their Workspaces from a verified trace archive; load scrollback in the background")
+		"Restore agents from a retained engine archive, falling back to their Dagger Cloud trace")
 	agentCmd.Flags().BoolVar(&agentListArchives, "list-archives", false,
 		"List retained engine archives without restoring; --trace filters the list")
 	agentCmd.Flags().StringVar(&agentSourceSession, "source-session", "",
-		"With --trace and --generation, select the archive's source session")
+		"With --trace, select the source session in an engine archive or Cloud trace")
 	agentCmd.Flags().StringVar(&agentGeneration, "generation", "",
 		"With --trace and --source-session, select the exact archive generation")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
@@ -166,8 +168,8 @@ func validateArchiveFlags(traceID, source, generation, focus string, listArchive
 	if traceID == "" && (source != "" || generation != "" || focus != "") {
 		return fmt.Errorf("--source-session, --generation, and --agent require --trace")
 	}
-	if (source == "") != (generation == "") {
-		return fmt.Errorf("--source-session and --generation must be supplied together; discover choices with --list-archives")
+	if generation != "" && source == "" {
+		return fmt.Errorf("--generation requires --source-session; discover engine cuts with --list-archives")
 	}
 	return nil
 }

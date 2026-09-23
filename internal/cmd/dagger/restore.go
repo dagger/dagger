@@ -22,11 +22,13 @@ import (
 
 // traceRestore describes a verified source archive, not a local session file.
 type traceRestore struct {
-	traceID    string
-	generation string
-	agent      string
-	partial    bool
-	source     archiveRestoreSource
+	traceID       string
+	generation    string
+	agent         string
+	partial       bool
+	source        archiveRestoreSource
+	cloudSource   cloudRestoreSource
+	sourceSession string
 }
 
 // agentRestoreSource is the frontend seam the plan is read through
@@ -67,7 +69,7 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 	}
 	ctx, span := Tracer().Start(ctx, "restoring trace "+req.traceID, telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
-	return restoreArchive(ctx, req.source, fe, &sessionRestore{dag: handler.dag, session: handler.llmSession}, req)
+	return restoreTraceSources(ctx, fe, &sessionRestore{dag: handler.dag, session: handler.llmSession}, req)
 }
 
 // restoredAgent is one entry of the plan, with the handle its anchor rebuilt

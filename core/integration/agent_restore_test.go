@@ -30,12 +30,14 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -730,6 +732,14 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 // TestCLIArchiveResumeIgnoresDestination runs the real from-source command and
 // drives its headless TUI prompt, rather than calling restore orchestration seams.
 func (AgentRestoreSuite) TestCLIArchiveResumeIgnoresDestination(ctx context.Context, t *testctx.T) {
+	testCLITraceResume(ctx, t, false)
+}
+
+func (AgentRestoreSuite) TestCLICloudFallbackIgnoresDestination(ctx context.Context, t *testctx.T) {
+	testCLITraceResume(ctx, t, true)
+}
+
+func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	provider := sdktrace.NewTracerProvider()
@@ -751,6 +761,52 @@ func (AgentRestoreSuite) TestCLIArchiveResumeIgnoresDestination(ctx context.Cont
 	traceID := node.Control.Trace
 	require.NoError(t, source.Close())
 	sourceSpan.End()
+
+	cloudURL := ""
+	var cloudRequests atomic.Int32
+	if cloudOnly {
+		// Keep the real canonical capture but serve it under a fresh trace ID:
+		// this engine has no archive for that ID, so the actual CLI must miss
+		// locally and fetch all three Cloud streams before restoring anything.
+		_, cloudSpan := provider.Tracer("cloud-only-fixture").Start(ctx, "cloud-only", trace.WithNewRoot())
+		traceID = cloudSpan.SpanContext().TraceID().String()
+		cloudSpan.End()
+		cloudID, err := trace.TraceIDFromHex(traceID)
+		require.NoError(t, err)
+		traces, logs := sink.capture()
+		for i, req := range traces {
+			traces[i] = proto.Clone(req).(*coltracepb.ExportTraceServiceRequest)
+			for _, resource := range traces[i].ResourceSpans {
+				for _, scope := range resource.ScopeSpans {
+					for _, span := range scope.Spans {
+						span.TraceId = slices.Clone(cloudID[:])
+					}
+				}
+			}
+		}
+		for i, req := range logs {
+			logs[i] = proto.Clone(req).(*collogspb.ExportLogsServiceRequest)
+			for _, resource := range logs[i].ResourceLogs {
+				for _, scope := range resource.ScopeLogs {
+					for _, rec := range scope.LogRecords {
+						rec.TraceId = slices.Clone(cloudID[:])
+						for _, kv := range rec.Attributes {
+							if kv.Key == agentcontrol.TraceAttr {
+								kv.Value = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: traceID}}
+							}
+						}
+					}
+				}
+			}
+		}
+		fixture := &fakeCloudTrace{traceID: traceID, traces: traces, logs: logs}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cloudRequests.Add(1)
+			fixture.ServeHTTP(w, r)
+		}))
+		defer server.Close()
+		cloudURL = server.URL
+	}
 
 	destination := t.TempDir()
 	// A destination-module load would fail before reaching the prompt.
@@ -779,22 +835,26 @@ func (AgentRestoreSuite) TestCLIArchiveResumeIgnoresDestination(ctx context.Cont
 		}
 		cmd.Env = append(cmd.Env, entry)
 	}
-	// Discovery and exact selection must also ignore the broken destination.
-	// The listing is metadata-only and must not initialize an interactive LLM.
-	listCmd := exec.CommandContext(ctx, bin, "agent", "--list-archives", "--trace", traceID)
-	listCmd.Dir, listCmd.Env = destination, slices.Clone(cmd.Env)
-	listing, err := listCmd.Output()
-	require.NoError(t, err)
-	var generation string
-	for _, line := range strings.Split(string(listing), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 4 && fields[0] == traceID && fields[1] == node.Control.Session {
-			generation = fields[2]
-			require.Equal(t, "closed", fields[3])
+	if cloudOnly {
+		cmd.Env = append(cmd.Env, "DAGGER_CLOUD_URL="+cloudURL, "DAGGER_CLOUD_TOKEN=restore-test-token")
+	} else {
+		// Discovery and exact selection must also ignore the broken destination.
+		// The listing is metadata-only and must not initialize an interactive LLM.
+		listCmd := exec.CommandContext(ctx, bin, "agent", "--list-archives", "--trace", traceID)
+		listCmd.Dir, listCmd.Env = destination, slices.Clone(cmd.Env)
+		listing, err := listCmd.Output()
+		require.NoError(t, err)
+		var generation string
+		for _, line := range strings.Split(string(listing), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 && fields[0] == traceID && fields[1] == node.Control.Session {
+				generation = fields[2]
+				require.Equal(t, "closed", fields[3])
+			}
 		}
+		require.NotEmpty(t, generation, "archive not discoverable: %s", listing)
+		cmd.Args = append(cmd.Args, "--source-session", node.Control.Session, "--generation", generation)
 	}
-	require.NotEmpty(t, generation, "archive not discoverable: %s", listing)
-	cmd.Args = append(cmd.Args, "--source-session", node.Control.Session, "--generation", generation)
 	cmd.Env = append(cmd.Env, "DAGGER_TUI_CONSOLE="+address, "DAGGER_PROGRESS=tty", "XDG_STATE_HOME="+state)
 	logFile, err := os.CreateTemp(t.TempDir(), "cli-output")
 	require.NoError(t, err)
@@ -848,6 +908,9 @@ func (AgentRestoreSuite) TestCLIArchiveResumeIgnoresDestination(ctx context.Cont
 		last = body
 		return strings.Contains(body, "RESTORED-PROMPT-TURN-SUCCEEDED")
 	}, time.Minute, 100*time.Millisecond, "restored prompt did not complete a turn: %s", last)
+	if cloudOnly {
+		require.GreaterOrEqual(t, cloudRequests.Load(), int32(3), "CLI must fetch the Cloud trace on a local miss")
+	}
 	entries, err := os.ReadDir(legacyDir)
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "trace-only CLI must not write JSON sessions")

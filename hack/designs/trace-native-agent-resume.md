@@ -23,6 +23,17 @@ that boundary. Earlier local-history portability results below are historical,
 not current guarantees; this scope decision supersedes conflicting requirements
 in the historical design sections.
 
+Cloud resume is supported again: try the connected engine first, then transparently
+fetch the whole Cloud trace when the archive is absent, evicted, or its endpoint
+is unavailable before bootstrap import. Validate the observed latest canonical
+agent/subscription records, source namespace, complete recipe closure and graph
+before creating runtimes. Cloud downloads do not supply an independent final
+roster witness, so this path does not claim archive finality or bootstrap-first
+startup. Explicit engine generations, ambiguity, authorization failures,
+corruption, incomplete local archives, and failures after bootstrap begins do not
+silently switch sources. `--source-session` can disambiguate either source;
+`--generation` is an optional engine-only pin and requires `--source-session`.
+
 ## Implementation checkpoint
 
 Commit references in the original checklist name the pre-rebase implementation
@@ -83,8 +94,9 @@ race run outside the engine harness failed because it lacked a `dagger` executab
   still unsupported for strict restoration. Composite archive identity does not
   solve this separate registry/graph/history problem; do not infer completeness.
 - [x] Minimal CLI generation selection/listing: `--list-archives` reads retained
-  metadata, optionally filtered by `--trace`; `--source-session` and `--generation`
-  select an exact cut together. Invalid combinations fail before engine work;
+  metadata, optionally filtered by `--trace`; `--source-session` selects a source
+  namespace, with optional `--generation` pinning an exact engine cut. Invalid
+  combinations fail before engine work;
   ambiguous reads guide the user to discovery. Unit race coverage includes
   pagination, safe title rendering, selection, and errors; actual CLI discovery
   and selected restore pass without loading the destination module or provider.
@@ -659,9 +671,11 @@ moving the fetch into a goroutine alone is not proof of a usable prompt.
 
 ### 10.1 Engine first; explicit Cloud limitations
 
-Use the connected engine's archive first. Fall back to Cloud only when the local
-archive is absent or evicted, not on corruption, incomplete finalization,
-authorization failure, or transient transport errors.
+Use the connected engine's archive first. Fall back to Cloud when the local
+archive is absent or evicted, or the archive endpoint is unsupported/unavailable
+before any bootstrap is imported (including transport failures). Do not switch on
+corruption, incomplete finalization, ambiguous identity, authorization failure,
+explicit generation pins, cancellation, or failures after bootstrap starts.
 
 Cloud can offer the same fast path only if it exposes equivalent verified
 bootstrap/finality information. Otherwise a full-fetch fallback may reconstruct
