@@ -258,8 +258,12 @@ type IndexedRowInfo struct {
 	Digests []string
 	// ClassDigests are every digest of the row's equivalence classes.
 	ClassDigests []string
-	Deps         []RowKey
-	UnknownDeps  []uint64
+	// Terms are the terms producing the row's classes, each over its inputs'
+	// class representatives (the smallest digest of each input class, as boot
+	// facts name classes) with their provenance, sorted.
+	Terms       []cachefact.Term
+	Deps        []RowKey
+	UnknownDeps []uint64
 	// Removed reports that the row's engine removed it; rows that depend on
 	// it keep it in the cache.
 	Removed bool
@@ -296,9 +300,15 @@ func (c *Cache) RowInfo(key RowKey) (IndexedRowInfo, bool) {
 				digests[dig] = struct{}{}
 			}
 		}
+		for termID := range c.outputEqClassToTerms[classID] {
+			if term := c.egraphTerms[termID]; term != nil {
+				info.Terms = append(info.Terms, c.portableTermLocked(term))
+			}
+		}
 	}
 	info.Digests = sortedKeys(digests)
 	info.ClassDigests = sortedKeys(classDigests)
+	slices.SortFunc(info.Terms, compareTerms)
 	for depID := range res.deps {
 		if dep := c.resultsByID[depID]; dep != nil && dep.indexed != nil {
 			info.Deps = append(info.Deps, dep.indexed.key)
@@ -335,6 +345,26 @@ func (c *Cache) outputEqClassRootsLocked(resID sharedResultID) map[eqClassID]str
 		}
 	}
 	return out
+}
+
+// portableTermLocked names a term's inputs by their class representatives.
+// Requires egraphMu, for reading or writing.
+func (c *Cache) portableTermLocked(term *egraphTerm) cachefact.Term {
+	out := cachefact.Term{Self: term.selfDigest.String(), Inputs: make([]cachefact.TermInput, len(term.inputEqIDs))}
+	provenance := c.termInputProvenance[term.id]
+	for i, in := range term.inputEqIDs {
+		out.Inputs[i].Digest = c.classRepresentativeLocked(in)
+		if i < len(provenance) {
+			out.Inputs[i].Provenance = cachefact.Provenance(provenance[i])
+		}
+	}
+	return out
+}
+
+func compareTerms(a, b cachefact.Term) int {
+	return cmp.Or(cmp.Compare(a.Self, b.Self), slices.CompareFunc(a.Inputs, b.Inputs, func(x, y cachefact.TermInput) int {
+		return cmp.Or(cmp.Compare(x.Digest, y.Digest), cmp.Compare(x.Provenance, y.Provenance))
+	}))
 }
 
 func sortedKeys(m map[string]struct{}) []string {

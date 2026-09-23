@@ -63,10 +63,13 @@ type rowView struct {
 	classes      string // canonical set of output classes, as an opaque key
 	classDigests []string
 	postings     []string
-	deps         []uint64
-	// termSelfs are the self digests of the terms producing the row's
-	// classes, one per term.
-	termSelfs []string
+	// classLabels are the (digest, label) pairs of the row's classes.
+	classLabels []string
+	deps        []uint64
+	// terms are the terms producing the row's classes, one per term, each as
+	// its self digest over its inputs' class representatives and provenance.
+	terms         []string
+	expiresAtUnix int64
 }
 
 // sourceRowViews describes an engine cache's own results by result number.
@@ -113,20 +116,28 @@ func cloudRowViews(c *Cache, engine string) map[uint64]rowView {
 
 func rowViewLocked(c *Cache, id sharedResultID) rowView {
 	var view rowView
+	if res := c.resultsByID[id]; res != nil {
+		view.expiresAtUnix = res.expiresAtUnix
+	}
 	var roots []int
 	digests := map[string]struct{}{}
+	labels := map[string]struct{}{}
 	for classID := range c.outputEqClassesForResultLocked(id) {
 		roots = append(roots, int(classID))
 		for dig := range c.eqClassToDigests[classID] {
 			digests[dig] = struct{}{}
 		}
+		for extra := range c.eqClassExtraDigests[classID] {
+			labels[extra.Digest.String()+" "+extra.Label] = struct{}{}
+		}
 		for termID := range c.outputEqClassToTerms[classID] {
 			if term := c.egraphTerms[termID]; term != nil {
-				view.termSelfs = append(view.termSelfs, term.selfDigest.String())
+				view.terms = append(view.terms, formatTerm(c.portableTermLocked(term)))
 			}
 		}
 	}
-	slices.Sort(view.termSelfs)
+	slices.Sort(view.terms)
+	view.classLabels = sortedKeys(labels)
 	slices.Sort(roots)
 	parts := make([]string, len(roots))
 	for i, r := range roots {
@@ -147,6 +158,14 @@ func rowViewLocked(c *Cache, id sharedResultID) rowView {
 	return view
 }
 
+func formatTerm(term cachefact.Term) string {
+	parts := []string{term.Self}
+	for _, in := range term.Inputs {
+		parts = append(parts, in.Digest+"/"+string(in.Provenance))
+	}
+	return strings.Join(parts, " ")
+}
+
 // partition groups row numbers by their classes.
 func partition(views map[uint64]rowView) [][]uint64 {
 	groups := map[string][]uint64{}
@@ -165,7 +184,8 @@ func partition(views map[uint64]rowView) [][]uint64 {
 // requireRoundTrip requires that the indexed rows built from one engine's
 // facts alone match the engine's own cache: the same rows, the same
 // partition of rows into classes, the same digests per class, the same terms
-// per class, the same digest postings and the same dependency edges.
+// per class with the same inputs, the same labels, the same digest postings,
+// the same dependency edges and the same expiry.
 func requireRoundTrip(t *testing.T, source, cloud *Cache, engine string) {
 	t.Helper()
 	src := sourceRowViews(source)
@@ -177,7 +197,9 @@ func requireRoundTrip(t *testing.T, source, cloud *Cache, engine string) {
 		require.Equal(t, want.classDigests, have.classDigests, "class digests of row %d", id)
 		require.Equal(t, want.postings, have.postings, "postings of row %d", id)
 		require.Equal(t, want.deps, have.deps, "dependencies of row %d", id)
-		require.Equal(t, want.termSelfs, have.termSelfs, "terms producing the classes of row %d", id)
+		require.Equal(t, want.terms, have.terms, "terms producing the classes of row %d", id)
+		require.Equal(t, want.classLabels, have.classLabels, "labeled digests of the classes of row %d", id)
+		require.Equal(t, want.expiresAtUnix, have.expiresAtUnix, "expiry of row %d", id)
 	}
 }
 
@@ -263,7 +285,8 @@ func TestIndexedRowsRoundTripComputed(t *testing.T) {
 	require.Equal(t, "root", info.Field)
 	require.Equal(t, "Int", info.TypeName)
 	require.ElementsMatch(t, []RowKey{leafKey, depKey}, info.Deps)
-	require.NotZero(t, info.ExpiresAtUnix, "the TTL hit lowered the root's own expiry")
+	require.Equal(t, root.cacheSharedResult().expiresAtUnix, info.ExpiresAtUnix, "the TTL hit lowered the root's own expiry")
+	require.NotZero(t, info.ExpiresAtUnix)
 	require.Contains(t, info.Digests, s.recipe(t, rootFrame))
 
 	// The indexed rows are never cache hits.
@@ -486,6 +509,58 @@ func TestIndexedRowsRemovalFollowsOwnership(t *testing.T) {
 	require.ErrorIs(t, cloud.TeachIndexedRowIdentity(ctx, "e", cachefact.Identity{ID: 2}), ErrUnknownIndexedRow)
 }
 
+// Two terms with the same self digest over different inputs produce one
+// class: f(x), and f(y) taught equal to it. The round trip keeps both terms
+// with their own inputs, and RowInfo reports them.
+func TestIndexedRowsRoundTripSameSelfTerms(t *testing.T) {
+	t.Parallel()
+	s := newFactSource(t)
+	x := s.int(t, "same-self-x", 1)
+	y := s.int(t, "same-self-y", 2)
+	fx := receiverCall("f", x)
+	fxRes := s.publish(t, "s", &CallRequest{ResultCall: fx, IsPersistable: true}, cacheTestIntResult(fx, 3))
+	require.NoError(t, s.cache.TeachCallEquivalentToResult(s.ctx, "s", receiverCall("f", y), fxRes))
+
+	cloud := newCloudCache(t)
+	replayOntoCloud(t, cloud, "engine-a", s.rec.all())
+	requireRoundTrip(t, s.cache, cloud, "engine-a")
+
+	info, ok := cloud.RowInfo(RowKey{Engine: "engine-a", ID: uint64(fxRes.cacheSharedResult().id)})
+	require.True(t, ok)
+	var inputs []string
+	for _, term := range info.Terms {
+		require.Len(t, term.Inputs, 1)
+		inputs = append(inputs, term.Self+" "+term.Inputs[0].Digest)
+	}
+	require.Len(t, inputs, 2, "f over x and f over y: %v", inputs)
+	require.Equal(t, info.Terms[0].Self, info.Terms[1].Self, "one self digest")
+	require.NotEqual(t, info.Terms[0].Inputs, info.Terms[1].Inputs, "over different inputs")
+}
+
+// An imported result's facts round-trip like a computed one's.
+func TestIndexedRowsRoundTripImported(t *testing.T) {
+	t.Parallel()
+	ctx, a, srv := transferTestCache(t)
+	leaf := persistedListTestResult(t, ctx, a, srv, "leaf", String("value"))
+	root := persistedListTestResult(t, ctx, a, srv, "root", DynamicResultArrayOutput{Elem: String(""), Values: []AnyResult{leaf}})
+	bundle := exportTestBundle(t, ctx, a, root)
+
+	ctx, b, _ := transferTestCache(t)
+	rec := attachFactRecorder(t, b)
+	_, err := b.ImportValues(ctx, bundle)
+	require.NoError(t, err)
+	require.NotEmpty(t, factsOfKind[cachefact.Result](rec.all()))
+
+	cloud := newCloudCache(t)
+	replayOntoCloud(t, cloud, "engine-b", rec.all())
+	requireRoundTrip(t, b, cloud, "engine-b")
+	for _, res := range factsOfKind[cachefact.Result](rec.all()) {
+		info, ok := cloud.RowInfo(RowKey{Engine: "engine-b", ID: res.ID})
+		require.True(t, ok)
+		require.Equal(t, cachefact.OriginImported, info.Origin)
+	}
+}
+
 func rowFact(id uint64, recipe string, expiresAtUnix int64) cachefact.Result {
 	return cachefact.Result{
 		ID: id, Origin: cachefact.OriginComputed, Field: "f", ExpiresAtUnix: expiresAtUnix,
@@ -519,6 +594,7 @@ func TestIndexedRowsSurviveOtherEnginesRemovals(t *testing.T) {
 	require.True(t, ok, "engine B's removal leaves engine A's expired row")
 	require.False(t, info.Removed)
 	require.Equal(t, []string{"xxh3:shared"}, info.ClassDigests)
+	require.Len(t, info.Terms, 1, "and the term producing its class")
 	require.Equal(t, []RowKey{a}, cloud.EquivalentRows("xxh3:shared"))
 	_, ok = cloud.RowInfo(r)
 	require.True(t, ok, "and the restored row")
