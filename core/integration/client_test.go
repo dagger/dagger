@@ -40,7 +40,6 @@ func (ClientSuite) TestClose(ctx context.Context, t *testctx.T) {
 
 func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	devEngine := devEngineContainerAsService(devEngineContainer(c))
 
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
@@ -69,6 +68,10 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		AsService()
 
 	eventsID := identity.NewID()
+	// The engine publishes the session's telemetry to the same Cloud.
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding("cloud", fakeCloud)
+	}))
 	_, err = base.
 		WithServiceBinding("dev-engine", devEngine).
 		WithServiceBinding("cloud", fakeCloud).
@@ -86,7 +89,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		WithMountedCache("/events", eventsVol).
 		WithExec([]string{"grep", "-F", "Container.withExec", fmt.Sprintf("/events/%s/v1/traces.json.names", eventsID)}).
 		Sync(ctx)
-	require.NoError(t, err, "relayed engine spans must still reach the independent Cloud exporter")
+	require.NoError(t, err, "the silent session's engine spans must reach Cloud")
 }
 
 func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
@@ -250,7 +253,6 @@ func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	devEngine := devEngineContainerAsService(devEngineContainer(c))
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
 
@@ -282,6 +284,10 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		AsService()
 
 	eventsID := identity.NewID()
+	// The engine publishes the session's telemetry to the same Cloud.
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding("cloud", fakeCloud)
+	}))
 
 	daggerCli := daggerCliFile(t, c)
 
