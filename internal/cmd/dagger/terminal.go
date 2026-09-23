@@ -109,8 +109,8 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 				}
 				for _, command := range terminalInits {
 					ctr = ctr.WithExec(append(slices.Clone(shell.Args), command), dagger.ContainerWithExecOpts{
-						ExperimentalPrivilegedNesting: shell.PrivilegedNesting,
-						InsecureRootCapabilities:      shell.InsecureRootCapabilities,
+						DisableDaggerInDagger:    !shell.PrivilegedNesting,
+						InsecureRootCapabilities: shell.InsecureRootCapabilities,
 					})
 				}
 			}
@@ -128,10 +128,10 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 			// Cache setup work, but run the final user command on every invocation.
 			ctr = ctr.WithEnvVariable("_DAGGER_SHELL_NONCE", rand.Text())
 			return execTerminalCommand(ctx, cmd, ctr.WithExec(shell.Args, dagger.ContainerWithExecOpts{
-				Stdin:                         in,
-				Expect:                        dagger.ReturnTypeAny,
-				ExperimentalPrivilegedNesting: shell.PrivilegedNesting,
-				InsecureRootCapabilities:      shell.InsecureRootCapabilities,
+				Stdin:                    in,
+				Expect:                   dagger.ReturnTypeAny,
+				DisableDaggerInDagger:    !shell.PrivilegedNesting,
+				InsecureRootCapabilities: shell.InsecureRootCapabilities,
 			}))
 		},
 	)

@@ -26,7 +26,7 @@ func (Command) TypeDescription() string {
 
 // Shell resolves the shell configuration without evaluating the container.
 // Callers must first load the container metadata.
-func (container *Container) Shell(batch bool) Command {
+func (container *Container) Shell(batch, defaultNesting bool) Command {
 	defaults := container.DefaultTerminalCmd
 	args := slices.Clone(defaults.Args)
 	if len(args) == 0 {
@@ -42,7 +42,7 @@ func (container *Container) Shell(batch bool) Command {
 	return Command{
 		Args:                     args,
 		Env:                      []EnvVariable{},
-		PrivilegedNesting:        bool(defaults.ExperimentalPrivilegedNesting.Value),
+		PrivilegedNesting:        defaults.ExperimentalPrivilegedNesting.GetOr(dagql.Boolean(defaultNesting)).Bool(),
 		InsecureRootCapabilities: bool(defaults.InsecureRootCapabilities.Value),
 	}
 }

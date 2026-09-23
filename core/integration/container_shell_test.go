@@ -32,7 +32,7 @@ func (ContainerSuite) TestShellMetadataIsLazy(ctx context.Context, t *testctx.T)
 		container {
 			from(address: "`+alpineImage+`") {
 				withExec(args: ["false"]) {
-					withShell(interactive: ["sh"], batch: ["sh", "-eu", "-c"], experimentalPrivilegedNesting: true, insecureRootCapabilities: true) {
+					withShell(interactive: ["sh"], batch: ["sh", "-eu", "-c"], disableDaggerInDagger: false, insecureRootCapabilities: true) {
 						interactive: shell { args env { name value } workdir privilegedNesting insecureRootCapabilities }
 						batch: shell(batch: true) { args privilegedNesting insecureRootCapabilities }
 						withRun(command: "echo should-not-run") { id }
@@ -65,9 +65,9 @@ func (ContainerSuite) TestWithRun(ctx context.Context, t *testctx.T) {
 	}](t, `{
 		container {
 			from(address: "`+alpineImage+`") {
-				withShell(interactive: ["sh"], batch: ["sh", "-eu", "-c"], experimentalPrivilegedNesting: true) {
+				withShell(interactive: ["sh"], batch: ["sh", "-eu", "-c"], disableDaggerInDagger: false) {
 					configured: withRun(command: "test -n \"$DAGGER_SESSION_PORT\"; printf '%s' 'two words'") { stdout }
-					override: withRun(command: "test -z \"${DAGGER_SESSION_PORT:-}\" && printf '%s' overridden", shell: ["sh", "-c"], experimentalPrivilegedNesting: false) { stdout }
+					override: withRun(command: "test -z \"${DAGGER_SESSION_PORT:-}\" && printf '%s' overridden", shell: ["sh", "-c"], disableDaggerInDagger: true) { stdout }
 				}
 			}
 		}

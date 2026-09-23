@@ -41,6 +41,7 @@ type containerSchema struct{}
 var _ SchemaResolvers = &containerSchema{}
 
 func (s *containerSchema) Install(srv *dagql.Server) {
+	srv.InstallObject(dagql.NewClass[core.Command](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[core.Command]{}.Install(srv)
 
 	dagql.Fields[*core.Query]{
@@ -954,25 +955,34 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withShell", s.withShell).
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`Set the shell used by terminal() and withRun().`).
 			Args(
 				dagql.Arg("interactive").Doc(`Command arguments for interactive use. Example: ["sh"].`),
 				dagql.Arg("batch").Doc(`Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(`Give the shell access to Dagger.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(`Give the shell all root capabilities. Use only with trusted commands.`),
 			),
 
 		dagql.NodeFunc("shell", s.shell).
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`Return the configured shell command. Defaults to ["sh"].`).
 			Args(dagql.Arg("batch").Doc(`Return the batch command instead of the interactive command.`)),
 
 		dagql.NodeFunc("withRun", s.withRun).
+			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
 			Doc(`Execute a script with the configured batch shell and return the modified container.`).
 			Args(
 				dagql.Arg("command").Doc(`Script to append to the shell command as one argument.`),
 				dagql.Arg("shell").Doc(`Override the batch shell arguments. Example: ["bash", "-c"].`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(`Override whether the shell has access to Dagger.`),
+				dagql.Arg("disableDaggerInDagger").
+					View(AfterVersion(defaultNestingVersion)).
+					Doc(`Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.`),
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(`Override whether the shell has all root capabilities.`),
 			),
 
@@ -4731,6 +4741,7 @@ type containerWithDefaultTerminalCmdArgs struct {
 	Args                          []string
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
 	InsecureRootCapabilities      dagql.Optional[dagql.Boolean] `default:"false"`
+	DisableDaggerInDagger         bool                          `default:"false"`
 }
 
 func (s *containerSchema) withDefaultTerminalCmd(
@@ -4770,14 +4781,19 @@ type containerWithShellArgs struct {
 	Batch                         dagql.Optional[dagql.ArrayInput[dagql.String]]
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
 	InsecureRootCapabilities      dagql.Optional[dagql.Boolean] `default:"false"`
+	DisableDaggerInDagger         bool                          `default:"false"`
 }
 
 func (s *containerSchema) withShell(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithShellArgs) (*core.Container, error) {
 	if len(args.Interactive) == 0 {
 		return nil, fmt.Errorf("interactive shell arguments must not be empty")
 	}
+	if core.Supports(ctx, defaultNestingVersion) {
+		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(!args.DisableDaggerInDagger))
+	}
 	opts := core.DefaultTerminalCmdOpts{
 		Args:                          args.Interactive,
+		DisableDaggerInDagger:         args.DisableDaggerInDagger,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
 	}
@@ -4799,7 +4815,7 @@ func (s *containerSchema) shell(ctx context.Context, parent dagql.ObjectResult[*
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return core.Command{}, err
 	}
-	return parent.Self().Shell(args.Batch), nil
+	return parent.Self().Shell(args.Batch, core.Supports(ctx, defaultNestingVersion)), nil
 }
 
 type containerWithRunArgs struct {
@@ -4807,6 +4823,7 @@ type containerWithRunArgs struct {
 	Shell                         dagql.Optional[dagql.ArrayInput[dagql.String]]
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean]
 	InsecureRootCapabilities      dagql.Optional[dagql.Boolean]
+	DisableDaggerInDagger         dagql.Optional[dagql.Boolean]
 }
 
 func (s *containerSchema) withRun(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithRunArgs) (res dagql.ObjectResult[*core.Container], _ error) {
@@ -4816,15 +4833,20 @@ func (s *containerSchema) withRun(ctx context.Context, parent dagql.ObjectResult
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return res, err
 	}
-	shell := parent.Self().Shell(true)
+	defaultNesting := core.Supports(ctx, defaultNestingVersion)
+	shell := parent.Self().Shell(true, defaultNesting)
 	if args.Shell.Valid {
 		shell.Args = make([]string, len(args.Shell.Value))
 		for i, arg := range args.Shell.Value {
 			shell.Args[i] = string(arg)
 		}
 	}
-	if args.ExperimentalPrivilegedNesting.Valid {
-		shell.PrivilegedNesting = bool(args.ExperimentalPrivilegedNesting.Value)
+	if defaultNesting {
+		if args.DisableDaggerInDagger.Valid {
+			shell.PrivilegedNesting = !args.DisableDaggerInDagger.Value.Bool()
+		}
+	} else if args.ExperimentalPrivilegedNesting.Valid {
+		shell.PrivilegedNesting = args.ExperimentalPrivilegedNesting.Value.Bool()
 	}
 	if args.InsecureRootCapabilities.Valid {
 		shell.InsecureRootCapabilities = bool(args.InsecureRootCapabilities.Value)
@@ -4833,13 +4855,19 @@ func (s *containerSchema) withRun(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return res, err
 	}
+	execArgs := []dagql.NamedInput{
+		{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(append(shell.Args, args.Command)...))},
+		{Name: "insecureRootCapabilities", Value: dagql.Boolean(shell.InsecureRootCapabilities)},
+	}
+	if defaultNesting {
+		execArgs = append(execArgs, dagql.NamedInput{Name: "disableDaggerInDagger", Value: dagql.Boolean(!shell.PrivilegedNesting)})
+	} else {
+		execArgs = append(execArgs, dagql.NamedInput{Name: "experimentalPrivilegedNesting", Value: dagql.Boolean(shell.PrivilegedNesting)})
+	}
 	return res, srv.Canonical().Select(ctx, parent, &res, dagql.Selector{
 		Field: "withExec",
-		Args: []dagql.NamedInput{
-			{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(append(shell.Args, args.Command)...))},
-			{Name: "experimentalPrivilegedNesting", Value: dagql.Boolean(shell.PrivilegedNesting)},
-			{Name: "insecureRootCapabilities", Value: dagql.Boolean(shell.InsecureRootCapabilities)},
-		},
+		View:  dagql.CurrentCall(ctx).View,
+		Args:  execArgs,
 	})
 }
 
