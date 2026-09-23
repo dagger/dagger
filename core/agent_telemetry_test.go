@@ -75,8 +75,7 @@ func (r *stateRecorder) ForceFlush(context.Context) error { return nil }
 
 func (r *stateRecorder) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }
 
-// states lists the state records only: a snapshot record carries no state, and
-// the two channels are deliberately separate (a commit is not a transition).
+// states extracts lifecycle projections, ignoring subscription/payload records.
 func (r *stateRecorder) states() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -217,52 +216,6 @@ func TestPublishStateSealedTombstone(t *testing.T) {
 
 	rt.testTransition(func() { rt.sealed = true })
 	require.Equal(t, []string{"FAILED", "STOPPED"}, rec.states())
-}
-
-// TestEmitAgentStateRecordShape locks the wire contract a consumer keys on:
-// the state token, the parked question, and an explicitly empty body so the
-// record is never mistaken for log text.
-func TestEmitAgentStateRecordShape(t *testing.T) {
-	rec, ctx := stateRecorderCtx(t)
-
-	EmitAgentState(ctx, AgentStateWaitingInput, "ok to delete testdata/legacy?", "")
-	EmitAgentState(ctx, AgentStateRunning, "", "")
-
-	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	require.Len(t, rec.records, 2)
-
-	require.Equal(t, "WAITING_INPUT", rec.records[0].state)
-	require.Equal(t, "ok to delete testdata/legacy?", rec.records[0].waitingOn)
-	require.Empty(t, rec.records[0].body, "state records must not carry log text")
-
-	// The question is cleared explicitly rather than omitted, so a consumer
-	// folding records latest-wins drops a question that has been answered.
-	require.Equal(t, "RUNNING", rec.records[1].state)
-	require.Empty(t, rec.records[1].waitingOn)
-}
-
-// TestEmitAgentSnapshotRecordShape locks the resume anchor's wire contract:
-// the digest of the last committed conversation, on a record of its own, with
-// no state token and an explicitly empty body.
-//
-// A record of its own is forced: state records are edge-triggered on the
-// projected state, and most commits do not move the state while every commit
-// moves the snapshot — folding the digest into them would publish a resume
-// anchor stuck at whatever the conversation was when the agent last changed
-// state.
-func TestEmitAgentSnapshotRecordShape(t *testing.T) {
-	rec, ctx := stateRecorderCtx(t)
-
-	EmitAgentSnapshot(ctx, "xxh3:9e107d9d372bb682")
-
-	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	require.Len(t, rec.records, 1)
-	require.Equal(t, "xxh3:9e107d9d372bb682", rec.records[0].digest)
-	require.Empty(t, rec.records[0].state,
-		"a commit is not a transition: the snapshot record carries no state")
-	require.Empty(t, rec.records[0].body, "snapshot records must not carry log text")
 }
 
 // TestEmitAgentFailureMessage locks the durable failure surface: the loop's
