@@ -144,7 +144,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	frozen := snapshotWorkspace(ctx, t, c, live)
 	frozenID, err := frozen.ID(ctx)
 	require.NoError(t, err)
-	require.Contains(t, workspaceRecipeFields(ctx, t, c, sink, string(frozenID)), "__gitDir")
+	require.NotContains(t, workspaceRecipeFields(ctx, t, c, sink, string(frozenID)), "__gitDir", "snapshot must not retain the source client's Git directory")
 	modified, err := frozen.Git().Uncommitted().ModifiedPaths(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"tracked.txt"}, modified)
@@ -186,7 +186,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	require.NoError(t, err)
 	require.Equal(t, "untracked bytes", contents)
 
-	// Filesystem remotes remain session-local.
+	// A filesystem remote must not reintroduce a live client dependency.
 	remotePath := filepath.Join(t.TempDir(), "origin.git")
 	git("clone", "--bare", workdir, remotePath)
 	git("remote", "add", "origin", remotePath)
@@ -196,7 +196,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	contents, err = localRemote.File("tracked.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "later", contents)
-	require.Contains(t, workspaceRecipeFields(ctx, t, c, sink, string(id)), "__gitDir")
+	require.NotContains(t, workspaceRecipeFields(ctx, t, c, sink, string(id)), "__gitDir", "a local remote must not make the snapshot client-dependent")
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotWithoutGitBaseline(ctx context.Context, t *testctx.T) {
