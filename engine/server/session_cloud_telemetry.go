@@ -73,13 +73,13 @@ func (sess *daggerSession) publishesToCloud() bool {
 
 var errCloudRefreshSessionClosing = errors.New("refresh cloud token: the main client is shutting down")
 
-// cloudRefreshGate admits token refreshes until the main client's shutdown
-// has flushed Cloud. A refresh reads and writes the client's credentials file
-// through its attachables; when they close under one, the gateway's lookup
-// waits out its own 10s whatever the refresh's deadline, and while it waits
-// the client's /shutdown response does not arrive. So after the Cloud flush,
-// and before the attachables close, shutdown stops new refreshes and waits,
-// within the Cloud budget, for one in flight.
+// cloudRefreshGate admits a refresh's file operations until the main
+// client's shutdown has flushed Cloud. A refresh reads and writes the
+// client's credentials file through its attachables; when they close under
+// one, the gateway's lookup waits out its own 10s whatever the refresh's
+// deadline. So after the Cloud flush, and before the attachables close,
+// shutdown stops new file operations and waits, within the Cloud budget,
+// for one in flight. A nil gate admits everything.
 type cloudRefreshGate struct {
 	mu       sync.Mutex
 	closed   bool
@@ -87,6 +87,9 @@ type cloudRefreshGate struct {
 }
 
 func (g *cloudRefreshGate) enter() bool {
+	if g == nil {
+		return true
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.closed {
@@ -96,7 +99,11 @@ func (g *cloudRefreshGate) enter() bool {
 	return true
 }
 
-func (g *cloudRefreshGate) exit() { g.inflight.Done() }
+func (g *cloudRefreshGate) exit() {
+	if g != nil {
+		g.inflight.Done()
+	}
+}
 
 // close stops new refreshes and waits for those in flight, until ctx ends.
 func (g *cloudRefreshGate) close(ctx context.Context) error {
@@ -124,11 +131,12 @@ func (g *cloudRefreshGate) wait(ctx context.Context) error {
 	}
 }
 
-// stopCloudTokenRefresh ends token refreshes for the rest of the session: the
-// main client's shutdown calls it after the Cloud flush and before the
-// attachables close. Exports after it use the token they have; with an
-// expired one they fail at once, costing telemetry at the very end of a
-// session, never its shutdown.
+// stopCloudTokenRefresh ends the refreshes' file operations for the rest of
+// the session: the main client's shutdown calls it after the Cloud flush and
+// before the attachables close. A refresh already exchanging its token keeps
+// the new token without writing it back; exports with an expired token fail
+// at once, costing telemetry at the very end of a session, never its
+// shutdown.
 func (sess *daggerSession) stopCloudTokenRefresh(ctx context.Context) {
 	if sess.cloudRefresh == nil {
 		return
@@ -154,27 +162,68 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 	if err != nil {
 		return nil, fmt.Errorf("refresh cloud token: main client metadata: %w", err)
 	}
-	// See cloudRefreshGate: no refresh once the main client's shutdown began,
-	// and none may find its attachables gone.
-	if sess.cloudRefresh != nil {
-		if !sess.cloudRefresh.enter() {
-			return nil, errCloudRefreshSessionClosing
-		}
-		defer sess.cloudRefresh.exit()
-	}
-	if sess.closingCtx != nil && sess.closingCtx.Err() != nil {
-		return nil, errCloudRefreshSessionClosing
-	}
-	if sess.attachables != nil {
-		if _, ok := sess.attachables.Lookup(record.clientID); !ok {
-			return nil, errCloudRefreshSessionClosing
-		}
-	}
 	if sess.engineUtilClient == nil {
 		return nil, fmt.Errorf("refresh cloud token: session gateway not initialized")
 	}
 	ctx = engine.ContextWithClientMetadata(ctx, md)
-	data, err := sess.engineUtilClient.ReadCallerHostFile(ctx, credentialsPath)
+	// attachable fails at once once the client's attachables close or are
+	// gone: waiting for them ignores every deadline (see cloudRefreshGate).
+	attachable := func() error {
+		if sess.closingCtx != nil && sess.closingCtx.Err() != nil {
+			return errCloudRefreshSessionClosing
+		}
+		if sess.attachables != nil {
+			if _, ok := sess.attachables.Lookup(record.clientID); !ok {
+				return errCloudRefreshSessionClosing
+			}
+		}
+		return nil
+	}
+	return refreshCredentialsFile(ctx, sess.sessionID, sess.cloudRefresh, cloudCredentialsFile{
+		read: func(ctx context.Context) ([]byte, error) {
+			if err := attachable(); err != nil {
+				return nil, err
+			}
+			return sess.engineUtilClient.ReadCallerHostFile(ctx, credentialsPath)
+		},
+		// Replaced atomically: the CLI and other sessions' engines read and
+		// write the same file.
+		write: func(ctx context.Context, data []byte) error {
+			if err := attachable(); err != nil {
+				return err
+			}
+			return sess.engineUtilClient.ReplaceCallerHostFile(ctx, data, credentialsPath, 0o600)
+		},
+		refresh: func(ctx context.Context, token *oauth2.Token) (*oauth2.Token, error) {
+			source, err := cloudauth.TokenSource(ctx, token)
+			if err != nil {
+				return nil, err
+			}
+			return source.Token()
+		},
+	})
+}
+
+// cloudCredentialsFile reads and replaces the main client's credentials file
+// through its attachables, and exchanges its refresh token with Cloud.
+type cloudCredentialsFile struct {
+	read    func(context.Context) ([]byte, error)
+	write   func(context.Context, []byte) error
+	refresh func(context.Context, *oauth2.Token) (*oauth2.Token, error)
+}
+
+// refreshCredentialsFile refreshes the token in the credentials file and
+// writes the new one back, since refreshing may invalidate the old. The read
+// and the write each pass the gate on their own; the exchange with Cloud does
+// not, so stopping refreshes waits only for a file operation in flight. A
+// refresh that finds the gate closed before its write-back, or whose
+// write-back fails, still returns the token it got.
+func refreshCredentialsFile(ctx context.Context, sessionID string, gate *cloudRefreshGate, file cloudCredentialsFile) (*oauth2.Token, error) {
+	if !gate.enter() {
+		return nil, errCloudRefreshSessionClosing
+	}
+	data, err := file.read(ctx)
+	gate.exit()
 	if err != nil {
 		return nil, fmt.Errorf("refresh cloud token: read credentials: %w", err)
 	}
@@ -182,26 +231,29 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 	if err := json.Unmarshal(data, &token); err != nil {
 		return nil, fmt.Errorf("refresh cloud token: parse credentials: %w", err)
 	}
-	source, err := cloudauth.TokenSource(ctx, &token)
+	refreshed, err := file.refresh(ctx, &token)
 	if err != nil {
 		return nil, fmt.Errorf("refresh cloud token: %w", err)
 	}
-	refreshed, err := source.Token()
+	if refreshed.AccessToken == token.AccessToken {
+		return refreshed, nil
+	}
+	encoded, err := json.Marshal(refreshed)
 	if err != nil {
-		return nil, fmt.Errorf("refresh cloud token: %w", err)
+		slog.Warn("refreshed cloud token not written back", "session", sessionID, "error", err)
+		return refreshed, nil
 	}
-	if refreshed.AccessToken != token.AccessToken {
-		encoded, err := json.Marshal(refreshed)
-		if err != nil {
-			return nil, fmt.Errorf("refresh cloud token: encode: %w", err)
-		}
-		// Replaced atomically: the CLI and other sessions' engines read and
-		// write the same file.
-		if err := sess.engineUtilClient.ReplaceCallerHostFile(ctx, encoded, credentialsPath, 0o600); err != nil {
-			return nil, fmt.Errorf("refresh cloud token: write credentials: %w", err)
-		}
-		slog.Info("refreshed cloud credentials", "session", sess.sessionID, "credentialsPath", credentialsPath)
+	if !gate.enter() {
+		slog.Info("refreshed cloud token not written back: the main client is shutting down", "session", sessionID)
+		return refreshed, nil
 	}
+	err = file.write(ctx, encoded)
+	gate.exit()
+	if err != nil {
+		slog.Warn("refreshed cloud token not written back", "session", sessionID, "error", err)
+		return refreshed, nil
+	}
+	slog.Info("refreshed cloud credentials", "session", sessionID)
 	return refreshed, nil
 }
 

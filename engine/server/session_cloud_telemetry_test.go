@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -542,38 +541,107 @@ func TestPostedTelemetryReachesCloudOnce(t *testing.T) {
 	}
 }
 
-// Once the main client's shutdown begins, or its attachables are gone, a
-// token refresh fails at once instead of reaching for them: that wait
-// ignores deadlines and held the client's /shutdown response.
-func TestCloudTokenRefreshFailsOnceClosing(t *testing.T) {
+// fakeCredentialsFile records the file operations of one refresh.
+type fakeCredentialsFile struct {
+	mu       sync.Mutex
+	reads    int
+	writes   []string
+	readErr  error
+	writeErr error
+	refresh  func(context.Context, *oauth2.Token) (*oauth2.Token, error)
+}
+
+func (f *fakeCredentialsFile) file() cloudCredentialsFile {
+	return cloudCredentialsFile{
+		read: func(context.Context) ([]byte, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.reads++
+			return []byte(`{"access_token":"old","refresh_token":"r"}`), f.readErr
+		},
+		write: func(_ context.Context, data []byte) error {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if f.writeErr != nil {
+				return f.writeErr
+			}
+			f.writes = append(f.writes, string(data))
+			return nil
+		},
+		refresh: func(ctx context.Context, token *oauth2.Token) (*oauth2.Token, error) {
+			if f.refresh != nil {
+				return f.refresh(ctx, token)
+			}
+			return &oauth2.Token{AccessToken: "new", RefreshToken: "r"}, nil
+		},
+	}
+}
+
+// A refresh reads the credentials file, exchanges the token and writes the
+// new one back; with the gate closed it reads nothing.
+func TestRefreshCredentialsFile(t *testing.T) {
 	t.Parallel()
-	srv := &Server{}
-	sess, root := newCloudTestSession(t, srv, &engine.ClientMetadata{CloudAuth: basicCloudAuth("dag_test_token")})
-	root.metadataSealed = true
-	sess.state.Store(sessionStateInitialized)
-	srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
-	t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
+	f := &fakeCredentialsFile{}
+	token, err := refreshCredentialsFile(t.Context(), "session", &cloudRefreshGate{}, f.file())
+	require.NoError(t, err)
+	require.Equal(t, "new", token.AccessToken)
+	require.Len(t, f.writes, 1)
+	require.Contains(t, f.writes[0], `"access_token":"new"`)
 
-	sess.cloudRefresh = &cloudRefreshGate{}
-	sess.stopCloudTokenRefresh(t.Context())
-	start := time.Now()
-	_, err := srv.refreshSessionCloudToken(t.Context(), sess, "/credentials.json")
-	require.ErrorIs(t, err, errCloudRefreshSessionClosing, "no refresh once the main client's shutdown began")
-	require.Less(t, time.Since(start), time.Second)
-
-	sess.cloudRefresh = &cloudRefreshGate{}
-	sess.attachables = newSessionAttachableManager()
-	_, err = srv.refreshSessionCloudToken(t.Context(), sess, "/credentials.json")
-	require.ErrorIs(t, err, errCloudRefreshSessionClosing, "no attachables registered for the main client")
-
-	sess.attachables = nil
-	closing, cancelClosing := context.WithCancelCause(context.Background())
-	sess.closingCtx = closing
-	cancelClosing(errors.New("closing"))
-	start = time.Now()
-	_, err = srv.refreshSessionCloudToken(t.Context(), sess, "/credentials.json")
+	closed := &cloudRefreshGate{}
+	closed.stop()
+	f = &fakeCredentialsFile{}
+	_, err = refreshCredentialsFile(t.Context(), "session", closed, f.file())
 	require.ErrorIs(t, err, errCloudRefreshSessionClosing)
-	require.Less(t, time.Since(start), time.Second)
+	require.Zero(t, f.reads, "no file operation once the main client's shutdown began")
+}
+
+// The exchange with Cloud is outside the gate: stopping refreshes does not
+// wait for it, and a refresh whose exchange completes after that keeps its
+// token and does not write it back.
+func TestRefreshCredentialsFileLateExchange(t *testing.T) {
+	t.Parallel()
+	exchanging, release := make(chan struct{}), make(chan struct{})
+	f := &fakeCredentialsFile{refresh: func(context.Context, *oauth2.Token) (*oauth2.Token, error) {
+		close(exchanging)
+		<-release
+		return &oauth2.Token{AccessToken: "late"}, nil
+	}}
+	gate := &cloudRefreshGate{}
+	type result struct {
+		token *oauth2.Token
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		token, err := refreshCredentialsFile(t.Context(), "session", gate, f.file())
+		done <- result{token, err}
+	}()
+	<-exchanging
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	start := time.Now()
+	require.NoError(t, gate.close(ctx), "no file operation in flight to wait for")
+	require.Less(t, time.Since(start), 100*time.Millisecond)
+	close(release)
+	got := <-done
+	require.NoError(t, got.err)
+	require.Equal(t, "late", got.token.AccessToken, "the token is kept")
+	require.Empty(t, f.writes, "and not written back after the gate closed")
+}
+
+// A write-back that fails, the client's attachables gone, costs the file its
+// update, never the refreshed token; a read that fails fails the refresh.
+func TestRefreshCredentialsFileAttachablesGone(t *testing.T) {
+	t.Parallel()
+	f := &fakeCredentialsFile{writeErr: errCloudRefreshSessionClosing}
+	token, err := refreshCredentialsFile(t.Context(), "session", &cloudRefreshGate{}, f.file())
+	require.NoError(t, err)
+	require.Equal(t, "new", token.AccessToken)
+
+	f = &fakeCredentialsFile{readErr: errCloudRefreshSessionClosing}
+	_, err = refreshCredentialsFile(t.Context(), "session", &cloudRefreshGate{}, f.file())
+	require.ErrorIs(t, err, errCloudRefreshSessionClosing)
 }
 
 // Stopping refreshes waits for one in flight, and no longer than its context.
