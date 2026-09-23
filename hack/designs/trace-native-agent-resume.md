@@ -34,6 +34,27 @@ corruption, incomplete local archives, and failures after bootstrap begins do no
 silently switch sources. `--source-session` can disambiguate either source;
 `--generation` is an optional engine-only pin and requires `--source-session`.
 
+## Current-main compatibility validation
+
+The earlier remote build failures included a concrete source incompatibility,
+not merely an infrastructure problem: upstream `f48dfd5` wrapped skill directories
+in `ownedSkillDirectory`, while capture still passed that wrapper as a DagQL
+object result. `a020921` validates its `Directory` field without changing ownership.
+It also tests owned/unowned portable and host-backed skills without reloading them.
+
+The tested tree includes current main `8a134a7` through additive merge `eb4b8a1`,
+whose other parent is the existing PR head `251a78f`; no published history was
+rewritten. Merged-tree lint exposed another genuine incompatibility: seven new
+recomposition tests called the removed public `PortableID` API. `06fa3b5` migrates
+those calls to canonical trace capture, retaining their owner/state assertions.
+
+On that merged tree, capture/composition unit tests pass under the race detector;
+`core/sdk/dang/shared`, `core/sdk/entrypoint`, integration and CLI packages compile;
+all 14 `TestLLM/TestRecompose` cases (including their failure subcases) pass against
+the actual engine; full `golangci-lint:lint-all` passes. `docs:references` regenerates
+successfully with no schema drift. This is not a claim that every remote CI
+failure has recovered; remote reruns must establish that separately.
+
 ## Latest scope-correction validation
 
 - Repository-history rollback: `4edd6e0`; Cloud fallback: `85a57b8`; supported
