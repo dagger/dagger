@@ -3,10 +3,12 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -169,4 +171,52 @@ func TestGetCloudAuthAllowsMissingOrgFile(t *testing.T) {
 	require.NotNil(t, cloud)
 	require.NotNil(t, cloud.Token)
 	require.Nil(t, cloud.Org)
+}
+
+// The credentials file is replaced atomically: while writers of different
+// token lengths race, a reader always parses a complete file.
+func TestWriteFileReplacesAtomically(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	require.NoError(t, writeFile(path, []byte(`{"access_token":"seed"}`), 0o600))
+	tokens := []string{
+		`{"access_token":"short"}`,
+		`{"access_token":"a-much-longer-token-than-the-other-one-written-concurrently"}`,
+	}
+	stop := make(chan struct{})
+	var writers sync.WaitGroup
+	for _, token := range tokens {
+		writers.Go(func() {
+			for range 200 {
+				require.NoError(t, writeFile(path, []byte(token), 0o600))
+			}
+		})
+	}
+	readerDone := make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				readerDone <- nil
+				return
+			default:
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				readerDone <- err
+				return
+			}
+			var parsed map[string]string
+			if err := json.Unmarshal(data, &parsed); err != nil {
+				readerDone <- fmt.Errorf("partial or interleaved file %q: %w", data, err)
+				return
+			}
+		}
+	}()
+	writers.Wait()
+	close(stop)
+	require.NoError(t, <-readerDone)
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }

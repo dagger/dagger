@@ -436,6 +436,10 @@ type LocalExportOpts struct {
 	// which includes deleting any files that are not in the source directory
 	Merge       bool
 	RemovePaths []string `json:"remove_paths"`
+	// ReplaceAtomically, for a file stream, writes a temporary file beside
+	// the destination and renames it into place, so a concurrent reader or
+	// writer of the file never sees a partial or interleaved one.
+	ReplaceAtomically bool `json:"replace_atomically,omitempty"`
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {

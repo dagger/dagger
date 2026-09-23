@@ -279,7 +279,26 @@ func writeFile(filename string, data []byte, perm os.FileMode) error {
 
 	defer fileLock.Unlock()
 
-	return os.WriteFile(filename, data, perm)
+	// Replace the file atomically: an engine refreshing the same token
+	// writes it back through its own path, without this lock, so a reader
+	// must never see a partial or interleaved file.
+	tmp, err := os.CreateTemp(filepath.Dir(filename), "."+filepath.Base(filename)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // after a successful rename, a no-op
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filename)
 }
 
 type Org struct {

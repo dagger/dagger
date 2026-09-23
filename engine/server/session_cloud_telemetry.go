@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -195,7 +194,9 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 		if err != nil {
 			return nil, fmt.Errorf("refresh cloud token: encode: %w", err)
 		}
-		if err := sess.engineUtilClient.IOReaderExport(ctx, bytes.NewReader(encoded), credentialsPath, 0o600); err != nil {
+		// Replaced atomically: the CLI and other sessions' engines read and
+		// write the same file.
+		if err := sess.engineUtilClient.ReplaceCallerHostFile(ctx, encoded, credentialsPath, 0o600); err != nil {
 			return nil, fmt.Errorf("refresh cloud token: write credentials: %w", err)
 		}
 		slog.Info("refreshed cloud credentials", "session", sess.sessionID, "credentialsPath", credentialsPath)

@@ -315,24 +315,44 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	if opts.FileMode == 0 {
 		opts.FileMode = 0o600
 	}
-	destF, err := os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, opts.FileMode)
+	writePath := finalDestPath
+	var destF *os.File
+	if opts.ReplaceAtomically {
+		destF, err = os.CreateTemp(destParentDir, "."+filepath.Base(finalDestPath)+".*.tmp")
+		if err == nil {
+			writePath = destF.Name()
+			defer os.Remove(writePath) // after a successful rename, a no-op
+			err = destF.Chmod(opts.FileMode)
+		}
+	} else {
+		destF, err = os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, opts.FileMode)
+	}
 	if err != nil {
-		return fmt.Errorf("failed to create synctarget dest file %s: %w", finalDestPath, err)
+		return fmt.Errorf("failed to create synctarget dest file %s: %w", writePath, err)
 	}
 	defer destF.Close()
 	if runtime.GOOS != "windows" {
 		if err := destF.Chown(int(t.uid), int(t.gid)); err != nil {
-			return fmt.Errorf("failed to chown synctarget dest file %s: %w", finalDestPath, err)
+			return fmt.Errorf("failed to chown synctarget dest file %s: %w", writePath, err)
 		}
 	}
 
 	for {
 		msg := filesync.BytesMessage{}
 		if err := stream.RecvMsg(&msg); err != nil {
-			if errors.Is(err, io.EOF) {
+			if !errors.Is(err, io.EOF) {
+				return err
+			}
+			if !opts.ReplaceAtomically {
 				return nil
 			}
-			return err
+			if err := destF.Close(); err != nil {
+				return fmt.Errorf("failed to write synctarget dest file %s: %w", writePath, err)
+			}
+			if err := os.Rename(writePath, finalDestPath); err != nil {
+				return fmt.Errorf("failed to replace synctarget dest file %s: %w", finalDestPath, err)
+			}
+			return nil
 		}
 		if _, err := destF.Write(msg.Data); err != nil {
 			return err
