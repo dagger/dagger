@@ -268,6 +268,11 @@ export type ArtifactsPathDefinitionsOpts = {
    * Prefix each address with the workspace's Git address and commit.
    */
   absolute?: boolean
+
+  /**
+   * Include the artifact type in each address scheme.
+   */
+  typeAssertion?: boolean
 }
 
 export type ArtifactsValuesOpts = {
@@ -750,6 +755,13 @@ export type ContainerPublishOpts = {
   insecureSkipTLSVerify?: boolean
 }
 
+export type ContainerShellOpts = {
+  /**
+   * Return the batch command instead of the interactive command.
+   */
+  batch?: boolean
+}
+
 export type ContainerStatOpts = {
   /**
    * If specified, do not follow symlinks.
@@ -1218,6 +1230,50 @@ export type ContainerWithNewFileOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
+}
+
+export type ContainerWithRunOpts = {
+  /**
+   * Override the batch shell arguments. Example: ["bash", "-c"].
+   */
+  shell?: string[]
+
+  /**
+   * Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.
+   */
+  disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Override whether the shell has all root capabilities.
+   */
+  insecureRootCapabilities?: boolean
+}
+
+export type ContainerWithShellOpts = {
+  /**
+   * Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".
+   */
+  batch?: string[]
+
+  /**
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   */
+  disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Give the shell all root capabilities. Use only with trusted commands.
+   */
+  insecureRootCapabilities?: boolean
 }
 
 export type ContainerWithSymlinkOpts = {
@@ -3419,52 +3475,6 @@ export type ServiceUpOpts = {
   random?: boolean
 }
 
-export type TerminalCopy = {
-  /**
-   * Location of the copied directory. A relative path is relative to the container's working directory.
-   */
-  path: string
-
-  /**
-   * The directory to copy.
-   */
-  source: Directory
-}
-
-export type TerminalGroupExecOpts = {
-  /**
-   * Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
-   */
-  args?: string[]
-
-  /**
-   * Content to write to the command's standard input.
-   */
-  stdin?: string
-
-  /**
-   * Directories to copy into the container, in order.
-   */
-  copy?: TerminalCopy[]
-
-  /**
-   * Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
-   */
-  init?: string[]
-}
-
-export type TerminalGroupRunOpts = {
-  /**
-   * Directories to copy into the container, in order.
-   */
-  copy?: TerminalCopy[]
-
-  /**
-   * Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
-   */
-  init?: string[]
-}
-
 export type TypeDefWithEnumOpts = {
   /**
    * A doc string for the enum, if any
@@ -4248,25 +4258,6 @@ export function WorkspaceCommitPickStatusNameToValue(
       return name as WorkspaceCommitPickStatus
   }
 }
-export type __DirectiveArgsOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __FieldArgsOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __TypeEnumValuesOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __TypeFieldsOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __TypeInputFieldsOpts = {
-  includeDeprecated?: boolean
-}
 
 /**
  * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
@@ -4786,6 +4777,90 @@ export class AgentMessage extends BaseClient {
     const ctx = this._ctx.select("response")
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * An agent function that can modify a conversation.
+ */
+export class AgentMiddleware extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this AgentMiddleware.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The agent function's description.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The agent function's name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module that defines the agent function.
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * The agent function's path within its module.
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
 
     return response
   }
@@ -5342,6 +5417,73 @@ export class Artifacts extends BaseClient {
   }
 
   /**
+   * Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware.
+   */
+  asAgentMiddlewares = async (): Promise<AgentMiddleware[]> => {
+    type asAgentMiddlewares = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("asAgentMiddlewares").select("id")
+
+    const response: Awaited<asAgentMiddlewares[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new AgentMiddleware(ctx.copy().selectNode(r.id, "AgentMiddleware")),
+    )
+  }
+
+  /**
+   * Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+   */
+  asChangesets = async (): Promise<Changeset[]> => {
+    type asChangesets = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("asChangesets").select("id")
+
+    const response: Awaited<asChangesets[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new Changeset(ctx.copy().selectNode(r.id, "Changeset")),
+    )
+  }
+
+  /**
+   * Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+   */
+  asChecks = async (): Promise<Check[]> => {
+    type asChecks = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("asChecks").select("id")
+
+    const response: Awaited<asChecks[]> = await ctx.execute()
+
+    return response.map((r) => new Check(ctx.copy().selectNode(r.id, "Check")))
+  }
+
+  /**
+   * Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+   */
+  asServices = async (): Promise<Service[]> => {
+    type asServices = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("asServices").select("id")
+
+    const response: Awaited<asServices[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new Service(ctx.copy().selectNode(r.id, "Service")),
+    )
+  }
+
+  /**
    * List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
    */
   dimensionDefinitions = async (): Promise<ArtifactDimension[]> => {
@@ -5356,6 +5498,23 @@ export class Artifacts extends BaseClient {
     return response.map(
       (r) =>
         new ArtifactDimension(ctx.copy().selectNode(r.id, "ArtifactDimension")),
+    )
+  }
+
+  /**
+   * List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+   */
+  dimensionItems = async (dimension: string): Promise<Artifact[]> => {
+    type dimensionItems = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("dimensionItems", { dimension }).select("id")
+
+    const response: Awaited<dimensionItems[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new Artifact(ctx.copy().selectNode(r.id, "Artifact")),
     )
   }
 
@@ -5528,6 +5687,7 @@ export class Artifacts extends BaseClient {
   /**
    * List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
    * @param opts.absolute Prefix each address with the workspace's Git address and commit.
+   * @param opts.typeAssertion Include the artifact type in each address scheme.
    */
   pathDefinitions = async (
     opts?: ArtifactsPathDefinitionsOpts,
@@ -6201,6 +6361,122 @@ export class CollectionTypeDef extends BaseClient {
 }
 
 /**
+ * A command's arguments and execution settings.
+ */
+export class Command extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _insecureRootCapabilities?: boolean = undefined
+  private readonly _privilegedNesting?: boolean = undefined
+  private readonly _workdir?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _insecureRootCapabilities?: boolean,
+    _privilegedNesting?: boolean,
+    _workdir?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._insecureRootCapabilities = _insecureRootCapabilities
+    this._privilegedNesting = _privilegedNesting
+    this._workdir = _workdir
+  }
+
+  /**
+   * A unique identifier for this Command.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The command arguments.
+   */
+  args = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("args")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Environment variable overrides. Other variables come from the container.
+   */
+  env = async (): Promise<EnvVariable[]> => {
+    type env = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("env").select("id")
+
+    const response: Awaited<env[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new EnvVariable(ctx.copy().selectNode(r.id, "EnvVariable")),
+    )
+  }
+
+  /**
+   * Whether the command has all root capabilities.
+   */
+  insecureRootCapabilities = async (): Promise<boolean> => {
+    if (this._insecureRootCapabilities) {
+      return this._insecureRootCapabilities
+    }
+
+    const ctx = this._ctx.select("insecureRootCapabilities")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the command has access to Dagger.
+   */
+  privilegedNesting = async (): Promise<boolean> => {
+    if (this._privilegedNesting) {
+      return this._privilegedNesting
+    }
+
+    const ctx = this._ctx.select("privilegedNesting")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Working directory override. If unset, use the container's working directory.
+   */
+  workdir = async (): Promise<string> => {
+    if (this._workdir) {
+      return this._workdir
+    }
+
+    const ctx = this._ctx.select("workdir")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * An OCI-compatible container, also known as a Docker container.
  */
 export class Container extends BaseClient {
@@ -6821,6 +7097,15 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Return the configured shell command. Defaults to ["sh"].
+   * @param opts.batch Return the batch command instead of the interactive command.
+   */
+  shell = (opts?: ContainerShellOpts): Command => {
+    const ctx = this._ctx.select("shell", { ...opts })
+    return new Command(ctx)
+  }
+
+  /**
    * Return file status
    * @param path Path to check (e.g., "/file.txt").
    * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
@@ -6965,6 +7250,7 @@ export class Container extends BaseClient {
    * @param args The args of the command.
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   * @deprecated Use withShell.
    */
   withDefaultTerminalCmd = (
     args: string[],
@@ -7366,6 +7652,18 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Execute a script with the configured batch shell and return the modified container.
+   * @param command Script to append to the shell command as one argument.
+   * @param opts.shell Override the batch shell arguments. Example: ["bash", "-c"].
+   * @param opts.disableDaggerInDagger Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.
+   * @param opts.insecureRootCapabilities Override whether the shell has all root capabilities.
+   */
+  withRun = (command: string, opts?: ContainerWithRunOpts): Container => {
+    const ctx = this._ctx.select("withRun", { command, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
    * Set a new environment variable, using a secret value
    * @param name Name of the secret variable (e.g., "API_SECRET").
    * @param secret Identifier of the secret value.
@@ -7388,6 +7686,21 @@ export class Container extends BaseClient {
    */
   withServiceBinding = (alias: string, service: Service): Container => {
     const ctx = this._ctx.select("withServiceBinding", { alias, service })
+    return new Container(ctx)
+  }
+
+  /**
+   * Set the shell used by terminal() and withRun().
+   * @param interactive Command arguments for interactive use. Example: ["sh"].
+   * @param opts.batch Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".
+   * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   * @param opts.insecureRootCapabilities Give the shell all root capabilities. Use only with trusted commands.
+   */
+  withShell = (
+    interactive: string[],
+    opts?: ContainerWithShellOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withShell", { interactive, ...opts })
     return new Container(ctx)
   }
 
@@ -12511,6 +12824,15 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.
+   * @param agents The agent middleware to run. Each reference retains its source workspace.
+   */
+  compose = (agents: AgentMiddleware[]): LLM => {
+    const ctx = this._ctx.select("compose", { agents })
+    return new LLM(ctx)
+  }
+
+  /**
    * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
    */
   contextTokens = async (): Promise<number> => {
@@ -12675,6 +12997,19 @@ export class LLM extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.
+   *
+   * Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+   *
+   * A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
+   * @param agents The agent middleware to run. Each reference retains its source workspace.
+   */
+  recompose = (agents: AgentMiddleware[]): LLM => {
+    const ctx = this._ctx.select("recompose", { agents })
+    return new LLM(ctx)
   }
 
   /**

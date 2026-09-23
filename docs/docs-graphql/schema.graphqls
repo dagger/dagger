@@ -392,6 +392,24 @@ enum AgentMessageDelivery {
   QUEUED
 }
 
+"""An agent function that can modify a conversation."""
+type AgentMiddleware implements Node {
+  """A unique identifier for this AgentMiddleware."""
+  id: ID!
+
+  """The agent function's name."""
+  name: String!
+
+  """The agent function's description."""
+  description: String!
+
+  """The agent function's path within its module."""
+  path: [String!]!
+
+  """The module that defines the agent function."""
+  originalModule: Module!
+}
+
 """
 EXPERIMENTAL: Agent APIs are likely to change.
 
@@ -549,11 +567,35 @@ type Artifacts implements Node {
   id: ID!
 
   """
+  Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware.
+  """
+  asAgentMiddlewares: [AgentMiddleware!]!
+
+  """
+  Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+  """
+  asChecks: [Check!]!
+
+  """
+  Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+  """
+  asChangesets: [Changeset!]!
+
+  """
+  Convert the selection to Services. Fail if any artifact is not a Service. Does
+  not apply command filters or start the services.
+  """
+  asServices: [Service!]!
+
+  """
   List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
   """
   pathDefinitions(
     """Prefix each address with the workspace's Git address and commit."""
     absolute: Boolean = false
+
+    """Include the artifact type in each address scheme."""
+    typeAssertion: Boolean = false
   ): [ArtifactPath!]!
 
   """
@@ -674,6 +716,13 @@ type Artifacts implements Node {
   List keys represented in this selection for the given dimension, sorted with no duplicates.
   """
   dimensionKeys(dimension: String!): [String!]!
+
+  """
+  List collection items represented in this selection for the given dimension.
+  Preserve parent keys and remove duplicate item addresses. Does not evaluate
+  item values.
+  """
+  dimensionItems(dimension: String!): [Artifact!]!
 
   """Enumerate complete artifacts without evaluating their values."""
   items: [Artifact!]!
@@ -918,6 +967,31 @@ type CollectionTypeDef implements Node {
 
   """The type of batch operations, or null when there are none."""
   batchType: TypeDef
+}
+
+"""A command's arguments and execution settings."""
+type Command implements Node {
+  """A unique identifier for this Command."""
+  id: ID!
+
+  """The command arguments."""
+  args: [String!]!
+
+  """
+  Environment variable overrides. Other variables come from the container.
+  """
+  env: [EnvVariable!]!
+
+  """
+  Working directory override. If unset, use the container's working directory.
+  """
+  workdir: String
+
+  """Whether the command has access to Dagger."""
+  privilegedNesting: Boolean!
+
+  """Whether the command has all root capabilities."""
+  insecureRootCapabilities: Boolean!
 }
 
 """An OCI-compatible container, also known as a Docker container."""
@@ -1732,8 +1806,12 @@ type Container implements Exportable & Node & Syncer {
     """Exit codes this command is allowed to exit with without error"""
     expect: ReturnType = SUCCESS
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. Like --privileged in Docker
@@ -2144,8 +2222,12 @@ type Container implements Exportable & Node & Syncer {
     """The args of the command."""
     args: [String!]!
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2155,6 +2237,54 @@ type Container implements Exportable & Node & Syncer {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
+  ): Container! @deprecated(reason: "Use withShell.")
+
+  """Set the shell used by terminal() and withRun()."""
+  withShell(
+    """Command arguments for interactive use. Example: ["sh"]."""
+    interactive: [String!]!
+
+    """
+    Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".
+    """
+    batch: [String!]
+
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
+
+    """Give the shell all root capabilities. Use only with trusted commands."""
+    insecureRootCapabilities: Boolean = false
+  ): Container!
+
+  """Return the configured shell command. Defaults to ["sh"]."""
+  shell(
+    """Return the batch command instead of the interactive command."""
+    batch: Boolean = false
+  ): Command!
+
+  """
+  Execute a script with the configured batch shell and return the modified container.
+  """
+  withRun(
+    """Script to append to the shell command as one argument."""
+    command: String!
+
+    """Override the batch shell arguments. Example: ["bash", "-c"]."""
+    shell: [String!]
+
+    """
+    Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.
+    """
+    disableDaggerInDagger: Boolean
+
+    experimentalPrivilegedNesting: Boolean @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
+
+    """Override whether the shell has all root capabilities."""
+    insecureRootCapabilities: Boolean
   ): Container!
 
   """
@@ -2172,7 +2302,7 @@ type Container implements Exportable & Node & Syncer {
     """
     disableDaggerInDagger: Boolean = false
 
-    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
+    experimentalPrivilegedNesting: Boolean @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2181,7 +2311,7 @@ type Container implements Exportable & Node & Syncer {
     option. It should only be used when absolutely necessary and only with
     trusted commands.
     """
-    insecureRootCapabilities: Boolean = false
+    insecureRootCapabilities: Boolean
   ): Container!
 
   """
@@ -2221,8 +2351,12 @@ type Container implements Exportable & Node & Syncer {
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2807,8 +2941,12 @@ type Directory implements Exportable & Node & Syncer {
     """
     cmd: [String!] = []
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2817,7 +2955,7 @@ type Directory implements Exportable & Node & Syncer {
     option. It should only be used when absolutely necessary and only with
     trusted commands.
     """
-    insecureRootCapabilities: Boolean = false
+    insecureRootCapabilities: Boolean
   ): Directory!
 
   """Return a snapshot with a symlink"""
@@ -4375,6 +4513,33 @@ and step the model until it completes its turn.
 type LLM implements Node & Syncer {
   """A unique identifier for this LLM."""
   id: ID!
+
+  """
+  Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.
+  """
+  compose(
+    """
+    The agent middleware to run. Each reference retains its source workspace.
+    """
+    agents: [ID!]! @expectedType(name: "AgentMiddleware")
+  ): LLM!
+
+  """
+  Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.
+
+  Clear each selected module's contributions once before execution. Retain
+  unowned contributions and contributions from other modules. Keep this LLM's
+  workspace.
+
+  A change to a tool binding's version resets its state. Removed bindings,
+  changed identities, and incompatible state are errors.
+  """
+  recompose(
+    """
+    The agent middleware to run. Each reference retains its source workspace.
+    """
+    agents: [ID!]! @expectedType(name: "AgentMiddleware")
+  ): LLM!
 
   """
   The model the conversation is running against, after resolving any configured default.
