@@ -103,18 +103,19 @@ func moduleObjectsForRebind(initial, previous dagql.AnyObjectResult) (*ModuleObj
 	return target, old, nil
 }
 
-func (obj *ModuleObject) stateRebindField(ctx context.Context, srv *dagql.Server) (dagql.Field[*ModuleObject], error) {
-	module, err := NewUserMod(obj.Module).ResultCallModule(ctx)
+func (obj *ModuleObject) stateRebindField(srv *dagql.Server) (dagql.Field[*ModuleObject], error) {
+	module, moduleProvider, err := NewUserMod(obj.Module).FieldModule()
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, err
 	}
 	return dagql.Field[*ModuleObject]{
 		Spec: &dagql.FieldSpec{
-			Name:          rebindModuleObjectStateField,
-			Type:          obj,
-			Module:        module,
-			IsPersistable: true,
-			Args:          dagql.NewInputSpecs(dagql.InputSpec{Name: "previous", Type: dagql.AnyID{}}),
+			Name:           rebindModuleObjectStateField,
+			Type:           obj,
+			Module:         module,
+			ModuleProvider: moduleProvider,
+			IsPersistable:  true,
+			Args:           dagql.NewInputSpecs(dagql.InputSpec{Name: "previous", Type: dagql.AnyID{}}),
 		},
 		Func: func(ctx context.Context, self dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
 			id, ok := args["previous"].(dagql.AnyID)
