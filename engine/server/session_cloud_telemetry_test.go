@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -732,4 +733,62 @@ func TestCallPayloadReachesCloudOnce(t *testing.T) {
 	receiver.mu.Lock()
 	defer receiver.mu.Unlock()
 	require.Equal(t, []string{digest}, receiver.payloadDigests, "Cloud gets the payload once")
+}
+
+func histogramMetrics(counts []uint64, bounds []float64) *metricdata.ResourceMetrics {
+	return &metricdata.ResourceMetrics{
+		Resource: resource.NewSchemaless(attribute.String("service.name", "test")),
+		ScopeMetrics: []metricdata.ScopeMetrics{{Metrics: []metricdata.Metrics{{
+			Name: "test.histogram",
+			Data: metricdata.Histogram[int64]{
+				Temporality: metricdata.CumulativeTemporality,
+				DataPoints: []metricdata.HistogramDataPoint[int64]{{
+					StartTime: time.Now(), Time: time.Now(),
+					Count: 3, Bounds: bounds, BucketCounts: counts,
+				}},
+			},
+		}}}},
+	}
+}
+
+// A queued collection is a deep copy: the reader reusing its buffers after
+// Export returns does not change what gets exported.
+func TestCloudMetricQueueCopiesCollections(t *testing.T) {
+	t.Parallel()
+	// No worker: the collection stays queued.
+	q := &cloudMetricQueue{wake: make(chan struct{}, 1)}
+	counts := []uint64{1, 2}
+	bounds := []float64{10}
+	require.NoError(t, q.Export(t.Context(), histogramMetrics(counts, bounds)))
+	counts[0], counts[1], bounds[0] = 99, 99, 99
+
+	require.Len(t, q.queue, 1)
+	point := q.queue[0].GetScopeMetrics()[0].GetMetrics()[0].GetHistogram().GetDataPoints()[0]
+	require.Equal(t, []uint64{1, 2}, point.GetBucketCounts())
+	require.Equal(t, []float64{10}, point.GetExplicitBounds())
+}
+
+// Against a Cloud that never answers, shutting the queue down, with one
+// export in flight and another queued, takes one bound in all: draining, the
+// export in flight and releasing the exporter.
+func TestCloudMetricQueueShutdownIsBounded(t *testing.T) {
+	t.Parallel()
+	receiver := newCloudReceiver(t, true)
+	_, _, metrics, err := enginetel.NewCloudExporters(t.Context(), basicCloudAuth("dag_test_token"), nil, receiver.URL)
+	require.NoError(t, err)
+	const bound = 200 * time.Millisecond
+	q := newCloudMetricQueue(metrics, cloudFlushBound{sessionID: "session", timeout: bound})
+	require.NoError(t, q.Export(t.Context(), histogramMetrics([]uint64{1, 2}, []float64{10})))
+	require.NoError(t, q.Export(t.Context(), histogramMetrics([]uint64{3, 4}, []float64{10})))
+	// The first export has started and waits on Cloud.
+	time.Sleep(bound * 3 / 4)
+
+	start := time.Now()
+	require.NoError(t, q.Shutdown(t.Context()))
+	require.Less(t, time.Since(start), bound+100*time.Millisecond, "one bound for draining, the export in flight and the release")
+	select {
+	case <-q.drained:
+	default:
+		t.Fatal("the export in flight was not cancelled: the worker still waits on Cloud")
+	}
 }
