@@ -195,29 +195,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return dagql.NewID[*core.LLM](id), nil
 		}).
 			Doc("Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine."),
-		dagql.NodeFunc("portableID", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.AnyID, error) {
-			recipe, err := self.Self().PortableRecipe(ctx)
-			if err != nil {
-				return dagql.AnyID{}, err
-			}
-			id, err := recipe.RecipeID(ctx)
-			if err != nil {
-				return dagql.AnyID{}, err
-			}
-			return dagql.NewAnyID(id), nil
-		}).
-			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("An ID describes the current attached result and must not be served from cache.").
-			Doc("A portable, self-contained ID for the conversation that node() can resolve in any session. " +
-				"Unlike id, which may return an engine-local runtime handle valid only within the current session, " +
-				"this returns the recipe form suitable for persisting and later restoring the conversation. " +
-				"The recipe is flattened: bindings superseded during the session (workspace overlays recorded by " +
-				"each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — " +
-				"including any pending, un-exported edits — is preserved."),
-		dagql.NodeFunc("emitHistory", s.emitHistory).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerCallInput).
-			Doc("Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI."),
 		dagql.NodeFunc("loop", s.loop).
 			Doc("Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.").
 			Args(
@@ -785,15 +762,6 @@ func (s *llmSchema) agent(ctx context.Context, parent dagql.ObjectResult[*core.L
 		Handle: args.Handle,
 		Name:   args.Name,
 	}, nil
-}
-
-func (s *llmSchema) emitHistory(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {
-	parent.Self().EmitHistory(ctx)
-	id, err := parent.ID()
-	if err != nil {
-		return res, err
-	}
-	return dagql.NewID[*core.LLM](id), nil
 }
 
 func (s *llmSchema) hasPending(ctx context.Context, llm *core.LLM, args struct{}) (bool, error) {
