@@ -366,6 +366,10 @@ func rosterTraceFor(names ...string) (map[string]*callpbv1.Call, []dagui.SpanSna
 // half-typed line is parked against the agent being left, and the
 // last-focused toggle brings it back.
 func TestFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
+	runFocusTest(t, testFocusKeyRetargetsAndKeepsDrafts)
+}
+
+func testFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, rosterDB(t), handler)
 
@@ -383,11 +387,7 @@ func TestFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
 	// Half a sentence to the chief, then jump to the scout.
 	fe.textInput.SetValue("half a thought")
 	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
-	require.Eventually(t, func() bool {
-		focused := handler.focusedAgents()
-		return len(focused) == 1 && focused[0] == "agent-scout"
-	}, 5*time.Second, 10*time.Millisecond)
-	fe.tui.Step()
+	awaitFocus(t, fe, handler, "agent-scout")
 
 	require.Equal(t, "", fe.textInput.Value(), "the scout has no draft yet")
 	entries = fe.agentRosterEntries()
@@ -397,18 +397,11 @@ func TestFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
 	// the agent it was meant for.
 	fe.textInput.SetValue("for the scout")
 	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: 'l', Mod: uv.ModAlt}))
-	require.Eventually(t, func() bool {
-		focused := handler.focusedAgents()
-		return len(focused) == 2 && focused[1] == "agent-chief"
-	}, 5*time.Second, 10*time.Millisecond)
-	fe.tui.Step()
+	awaitFocus(t, fe, handler, "agent-scout", "agent-chief")
 	require.Equal(t, "half a thought", fe.textInput.Value())
 
 	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
-	require.Eventually(t, func() bool {
-		return len(handler.focusedAgents()) == 3
-	}, 5*time.Second, 10*time.Millisecond)
-	fe.tui.Step()
+	awaitFocus(t, fe, handler, "agent-scout", "agent-chief", "agent-scout")
 	require.Equal(t, "for the scout", fe.textInput.Value())
 }
 
