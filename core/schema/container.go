@@ -656,11 +656,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("redirectStderr").Doc(
 					`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
-				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. Like --privileged in Docker`,
 					`DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.`),
@@ -937,11 +935,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				`This is the initial state of all containers.`),
 
 		dagql.NodeFunc("withDefaultTerminalCmd", s.withDefaultTerminalCmd).
+			View(AllVersion).
 			Doc(`Set the default command to invoke for the container's terminal API.`).
 			Args(
 				dagql.Arg("args").Doc(`The args of the command.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -956,8 +956,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			Args(
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -970,8 +971,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			Args(
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -1633,6 +1635,9 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if args.SkipEntrypoint != nil {
 		args.UseEntrypoint = !*args.SkipEntrypoint
 	}
+	if core.Supports(ctx, defaultNestingVersion) {
+		args.ExperimentalPrivilegedNesting = !args.DisableDaggerInDagger
+	}
 
 	var md *engineutil.ExecutionMetadata
 	if args.ExecMD.Self != nil {
@@ -1680,6 +1685,7 @@ func (s *containerSchema) stdoutLegacy(ctx context.Context, parent dagql.ObjectR
 		var ctr dagql.ObjectResult[*core.Container]
 		if err := srv.Select(ctx, parent, &ctr, dagql.Selector{
 			Field: "withExec",
+			View:  "v0.12.0",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "args",
@@ -1721,6 +1727,7 @@ func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.ObjectR
 		var ctr dagql.ObjectResult[*core.Container]
 		if err := srv.Select(ctx, parent, &ctr, dagql.Selector{
 			Field: "withExec",
+			View:  "v0.12.0",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "args",
@@ -4703,6 +4710,9 @@ func (s *containerSchema) withDefaultTerminalCmd(
 	parent dagql.ObjectResult[*core.Container],
 	args containerWithDefaultTerminalCmdArgs,
 ) (*core.Container, error) {
+	if core.Supports(ctx, defaultNestingVersion) {
+		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(!args.DisableDaggerInDagger))
+	}
 	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
@@ -4736,6 +4746,11 @@ func (s *containerSchema) terminal(
 	}
 
 	args.TerminalArgs = ctr.Self().WithTerminalDefaults(args.TerminalArgs)
+
+	if core.Supports(ctx, defaultNestingVersion) {
+		defaults := ctr.Self().DefaultTerminalCmd.ExperimentalPrivilegedNesting.GetOr(dagql.Boolean(true))
+		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(defaults.Bool() && !args.DisableDaggerInDagger))
+	}
 
 	ctrDig, err := ctr.ContentPreferredDigest(ctx)
 	if err != nil {
@@ -4789,6 +4804,7 @@ func (s *containerSchema) terminalLegacy(
 	err = srv.Select(ctx, ctr, new(dagql.Result[*core.Container]),
 		dagql.Selector{
 			Field: "terminal",
+			View:  "v0.12.0",
 			Args:  inputs,
 		},
 	)

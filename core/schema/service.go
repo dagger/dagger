@@ -31,8 +31,9 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the
@@ -74,8 +75,9 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the
@@ -285,6 +287,9 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent dagql.ObjectResult[*core.Container], args core.ContainerAsServiceArgs) (*core.Service, error) {
+	if core.Supports(ctx, defaultNestingVersion) {
+		args.ExperimentalPrivilegedNesting = !args.DisableDaggerInDagger
+	}
 	// A service needs only the container config. The service evaluates the
 	// filesystem when it starts.
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
@@ -327,7 +332,11 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 			Value: dagql.Boolean(true),
 		})
 	}
-	if args.ExperimentalPrivilegedNesting {
+	if core.Supports(ctx, defaultNestingVersion) {
+		inputs = append(inputs, dagql.NamedInput{
+			Name: "disableDaggerInDagger", Value: dagql.Boolean(args.DisableDaggerInDagger),
+		})
+	} else if args.ExperimentalPrivilegedNesting {
 		inputs = append(inputs, dagql.NamedInput{
 			Name:  "experimentalPrivilegedNesting",
 			Value: dagql.Boolean(true),

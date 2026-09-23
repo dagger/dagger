@@ -837,8 +837,7 @@ func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 		result := base.WithExec([]string{
 			"dagger", "-W", workspace, "ws", "export", "a.txt", "-o", "/caller/rejected", "--include=*.txt",
 		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect: dagger.ReturnTypeFailure,
 		})
 		stderr, err := result.Stderr(ctx)
 		require.NoError(t, err)
@@ -849,8 +848,7 @@ func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 		result := base.WithExec([]string{
 			"dagger", "-W", workspace, "ws", "export", "missing", "-o", "/caller/missing",
 		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect: dagger.ReturnTypeFailure,
 		})
 		stderr, err := result.Stderr(ctx)
 		require.NoError(t, err)
@@ -861,8 +859,7 @@ func (WorkspaceSuite) TestExportCLI(ctx context.Context, t *testctx.T) {
 		result := base.WithExec([]string{
 			"dagger", "-W", workspace, "ws", "export", "a.txt",
 		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Expect: dagger.ReturnTypeFailure,
 		})
 		stderr, err := result.Stderr(ctx)
 		require.NoError(t, err)

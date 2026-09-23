@@ -2322,6 +2322,7 @@ class Container(Type):
         *,
         args: list[str] | None = None,
         use_entrypoint: bool | None = False,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -2339,8 +2340,12 @@ class Container(Type):
             If empty, the container's default command is used.
         use_entrypoint:
             If the container has an entrypoint, prepend it to the args.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -2360,6 +2365,7 @@ class Container(Type):
         _args = [
             Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3238,6 +3244,7 @@ class Container(Type):
         self,
         *,
         cmd: list[str] | None = None,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
@@ -3250,8 +3257,12 @@ class Container(Type):
         cmd:
             If set, override the container's default terminal command and
             invoke these command arguments instead.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -3261,6 +3272,7 @@ class Container(Type):
         """
         _args = [
             Arg("cmd", [] if cmd is None else cmd, []),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3276,6 +3288,7 @@ class Container(Type):
         ports: list[PortForward] | None = None,
         args: list[str] | None = None,
         use_entrypoint: bool | None = False,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -3300,8 +3313,12 @@ class Container(Type):
             If empty, the container's default command is used.
         use_entrypoint:
             If the container has an entrypoint, prepend it to the args.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -3336,6 +3353,7 @@ class Container(Type):
             Arg("ports", [] if ports is None else ports, []),
             Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3404,6 +3422,7 @@ class Container(Type):
         self,
         args: list[str],
         *,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
@@ -3413,8 +3432,12 @@ class Container(Type):
         ----------
         args:
             The args of the command.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -3424,6 +3447,7 @@ class Container(Type):
         """
         _args = [
             Arg("args", args),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3629,6 +3653,7 @@ class Container(Type):
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
         expect: ReturnType | None = ReturnType.SUCCESS,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -3663,8 +3688,12 @@ class Container(Type):
             Example: "./stderr.txt"
         expect:
             Exit codes this command is allowed to exit with without error
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. Like --privileged
             in Docker
@@ -3689,6 +3718,7 @@ class Container(Type):
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
             Arg("expect", expect, ReturnType.SUCCESS),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -5516,6 +5546,7 @@ class Directory(Type):
         *,
         container: Container | None = None,
         cmd: list[str] | None = None,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
@@ -5529,8 +5560,12 @@ class Directory(Type):
         cmd:
             If set, override the container's default terminal command and
             invoke these command arguments instead.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -5541,6 +5576,7 @@ class Directory(Type):
         _args = [
             Arg("container", container, None),
             Arg("cmd", [] if cmd is None else cmd, []),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),

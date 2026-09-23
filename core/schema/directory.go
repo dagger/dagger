@@ -304,8 +304,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("container").Doc(`If set, override the default container used for the terminal.`),
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 			running a command with "sudo" or executing "docker run" with the
@@ -1855,6 +1856,9 @@ func (s *directorySchema) terminal(
 
 	if len(args.Cmd) == 0 {
 		args.Cmd = []string{"sh"}
+	}
+	if core.Supports(ctx, defaultNestingVersion) {
+		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(!args.DisableDaggerInDagger))
 	}
 
 	var ctr dagql.ObjectResult[*core.Container]

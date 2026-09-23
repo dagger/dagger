@@ -1531,8 +1531,12 @@ type Container implements Exportable & Node & Syncer {
     """Exit codes this command is allowed to exit with without error"""
     expect: ReturnType = SUCCESS
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. Like --privileged in Docker
@@ -1943,8 +1947,12 @@ type Container implements Exportable & Node & Syncer {
     """The args of the command."""
     args: [String!]!
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -1966,8 +1974,12 @@ type Container implements Exportable & Node & Syncer {
     """
     cmd: [String!] = []
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2016,8 +2028,12 @@ type Container implements Exportable & Node & Syncer {
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2070,8 +2086,12 @@ type Container implements Exportable & Node & Syncer {
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2604,8 +2624,12 @@ type Directory implements Exportable & Node & Syncer {
     """
     cmd: [String!] = []
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
