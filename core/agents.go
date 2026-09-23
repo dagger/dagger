@@ -82,7 +82,7 @@ func (r *AgentMiddlewareGroup) Compose(ctx context.Context, base dagql.ObjectRes
 
 	acc := base
 	for _, agent := range r.Agents {
-		next, err := runAgentMiddleware(ctx, agent, acc, false)
+		next, err := agent.Node.RunAgent(ctx, acc)
 		if err != nil {
 			return acc, fmt.Errorf("compose agent %q: %w", agent.Name(), err)
 		}

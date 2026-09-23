@@ -175,7 +175,6 @@ func TestConsoleRecordedCheckpoint(t *testing.T) {
 	// require this frame or its dependencies, let alone evaluate it.
 	tool := call.New().Append(&ast.Type{NamedType: "MissingTool"}, "unavailable")
 	appendFrame("withTools", call.NewArgument("object", call.NewLiteralID(tool), false), arg("owner", "middleware"))
-	appendFrame("__withCompositionOwner", arg("owner", "middleware"))
 	appendFrame("withSystemPrompt", arg("prompt", "system"), arg("owner", "middleware"))
 	appendFrame("withPrompt", arg("prompt", "user\nprompt"), arg("origin", map[string]any{"kind": "AGENT", "agentName": "chief", "ref": "#3"}))
 	appendFrame("withResponse", arg("content", []any{

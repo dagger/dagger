@@ -14,15 +14,12 @@ func TestLLMCompositionOwnerPrompts(t *testing.T) {
 	base, err := (&Query{}).NewLLM(t.Context(), "test-model", "")
 	require.NoError(t, err)
 	base = base.WithSystemPrompt("same text").WithPrompt("user history")
-	owned := base.WithCompositionOwner("group-A").WithSystemPrompt("same text")
-	other := owned.WithCompositionOwner("group-B").WithSystemPrompt("same text")
-	composed := other.WithCompositionOwner(owned.CompositionOwner()).
-		WithSystemPrompt("outer after nested").WithCompositionOwner(base.CompositionOwner())
+	owned := base.WithSystemPromptOwner("same text", "group-A")
+	other := owned.WithSystemPromptOwner("same text", "group-B")
+	composed := other.WithSystemPromptOwner("outer after nested", "group-A")
 	composed = composed.WithResponse([]*LLMContentBlock{{Kind: LLMContentText, Text: "assistant history"}}, LLMTokenUsage{}).
 		WithToolResult("call-1", "tool history", false)
 
-	require.Empty(t, base.CompositionOwner())
-	require.Empty(t, composed.CompositionOwner())
 	require.Equal(t, "group-A", owned.Messages[2].CompositionOwner)
 	require.Nil(t, owned.Messages[2].Origin)
 	require.Equal(t, "group-A", owned.Messages[2].Clone().CompositionOwner)
@@ -45,16 +42,16 @@ func TestLLMCompositionOwnerPrompts(t *testing.T) {
 
 	// Recomposition replaces exactly the owned prompts, even when another
 	// owner and the caller installed textually identical prompts.
-	recomposed := removed.WithCompositionOwner("group-A").WithSystemPrompt("updated").WithCompositionOwner("")
+	recomposed := removed.WithSystemPromptOwner("updated", "group-A")
 	require.Len(t, recomposed.Messages, 6)
 	require.Equal(t, "updated", recomposed.Messages[5].TextContent())
 	require.Len(t, recomposed.WithoutComposition("group-A").Messages, 5)
 }
 
-func TestLLMCompositionOwnerSubtrees(t *testing.T) {
-	// A quoted identity's escaped newline is not a scope separator.
-	require.False(t, compositionOwnerWithin("outer\\ninner", "outer"))
-	require.False(t, compositionOwnerWithin("outer\ninner\\ngrandchild", "outer\ninner"))
+func TestLLMCompositionOwnerFlatIdentity(t *testing.T) {
+	// Module identities are exact, not scope paths or prefixes.
+	require.False(t, compositionOwnerMatches("outer\ninner", "outer"))
+	require.False(t, compositionOwnerMatches("", ""))
 	base, err := (&Query{}).NewLLM(t.Context(), "test-model", "")
 	require.NoError(t, err)
 	owners := []string{"", "outer", "outer\ninner", "outer\ninner\ngrandchild", "inner", "outerish", "outer\ninnerish", "other\ninner"}
@@ -67,8 +64,8 @@ func TestLLMCompositionOwnerSubtrees(t *testing.T) {
 		want  []string
 	}{
 		{"", owners},
-		{"outer", []string{"", "inner", "outerish", "other\ninner"}},
-		{"outer\ninner", []string{"", "outer", "inner", "outerish", "outer\ninnerish", "other\ninner"}},
+		{"outer", []string{"", "outer\ninner", "outer\ninner\ngrandchild", "inner", "outerish", "outer\ninnerish", "other\ninner"}},
+		{"outer\ninner", []string{"", "outer", "outer\ninner\ngrandchild", "inner", "outerish", "outer\ninnerish", "other\ninner"}},
 		{"outer\ninner\ngrandchild", []string{"", "outer", "outer\ninner", "inner", "outerish", "outer\ninnerish", "other\ninner"}},
 		{"inner", []string{"", "outer", "outer\ninner", "outer\ninner\ngrandchild", "outerish", "outer\ninnerish", "other\ninner"}},
 	} {
@@ -112,11 +109,10 @@ func TestLLMCompositionOwnerBindingsAndReplay(t *testing.T) {
 	base, err := (&Query{}).NewLLM(ctx, "test-model", "")
 	require.NoError(t, err)
 	base = base.WithTools(manual, srv.Schema(), nil)
-	owned := base.WithCompositionOwner("group-A").WithToolsOwner(first, srv.Schema(), []string{"hidden"}, "group-A", 7)
+	owned := base.WithToolsOwner(first, srv.Schema(), []string{"hidden"}, "group-A", 7)
 	otherID, err := other.ID()
 	require.NoError(t, err)
-	owned = owned.WithCompositionOwner("group-B").WithLazyToolsOwner(otherID, other.ObjectType(), srv.Schema(), nil, "group-B", 3).
-		WithCompositionOwner("")
+	owned = owned.WithLazyToolsOwner(otherID, other.ObjectType(), srv.Schema(), nil, "group-B", 3)
 	require.Equal(t, []string{"", "group-A", "group-B"}, compositionBindingOwners(owned.mcp.boundTools))
 
 	before, err := owned.mcp.BoundToolBindings()
@@ -149,26 +145,25 @@ func TestLLMCompositionOwnerBindingsAndReplay(t *testing.T) {
 	require.Empty(t, compositionSelectorOwner(t, changedOwnerDelta[0]))
 
 	srv.InstallObject(dagql.NewClass[*LLM](srv))
-	// A nested composition must not claim an unrelated binding, including
-	// another independently composed instance of the same middleware. Moving
-	// a binding within the selected subtree remains within the same owner.
+	// Recomposition must not transfer bindings between distinct module owners,
+	// regardless of whether both modules are being recomposed.
 	for _, tc := range []struct {
 		name, previous, candidate string
 		conflict                  bool
 	}{
-		{"independent child", "inner", "outer\ninner", true},
-		{"different ancestor", "other\ninner", "outer\ninner", true},
-		{"prefix collision", "outerish", "outer\ninner", true},
-		{"selected child", "outer\ninner", "outer\ninner", false},
-		{"selected child to parent", "outer\ninner", "outer", false},
-		{"unowned migration", "", "outer\ninner", false},
+		{"different modules", "inner", "outer", true},
+		{"prefix collision", "outerish", "outer", true},
+		{"no subtree identity", "outer\ninner", "outer", true},
+		{"same module", "outer", "outer", false},
+		{"unowned migration", "", "outer", false},
+		{"unowned retained", "", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			previous := newTypeDefDetachedResult(t, srv, "previous-"+tc.name,
 				base.WithToolsOwner(first, srv.Schema(), nil, tc.previous, 0))
 			candidate := newTypeDefDetachedResult(t, srv, "candidate-"+tc.name,
 				base.WithToolsOwner(first, srv.Schema(), nil, tc.candidate, 0))
-			_, err := preserveRecomposedTools(ctx, srv, previous, candidate, "outer")
+			_, err := preserveRecomposedTools(ctx, srv, previous, candidate)
 			if tc.conflict {
 				require.ErrorContains(t, err, "owned by another middleware")
 			} else {
@@ -177,10 +172,9 @@ func TestLLMCompositionOwnerBindingsAndReplay(t *testing.T) {
 		})
 	}
 
-	// Recipe recording retains final binding owners, each prompt's owner, and
-	// the active scope of an in-progress composition. Explicit empty owners
-	// must also be recorded, rather than inheriting a scope during replay.
-	scoped := next.WithSystemPrompt("manual").WithCompositionOwner("group-A").WithSystemPrompt("owned")
+	// Recipe recording retains final binding owners and each prompt's owner.
+	// Explicit empty owners must also be recorded, not inferred during replay.
+	scoped := next.WithSystemPrompt("manual").WithSystemPromptOwner("owned", "group-A")
 	sels, err := scoped.recipeSelectors(context.Background())
 	require.NoError(t, err)
 	var toolVersions []int
@@ -197,8 +191,9 @@ func TestLLMCompositionOwnerBindingsAndReplay(t *testing.T) {
 	require.Equal(t, []int{0, 7, 3}, toolVersions)
 	require.Equal(t, []string{"", "group-A", "group-B"}, toolOwners)
 	require.Equal(t, []string{"", "group-A"}, promptOwners)
-	require.Equal(t, "__withCompositionOwner", sels[len(sels)-1].Field)
-	require.Equal(t, dagql.String("group-A"), sels[len(sels)-1].Args[0].Value)
+	for _, sel := range sels {
+		require.NotEqual(t, "__withCompositionOwner", sel.Field)
+	}
 }
 
 func compositionBindingOwners(bindings []boundTool) []string {

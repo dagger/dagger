@@ -103,7 +103,7 @@ type MCP struct {
 	// skillDirs are skill directories installed via LLM.withSkills, surfaced to
 	// the model through ListSkills/ReadSkill alongside the engine-embedded and
 	// workspace-discovered skills.
-	skillDirs []dagql.ObjectResult[*Directory]
+	skillDirs []ownedSkillDirectory
 	// selfLLM is the conversation dispatching the current step's tool calls —
 	// inst + withResponse, i.e. up to and including the in-flight tool call.
 	// The object-tool adapter passes it explicitly to hidden LLM arguments.
@@ -320,8 +320,12 @@ func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
 // WithSkills installs a directory of skills, discovered via its SKILL.md files
 // and surfaced to the model through ListSkills/ReadSkill.
 func (m *MCP) WithSkills(dir dagql.ObjectResult[*Directory]) *MCP {
+	return m.withSkillsOwner(dir, "")
+}
+
+func (m *MCP) withSkillsOwner(dir dagql.ObjectResult[*Directory], owner string) *MCP {
 	m = m.Clone()
-	m.skillDirs = append(m.skillDirs, dir)
+	m.skillDirs = append(m.skillDirs, ownedSkillDirectory{Directory: dir, Owner: owner})
 	return m
 }
 

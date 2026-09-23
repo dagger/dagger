@@ -95,10 +95,6 @@ type LLM struct {
 	// a `field:"true"` tag, since struct tag fields cannot carry a view filter.
 	Messages []*LLMMessage
 
-	// compositionOwner scopes future system prompts and object tool bindings.
-	// It is explicit LLM state (and part of recipes), not ambient Go context.
-	compositionOwner string
-
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
 
@@ -822,7 +818,7 @@ type LLMMessage struct {
 	// since absent is the common case.
 	Origin *LLMMessageOrigin `json:"origin,omitempty"`
 
-	// CompositionOwner identifies the composition that installed a system
+	// CompositionOwner identifies the module that installed a system
 	// prompt. Empty means caller-owned/unowned. This is independent of mailbox
 	// Origin and is never sent to a model as prompt text or attribution.
 	CompositionOwner string `json:"composition_owner,omitempty"`
@@ -1853,7 +1849,7 @@ func (llm *LLM) AttachDependencyResults(
 		deps = append(deps, obj)
 	}
 	for i, skillDir := range llm.mcp.skillDirs {
-		attached, err := attach(skillDir)
+		attached, err := attach(skillDir.Directory)
 		if err != nil {
 			return nil, fmt.Errorf("attach llm skill directory: %w", err)
 		}
@@ -1861,7 +1857,7 @@ func (llm *LLM) AttachDependencyResults(
 		if !ok {
 			return nil, fmt.Errorf("attach llm skill directory: unexpected result %T", attached)
 		}
-		llm.mcp.skillDirs[i] = dir
+		llm.mcp.skillDirs[i].Directory = dir
 		deps = append(deps, attached)
 	}
 	return deps, nil
@@ -2043,44 +2039,33 @@ func (llm *LLM) WithoutSystemPrompts() *LLM {
 	return llm
 }
 
-// CompositionOwner identifies the scope that owns subsequently installed
-// system prompts and object tool bindings. Empty means caller-owned/unowned.
-func (llm *LLM) CompositionOwner() string {
-	return llm.compositionOwner
-}
-
-// WithCompositionOwner sets an explicit scope without changing existing state.
-// Nested compositions restore their caller's owner when they finish.
-func (llm *LLM) WithCompositionOwner(owner string) *LLM {
-	llm = llm.Clone()
-	llm.compositionOwner = owner
-	return llm
-}
-
-// WithoutComposition removes system prompts and object tool bindings installed
-// by owner, including its nested compositions. Unowned state is never removed,
-// even for an empty owner. History, other owners, skills and configuration survive.
+// WithoutComposition removes system prompts, tools, and skill directories
+// installed by the named module. Unowned state is never removed, even for an
+// empty owner. History, other modules' contributions, and configuration survive.
 func (llm *LLM) WithoutComposition(owner string) *LLM {
 	llm = llm.Clone()
 	if owner == "" {
 		return llm
 	}
 	llm.Messages = slices.DeleteFunc(llm.Messages, func(msg *LLMMessage) bool {
-		return msg.Role == LLMMessageRoleSystem && compositionOwnerWithin(msg.CompositionOwner, owner)
+		return msg.Role == LLMMessageRoleSystem && compositionOwnerMatches(msg.CompositionOwner, owner)
 	})
 	llm.mcp.boundTools = slices.DeleteFunc(llm.mcp.boundTools, func(binding boundTool) bool {
-		return compositionOwnerWithin(binding.Owner, owner)
+		return compositionOwnerMatches(binding.Owner, owner)
+	})
+	llm.mcp.skillDirs = slices.DeleteFunc(llm.mcp.skillDirs, func(dir ownedSkillDirectory) bool {
+		return compositionOwnerMatches(dir.Owner, owner)
 	})
 	return llm
 }
 
-// Append a system prompt message to the history, owned by the active scope.
+// Append an unowned system prompt message to the history.
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
-	return llm.WithSystemPromptOwner(prompt, llm.compositionOwner)
+	return llm.WithSystemPromptOwner(prompt, "")
 }
 
-// WithSystemPromptOwner records an explicit owner without changing the active
-// composition scope. Recipe replay uses this to preserve even an empty owner.
+// WithSystemPromptOwner records the installing module's identity.
+// Recipe replay uses this to preserve even an empty owner.
 func (llm *LLM) WithSystemPromptOwner(prompt, owner string) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
@@ -2132,11 +2117,11 @@ func (llm *LLM) WithToolResultBlocks(callID, text string, blocks []*LLMContentBl
 // own type rebinds it as the new agent state; except lists method names to exclude
 // (e.g. the module's own entrypoint).
 func (llm *LLM) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string) *LLM {
-	return llm.WithToolsOwner(obj, definingSchema, except, llm.compositionOwner, 0)
+	return llm.WithToolsOwner(obj, definingSchema, except, "", 0)
 }
 
-// WithToolsOwner binds tools with an explicit owner, leaving the active scope
-// unchanged. It is used when replaying a recorded binding or state transition.
+// WithToolsOwner binds tools with an explicit installing module identity.
+// It is also used when replaying a recorded binding or state transition.
 func (llm *LLM) WithToolsOwner(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string, owner string, version int) *LLM {
 	llm = llm.Clone()
 	llm.mcp = llm.mcp.withToolsOwner(obj, definingSchema, except, owner, version)
@@ -2147,7 +2132,7 @@ func (llm *LLM) WithToolsOwner(obj dagql.AnyObjectResult, definingSchema *ast.Sc
 // preserving the schema that defined its type without loading the object.
 // See MCP.WithLazyTools.
 func (llm *LLM) WithLazyTools(id *call.ID, objType dagql.ObjectType, definingSchema *ast.Schema, except []string) *LLM {
-	return llm.WithLazyToolsOwner(id, objType, definingSchema, except, llm.compositionOwner, 0)
+	return llm.WithLazyToolsOwner(id, objType, definingSchema, except, "", 0)
 }
 
 // WithLazyToolsOwner is the lazy counterpart of WithToolsOwner.
@@ -2187,8 +2172,13 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 // SKILL.md — surfaced to the model through ListSkills/ReadSkill alongside
 // the engine-embedded and workspace-discovered skills.
 func (llm *LLM) WithSkills(dir dagql.ObjectResult[*Directory]) *LLM {
+	return llm.WithSkillsOwner(dir, "")
+}
+
+// WithSkillsOwner installs a skill directory with an explicit module owner.
+func (llm *LLM) WithSkillsOwner(dir dagql.ObjectResult[*Directory], owner string) *LLM {
 	llm = llm.Clone()
-	llm.mcp = llm.mcp.WithSkills(dir)
+	llm.mcp = llm.mcp.withSkillsOwner(dir, owner)
 	return llm
 }
 
@@ -3349,7 +3339,7 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 	}
 
 	for _, dir := range llm.mcp.skillDirs {
-		dirID, err := dir.ID()
+		dirID, err := dir.Directory.ID()
 		if err != nil {
 			return nil, fmt.Errorf("skill directory ID: %w", err)
 		}
@@ -3357,6 +3347,7 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 			Field: "withSkills",
 			Args: []dagql.NamedInput{
 				{Name: "directory", Value: dagql.NewID[*Directory](dirID)},
+				{Name: "owner", Value: dagql.Opt(dagql.String(dir.Owner))},
 			},
 		})
 	}
@@ -3487,12 +3478,6 @@ func (llm *LLM) messageRecipeSelectors() ([]dagql.Selector, error) {
 		}
 	}
 
-	if llm.compositionOwner != "" {
-		sels = append(sels, dagql.Selector{
-			Field: "__withCompositionOwner",
-			Args:  []dagql.NamedInput{{Name: "owner", Value: dagql.String(llm.compositionOwner)}},
-		})
-	}
 	return sels, nil
 }
 

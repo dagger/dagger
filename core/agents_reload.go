@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
@@ -20,79 +19,46 @@ func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectR
 		ctx = WorkspaceToContext(ctx, r.BoundWorkspace)
 	}
 	acc := base
-	for _, agent := range r.Agents {
-		next, err := runAgentMiddleware(ctx, agent, acc, true)
-		if err != nil {
-			return base, fmt.Errorf("recompose agent %q: %w", agent.Name(), err)
-		}
-		acc = next
-	}
-	warnToolNameCollisions(ctx, acc.Self())
-	return acc, nil
-}
-
-// compositionOwnerWithin reports whether a contribution belongs to a selected
-// scope or one of its nested compositions. Empty owners are always unowned.
-func compositionOwnerWithin(contribution, owner string) bool {
-	return owner != "" && (contribution == owner || strings.HasPrefix(contribution, owner+"\n"))
-}
-
-// Scope ownership on the LLM value passed across the module boundary, not on
-// the Go context: a middleware's nested withTools/withSystemPrompt calls must
-// observe the same owner and record it in their results. Restore any enclosing
-// scope after a nested composition finishes.
-func runAgentMiddleware(ctx context.Context, agent *AgentMiddleware, base dagql.ObjectResult[*LLM], reload bool) (dagql.ObjectResult[*LLM], error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return base, err
 	}
-	mod := agent.Node.OriginalModule.Self()
-	// A replacement implementation at the same installation and entrypoint owns
-	// the same contributions, even if its source moved from remote to local.
-	owner := fmt.Sprintf("%q/%q", mod.Name(), agent.Node.PathString())
-	// Keep causal ownership: composing Inner through Outer is distinct from
-	// composing Inner independently. Quoted identity components cannot contain
-	// literal newlines, so this separator unambiguously delimits scope levels.
-	// Clearing Outer also clears descendants it no longer composes; retained
-	// descendant tool state is restored by Outer's preserveRecomposedTools.
-	if parent := base.Self().CompositionOwner(); parent != "" {
-		owner = parent + "\n" + owner
-	}
-	scoped := base
-	if reload {
-		if err := srv.Select(ctx, scoped, &scoped, dagql.Selector{
+	// Clear each module once, before running any entrypoints. Clearing before
+	// every entrypoint would erase contributions from earlier ones in the same
+	// module; checking tool state before all have run would reject their tools.
+	removed := map[string]bool{}
+	for _, agent := range r.Agents {
+		owner := agent.Node.OriginalModule.Self().Name()
+		if removed[owner] {
+			continue
+		}
+		removed[owner] = true
+		if err := srv.Select(ctx, acc, &acc, dagql.Selector{
 			Field: "__withoutComposition",
 			Args:  []dagql.NamedInput{{Name: "owner", Value: dagql.String(owner)}},
 		}); err != nil {
 			return base, err
 		}
 	}
-	if err := srv.Select(ctx, scoped, &scoped, dagql.Selector{
-		Field: "__withCompositionOwner",
-		Args:  []dagql.NamedInput{{Name: "owner", Value: dagql.String(owner)}},
-	}); err != nil {
-		return base, err
+	for _, agent := range r.Agents {
+		next, err := agent.Node.RunAgent(ctx, acc)
+		if err != nil {
+			return base, fmt.Errorf("recompose agent %q: %w", agent.Name(), err)
+		}
+		acc = next
 	}
-	next, err := agent.Node.RunAgent(ctx, scoped)
+	acc, err = preserveRecomposedTools(ctx, srv, base, acc)
 	if err != nil {
 		return base, err
 	}
-	if reload && next.Self().CompositionOwner() != owner {
-		return base, fmt.Errorf("middleware did not preserve its base LLM composition scope")
-	}
-	if reload {
-		next, err = preserveRecomposedTools(ctx, srv, base, next, owner)
-		if err != nil {
-			return base, err
-		}
-	}
-	if err := srv.Select(ctx, next, &next, dagql.Selector{
-		Field: "__withCompositionOwner",
-		Args:  []dagql.NamedInput{{Name: "owner", Value: dagql.String(base.Self().CompositionOwner())}},
-	}); err != nil {
-		return base, err
-	}
-	return next, nil
+	warnToolNameCollisions(ctx, acc.Self())
+	return acc, nil
+}
+
+// compositionOwnerMatches compares flat module identities. Empty owners are
+// always unowned, never a module selected for recomposition.
+func compositionOwnerMatches(contribution, owner string) bool {
+	return owner != "" && contribution == owner
 }
 
 func snapshotBoundTools(m *MCP) []boundTool {
@@ -101,7 +67,7 @@ func snapshotBoundTools(m *MCP) []boundTool {
 	return slices.Clone(m.boundTools)
 }
 
-func preserveRecomposedTools(ctx context.Context, srv *dagql.Server, previous, candidate dagql.ObjectResult[*LLM], owner string) (dagql.ObjectResult[*LLM], error) {
+func preserveRecomposedTools(ctx context.Context, srv *dagql.Server, previous, candidate dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	oldBindings := snapshotBoundTools(previous.Self().mcp)
 	newBindings := snapshotBoundTools(candidate.Self().mcp)
 	byType := make(map[string]boundTool, len(newBindings))
@@ -113,7 +79,7 @@ func preserveRecomposedTools(ctx context.Context, srv *dagql.Server, previous, c
 		if !exists {
 			return candidate, fmt.Errorf("reload would discard tool state for %q; use a fresh composition to reset it explicitly", old.typeName())
 		}
-		if old.Owner != "" && !compositionOwnerWithin(old.Owner, owner) && compositionOwnerWithin(next.Owner, owner) {
+		if old.Owner != "" && next.Owner != "" && old.Owner != next.Owner {
 			return candidate, fmt.Errorf("reload would replace tool binding %q owned by another middleware", old.typeName())
 		}
 		if stableIDDigest(old.id) == stableIDDigest(next.id) && old.Version == next.Version {
