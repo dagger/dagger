@@ -1393,7 +1393,8 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 	}
 
 	var commits []*GitCommitMetadata
-	err := mountRefs(ctx, refs, func(git *gitutil.GitCLI, shas []string) error {
+	needsFullHistory := false
+	readLog := func(git *gitutil.GitCLI, shas []string) error {
 		args := []string{"rev-list", "-n", strconv.Itoa(opts.Limit), shas[0]}
 		if len(shas) > 1 {
 			args = append(args, "^"+shas[1])
@@ -1407,9 +1408,20 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 			return fmt.Errorf("git rev-list failed: %w", err)
 		}
 
+		logSHAs := strings.Fields(string(out))
+		if opts.Base == nil && len(opts.Paths) == 0 && !needsFullHistory {
+			// A shared mirror can have uneven shallow boundaries (for example,
+			// a merge's second parent fetched separately). The mount's depth
+			// estimate alone does not guarantee this walk is complete.
+			needsFullHistory, err = gitLogReachesShallowBoundary(ctx, git, logSHAs, opts.Limit)
+			if err != nil || needsFullHistory {
+				return err
+			}
+		}
+
 		// read every commit while the repo is still mounted, rather than leaving
 		// each one to mount again on demand
-		for _, sha := range strings.Fields(string(out)) {
+		for _, sha := range logSHAs {
 			raw, err := git.Run(ctx, "cat-file", "commit", sha)
 			if err != nil {
 				return fmt.Errorf("read git commit metadata for %s: %w", sha, err)
@@ -1421,11 +1433,61 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 			commits = append(commits, meta)
 		}
 		return nil
-	})
+	}
+
+	var err error
+	if opts.Base == nil && len(opts.Paths) == 0 {
+		// Without filtering, at most Limit generations can contribute to the
+		// first Limit commits. Avoid unshallowing the entire remote just to
+		// read a short log. Path filters and base exclusions need full history.
+		err = ref.Backend.mount(ctx, opts.Limit, false, func(git *gitutil.GitCLI) error {
+			return readLog(git, []string{ref.Ref.SHA})
+		})
+	} else {
+		needsFullHistory = true
+	}
+	if err == nil && needsFullHistory {
+		err = mountRefs(ctx, refs, readLog)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return commits, nil
+}
+
+// gitLogReachesShallowBoundary reports whether the bounded walk may have omitted
+// ancestors. The final commit need not have traversable parents when the limit
+// was reached: its metadata is read from the raw object, not the shallow graph.
+func gitLogReachesShallowBoundary(ctx context.Context, git *gitutil.GitCLI, shas []string, limit int) (bool, error) {
+	if len(shas) == limit {
+		shas = shas[:len(shas)-1]
+	}
+	if len(shas) == 0 {
+		return false, nil
+	}
+	// Linked worktrees keep shallow boundaries in the common directory, not
+	// their own git directory. Let Git resolve the effective shallow file.
+	shallowPath, err := git.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "shallow")
+	if err != nil {
+		return false, err
+	}
+	shallow, err := os.ReadFile(strings.TrimSuffix(string(shallowPath), "\n"))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read git shallow boundaries: %w", err)
+	}
+	boundaries := make(map[string]struct{})
+	for _, sha := range strings.Fields(string(shallow)) {
+		boundaries[sha] = struct{}{}
+	}
+	for _, sha := range shas {
+		if _, ok := boundaries[sha]; ok {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 var errShallowCachedGitHistory = errors.New("cannot share shallow git history")
