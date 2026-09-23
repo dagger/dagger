@@ -300,6 +300,7 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	defer func() { phase.End() }()
 
 	prerequisiteRef := metadata.RemoteRef
+	originURL := metadata.RemoteUrl
 	// A local filesystem remote is available only to the capturing client,
 	// just like a repository with no remote at all.
 	_, remoteErr := gitutil.ParseURL(metadata.RemoteUrl)
@@ -328,6 +329,9 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 			return inst, fmt.Errorf("pack workspace snapshot history: %w", err)
 		}
 		defer func() { _ = pack.Close() }()
+		// Capture can omit an unreachable origin from its fetch prerequisites.
+		// Preserve that origin as sanitized metadata, never as a content source.
+		originURL = hostCheckoutOriginURL(ctx, bk, captured.HostPath())
 		repo, err = checkpointLocalGitPackComposition(ctx, srv, metadata, pack)
 		if err != nil {
 			return inst, err
@@ -349,12 +353,12 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	}
 
 	nextPhase("checkpoint construct HEAD workspace")
-	if metadata.RemotePushUrl != "" || (remoteErr != nil && metadata.RemoteUrl != "") {
+	if originURL != "" || metadata.RemotePushUrl != "" {
 		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
 			Field: "withRemote",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.NewString("origin")},
-				{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)},
+				{Name: "url", Value: dagql.NewString(originURL)},
 				{Name: "pushUrl", Value: dagql.NewString(metadata.RemotePushUrl)},
 			},
 		}); err != nil {

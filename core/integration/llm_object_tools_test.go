@@ -423,7 +423,11 @@ type Editor {
 // the empty directory while keeping the file beside it.
 func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	base := workspaceFixture(t, c, "workspace-tool-return")
+	// Strict agent capture requires a snapshot-backed workspace. Give the
+	// fixture a HEAD so snapshot does not retain an unborn live checkout.
+	base := workspaceFixture(t, c, "workspace-tool-return").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "fixture"})
 
 	model := cannedRecordingModel(ctx, t, c, c.LLM().
 		WithPrompt("scaffold the project").
@@ -464,7 +468,7 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		// withNewDirectory that restored the empty directory, while the raw
 		// changeset's chain has the tool's operations and no withPatch.
 		out, err := sink.captureShellRecipe(ctx, t, base, fmt.Sprintf(
-			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "scaffold the project" | loop`,
+			`llm --model="%s" | with-workspace --workspace $(current-workspace | snapshot) | with-tools $(swapper) | with-prompt "scaffold the project" | loop`,
 			model,
 		))
 		require.NoError(t, err)
