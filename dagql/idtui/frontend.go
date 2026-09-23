@@ -417,6 +417,11 @@ type renderer struct {
 	maxWidth      int
 	widthOffset   int
 
+	// Width measurements live only for one top-level call render. Calls and
+	// their simplifications may change as telemetry arrives between frames.
+	widthProbe *callWidthProbe
+	measuring  *callWidthProbe
+
 	// indentFunc, when set, may override fancyIndent. Returns true if it
 	// handled the indent, false to fall through to the default parent-chain
 	// walk. This is used by the tree-based renderer (SpanTreeView) which
@@ -548,6 +553,39 @@ func (r *renderer) visibleArgs(args []*callpbv1.Argument, elide map[string]struc
 	return visible
 }
 
+// Inline layout does not depend on indentation or available width. It does
+// depend on the receiver's span/base and whether the type suffix is shown.
+type callWidthKey struct {
+	call     *callpbv1.Call
+	span     *dagui.Span
+	chained  bool
+	abridged bool
+}
+
+// callWidthProbe runs the ordinary inline renderer, but counts terminal cells
+// instead of allocating the expanded recipe. Memoizing subtree widths avoids
+// measuring every suffix again when a nested call wraps. Widths saturate once
+// they exceed the viewport: layout only needs to know whether a call fits.
+type callWidthProbe struct {
+	renderer *renderer
+	out      TermOutput
+	widths   map[callWidthKey]int
+	width    int
+	limit    int
+	cycles   int
+}
+
+func (p *callWidthProbe) add(width int) {
+	p.width += min(width, p.limit-p.width)
+}
+
+func (p *callWidthProbe) Write(data []byte) (int, error) {
+	if p.width < p.limit {
+		p.add(ansi.StringWidth(string(data)))
+	}
+	return len(data), nil
+}
+
 func (r *renderer) compactRenderedLen(
 	span *dagui.Span,
 	call *callpbv1.Call,
@@ -558,16 +596,24 @@ func (r *renderer) compactRenderedLen(
 	row *dagui.TraceRow,
 	abridged bool,
 ) int {
-	var buf strings.Builder
-	probe := newRenderer(r.db, -1, r.FrontendOpts, r.final)
-	probe.omitNulls = r.omitNulls
-	probe.compactIDs = r.compactIDs
-	probe.newline = r.newline
-	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
-	if err := probe.renderCall(out, span, call, prefix, chained, depth, internal, row, abridged); err != nil {
+	if r.widthProbe == nil {
+		probe := &callWidthProbe{
+			renderer: newRenderer(r.db, -1, r.FrontendOpts, r.final),
+			widths:   make(map[callWidthKey]int),
+			limit:    r.maxWidth + 1,
+		}
+		probe.renderer.omitNulls = r.omitNulls
+		probe.renderer.compactIDs = true
+		probe.renderer.measuring = probe
+		probe.out = termenv.NewOutput(probe, termenv.WithProfile(termenv.Ascii))
+		r.widthProbe = probe
+	}
+	probe := r.widthProbe
+	probe.width = 0
+	if err := probe.renderer.renderCall(probe.out, span, call, prefix, chained, depth, internal, row, abridged); err != nil {
 		return r.maxWidth + 1
 	}
-	return ansi.StringWidth(buf.String())
+	return probe.width
 }
 
 func (r *renderer) renderIDBase(out TermOutput, call *callpbv1.Call) {
@@ -592,10 +638,35 @@ func (r *renderer) renderCall( //nolint: gocyclo
 	internal bool,
 	row *dagui.TraceRow,
 	abridged bool,
-) error {
+) (err error) {
+	if r.measuring == nil && len(r.rendering) == 0 {
+		defer func() { r.widthProbe = nil }()
+	}
 	if r.rendering[call.Digest] {
+		if r.measuring != nil {
+			r.measuring.cycles++
+		}
 		fmt.Fprintf(out, "<cycle detected: %s>", call.Digest)
 		return nil
+	}
+	if probe := r.measuring; probe != nil {
+		key := callWidthKey{call: call, span: span, chained: chained, abridged: abridged}
+		if width, ok := probe.widths[key]; ok {
+			probe.add(width)
+			return nil
+		}
+		parentWidth, cycles := probe.width, probe.cycles
+		probe.width = 0
+		defer func() {
+			width := probe.width
+			// A cycle marker depends on the active ancestors. Do not reuse
+			// widths containing one in a different ancestor context.
+			if err == nil && probe.cycles == cycles {
+				probe.widths[key] = width
+			}
+			probe.width = parentWidth
+			probe.add(width)
+		}()
 	}
 	r.rendering[call.Digest] = true
 	defer func() { delete(r.rendering, call.Digest) }()
