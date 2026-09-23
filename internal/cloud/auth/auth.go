@@ -42,12 +42,25 @@ var authConfig = &oauth2.Config{
 	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
 	ClientID: "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
 	Scopes:   []string{"openid", "offline_access"},
-	Endpoint: oauth2.Endpoint{
+	Endpoint: authEndpoint(authDomainFromEnv()),
+}
+
+// authDomainFromEnv is the OAuth domain, overridden by DAGGER_CLOUD_AUTH_URL
+// for integration tests, as DAGGER_CLOUD_URL overrides the API.
+func authDomainFromEnv() string {
+	if u := os.Getenv("DAGGER_CLOUD_AUTH_URL"); u != "" {
+		return u
+	}
+	return authDomain
+}
+
+func authEndpoint(domain string) oauth2.Endpoint {
+	return oauth2.Endpoint{
 		AuthStyle:     oauth2.AuthStyleInParams,
-		AuthURL:       authDomain + "/authorize",
-		TokenURL:      authDomain + "/oauth/token",
-		DeviceAuthURL: authDomain + "/oauth/device/code",
-	},
+		AuthURL:       domain + "/authorize",
+		TokenURL:      domain + "/oauth/token",
+		DeviceAuthURL: domain + "/oauth/device/code",
+	}
 }
 
 type LoginOption func(*loginOptions)

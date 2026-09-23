@@ -126,7 +126,8 @@ func readTelemetrySplit(ctx context.Context, t *testctx.T, cloud telemetrySplitC
 	}
 }
 
-// cliWriters are the writers of the client's own spans.
+// cliWriters are the writers of the client's own spans, one per client
+// process.
 func (got telemetrySplitReceived) cliWriters(t *testctx.T) map[string]bool {
 	writers := map[string]bool{}
 	for _, span := range got.spans {
@@ -134,7 +135,7 @@ func (got telemetrySplitReceived) cliWriters(t *testctx.T) map[string]bool {
 			writers[span.Writer] = true
 		}
 	}
-	require.Len(t, writers, 1, "the client's own spans reach Cloud from the client")
+	require.NotEmpty(t, writers, "the client's own spans reach Cloud from the client")
 	return writers
 }
 
@@ -451,4 +452,172 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 			}
 		})
 	}
+}
+
+// telemetrySplitMarkerModule is a module whose function, run as a nested
+// client, prints a marker assembled inside its exec.
+func telemetrySplitMarkerModule(c *dagger.Client) *dagger.Directory {
+	return c.Directory().
+		WithNewFile("dagger.json", `{"name": "marker", "sdk": "go", "source": "."}`).
+		WithNewFile("main.go", fmt.Sprintf(`package main
+
+import "context"
+
+type Marker struct{}
+
+func (m *Marker) Emit(ctx context.Context, prefix string, id string) error {
+	_, err := dag.Container().
+		From(%q).
+		WithEnvVariable("MARKER_PREFIX", prefix).
+		WithEnvVariable("MARKER_ID", id).
+		WithExec([]string{"sh", "-c", "echo $MARKER_PREFIX$MARKER_ID"}).
+		Sync(ctx)
+	return err
+}
+`, alpineImage))
+}
+
+// markerExecArgs runs an exec printing prefix+id through the CLI. Each
+// marker ships as two halves, assembled only inside the exec: the client's
+// root span is named after its command line, and the client exports its own
+// telemetry to the same fake Cloud.
+func markerExecArgs(prefix, id string) []string {
+	return []string{
+		"/bin/dagger", "core", "container",
+		"from", "--address=" + alpineImage,
+		"with-env-variable", "--name=MARKER_PREFIX", "--value=" + prefix,
+		"with-env-variable", "--name=MARKER_ID", "--value=" + id,
+		"with-exec", "--args=sh", "--args=-c", "--args=echo $MARKER_PREFIX$MARKER_ID",
+		"stdout",
+	}
+}
+
+// TestEngineTelemetryToCloud (from #13339): the engine publishes the
+// session's telemetry, the main client's and a nested client's (a module
+// function), with the credential and Cloud URL the client provides, over all
+// three signals.
+func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	cloud := newTelemetrySplitCloud(t, c)
+	engine, err := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), cloud)).Start(ctx)
+	require.NoError(t, err)
+
+	mainID, nestedID := identity.NewID(), identity.NewID()
+	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
+		WithExec(markerExecArgs("main-marker-", mainID)).
+		WithDirectory("/work/marker", telemetrySplitMarkerModule(c)).
+		WithWorkdir("/work/marker").
+		WithExec([]string{"/bin/dagger", "call", "-m", ".", "emit", "--prefix=nested-marker-", "--id=" + nestedID}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	got := readTelemetrySplit(ctx, t, cloud)
+	got.requireSpansFromOneWriter(t)
+	cliLogWriters := got.cliLogWriters(t)
+	for name, marker := range map[string]string{
+		"main client":                     "main-marker-" + mainID,
+		"nested client (module function)": "nested-marker-" + nestedID,
+	} {
+		output := got.output(t, marker)
+		require.False(t, cliLogWriters[output.Writer], "the engine publishes the %s's output", name)
+	}
+
+	// Each signal has its own writers: an engine resource's metrics that
+	// the client forwarded would carry one of the client's metric writers.
+	type metricWriter struct {
+		Writer  string `json:"writer"`
+		Service string `json:"service"`
+	}
+	metricWriters := readTelemetrySplitLines[metricWriter](ctx, t, cloud, "v1/metrics.json.writers")
+	cliMetricWriters := map[string]bool{}
+	for _, mw := range metricWriters {
+		if mw.Service == "dagger-cli" {
+			cliMetricWriters[mw.Writer] = true
+		}
+	}
+	var engineMetrics bool
+	for _, mw := range metricWriters {
+		if mw.Service != "dagger-cli" {
+			require.False(t, cliMetricWriters[mw.Writer], "the client does not forward the engine's metrics")
+			engineMetrics = true
+		}
+	}
+	require.True(t, engineMetrics, "the engine publishes metrics")
+}
+
+// TestEngineTelemetryCloudOAuthRefresh (from #13339): with a `dagger login`
+// token that outlives its access token, the engine refreshes it from the
+// client host's credentials file, through the session's attachables, exports
+// all three signals with the refreshed token, and writes it back. The fake
+// Cloud issues tokens that expire at once and refuses any it did not issue,
+// and the engine and the client refresh through different token endpoints,
+// so the request log pins each export to the engine.
+func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	cloud := newTelemetrySplitCloud(t, c)
+	engine, err := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), cloud).
+		WithEnvVariable("DAGGER_CLOUD_AUTH_URL", "http://cloud:8080/"+cloud.eventsID+"/engine")).Start(ctx)
+	require.NoError(t, err)
+	endpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	require.NoError(t, err)
+
+	markerID := identity.NewID()
+	staleCreds := `{"access_token":"stale-token","token_type":"Bearer","refresh_token":"test-refresh-token","expiry":"2020-01-01T00:00:00Z"}`
+	clientCtr := cloud.bind(c.Container().From(alpineImage)).
+		WithServiceBinding("dev-engine", engine).
+		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithEnvVariable("XDG_CONFIG_HOME", "/root/.config").
+		WithNewFile("/root/.config/dagger/credentials.json", staleCreds).
+		WithNewFile("/root/.config/dagger/org", `{"id":"org-telemetry-test","name":"telemetry-test"}`).
+		WithEnvVariable("DAGGER_CLOUD_AUTH_URL", "http://cloud:8080/"+cloud.eventsID+"/client").
+		WithExec(markerExecArgs("refresh-marker-", markerID))
+	_, err = clientCtr.Sync(ctx)
+	require.NoError(t, err)
+
+	got := readTelemetrySplit(ctx, t, cloud)
+	output := got.output(t, "refresh-marker-"+markerID)
+	require.False(t, got.cliLogWriters(t)[output.Writer], "the engine publishes the output")
+
+	events := cloud.reader.WithEnvVariable("CACHEBUSTER", identity.NewID())
+	_, err = events.
+		WithExec([]string{"test", "-s", fmt.Sprintf("/events/%s/engine/issued-tokens.txt", cloud.eventsID)}).
+		Sync(ctx)
+	require.NoError(t, err, "the engine never refreshed the OAuth token")
+	for _, signal := range []string{"traces", "logs", "metrics"} {
+		_, err := events.
+			WithExec([]string{"grep", "-E",
+				fmt.Sprintf("^fresh-token-.*-engine-[0-9]+ /%s/v1/%s$", cloud.eventsID, signal),
+				"/events/requests.log",
+			}).
+			Sync(ctx)
+		require.NoError(t, err, "the engine exported no %s with a refreshed token", signal)
+	}
+
+	creds, err := clientCtr.WithExec([]string{"cat", "/root/.config/dagger/credentials.json"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, creds, "fresh-token-", "the refreshed token is written back")
+	require.NotContains(t, creds, "stale-token")
+}
+
+// TestEngineTelemetryCloudOutage (from #13339): a Cloud that accepts
+// requests and never answers costs telemetry, never the build. The client
+// gives the engine 10s to shut down; the engine's Cloud flush gives up well
+// within that.
+func (ClientSuite) TestEngineTelemetryCloudOutage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	cloud := newTelemetrySplitCloud(t, c)
+	cloud.eventsID = "hang/" + cloud.eventsID
+	engine, err := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), cloud)).Start(ctx)
+	require.NoError(t, err)
+	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
+		WithExec([]string{
+			"/bin/dagger", "core", "container",
+			"from", "--address=" + alpineImage,
+			"with-exec", "--args=true",
+			"stdout",
+		}).
+		Sync(ctx)
+	require.NoError(t, err, "a hanging Cloud must never fail the build")
 }
