@@ -133,6 +133,16 @@ type daggerSession struct {
 	logExporter    sdklog.Exporter
 	telemetryDebug LifecycleTelemetryCounts
 
+	// Dagger Cloud exporters, set when the main client asked the engine to
+	// publish the session's telemetry. The session's providers own the span
+	// and log exporters; the metric exporter is shared by every client's
+	// periodic reader, so the session shuts it down itself.
+	cloudSpans   sdktrace.SpanExporter
+	cloudLogs    sdklog.Exporter
+	cloudMetrics sdkmetric.Exporter
+	// cloudFlushers flush the session's Cloud processors, bounded.
+	cloudFlushers []func(context.Context) error
+
 	// informed when a client goes away to prevent hanging on drain
 	telemetryPubSub *PubSub
 	seenKeys        sync.Map
@@ -691,6 +701,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	if sess.loggerProvider != nil {
 		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
 	}
+	if sess.cloudMetrics != nil {
+		metricDur += timedProviderOp(ctx, &errs, sess.cloudMetrics.Shutdown)
+	}
 	for _, client := range clients {
 		errs = errors.Join(errs, client.closeTelemetryDB())
 	}
@@ -775,23 +788,36 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 		record: client.clientRecord,
 		ps:     srv.telemetryPubSub,
 	}
-	client.metricMu.Lock()
-	client.metricExporter = exporter
-	client.meterProvider = sdkmetric.NewMeterProvider(
+	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
 			exporter,
 			sdkmetric.WithInterval(metricReaderInterval),
 		)),
-	)
+	}
+	readers := 1
+	if cloudMetrics := client.daggerSession.cloudMetrics; cloudMetrics != nil {
+		// Each client's reader shuts its exporter down with the client; the
+		// session owns the Cloud exporter.
+		meterOpts = append(meterOpts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
+			enginetel.SharedMetricExporter{Exporter: cloudMetrics},
+			sdkmetric.WithInterval(metricReaderInterval),
+		)))
+		readers++
+	}
+	client.metricMu.Lock()
+	client.metricExporter = exporter
+	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 	client.metricMu.Unlock()
 	client.telemetryDebug = LifecycleTelemetryCounts{
 		MeterProviders:          1,
-		ConfiguredMetricReaders: 1,
+		ConfiguredMetricReaders: readers,
 	}
 }
 
-func (srv *Server) initializeSessionTelemetry(sess *daggerSession, cloudEngine bool) {
+func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadata *engine.ClientMetadata) {
+	cloudEngine := clientMetadata != nil && clientMetadata.CloudEngine
+	srv.initializeSessionCloudTelemetry(sess, clientMetadata)
 	spanExporter := sessionSpanExporter{sess: sess, ps: srv.telemetryPubSub}
 	logExporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
 	sess.spanExporter = spanExporter
@@ -836,13 +862,31 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, cloudEngine b
 		sdklog.WithProcessor(enginetel.NewCallPayloadBatchProcessor(logExporter)),
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
+	spanProcessors, logProcessors := 4, 3
+	bound := cloudFlushBound{sessionID: sess.sessionID}
+	if sess.cloudSpans != nil {
+		// The engine publishes the session's telemetry to Cloud itself: every
+		// span, and every record including call payloads, as the client used
+		// to forward them.
+		processor := boundedCloudSpanProcessor{SpanProcessor: enginetel.NewLargeQueueLiveSpanProcessor(sess.cloudSpans), bound: bound}
+		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(processor))
+		sess.cloudFlushers = append(sess.cloudFlushers, processor.ForceFlush)
+		spanProcessors++
+	}
+	if sess.cloudLogs != nil {
+		processor := boundedCloudLogProcessor{Processor: sdklog.NewBatchProcessor(sess.cloudLogs,
+			sdklog.WithExportInterval(telemetry.NearlyImmediate)), bound: bound}
+		loggerOpts = append(loggerOpts, sdklog.WithProcessor(processor))
+		sess.cloudFlushers = append(sess.cloudFlushers, processor.ForceFlush)
+		logProcessors++
+	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	sess.telemetryDebug = LifecycleTelemetryCounts{
 		TracerProviders:          1,
 		LoggerProviders:          1,
-		ConfiguredSpanProcessors: 4,
-		ConfiguredLogProcessors:  3,
+		ConfiguredSpanProcessors: spanProcessors,
+		ConfiguredLogProcessors:  logProcessors,
 		ConfiguredSpanQueueSlots: enginetel.LargeSpanQueueSize,
 		ConfiguredLogQueueSlots:  enginetel.LogQueueSize,
 	}
@@ -883,7 +927,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.telemetryPubSub = srv.telemetryPubSub
-	srv.initializeSessionTelemetry(sess, clientMetadata.CloudEngine)
+	srv.initializeSessionTelemetry(sess, clientMetadata)
 	failureCleanups.Add("shutdown session telemetry", func() error {
 		return sess.shutdownTelemetry(context.Background())
 	})
@@ -2695,6 +2739,14 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush workspace locks: %w", err))
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
+
+		// Publish what the session has sent to Cloud so far while the client's
+		// attachables are still open: refreshing an OAuth token reads the
+		// client's credentials file through them.
+		_ = drainPhase("flush session Cloud telemetry", func() error {
+			sess.flushSessionCloudTelemetry(ctx)
+			return nil
+		})
 
 		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host)
 		sess.beginClosing()
