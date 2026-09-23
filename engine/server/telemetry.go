@@ -314,7 +314,9 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 				return fmt.Errorf("control namespace does not match emission session/trace")
 			}
 			if err := exp.sess.ensureArchive(ns.Trace); err != nil {
-				return err
+				// Archive availability is not authority to suppress the live roster.
+				// The registration failure is retained separately for finalization.
+				slog.Warn("register agent archive", "err", err)
 			}
 			encoded, err := json.Marshal(projection)
 			if err != nil {
