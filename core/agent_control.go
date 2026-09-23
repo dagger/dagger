@@ -15,8 +15,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// agentCapture owns the immutable committed value until recipe derivation has
-// finished. The runtime's tombstone lease is held until its publisher drains.
+// agentCapture owns the immutable committed value and its own executable
+// client scope until derivation finishes (or coalescing drops the capture).
 // State-only revisions share this capture; a new conversation never does.
 type agentCapture struct {
 	ctx     context.Context
@@ -386,6 +386,9 @@ func (ars *AgentRuntimes) closeControl(ctx context.Context, cause error) (map[st
 	out := map[string]agentcontrol.Expectation{}
 	for _, rt := range entries {
 		rt.mu.Lock()
+		if !rt.controlClosed {
+			rt.publishControlLocked()
+		}
 		rt.controlClosed = true
 		expect := out[rt.controlOrigin]
 		if expect.Agents == nil {

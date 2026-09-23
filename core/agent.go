@@ -1173,20 +1173,8 @@ type AgentRuntime struct {
 	// WaitFor can block on transitions without polling.
 	stateChanged chan struct{}
 
-	// Telemetry directory plumbing (design §3.3), guarded by mu.
-	//
-	// spanCtx carries the loop span, set when the loop starts, and is what
-	// state records are attributed to. It deliberately outlives the span
-	// itself: a record emitted after the span ended still carries its span
-	// ID, which is how the tombstone-sealing transition (Stop on a FAILED
-	// agent, after the loop returned) still reaches a client's roster.
-	//
-	// emittedState is the last state published on that channel, so a
-	// transition that does not change the PROJECTION emits nothing —
-	// transitionLocked fires on every fact change, of which only a fraction
-	// are state changes. emittedSnapshot is the same guard for the snapshot
-	// channel: a relaunched loop re-publishes the conversation it resumes
-	// from, and a client gains nothing from the duplicate.
+	// Compact telemetry attribution; never retains a resolver/query context.
+	// Executable capture contexts have independent, short-lived scope leases.
 	spanCtx context.Context
 
 	control               *agentControlPublisher
