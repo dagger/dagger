@@ -15,15 +15,15 @@ type SelectMetricsRangeParams struct{ AfterID, ThroughID, Limit int64 }
 
 // Checkpoint is a persistence barrier, not merely an in-memory high water.
 // Producers must be quiesced to use the returned cut for finalization.
-func (db *DB) Checkpoint(ctx context.Context) (HighWater, error) {
-	cut := HighWater{db.spans.highWater(), db.logs.highWater(), db.metrics.highWater()}
-	for _, sync := range []func(context.Context) error{db.spans.checkpoint, db.logs.checkpoint, db.metrics.checkpoint} {
+func (s *DB) Checkpoint(ctx context.Context) (HighWater, error) {
+	cut := HighWater{s.spans.highWater(), s.logs.highWater(), s.metrics.highWater()}
+	for _, sync := range []func(context.Context) error{s.spans.checkpoint, s.logs.checkpoint, s.metrics.checkpoint} {
 		if err := sync(ctx); err != nil {
 			return HighWater{}, err
 		}
 	}
 	// Sync directory entries as well as stream contents before a manifest refers to them.
-	dir, err := os.Open(filepath.Dir(db.logs.spill.file.Name()))
+	dir, err := os.Open(filepath.Dir(s.logs.spill.file.Name()))
 	if err != nil {
 		return HighWater{}, err
 	}
@@ -31,19 +31,19 @@ func (db *DB) Checkpoint(ctx context.Context) (HighWater, error) {
 	return cut, err
 }
 
-func (db *DB) CheckpointLogs(ctx context.Context) error { return db.logs.checkpoint(ctx) }
-func (db *DB) SelectSpansRange(ctx context.Context, p SelectSpansRangeParams) ([]Span, error) {
-	return db.spans.Range(ctx, p.AfterID, p.ThroughID, storeLimit(p.Limit))
+func (s *DB) CheckpointLogs(ctx context.Context) error { return s.logs.checkpoint(ctx) }
+func (s *DB) SelectSpansRange(ctx context.Context, p SelectSpansRangeParams) ([]Span, error) {
+	return s.spans.Range(ctx, p.AfterID, p.ThroughID, storeLimit(p.Limit))
 }
-func (db *DB) SelectLogsRange(ctx context.Context, p SelectLogsRangeParams) ([]Log, error) {
-	return db.logs.Range(ctx, p.AfterID, p.ThroughID, storeLimit(p.Limit))
+func (s *DB) SelectLogsRange(ctx context.Context, p SelectLogsRangeParams) ([]Log, error) {
+	return s.logs.Range(ctx, p.AfterID, p.ThroughID, storeLimit(p.Limit))
 }
-func (db *DB) SelectMetricsRange(ctx context.Context, p SelectMetricsRangeParams) ([]Metric, error) {
-	return db.metrics.Range(ctx, p.AfterID, p.ThroughID, storeLimit(p.Limit))
+func (s *DB) SelectMetricsRange(ctx context.Context, p SelectMetricsRangeParams) ([]Metric, error) {
+	return s.metrics.Range(ctx, p.AfterID, p.ThroughID, storeLimit(p.Limit))
 }
-func (db *DB) SizeBytes() (int64, error) {
+func (s *DB) SizeBytes() (int64, error) {
 	var total int64
-	for _, file := range []*os.File{db.spans.spill.file, db.logs.spill.file, db.metrics.spill.file} {
+	for _, file := range []*os.File{s.spans.spill.file, s.logs.spill.file, s.metrics.spill.file} {
 		stat, err := file.Stat()
 		if err != nil {
 			return 0, err

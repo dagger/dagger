@@ -204,7 +204,7 @@ func TestArchiveDiscoveryIsReadOnlyAndPaginated(t *testing.T) {
 }
 
 func TestArchiveRestorePinsSelectedGeneration(t *testing.T) {
-	source, _, _, _ := canonicalArchive()
+	source, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
 	req := restoreRequest()
 	req.generation = source.header.Generation
 	cleanup, err := restoreArchive(t.Context(), source, newRestoreTestFrontend(), newFakeRestoreTarget(), req)
@@ -223,7 +223,7 @@ func TestArchiveAmbiguityGuidesSelection(t *testing.T) {
 }
 
 func TestArchivePromptDoesNotWaitForHistory(t *testing.T) {
-	source, _, _, _ := canonicalArchive()
+	source, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
 	fe, target := newRestoreTestFrontend(), newFakeRestoreTarget()
 	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
 	require.NoError(t, err)
@@ -241,7 +241,7 @@ func TestArchivePromptDoesNotWaitForHistory(t *testing.T) {
 }
 
 func TestArchiveRestoreWaitsForFrontendApplication(t *testing.T) {
-	source, _, _, _ := canonicalArchive()
+	source, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
 	fe, target := newRestoreTestFrontend(), newFakeRestoreTarget()
 	entered, apply := make(chan struct{}, 1), make(chan struct{})
 	fe.barrier = func(ctx context.Context) error {

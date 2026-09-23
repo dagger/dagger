@@ -87,6 +87,12 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 		return inst, err
 	}
 
+	return captureWorkspaceCommit(ctx, srv, frozen, args)
+}
+
+// captureWorkspaceCommit merges and captures both the selected delta and pending
+// remainder against an already approved immutable receiver.
+func captureWorkspaceCommit(ctx context.Context, srv *dagql.Server, frozen dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (inst dagql.ObjectResult[*core.Workspace], err error) {
 	var changes dagql.ObjectResult[*core.Changeset]
 	if err := srv.Select(ctx, frozen, &changes,
 		dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"},
