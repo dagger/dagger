@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -248,4 +249,51 @@ func TestCloudExportDoesNotWaitOnStalledRefresh(t *testing.T) {
 		require.Less(t, time.Since(start), 2*time.Second, "%s export waited on the stalled refresh", name)
 		cancel()
 	}
+}
+
+// Concurrent exports waiting on an expired token share one refresh: during a
+// stalled refresh, callers return at their own deadlines without starting
+// refreshes of their own, a failed refresh is not retried at once, and no
+// goroutine outlives the refresh's bound. A caller whose context has already
+// ended never starts a refresh.
+func TestSharedTokenSourceRefreshesOnce(t *testing.T) {
+	var refreshes atomic.Int32
+	source := &sharedTokenSource{
+		token: &oauth2.Token{AccessToken: "expired", Expiry: time.Now().Add(-time.Hour)},
+		refresh: boundedTokenRefresh(func(ctx context.Context) (*oauth2.Token, error) {
+			refreshes.Add(1)
+			<-ctx.Done() // a stalled OAuth endpoint
+			return nil, context.Cause(ctx)
+		}, 150*time.Millisecond),
+	}
+
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := source.Token(cancelled)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Zero(t, refreshes.Load(), "a cancelled caller starts no refresh")
+
+	var wg sync.WaitGroup
+	const callers = 20
+	start := time.Now()
+	for range callers {
+		wg.Go(func() {
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+			defer cancel()
+			_, err := source.Token(ctx)
+			require.Error(t, err)
+		})
+	}
+	wg.Wait()
+	require.Less(t, time.Since(start), 120*time.Millisecond, "callers return at their own deadlines")
+
+	time.Sleep(300 * time.Millisecond)
+	require.Equal(t, int32(1), refreshes.Load(), "one refresh for all callers, and no retry right after it failed")
+	_, err = source.Token(t.Context())
+	require.Error(t, err, "the failed refresh answers during its backoff")
+	require.Equal(t, int32(1), refreshes.Load())
+	source.mu.Lock()
+	inflight := source.inflight
+	source.mu.Unlock()
+	require.Nil(t, inflight, "the one refresh goroutine ended at its bound; callers started none")
 }
