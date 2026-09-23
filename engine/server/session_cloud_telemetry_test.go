@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -527,4 +528,30 @@ func TestPostedTelemetryReachesCloudOnce(t *testing.T) {
 			require.Equal(t, want, count(cloudMetrics, "posted.metric"), "Cloud metric delivery")
 		})
 	}
+}
+
+// Once the main client's shutdown has closed its attachables, a token refresh
+// fails at once instead of waiting for them: that wait ignores deadlines and
+// held the client's /shutdown response.
+func TestCloudTokenRefreshFailsOnceClosing(t *testing.T) {
+	t.Parallel()
+	srv := &Server{}
+	sess, root := newCloudTestSession(t, srv, &engine.ClientMetadata{CloudAuth: basicCloudAuth("dag_test_token")})
+	root.metadataSealed = true
+	sess.state.Store(sessionStateInitialized)
+	srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
+	t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
+
+	sess.attachables = newSessionAttachableManager()
+	_, err := srv.refreshSessionCloudToken(t.Context(), sess, "/credentials.json")
+	require.ErrorIs(t, err, errCloudRefreshSessionClosing, "no attachables registered for the main client")
+
+	sess.attachables = nil
+	closing, cancelClosing := context.WithCancelCause(context.Background())
+	sess.closingCtx = closing
+	cancelClosing(errors.New("closing"))
+	start := time.Now()
+	_, err = srv.refreshSessionCloudToken(t.Context(), sess, "/credentials.json")
+	require.ErrorIs(t, err, errCloudRefreshSessionClosing)
+	require.Less(t, time.Since(start), time.Second)
 }

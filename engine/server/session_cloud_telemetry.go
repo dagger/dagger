@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -69,6 +70,8 @@ func (sess *daggerSession) publishesToCloud() bool {
 	return sess.cloudSpanProcessor != nil && sess.cloudLogProcessor != nil && sess.cloudMetrics != nil
 }
 
+var errCloudRefreshSessionClosing = errors.New("refresh cloud token: the main client's attachables are closed")
+
 // refreshSessionCloudToken refreshes the main client's expired OAuth token
 // from the credentials file on the client's host, and writes the refreshed
 // token back there, since refreshing invalidates the old one.
@@ -83,6 +86,18 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 	md, err := sess.clientMetadataSnapshot(record)
 	if err != nil {
 		return nil, fmt.Errorf("refresh cloud token: main client metadata: %w", err)
+	}
+	// Once the main client's shutdown closes its attachables, the credentials
+	// file is out of reach. Looking for the attachables then waits out the
+	// gateway's own 10s bound, whatever this context says, and while it waits
+	// the client's /shutdown response does not arrive: fail at once instead.
+	if sess.closingCtx != nil && sess.closingCtx.Err() != nil {
+		return nil, errCloudRefreshSessionClosing
+	}
+	if sess.attachables != nil {
+		if _, ok := sess.attachables.Lookup(record.clientID); !ok {
+			return nil, errCloudRefreshSessionClosing
+		}
 	}
 	if sess.engineUtilClient == nil {
 		return nil, fmt.Errorf("refresh cloud token: session gateway not initialized")
