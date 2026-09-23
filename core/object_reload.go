@@ -103,7 +103,7 @@ func moduleObjectsForRebind(initial, previous dagql.AnyObjectResult) (*ModuleObj
 	return target, old, nil
 }
 
-func (obj *ModuleObject) stateRebindField(ctx context.Context, srv *dagql.Server) (dagql.Field[*ModuleObject], error) {
+func (obj *ModuleObject) stateRebindField(srv *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	module, moduleProvider, err := NewUserMod(obj.Module).FieldModule()
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, err

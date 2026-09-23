@@ -1119,7 +1119,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 
 	// Engine-only state transfer is deliberately absent from TypeDef.Functions:
 	// it must not become an author method, tool, or entrypoint proxy.
-	rebind, err := obj.stateRebindField(ctx, dag)
+	rebind, err := obj.stateRebindField(dag)
 	if err != nil {
 		return fmt.Errorf("install state rebind: %w", err)
 	}
