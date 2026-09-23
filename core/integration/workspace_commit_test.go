@@ -132,6 +132,7 @@ func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Cont
 	// commits may still materialize checkouts, independently of reading logs.
 	traces, _ := sink.capture()
 	parents, names := map[string]string{}, map[string]string{}
+	discardedCheckouts := map[string]bool{}
 	for _, request := range traces {
 		for _, resource := range request.ResourceSpans {
 			for _, scope := range resource.ScopeSpans {
@@ -141,7 +142,25 @@ func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Cont
 					}
 					id := string(span.TraceId) + string(span.SpanId)
 					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+					if span.Name == "materialize local git checkout" {
+						for _, attr := range span.Attributes {
+							if attr.Key == "dagger.git.checkout.discard_git_dir" && attr.Value.GetBoolValue() {
+								discardedCheckouts[id] = true
+							}
+						}
+					}
 				}
+			}
+		}
+	}
+	// Source-only trees created while committing also borrow local objects.
+	// Retained full checkouts still fetch to own their history independently.
+	require.NotEmpty(t, discardedCheckouts, "must exercise real local tree checkouts")
+	for id, name := range names {
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if discardedCheckouts[parent] {
+				require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "local source tree fetched objects: %s", name)
+				break
 			}
 		}
 	}

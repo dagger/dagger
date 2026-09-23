@@ -1152,12 +1152,7 @@ func doGitCheckout(
 	depth int,
 	discardGitDir bool,
 ) error {
-	checkoutDirGit, err := checkoutGit.GitDir(ctx)
-	if err != nil {
-		return fmt.Errorf("could not find git dir: %w", err)
-	}
-
-	_, err = checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	_, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
 	if err != nil {
 		return err
 	}
@@ -1176,6 +1171,24 @@ func doGitCheckout(
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
 		return err
+	}
+	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref)
+}
+
+// finishGitCheckout materializes a ref whose objects are already available.
+// tmpref is set only when the caller fetched the objects into a temporary ref.
+func finishGitCheckout(
+	ctx context.Context,
+	checkoutGit *gitutil.GitCLI,
+	remotes []GitRemote,
+	cloneURL string,
+	ref *gitutil.Ref,
+	discardGitDir bool,
+	tmpref string,
+) error {
+	checkoutDirGit, err := checkoutGit.GitDir(ctx)
+	if err != nil {
+		return fmt.Errorf("could not find git dir: %w", err)
 	}
 	if ref.Name == "" {
 		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
@@ -1201,9 +1214,11 @@ func doGitCheckout(
 			return err
 		}
 	}
-	_, err = checkoutGit.Run(ctx, "update-ref", "-d", tmpref)
-	if err != nil {
-		return fmt.Errorf("failed to delete tmp ref: %w", err)
+	if tmpref != "" {
+		_, err = checkoutGit.Run(ctx, "update-ref", "-d", tmpref)
+		if err != nil {
+			return fmt.Errorf("failed to delete tmp ref: %w", err)
+		}
 	}
 	_, err = checkoutGit.Run(ctx, "reflog", "expire", "--all", "--expire=now")
 	if err != nil {
