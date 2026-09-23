@@ -40,6 +40,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -6703,6 +6704,16 @@ func (fe *frontendPretty) WaitForEventLoop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (fe *frontendPretty) AgentControl() (agents []agentcontrol.Agent, subscriptions []agentcontrol.Subscription, err error) {
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		agents, subscriptions, err = fe.db.AgentControl()
+	})
+	<-done
+	return
 }
 
 // AgentRestorePlan projects the imported trace's agents into a restore plan

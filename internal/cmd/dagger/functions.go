@@ -1133,6 +1133,18 @@ type interactivePromptModeOpts struct {
 	generateSessionTitle bool
 }
 
+func newInteractivePromptHandler(dag *dagger.Client, opts interactivePromptModeOpts) *shellCallHandler {
+	handler := newShellCallHandler(dag, Frontend)
+	handler.mode = modePrompt
+	handler.generateSessionTitle = opts.generateSessionTitle
+	if opts.restore.traceID != "" {
+		// Shell conveniences may use the destination checkout, but its module
+		// must not be loaded or composed into a traced agent graph.
+		handler.noModule = true
+	}
+	return handler
+}
+
 // startInteractivePromptModeWithResume optionally restores a verified trace's
 // agent graph before entering the prompt. Original telemetry supplies history.
 func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Client, response any, opts interactivePromptModeOpts) error {
@@ -1152,9 +1164,7 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	}
 
 	// Set up the shell handler with prompt mode
-	handler := newShellCallHandler(dag, Frontend)
-	handler.mode = modePrompt
-	handler.generateSessionTitle = opts.generateSessionTitle
+	handler := newInteractivePromptHandler(dag, opts)
 
 	// Initialize the handler
 	if err := handler.Initialize(ctx); err != nil {
@@ -1172,9 +1182,11 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	// nothing may address a restored instance before every one of them
 	// exists (hack/designs/resume-from-trace.md §5.3).
 	if opts.restore.traceID != "" {
-		if err := restoreFromTrace(ctx, handler, opts.restore); err != nil {
+		cleanup, err := restoreFromTrace(ctx, handler, opts.restore)
+		if err != nil {
 			return err
 		}
+		defer cleanup()
 	}
 
 	// Start interactive mode
