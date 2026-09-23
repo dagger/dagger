@@ -38,7 +38,7 @@ type Swapper {
   }
 
   reload(llm: LLM!): LLM! {
-    llm.workspace.agents.recompose(base: llm)
+    llm.recompose(agents: llm.workspace.artifacts.filterAgentCommand.asAgentMiddlewares)
   }
 %s
 }
@@ -51,33 +51,63 @@ func recomposeFixture(c *dagger.Client, source string) *dagger.Directory {
 		WithNewFile(recomposeModulePath, source)
 }
 
-// Use the live schema so this regression does not depend on SDK regeneration.
+// Use the live schema so these regressions do not depend on SDK regeneration.
+func composeRecomposeFixture(ctx context.Context, t *testctx.T, c *dagger.Client, ws *dagger.Workspace, base *dagger.LLM, include ...string) *dagger.LLM {
+	t.Helper()
+	if base == nil {
+		base = c.LLM().WithWorkspace(ws)
+	}
+	result, err := applyAgentMiddlewares(ctx, c, ws, base, "compose", include...)
+	require.NoError(t, err)
+	return result
+}
+
 func recomposeLLM(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, base *dagger.LLM, include ...string) (*dagger.LLM, error) {
+	return applyAgentMiddlewares(ctx, c, ws, base.WithWorkspace(ws), "recompose", include...)
+}
+
+func applyAgentMiddlewares(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, base *dagger.LLM, operation string, include ...string) (*dagger.LLM, error) {
 	wsID, err := ws.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	baseID, err := base.WithWorkspace(ws).ID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var res struct {
+	var selected struct {
 		Node struct {
-			Agents struct {
-				Recompose struct{ ID string }
+			Artifacts struct {
+				FilterAgentCommand struct{ AsAgentMiddlewares []struct{ ID dagger.ID } }
 			}
 		}
 	}
 	err = c.Do(ctx, &dagger.Request{
-		Query: `query($workspace: ID!, $base: ID!, $include: [String!]) {
-			node(id: $workspace) { ... on Workspace { agents(include: $include) { recompose(base: $base) { id } } } }
-		}`,
-		Variables: map[string]any{"workspace": wsID, "base": baseID, "include": include},
-	}, &dagger.Response{Data: &res})
+		Query: `query($workspace: ID!, $include: [String!]) {
+   node(id: $workspace) { ... on Workspace { artifacts(include: $include) { filterAgentCommand { asAgentMiddlewares { id } } } } }
+  }`,
+		Variables: map[string]any{"workspace": wsID, "include": include},
+	}, &dagger.Response{Data: &selected})
 	if err != nil {
 		return nil, err
 	}
-	return dagger.Ref[*dagger.LLM](c, dagger.ID(res.Node.Agents.Recompose.ID)), nil
+	agents := make([]dagger.ID, 0, len(selected.Node.Artifacts.FilterAgentCommand.AsAgentMiddlewares))
+	for _, agent := range selected.Node.Artifacts.FilterAgentCommand.AsAgentMiddlewares {
+		agents = append(agents, agent.ID)
+	}
+	baseID, err := base.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Node struct{ Result struct{ ID dagger.ID } }
+	}
+	err = c.Do(ctx, &dagger.Request{
+		Query: fmt.Sprintf(`query($base: ID!, $agents: [ID!]!) {
+   node(id: $base) { ... on LLM { result: %s(agents: $agents) { id } } }
+  }`, operation),
+		Variables: map[string]any{"base": baseID, "agents": agents},
+	}, &dagger.Response{Data: &result})
+	if err != nil {
+		return nil, err
+	}
+	return dagger.Ref[*dagger.LLM](c, result.Node.Result.ID), nil
 }
 
 func recomposeTool(id, name string) dagger.LLMContentBlockInput {
@@ -113,7 +143,7 @@ func (LLMSuite) TestRecomposePrivateStateAndReplay(ctx context.Context, t *testc
 	script = recomposeRecordingTurn(script, "installed", "added", "extraTool", "readState")
 	model := cannedRecordingModel(ctx, t, c, script)
 	mapPattern := regexp.MustCompile(`"memo"\s*:\s*"kept"`)
-	llm := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)}).
+	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
 		WithPrompt("mutate").Loop()
 	transcript, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -206,9 +236,7 @@ func (LLMSuite) TestRecomposeRemoteToLocalStateAndReplay(ctx context.Context, t 
 	// compatibility or ownership of the middleware's tools and prompts.
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, recomposeFixture(c, initial).Directory(".dagger/modules/swapper"))
 	ws := c.Directory().WithNewFile("dagger.toml", fmt.Sprintf("[modules.swapper]\nsource = %q\n", remoteRef)).AsWorkspace()
-	llm := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{
-		Base: c.LLM().WithWorkspace(ws).WithSystemPrompt(remotePrompt),
-	})
+	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM().WithWorkspace(ws).WithSystemPrompt(remotePrompt))
 	require.ElementsMatch(t, []string{remotePrompt, remotePrompt}, recomposeSystemPrompts(ctx, t, c, llm))
 	model := cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(llm, "mutate remote", "advance", "readState"))
 	llm = llm.WithModel(model).WithPrompt("mutate remote").Loop()
@@ -280,7 +308,7 @@ func (LLMSuite) TestRecomposeFailureKeepsOldState(ctx context.Context, t *testct
 			script := recomposeRecordingTurn(c.LLM(), "mutate", "advance")
 			script = recomposeRecordingTurn(script, "still usable", "advance", "readState")
 			model := cannedRecordingModel(ctx, t, c, script)
-			llm := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)}).
+			llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
 				WithPrompt("mutate").Loop()
 			_, err := llm.Sync(ctx)
 			require.NoError(t, err)
@@ -323,7 +351,7 @@ func (LLMSuite) TestRecomposeStateVersion(ctx context.Context, t *testctx.T) {
 	script = recomposeRecordingTurn(script, "reset", "readState", "advance")
 	script = recomposeRecordingTurn(script, "carried", "added", "readState")
 	model := cannedRecordingModel(ctx, t, c, script)
-	llm := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)}).
+	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
 		WithPrompt("mutate").Loop()
 	transcript, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -425,7 +453,7 @@ func (s *Swapper) Added() string {
 	script = recomposeRecordingTurn(script, "edited", "added", "advance", "readState")
 	script = recomposeRecordingTurn(script, "reset", "readState")
 	model := cannedRecordingModel(ctx, t, c, script)
-	llm := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)}).
+	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
 		WithPrompt("mutate").Loop()
 	transcript, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -535,7 +563,7 @@ func (LLMSuite) TestRecomposeLivePrivateRoster(ctx context.Context, t *testctx.T
 	script = recomposeRecordingTurn(script, "use roster", "workerHandle", "askWorker", "harvest")
 	model := cannedRecordingModel(ctx, t, c, script)
 	ws := fixture.AsWorkspace()
-	llm := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)}).
+	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
 		WithPrompt("hire once").Loop()
 	before, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -603,9 +631,7 @@ type Other {
 `
 	fixture = fixture.WithNewFile("modules/other/main.dang", otherSource)
 	ws := fixture.AsWorkspace()
-	llm := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{
-		Base: c.LLM().WithWorkspace(ws).WithSystemPrompt(shared),
-	}).WithSystemPrompt(callerTail)
+	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM().WithWorkspace(ws).WithSystemPrompt(shared)).WithSystemPrompt(callerTail)
 	require.ElementsMatch(t, []string{shared, shared, callerTail, "The unrelated middleware prompt."},
 		recomposeSystemPrompts(ctx, t, c, llm))
 
@@ -666,7 +692,7 @@ func (LLMSuite) TestRecomposeNestedCompositionPrompts(ctx context.Context, t *te
 		WithNewFile("outer/main.dang", `
 type Outer {
   agent(base: LLM!, ws: Workspace!): LLM! @agent {
-    ws.agents(include: ["inner"]).compose(base: base.withSystemPrompt("outer prompt"))
+    base.withSystemPrompt("outer prompt").compose(agents: ws.artifacts(include: ["inner"]).filterAgentCommand.asAgentMiddlewares)
   }
 }
 `).
@@ -677,7 +703,7 @@ type Inner {
 }
 `)
 	ws := fixture.AsWorkspace()
-	llm := ws.Agents(dagger.WorkspaceAgentsOpts{Include: []string{"outer"}}).Compose()
+	llm := composeRecomposeFixture(ctx, t, c, ws, nil, "outer")
 	expected := []string{"outer prompt", "inner prompt"}
 	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm))
 	for range 2 {
@@ -709,9 +735,9 @@ func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t
 	require.Contains(t, tools, "## contents\n")
 
 	// Explicit compose is still append-only, not a synonym for recompose.
-	composed := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: manual})
+	composed := composeRecomposeFixture(ctx, t, c, ws, manual)
 	require.ElementsMatch(t, []string{prompt, prompt}, recomposeSystemPrompts(ctx, t, c, composed))
-	composed = ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: composed})
+	composed = composeRecomposeFixture(ctx, t, c, ws, composed)
 	require.ElementsMatch(t, []string{prompt, prompt, prompt}, recomposeSystemPrompts(ctx, t, c, composed))
 
 	const replacement = "Replacement owned prompt, never the caller's."
@@ -742,7 +768,7 @@ func (LLMSuite) TestRecomposeNestedToolState(ctx context.Context, t *testctx.T) 
 	const outerSource = `
 type Outer {
   agent(base: LLM!, ws: Workspace!): LLM! @agent {
-    ws.agents(include: ["swapper"]).compose(base: base)
+    base.compose(agents: ws.artifacts(include: ["swapper"]).filterAgentCommand.asAgentMiddlewares)
   }
 }
 `
@@ -760,8 +786,7 @@ type Outer {
 	script = recomposeRecordingTurn(script, "updated nested", "added")
 	script = recomposeRecordingTurn(script, "reset nested", "added")
 	model := cannedRecordingModel(ctx, t, c, script)
-	llm := ws.Agents(dagger.WorkspaceAgentsOpts{Include: []string{"outer"}}).
-		Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)}).
+	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws), "outer").
 		WithPrompt("mutate nested").Loop()
 	transcript, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -774,7 +799,7 @@ type Outer {
 	// Refreshing nested tool state is explicit: Outer asks Swapper to
 	// recompose its own contributions rather than appending another binding.
 	ws = ws.WithNewFile(recomposeModulePath, updated).
-		WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource, ".compose(base: base)", ".recompose(base: base)"))
+		WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource, ".compose(agents:", ".recompose(agents:"))
 	llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
 	require.NoError(t, err)
 	llm = llm.WithPrompt("updated nested").Loop()
@@ -799,7 +824,7 @@ type Outer {
 	// Removing the nested call does not select Swapper: its independently
 	// owned binding survives rather than being discarded as an Outer subtree.
 	withoutNested := ws.WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource,
-		`ws.agents(include: ["swapper"]).compose(base: base)`, "base"))
+		`base.compose(agents: ws.artifacts(include: ["swapper"]).filterAgentCommand.asAgentMiddlewares)`, "base"))
 	llm, err = recomposeLLM(ctx, c, withoutNested, llm, "outer")
 	require.NoError(t, err)
 	tools, err := llm.Tools(ctx)
@@ -812,7 +837,7 @@ func (LLMSuite) TestRecomposeNestedOwnershipIsolation(ctx context.Context, t *te
 	const outerSource = `
 type Outer {
   agent(base: LLM!, ws: Workspace!): LLM! @agent {
-    ws.agents(include: ["inner"]).compose(base: base.withSystemPrompt("outer original"))
+    base.withSystemPrompt("outer original").compose(agents: ws.artifacts(include: ["inner"]).filterAgentCommand.asAgentMiddlewares)
   }
 }
 `
@@ -832,8 +857,7 @@ type Inner {
 	// The same Inner is composed both independently and through Outer. Normal
 	// compose must append in both contexts, even when every prompt is identical.
 	for _, name := range []string{"inner", "inner", "outer", "outer"} {
-		llm = ws.Agents(dagger.WorkspaceAgentsOpts{Include: []string{name}}).
-			Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: llm})
+		llm = composeRecomposeFixture(ctx, t, c, ws, llm, name)
 	}
 	require.ElementsMatch(t, []string{
 		"inner original", "inner original", "inner original", "inner original", "inner original",

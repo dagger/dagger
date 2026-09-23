@@ -34,6 +34,10 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		Description: "The evaluated value, or null when evaluation failed."}, s.resultValue)
 	dagql.Fields[*core.ArtifactDimensionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
+		dagql.NodeFunc("asAgentMiddlewares", s.asAgentMiddlewares).Doc("Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware."),
+		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
+		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
+		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services."),
 		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).DoNotCache("Evaluate each value with its own cache policy.").Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
 		dagql.Func("filterCheckCommand", s.filterCheckCommand).Doc("Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.").Args(dagql.Arg("generated").Doc("Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.")),
@@ -813,4 +817,59 @@ func (*artifactsSchema) loadError(_ context.Context, artifact *core.Artifact, _ 
 		return artifact.LoadFailure.Message, nil
 	}
 	return "", nil
+}
+
+func (*artifactsSchema) asAgentMiddlewares(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) ([]*core.AgentMiddleware, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var items dagql.ObjectResultArray[*core.Artifact]
+	if err := srv.Select(ctx, parent, &items, dagql.Selector{Field: "items"}); err != nil {
+		return nil, err
+	}
+	agents := make([]*core.AgentMiddleware, len(items))
+	for i, item := range items {
+		agents[i], err = core.NewAgentMiddleware(item.Self())
+		if err != nil {
+			return nil, err
+		}
+	}
+	return agents, nil
+}
+
+func (*artifactsSchema) asChecks(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Check], error) {
+	return artifactValuesAs[*core.Check](ctx, parent)
+}
+func (*artifactsSchema) asChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Changeset], error) {
+	return artifactValuesAs[*core.Changeset](ctx, parent)
+}
+func (*artifactsSchema) asServices(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Service], error) {
+	return artifactValuesAs[*core.Service](ctx, parent)
+}
+
+func artifactValuesAs[T dagql.Typed](ctx context.Context, parent dagql.ObjectResult[*core.Artifacts]) (dagql.ObjectResultArray[T], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var items dagql.ObjectResultArray[*core.Artifact]
+	if err := srv.Select(ctx, parent, &items, dagql.Selector{Field: "items"}); err != nil {
+		return nil, err
+	}
+	var value T
+	typeName := value.Type().NamedType
+	// Validate the whole selection before evaluating any artifact.
+	for _, item := range items {
+		if err := item.Self().AssertType([]string{core.ArtifactTypeName(typeName)}); err != nil {
+			return nil, err
+		}
+	}
+	values := make(dagql.ObjectResultArray[T], len(items))
+	for i, item := range items {
+		if err := srv.Select(ctx, item, &values[i], dagql.Selector{Field: "value"}); err != nil {
+			return nil, err
+		}
+	}
+	return values, nil
 }

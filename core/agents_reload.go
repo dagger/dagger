@@ -9,15 +9,12 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-// Recompose replaces the selected middleware's owned contributions, preserving
+// RecomposeAgents replaces the selected middleware's owned contributions, preserving
 // the state of its tool objects while loading new implementations. Unowned
 // prompts and bindings, and contributions from other middleware, are retained.
 // Every replacement is recorded as a real selector, including the module-state
 // rebind, rather than an in-memory change to an old object's class.
-func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
-	if r.BoundWorkspace.Self() != nil {
-		ctx = WorkspaceToContext(ctx, r.BoundWorkspace)
-	}
+func RecomposeAgents(ctx context.Context, base dagql.ObjectResult[*LLM], agents []*AgentMiddleware) (dagql.ObjectResult[*LLM], error) {
 	acc := base
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -27,8 +24,8 @@ func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectR
 	// every entrypoint would erase contributions from earlier ones in the same
 	// module; checking tool state before all have run would reject their tools.
 	removed := map[string]bool{}
-	for _, agent := range r.Agents {
-		owner := agent.Node.OriginalModule.Self().Name()
+	for _, agent := range agents {
+		owner := agent.OriginalModule().Name()
 		if removed[owner] {
 			continue
 		}
@@ -40,8 +37,8 @@ func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectR
 			return base, err
 		}
 	}
-	for _, agent := range r.Agents {
-		next, err := agent.Node.RunAgent(ctx, acc)
+	for _, agent := range agents {
+		next, err := agent.Run(ctx, acc)
 		if err != nil {
 			return base, fmt.Errorf("recompose agent %q: %w", agent.Name(), err)
 		}
@@ -51,7 +48,7 @@ func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectR
 	if err != nil {
 		return base, err
 	}
-	warnToolNameCollisions(ctx, acc.Self())
+	acc.Self().WarnToolNameCollisions(ctx)
 	return acc, nil
 }
 

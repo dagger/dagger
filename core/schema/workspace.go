@@ -4223,21 +4223,7 @@ func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *
 // withWorkspaceClientContext stamps owner metadata for host/resource routing;
 // the caller's ClientScope remains the only runtime execution authority.
 func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
-	if ws.IsValueWorkspace() {
-		return ctx, nil
-	}
-	if ws.ClientID == "" {
-		return nil, fmt.Errorf("workspace has no client ID")
-	}
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get current query: %w", err)
-	}
-	clientMetadata, err := query.SpecificClientMetadata(ctx, ws.ClientID)
-	if err != nil {
-		return ctx, fmt.Errorf("get client metadata: %w", err)
-	}
-	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
+	return core.WorkspaceClientContext(ctx, ws)
 }
 
 func (*workspaceSchema) resolve(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct{ Value dagql.String }) (*core.Address, error) {
