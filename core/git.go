@@ -1283,11 +1283,31 @@ func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, re
 // GitCLI positioned in a repository containing all of them, along with their
 // resolved commit SHAs (in the same order as refs).
 //
-// Refs sharing a repository are mounted together; refs from different
-// repositories are joined into a temporary repository via refJoin.
+// Refs sharing a repository are mounted together. Local repositories can share
+// their cached objects read-only; other repositories use refJoin.
 func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI, shas []string) error) error {
 	if len(refs) == 0 {
 		return fmt.Errorf("mount refs: no refs given")
+	}
+	// A single ref needs neither repository identity nor a joined object store.
+	if len(refs) == 1 {
+		return refs[0].Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
+			return fn(git, []string{refs[0].Ref.SHA})
+		})
+	}
+
+	allLocal := true
+	for _, ref := range refs {
+		if _, ok := ref.Backend.(*LocalGitRef); !ok {
+			allLocal = false
+			break
+		}
+	}
+	if allLocal {
+		err := mountCachedGitRefs(ctx, refs, fn)
+		if !errors.Is(err, errShallowCachedGitHistory) {
+			return err
+		}
 	}
 
 	shas := make([]string, len(refs))
@@ -1406,6 +1426,86 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 		return nil, err
 	}
 	return commits, nil
+}
+
+var errShallowCachedGitHistory = errors.New("cannot share shallow git history")
+
+// mountCachedGitRefs borrows object databases for the duration of fn, without
+// fetching or copying any objects. Only use this for local, read-only mounts:
+// recursively mounting remote refs can deadlock on a shared mirror lock.
+func mountCachedGitRefs(ctx context.Context, refs []*GitRef, fn func(*gitutil.GitCLI, []string) error) error {
+	var objects []string
+	var shas []string
+	var objectFormat string
+	var mountNext func(int) error
+	mountNext = func(i int) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if i == len(refs) {
+			return withGitObjectView(ctx, objects, objectFormat, func(git *gitutil.GitCLI) error {
+				return fn(git, shas)
+			})
+		}
+		return refs[i].Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
+			shallow, err := git.Run(ctx, "rev-parse", "--is-shallow-repository")
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(string(shallow)) != "false" {
+				// Alternates share objects, not shallow boundaries. Dropping the
+				// boundaries invents history; unioning them can truncate another
+				// source's complete history. Leave shallow inputs to refJoin.
+				return errShallowCachedGitHistory
+			}
+			format, err := git.Run(ctx, "rev-parse", "--show-object-format")
+			if err != nil {
+				return err
+			}
+			if i == 0 {
+				objectFormat = strings.TrimSpace(string(format))
+			} else if strings.TrimSpace(string(format)) != objectFormat {
+				return fmt.Errorf("cannot compare git repositories with different object formats")
+			}
+			// --git-path resolves the common directory for linked worktrees.
+			// Strip only the output terminator: whitespace can be part of a path.
+			path, err := git.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+			if err != nil {
+				return err
+			}
+			objects = append(objects, strings.TrimSuffix(string(path), "\n"))
+			shas = append(shas, refs[i].Ref.SHA)
+			return mountNext(i + 1)
+		})
+	}
+	return mountNext(0)
+}
+
+// withGitObjectView creates only private repository metadata. Every source
+// object database (including its own alternates) stays read-only and mounted
+// until the callback returns. No refs or configuration are imported.
+func withGitObjectView(ctx context.Context, objects []string, format string, fn func(*gitutil.GitCLI) error) error {
+	tmp, err := os.MkdirTemp("", "dagger-git-history-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	git := gitutil.NewGitCLI(gitutil.WithDir(tmp), gitutil.WithGitDir(tmp))
+	if _, err := git.Run(ctx, "-c", "init.defaultBranch=main", "init", "--bare", "--object-format="+format); err != nil {
+		return fmt.Errorf("initialize git history view: %w", err)
+	}
+	var alternates strings.Builder
+	for _, path := range objects {
+		// Git's alternates file accepts C-quoted paths, one per line. In
+		// particular, a newline or quote in a mount path must not add an entry.
+		alternates.WriteByte('"')
+		alternates.WriteString(strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n").Replace(path))
+		alternates.WriteString("\"\n")
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "objects", "info", "alternates"), []byte(alternates.String()), 0600); err != nil {
+		return fmt.Errorf("write git history alternates: %w", err)
+	}
+	return fn(git)
 }
 
 // refJoin creates a temporary git repository, adds the given refs as remotes,
