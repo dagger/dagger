@@ -312,6 +312,7 @@ func (WorkspaceSuite) TestWorkspacePullDirtyDirectoryRename(ctx context.Context,
 
 func (WorkspaceSuite) TestWorkspacePullShortSHAs(ctx context.Context, t *testctx.T) {
 	checkout, _ := workspaceExportCheckout(ctx, t)
+	publishCheckpointRemote(ctx, t, checkout)
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: checkout})
 	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
 	source := base.WithNewFile("a", "a").With(func(ws *dagger.Workspace) *dagger.Workspace {
