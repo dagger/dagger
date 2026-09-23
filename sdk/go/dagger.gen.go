@@ -1184,6 +1184,25 @@ func (r *AgentMiddlewareGroup) List(ctx context.Context) ([]AgentMiddleware, err
 	return convert(response), nil
 }
 
+// Recompose the selected agent middlewares onto an existing LLM, replacing their modules' owned system prompts, skills, and tool bindings while preserving tool object state.
+//
+// Contributions belong to the installed module calling withSystemPrompt, withSkills, or withTools, independently of the bound object's module or middleware entrypoint. Ownership follows the installed module name, not its source location. Moving a module between remote, local, or forked sources preserves compatible state when its installation name and intrinsic module and object identities stay the same.
+//
+// Contributions from selected modules are removed once before running the selected entrypoints. Unowned contributions and contributions from other modules are retained. Nested modules own their own contributions; use recompose explicitly to refresh them. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+//
+// Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or changed module or object identities are errors regardless of version. Ownership checks still apply. The base workspace is preserved.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMiddlewareGroup) Recompose(base *LLM) *LLM {
+	assertNotNil("base", base)
+	q := r.query.Select("recompose")
+	q = q.Arg("base", base)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // AsNode returns this AgentMiddlewareGroup as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *AgentMiddlewareGroup) AsNode() Node {
@@ -11748,6 +11767,8 @@ func (r *LLM) WithToolResult(callId string, content string, errored bool, opts .
 type LLMWithToolsOpts struct {
 	// Method names to exclude from the toolset (e.g. constructors, entrypoints).
 	Except []string
+	// Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply.
+	Version int
 }
 
 // Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
@@ -11757,6 +11778,10 @@ func (r *LLM) WithTools(object Node, opts ...LLMWithToolsOpts) *LLM {
 		// `except` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Except) {
 			q = q.Arg("except", opts[i].Except)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("object", object)

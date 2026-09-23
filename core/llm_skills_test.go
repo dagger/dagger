@@ -226,6 +226,61 @@ func TestSkillSourcesOrder(t *testing.T) {
 	require.IsType(t, workspaceSkillSource{}, sources[4])
 }
 
+func TestLLMSkillOwnership(t *testing.T) {
+	ctx := llmTestContext()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := newCoreDagqlServerForTest(t, LLMTestQuery{})
+	srv.InstallObject(dagql.NewClass[*Directory](srv))
+	dir := newTypeDefAttachedResult(t, ctx, cache, srv, "skills", &Directory{})
+	replacement := newTypeDefAttachedResult(t, ctx, cache, srv, "attached-skills", &Directory{})
+	base, err := (&Query{}).NewLLM(ctx, "test-model", "")
+	require.NoError(t, err)
+	base = base.WithSkills(dir).
+		WithSkillsOwner(dir, "outer").
+		WithSkillsOwner(dir, "inner").
+		WithSkillsOwner(dir, "outer")
+	owners := func(llm *LLM) []string {
+		var owners []string
+		for _, dir := range llm.mcp.skillDirs {
+			owners = append(owners, dir.Owner)
+		}
+		return owners
+	}
+	require.Equal(t, []string{"", "outer", "inner", "outer"}, owners(base))
+	require.Equal(t, owners(base), owners(base.WithoutComposition("")))
+	removed := base.WithoutComposition("outer")
+	require.Equal(t, []string{"", "inner"}, owners(removed))
+	require.Len(t, base.mcp.skillDirs, 4, "removal must not mutate the base")
+	require.Len(t, removed.mcp.skillSources(), 5, "unowned and nested module skills survive")
+
+	clone := base.Clone()
+	deps, err := clone.AttachDependencyResults(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+		attached, ok := res.(dagql.ObjectResult[*Directory])
+		require.True(t, ok)
+		require.Same(t, dir.Self(), attached.Self())
+		return replacement, nil
+	})
+	require.NoError(t, err)
+	require.Len(t, deps, 4)
+	require.Equal(t, owners(base), owners(clone), "attachment retains owners")
+	for i := range base.mcp.skillDirs {
+		require.Same(t, dir.Self(), base.mcp.skillDirs[i].Directory.Self())
+		require.Same(t, replacement.Self(), clone.mcp.skillDirs[i].Directory.Self())
+	}
+
+	sels, err := clone.recipeSelectors(ctx)
+	require.NoError(t, err)
+	var replayOwners []string
+	for _, sel := range sels {
+		if sel.Field == "withSkills" {
+			replayOwners = append(replayOwners, compositionSelectorOwner(t, sel))
+		}
+	}
+	require.Equal(t, owners(base), replayOwners, "replay records explicit owners, including empty")
+}
+
 // TestEngineSkills checks the real embedded source: the dang-language skill is
 // exposed with a description and its reference files are readable, while the
 // compiler-contributor skills are curated out.

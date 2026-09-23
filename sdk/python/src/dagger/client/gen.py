@@ -1602,6 +1602,48 @@ class AgentMiddlewareGroup(Type):
         _ctx = self._select("list", _args)
         return await _ctx.execute_object_list(AgentMiddleware)
 
+    def recompose(self, base: "LLM") -> "LLM":
+        """Recompose the selected agent middlewares onto an existing LLM,
+        replacing their modules' owned system prompts, skills, and tool
+        bindings while preserving tool object state.
+
+        Contributions belong to the installed module calling withSystemPrompt,
+        withSkills, or withTools, independently of the bound object's module
+        or middleware entrypoint. Ownership follows the installed module name,
+        not its source location. Moving a module between remote, local, or
+        forked sources preserves compatible state when its installation name
+        and intrinsic module and object identities stay the same.
+
+        Contributions from selected modules are removed once before running
+        the selected entrypoints. Unowned contributions and contributions from
+        other modules are retained. Nested modules own their own
+        contributions; use recompose explicitly to refresh them. Other
+        middleware effects retain compose semantics; this is not a general
+        rollback of arbitrary middleware changes.
+
+        Existing field values win over new defaults; fields added by the new
+        revision take its defaults. Changing a binding's withTools version
+        resets that object's state to the new defaults instead. With an
+        unchanged version, visibly incompatible state (a public field that
+        changed type, or a value whose shape differs from the new default) is
+        an error. Discarded bindings or changed module or object identities
+        are errors regardless of version. Ownership checks still apply. The
+        base workspace is preserved.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
+        Parameters
+        ----------
+        base:
+            The existing conversation whose tool state should be preserved.
+        """
+        _args = [
+            Arg("base", base),
+        ]
+        _ctx = self._select("recompose", _args)
+        return LLM(_ctx)
+
 
 @typecheck
 class CacheVolume(Type):
@@ -11648,6 +11690,7 @@ class LLM(Type):
         object: Node,
         *,
         except_: list[str] | None = None,
+        version: int | None = 0,
     ) -> Self:
         """Expose an object's methods as tools. Every eligible method of the
         bound object becomes a tool; a tool that returns this object's own
@@ -11660,10 +11703,18 @@ class LLM(Type):
         except_:
             Method names to exclude from the toolset (e.g. constructors,
             entrypoints).
+        version:
+            Version of this binding's state contract. Recomposition preserves
+            compatible state when the version is unchanged and resets to the
+            newly bound object's defaults when it differs. Change this when
+            the state layout changes incompatibly. Same-type tool returns
+            retain the version. Module identity and ownership checks still
+            apply.
         """
         _args = [
             Arg("object", object),
             Arg("except", [] if except_ is None else except_, []),
+            Arg("version", version, 0),
         ]
         _ctx = self._select("withTools", _args)
         return LLM(_ctx)

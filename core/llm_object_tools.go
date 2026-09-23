@@ -67,6 +67,13 @@ type boundTool struct {
 	// edits only affect tools after explicit recomposition creates a new LLM.
 	definingSchema *ast.Schema
 	Except         []string
+	// Owner identifies the composition that installed this binding. A
+	// same-type tool return retains it; an explicit withTools replaces it.
+	// Empty means caller-owned/unowned.
+	Owner string
+	// Version is the explicit withTools state contract. Same-type returns keep
+	// it; recomposition resets the receiver when the new binding differs.
+	Version int
 }
 
 // typeName returns the bound object's type name without forcing a load.
@@ -87,6 +94,10 @@ func (b boundTool) typeName() string {
 // through here — so the binding list stays bounded and a recorded withTools
 // selector reconstructs the same state deterministically.
 func (m *MCP) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string) *MCP {
+	return m.withToolsOwner(obj, definingSchema, except, "", 0)
+}
+
+func (m *MCP) withToolsOwner(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string, owner string, version int) *MCP {
 	m = m.Clone()
 	typeName := obj.Type().Name()
 	id, _ := obj.ID()
@@ -96,6 +107,8 @@ func (m *MCP) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, e
 		objType:        obj.ObjectType(),
 		definingSchema: definingSchema,
 		Except:         except,
+		Owner:          owner,
+		Version:        version,
 	}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
@@ -115,9 +128,13 @@ func (m *MCP) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, e
 // GraphQL type without loading it. The defining schema stays authoritative even
 // if the bound Workspace later contains another definition of the same type.
 func (m *MCP) WithLazyTools(id *call.ID, objType dagql.ObjectType, definingSchema *ast.Schema, except []string) *MCP {
+	return m.withLazyToolsOwner(id, objType, definingSchema, except, "", 0)
+}
+
+func (m *MCP) withLazyToolsOwner(id *call.ID, objType dagql.ObjectType, definingSchema *ast.Schema, except []string, owner string, version int) *MCP {
 	m = m.Clone()
 	typeName := objType.TypeName()
-	binding := boundTool{id: id, objType: objType, definingSchema: definingSchema, Except: except}
+	binding := boundTool{id: id, objType: objType, definingSchema: definingSchema, Except: except, Owner: owner, Version: version}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
 			m.boundTools[i] = binding
@@ -200,9 +217,9 @@ func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) err
 	}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
-			// A state transition changes the value, not the module revision the
-			// binding was composed from. Select may have wrapped the returned
-			// value using the caller's older same-named class.
+			// A state transition changes the value, not its composition owner or
+			// the module revision the binding was composed from. Select may have
+			// wrapped the returned value using the caller's older same-named class.
 			newObj, err := b.objType.New(newObj)
 			if err != nil {
 				return fmt.Errorf("rebind object of type %q: %w", typeName, err)
@@ -218,10 +235,12 @@ func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) err
 }
 
 // boundToolBinding is a flattened snapshot of a binding: the object's ID plus its
-// except list, enough for step() to rebuild a withTools selector.
+// except list and owner, enough for step() to rebuild a withTools selector.
 type boundToolBinding struct {
-	ID     *call.ID
-	Except []string
+	ID      *call.ID
+	Except  []string
+	Owner   string
+	Version int
 }
 
 // BoundToolBindings snapshots the current bindings' IDs and except lists so
@@ -242,7 +261,7 @@ func (m *MCP) BoundToolBindings() ([]boundToolBinding, error) {
 				return nil, err
 			}
 		}
-		out = append(out, boundToolBinding{ID: id, Except: slices.Clone(b.Except)})
+		out = append(out, boundToolBinding{ID: id, Except: slices.Clone(b.Except), Owner: b.Owner, Version: b.Version})
 	}
 	return out, nil
 }

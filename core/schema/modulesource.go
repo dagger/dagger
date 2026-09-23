@@ -869,6 +869,11 @@ type directoryAsModuleArgs struct {
 type directoryAsModuleSourceArgs struct {
 	SourceRootPath string `default:"."`
 
+	// Workspace retains source lineage for a workspace module loaded from a
+	// materialized directory (including an overlay). It is explicit in the
+	// selector so source identity and dependency loading survive recipe replay.
+	Workspace dagql.Optional[dagql.ID[*core.Workspace]] `internal:"true"`
+
 	// AllowNotExists tolerates a directory holding no dagger config file at
 	// the source root, returning a context-only source (ConfigExists=false)
 	// instead of erroring. Used when the directory is needed purely as a
@@ -922,6 +927,16 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
 		},
+	}
+	if args.Workspace.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		dirSrc.Workspace, err = args.Workspace.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load module source workspace: %w", err)
+		}
 	}
 	if dirSrc.SourceRootSubpath == "" {
 		dirSrc.SourceRootSubpath = "."

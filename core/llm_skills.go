@@ -55,6 +55,13 @@ func (*LLMSkill) TypeDescription() string {
 	return "A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill."
 }
 
+// ownedSkillDirectory retains the installing module's identity for recomposition.
+// An empty owner denotes a directory installed outside a module.
+type ownedSkillDirectory struct {
+	Directory dagql.ObjectResult[*Directory]
+	Owner     string
+}
+
 // skillSource enumerates and reads skills from one origin.
 type skillSource interface {
 	// list returns discovery metadata for every skill this source exposes.
@@ -73,7 +80,7 @@ type skillSource interface {
 func (m *MCP) skillSources() []skillSource {
 	sources := []skillSource{engineSkills, daggerSkills}
 	for _, dir := range m.skillDirs {
-		sources = append(sources, directorySkillSource{m: m, dir: dir})
+		sources = append(sources, directorySkillSource{m: m, dir: dir.Directory})
 	}
 	return append(sources, workspaceSkillSource{m: m})
 }

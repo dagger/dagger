@@ -562,13 +562,15 @@ defmodule Dagger.LLM do
   @doc """
   Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
   """
-  @spec with_tools(t(), Dagger.Node.t(), [{:except, [String.t()]}]) :: Dagger.LLM.t()
+  @spec with_tools(t(), Dagger.Node.t(), [{:except, [String.t()]}, {:version, integer() | nil}]) ::
+          Dagger.LLM.t()
   def with_tools(%__MODULE__{} = llm, object, optional_args \\ []) do
     query_builder =
       llm.query_builder
       |> QB.select("withTools")
       |> QB.put_arg("object", Dagger.ID.id!(object))
       |> QB.maybe_put_arg("except", optional_args[:except])
+      |> QB.maybe_put_arg("version", optional_args[:version])
 
     %Dagger.LLM{
       query_builder: query_builder,
