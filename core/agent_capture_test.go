@@ -40,6 +40,56 @@ func TestAgentCaptureValidatesLazyAndImplicitDependencies(t *testing.T) {
 	require.ErrorContains(t, validateAgentRecipe(srv, call.NewEngineResultID(42, call.NewType(typ))), "engine-local handle")
 }
 
+func TestAgentCaptureValidatesOwnedSkillDirectories(t *testing.T) {
+	ctx := llmTestContext()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv, err := dagql.NewServer(ctx, &Query{})
+	require.NoError(t, err)
+	srv.InstallObject(dagql.NewClass[*Directory](srv))
+	srv.InstallObject(dagql.NewClass[*Host](srv))
+	var loads int
+	dagql.Fields[*Query]{
+		dagql.Func("portableSkills", func(context.Context, *Query, struct{}) (*Directory, error) {
+			loads++
+			return &Directory{}, nil
+		}),
+		dagql.Func("host", func(context.Context, *Query, struct{}) (*Host, error) { return &Host{}, nil }),
+	}.Install(srv)
+	dagql.Fields[*Host]{
+		dagql.Func("directory", func(context.Context, *Host, struct{}) (*Directory, error) {
+			loads++
+			return &Directory{}, nil
+		}),
+	}.Install(srv)
+	for _, owner := range []string{"", "module-A"} {
+		for _, hostBacked := range []bool{false, true} {
+			sels := []dagql.Selector{{Field: "portableSkills"}}
+			if hostBacked {
+				sels = []dagql.Selector{{Field: "host"}, {Field: "directory"}}
+			}
+			var directory dagql.ObjectResult[*Directory]
+			require.NoError(t, srv.Select(ctx, srv.Root(), &directory, sels...))
+			llm := &LLM{mcp: (&MCP{}).withSkillsOwner(directory, owner)}
+			before, err := directory.RecipeID(ctx)
+			require.NoError(t, err)
+			loaded := loads
+			err = llm.validateAgentBindings(ctx, srv)
+			if hostBacked {
+				require.ErrorContains(t, err, "capture skills: agent capture depends on originating client via Host.directory")
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, loaded, loads, "validation must not reload skill content")
+			require.Equal(t, owner, llm.mcp.skillDirs[0].Owner, "capture must preserve recomposition ownership")
+			after, err := llm.mcp.skillDirs[0].Directory.RecipeID(ctx)
+			require.NoError(t, err)
+			require.Equal(t, before.Digest(), after.Digest())
+		}
+	}
+}
+
 func TestAgentCapturePayloadsCheckEveryDependency(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	typ := dagql.String("").Type()

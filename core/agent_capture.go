@@ -119,6 +119,8 @@ func (llm *LLM) validateAgentBindings(ctx context.Context, srv *dagql.Server) er
 		}
 	}
 	for _, dir := range llm.mcp.skillDirs {
+		// Ownership controls recomposition, not recipe identity. Validate the
+		// underlying directory without changing the contribution's owner.
 		if err := validate("skills", dir.Directory); err != nil {
 			return err
 		}
