@@ -42,6 +42,7 @@ type agentTraceSink struct {
 	db     *dagui.DB
 	logExp sdklog.Exporter
 	base   string
+	conn   engineconn.EngineConn
 
 	traces []*coltracepb.ExportTraceServiceRequest
 	logs   []*collogspb.ExportLogsServiceRequest
@@ -140,6 +141,7 @@ func connectWithTrace(ctx context.Context, t *testctx.T, configs ...engineconn.C
 	conn, found, err := engineconn.FromLocalCLI(ctx, &cfg)
 	require.NoError(t, err)
 	require.True(t, found, "set _EXPERIMENTAL_DAGGER_CLI_BIN to the from-source CLI")
+	sink.conn = conn
 	return connect(ctx, t, dagger.WithConn(conn)), sink
 }
 
