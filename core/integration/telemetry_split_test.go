@@ -166,6 +166,21 @@ func (got telemetrySplitReceived) output(t *testctx.T, body string) telemetrySpl
 	return outputs[0]
 }
 
+// execOutput returns the log record of an exec's own output carrying body,
+// which must reach Cloud exactly once. Printing a result (`stdout`) adds
+// records of other scopes with the same text, the engine's result record and
+// the client's own output, which are distinct records, not duplicates.
+func (got telemetrySplitReceived) execOutput(t *testctx.T, body string) telemetrySplitRecord {
+	var outputs []telemetrySplitRecord
+	for _, rec := range got.records {
+		if rec.Scope == "dagger.io/engine.buildkit" && strings.Contains(rec.Body, body) {
+			outputs = append(outputs, rec)
+		}
+	}
+	require.Len(t, outputs, 1, "the exec's output reaches Cloud once: %+v", outputs)
+	return outputs[0]
+}
+
 // requireSpansFromOneWriter requires that every span reached Cloud from one
 // writer: none was published twice.
 func (got telemetrySplitReceived) requireSpansFromOneWriter(t *testctx.T) {
@@ -523,7 +538,7 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 		"main client":                     "main-marker-" + mainID,
 		"nested client (module function)": "nested-marker-" + nestedID,
 	} {
-		output := got.output(t, marker)
+		output := got.execOutput(t, marker)
 		require.False(t, cliLogWriters[output.Writer], "the engine publishes the %s's output", name)
 	}
 
@@ -594,7 +609,7 @@ func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *
 	require.NoError(t, err)
 
 	got := readTelemetrySplit(ctx, t, cloud)
-	output := got.output(t, "refresh-marker-"+markerID)
+	output := got.execOutput(t, "refresh-marker-"+markerID)
 	require.False(t, got.cliLogWriters(t)[output.Writer], "the engine publishes the output")
 
 	events := cloud.reader.WithEnvVariable("CACHEBUSTER", identity.NewID())
