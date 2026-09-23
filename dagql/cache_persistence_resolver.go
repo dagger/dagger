@@ -84,6 +84,9 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		if res == nil {
 			return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)
 		}
+		if res.indexed != nil {
+			return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errIndexedRowHasNoValue)
+		}
 		return sharedResultLookup{res: res, requiredGenAtCheck: requiredGenAtCheck}, nil
 	}
 
@@ -92,6 +95,12 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	if res == nil {
 		c.egraphMu.Unlock()
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)
+	}
+	if res.indexed != nil {
+		// Not even as a starting point for an equivalent: an indexed row is
+		// no result of this engine.
+		c.egraphMu.Unlock()
+		return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errIndexedRowHasNoValue)
 	}
 	if mode != sharedResultLookupExact {
 		// Require clean attachment, as publication adoption does: without it

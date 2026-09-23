@@ -558,6 +558,12 @@ func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
 		if res == nil {
 			continue
 		}
+		if res.indexed != nil {
+			// An indexed row keeps its class's terms until its engine removes
+			// it, expired or not: it is never served, and its identity is
+			// what the cache holds it for.
+			return true
+		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
@@ -1923,7 +1929,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	if res.indexed != nil {
 		delete(c.indexedRows, res.indexed.key)
 	}
-	if len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0 {
+	if (len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0) && len(c.indexedRows) == 0 {
 		c.maybeResetEgraphLocked()
 		return
 	}
@@ -1993,7 +1999,9 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 }
 
 func (c *Cache) maybeResetEgraphLocked() {
-	if len(c.egraphTerms) != 0 {
+	// Indexed rows can hold classes without terms (restored rows), and each
+	// stays until its own engine removes it.
+	if len(c.egraphTerms) != 0 || len(c.indexedRows) != 0 {
 		return
 	}
 

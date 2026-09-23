@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dagger/dagger/dagql/cachefact"
@@ -483,4 +484,169 @@ func TestIndexedRowsRemovalFollowsOwnership(t *testing.T) {
 	}
 	require.Empty(t, cloud.EquivalentRows("xxh3:root"))
 	require.ErrorIs(t, cloud.TeachIndexedRowIdentity(ctx, "e", cachefact.Identity{ID: 2}), ErrUnknownIndexedRow)
+}
+
+func rowFact(id uint64, recipe string, expiresAtUnix int64) cachefact.Result {
+	return cachefact.Result{
+		ID: id, Origin: cachefact.OriginComputed, Field: "f", ExpiresAtUnix: expiresAtUnix,
+		Digests: []cachefact.Digest{{Digest: recipe, Label: cachefact.LabelRecipe}},
+		Terms:   []cachefact.Term{{Self: recipe + "-self"}},
+	}
+}
+
+// A row stays until its own engine removes it: another engine's removal
+// never takes an expired row or a restored row without terms with it, even
+// when it removes the cache's last live term.
+func TestIndexedRowsSurviveOtherEnginesRemovals(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cloud := newCloudCache(t)
+	expired := rowFact(1, "xxh3:shared", 1) // expired long ago
+	_, err := cloud.UpsertIndexedRow(ctx, "engine-a", expired)
+	require.NoError(t, err)
+	_, err = cloud.UpsertIndexedRow(ctx, "engine-b", rowFact(1, "xxh3:shared", 0))
+	require.NoError(t, err)
+	_, err = cloud.UpsertIndexedRow(ctx, "engine-r", cachefact.Result{
+		ID: 7, Origin: cachefact.OriginRestored, Field: "restored",
+		Digests: []cachefact.Digest{{Digest: "xxh3:restored"}},
+	})
+	require.NoError(t, err)
+
+	a := RowKey{Engine: "engine-a", ID: 1}
+	r := RowKey{Engine: "engine-r", ID: 7}
+	require.NoError(t, cloud.RemoveIndexedRow(ctx, RowKey{Engine: "engine-b", ID: 1}))
+	info, ok := cloud.RowInfo(a)
+	require.True(t, ok, "engine B's removal leaves engine A's expired row")
+	require.False(t, info.Removed)
+	require.Equal(t, []string{"xxh3:shared"}, info.ClassDigests)
+	require.Equal(t, []RowKey{a}, cloud.EquivalentRows("xxh3:shared"))
+	_, ok = cloud.RowInfo(r)
+	require.True(t, ok, "and the restored row")
+
+	require.NoError(t, cloud.RemoveIndexedRow(ctx, a))
+	_, ok = cloud.RowInfo(a)
+	require.False(t, ok, "engine A's own removal takes it")
+	require.Empty(t, cloud.EquivalentRows("xxh3:shared"))
+	info, ok = cloud.RowInfo(r)
+	require.True(t, ok, "the restored row survives the last term's removal")
+	require.Equal(t, []string{"xxh3:restored"}, info.ClassDigests)
+	require.Equal(t, []RowKey{r}, cloud.EquivalentRows("xxh3:restored"))
+
+	require.NoError(t, cloud.RemoveIndexedRow(ctx, r))
+	_, ok = cloud.RowInfo(r)
+	require.False(t, ok)
+	_, err = cloud.UpsertIndexedRow(ctx, "engine-a", rowFact(2, "xxh3:after", 0))
+	require.NoError(t, err, "the emptied cache takes new rows")
+	require.Equal(t, []RowKey{{Engine: "engine-a", ID: 2}}, cloud.EquivalentRows("xxh3:after"))
+}
+
+// Removals of two engines' rows, interleaved in any order, leave exactly the
+// rows not removed, each still in its class.
+func TestIndexedRowsRemovalInterleavings(t *testing.T) {
+	t.Parallel()
+	a, b, _ := refinementSources(t)
+	factsA, factsB := a.rec.all(), b.rec.all()
+	var removals []RowKey
+	survivors := map[RowKey]bool{}
+	for i, res := range factsOfKind[cachefact.Result](factsA) {
+		key := RowKey{Engine: "engine-a", ID: res.ID}
+		if i%2 == 0 {
+			removals = append(removals, key)
+		} else {
+			survivors[key] = true
+		}
+	}
+	for _, res := range factsOfKind[cachefact.Result](factsB) {
+		removals = append(removals, RowKey{Engine: "engine-b", ID: res.ID})
+	}
+	require.NotEmpty(t, survivors)
+
+	for seed := range uint64(8) {
+		cloud := newCloudCache(t)
+		replayOntoCloud(t, cloud, "engine-a", factsA)
+		replayOntoCloud(t, cloud, "engine-b", factsB)
+		order := slices.Clone(removals)
+		rand.New(rand.NewPCG(seed, seed+7)).Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+		for _, key := range order {
+			require.NoError(t, cloud.RemoveIndexedRow(t.Context(), key))
+		}
+		cloud.egraphMu.Lock()
+		held := map[RowKey]bool{}
+		for key, id := range cloud.indexedRows {
+			if res := cloud.resultsByID[id]; res != nil && !res.indexed.removed {
+				held[key] = true
+			}
+		}
+		cloud.egraphMu.Unlock()
+		require.Equal(t, survivors, held, "seed %d", seed)
+		for key := range survivors {
+			info, ok := cloud.RowInfo(key)
+			require.True(t, ok)
+			require.NotEmpty(t, info.ClassDigests, "seed %d: %v keeps its class", seed, key)
+			for _, dig := range info.Digests {
+				require.Contains(t, cloud.EquivalentRows(dig), key)
+			}
+		}
+	}
+}
+
+// An indexed row's number never loads a value, a call frame or a schema
+// module, with or without a session.
+func TestIndexedRowsNeverLoadByResultID(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cloud := newCloudCache(t)
+	_, err := cloud.UpsertIndexedRow(ctx, "engine-a", rowFact(1, "xxh3:load", 0))
+	require.NoError(t, err)
+	cloud.egraphMu.RLock()
+	id := uint64(cloud.indexedRows[RowKey{Engine: "engine-a", ID: 1}])
+	cloud.egraphMu.RUnlock()
+	require.NotZero(t, id)
+
+	for _, session := range []string{"", "s"} {
+		_, err := cloud.LoadResultByResultID(ctx, session, nil, id)
+		require.ErrorIs(t, err, errIndexedRowHasNoValue, "session %q", session)
+		_, err = cloud.ResultCallByResultID(ctx, session, id)
+		require.ErrorIs(t, err, errIndexedRowHasNoValue, "session %q", session)
+	}
+	_, err = cloud.LoadResultByResultIDForSchema(ctx, "s", nil, id, nil)
+	require.ErrorIs(t, err, errIndexedRowHasNoValue)
+}
+
+// Readers of a merged-away digest run concurrently with each other and with
+// writers. Run with -race.
+func TestIndexedRowsConcurrentReadsOfMergedDigest(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cloud := newCloudCache(t)
+	const n = 8
+	for i := range n {
+		_, err := cloud.UpsertIndexedRow(ctx, "engine-a", rowFact(uint64(i+1), "xxh3:merge-"+strconv.Itoa(i), 0))
+		require.NoError(t, err)
+	}
+	// Chain the classes so that finding a digest's root walks a path.
+	for i := range n - 1 {
+		require.NoError(t, cloud.UpsertIndexedClass(ctx, cachefact.Class{Digests: []cachefact.Digest{
+			{Digest: "xxh3:merge-" + strconv.Itoa(i)}, {Digest: "xxh3:merge-" + strconv.Itoa(i+1)},
+		}}))
+	}
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Go(func() {
+			for i := range 50 {
+				dig := "xxh3:merge-" + strconv.Itoa((g+i)%n)
+				require.Len(t, cloud.EquivalentRows(dig), n)
+				info, ok := cloud.RowInfo(RowKey{Engine: "engine-a", ID: uint64((g+i)%n + 1)})
+				require.True(t, ok)
+				require.Len(t, info.ClassDigests, n)
+			}
+		})
+	}
+	wg.Go(func() {
+		for i := range 20 {
+			_, err := cloud.UpsertIndexedRow(ctx, "engine-w", rowFact(uint64(i+1), "xxh3:writer-"+strconv.Itoa(i), 0))
+			require.NoError(t, err)
+		}
+	})
+	wg.Wait()
 }

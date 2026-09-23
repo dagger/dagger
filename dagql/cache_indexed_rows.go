@@ -32,6 +32,9 @@ func compareRowKeys(a, b RowKey) int {
 // hold.
 var ErrUnknownIndexedRow = errors.New("unknown indexed row")
 
+// errIndexedRowHasNoValue refuses to load an indexed row by its result number.
+var errIndexedRowHasNoValue = errors.New("indexed row has no value")
+
 // indexedRowState marks a sharedResult as an indexed row. Guarded by egraphMu.
 type indexedRowState struct {
 	key      RowKey
@@ -205,7 +208,7 @@ func (c *Cache) EquivalentRows(dig string) []RowKey {
 		return nil
 	}
 	var keys []RowKey
-	for id := range c.outputEqClassResults[c.findEqClassLocked(classID)] {
+	for id := range c.outputEqClassResults[c.eqClassRootLocked(classID)] {
 		if res := c.resultsByID[id]; res != nil && res.indexed != nil {
 			keys = append(keys, res.indexed.key)
 		}
@@ -286,7 +289,7 @@ func (c *Cache) RowInfo(key RowKey) (IndexedRowInfo, bool) {
 	}
 	_, broad := c.broadlyIndexedResults[res.id]
 	classDigests := map[string]struct{}{}
-	for classID := range c.outputEqClassesForResultLocked(res.id) {
+	for classID := range c.outputEqClassRootsLocked(res.id) {
 		for dig := range c.eqClassToDigests[classID] {
 			classDigests[dig] = struct{}{}
 			if broad {
@@ -307,6 +310,31 @@ func (c *Cache) RowInfo(key RowKey) (IndexedRowInfo, bool) {
 	}
 	slices.Sort(info.UnknownDeps)
 	return info, true
+}
+
+// eqClassRootLocked returns the root of id's class, as findEqClassLocked
+// does, without compressing the path, so a reader holding only
+// egraphMu.RLock can use it.
+func (c *Cache) eqClassRootLocked(id eqClassID) eqClassID {
+	if id == 0 || int(id) >= len(c.egraphParents) {
+		return 0
+	}
+	for c.egraphParents[id] != id {
+		id = c.egraphParents[id]
+	}
+	return id
+}
+
+// outputEqClassRootsLocked is outputEqClassesForResultLocked for a reader
+// holding only egraphMu.RLock.
+func (c *Cache) outputEqClassRootsLocked(resID sharedResultID) map[eqClassID]struct{} {
+	out := make(map[eqClassID]struct{}, len(c.resultOutputEqClasses[resID]))
+	for eqID := range c.resultOutputEqClasses[resID] {
+		if root := c.eqClassRootLocked(eqID); root != 0 {
+			out[root] = struct{}{}
+		}
+	}
+	return out
 }
 
 func sortedKeys(m map[string]struct{}) []string {
