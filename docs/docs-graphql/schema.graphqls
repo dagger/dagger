@@ -276,6 +276,28 @@ type Agent implements Node {
   ): ID! @expectedType(name: "Agent") @experimental(reason: "Agent APIs are likely to change.")
 
   """
+  Restore a lifecycle subscription without announcing the current state or starting work.
+
+  Both agents must have been restored with a supplied spawn handle and never
+  activated. An empty state set removes the subscription.
+  """
+  restoreNotify(
+    """The restored subscriber capability."""
+    subscriber: ID! @expectedType(name: "Agent")
+
+    """The recorded lifecycle state filter."""
+    on: [AgentState!]!
+  ): ID! @expectedType(name: "Agent") @experimental(reason: "Agent APIs are likely to change.")
+
+  """
+  Discard a restored runtime during failed graph installation.
+
+  Refuses fresh or already activated agents. Removes its notification edges and
+  preserves a telemetry removal tombstone for archive verification.
+  """
+  discardRestore: ID! @expectedType(name: "Agent") @experimental(reason: "Agent APIs are likely to change.")
+
+  """
   Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
   """
   stop(
@@ -4511,23 +4533,6 @@ type LLM implements Node & Syncer {
   sync: ID! @expectedType(name: "LLM")
 
   """
-  A portable, self-contained ID for the conversation that node() can resolve in
-  any session. Unlike id, which may return an engine-local runtime handle valid
-  only within the current session, this returns the recipe form suitable for
-  persisting and later restoring the conversation. The recipe is flattened:
-  bindings superseded during the session (workspace overlays recorded by each
-  mutating tool call, and re-bound toolsets) are dropped, while the current
-  workspace binding — including any pending, un-exported edits — is
-  preserved.
-  """
-  portableID: ID!
-
-  """
-  Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-  """
-  emitHistory: ID! @expectedType(name: "LLM")
-
-  """
   Send the queued prompt and step the model against the available tools, until
   it ends its turn: a reply with no tool calls and nothing left queued.
   """
@@ -4599,6 +4604,12 @@ type LLM implements Node & Syncer {
     IDLE, its interrupted turn's input still pending on the conversation.
     """
     state: AgentState = IDLE
+
+    """
+    Recorded parent handle when restoring an agent. Lineage does not install a
+    notification subscription. Requires a supplied handle.
+    """
+    parentHandle: String
 
     """
     The loop error to create the agent with, for state FAILED. Refused with any other state.

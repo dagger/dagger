@@ -2442,6 +2442,11 @@ export type LLMSpawnOpts = {
   state?: AgentState
 
   /**
+   * Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle.
+   */
+  parentHandle?: string
+
+  /**
    * The loop error to create the agent with, for state FAILED. Refused with any other state.
    */
   error?: string
@@ -4422,12 +4427,14 @@ export class Address extends BaseClient {
  */
 export class Agent extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _discardRestore?: ID = undefined
   private readonly _error?: string = undefined
   private readonly _handle?: string = undefined
   private readonly _name?: string = undefined
   private readonly _notify?: ID = undefined
   private readonly _pause?: ID = undefined
   private readonly _reseed?: ID = undefined
+  private readonly _restoreNotify?: ID = undefined
   private readonly _resume?: ID = undefined
   private readonly _send?: ID = undefined
   private readonly _state?: AgentState = undefined
@@ -4440,12 +4447,14 @@ export class Agent extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _discardRestore?: ID,
     _error?: string,
     _handle?: string,
     _name?: string,
     _notify?: ID,
     _pause?: ID,
     _reseed?: ID,
+    _restoreNotify?: ID,
     _resume?: ID,
     _send?: ID,
     _state?: AgentState,
@@ -4455,12 +4464,14 @@ export class Agent extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._discardRestore = _discardRestore
     this._error = _error
     this._handle = _handle
     this._name = _name
     this._notify = _notify
     this._pause = _pause
     this._reseed = _reseed
+    this._restoreNotify = _restoreNotify
     this._resume = _resume
     this._send = _send
     this._state = _state
@@ -4481,6 +4492,20 @@ export class Agent extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Discard a restored runtime during failed graph installation.
+   *
+   * Refuses fresh or already activated agents. Removes its notification edges and preserves a telemetry removal tombstone for archive verification.
+   * @experimental
+   */
+  discardRestore = async (): Promise<Agent> => {
+    const ctx = this._ctx.select("discardRestore")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
   }
 
   /**
@@ -4602,6 +4627,25 @@ export class Agent extends BaseClient {
    */
   reseed = async (conversation: LLM): Promise<Agent> => {
     const ctx = this._ctx.select("reseed", { conversation })
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
+   * Restore a lifecycle subscription without announcing the current state or starting work.
+   *
+   * Both agents must have been restored with a supplied spawn handle and never activated. An empty state set removes the subscription.
+   * @param subscriber The restored subscriber capability.
+   * @param on The recorded lifecycle state filter.
+   * @experimental
+   */
+  restoreNotify = async (
+    subscriber: Agent,
+    on: AgentState[],
+  ): Promise<Agent> => {
+    const ctx = this._ctx.select("restoreNotify", { subscriber, on })
 
     const response: Awaited<ID> = await ctx.execute()
 
@@ -12119,11 +12163,9 @@ export class LLM extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _contextTokens?: number = undefined
   private readonly _contextWindow?: number = undefined
-  private readonly _emitHistory?: ID = undefined
   private readonly _hasPending?: boolean = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
-  private readonly _portableID?: ID = undefined
   private readonly _provider?: string = undefined
   private readonly _reasoningEffort?: string = undefined
   private readonly _spawn?: ID = undefined
@@ -12139,11 +12181,9 @@ export class LLM extends BaseClient {
     _id?: ID,
     _contextTokens?: number,
     _contextWindow?: number,
-    _emitHistory?: ID,
     _hasPending?: boolean,
     _lastReply?: string,
     _model?: string,
-    _portableID?: ID,
     _provider?: string,
     _reasoningEffort?: string,
     _spawn?: ID,
@@ -12156,11 +12196,9 @@ export class LLM extends BaseClient {
     this._id = _id
     this._contextTokens = _contextTokens
     this._contextWindow = _contextWindow
-    this._emitHistory = _emitHistory
     this._hasPending = _hasPending
     this._lastReply = _lastReply
     this._model = _model
-    this._portableID = _portableID
     this._provider = _provider
     this._reasoningEffort = _reasoningEffort
     this._spawn = _spawn
@@ -12225,17 +12263,6 @@ export class LLM extends BaseClient {
     const response: Awaited<number> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-   */
-  emitHistory = async (): Promise<LLM> => {
-    const ctx = this._ctx.select("emitHistory")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return new LLM(ctx.copy().selectNode(response, "LLM"))
   }
 
   /**
@@ -12320,21 +12347,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-   */
-  portableID = async (): Promise<ID> => {
-    if (this._portableID) {
-      return this._portableID
-    }
-
-    const ctx = this._ctx.select("portableID")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
    * The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
    */
   provider = async (): Promise<string> => {
@@ -12394,6 +12406,7 @@ export class LLM extends BaseClient {
    * @param opts.state The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
    *
    * RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.
+   * @param opts.parentHandle Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle.
    * @param opts.error The loop error to create the agent with, for state FAILED. Refused with any other state.
    * @experimental
    */

@@ -862,6 +862,26 @@ class Agent(Type):
     conversation itself remains observable at any time as an immutable LLM
     value."""
 
+    async def discard_restore(self) -> Self:
+        """Discard a restored runtime during failed graph installation.
+
+        Refuses fresh or already activated agents. Removes its notification
+        edges and preserves a telemetry removal tombstone for archive
+        verification.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "discardRestore", _args)
+
     async def error(self) -> str:
         """Why the loop failed, for a FAILED agent; empty otherwise.
 
@@ -1125,6 +1145,40 @@ class Agent(Type):
             Arg("conversation", conversation),
         ]
         return await self._ctx.execute_sync(self, "reseed", _args)
+
+    async def restore_notify(
+        self,
+        subscriber: Self,
+        on: list[AgentState],
+    ) -> Self:
+        """Restore a lifecycle subscription without announcing the current state
+        or starting work.
+
+        Both agents must have been restored with a supplied spawn handle and
+        never activated. An empty state set removes the subscription.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
+        Parameters
+        ----------
+        subscriber:
+            The restored subscriber capability.
+        on:
+            The recorded lifecycle state filter.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("subscriber", subscriber),
+            Arg("on", on),
+        ]
+        return await self._ctx.execute_sync(self, "restoreNotify", _args)
 
     async def resume(self) -> Self:
         """Resume draining the mailbox: a suspended turn continues from the last
@@ -11093,20 +11147,6 @@ class LLM(Type):
         _ctx = self._select("contextWindow", _args)
         return await _ctx.execute(int | None)
 
-    async def emit_history(self) -> Self:
-        """Re-emit telemetry spans for the full message history, so a loaded
-        conversation displays in the TUI.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        return await self._ctx.execute_sync(self, "emitHistory", _args)
-
     def fork(self, label: str) -> Self:
         """Fork the conversation, so that otherwise-identical follow-ups evaluate
         independently instead of deduplicating to a single cached result.
@@ -11247,37 +11287,6 @@ class LLM(Type):
         _ctx = self._select("model", _args)
         return await _ctx.execute(str)
 
-    async def portable_id(self) -> str:
-        """A portable, self-contained ID for the conversation that node() can
-        resolve in any session. Unlike id, which may return an engine-local
-        runtime handle valid only within the current session, this returns the
-        recipe form suitable for persisting and later restoring the
-        conversation. The recipe is flattened: bindings superseded during the
-        session (workspace overlays recorded by each mutating tool call, and
-        re-bound toolsets) are dropped, while the current workspace binding —
-        including any pending, un-exported edits — is preserved.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("portableID", _args)
-        return await _ctx.execute(str)
-
     async def provider(self) -> str:
         """The provider serving the model, e.g. "anthropic", "openai", "google",
         or "local".
@@ -11337,6 +11346,7 @@ class LLM(Type):
         name: str | None = None,
         handle: str | None = None,
         state: AgentState | None = AgentState.IDLE,
+        parent_handle: str | None = None,
         error: str | None = "",
     ) -> Agent:
         """Spawn the conversation as an agent: a startable, addressable
@@ -11382,6 +11392,9 @@ class LLM(Type):
             restored loop died with the session that published it — restore
             such an agent as IDLE, its interrupted turn's input still pending
             on the conversation.
+        parent_handle:
+            Recorded parent handle when restoring an agent. Lineage does not
+            install a notification subscription. Requires a supplied handle.
         error:
             The loop error to create the agent with, for state FAILED. Refused
             with any other state.
@@ -11397,6 +11410,7 @@ class LLM(Type):
             Arg("name", name, None),
             Arg("handle", handle, None),
             Arg("state", state, AgentState.IDLE),
+            Arg("parentHandle", parent_handle, None),
             Arg("error", error, ""),
         ]
         return await self._ctx.execute_sync(self, "spawn", _args, Agent)

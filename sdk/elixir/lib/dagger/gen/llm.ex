@@ -61,27 +61,6 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-  """
-  @spec emit_history(t()) :: {:ok, Dagger.LLM.t()} | {:error, term()}
-  def emit_history(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("emitHistory")
-
-    with {:ok, id} <- Client.execute(llm.client, query_builder) do
-      {:ok,
-       %Dagger.LLM{
-         query_builder:
-           QB.query()
-           |> QB.select("node")
-           |> QB.put_arg("id", id)
-           |> QB.inline_fragment("LLM"),
-         client: llm.client
-       }}
-    end
-  end
-
-  @doc """
   Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
   """
   @spec fork(t(), String.t()) :: Dagger.LLM.t()
@@ -181,17 +160,6 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-  """
-  @spec portable_id(t()) :: {:ok, String.t()} | {:error, term()}
-  def portable_id(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("portableID")
-
-    Client.execute(llm.client, query_builder)
-  end
-
-  @doc """
   The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
   """
   @spec provider(t()) :: {:ok, String.t()} | {:error, term()}
@@ -253,6 +221,7 @@ defmodule Dagger.LLM do
           {:name, String.t() | nil},
           {:handle, String.t() | nil},
           {:state, Dagger.AgentState.t() | nil},
+          {:parent_handle, String.t() | nil},
           {:error, String.t() | nil}
         ]) :: {:ok, Dagger.Agent.t()} | {:error, term()}
   def spawn(%__MODULE__{} = llm, optional_args \\ []) do
@@ -262,6 +231,7 @@ defmodule Dagger.LLM do
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("handle", optional_args[:handle])
       |> QB.maybe_put_arg("state", optional_args[:state])
+      |> QB.maybe_put_arg("parentHandle", optional_args[:parent_handle])
       |> QB.maybe_put_arg("error", optional_args[:error])
 
     with {:ok, id} <- Client.execute(llm.client, query_builder) do
