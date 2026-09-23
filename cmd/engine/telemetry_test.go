@@ -39,7 +39,8 @@ type cacheFactExportRequest struct {
 	hasAuth bool
 }
 
-// With DAGGER_CLOUD_TOKEN set, the engine exports its cache facts to
+// With _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT and DAGGER_CLOUD_TOKEN set, the
+// engine exports its cache facts to
 // DAGGER_CLOUD_URL under the token, with the engine instance in the resource,
 // through a logger provider of its own: the process context keeps its own
 // provider, so nothing else emitted in the process reaches Cloud.
@@ -59,6 +60,7 @@ func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
 		mu.Unlock()
 	}))
 	t.Cleanup(srv.Close)
+	t.Setenv(envCacheFactsExport, "1")
 	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
 	t.Setenv("DAGGER_CLOUD_URL", srv.URL)
 
@@ -102,11 +104,46 @@ func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
 }
 
 func TestCacheFactExportDisabledWithoutToken(t *testing.T) {
+	t.Setenv(envCacheFactsExport, "1")
 	t.Setenv("DAGGER_CLOUD_TOKEN", "")
 	export := newCacheFactExport(t.Context(), resource.Empty())
 	require.False(t, export.Enabled())
 	require.NoError(t, export.Shutdown(t.Context()))
 	require.Nil(t, serverCacheFactExport(export), "the server gets no export, not a nil pointer")
+}
+
+// A client forwards DAGGER_CLOUD_TOKEN into every engine it provisions, so the
+// token alone exports nothing: no fact reaches Cloud unless
+// _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT is set too.
+func TestCacheFactExportDisabledWithTokenAlone(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		requests int
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		mu.Lock()
+		requests++
+		mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv(envCacheFactsExport, "")
+	t.Setenv("DAGGER_CLOUD_TOKEN", "forwarded-token")
+	t.Setenv("DAGGER_CLOUD_URL", srv.URL)
+
+	ctx, export := InitTelemetry(t.Context(), "instance-a")
+	require.False(t, export.Enabled())
+	require.Nil(t, serverCacheFactExport(export), "the server gets no export, so it creates no emitter")
+
+	// A record in the facts scope on the process's own provider does not
+	// reach Cloud either.
+	var fact log.Record
+	fact.SetBody(log.StringValue("fact"))
+	telemetry.Logger(ctx, cachefact.ScopeName).Emit(ctx, fact)
+	require.NoError(t, export.Shutdown(context.Background()))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Zero(t, requests, "nothing is sent to Cloud")
 }
 
 func TestEngineTelemetry(t *testing.T) {

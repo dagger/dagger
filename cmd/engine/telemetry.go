@@ -106,10 +106,11 @@ func (e *cacheFactExport) shutdownAtExit(ctx context.Context) {
 // InitTelemetry sets up the engine process's telemetry. Its resource names
 // the engine instance.
 //
-// With DAGGER_CLOUD_TOKEN set, it also returns the export of the dagql cache's
-// facts to Dagger Cloud at DAGGER_CLOUD_URL, under that token. The export has
-// its own logger provider, so nothing else emitted in the process reaches
-// Cloud. Without the token the engine exports nothing.
+// With _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT and DAGGER_CLOUD_TOKEN both set,
+// it also returns the export of the dagql cache's facts to Dagger Cloud at
+// DAGGER_CLOUD_URL, under that token. The export has its own logger provider,
+// so nothing else emitted in the process reaches Cloud. Otherwise the engine
+// exports no facts.
 func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Context, *cacheFactExport) {
 	otelResource, err := resource.New(ctx,
 		resource.WithHost(),
@@ -132,8 +133,12 @@ func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Contex
 	return ctx, newCacheFactExport(ctx, otelResource)
 }
 
+// envCacheFactsExport enables the export of cache facts. The token alone does
+// not: clients forward DAGGER_CLOUD_TOKEN into every engine they provision.
+const envCacheFactsExport = "_EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT"
+
 func newCacheFactExport(ctx context.Context, otelResource *resource.Resource) *cacheFactExport {
-	if os.Getenv("DAGGER_CLOUD_TOKEN") == "" {
+	if os.Getenv(envCacheFactsExport) == "" || os.Getenv("DAGGER_CLOUD_TOKEN") == "" {
 		return nil
 	}
 	cloudAuth, err := auth.GetCloudAuth(ctx)
