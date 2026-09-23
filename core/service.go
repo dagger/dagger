@@ -1108,10 +1108,17 @@ func convertResizeChannel(ctx context.Context, in <-chan bkgw.WinSize) <-chan ex
 			select {
 			case <-ctx.Done():
 				return
-			case winSize := <-in:
-				out <- executor.WinSize{
+			case winSize, open := <-in:
+				if !open {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case out <- executor.WinSize{
 					Rows: winSize.Rows,
 					Cols: winSize.Cols,
+				}:
 				}
 			}
 		}
