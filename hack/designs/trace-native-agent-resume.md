@@ -63,12 +63,15 @@ Commit references below name the aggregate branch's commits.
   absence-of-live-dependency checks (`ac1191e`).
   `TestWorkspaceSnapshotFreezesLocalCheckout` passes, including the local-remote
   case. The engine build and tests now run; the earlier DNS blocker is resolved.
-- [ ] Fix the remaining committed-local-Workspace capture path:
-  `TestWorkspaceWithCommitFreezesHostAndAuthor` fails at strict capture because
-  the `withCommit` result still depends on `Host.__gitDir`. This is a real capture
-  gap, not a network failure or an assertion to relax. Earlier direct-snapshot
-  source-disappearance acceptance and producer capture/export tests passed as
-  recorded above; they do not cover this commit-returned value.
+- [x] Committed-local-Workspace capture no longer retains the original live
+  incoming Changeset in either the commit recipe or pending remainder (`3db0f6c`).
+  Capture materializes the selected resolved delta after the original eager
+  three-way merge, preserving author, pending-edit and conflict semantics.
+  Actual engine tests pass for `TestWorkspaceWithCommitFreezesHostAndAuthor`,
+  `TestWorkspaceWithCommitIncomingChanges` (clean and unrelated-dirt cases),
+  `TestWorkspaceWithCommitMergeConflicts` (all three variants), and
+  `TestWorkspaceWithCommitScopedHistory`. The strict no-`Host.__gitDir` assertion
+  remains in place; producer fresh-server partial/all-commit tests also passed.
 - [ ] Broader acceptance/performance work in §13 remains. No constant-time startup,
   crash-completeness, Cloud finality parity, or end-to-end latency claim is made.
   Internal recipe flattening remains; unsupported live dependencies fail capture.
