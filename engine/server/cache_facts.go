@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 
 	"github.com/dagger/dagger/dagql/cachefact"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -108,5 +109,69 @@ func (e *cacheFactEmitter) run(ctx context.Context) {
 			log.String(cachefact.AttrVersion, cachefact.Version),
 		)
 		logger.Emit(ctx, rec)
+	}
+}
+
+// cacheFactAliveInterval is how often a running engine emits engine.alive.
+const cacheFactAliveInterval = 60 * time.Second
+
+// startCacheFacts announces the engine once its cache is open, then reports
+// liveness until stopCacheFacts.
+func (srv *Server) startCacheFacts() {
+	if srv.cacheFacts == nil || srv.engineCache == nil {
+		return
+	}
+	restored := srv.engineCache.BootRestoredResults()
+	boot := cachefact.BootFresh
+	if restored > 0 {
+		boot = cachefact.BootRestored
+	}
+	srv.engineCache.EmitFact(cachefact.EngineStart{
+		EngineVersion:   engine.Version,
+		EngineName:      srv.engineName,
+		Boot:            boot,
+		RestoredResults: restored,
+	})
+
+	stop := make(chan struct{})
+	stopped := make(chan struct{})
+	srv.cacheFactAliveStop = stop
+	srv.cacheFactAliveStopped = stopped
+	go func() {
+		defer close(stopped)
+		ticker := time.NewTicker(cacheFactAliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				srv.emitEngineAlive()
+			}
+		}
+	}()
+}
+
+func (srv *Server) emitEngineAlive() {
+	srv.engineCache.EmitFact(cachefact.EngineAlive{DroppedFacts: srv.cacheFacts.Dropped()})
+}
+
+// stopCacheFacts runs after the cache closed: it stops liveness, announces the
+// stop with what the close persisted, and hands every queued fact to the
+// process logger provider, whose flush at process exit delivers them.
+func (srv *Server) stopCacheFacts(ctx context.Context, clean bool) {
+	if srv.cacheFacts == nil {
+		return
+	}
+	if srv.cacheFactAliveStop != nil {
+		close(srv.cacheFactAliveStop)
+		<-srv.cacheFactAliveStopped
+		srv.cacheFactAliveStop = nil
+	}
+	if srv.engineCache != nil {
+		srv.engineCache.EmitFact(cachefact.EngineStop{PersistedResults: srv.engineCache.PersistedResults(), Clean: clean})
+	}
+	if err := srv.cacheFacts.Close(ctx); err != nil {
+		slog.Warn("cache facts not drained before shutdown", "error", err, "dropped", srv.cacheFacts.Dropped())
 	}
 }

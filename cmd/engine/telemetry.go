@@ -7,22 +7,31 @@ import (
 	"os"
 	"time"
 
+	"github.com/dagger/dagger/dagql/cachefact"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/config"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetry/cgroupmetrics"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/cloud/auth"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
-
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/config"
-	"github.com/dagger/dagger/engine/telemetry/cgroupmetrics"
-	telemetry "github.com/dagger/otel-go"
 )
 
 const (
 	InstrumentationScopeName = "dagger.io/engine"
+
+	// cacheFactExportQueueSize bounds the fact records waiting for export to
+	// Cloud, matching the engine's own fact queue.
+	cacheFactExportQueueSize = 65536
+	// cacheFactShutdownTimeout bounds the final export of facts at shutdown.
+	cacheFactShutdownTimeout = 30 * time.Second
 )
 
 var (
@@ -45,22 +54,92 @@ func init() {
 	}
 }
 
-func InitTelemetry(ctx context.Context) context.Context {
+// cacheFactExport is the engine's export of its cache facts to Dagger Cloud.
+type cacheFactExport struct {
+	provider *sdklog.LoggerProvider
+}
+
+// Enabled reports whether the engine exports cache facts.
+func (e *cacheFactExport) Enabled() bool {
+	return e != nil && e.provider != nil
+}
+
+// Shutdown flushes the remaining fact records to Cloud, bounded.
+func (e *cacheFactExport) Shutdown(ctx context.Context) {
+	if !e.Enabled() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheFactShutdownTimeout)
+	defer cancel()
+	if err := e.provider.Shutdown(ctx); err != nil {
+		slog.Error("failed to export cache facts at shutdown", "error", err)
+	}
+}
+
+// InitTelemetry sets up the engine process's telemetry. Its resource names
+// the engine instance.
+//
+// With DAGGER_CLOUD_TOKEN set, the process logger provider also exports the
+// dagql cache's facts, and only them, to Dagger Cloud at DAGGER_CLOUD_URL,
+// under that token. Without it the engine exports nothing.
+func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Context, *cacheFactExport) {
 	otelResource, err := resource.New(ctx,
 		resource.WithHost(),
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String("dagger-engine"),
 			semconv.ServiceVersionKey.String(engine.Version),
 			attribute.String("dagger.io/engine.name", engineName),
+			attribute.String(cachefact.ResourceEngineInstance, engineInstanceID),
 		),
 	)
 	if err != nil {
 		slog.Error("failed to create OTel resource", "error", err)
-		return ctx
+		return ctx, nil
 	}
 
-	// Do not enable Detect: engine trace and log routing must stay unchanged.
-	return telemetry.Init(ctx, telemetry.Config{Resource: otelResource})
+	ctx = telemetry.Init(ctx, telemetry.Config{
+		Resource: otelResource,
+	})
+
+	export := newCacheFactExport(ctx, otelResource)
+	if export.Enabled() {
+		ctx = telemetry.WithLoggerProvider(ctx, export.provider)
+	}
+	return ctx, export
+}
+
+func newCacheFactExport(ctx context.Context, otelResource *resource.Resource) *cacheFactExport {
+	if os.Getenv("DAGGER_CLOUD_TOKEN") == "" {
+		return nil
+	}
+	cloudAuth, err := auth.GetCloudAuth(ctx)
+	if err != nil || cloudAuth == nil {
+		slog.Warn("cache facts not exported: cannot read DAGGER_CLOUD_TOKEN", "error", err)
+		return nil
+	}
+	spans, logs, metrics, err := enginetel.NewCloudExporters(ctx, cloudAuth, nil, os.Getenv("DAGGER_CLOUD_URL"))
+	if err != nil {
+		slog.Warn("cache facts not exported: cannot configure the Cloud exporter", "error", err)
+		return nil
+	}
+	// Session telemetry reaches Cloud through clients; only the log exporter
+	// carries facts.
+	if err := spans.Shutdown(ctx); err != nil {
+		slog.Debug("shut down unused Cloud span exporter", "error", err)
+	}
+	if err := metrics.Shutdown(ctx); err != nil {
+		slog.Debug("shut down unused Cloud metric exporter", "error", err)
+	}
+	// Other engine code emits on this provider too, for example snapshot
+	// progress outside any session; only cache facts go to Cloud.
+	processor := enginetel.OnlyScope(cachefact.ScopeName, sdklog.NewBatchProcessor(logs,
+		sdklog.WithExportInterval(telemetry.NearlyImmediate),
+		sdklog.WithMaxQueueSize(cacheFactExportQueueSize),
+	))
+	return &cacheFactExport{provider: sdklog.NewLoggerProvider(
+		sdklog.WithResource(otelResource),
+		sdklog.WithProcessor(processor),
+	)}
 }
 
 // initResourceMetrics creates an engine-owned provider after config loading.
