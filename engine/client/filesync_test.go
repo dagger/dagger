@@ -197,8 +197,8 @@ func exportFileStream(t *testing.T, opts engine.LocalExportOpts, chunks ...strin
 func TestFileStreamExportReplacesAtomically(t *testing.T) {
 	t.Parallel()
 	// On Windows a file held open cannot be renamed over (the export then
-	// falls back to rewriting it), and modes are not Unix permissions, so
-	// only the contents are checked there.
+	// fails and leaves it untouched), and modes are not Unix permissions, so
+	// no reader holds it open there and only the contents are checked.
 	unix := runtime.GOOS != "windows"
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "credentials.json")

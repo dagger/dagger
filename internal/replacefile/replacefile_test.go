@@ -24,8 +24,9 @@ func TestRenameReplaces(t *testing.T) {
 }
 
 // When the rename keeps failing, as on Windows over a file another process
-// holds open, the destination is rewritten in place after bounded retries.
-func TestRenameFallsBackAfterRetries(t *testing.T) {
+// holds open, Rename retries a few times and then returns the error, leaving
+// the destination untouched.
+func TestRenameFailsAfterRetriesAndPreservesDestination(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	tmp, dest := filepath.Join(dir, "tmp"), filepath.Join(dir, "dest")
@@ -36,13 +37,13 @@ func TestRenameFallsBackAfterRetries(t *testing.T) {
 		calls++
 		return errors.New("sharing violation")
 	}
-	require.NoError(t, rename(tmp, dest, failing, true))
+	require.Error(t, rename(tmp, dest, failing, true))
 	require.Equal(t, renameRetries+1, calls)
 	got, err := os.ReadFile(dest)
 	require.NoError(t, err)
-	require.Equal(t, "new", string(got))
-	_, err = os.Stat(tmp)
-	require.ErrorIs(t, err, os.ErrNotExist)
+	require.Equal(t, "old contents", string(got), "the destination is untouched")
 
-	require.Error(t, rename(tmp, dest, failing, false), "no retry off Windows")
+	calls = 0
+	require.Error(t, rename(tmp, dest, failing, false))
+	require.Equal(t, 1, calls, "no retry off Windows")
 }
