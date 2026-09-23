@@ -2747,9 +2747,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		// Every wait on Cloud from here until the request returns shares
 		// one deadline, well within the client's own shutdown limit.
 		defer sess.startCloudShutdownBudget()()
-		// No token refresh reaches through the client's attachables from
-		// here on; see cloudRefreshGate.
-		sess.stopCloudTokenRefresh(ctx)
 		err := drainPhase("flush workspace locks", func() error {
 			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
 		})
@@ -2763,6 +2760,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		// client's credentials file through them.
 		_ = drainPhase("flush session Cloud telemetry", func() error {
 			sess.flushSessionCloudTelemetry(ctx)
+			// No token refresh reaches through the client's attachables
+			// once they start closing; see cloudRefreshGate.
+			sess.stopCloudTokenRefresh(ctx)
 			return nil
 		})
 

@@ -74,12 +74,12 @@ func (sess *daggerSession) publishesToCloud() bool {
 var errCloudRefreshSessionClosing = errors.New("refresh cloud token: the main client is shutting down")
 
 // cloudRefreshGate admits token refreshes until the main client's shutdown
-// starts. A refresh reads and writes the client's credentials file through
-// its attachables; when they close under one, the gateway's lookup waits out
-// its own 10s whatever the refresh's deadline, and while it waits the
-// client's /shutdown response does not arrive. So shutdown first stops new
-// refreshes and waits, within the Cloud budget, for one in flight, while the
-// attachables are still open.
+// has flushed Cloud. A refresh reads and writes the client's credentials file
+// through its attachables; when they close under one, the gateway's lookup
+// waits out its own 10s whatever the refresh's deadline, and while it waits
+// the client's /shutdown response does not arrive. So after the Cloud flush,
+// and before the attachables close, shutdown stops new refreshes and waits,
+// within the Cloud budget, for one in flight.
 type cloudRefreshGate struct {
 	mu       sync.Mutex
 	closed   bool
@@ -125,9 +125,10 @@ func (g *cloudRefreshGate) wait(ctx context.Context) error {
 }
 
 // stopCloudTokenRefresh ends token refreshes for the rest of the session: the
-// main client's shutdown calls it first, before anything flushes to Cloud.
-// Exports after it use the token they have; with an expired one they fail at
-// once, costing telemetry at the very end of a session, never its shutdown.
+// main client's shutdown calls it after the Cloud flush and before the
+// attachables close. Exports after it use the token they have; with an
+// expired one they fail at once, costing telemetry at the very end of a
+// session, never its shutdown.
 func (sess *daggerSession) stopCloudTokenRefresh(ctx context.Context) {
 	if sess.cloudRefresh == nil {
 		return
