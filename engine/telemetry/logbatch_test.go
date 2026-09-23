@@ -708,3 +708,39 @@ func TestCallPayloadBatchProcessorShutdownEndsActiveExport(t *testing.T) {
 	}
 	require.Zero(t, exp.inFlight.Load(), "no export outlives Shutdown")
 }
+
+// An export started by ForceFlush, whose context outlives Shutdown's, ends
+// when Shutdown's time ends too: Shutdown returns on its deadline, with the
+// worker stopped and no export in flight.
+func TestCallPayloadBatchProcessorShutdownEndsFlushExport(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		exp := &ctxBlockingLogExporter{entered: make(chan struct{})}
+		proc := NewCallPayloadBatchProcessor(exp)
+		provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+		provider.Logger("test.core").Emit(t.Context(), payloadRecordWithBody("flushed"))
+
+		// Time stands still until every goroutine blocks, so the flush
+		// reaches the worker before its coalescing timer fires.
+		flushCtx, cancelFlush := context.WithTimeout(t.Context(), time.Hour)
+		defer cancelFlush()
+		flushed := make(chan error, 1)
+		go func() { flushed <- proc.ForceFlush(flushCtx) }()
+		<-exp.entered
+
+		const bound = 200 * time.Millisecond
+		ctx, cancel := context.WithTimeout(t.Context(), bound)
+		defer cancel()
+		start := time.Now()
+		require.ErrorIs(t, proc.Shutdown(ctx), context.DeadlineExceeded)
+		require.Equal(t, bound, time.Since(start), "Shutdown returns on its own deadline")
+		select {
+		case <-proc.done:
+		default:
+			t.Fatal("Shutdown returned before the worker stopped")
+		}
+		require.Zero(t, exp.inFlight.Load(), "no export outlives Shutdown")
+		require.ErrorIs(t, <-flushed, context.Canceled, "the flush's export was cancelled")
+	})
+}

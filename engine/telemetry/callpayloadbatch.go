@@ -237,12 +237,26 @@ func (processor *CallPayloadBatchProcessor) run() {
 				otel.Handle(err)
 			}
 		case request := <-processor.flush:
-			request.done <- export(request.ctx, true)
+			// A flush's export ends with the flush, or when Shutdown cancels
+			// the worker, whichever comes first.
+			ctx, stop := processor.withWorker(request.ctx)
+			request.done <- export(ctx, true)
+			stop()
 		case request := <-processor.shutdown:
 			disarm()
 			request.done <- processor.drain(request.ctx)
 			return
 		}
+	}
+}
+
+// withWorker returns ctx, also cancelled when Shutdown cancels the worker.
+func (processor *CallPayloadBatchProcessor) withWorker(ctx context.Context) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	stopAfter := context.AfterFunc(processor.ctx, cancel)
+	return ctx, func() {
+		stopAfter()
+		cancel()
 	}
 }
 
