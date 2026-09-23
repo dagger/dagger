@@ -131,7 +131,7 @@ old trees. Source paths below refer to main unless a branch is named.
 
 ### 2.1 Payload transport improved; agent control records did not
 
-#14189 has merged. Call-payload records have dedicated ingress and retries and no
+PR #14189 has merged. Call-payload records have dedicated ingress and retries and no
 longer share the ordinary bounded log queue. Agent state and snapshot-digest
 records still do: `engine/server/session.go`, `engine/telemetry/logbatch.go`, and
 `core/agent_telemetry.go` distinguish these classes. The ordinary queue has 2,048
@@ -183,7 +183,7 @@ processor publishes a snapshot at start, not every mutation. A final span export
 can contain later attributes, but that does not make mutable span attributes a
 sufficient live control protocol.
 
-#14197 treats checkpoint JSON as authoritative, then repairs or synthesizes ordinary
+PR #14197 treats checkpoint JSON as authoritative, then repairs or synthesizes ordinary
 agent telemetry from it in `engine/server/archive.go`. This duplicates lifecycle
 truth and reconciles two representations. The replacement removes that duplication,
 not merely the JSON syntax.
@@ -195,7 +195,7 @@ not merely the JSON syntax.
 `worker.notify(subscriber: chief, on: [IDLE, FAILED])`, but that is an ordinary
 subscription, not an implication of lineage.
 
-#14193's `parentHandle` populates `checkpointParentAgentID`; its checkpoint has no
+PR #14193's `parentHandle` populates `checkpointParentAgentID`; its checkpoint has no
 subscription edges, filters, or delivery state. Restoring the parent relationship
 therefore does not fix missing end-of-turn notifications. Both endpoints can exist
 and be addressable while the notification edge between them is absent.

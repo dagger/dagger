@@ -158,7 +158,7 @@ func (c *Client) Acquire(ctx context.Context, traceID string) (func(), error) {
 // AcquireGeneration binds the reader lifetime to exactly the listed archive.
 func (c *Client) AcquireGeneration(ctx context.Context, traceID, generation string) (func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), nil, nil, "application/octet-stream", generation, 0)
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), nil, nil, "application/octet-stream", generation, 0) //nolint:bodyclose // The returned release function owns the streaming lease body.
 	if err != nil {
 		cancel()
 		return nil, err

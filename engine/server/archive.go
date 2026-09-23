@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,6 +30,28 @@ import (
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
+
+func (srv *Server) initArchives() error {
+	// Telemetry archives survive worker cache resets and engine restart.
+	srv.clientDBDir = filepath.Join(srv.rootDir, "telemetry", "clientdbs")
+	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
+	config := archive.Config{Root: filepath.Join(srv.rootDir, "telemetry", "archives"), RemoveStore: srv.clientDBs.Remove}
+	var err error
+	if value := os.Getenv("_EXPERIMENTAL_DAGGER_ARCHIVE_TTL"); value != "" {
+		config.TTL, err = time.ParseDuration(value)
+		if err != nil {
+			return fmt.Errorf("archive TTL: %w", err)
+		}
+	}
+	if value := os.Getenv("_EXPERIMENTAL_DAGGER_ARCHIVE_QUOTA_BYTES"); value != "" {
+		config.QuotaBytes, err = strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("archive quota: %w", err)
+		}
+	}
+	srv.archives, err = archive.NewManager(config)
+	return err
+}
 
 func (sess *daggerSession) ensureArchive(traceID string) (rerr error) {
 	srv := sess.telemetryPubSub.srv
@@ -338,7 +361,8 @@ func serveArchiveBootstrap(w http.ResponseWriter, lease *archive.Lease) error {
 	}
 	w.Header().Set("Content-Type", archive.BootstrapContentType)
 	w.Header().Set("Cache-Control", "no-store")
-	_, err = w.Write(data)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, err = w.Write(data) //nolint:gosec // G705: verified binary bootstrap frames, never HTML; nosniff prevents reinterpretation.
 	return err
 }
 
@@ -416,21 +440,9 @@ func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m 
 				return errors.New("archive log stream truncated before cut")
 			}
 			cursor = rows[len(rows)-1].ID
-			var filtered []clientdb.Log
-			for _, row := range rows {
-				if row.TraceID.String != m.TraceID || excludedLogs[row.ID] {
-					continue
-				}
-				rec, err := clientdb.DecodeLogRecord(row)
-				if err != nil {
-					return err
-				}
-				// The bootstrap is the sole source control cut. Historical records cannot
-				// redefine it or interfere with destination runtime incarnations.
-				if agentcontrol.IsRecord(rec) {
-					continue
-				}
-				filtered = append(filtered, row)
+			filtered, err := archiveHistoryLogs(rows, m.TraceID, excludedLogs)
+			if err != nil {
+				return err
 			}
 			message = &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}
 		case "metrics":
@@ -454,6 +466,26 @@ func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m 
 	}
 	return enginetel.WriteLiveTerminal(w, high)
 }
+func archiveHistoryLogs(rows []clientdb.Log, traceID string, excluded map[int64]bool) ([]clientdb.Log, error) {
+	var filtered []clientdb.Log
+	for _, row := range rows {
+		if row.TraceID.String != traceID || excluded[row.ID] {
+			continue
+		}
+		rec, err := clientdb.DecodeLogRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		// The bootstrap is the sole source control cut. Historical records cannot
+		// redefine it or interfere with destination runtime incarnations.
+		if agentcontrol.IsRecord(rec) {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered, nil
+}
+
 func writeArchiveJSON(w http.ResponseWriter, status int, value any) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

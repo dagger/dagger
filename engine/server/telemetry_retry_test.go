@@ -33,7 +33,7 @@ func (sess *daggerSession) callPayloadMissingTargets(digest string, targets []st
 }
 
 func TestArchiveRegistrationFailureDoesNotDropControl(t *testing.T) {
-	srv, _, _, _ := archiveFixture(t)
+	srv, _, _, _ := archiveFixture(t) //nolint:dogsled // This test creates its own session and control records.
 	other := &daggerSession{sessionID: "other-session", mainClientCallerID: "other", clientRecords: map[string]*clientRecord{}}
 	other.telemetryPubSub = NewPubSub(srv)
 	other.archiveRegisterErr = fmt.Errorf("injected archive registration failure")
