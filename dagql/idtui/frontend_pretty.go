@@ -5600,22 +5600,8 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		// boundary it bubbles the key to PromptFrame for history navigation.
 		return false
 	default:
-		// Roster focus: tmux's numbered jump targets, with Ctrl so the digits
-		// themselves keep typing, plus its last-window toggle. Tuist requests
-		// Kitty keyboard disambiguation, so capable terminals encode modified
-		// digits distinctly. Nav mode's bare digits remain the fallback for
-		// legacy terminals and terminal shortcuts that consume Ctrl+digits.
-		// Tab is unavailable (input-mode binding, and the completion menu eats
-		// it).
-		if n, ok := agentJumpKey(keyStr); ok {
-			if fe.focusAgentIndex(n) {
-				return true
-			}
-		}
-		if keyStr == agentLastKey {
-			if claimed, _ := fe.focusLastAgent(); claimed {
-				return true
-			}
+		if fe.handleAgentFocusShortcut(keyStr) {
+			return true
 		}
 		if fe.shell != nil {
 			if work := fe.shell.ReactToInput(fe.shellCtx, ev, fe.textInput.Value(), true); work != nil {
@@ -5639,6 +5625,23 @@ func (fe *frontendPretty) handlePromptFrameKey(_ tuist.Context, ev uv.KeyPressEv
 	default:
 		return false
 	}
+}
+
+// handleAgentFocusShortcut handles prompt mode's numbered jumps and
+// last-focused toggle. Returns whether the shortcut was consumed.
+//
+// Tuist requests Kitty keyboard disambiguation, so capable terminals encode
+// modified digits distinctly. Nav mode's bare digits remain the fallback for
+// legacy terminals and terminal shortcuts that consume Ctrl+digits.
+func (fe *frontendPretty) handleAgentFocusShortcut(keyStr string) bool {
+	if n, ok := agentJumpKey(keyStr); ok {
+		return fe.focusAgentIndex(n)
+	}
+	if keyStr == agentLastKey {
+		claimed, _ := fe.focusLastAgent()
+		return claimed
+	}
+	return false
 }
 
 // agentLastKey toggles back to the previously focused agent (tmux's
