@@ -935,8 +935,9 @@ type Owner {
     base.withSystemPrompt("first replacement").withSkills(directory.withNewFile("current/SKILL.md", "---\ndescription: Current module skill.\n---\ncurrent"))
   }
   second(base: LLM!): LLM! @agent {
-    base.withSystemPrompt("second replacement").withSkills(directory.withNewFile("second/SKILL.md", "---\ndescription: Second entrypoint skill.\n---\nsecond"))
+    base.withSystemPrompt("second replacement").withSkills(directory.withNewFile("second/SKILL.md", "---\ndescription: Second entrypoint skill.\n---\nsecond")).withTools(currentNode)
   }
+  ping: String! { "second entrypoint tool" }
 }
 `
 	ws = ws.WithNewFile("owner/main.dang", updated)
@@ -947,6 +948,11 @@ type Owner {
 		for round := range 2 {
 			llm, err = recomposeLLM(ctx, client, refreshedWS, llm, "owner")
 			require.NoError(t, err)
+			// On the second round, the first entrypoint has not yet restored
+			// Owner's binding. Preservation must wait for the second one.
+			tools, err := llm.Tools(ctx)
+			require.NoError(t, err)
+			require.Contains(t, tools, "## ping\n")
 			expected := []string{shared, "first replacement", "second replacement"}
 			if caller != "owner" {
 				expected = append(expected, shared)
