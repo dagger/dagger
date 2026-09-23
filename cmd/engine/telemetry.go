@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/server"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetry/cgroupmetrics"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -18,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -33,7 +36,8 @@ const (
 	cacheFactExportQueueSize = 4096
 	// cacheFactExportBatchSize bounds the fact records of one export.
 	cacheFactExportBatchSize = 512
-	// cacheFactShutdownTimeout bounds the final export of facts at shutdown.
+	// cacheFactShutdownTimeout bounds the export's flush when the server did
+	// not already shut it down, for example after a failed start.
 	cacheFactShutdownTimeout = 30 * time.Second
 )
 
@@ -57,9 +61,12 @@ func init() {
 	}
 }
 
-// cacheFactExport is the engine's export of its cache facts to Dagger Cloud.
+// cacheFactExport is the engine's export of its cache facts to Dagger Cloud:
+// a logger provider of its own, written only by the engine's fact emitter.
 type cacheFactExport struct {
-	provider *sdklog.LoggerProvider
+	provider     *sdklog.LoggerProvider
+	shutdownOnce sync.Once
+	shutdownErr  error
 }
 
 // Enabled reports whether the engine exports cache facts.
@@ -67,14 +74,31 @@ func (e *cacheFactExport) Enabled() bool {
 	return e != nil && e.provider != nil
 }
 
-// Shutdown flushes the remaining fact records to Cloud, bounded.
-func (e *cacheFactExport) Shutdown(ctx context.Context) {
+// Logger is the logger the engine emits its cache facts through.
+func (e *cacheFactExport) Logger() log.Logger {
+	return e.provider.Logger(cachefact.ScopeName)
+}
+
+// Shutdown flushes the remaining fact records to Cloud within ctx. Later
+// calls return the first call's result.
+func (e *cacheFactExport) Shutdown(ctx context.Context) error {
+	if !e.Enabled() {
+		return nil
+	}
+	e.shutdownOnce.Do(func() {
+		e.shutdownErr = e.provider.Shutdown(ctx)
+	})
+	return e.shutdownErr
+}
+
+// shutdownAtExit shuts the export down, bounded, when the server did not.
+func (e *cacheFactExport) shutdownAtExit(ctx context.Context) {
 	if !e.Enabled() {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheFactShutdownTimeout)
 	defer cancel()
-	if err := e.provider.Shutdown(ctx); err != nil {
+	if err := e.Shutdown(ctx); err != nil {
 		slog.Error("failed to export cache facts at shutdown", "error", err)
 	}
 }
@@ -82,9 +106,10 @@ func (e *cacheFactExport) Shutdown(ctx context.Context) {
 // InitTelemetry sets up the engine process's telemetry. Its resource names
 // the engine instance.
 //
-// With DAGGER_CLOUD_TOKEN set, the process logger provider also exports the
-// dagql cache's facts, and only them, to Dagger Cloud at DAGGER_CLOUD_URL,
-// under that token. Without it the engine exports nothing.
+// With DAGGER_CLOUD_TOKEN set, it also returns the export of the dagql cache's
+// facts to Dagger Cloud at DAGGER_CLOUD_URL, under that token. The export has
+// its own logger provider, so nothing else emitted in the process reaches
+// Cloud. Without the token the engine exports nothing.
 func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Context, *cacheFactExport) {
 	otelResource, err := resource.New(ctx,
 		resource.WithHost(),
@@ -104,11 +129,7 @@ func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Contex
 		Resource: otelResource,
 	})
 
-	export := newCacheFactExport(ctx, otelResource)
-	if export.Enabled() {
-		ctx = telemetry.WithLoggerProvider(ctx, export.provider)
-	}
-	return ctx, export
+	return ctx, newCacheFactExport(ctx, otelResource)
 }
 
 func newCacheFactExport(ctx context.Context, otelResource *resource.Resource) *cacheFactExport {
@@ -133,14 +154,20 @@ func newCacheFactExport(ctx context.Context, otelResource *resource.Resource) *c
 	if err := metrics.Shutdown(ctx); err != nil {
 		slog.Debug("shut down unused Cloud metric exporter", "error", err)
 	}
-	// Other engine code emits on this provider too, for example snapshot
-	// progress outside any session; only cache facts go to Cloud.
-	processor := enginetel.OnlyScope(cachefact.ScopeName, enginetel.NewBlockingLogProcessor(logs,
-		cacheFactExportQueueSize, cacheFactExportBatchSize, telemetry.NearlyImmediate))
+	processor := enginetel.NewBlockingLogProcessor(logs, cacheFactExportQueueSize, cacheFactExportBatchSize, telemetry.NearlyImmediate)
 	return &cacheFactExport{provider: sdklog.NewLoggerProvider(
 		sdklog.WithResource(otelResource),
 		sdklog.WithProcessor(processor),
 	)}
+}
+
+// serverCacheFactExport returns the export as the server takes it: nil, not a
+// nil pointer, when the engine exports no facts.
+func serverCacheFactExport(e *cacheFactExport) server.CacheFactExport {
+	if !e.Enabled() {
+		return nil
+	}
+	return e
 }
 
 // initResourceMetrics creates an engine-owned provider after config loading.

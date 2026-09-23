@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
-	telemetry "github.com/dagger/otel-go"
 )
 
 // cacheFactQueueSize bounds the facts waiting to be encoded and logged.
@@ -24,14 +23,23 @@ type queuedCacheFact struct {
 	at   time.Time
 }
 
+// CacheFactExport is where the engine's cache facts go: a logger that
+// delivers every record it accepts, and a bounded shutdown that flushes them.
+type CacheFactExport interface {
+	Logger() log.Logger
+	Shutdown(context.Context) error
+}
+
+// cacheFactShutdownTimeout bounds the facts' whole shutdown: engine.stop, the
+// emitter's drain and the export's flush.
+const cacheFactShutdownTimeout = 30 * time.Second
+
 // cacheFactEmitter is the engine's dagql.FactSink. The cache calls Emit with
 // its graph lock held, so Emit never blocks: it queues the fact, or drops it
-// and counts the drop when the queue is full. The logger provider it emits
-// through must not drop records itself (the engine's Cloud fact export blocks
-// the drain instead), so that this count is the whole loss. One goroutine drains the queue,
-// encodes each fact and emits it as one OTel log record through the logger
-// provider of the context it was started with: the engine's process
-// telemetry, never a session's.
+// and counts the drop when the queue is full. One goroutine drains the queue,
+// encodes each fact and emits it as one OTel log record through the fact
+// logger. That logger waits rather than drop a record, so the count is the
+// whole loss before shutdown.
 type cacheFactEmitter struct {
 	queue   chan queuedCacheFact
 	dropped atomic.Uint64
@@ -43,12 +51,12 @@ type cacheFactEmitter struct {
 	done    chan struct{}
 }
 
-func newCacheFactEmitter(ctx context.Context) *cacheFactEmitter {
+func newCacheFactEmitter(logger log.Logger) *cacheFactEmitter {
 	e := &cacheFactEmitter{
 		queue: make(chan queuedCacheFact, cacheFactQueueSize),
 		done:  make(chan struct{}),
 	}
-	go e.run(context.WithoutCancel(ctx))
+	go e.run(logger)
 	return e
 }
 
@@ -72,8 +80,7 @@ func (e *cacheFactEmitter) Dropped() uint64 {
 }
 
 // Close stops accepting facts and waits, bounded by ctx, until every queued
-// fact has been handed to the logger provider. The provider's own flush
-// delivers them.
+// fact has been handed to the fact logger.
 func (e *cacheFactEmitter) Close(ctx context.Context) error {
 	e.closeMu.Lock()
 	if !e.closed {
@@ -89,9 +96,9 @@ func (e *cacheFactEmitter) Close(ctx context.Context) error {
 	}
 }
 
-func (e *cacheFactEmitter) run(ctx context.Context) {
+func (e *cacheFactEmitter) run(logger log.Logger) {
 	defer close(e.done)
-	logger := telemetry.Logger(ctx, cachefact.ScopeName)
+	ctx := context.Background()
 	for queued := range e.queue {
 		body, err := json.Marshal(queued.fact)
 		if err != nil {
@@ -158,8 +165,9 @@ func (srv *Server) emitEngineAlive() {
 }
 
 // stopCacheFacts runs after the cache closed: it stops liveness, announces the
-// stop with what the close persisted, and hands every queued fact to the
-// process logger provider, whose flush at process exit delivers them.
+// stop with what the close persisted, drains the emitter and shuts the export
+// down, all within one budget, so an unreachable Cloud delays shutdown by at
+// most that much. Facts still queued when it runs out are lost.
 func (srv *Server) stopCacheFacts(ctx context.Context, clean bool) {
 	if srv.cacheFacts == nil {
 		return
@@ -172,7 +180,12 @@ func (srv *Server) stopCacheFacts(ctx context.Context, clean bool) {
 	if srv.engineCache != nil {
 		srv.engineCache.EmitFact(cachefact.EngineStop{PersistedResults: srv.engineCache.PersistedResults(), Clean: clean})
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), srv.cacheFactShutdownBudget)
+	defer cancel()
 	if err := srv.cacheFacts.Close(ctx); err != nil {
 		slog.Warn("cache facts not drained before shutdown", "error", err, "dropped", srv.cacheFacts.Dropped())
+	}
+	if err := srv.cacheFactExport.Shutdown(ctx); err != nil {
+		slog.Warn("cache facts not exported before shutdown", "error", err)
 	}
 }

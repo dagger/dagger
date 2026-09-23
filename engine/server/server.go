@@ -70,11 +70,15 @@ type Server struct {
 	// engineInstanceID names this engine process: a random ID created once at
 	// startup. It names the engine in the dagql cache's facts.
 	engineInstanceID string
-	// cacheFacts receives the dagql cache's facts; nil when the engine emits
-	// none. The alive loop reports liveness between start and stop.
-	cacheFacts            *cacheFactEmitter
-	cacheFactAliveStop    chan struct{}
-	cacheFactAliveStopped chan struct{}
+	// cacheFacts receives the dagql cache's facts and cacheFactExport sends
+	// them; both nil when the engine emits none. The alive loop reports
+	// liveness between start and stop. cacheFactShutdownBudget bounds the
+	// facts' whole shutdown.
+	cacheFacts              *cacheFactEmitter
+	cacheFactExport         CacheFactExport
+	cacheFactAliveStop      chan struct{}
+	cacheFactAliveStopped   chan struct{}
+	cacheFactShutdownBudget time.Duration
 
 	//
 	// state directory/db paths
@@ -202,9 +206,9 @@ type NewServerOpts struct {
 	// EngineInstanceID names this engine process. NewServer creates a random
 	// one when it is empty.
 	EngineInstanceID string
-	// EmitCacheFacts makes the dagql cache emit its bookkeeping facts as OTel
-	// log records through the logger provider of NewServer's context.
-	EmitCacheFacts bool
+	// CacheFactExport, when set, makes the dagql cache emit its bookkeeping
+	// facts as OTel log records through its logger.
+	CacheFactExport CacheFactExport
 }
 
 const (
@@ -242,8 +246,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		locker: locker.New(),
 	}
-	if opts.EmitCacheFacts {
-		srv.cacheFacts = newCacheFactEmitter(ctx)
+	if opts.CacheFactExport != nil {
+		srv.cacheFactExport = opts.CacheFactExport
+		srv.cacheFacts = newCacheFactEmitter(opts.CacheFactExport.Logger())
+		srv.cacheFactShutdownBudget = cacheFactShutdownTimeout
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 

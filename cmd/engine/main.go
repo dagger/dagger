@@ -491,7 +491,7 @@ func main() { //nolint:gocyclo
 			Config:           &cfg,
 			BuildkitConfig:   &bkcfg,
 			EngineInstanceID: engineInstanceID,
-			EmitCacheFacts:   factExport.Enabled(),
+			CacheFactExport:  serverCacheFactExport(factExport),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
@@ -607,7 +607,7 @@ func main() { //nolint:gocyclo
 		defer fmt.Println("telemetry shut down complete")
 		// The server's close emitted engine.stop and queued every fact on the
 		// fact provider; flush them before the global providers close.
-		factExport.Shutdown(ctx)
+		factExport.shutdownAtExit(ctx)
 		closeResourceMetrics(ctx, resourceMetrics)
 		telemetry.Close()
 		return nil

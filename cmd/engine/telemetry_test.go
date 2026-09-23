@@ -19,7 +19,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -40,9 +39,10 @@ type cacheFactExportRequest struct {
 	hasAuth bool
 }
 
-// With DAGGER_CLOUD_TOKEN set, the process provider exports cache fact
-// records, and nothing else emitted on it, to DAGGER_CLOUD_URL under the
-// token, with the engine instance in the resource.
+// With DAGGER_CLOUD_TOKEN set, the engine exports its cache facts to
+// DAGGER_CLOUD_URL under the token, with the engine instance in the resource,
+// through a logger provider of its own: the process context keeps its own
+// provider, so nothing else emitted in the process reaches Cloud.
 func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
 	var (
 		mu       sync.Mutex
@@ -62,16 +62,18 @@ func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
 	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
 	t.Setenv("DAGGER_CLOUD_URL", srv.URL)
 
-	ctx := t.Context()
-	res := resource.NewSchemaless(attribute.String(cachefact.ResourceEngineInstance, "instance-a"))
-	export := newCacheFactExport(ctx, res)
+	ctx, export := InitTelemetry(t.Context(), "instance-a")
 	require.True(t, export.Enabled())
-	for _, scope := range []string{cachefact.ScopeName, "dagger.io/engine"} {
-		var rec log.Record
-		rec.SetBody(log.StringValue(scope))
-		export.provider.Logger(scope).Emit(ctx, rec)
-	}
-	export.Shutdown(context.Background())
+	require.NotSame(t, export.provider, telemetry.LoggerProvider(ctx), "the process context keeps its own logger provider")
+
+	var fact log.Record
+	fact.SetBody(log.StringValue("fact"))
+	export.Logger().Emit(ctx, fact)
+	var other log.Record
+	other.SetBody(log.StringValue("snapshot progress"))
+	telemetry.Logger(ctx, "dagger.io/engine").Emit(ctx, other)
+	require.NoError(t, export.Shutdown(context.Background()))
+	require.NoError(t, export.Shutdown(context.Background()), "a second shutdown returns the first result")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -96,14 +98,15 @@ func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
 			bodies = append(bodies, rec.Body.GetStringValue())
 		}
 	}
-	require.Equal(t, []string{cachefact.ScopeName}, bodies)
+	require.Equal(t, []string{"fact"}, bodies)
 }
 
 func TestCacheFactExportDisabledWithoutToken(t *testing.T) {
 	t.Setenv("DAGGER_CLOUD_TOKEN", "")
 	export := newCacheFactExport(t.Context(), resource.Empty())
 	require.False(t, export.Enabled())
-	export.Shutdown(t.Context())
+	require.NoError(t, export.Shutdown(t.Context()))
+	require.Nil(t, serverCacheFactExport(export), "the server gets no export, not a nil pointer")
 }
 
 func TestEngineTelemetry(t *testing.T) {

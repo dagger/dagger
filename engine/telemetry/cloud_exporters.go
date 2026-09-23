@@ -132,34 +132,3 @@ type tokenSourceFunc func(context.Context) (*oauth2.Token, error)
 func (fn tokenSourceFunc) Token() (*oauth2.Token, error) {
 	return fn(context.Background())
 }
-
-// OnlyScope passes to next only the log records of one instrumentation scope.
-// It keeps other records emitted on the same provider away from next's
-// exporter.
-func OnlyScope(scope string, next sdklog.Processor) sdklog.Processor {
-	return onlyScopeProcessor{scope: scope, next: next}
-}
-
-type onlyScopeProcessor struct {
-	scope string
-	next  sdklog.Processor
-}
-
-func (p onlyScopeProcessor) OnEmit(ctx context.Context, record *sdklog.Record) error {
-	if record == nil || record.InstrumentationScope().Name != p.scope {
-		return nil
-	}
-	return p.next.OnEmit(ctx, record)
-}
-
-func (p onlyScopeProcessor) Enabled(ctx context.Context, params sdklog.EnabledParameters) bool {
-	return params.InstrumentationScope.Name == p.scope && p.next.Enabled(ctx, params)
-}
-
-func (p onlyScopeProcessor) Shutdown(ctx context.Context) error {
-	return p.next.Shutdown(ctx)
-}
-
-func (p onlyScopeProcessor) ForceFlush(ctx context.Context) error {
-	return p.next.ForceFlush(ctx)
-}

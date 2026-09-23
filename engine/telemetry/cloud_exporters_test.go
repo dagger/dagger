@@ -125,35 +125,6 @@ func TestCloudLogExportWithEngineToken(t *testing.T) {
 	require.Equal(t, "2", secondSeq)
 }
 
-type scopeTestProcessor struct {
-	mu     sync.Mutex
-	scopes []string
-}
-
-func (p *scopeTestProcessor) OnEmit(_ context.Context, rec *sdklog.Record) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.scopes = append(p.scopes, rec.InstrumentationScope().Name)
-	return nil
-}
-func (*scopeTestProcessor) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }
-func (*scopeTestProcessor) Shutdown(context.Context) error                         { return nil }
-func (*scopeTestProcessor) ForceFlush(context.Context) error                       { return nil }
-
-// Only records of the chosen scope reach the wrapped processor.
-func TestOnlyScope(t *testing.T) {
-	t.Parallel()
-	next := &scopeTestProcessor{}
-	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(OnlyScope("dagger.io/cache", next)))
-	for _, scope := range []string{"dagger.io/cache", "dagger.io/engine", "other"} {
-		var rec log.Record
-		rec.SetBody(log.StringValue(scope))
-		provider.Logger(scope).Emit(t.Context(), rec)
-	}
-	require.NoError(t, provider.Shutdown(t.Context()))
-	require.Equal(t, []string{"dagger.io/cache"}, next.scopes)
-}
-
 // A Cloud response that never comes cannot hold the export forever: the
 // request times out, the export is retried, and every record still arrives,
 // in order, without a shutdown.
