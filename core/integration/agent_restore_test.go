@@ -316,7 +316,8 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	rostered := sink.awaitRestorable(t, 3)
 	sink.awaitAgentState(t, "tests", "STOPPED")
 	require.Contains(t, rostered, "chief")
-	sourceTraceID := rostered["chief"].Span().TraceID.String()
+	require.NotNil(t, rostered["chief"].Control)
+	sourceTraceID := rostered["chief"].Control.Trace
 	traces, logs := sink.capture()
 	require.NotEmpty(t, traces)
 	require.NotEmpty(t, logs)
@@ -422,7 +423,10 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	// below is caused by the strip and not by a payload that had simply not
 	// arrived yet.
 	rostered := sink.awaitRestorable(t, 1)
-	traceID := rostered["solo"].Span().TraceID.String()
+	// Canonical controls can arrive before diagnostic loop spans.
+	require.Contains(t, rostered, "solo")
+	require.NotNil(t, rostered["solo"].Control)
+	traceID := rostered["solo"].Control.Trace
 	traces, logs := sink.capture()
 
 	// Serve the spans and the agent's own state/anchor records, but no call
@@ -504,6 +508,9 @@ func (AgentRestoreSuite) TestRestoreWorkspaceAfterSourceDisappears(ctx context.C
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 	sourceDir, _ := workspaceExportCheckout(ctx, t)
+	// Only remote-backed snapshots survive the source session. Keep the Git
+	// base available independently of the checkout that is deleted below.
+	publishCheckpointRemote(ctx, t, sourceDir)
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "base.txt"), []byte("source"), 0o644))
 	source, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: sourceDir})
 	frozen := snapshotWorkspace(ctx, t, source, source.CurrentWorkspace())
