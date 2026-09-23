@@ -860,6 +860,53 @@ impl Agent {
             graphql_client: self.graphql_client.clone(),
         })
     }
+    /// Restore a lifecycle subscription without announcing the current state or starting work.
+    /// Both agents must have been restored with a supplied spawn handle and never activated. An empty state set removes the subscription.
+    ///
+    /// # Arguments
+    ///
+    /// * `subscriber` - The restored subscriber capability.
+    /// * `on` - The recorded lifecycle state filter.
+    pub async fn restore_notify(
+        &self,
+        subscriber: impl IntoID<Id>,
+        on: Vec<AgentState>,
+    ) -> Result<Agent, DaggerError> {
+        let mut query = self.selection.select("restoreNotify");
+        query = query.arg_lazy(
+            "subscriber",
+            Box::new(move || {
+                let subscriber = subscriber.clone();
+                Box::pin(async move { subscriber.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("on", on);
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Agent {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Agent"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// Discard a restored runtime during failed graph installation.
+    /// Refuses fresh or already activated agents. Removes its notification edges and preserves a telemetry removal tombstone for archive verification.
+    pub async fn discard_restore(&self) -> Result<Agent, DaggerError> {
+        let query = self.selection.select("discardRestore");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Agent {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Agent"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
     /// Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
     ///
     /// # Arguments
@@ -11277,6 +11324,9 @@ pub struct LlmSpawnOpts<'a> {
     /// Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
+    /// Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle.
+    #[builder(setter(into, strip_option), default)]
+    pub parent_handle: Option<&'a str>,
     /// The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
     /// RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.
     #[builder(setter(into, strip_option), default)]
@@ -11845,25 +11895,6 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         })
     }
-    /// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-    pub async fn portable_id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("portableID");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-    pub async fn emit_history(&self) -> Result<Llm, DaggerError> {
-        let query = self.selection.select("emitHistory");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
-        Ok(Llm {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("LLM"),
-            graphql_client: self.graphql_client.clone(),
-        })
-    }
     /// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
     ///
     /// # Arguments
@@ -11964,6 +11995,9 @@ impl Llm {
         }
         if let Some(state) = opts.state {
             query = query.arg("state", state);
+        }
+        if let Some(parent_handle) = opts.parent_handle {
+            query = query.arg("parentHandle", parent_handle);
         }
         if let Some(error) = opts.error {
             query = query.arg("error", error);

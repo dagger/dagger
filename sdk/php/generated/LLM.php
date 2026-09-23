@@ -325,25 +325,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-     */
-    public function portableID(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('portableID');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'portableID'));
-    }
-
-    /**
-     * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-     */
-    public function emitHistory(): LLM
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('emitHistory');
-        $id = $this->queryLeaf($leafQueryBuilder, 'emitHistory');
-        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
-    }
-
-    /**
      * Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
      */
     public function loop(?int $maxSteps = null, ?int $maxTokens = null): LLM
@@ -383,6 +364,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         ?string $name = null,
         ?string $handle = null,
         ?AgentState $state = null,
+        ?string $parentHandle = null,
         ?string $error = '',
     ): Agent {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('spawn');
@@ -394,6 +376,9 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         }
         if (null !== $state) {
         $leafQueryBuilder->setArgument('state', $state);
+        }
+        if (null !== $parentHandle) {
+        $leafQueryBuilder->setArgument('parentHandle', $parentHandle);
         }
         if (null !== $error) {
         $leafQueryBuilder->setArgument('error', $error);
