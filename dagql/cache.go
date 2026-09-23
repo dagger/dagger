@@ -1917,6 +1917,10 @@ type Cache struct {
 
 	// Cache fact emission, guarded by egraphMu. See cache_facts.go.
 	cacheFactState
+	// indexedRows maps the key of each indexed row, a result another engine
+	// announced in its facts, to its row here. Guarded by egraphMu. See
+	// cache_indexed_rows.go.
+	indexedRows map[RowKey]sharedResultID
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
@@ -2240,6 +2244,9 @@ type sharedResult struct {
 	// are guarded by egraphMu.
 	factAnnounced     bool
 	factDepsAnnounced bool
+	// indexed is set on an indexed row: a result of another engine known
+	// from its facts, with no value. Guarded by egraphMu.
+	indexed *indexedRowState
 
 	// Immutable payload shared by all per-call Result values.
 	self     Typed

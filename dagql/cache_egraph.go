@@ -615,6 +615,10 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		if res.attachmentState() == resultAttachmentFailed {
 			continue
 		}
+		// Indexed rows have no value to serve.
+		if res.indexed != nil {
+			continue
+		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
 			if sawExpired != nil {
 				*sawExpired = true
@@ -637,6 +641,9 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 				continue
 			}
 			if res.attachmentState() == resultAttachmentFailed {
+				continue
+			}
+			if res.indexed != nil {
 				continue
 			}
 			if c.resultExpiredAtLocked(res, nowUnix) {
@@ -1913,6 +1920,9 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	if res == nil {
 		return
 	}
+	if res.indexed != nil {
+		delete(c.indexedRows, res.indexed.key)
+	}
 	if len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0 {
 		c.maybeResetEgraphLocked()
 		return
@@ -2005,6 +2015,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
+	c.indexedRows = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs
