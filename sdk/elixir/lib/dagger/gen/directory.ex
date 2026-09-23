@@ -427,6 +427,7 @@ defmodule Dagger.Directory do
           {:container, Dagger.Container.t() | nil},
           {:cmd, [String.t()]},
           {:disable_dagger_in_dagger, boolean() | nil},
+          {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil}
         ]) :: Dagger.Directory.t()
   def terminal(%__MODULE__{} = directory, optional_args \\ []) do
@@ -439,6 +440,10 @@ defmodule Dagger.Directory do
       )
       |> QB.maybe_put_arg("cmd", optional_args[:cmd])
       |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
+      |> QB.maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
 
     %Dagger.Directory{

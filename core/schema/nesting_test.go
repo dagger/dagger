@@ -114,6 +114,11 @@ func TestNestingExecCallView(t *testing.T) {
 	}{
 		{name: "internal default", want: true},
 		{name: "internal opt-out", arg: []dagql.NamedInput{{Name: "disableDaggerInDagger", Value: dagql.Boolean(true)}}},
+		{name: "deprecated opt-in ignored", arg: []dagql.NamedInput{
+			{Name: "experimentalPrivilegedNesting", Value: dagql.Boolean(true)},
+			{Name: "disableDaggerInDagger", Value: dagql.Boolean(true)},
+		}},
+		{name: "deprecated opt-out ignored", arg: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Boolean(false)}}, want: true},
 		{name: "legacy default", view: "v0.21.0"},
 		{name: "legacy opt-in", view: "v0.21.0", arg: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Boolean(true)}}, want: true},
 	} {
@@ -160,14 +165,14 @@ func TestNestingTerminalDefaultsCallView(t *testing.T) {
 
 func TestNestingSchemaVersions(t *testing.T) {
 	for _, tc := range []struct {
-		version string
-		present string
-		absent  string
+		version    string
+		defaultOn  bool
+		deprecated bool
 	}{
-		{version: "v0.21.0", present: "experimentalPrivilegedNesting", absent: "disableDaggerInDagger"},
-		{version: "v1.0.0-beta.14", present: "experimentalPrivilegedNesting", absent: "disableDaggerInDagger"},
-		{version: "v1.0.0-beta.15", present: "disableDaggerInDagger", absent: "experimentalPrivilegedNesting"},
-		{version: "v1.0.0", present: "disableDaggerInDagger", absent: "experimentalPrivilegedNesting"},
+		{version: "v0.21.0"},
+		{version: "v1.0.0-beta.14"},
+		{version: "v1.0.0-beta.15", defaultOn: true, deprecated: true},
+		{version: "v1.0.0", defaultOn: true, deprecated: true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
 			_, dag := newNestingTestServer(t, call.View(tc.version))
@@ -181,12 +186,17 @@ func TestNestingSchemaVersions(t *testing.T) {
 				t.Run(target[0]+"/"+target[1], func(t *testing.T) {
 					field := schemaField(schema.Types.Get(target[0]), target[1])
 					require.NotNil(t, field)
-					arg := schemaArgument(t, field, tc.present)
+					legacy := schemaArgument(t, field, "experimentalPrivilegedNesting")
+					require.Equal(t, tc.deprecated, legacy.IsDeprecated)
+					if !tc.defaultOn {
+						for _, arg := range field.Args {
+							require.NotEqual(t, "disableDaggerInDagger", arg.Name, "%s.%s", target[0], target[1])
+						}
+						return
+					}
+					arg := schemaArgument(t, field, "disableDaggerInDagger")
 					require.NotNil(t, arg.DefaultValue)
 					require.Equal(t, "false", *arg.DefaultValue)
-					for _, arg := range field.Args {
-						require.NotEqual(t, tc.absent, arg.Name, "%s.%s", target[0], target[1])
-					}
 				})
 			}
 		})

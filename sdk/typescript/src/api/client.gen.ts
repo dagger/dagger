@@ -456,6 +456,11 @@ export type ContainerAsServiceOpts = {
   disableDaggerInDagger?: boolean
 
   /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
@@ -700,6 +705,11 @@ export type ContainerTerminalOpts = {
   disableDaggerInDagger?: boolean
 
   /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
@@ -736,6 +746,11 @@ export type ContainerUpOpts = {
   disableDaggerInDagger?: boolean
 
   /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
@@ -758,6 +773,11 @@ export type ContainerWithDefaultTerminalCmdOpts = {
    * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    */
   disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+   */
+  experimentalPrivilegedNesting?: boolean
 
   /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -883,6 +903,11 @@ export type ContainerWithExecOpts = {
    * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    */
   disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+   */
+  experimentalPrivilegedNesting?: boolean
 
   /**
    * Execute the command with all root capabilities. Like --privileged in Docker
@@ -1493,6 +1518,11 @@ export type DirectoryTerminalOpts = {
    * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    */
   disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+   */
+  experimentalPrivilegedNesting?: boolean
 
   /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.

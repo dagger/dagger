@@ -2176,6 +2176,8 @@ pub struct ContainerWithExecOpts<'a> {
     /// Exit codes this command is allowed to exit with without error
     #[builder(setter(into, strip_option), default)]
     pub expect: Option<ReturnType>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. Like --privileged in Docker
     /// DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
     #[builder(setter(into, strip_option), default)]
@@ -2329,6 +2331,8 @@ pub struct ContainerWithDefaultTerminalCmdOpts {
     /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     #[builder(setter(into, strip_option), default)]
     pub disable_dagger_in_dagger: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
@@ -2341,6 +2345,8 @@ pub struct ContainerTerminalOpts<'a> {
     /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     #[builder(setter(into, strip_option), default)]
     pub disable_dagger_in_dagger: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
@@ -2357,6 +2363,8 @@ pub struct ContainerAsServiceOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
@@ -2380,6 +2388,8 @@ pub struct ContainerUpOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
@@ -4120,6 +4130,12 @@ impl Container {
         if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
             query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
         }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
+        }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
@@ -4741,6 +4757,12 @@ impl Container {
         if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
             query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
         }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
+        }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
@@ -4775,6 +4797,12 @@ impl Container {
         }
         if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
             query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -4849,6 +4877,12 @@ impl Container {
         if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
             query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
         }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
+        }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
@@ -4896,6 +4930,12 @@ impl Container {
         }
         if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
             query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -5395,6 +5435,8 @@ pub struct DirectoryTerminalOpts<'a> {
     /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     #[builder(setter(into, strip_option), default)]
     pub disable_dagger_in_dagger: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
@@ -6339,6 +6381,12 @@ impl Directory {
         }
         if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
             query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);

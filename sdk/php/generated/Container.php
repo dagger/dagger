@@ -873,6 +873,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?string $redirectStderr = '',
         ?ReturnType $expect = null,
         ?bool $disableDaggerInDagger = false,
+        ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
@@ -899,6 +900,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $disableDaggerInDagger) {
         $innerQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
@@ -1266,12 +1270,16 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     public function withDefaultTerminalCmd(
         array $args,
         ?bool $disableDaggerInDagger = false,
+        ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultTerminalCmd');
         $innerQueryBuilder->setArgument('args', $args);
         if (null !== $disableDaggerInDagger) {
         $innerQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
@@ -1285,6 +1293,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     public function terminal(
         ?array $cmd = [],
         ?bool $disableDaggerInDagger = false,
+        ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
@@ -1293,6 +1302,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $disableDaggerInDagger) {
         $innerQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
@@ -1336,6 +1348,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?array $args = [],
         ?bool $useEntrypoint = false,
         ?bool $disableDaggerInDagger = false,
+        ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
@@ -1349,6 +1362,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $disableDaggerInDagger) {
         $innerQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
@@ -1373,6 +1389,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?array $args = [],
         ?bool $useEntrypoint = false,
         ?bool $disableDaggerInDagger = false,
+        ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
@@ -1392,6 +1409,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $disableDaggerInDagger) {
         $leafQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $leafQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
         }
         if (null !== $insecureRootCapabilities) {
         $leafQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);

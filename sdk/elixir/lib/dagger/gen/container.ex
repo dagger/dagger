@@ -24,6 +24,7 @@ defmodule Dagger.Container do
           {:args, [String.t()]},
           {:use_entrypoint, boolean() | nil},
           {:disable_dagger_in_dagger, boolean() | nil},
+          {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
           {:no_init, boolean() | nil}
@@ -35,6 +36,10 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("args", optional_args[:args])
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
+      |> QB.maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
@@ -672,6 +677,7 @@ defmodule Dagger.Container do
   @spec terminal(t(), [
           {:cmd, [String.t()]},
           {:disable_dagger_in_dagger, boolean() | nil},
+          {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil}
         ]) :: Dagger.Container.t()
   def terminal(%__MODULE__{} = container, optional_args \\ []) do
@@ -680,6 +686,10 @@ defmodule Dagger.Container do
       |> QB.select("terminal")
       |> QB.maybe_put_arg("cmd", optional_args[:cmd])
       |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
+      |> QB.maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
 
     %Dagger.Container{
@@ -699,6 +709,7 @@ defmodule Dagger.Container do
           {:args, [String.t()]},
           {:use_entrypoint, boolean() | nil},
           {:disable_dagger_in_dagger, boolean() | nil},
+          {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
           {:no_init, boolean() | nil}
@@ -712,6 +723,10 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("args", optional_args[:args])
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
+      |> QB.maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
@@ -769,6 +784,7 @@ defmodule Dagger.Container do
   """
   @spec with_default_terminal_cmd(t(), [String.t()], [
           {:disable_dagger_in_dagger, boolean() | nil},
+          {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_default_terminal_cmd(%__MODULE__{} = container, args, optional_args \\ []) do
@@ -777,6 +793,10 @@ defmodule Dagger.Container do
       |> QB.select("withDefaultTerminalCmd")
       |> QB.put_arg("args", args)
       |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
+      |> QB.maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
 
     %Dagger.Container{
@@ -924,6 +944,7 @@ defmodule Dagger.Container do
           {:redirect_stderr, String.t() | nil},
           {:expect, Dagger.ReturnType.t() | nil},
           {:disable_dagger_in_dagger, boolean() | nil},
+          {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
           {:no_init, boolean() | nil}
@@ -940,6 +961,10 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])
       |> QB.maybe_put_arg("expect", optional_args[:expect])
       |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
+      |> QB.maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])

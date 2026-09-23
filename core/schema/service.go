@@ -31,9 +31,9 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("disableDaggerInDagger").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
-				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
-					`Provides Dagger access to the executed command.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the
@@ -75,9 +75,9 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("disableDaggerInDagger").View(AfterVersion(defaultNestingVersion)).Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`),
-				dagql.Arg("experimentalPrivilegedNesting").View(BeforeVersion(defaultNestingVersion)).Doc(
-					`Provides Dagger access to the executed command.`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the

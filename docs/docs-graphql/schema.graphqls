@@ -1536,6 +1536,8 @@ type Container implements Exportable & Node & Syncer {
     """
     disableDaggerInDagger: Boolean = false
 
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
+
     """
     Execute the command with all root capabilities. Like --privileged in Docker
 
@@ -1950,6 +1952,8 @@ type Container implements Exportable & Node & Syncer {
     """
     disableDaggerInDagger: Boolean = false
 
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
+
     """
     Execute the command with all root capabilities. This is similar to running a
     command with "sudo" or executing "docker run" with the "--privileged" flag.
@@ -1974,6 +1978,8 @@ type Container implements Exportable & Node & Syncer {
     Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     """
     disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2026,6 +2032,8 @@ type Container implements Exportable & Node & Syncer {
     Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     """
     disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2082,6 +2090,8 @@ type Container implements Exportable & Node & Syncer {
     Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     """
     disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2618,6 +2628,8 @@ type Directory implements Exportable & Node & Syncer {
     Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     """
     disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a

@@ -2094,6 +2094,9 @@ type ContainerAsServiceOpts struct {
 	UseEntrypoint bool
 	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
 	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -2121,6 +2124,10 @@ func (r *Container) AsService(opts ...ContainerAsServiceOpts) *Service {
 		// `disableDaggerInDagger` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
 			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -2954,6 +2961,9 @@ type ContainerTerminalOpts struct {
 	Cmd []string
 	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
 	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 }
@@ -2969,6 +2979,10 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 		// `disableDaggerInDagger` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
 			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -2997,6 +3011,9 @@ type ContainerUpOpts struct {
 	UseEntrypoint bool
 	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
 	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -3035,6 +3052,10 @@ func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
 		// `disableDaggerInDagger` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
 			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -3091,6 +3112,9 @@ func (r *Container) WithDefaultArgs(args []string) *Container {
 type ContainerWithDefaultTerminalCmdOpts struct {
 	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
 	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 }
@@ -3102,6 +3126,10 @@ func (r *Container) WithDefaultTerminalCmd(args []string, opts ...ContainerWithD
 		// `disableDaggerInDagger` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
 			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -3315,6 +3343,9 @@ type ContainerWithExecOpts struct {
 	Expect ReturnType
 	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
 	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. Like --privileged in Docker
 	//
 	// DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
@@ -3358,6 +3389,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `disableDaggerInDagger` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
 			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -5186,6 +5221,9 @@ type DirectoryTerminalOpts struct {
 	Cmd []string
 	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
 	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 }
@@ -5205,6 +5243,10 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 		// `disableDaggerInDagger` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
 			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
