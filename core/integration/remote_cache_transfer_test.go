@@ -158,8 +158,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.NoError(t, err)
 		return e
 	}
-	var lastArtifactID string
-	callReport := func(t *testctx.T, client *dagger.Client, seed string) string {
+	callReport := func(t *testctx.T, client *dagger.Client, seed string) (reportID, artifactID string) {
 		var data struct {
 			Probe struct {
 				Report struct {
@@ -178,8 +177,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.Equal(t, "READY", data.Probe.Report.Status)
 		require.Equal(t, "linux/amd64", data.Probe.Report.Platform)
 		require.Equal(t, "selected artifact:"+seed, data.Probe.Report.Artifact.File.Contents)
-		lastArtifactID = data.Probe.Report.Artifact.ID
-		return data.Probe.Report.ID
+		return data.Probe.Report.ID, data.Probe.Report.Artifact.ID
 	}
 	countBody := func(t *testctx.T, client *dagger.Client, function string) uint64 {
 		var report transferFixtureReport
@@ -197,10 +195,10 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	a := start(t, "b2-transfer-a-state-"+identity.NewID(), aVolume, aDir)
 	defer stop(t, a)
 	require.NoError(t, a.client.ModuleSource(".").AsModule().Serve(ctx))
-	aID := callReport(t, a.client, "same")
+	aID, aArtifactID := callReport(t, a.client, "same")
 	require.Equal(t, uint64(1), countBody(t, a.client, "report"))
 	var source []transferFixtureMapping
-	require.NoError(t, transferFixtureSelected(ctx, a.client, "report.json", []string{aID}, []string{lastArtifactID}, &source))
+	require.NoError(t, transferFixtureSelected(ctx, a.client, "report.json", []string{aID}, []string{aArtifactID}, &source))
 	require.NotEmpty(t, source)
 	// The same contextual call succeeds on the native object without import.
 	var native struct{ Node struct{ NoteFile string } }
@@ -263,7 +261,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				}
 				require.NoError(t, operational.Serve(ctx))
 			}
-			saved := callReport(t, b.client, "same")
+			saved, _ := callReport(t, b.client, "same")
 			var acquisition transferFixtureReport
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
 			counters := map[string]int{}
@@ -394,7 +392,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			defer func() { require.NoError(t, closeClientBounded(ctx, writer), "close writer session") }()
 			nativeModule := writer.ModuleSource(".").AsModule().WithDescription("native recorded control")
 			require.NoError(t, nativeModule.Serve(ctx))
-			nativeID := callReport(t, writer, "native recorded control")
+			nativeID, _ := callReport(t, writer, "native recorded control")
 			var graph transferFixtureReport
 			require.NoError(t, transferFixture(ctx, writer, "report", "", []string{}, &graph))
 			decoded := new(call.ID)
