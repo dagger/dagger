@@ -1,11 +1,18 @@
+# Temporary registry canary experiment: run only test-split:test-provision.
+# Do not merge these CI restrictions.
+check-generated = false
+
 [modules.changie]
+check.skip = ["**"]
 source = ".dagger/modules/changie"
 
 [modules.cli]
+check.skip = ["**"]
 source = ".dagger/modules/cli-dev"
 legacy-default-path = true
 
 [modules.dev]
+check.skip = ["**"]
 source = ".dagger/modules/dev"
 
 [modules.dev.settings]
@@ -14,26 +21,32 @@ source = ".dagger/modules/dev"
 docker = "unix:///var/run/docker.sock"
 
 [modules.docs]
+check.skip = ["**"]
 source = ".dagger/modules/docs-dev"
 legacy-default-path = true
 
 [modules.dotnet-client]
+check.skip = ["**"]
 source = ".dagger/modules/dotnet-client-dev"
 legacy-default-path = true
 
 [modules.elixir-client]
+check.skip = ["**"]
 source = ".dagger/modules/elixir-client-dev"
 legacy-default-path = true
 
 [modules.engine-dev]
+check.skip = ["**"]
 source = ".dagger/modules/engine-dev"
 legacy-default-path = true
 
 [modules.go-client]
+check.skip = ["**"]
 source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
+check.skip = ["**"]
 source = "dagger.io/go@pull/45/head"
 legacy-default-path = true
 
@@ -49,6 +62,7 @@ generate = [
 test = ["e2e/**", "hack/sdl-diff"]
 
 [modules.golangci-lint]
+check.skip = ["**"]
 source = "github.com/dagger/golangci-lint@main"
 
 [modules.golangci-lint.settings]
@@ -72,6 +86,7 @@ lint = [
 ]
 
 [modules.helm]
+check.skip = ["**"]
 source = "dagger.io/kubernetes/helm"
 legacy-default-path = true
 
@@ -83,34 +98,42 @@ legacy-default-path = true
 version = "4.0.1"
 
 [modules.java-client]
+check.skip = ["**"]
 source = ".dagger/modules/java-client-dev"
 legacy-default-path = true
 
 [modules.markdown-lint]
+check.skip = ["**"]
 source = "modules/markdownlint"
 legacy-default-path = true
 
 [modules.php-client]
+check.skip = ["**"]
 source = ".dagger/modules/php-client-dev"
 legacy-default-path = true
 
 [modules.ps-analyzer]
+check.skip = ["**"]
 source = "dagger.io/dotnet/PsScriptAnalyzer"
 legacy-default-path = true
 
 [modules.python-client]
+check.skip = ["**"]
 source = ".dagger/modules/python-client-dev"
 legacy-default-path = true
 
 [modules.release]
+check.skip = ["**"]
 source = ".dagger/modules/release"
 legacy-default-path = true
 
 [modules.rust-client]
+check.skip = ["**"]
 source = ".dagger/modules/rust-client-dev"
 legacy-default-path = true
 
 [modules.security]
+check.skip = ["**"]
 source = ".dagger/modules/security"
 legacy-default-path = true
 
@@ -127,24 +150,41 @@ ignore = [
 ]
 
 [modules.shellcheck]
+check.skip = ["**"]
 source = "dagger.io/shellcheck"
 legacy-default-path = true
 
 [modules.test-split]
+check.skip = [
+  "test-base",
+  "test-telemetry",
+  "test-call-and-shell",
+  "test-cli-engine",
+  "test-cache-persistence",
+  "test-local-cache",
+  "test-client-generator",
+  "test-container",
+  "test-interface",
+  "test-llm",
+  "test-module-runtimes",
+  "test-modules",
+  "test-workspaces",
+]
 source = ".dagger/modules/test-split"
 legacy-default-path = true
 
 [modules.typescript-client]
+check.skip = ["**"]
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
 
 [modules.dang-sdk]
 source = "dagger.io/sdk/dang@main"
-check.skip = ["generate:up-to-date"]
+check.skip = ["**"]
 
 [modules.go-sdk]
 source = "dagger.io/sdk/go@main"
-check.skip = ["generate:up-to-date"]
+check.skip = ["**"]
 
 # Dev-only: the TLA+ cache-model checks are expensive (the full run takes
 # well over an hour) and deliberately do not run in CI; use
@@ -155,6 +195,7 @@ check.skip = ["generate:up-to-date"]
 source = ".dagger/modules/tla-check"
 
 [modules.engine-lab]
+check.skip = ["**"]
 source = ".dagger/modules/engine-lab"
 
 [modules.engine-lab.settings]
@@ -162,6 +203,7 @@ cloudCredentials = "file://~/.config/dagger/credentials.json"
 daggerConfig = "file://~/.config/dagger/config.toml"
 
 [modules.tui-qa]
+check.skip = ["**"]
 source = ".dagger/modules/tui-qa"
 
 [modules.tui-qa.settings]
@@ -169,21 +211,26 @@ cloudCredentials = "file://~/.config/dagger/credentials.json"
 daggerConfig = "file://~/.config/dagger/config.toml"
 
 [modules.mcp-lab]
+check.skip = ["**"]
 source = ".dagger/modules/mcp-lab"
 
 [modules.editor]
+check.skip = ["**"]
 source = "github.com/vito/editor"
 
 [modules.go-cli]
+check.skip = ["**"]
 source = ".dagger/modules/go-cli"
 
 [modules.sdl-diff]
+check.skip = ["**"]
 source = ".dagger/modules/sdl-diff"
 
 [modules.sdl-diff.settings]
 githubToken = "cmd://gh auth token"
 
 [modules.contributor]
+check.skip = ["**"]
 source = "github.com/vito/agents/contributor"
 
 [modules.contributor.settings]
@@ -191,9 +238,11 @@ githubToken = "cmd://gh auth token"
 remote = "dagger/dagger"
 
 [modules.staff]
+check.skip = ["**"]
 source = "github.com/vito/agents/staff"
 
 [modules.committer]
+check.skip = ["**"]
 source = "github.com/vito/agents/committer"
 
 [sdks.dang]
@@ -330,5 +379,6 @@ clients = ["./modules/wolfi"]
 is-module = true
 
 [modules.dagger-dev]
+check.skip = ["**"]
 source = ".dagger/modules/dagger-dev"
 entrypoint = true
