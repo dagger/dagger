@@ -147,6 +147,9 @@ type daggerSession struct {
 	// cloudSpanProcessor and cloudLogProcessor carry the session's telemetry
 	// to Cloud; a scale-out engine that does not publish its own stream sends
 	// it through them.
+	// cloudRefresh admits OAuth token refreshes until the main client's
+	// shutdown starts.
+	cloudRefresh       *cloudRefreshGate
 	cloudSpanProcessor sdktrace.SpanProcessor
 	cloudLogProcessor  sdklog.Processor
 
@@ -2744,6 +2747,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		// Every wait on Cloud from here until the request returns shares
 		// one deadline, well within the client's own shutdown limit.
 		defer sess.startCloudShutdownBudget()()
+		// No token refresh reaches through the client's attachables from
+		// here on; see cloudRefreshGate.
+		sess.stopCloudTokenRefresh(ctx)
 		err := drainPhase("flush workspace locks", func() error {
 			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
 		})

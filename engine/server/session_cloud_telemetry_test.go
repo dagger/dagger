@@ -530,9 +530,9 @@ func TestPostedTelemetryReachesCloudOnce(t *testing.T) {
 	}
 }
 
-// Once the main client's shutdown has closed its attachables, a token refresh
-// fails at once instead of waiting for them: that wait ignores deadlines and
-// held the client's /shutdown response.
+// Once the main client's shutdown begins, or its attachables are gone, a
+// token refresh fails at once instead of reaching for them: that wait
+// ignores deadlines and held the client's /shutdown response.
 func TestCloudTokenRefreshFailsOnceClosing(t *testing.T) {
 	t.Parallel()
 	srv := &Server{}
@@ -542,16 +542,48 @@ func TestCloudTokenRefreshFailsOnceClosing(t *testing.T) {
 	srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
 	t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
 
-	sess.attachables = newSessionAttachableManager()
+	sess.cloudRefresh = &cloudRefreshGate{}
+	sess.stopCloudTokenRefresh(t.Context())
+	start := time.Now()
 	_, err := srv.refreshSessionCloudToken(t.Context(), sess, "/credentials.json")
+	require.ErrorIs(t, err, errCloudRefreshSessionClosing, "no refresh once the main client's shutdown began")
+	require.Less(t, time.Since(start), time.Second)
+
+	sess.cloudRefresh = &cloudRefreshGate{}
+	sess.attachables = newSessionAttachableManager()
+	_, err = srv.refreshSessionCloudToken(t.Context(), sess, "/credentials.json")
 	require.ErrorIs(t, err, errCloudRefreshSessionClosing, "no attachables registered for the main client")
 
 	sess.attachables = nil
 	closing, cancelClosing := context.WithCancelCause(context.Background())
 	sess.closingCtx = closing
 	cancelClosing(errors.New("closing"))
-	start := time.Now()
+	start = time.Now()
 	_, err = srv.refreshSessionCloudToken(t.Context(), sess, "/credentials.json")
 	require.ErrorIs(t, err, errCloudRefreshSessionClosing)
 	require.Less(t, time.Since(start), time.Second)
+}
+
+// Stopping refreshes waits for one in flight, and no longer than its context.
+func TestCloudRefreshGateWaitsForInflight(t *testing.T) {
+	t.Parallel()
+	gate := &cloudRefreshGate{}
+	require.True(t, gate.enter())
+	closed := make(chan error, 1)
+	go func() { closed <- gate.close(t.Context()) }()
+	select {
+	case <-closed:
+		t.Fatal("close returned while a refresh was in flight")
+	case <-time.After(50 * time.Millisecond):
+	}
+	require.False(t, gate.enter(), "no new refresh once closing")
+	gate.exit()
+	require.NoError(t, <-closed)
+
+	stuck := &cloudRefreshGate{}
+	require.True(t, stuck.enter())
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, stuck.close(ctx), context.DeadlineExceeded)
+	stuck.exit()
 }

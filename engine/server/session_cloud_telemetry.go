@@ -55,6 +55,7 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 		return
 	}
 	sess.cloudBound = cloudFlushBound{sessionID: sess.sessionID, timeout: sessionTelemetryFlushTimeout, budget: &cloudShutdownBudget{}}
+	sess.cloudRefresh = &cloudRefreshGate{}
 	if srv.sessionCloudFlushTimeout > 0 {
 		sess.cloudBound.timeout = srv.sessionCloudFlushTimeout
 	}
@@ -70,7 +71,72 @@ func (sess *daggerSession) publishesToCloud() bool {
 	return sess.cloudSpanProcessor != nil && sess.cloudLogProcessor != nil && sess.cloudMetrics != nil
 }
 
-var errCloudRefreshSessionClosing = errors.New("refresh cloud token: the main client's attachables are closed")
+var errCloudRefreshSessionClosing = errors.New("refresh cloud token: the main client is shutting down")
+
+// cloudRefreshGate admits token refreshes until the main client's shutdown
+// starts. A refresh reads and writes the client's credentials file through
+// its attachables; when they close under one, the gateway's lookup waits out
+// its own 10s whatever the refresh's deadline, and while it waits the
+// client's /shutdown response does not arrive. So shutdown first stops new
+// refreshes and waits, within the Cloud budget, for one in flight, while the
+// attachables are still open.
+type cloudRefreshGate struct {
+	mu       sync.Mutex
+	closed   bool
+	inflight sync.WaitGroup
+}
+
+func (g *cloudRefreshGate) enter() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		return false
+	}
+	g.inflight.Add(1)
+	return true
+}
+
+func (g *cloudRefreshGate) exit() { g.inflight.Done() }
+
+// close stops new refreshes and waits for those in flight, until ctx ends.
+func (g *cloudRefreshGate) close(ctx context.Context) error {
+	g.stop()
+	return g.wait(ctx)
+}
+
+func (g *cloudRefreshGate) stop() {
+	g.mu.Lock()
+	g.closed = true
+	g.mu.Unlock()
+}
+
+func (g *cloudRefreshGate) wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		g.inflight.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
+// stopCloudTokenRefresh ends token refreshes for the rest of the session: the
+// main client's shutdown calls it first, before anything flushes to Cloud.
+// Exports after it use the token they have; with an expired one they fail at
+// once, costing telemetry at the very end of a session, never its shutdown.
+func (sess *daggerSession) stopCloudTokenRefresh(ctx context.Context) {
+	if sess.cloudRefresh == nil {
+		return
+	}
+	// Stopping is unconditional; only the wait for a refresh in flight is
+	// bounded.
+	sess.cloudRefresh.stop()
+	sess.cloudBound.bounded(ctx, "wait for token refresh", false, sess.cloudRefresh.wait)
+}
 
 // refreshSessionCloudToken refreshes the main client's expired OAuth token
 // from the credentials file on the client's host, and writes the refreshed
@@ -87,10 +153,14 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 	if err != nil {
 		return nil, fmt.Errorf("refresh cloud token: main client metadata: %w", err)
 	}
-	// Once the main client's shutdown closes its attachables, the credentials
-	// file is out of reach. Looking for the attachables then waits out the
-	// gateway's own 10s bound, whatever this context says, and while it waits
-	// the client's /shutdown response does not arrive: fail at once instead.
+	// See cloudRefreshGate: no refresh once the main client's shutdown began,
+	// and none may find its attachables gone.
+	if sess.cloudRefresh != nil {
+		if !sess.cloudRefresh.enter() {
+			return nil, errCloudRefreshSessionClosing
+		}
+		defer sess.cloudRefresh.exit()
+	}
 	if sess.closingCtx != nil && sess.closingCtx.Err() != nil {
 		return nil, errCloudRefreshSessionClosing
 	}
