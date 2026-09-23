@@ -363,6 +363,8 @@ func (Identity) FactKind() Kind { return KindIdentity }
 
 // Retention records a result's retention edge: the record that keeps the
 // result alive after its session. Retained false means the edge was dropped.
+// An unpruneable edge never expires, and making an edge unpruneable also
+// clears the result's own expiry.
 type Retention struct {
 	ID       uint64 `json:"id"`
 	Retained bool   `json:"retained"`
