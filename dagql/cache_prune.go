@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -66,6 +67,8 @@ type pruneSimulationState struct {
 	sizeBytesByUsageIdentity  map[string]int64
 	collected                 map[sharedResultID]struct{}
 }
+
+var errCacheUsageChanged = errors.New("cache usage population changed during sampling")
 
 type pruneSnapshotMode uint8
 
@@ -282,7 +285,15 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	for policyIdx, policy := range policies {
 		activeRoots := c.snapshotSessionResultIDs()
 		c.measureAllResultSizes(ctx)
-		snapshot := c.snapshotPruneState(activeRoots, pruneSnapshotDisk, 0)
+		snapshot, err := c.snapshotPruneStateCancelable(activeRoots, pruneSnapshotDisk, 0, newPruneCancellationChecker(ctx))
+		if err == errCacheUsageChanged {
+			// Unknown identity membership could overstate physical reclaim.
+			// Defer this policy rather than treating unsampled rows as empty.
+			continue
+		}
+		if err != nil {
+			return report, err
+		}
 
 		targetBytes, _ := pruneTargetBytes(policy, snapshot.usedBytes)
 		if targetBytes <= 0 {
@@ -388,9 +399,43 @@ func (c *Cache) snapshotPruneStateCancelable(
 	mode pruneSnapshotMode,
 	directResultBytes int64,
 	checker *pruneCancellationChecker,
-) (pruneSnapshot, error) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+) (_ pruneSnapshot, rerr error) {
+	var usage *cacheUsageSnapshot
+	if mode == pruneSnapshotDisk {
+		ctx := context.Background()
+		if checker != nil {
+			ctx = checker.ctx
+		}
+		var err error
+		usage, err = c.collectUsageMeasurementInputs(ctx)
+		if err != nil {
+			return pruneSnapshot{}, err
+		}
+		defer func() {
+			if err := usage.close(ctx); err != nil {
+				rerr = errors.Join(rerr, err)
+			}
+		}()
+	}
+	if usage != nil {
+		c.egraphMu.Lock()
+		defer c.egraphMu.Unlock()
+	} else {
+		c.egraphMu.RLock()
+		defer c.egraphMu.RUnlock()
+	}
+	identities := make(map[sharedResultID][]string)
+	if usage != nil {
+		usage.releaseLocked(context.Background())
+		for _, input := range usage.inputs {
+			if input.validLocked(c) {
+				identities[input.resultID] = input.identities
+			}
+		}
+	}
+	if usage != nil && (len(identities) != len(usage.inputs) || len(identities) != len(c.resultsByID)) {
+		return pruneSnapshot{}, errCacheUsageChanged
+	}
 
 	snapshot := pruneSnapshot{
 		results:         make(map[sharedResultID]pruneSnapshotResult, len(c.resultsByID)),
@@ -416,7 +461,7 @@ func (c *Cache) snapshotPruneStateCancelable(
 	}
 
 	if mode == pruneSnapshotDisk {
-		if err := c.snapshotPruneDiskUsageIdentitiesLocked(&snapshot, checker); err != nil {
+		if err := c.snapshotPruneDiskUsageIdentitiesLocked(&snapshot, identities, checker); err != nil {
 			return pruneSnapshot{}, err
 		}
 	}
@@ -474,7 +519,7 @@ func (c *Cache) snapshotPruneStateCancelable(
 			snapshotResult.directResultBytes = directResultBytes
 			snapshotResult.entry.SizeBytes = directResultBytes
 		} else {
-			usageIdentities := cacheUsageIdentities(res)
+			usageIdentities := identities[resID]
 			sizeBytes := int64(0)
 			for _, measured := range res.cacheUsageSizeByIdentity {
 				if checker != nil {
@@ -519,7 +564,7 @@ func (c *Cache) snapshotPruneStateCancelable(
 	return snapshot, nil
 }
 
-func (c *Cache) snapshotPruneDiskUsageIdentitiesLocked(snapshot *pruneSnapshot, checker *pruneCancellationChecker) error {
+func (c *Cache) snapshotPruneDiskUsageIdentitiesLocked(snapshot *pruneSnapshot, identities map[sharedResultID][]string, checker *pruneCancellationChecker) error {
 	for resID, res := range c.resultsByID {
 		if checker != nil {
 			if err := checker.check(); err != nil {
@@ -529,7 +574,7 @@ func (c *Cache) snapshotPruneDiskUsageIdentitiesLocked(snapshot *pruneSnapshot, 
 		if res == nil {
 			continue
 		}
-		for _, usageIdentity := range cacheUsageIdentities(res) {
+		for _, usageIdentity := range identities[resID] {
 			if checker != nil {
 				if err := checker.check(); err != nil {
 					return err
