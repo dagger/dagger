@@ -124,7 +124,7 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 	tracePayload, _ := proto.Marshal(traces)
 	logPayload, _ := proto.Marshal(logs)
 	sealAt := time.Now().UTC().Format(time.RFC3339Nano)
-	data, _, err := BuildBootstrap(BootstrapHeader{
+	data, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session",
 		Generation: generation, TraceID: traceID, SealAt: sealAt,
 		HighWater: HighWater{Spans: 5, Logs: 7, Metrics: 9},
 	}, []BootstrapSignal{
@@ -180,7 +180,7 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 
 	t.Run("invalid header stops before signal consumption", func(t *testing.T) {
 		wrongTrace := strings.Repeat("b", 32)
-		invalid, _, err := BuildBootstrap(BootstrapHeader{
+		invalid, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session",
 			Generation: generation, TraceID: wrongTrace, SealAt: sealAt,
 		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 1}}, BootstrapExclusions{})
 		if err != nil {
@@ -218,7 +218,7 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 	})
 
 	t.Run("terminal count mismatch is corruption", func(t *testing.T) {
-		mismatch, _, err := BuildBootstrap(BootstrapHeader{
+		mismatch, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session",
 			Generation: generation, TraceID: traceID, SealAt: sealAt,
 		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 2}}, BootstrapExclusions{})
 		if err != nil {

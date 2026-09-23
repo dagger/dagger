@@ -29,12 +29,13 @@ const (
 )
 
 type BootstrapHeader struct {
-	Version    int        `json:"version"`
-	Generation string     `json:"generation"`
-	TraceID    string     `json:"traceID"`
-	SealAt     string     `json:"sealAt"`
-	HighWater  HighWater  `json:"highWater"`
-	Completion Completion `json:"completion"`
+	Version       int        `json:"version"`
+	Generation    string     `json:"generation"`
+	TraceID       string     `json:"traceID"`
+	SourceSession string     `json:"sourceSession"`
+	SealAt        string     `json:"sealAt"`
+	HighWater     HighWater  `json:"highWater"`
+	Completion    Completion `json:"completion"`
 }
 
 type BootstrapSignal struct {

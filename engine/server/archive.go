@@ -51,7 +51,7 @@ func (sess *daggerSession) ensureArchive(traceID string) (rerr error) {
 		}
 		return nil
 	}
-	manifest, err := srv.archives.Register(traceID, sess.mainClientCallerID)
+	manifest, err := srv.archives.RegisterSession(traceID, sess.sessionID, sess.mainClientCallerID)
 	if err != nil {
 		return err
 	}
@@ -197,7 +197,7 @@ func buildArchiveBootstrap(ctx context.Context, db *clientdb.DB, manifest archiv
 		}
 		return 0
 	})
-	header := archive.BootstrapHeader{Generation: manifest.Generation, TraceID: manifest.TraceID, SealAt: time.Now().UTC().Format(time.RFC3339Nano), HighWater: archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, Completion: archive.Witness(want)}
+	header := archive.BootstrapHeader{Generation: manifest.Generation, TraceID: manifest.TraceID, SourceSession: manifest.SourceSession, SealAt: time.Now().UTC().Format(time.RFC3339Nano), HighWater: archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, Completion: archive.Witness(want)}
 	var signals []archive.BootstrapSignal
 	var batches []archive.BootstrapBatch
 	var exclusions archive.BootstrapExclusions
@@ -255,7 +255,7 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		record.daggerSession.archiveMu.Lock()
 		exclude := ""
 		if m := record.daggerSession.archiveManifest; m != nil {
-			exclude = m.TraceID
+			exclude = m.Generation
 		}
 		record.daggerSession.archiveMu.Unlock()
 		return writeArchiveJSON(w, http.StatusOK, srv.archives.List(r.URL.Query().Get("after"), exclude, limit))
@@ -269,7 +269,12 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		if r.Method != http.MethodPost {
 			return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
 		}
-		m, err := srv.archives.Manifest(traceID)
+		source := r.URL.Query().Get("source_session")
+		generation := r.Header.Get("X-Dagger-Archive-Generation")
+		if source == "" && generation == "" {
+			source = record.daggerSession.sessionID
+		}
+		m, err := srv.archives.ManifestSource(traceID, generation, source)
 		if err != nil {
 			return writeArchiveFailure(w, err)
 		}
@@ -289,7 +294,7 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	if r.Method != http.MethodGet {
 		return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
 	}
-	lease, err := srv.archives.Acquire(traceID)
+	lease, err := srv.archives.AcquireSource(traceID, r.Header.Get("X-Dagger-Archive-Generation"), r.URL.Query().Get("source_session"))
 	if err != nil {
 		return writeArchiveFailure(w, err)
 	}
@@ -466,7 +471,7 @@ func writeArchiveFailure(w http.ResponseWriter, err error) error {
 			status = http.StatusNotFound
 		case archive.FailureEvicted:
 			status = http.StatusGone
-		case archive.FailureState:
+		case archive.FailureState, archive.FailureAmbiguous:
 			status = http.StatusConflict
 		case archive.FailureCorrupt:
 			status = http.StatusUnprocessableEntity
