@@ -52,11 +52,11 @@ func TestMessageSpansCarryGenAIAgentIdentity(t *testing.T) {
 	emitMessageSpan(ctx, &LLMMessage{
 		Role:    LLMMessageRoleUser,
 		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "Please review this."}},
-	}, "", nil, nil)
+	}, "")
 	emitMessageSpan(ctx, &LLMMessage{
 		Role:    LLMMessageRoleAssistant,
 		Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "On it."}},
-	}, "", nil, nil)
+	}, "")
 
 	byName := map[string]sdktrace.ReadOnlySpan{}
 	for _, span := range sr.Ended() {
@@ -98,7 +98,7 @@ func TestDisplayToolArgsAreLineTerminatedOnce(t *testing.T) {
 	}
 }
 
-func TestReplayPreservesHeaderArgsAndTerminatesJSON(t *testing.T) {
+func TestMessagePreservesHeaderArgsAndTerminatesJSON(t *testing.T) {
 	sr, ctx := recordingTestRecorder(t)
 	recorder := &stateRecorder{}
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
@@ -110,7 +110,7 @@ func TestReplayPreservesHeaderArgsAndTerminatesJSON(t *testing.T) {
 		Content: []*LLMContentBlock{{
 			Kind: LLMContentToolCall, CallID: "call_1", ToolName: "read", Arguments: JSON(args),
 		}},
-	}, "", nil, nil)
+	}, "")
 
 	ended := sr.Ended()
 	require.NotEmpty(t, ended)
@@ -131,36 +131,17 @@ func TestReplayPreservesHeaderArgsAndTerminatesJSON(t *testing.T) {
 			}
 		}
 		return false
-	}, "replayed tool JSON was not newline-terminated")
+	}, "message tool JSON was not newline-terminated")
 }
 
-func TestReplayEmitsAuthoritativePatchResult(t *testing.T) {
+func TestToolResultEmitsAuthoritativePatch(t *testing.T) {
 	_, ctx := recordingTestRecorder(t)
 	recorder := &stateRecorder{}
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
 	ctx = telemetry.WithLoggerProvider(ctx, provider)
 
 	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1 +1 @@\n-old\n+new\n"
-	llm := &LLM{Messages: []*LLMMessage{
-		{
-			Role: LLMMessageRoleAssistant,
-			Content: []*LLMContentBlock{{
-				Kind:      LLMContentToolCall,
-				CallID:    "call_1",
-				ToolName:  "edit",
-				Arguments: JSON(`{"filePath":"main.go"}`),
-			}},
-		},
-		{
-			Role: LLMMessageRoleUser,
-			Content: []*LLMContentBlock{{
-				Kind:   LLMContentToolResult,
-				CallID: "call_1",
-				Text:   patch,
-			}},
-		},
-	}}
-	llm.EmitHistory(ctx)
+	emitToolResultLogs(ctx, &LLMContentBlock{Kind: LLMContentToolResult, CallID: "call_1", Text: patch})
 
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
@@ -170,7 +151,7 @@ func TestReplayEmitsAuthoritativePatchResult(t *testing.T) {
 			return
 		}
 	}
-	t.Fatal("replayed patch result was not emitted")
+	t.Fatal("authoritative patch result was not emitted")
 }
 
 func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
