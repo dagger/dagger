@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,33 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+func TestServeHTTPPreservesArchiveQueries(t *testing.T) {
+	const query = "after=a%2Fb%2Bc&exclude_log=4&exclude_log=8&exclude_span=aa%3Abb&limit=3"
+	client := &Client{Params: Params{SecretToken: "session-secret"}, closeCtx: context.Background()}
+	called := false
+	client.httpClient = &httpClient{secretToken: "engine-secret", inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		called = true
+		require.Equal(t, query, req.URL.RawQuery)
+		require.Equal(t, "a/b+c", req.URL.Query().Get("after"))
+		require.Equal(t, []string{"4", "8"}, req.URL.Query()["exclude_log"])
+		require.Equal(t, "generation-1", req.Header.Get("X-Dagger-Archive-Generation"))
+		require.Equal(t, "27", req.Header.Get(enginetel.LiveCursorHeader))
+		token, _, ok := req.BasicAuth()
+		require.True(t, ok)
+		require.Equal(t, "engine-secret", token)
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("archive")), Request: req}, nil
+	})}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/telemetry/archives/trace/logs?"+query, nil)
+	req.Header.Set("X-Dagger-Archive-Generation", "generation-1")
+	req.Header.Set(enginetel.LiveCursorHeader, "27")
+	req.SetBasicAuth("session-secret", "")
+	response := httptest.NewRecorder()
+	client.ServeHTTP(response, req)
+	require.True(t, called)
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Equal(t, "archive", response.Body.String())
+}
 
 func TestTelemetryContextUsesClientLifetime(t *testing.T) {
 	t.Parallel()
