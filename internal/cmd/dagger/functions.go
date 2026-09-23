@@ -1171,10 +1171,17 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 		return err
 	}
 
-	// Load the LLM from the ID and assign it as $agent
-	llm := dagger.Ref[*dagger.LLM](dag, dagger.ID(llmID))
-	if _, err := handler.initLLM(ctx, llm); err != nil {
-		return err
+	// Restore has no destination seed. Evaluating even a bare llm.id would
+	// resolve the destination's default provider before the archive is loaded.
+	if opts.restore.traceID != "" {
+		if _, err := handler.initLLMSession(ctx, nil, true); err != nil {
+			return err
+		}
+	} else {
+		llm := dagger.Ref[*dagger.LLM](dag, dagger.ID(llmID))
+		if _, err := handler.initLLM(ctx, llm); err != nil {
+			return err
+		}
 	}
 
 	// Or restore a whole past session from its published trace: its agents,

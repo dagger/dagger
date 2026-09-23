@@ -964,12 +964,22 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 }
 
 func (h *shellCallHandler) initLLM(ctx context.Context, initial *dagger.LLM) (*LLMSession, error) {
+	return h.initLLMSession(ctx, initial, false)
+}
+
+func (h *shellCallHandler) initLLMSession(ctx context.Context, initial *dagger.LLM, restoring bool) (*LLMSession, error) {
 	if s, e := h.llmMaybe(); s != nil || e != nil {
 		return s, e
 	}
 
 	// initialize without the lock held
-	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h, h.frontend, initial)
+	var s *LLMSession
+	var err error
+	if restoring {
+		s, err = newRestoringLLMSession(ctx, h.dag, h, h.frontend)
+	} else {
+		s, err = NewLLMSession(ctx, h.dag, h.llmModel, h, h.frontend, initial)
+	}
 
 	h.llmL.Lock()
 	defer h.llmL.Unlock()
