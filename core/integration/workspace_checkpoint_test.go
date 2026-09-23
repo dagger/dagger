@@ -5,9 +5,13 @@ package core
 
 import (
 	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger"
@@ -36,6 +40,64 @@ func checkpointCheckoutBase(ctx context.Context, t *testctx.T, c *dagger.Client)
 		WithExec([]string{"git", "add", "local.txt"}).
 		WithExec([]string{"git", "commit", "-m", "local commit"}).
 		WithNewFile("/work/tracked.txt", "base\ndirty\n")
+}
+
+// publishCheckpointRemote serves a test checkout's committed Git objects over
+// HTTP. Unlike an engine-container service, the test process's address is
+// reachable by both a host-side capture CLI and a fresh engine session.
+func publishCheckpointRemote(ctx context.Context, t *testctx.T, checkout string) {
+	t.Helper()
+	remoteRoot := t.TempDir()
+	cmd := exec.CommandContext(ctx, "git", "clone", "--bare", checkout, filepath.Join(remoteRoot, "repo.git"))
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	addresses, err := net.InterfaceAddrs()
+	require.NoError(t, err)
+	var host string
+	for _, addr := range addresses {
+		if ip, ok := addr.(*net.IPNet); ok && !ip.IP.IsLoopback() && ip.IP.To4() != nil {
+			host = ip.IP.String()
+			break
+		}
+	}
+	require.NotEmpty(t, host, "test process needs a reachable address for the Git remote")
+	listener, err := net.Listen("tcp4", "0.0.0.0:0")
+	require.NoError(t, err)
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		args := []string{"upload-pack", "--stateless-rpc"}
+		advertise := r.Method == http.MethodGet && r.URL.Path == "/repo.git/info/refs"
+		if advertise {
+			args = append(args, "--advertise-refs")
+		} else if r.Method != http.MethodPost || r.URL.Path != "/repo.git/git-upload-pack" {
+			http.NotFound(w, r)
+			return
+		}
+		args = append(args, filepath.Join(remoteRoot, "repo.git"))
+		command := exec.CommandContext(r.Context(), "git", args...)
+		if !advertise {
+			command.Stdin = r.Body
+		}
+		data, err := command.Output()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		if advertise {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+			_, _ = w.Write([]byte("001e# service=git-upload-pack\n0000"))
+		} else {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		}
+		_, _ = w.Write(data)
+	}))
+	server.Listener = listener
+	server.Start()
+	t.Cleanup(server.Close)
+	url := "http://" + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)) + "/repo.git"
+	cmd = exec.CommandContext(ctx, "git", "-C", checkout, "remote", "add", "origin", url)
+	out, err = cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
 }
 
 // snapshotWorkspace captures once and returns the SDK object rooted at the resulting ID.

@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -15,13 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func checkpointTestGit(t *testing.T, root string, args ...string) string {
+func checkpointTestGit(t *testing.T, root string, args ...string) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", root}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=Snapshot Test", "GIT_AUTHOR_EMAIL=snapshot@example.com", "GIT_COMMITTER_NAME=Snapshot Test", "GIT_COMMITTER_EMAIL=snapshot@example.com")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "%s", out)
-	return strings.TrimSpace(string(out))
 }
 
 func checkpointTestServer(t *testing.T, session string) (context.Context, *dagql.Server) {

@@ -1013,6 +1013,7 @@ func (LLMSuite) TestTraceRecipeAfterChangesExport(ctx context.Context, t *testct
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "a.txt"), []byte("before"), 0o644))
 	git("add", "a.txt")
 	git("commit", "-m", "initial editable file")
+	publishCheckpointRemote(ctx, t, workdir)
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
 	current := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
 	llm := c.LLM().
@@ -1062,6 +1063,7 @@ func (LLMSuite) TestTraceRecipeAfterChangesExport(ctx context.Context, t *testct
 // these retained an already-exported overlay and reported stale pending edits.
 func (LLMSuite) TestTraceRecipeAfterFileExport(ctx context.Context, t *testctx.T) {
 	workdir, git := workspaceExportCheckout(ctx, t)
+	publishCheckpointRemote(ctx, t, workdir)
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
 	current := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
 	llm := c.LLM().
@@ -1112,6 +1114,7 @@ func (LLMSuite) TestTraceRecipeAfterFileExport(ctx context.Context, t *testctx.T
 // frozen base, even if the client checkout changes after the source closes.
 func (LLMSuite) TestTraceRecipePreservesPendingEdits(ctx context.Context, t *testctx.T) {
 	workdir, _ := workspaceExportCheckout(ctx, t)
+	publishCheckpointRemote(ctx, t, workdir)
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("SOURCE"), 0o644))
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
 	current := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
