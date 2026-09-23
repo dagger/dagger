@@ -1,8 +1,12 @@
 """
-A module for running the `go` CLI.
+A module for running the `go` CLI and profiling remote Go processes.
 """
 type GoCli {
   sandbox: Container!
+
+  let profileService: Service = null
+  let profileClient: Container! = container
+  let profileURL: String! = ""
 
   new(
     base: Container! = container.from("golang:1.26"),
@@ -12,7 +16,7 @@ type GoCli {
   }
 
   """
-  Compose the Go command tool onto a base LLM.
+  Compose the Go command and profiling tools onto a base LLM.
   """
   @agent
   agent(base: LLM!): LLM! {
@@ -42,6 +46,141 @@ type GoCli {
       # happens, maybe VCS build related? I think it was .git/index?
       .withoutDirectory(".git")
       .changes(before.directory(".").withoutDirectory(".git"))
+  }
+
+  """
+  Continuously sample a remote Go pprof endpoint in the background. Captures a
+  CPU profile and goroutine dumps before/after each window, retaining a bounded
+  history. Returns immediately; profileStatus lists completed sample IDs and
+  failures, profileReport analyzes them, and profileSave preserves the raw files.
+
+  Use the container-reachable URL, including /debug/pprof/, not host localhost.
+  Refused/reset endpoints are recorded and retried. Only one monitor is active
+  at a time; save and stop it before starting another. Profiling has overhead and
+  only one CPU profiler may run on the target process at once.
+  """
+  profileStart(
+    ws: Workspace!,
+    endpoint: String!,
+    """CPU sample duration, 1–60 seconds."""
+    seconds: Int! = 15,
+    """Pause between captures, 0–300 seconds."""
+    interval: Int! = 5,
+    """Number of completed samples to retain, 1–100; older files are deleted."""
+    retain: Int! = 20,
+  ): GoCli! @cache(policy: FunctionCachePolicy.Never) {
+    if (profileService != null) {
+      raise "A profiler is already running. Use profileSave, then profileStop first."
+    }
+    if (seconds < 1 or seconds > 60 or interval < 0 or interval > 300 or retain < 1 or retain > 100) {
+      raise "Require seconds=1..60, interval=0..300, retain=1..100."
+    }
+    let runner = profiler
+      .withMountedDirectory("/workspace", ws.directory("/", gitignore: true))
+      .withEnvVariable("PROFILE_NONCE", UUID.v7)
+      .withExposedPort(8080)
+    let svc = runner.asService(args: [
+      "go-profiler", "serve", "--endpoint", endpoint,
+      "--seconds", toString(seconds), "--interval", toString(interval),
+      "--retain", toString(retain), "--listen", ":8080", "--dir", "/profiles",
+    ]).start
+    self.profileService = svc
+    self.profileClient = profiler.withServiceBinding("go-profiler", svc)
+    self.profileURL = "http://go-profiler:8080"
+    print("Profiling " + endpoint + " in the background. Use profileStatus and profileReport; profileSave before stopping. Completion summaries also appear in the service logs.")
+    self
+  }
+
+  """
+  Read the background profiler's current capture, retained sample IDs (newest
+  first), timestamps and errors. Live read: does not start a new sample or wait
+  for one to finish.
+  """
+  profileStatus: String! @cache(policy: FunctionCachePolicy.Never) {
+    profileExec(["client", "--url", profileURL, "/status"]).stdout
+  }
+
+  """
+  Analyze a retained sample without profiling the target again. Views: cum
+  (cumulative CPU top), flat (self CPU top), list (source lines; requires focus),
+  goroutines-before, goroutines-after. CPU reports default to the latest successful
+  sample. Use explicit sample IDs from profileStatus to compare windows.
+
+  focus is an optional Go regexp selecting CPU stacks/functions; list uses the
+  workspace source at monitor start, which may differ from the profiled binary.
+  Goroutine output is bounded; save profiles to read the full dump with file tools.
+  """
+  profileReport(
+    sample: String! = "latest",
+    view: String! = "cum",
+    focus: String! = "",
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    profileExec([
+      "report", "--url", profileURL, "--sample", sample,
+      "--view", view, "--focus", focus,
+    ]).stdout
+  }
+
+  """
+  Save the monitor's completed retained profiles, goroutine dumps and metadata
+  into a workspace scratch directory. The monitor keeps running; the in-progress
+  sample is not included. Save before stopping or before retention evicts a window.
+  Files can then be analyzed with go tool pprof or the normal file tools.
+  """
+  profileSave(
+    ws: Workspace!,
+    path: String! = "tmp/go-profiles",
+  ): Changeset! @cache(policy: FunctionCachePolicy.Never) {
+    if (path == "" or path.hasPrefix("/") or path.split("/").contains("..")) {
+      raise "Profile destination must be a nonempty workspace-relative path without '..'."
+    }
+    let captured = profileExec(["export", "--url", profileURL, "--dir", "/profile-export"])
+      .directory("/profile-export")
+    let before = ws.directory("/")
+    before.withDirectory(path, captured).changes(before)
+  }
+
+  """
+  Stop the background profiler. Does not stop or modify the remote Go process.
+  Save retained captures with profileSave first: stopping releases their service.
+  """
+  profileStop: GoCli! @cache(policy: FunctionCachePolicy.Never) {
+    if (profileService != null) {
+      profileService.stop
+    }
+    self.profileService = null
+    self.profileClient = container
+    self.profileURL = ""
+    print("Stopped background profiling; remote process left running.")
+    self
+  }
+
+  let profileExec(args: [String!]!): Container! {
+    if (profileService == null) {
+      raise "No active profiler. Call profileStart first."
+    }
+    profileClient
+      .withEnvVariable("PROFILE_NONCE", UUID.v7)
+      .withExec(["go-profiler"] + args)
+  }
+
+  """
+  Test the profiling helper's capture, retention, reports and safe export paths.
+  """
+  profileTests: Void @check {
+    base
+      .withMountedDirectory("/profiler-src", currentModule.source.directory("profiler"))
+      .withWorkdir("/profiler-src")
+      .withEnvVariable("GO111MODULE", "off")
+      .withExec(["go", "test", "-race", "./..."])
+      .sync
+    null
+  }
+
+  let profiler: Container! {
+    base
+      .withMountedDirectory("/profiler-src", currentModule.source.directory("profiler"))
+      .withExec(["go", "build", "-o", "/usr/local/bin/go-profiler", "/profiler-src/main.go"])
   }
 
   base: Container! {
