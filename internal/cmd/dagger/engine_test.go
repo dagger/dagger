@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -28,6 +29,26 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func TestSessionProxyEnvClearsInheritedExecIdentity(t *testing.T) {
+	t.Parallel()
+	cmd := exec.Command("unused")
+	cmd.Env = sessionProxyEnv([]string{
+		"DAGGER_SESSION_PORT=1234",
+		"DAGGER_SESSION_TOKEN=exec-token",
+		engine.NestedClientIDEnv + "=exec-bootstrap",
+		"PRESERVED=value",
+	}, "5678", "proxy-token")
+	// Environ uses the same duplicate-variable handling as the child process.
+	env := cmd.Environ()
+	require.Contains(t, env, "DAGGER_SESSION_PORT=5678")
+	require.Contains(t, env, "DAGGER_SESSION_TOKEN=proxy-token")
+	require.Contains(t, env, engine.NestedClientIDEnv+"=")
+	require.Contains(t, env, "PRESERVED=value")
+	require.NotContains(t, env, engine.NestedClientIDEnv+"=exec-bootstrap")
+	require.NotContains(t, env, "DAGGER_SESSION_PORT=1234")
+	require.NotContains(t, env, "DAGGER_SESSION_TOKEN=exec-token")
+}
 
 type countingLogExporter struct {
 	exports atomic.Int64
