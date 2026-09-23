@@ -14,6 +14,9 @@ import (
 const (
 	blockingLogRetryBaseDelay = 100 * time.Millisecond
 	blockingLogRetryMaxDelay  = 5 * time.Second
+	// blockingLogWarnInterval spaces the warnings of a batch that keeps
+	// failing, for example against an organization Cloud refuses.
+	blockingLogWarnInterval = time.Minute
 )
 
 // BlockingLogProcessor batches log records to an exporter without ever
@@ -211,6 +214,10 @@ func (p *BlockingLogProcessor) exportQueued() {
 
 func (p *BlockingLogProcessor) exportWithRetry(batch []sdklog.Record) bool {
 	delay := blockingLogRetryBaseDelay
+	var (
+		failures int
+		warned   time.Time
+	)
 	for {
 		err := p.exporter.Export(p.runCtx, batch)
 		if err == nil {
@@ -219,7 +226,11 @@ func (p *BlockingLogProcessor) exportWithRetry(batch []sdklog.Record) bool {
 		if p.runCtx.Err() != nil {
 			return false
 		}
-		slog.Warn("log export failed; retrying", "records", len(batch), "delay", delay, "error", err)
+		failures++
+		if time.Since(warned) >= blockingLogWarnInterval {
+			warned = time.Now()
+			slog.Warn("log export failed; retrying", "records", len(batch), "failures", failures, "delay", delay, "error", err)
+		}
 		select {
 		case <-time.After(delay):
 		case <-p.runCtx.Done():
