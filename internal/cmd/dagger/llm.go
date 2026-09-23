@@ -122,6 +122,17 @@ func NewLLMSession(
 	frontend idtui.Frontend,
 	initialLLM *dagger.LLM,
 ) (*LLMSession, error) {
+	return newLLMSession(ctx, dag, llmModel, shellHandler, frontend, initialLLM, false)
+}
+
+// newRestoringLLMSession creates client plumbing without evaluating an LLM or
+// consulting a destination workspace/provider. Only traced anchors may supply
+// those capabilities during restore.
+func newRestoringLLMSession(ctx context.Context, dag *dagger.Client, shellHandler *shellCallHandler, frontend idtui.Frontend) (*LLMSession, error) {
+	return newLLMSession(ctx, dag, "", shellHandler, frontend, nil, true)
+}
+
+func newLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler, frontend idtui.Frontend, initialLLM *dagger.LLM, restoring bool) (*LLMSession, error) {
 	s := &LLMSession{
 		dag:        dag,
 		shell:      shellHandler,
@@ -156,15 +167,17 @@ func NewLLMSession(
 	s.target = own
 	// Install the selected composition before status reads so its frozen
 	// checkpoint is captured only once and belongs to this conversation.
-	if initialLLM == nil {
-		workspace, err := snapshotWorkspace(ctx, dag)
-		if err != nil {
+	if !restoring {
+		if initialLLM == nil {
+			workspace, err := snapshotWorkspace(ctx, dag)
+			if err != nil {
+				return nil, err
+			}
+			initialLLM = dag.LLM(dagger.LLMOpts{Model: llmModel}).WithWorkspace(workspace)
+		}
+		if err := own.setInitialLLM(initialLLM); err != nil {
 			return nil, err
 		}
-		initialLLM = dag.LLM(dagger.LLMOpts{Model: llmModel}).WithWorkspace(workspace)
-	}
-	if err := own.setInitialLLM(initialLLM); err != nil {
-		return nil, err
 	}
 
 	if sink, ok := frontend.(interface {
