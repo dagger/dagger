@@ -528,7 +528,6 @@ func (obj *ModuleObject) AttachDependencyResults(
 		return nil, err
 	}
 
-	owned := make([]dagql.AnyResult, 0, 1+len(obj.Fields))
 	if obj.Module.Self() != nil {
 		// The object's class resolves its fields against this module, and its
 		// provider scopes it for every call. The object must own it: the
