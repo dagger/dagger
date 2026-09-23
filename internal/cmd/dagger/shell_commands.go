@@ -191,6 +191,17 @@ func (h *shellCallHandler) Builtins() []*ShellCommand {
 func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 	return []*ShellCommand{
 		{
+			Use:         ".resume [session]",
+			Description: "Local JSON session resume is no longer supported",
+			GroupID:     "llm",
+			Hidden:      true,
+			Args:        MaximumArgs(1),
+			State:       NoState,
+			Run: func(context.Context, *ShellCommand, []string, *ShellState) error {
+				return fmt.Errorf("local JSON session resume is no longer supported; use dagger agent --trace <trace-id> with a verified archive")
+			},
+		},
+		{
 			Use:         ".shell",
 			Description: "Switch into shell mode",
 			GroupID:     "llm",
