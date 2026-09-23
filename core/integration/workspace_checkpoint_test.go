@@ -435,7 +435,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotHostDirectoryIsSessionOnly(ctx contex
 	// agent capture must not advertise its live host dependency as resumable.
 	_, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(ws))
 	require.ErrorContains(t, err, "capture failed")
-	require.ErrorContains(t, err, "host")
+	require.ErrorContains(t, err, "Host.directory")
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotReplayableValuePassesThrough(ctx context.Context, t *testctx.T) {
