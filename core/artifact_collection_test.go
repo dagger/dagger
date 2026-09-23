@@ -2,7 +2,11 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/stretchr/testify/require"
@@ -22,6 +26,176 @@ func collectionArtifactFixture() *Artifacts {
 		}
 	}
 	return artifacts
+}
+
+// parallelCollectionFixture exercises both independent templates and multiple
+// receivers produced by a single template's outer collection.
+func parallelCollectionFixture(nested bool) (*Artifacts, artifactCollectionKeyFunc) {
+	all := &Artifacts{}
+	outer := &ArtifactDimension{Identifier: "App.modules", Name: "module"}
+	inner := &ArtifactDimension{Identifier: "Module.tests", Name: "test"}
+	if nested {
+		root := &ModTreeNode{Name: "modules"}
+		module := &ModTreeNode{Name: "get", Parent: root, CollectionDimension: outer}
+		tests := &ModTreeNode{Name: "tests", Parent: module}
+		item := &ModTreeNode{Name: "get", Parent: tests, CollectionDimension: inner}
+		all.Entries = append(all.Entries, &Artifact{Path: []string{"modules", "tests", "check"}, Node: &ModTreeNode{Name: "check", Parent: item}})
+	} else {
+		for _, name := range []string{"b", "a"} {
+			root := &ModTreeNode{Name: name}
+			item := &ModTreeNode{Name: "get", Parent: root, CollectionDimension: inner}
+			all.Entries = append(all.Entries, &Artifact{Path: []string{name, "check"}, Node: &ModTreeNode{Name: "check", Parent: item}})
+		}
+	}
+	return all, func(_ context.Context, receiver *Artifact) ([]collectionKey, error) {
+		if nested && receiver.Node.Name == "modules" {
+			return []collectionKey{{text: "b"}, {text: "a"}}, nil
+		}
+		return nil, fmt.Errorf("unexpected collection receiver %q (leaf must remain deferred)", receiver.Node.Name)
+	}
+}
+
+func parallelCollectionReceiver(nested bool, receiver *Artifact) string {
+	if nested && receiver.Node.Name == "tests" {
+		return *receiver.Node.Parent.CollectionKey
+	}
+	return receiver.Node.Name
+}
+
+func TestArtifactCollectionParallelExpansion(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(fmt.Sprintf("nested=%t", nested), func(t *testing.T) {
+			all, fallback := parallelCollectionFixture(nested)
+			// The deadline only guards against deadlocks in a serial regression;
+			// overlap is proved by both receivers reaching the barrier.
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			var arrived atomic.Int32
+			ready := make(chan struct{})
+			secondReturned := make(chan struct{})
+			keys := func(ctx context.Context, receiver *Artifact) ([]collectionKey, error) {
+				name := parallelCollectionReceiver(nested, receiver)
+				if name != "b" && name != "a" {
+					return fallback(ctx, receiver)
+				}
+				if arrived.Add(1) == 2 {
+					close(ready)
+				}
+				select {
+				case <-ready:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				if name == "b" {
+					select {
+					case <-secondReturned:
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+				} else {
+					close(secondReturned)
+				}
+				return []collectionKey{{text: "z"}, {text: "x"}}, nil
+			}
+			expanded, err := all.expand(ctx, keys)
+			require.NoError(t, err)
+			require.EqualValues(t, 2, arrived.Load())
+			var uris []string
+			for _, item := range expanded.Entries {
+				uri, err := item.URI(ArtifactURIOpts{DimensionKeys: true})
+				require.NoError(t, err)
+				uris = append(uris, uri)
+			}
+			if nested {
+				require.Equal(t, []string{
+					"dag://modules/tests/check?module=b&test=z", "dag://modules/tests/check?module=b&test=x",
+					"dag://modules/tests/check?module=a&test=z", "dag://modules/tests/check?module=a&test=x",
+				}, uris)
+			} else {
+				require.Equal(t, []string{
+					"dag://b/check?test=z", "dag://b/check?test=x", "dag://a/check?test=z", "dag://a/check?test=x",
+				}, uris)
+			}
+			for _, template := range all.Entries {
+				require.Nil(t, template.Node.Parent.CollectionKey, "templates must not be mutated")
+			}
+		})
+	}
+}
+
+func TestArtifactCollectionParallelCancellation(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		for _, external := range []bool{false, true} {
+			t.Run(fmt.Sprintf("nested=%t/external=%t", nested, external), func(t *testing.T) {
+				all, fallback := parallelCollectionFixture(nested)
+				ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+				defer cancel()
+				siblingStarted := make(chan struct{})
+				siblingStopped := make(chan struct{})
+				failure := errors.New("enumeration failed")
+				keys := func(ctx context.Context, receiver *Artifact) ([]collectionKey, error) {
+					switch parallelCollectionReceiver(nested, receiver) {
+					case "b":
+						select {
+						case <-siblingStarted:
+						case <-ctx.Done():
+							return nil, ctx.Err()
+						}
+						if external {
+							cancel()
+							return nil, ctx.Err()
+						}
+						return nil, failure
+					case "a":
+						close(siblingStarted)
+						<-ctx.Done()
+						close(siblingStopped)
+						return nil, ctx.Err()
+					default:
+						return fallback(ctx, receiver)
+					}
+				}
+				expanded, err := all.expand(ctx, keys)
+				if external {
+					require.ErrorIs(t, err, context.Canceled)
+				} else {
+					require.ErrorIs(t, err, failure)
+				}
+				require.Nil(t, expanded, "do not expose partial expansion")
+				select {
+				case <-siblingStopped:
+				default:
+					t.Fatal("expansion must wait for canceled workers")
+				}
+			})
+		}
+	}
+}
+
+func TestArtifactCollectionExpansionPrunesParents(t *testing.T) {
+	all, fallback := parallelCollectionFixture(true)
+	for i, selected := range []*Artifacts{
+		all.FilterDimensionKeys("module", []string{"a"}).FilterDimensionKeys("test", []string{"x"}),
+		all.FilterDimensionKeys("module", []string{}),
+	} {
+		var calls atomic.Int32
+		expanded, err := selected.expand(t.Context(), func(ctx context.Context, receiver *Artifact) ([]collectionKey, error) {
+			if receiver.Node.Name == "tests" {
+				if *receiver.Node.Parent.CollectionKey != "a" {
+					return nil, errors.New("filtered parent was evaluated")
+				}
+				calls.Add(1)
+				return []collectionKey{{text: "z"}, {text: "x"}}, nil
+			}
+			return fallback(ctx, receiver)
+		})
+		require.NoError(t, err)
+		require.EqualValues(t, 1-i, calls.Load())
+		require.Len(t, expanded.Entries, int(calls.Load()))
+		if calls.Load() != 0 {
+			require.Equal(t, []*ArtifactDimensionKey{{Dimension: "App.modules", Key: "a"}, {Dimension: "Module.tests", Key: "x"}}, expanded.Entries[0].DimensionKeys)
+		}
+	}
 }
 
 func TestArtifactCollectionDimensionBinding(t *testing.T) {

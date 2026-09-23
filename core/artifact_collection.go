@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
+	"golang.org/x/sync/errgroup"
 )
 
 type ArtifactDimension = artifact.Dimension
@@ -201,10 +202,29 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 // Expand evaluates only the collection receivers needed to enumerate selected
 // keys. A leaf artifact's value remains deferred.
 func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
+	return a.expand(ctx, artifactCollectionKeys)
+}
+
+// artifactCollectionKeyFunc evaluates a collection receiver, never the item or leaf.
+type artifactCollectionKeyFunc func(context.Context, *Artifact) ([]collectionKey, error)
+
+func artifactCollectionKeys(ctx context.Context, artifact *Artifact) ([]collectionKey, error) {
+	var value dagql.AnyResult
+	if err := artifact.Evaluate(ctx, &value); err != nil {
+		return nil, err
+	}
+	obj, ok := dagql.UnwrapAs[*ModuleObject](value)
+	if !ok {
+		return nil, fmt.Errorf("returned %T instead of a collection", value.Unwrap())
+	}
+	return obj.collectionKeys(ctx)
+}
+
+func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectionKeyFunc) (*Artifacts, error) {
 	if len(a.Selector.ExcludedURIs) > 0 {
 		included := a.filter(func(*Artifact) bool { return true })
 		included.Selector.ExcludedURIs = nil
-		result, err := included.Expand(ctx)
+		result, err := included.expand(ctx, collectionKeys)
 		if err != nil {
 			return nil, err
 		}
@@ -219,7 +239,7 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 			if err != nil {
 				return nil, err
 			}
-			excluded, err = excluded.Expand(ctx)
+			excluded, err = excluded.expand(ctx, collectionKeys)
 			if err != nil {
 				return nil, err
 			}
@@ -250,7 +270,11 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 		return bound, nil
 	}
 	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector}
-	for _, template := range bound.Entries {
+	// Each worker owns one slot; flatten only after all workers finish so
+	// discovery order is independent of evaluation completion order.
+	entries := make([][]*Artifact, len(bound.Entries))
+	group, ctx := errgroup.WithContext(ctx)
+	for i, template := range bound.Entries {
 		dims := template.DimensionDefinitions()
 		if !bound.matchesDimensionFilters(dims) {
 			continue
@@ -259,28 +283,37 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 		if template.Node != nil && template.Node.CollectionDimension != nil && bound.hasExactPath(template.Path) && !bound.selectsDimension(template.Node.CollectionDimension.Identifier) {
 			continue
 		}
-		nodes, err := expandArtifactNode(ctx, template.Node, template.Workspace, bound.Selector.Dimensions)
-		if err != nil {
-			return nil, err
-		}
-		dimensionNames := map[string]string{}
-		pathDims := bound.FilterPath(template.Path).DimensionDefinitions()
-		for _, dim := range dims {
-			dimensionNames[dim.Identifier] = pathDims.DisplayName(dim)
-		}
-		for _, node := range nodes {
-			item := template.Clone()
-			item.Node = node
-			item.DimensionKeys = []*ArtifactDimensionKey{}
-			for n := node; n != nil; n = n.Parent {
-				if n.CollectionDimension != nil && n.CollectionKey != nil {
-					item.DimensionKeys = append(item.DimensionKeys, &ArtifactDimensionKey{Dimension: n.CollectionDimension.Identifier, Key: *n.CollectionKey})
-				}
+		group.Go(func() error {
+			nodes, err := expandArtifactNode(ctx, template.Node, template.Workspace, bound.Selector.Dimensions, collectionKeys)
+			if err != nil {
+				return err
 			}
-			slices.Reverse(item.DimensionKeys)
-			item.DimensionNames = dimensionNames
-			result.Entries = append(result.Entries, item)
-		}
+			dimensionNames := map[string]string{}
+			pathDims := bound.FilterPath(template.Path).DimensionDefinitions()
+			for _, dim := range dims {
+				dimensionNames[dim.Identifier] = pathDims.DisplayName(dim)
+			}
+			for _, node := range nodes {
+				item := template.Clone()
+				item.Node = node
+				item.DimensionKeys = []*ArtifactDimensionKey{}
+				for n := node; n != nil; n = n.Parent {
+					if n.CollectionDimension != nil && n.CollectionKey != nil {
+						item.DimensionKeys = append(item.DimensionKeys, &ArtifactDimensionKey{Dimension: n.CollectionDimension.Identifier, Key: *n.CollectionKey})
+					}
+				}
+				slices.Reverse(item.DimensionKeys)
+				item.DimensionNames = dimensionNames
+				entries[i] = append(entries[i], item)
+			}
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	for _, items := range entries {
+		result.Entries = append(result.Entries, items...)
 	}
 	return result, nil
 }
@@ -306,54 +339,67 @@ func (a *Artifacts) selectsDimension(id string) bool {
 	return slices.ContainsFunc(a.Selector.DimensionAlternatives, func(group []string) bool { return slices.Contains(group, id) })
 }
 
-func expandArtifactNode(ctx context.Context, node *ModTreeNode, ws dagql.ObjectResult[*Workspace], filters []ArtifactDimensionFilter) ([]*ModTreeNode, error) {
+func expandArtifactNode(ctx context.Context, node *ModTreeNode, ws dagql.ObjectResult[*Workspace], filters []ArtifactDimensionFilter, collectionKeys artifactCollectionKeyFunc) ([]*ModTreeNode, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if node == nil {
 		return []*ModTreeNode{nil}, nil
 	}
-	parents, err := expandArtifactNode(ctx, node.Parent, ws, filters)
+	parents, err := expandArtifactNode(ctx, node.Parent, ws, filters, collectionKeys)
 	if err != nil {
 		return nil, err
 	}
 	var expanded []*ModTreeNode
-	for _, parent := range parents {
-		if node.CollectionDimension == nil || node.CollectionKey != nil {
-			if node.CollectionDimension != nil && slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
-				return filter.Dimension == node.CollectionDimension.Identifier && filter.Keys != nil && !slices.Contains(filter.Keys, *node.CollectionKey)
-			}) {
-				continue
-			}
+	if node.CollectionDimension == nil || node.CollectionKey != nil {
+		if node.CollectionDimension != nil && slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
+			return filter.Dimension == node.CollectionDimension.Identifier && filter.Keys != nil && !slices.Contains(filter.Keys, *node.CollectionKey)
+		}) {
+			return nil, nil
+		}
+		for _, parent := range parents {
 			copy := *node
 			copy.Parent = parent
 			expanded = append(expanded, &copy)
-			continue
 		}
-		artifact := &Artifact{Node: parent, Workspace: ws}
-		var value dagql.AnyResult
-		if err := artifact.Evaluate(ctx, &value); err != nil {
-			return nil, err
-		}
-		obj, ok := dagql.UnwrapAs[*ModuleObject](value)
-		if !ok {
-			return nil, fmt.Errorf("dimension %q returned %T instead of a collection", node.CollectionDimension.Identifier, value.Unwrap())
-		}
-		keys, err := obj.collectionKeys(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, key := range keys {
-			keep := true
-			for _, filter := range filters {
-				if filter.Dimension == node.CollectionDimension.Identifier && filter.Keys != nil && !slices.Contains(filter.Keys, key.text) {
-					keep = false
+		return expanded, nil
+	}
+
+	// Parent items are independent collection receivers. Preserve their order
+	// and each receiver's key order, even when they finish out of order.
+	children := make([][]*ModTreeNode, len(parents))
+	group, ctx := errgroup.WithContext(ctx)
+	for i, parent := range parents {
+		group.Go(func() error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			keys, err := collectionKeys(ctx, &Artifact{Node: parent, Workspace: ws})
+			if err != nil {
+				return fmt.Errorf("dimension %q: %w", node.CollectionDimension.Identifier, err)
+			}
+			for _, key := range keys {
+				keep := true
+				for _, filter := range filters {
+					if filter.Dimension == node.CollectionDimension.Identifier && filter.Keys != nil && !slices.Contains(filter.Keys, key.text) {
+						keep = false
+					}
+				}
+				if keep {
+					copy := *node
+					copy.Parent = parent
+					copy.CollectionKey = &key.text
+					children[i] = append(children[i], &copy)
 				}
 			}
-			if keep {
-				copy := *node
-				copy.Parent = parent
-				copy.CollectionKey = &key.text
-				expanded = append(expanded, &copy)
-			}
-		}
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	for _, nodes := range children {
+		expanded = append(expanded, nodes...)
 	}
 	return expanded, nil
 }
