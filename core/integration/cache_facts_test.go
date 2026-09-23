@@ -228,9 +228,12 @@ func (ProvisionSuite) TestImageDriverCacheFactsNeedEnable(ctx context.Context, t
 		require.NoError(t, err)
 		return eventsID
 	}
+	// events runs script where the fake cloud records what it received
+	// under eventsID.
 	events := func(eventsID, script string) string {
 		out, err := base.
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithWorkdir("/events/"+eventsID+"/v1").
 			WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{
 				Expect: dagger.ReturnTypeAny,
 			}).
@@ -240,12 +243,12 @@ func (ProvisionSuite) TestImageDriverCacheFactsNeedEnable(ctx context.Context, t
 	}
 
 	off := provision("registry.dagger.io/engine:dev-cache-facts-off", false)
-	require.Equal(t, "yes", events(off, "test -s /events/"+off+"/v1/traces.json && echo yes"), "the client's session telemetry reaches Cloud")
-	require.Equal(t, "none", events(off, "test -e /events/"+off+"/v1/logs.json.facts || echo none"), "the provisioned engine sent no cache fact")
+	require.Equal(t, "yes", events(off, "test -s traces.json && echo yes"), "the client's session telemetry reaches Cloud")
+	require.Equal(t, "none", events(off, "test -e logs.json.facts || echo none"), "the provisioned engine sent no cache fact")
 
 	on := provision("registry.dagger.io/engine:dev-cache-facts-on", true)
-	require.Equal(t, "yes", events(on, "test -s /events/"+on+"/v1/traces.json && echo yes"))
-	facts := events(on, "cat /events/"+on+"/v1/logs.json.facts")
+	require.Equal(t, "yes", events(on, "test -s traces.json && echo yes"))
+	facts := events(on, "cat logs.json.facts")
 	require.Contains(t, facts, string(cachefact.KindEngineStart))
 	require.Contains(t, facts, string(cachefact.KindEngineStop))
 }
