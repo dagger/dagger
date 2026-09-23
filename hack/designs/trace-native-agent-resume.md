@@ -1,10 +1,63 @@
 # Trace-native agent resume
 
-Status: proposed replacement for [#14193](https://github.com/dagger/dagger/pull/14193)
-and [#14197](https://github.com/dagger/dagger/pull/14197). This document proposes a
-design for a fresh PR or a small, explicitly staged replacement stack, grounded in
-the investigation below. Requirements and proposed behavior are distinguished from
-existing behavior; it does not describe functionality that has already landed.
+Status: implementation in progress on
+[`vito/dagger:trace-native-agent-resume`](https://github.com/vito/dagger/tree/trace-native-agent-resume),
+replacing [#14193](https://github.com/dagger/dagger/pull/14193) and
+[#14197](https://github.com/dagger/dagger/pull/14197). The checklist below records
+implemented and verified work. The numbered sections retain the approved design
+and historical investigation; they are requirements, not a blanket completion claim.
+
+## Implementation checkpoint
+
+Commit references below name the aggregate branch's commits.
+
+- [x] Canonical typed, revisioned agent/subscription control, creation publication,
+  retained capture leases, strict dependency checks, independent close witness,
+  and protected payload/control delivery (`4255c9a`, `51aa5a7`, `158b585`,
+  `0a9f24e`). Producer suites have focused race coverage.
+- [x] Canonical live roster and inert whole-graph restoration with frontend
+  application acknowledgment (`1813d56`, `0586867`, `b69faed`). Actual engine
+  tests pass for dormant/paused/failed/explicitly stopped agents, repeated failure
+  preservation, real notification filters/replacements/removals, and no synthetic
+  historical completion (`61e51c0`).
+- [x] Persistent verified bootstrap and original history import (`fd7210a`).
+  `TestArchiveSurvivesEngineRestart` stops the actual engine process and starts a
+  different process over the same state volume; authenticated bootstrap and a
+  continued recorded turn pass without fetching historical streams (`8cf9e4d`).
+  This passed again after archive composite identity (`de6e598`).
+- [x] Trace-authoritative CLI initialization without destination model/provider
+  lookup (`7dec76e`). Actual `TestCLIArchiveResumeIgnoresDestination` passes:
+  missing destination module, no destination provider configuration, continued
+  prompt turn, no implicit export, and untouched legacy JSON sentinel (`79a467b`).
+- [x] Immutable local/no-remote Git snapshot capture through blob-backed bundles
+  (`0cc698c`). Original source-session-and-checkout-disappearance acceptance passes
+  with frozen files and pending edits. Producer fresh-server tests passed four
+  root/subdirectory/overlay variants after source, remote and spool deletion,
+  plus existing export reuse; no new public API was required.
+- [x] Local JSON persistence/picker/restore and public `portableID`/`emitHistory`
+  removed (`4fbfde7`, `1176673`); obsolete TUI QA JSON mount removed (`df25dc7`).
+  Public GraphQL schema and Go, Python, TypeScript, Rust, PHP, Elixir SDKs generated
+  successfully (`4aa2649`); combined integration/CLI compilation passes.
+- [x] Same **trace ID across multiple source sessions**: archive identity now
+  includes source session and generation; plain ambiguous lookup fails explicitly,
+  selected bootstrap/lease APIs avoid mixing sessions (`de6e598`). Registration
+  failures cannot suppress live canonical telemetry (`f6bacfb`). Producer
+  ambiguity, pagination, reopening and lease tests passed under the race detector.
+- [ ] Apply the completed cursor-aware history retry importer and wire actual
+  callback cursors in CLI imports; targeted retry validation is the next slice.
+- [ ] Same **runtime session with agents created under multiple trace roots** is
+  still unsupported for strict restoration. Composite archive identity does not
+  solve this separate registry/graph/history problem; do not infer completeness.
+- [ ] Minimal CLI generation selection/listing for ambiguous trace IDs remains a
+  follow-up; generation selection is currently available through archive APIs.
+- [ ] Refresh remaining module SDK snapshots and final CLI reference help.
+  `go-sdk:generate` / `dang-sdk:generate` attempted broad generation but failed
+  resolving `modules/wolfi`'s remote dependency at an unpublished local commit
+  SHA. The seven public API/reference generators above succeeded; this failure
+  must not be represented as complete whole-repository generation.
+- [ ] Broader acceptance/performance work in §13 remains. No constant-time startup,
+  crash-completeness, Cloud finality parity, or end-to-end latency claim is made.
+  Internal recipe flattening remains; unsupported live dependencies fail capture.
 
 **One authoritative agent telemetry model, indexed for bootstrap-first restore.
 The trace owns the agents, their Workspaces, and their notification relationships;
