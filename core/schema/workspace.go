@@ -468,11 +468,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Writes workspace commits and changes to the calling client's host").
 			Doc("Write this workspace's commits and pending changes to a checkout on the calling client.",
-				"With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.",
-				"Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.").
+				"Path selects the destination; omitting it uses the calling client's current local workspace root, including when exporting a snapshot or committed workspace. Exported file paths are relative to the workspace root regardless of its working directory. This writes only to the client making the call, never the source's client.",
+				"A live workspace exported to its own checkout applies only its overlay edits, without capturing the whole checkout. This also applies with an explicit path. Pass from with the same live base to apply only changes since that overlay state.",
+				"Other exports integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. Live inputs are snapshotted automatically; capturing untracked source files requires interactive approval. Stable inputs retain their baseline. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.").
 			Args(
-				dagql.Arg("path").Doc("Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root."),
-				dagql.Arg("from").Doc("Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace."),
+				dagql.Arg("path").Doc("Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to use the calling client's current local workspace root."),
+				dagql.Arg("from").Doc("Earlier workspace state to compare against. For Git integration, live inputs are snapshotted at export time; use a snapshot to retain the baseline of a previous export."),
 			),
 		dagql.Func("configRead", s.configRead).
 			View(AfterVersion("v1.0.0-0")).
@@ -2436,21 +2437,12 @@ func workspacePathInOrLeadingToCwd(p, cwd string) bool {
 	return p == cwd || strings.HasPrefix(p, cwd+"/") || strings.HasPrefix(cwd, p+"/")
 }
 
-func (s *workspaceSchema) export(
+func (s *workspaceSchema) exportOverlay(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceExportArgs,
 ) (core.Void, error) {
-	if args.Path != "" {
-		defer invalidateExportedWorkspace(ctx)
-		return core.Void{}, s.saveWorkspace(ctx, parent, args)
-	}
 	ws := parent.Self()
-	hostPath, err := ws.ExportHostPath()
-	if err != nil {
-		return core.Void{}, fmt.Errorf("%w; export frozen workspaces with an explicit path", err)
-	}
-
 	changes, ok := ws.OverlayChanges()
 	wrote := false
 	defer func() {
@@ -2506,7 +2498,7 @@ func (s *workspaceSchema) export(
 	// effect on the calling client, like Directory.export — never on the
 	// client that created the workspace (dagger/dagger#14007).
 	wrote = true // Filesync can partially write before returning an error.
-	if err := changes.Self().Export(ctx, hostPath); err != nil {
+	if err := changes.Self().Export(ctx, args.Path); err != nil {
 		return core.Void{}, err
 	}
 	return core.Void{}, nil

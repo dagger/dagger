@@ -8,9 +8,18 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// semanticDiff emits additions as SDL and removals/replacements as comments:
-// GraphQL extensions cannot remove or replace existing declarations.
+// semanticDiff is the CLI's annotated after-SDL summary. PRs also include the
+// selected before/after fragments as a collapsed line diff.
 func semanticDiff(old, new *ast.SchemaDocument) string {
+	return compareSchemas(old, new).summary
+}
+
+type schemaDiff struct {
+	summary string
+	details string
+}
+
+func compareSchemas(old, new *ast.SchemaDocument) schemaDiff {
 	extensionOnly := map[string]bool{}
 	for _, ext := range new.Extensions {
 		extensionOnly[ext.Name] = new.Definitions.ForName(ext.Name) == nil
@@ -19,36 +28,25 @@ func semanticDiff(old, new *ast.SchemaDocument) string {
 	mergeExtensions(new)
 	canonicalOld := canonicalize(old)
 	canonicalNew := canonicalize(new)
-	var out strings.Builder
-	emit := func(label, s string) {
-		if s == "" {
-			return
-		}
-		if label != "" {
-			out.WriteString("# " + label + "\n")
-			for line := range strings.SplitSeq(strings.TrimSpace(s), "\n") {
-				out.WriteString("# " + line + "\n")
-			}
-		} else {
-			out.WriteString(s)
-		}
-		out.WriteString("\n")
-	}
-	compare := func(before, after string) {
-		switch {
-		case before == after:
-		case before == "":
-			emit("", after)
-		case after == "":
-			emit("Removed:", before)
-		default:
-			emit("Changed (before):", before)
-			emit("Changed (after):", after)
+	var summary, details strings.Builder
+	emit := func(s, before, after string) {
+		if s != "" {
+			summary.WriteString(strings.TrimRight(s, "\n") + "\n\n")
+			details.WriteString(lineDiff(before, after) + "\n")
 		}
 	}
-	if format(&ast.SchemaDocument{Schema: canonicalOld.Schema}) != format(&ast.SchemaDocument{Schema: canonicalNew.Schema}) {
-		compare(format(&ast.SchemaDocument{Schema: old.Schema}), format(&ast.SchemaDocument{Schema: new.Schema}))
+	compare := func(before, after, canonicalBefore, canonicalAfter string) {
+		if canonicalBefore != canonicalAfter {
+			emit(annotatedChange(before, after), canonicalBefore, canonicalAfter)
+		}
 	}
+	renderSchema := func(defs ast.SchemaDefinitionList) string {
+		if len(defs) > 0 && len(defs[0].OperationTypes) == 0 {
+			return format(&ast.SchemaDocument{SchemaExtension: defs})
+		}
+		return format(&ast.SchemaDocument{Schema: defs})
+	}
+	compare(renderSchema(old.Schema), renderSchema(new.Schema), renderSchema(canonicalOld.Schema), renderSchema(canonicalNew.Schema))
 	for _, name := range names(old.Directives, new.Directives, func(d *ast.DirectiveDefinition) string { return d.Name }) {
 		render := func(d *ast.DirectiveDefinition) string {
 			if d == nil {
@@ -56,88 +54,83 @@ func semanticDiff(old, new *ast.SchemaDocument) string {
 			}
 			return format(&ast.SchemaDocument{Directives: ast.DirectiveDefinitionList{d}})
 		}
-		if render(canonicalOld.Directives.ForName(name)) != render(canonicalNew.Directives.ForName(name)) {
-			compare(render(old.Directives.ForName(name)), render(new.Directives.ForName(name)))
-		}
+		compare(render(old.Directives.ForName(name)), render(new.Directives.ForName(name)),
+			render(canonicalOld.Directives.ForName(name)), render(canonicalNew.Directives.ForName(name)))
 	}
 	for _, name := range names(old.Definitions, new.Definitions, func(d *ast.Definition) string { return d.Name }) {
 		before, after := old.Definitions.ForName(name), new.Definitions.ForName(name)
-		if before == nil || after == nil {
-			compare(renderDefinition(before, false), renderDefinition(after, extensionOnly[name]))
-			continue
-		}
 		canonicalBefore, canonicalAfter := canonicalOld.Definitions.ForName(name), canonicalNew.Definitions.ForName(name)
-		// Kind, type-level directives, and descriptions cannot be replaced with
-		// an extension. Show the complete replacement when these change.
-		header := func(d *ast.Definition) string {
-			return renderDefinition(&ast.Definition{Kind: d.Kind, Name: d.Name, Description: d.Description, Directives: d.Directives}, false)
-		}
-		if header(canonicalBefore) != header(canonicalAfter) {
-			compare(renderDefinition(before, false), renderDefinition(after, false))
+		if before == nil || after == nil {
+			compare(renderDefinition(before, false), renderDefinition(after, extensionOnly[name]),
+				renderDefinition(canonicalBefore, false), renderDefinition(canonicalAfter, extensionOnly[name]))
 			continue
 		}
-		added := &ast.Definition{Kind: after.Kind, Name: name}
-		removed := &ast.Definition{Kind: before.Kind, Name: name}
-		changedBefore := &ast.Definition{Kind: before.Kind, Name: name}
-		changedAfter := &ast.Definition{Kind: after.Kind, Name: name}
+		// Select changed members only, even when the type's own metadata changes.
+		// Both sides use the same selection so detailed context is emitted once.
+		a, b := *before, *after
+		a.Fields, b.Fields = nil, nil
+		a.EnumValues, b.EnumValues = nil, nil
+		headerChanged := definitionHeader(canonicalBefore) != definitionHeader(canonicalAfter)
+		if !headerChanged {
+			a.Description, b.Description = "", ""
+			a.Directives, b.Directives = nil, nil
+		}
+		b.Interfaces, a.Interfaces = difference(before.Interfaces, after.Interfaces)
+		b.Types, a.Types = difference(before.Types, after.Types)
+		var members strings.Builder
 		for _, field := range names(before.Fields, after.Fields, func(f *ast.FieldDefinition) string { return f.Name }) {
-			a, b := before.Fields.ForName(field), after.Fields.ForName(field)
-			switch {
-			case a == nil:
-				added.Fields = append(added.Fields, b)
-			case b == nil:
-				removed.Fields = append(removed.Fields, a)
-			default:
-				render := func(f *ast.FieldDefinition) string {
-					return renderDefinition(&ast.Definition{Kind: after.Kind, Name: name, Fields: ast.FieldList{f}}, true)
-				}
-				if render(canonicalBefore.Fields.ForName(field)) != render(canonicalAfter.Fields.ForName(field)) {
-					changedAfter.Fields = append(changedAfter.Fields, b)
-				}
+			oldField, newField := before.Fields.ForName(field), after.Fields.ForName(field)
+			if renderField(canonicalBefore.Fields.ForName(field)) == renderField(canonicalAfter.Fields.ForName(field)) {
+				continue
 			}
+			if oldField != nil {
+				a.Fields = append(a.Fields, oldField)
+			}
+			if newField != nil {
+				b.Fields = append(b.Fields, newField)
+			}
+			members.WriteString(indent(annotatedField(oldField, newField)))
 		}
 		for _, value := range names(before.EnumValues, after.EnumValues, func(v *ast.EnumValueDefinition) string { return v.Name }) {
-			a, b := before.EnumValues.ForName(value), after.EnumValues.ForName(value)
-			switch {
-			case a == nil:
-				added.EnumValues = append(added.EnumValues, b)
-			case b == nil:
-				removed.EnumValues = append(removed.EnumValues, a)
-			default:
-				render := func(v *ast.EnumValueDefinition) string {
-					return renderDefinition(&ast.Definition{Kind: ast.Enum, Name: name, EnumValues: ast.EnumValueList{v}}, true)
-				}
-				if render(canonicalBefore.EnumValues.ForName(value)) != render(canonicalAfter.EnumValues.ForName(value)) {
-					changedAfter.EnumValues = append(changedAfter.EnumValues, b)
-				}
+			oldValue, newValue := before.EnumValues.ForName(value), after.EnumValues.ForName(value)
+			if renderEnumValue(canonicalBefore.EnumValues.ForName(value)) == renderEnumValue(canonicalAfter.EnumValues.ForName(value)) {
+				continue
 			}
-		}
-		for _, field := range before.Fields {
-			if changedAfter.Fields.ForName(field.Name) != nil {
-				changedBefore.Fields = append(changedBefore.Fields, field)
+			if oldValue != nil {
+				a.EnumValues = append(a.EnumValues, oldValue)
 			}
-		}
-		for _, value := range before.EnumValues {
-			if changedAfter.EnumValues.ForName(value.Name) != nil {
-				changedBefore.EnumValues = append(changedBefore.EnumValues, value)
+			if newValue != nil {
+				b.EnumValues = append(b.EnumValues, newValue)
 			}
+			members.WriteString(indent(annotatedChange(renderEnumValue(oldValue), renderEnumValue(newValue))))
 		}
-		added.Interfaces, removed.Interfaces = difference(before.Interfaces, after.Interfaces)
-		added.Types, removed.Types = difference(before.Types, after.Types)
-		renderChange := func(d *ast.Definition) string {
-			if len(d.Fields)+len(d.EnumValues)+len(d.Interfaces)+len(d.Types) == 0 {
-				return ""
+		if !headerChanged && members.Len() == 0 && len(a.Interfaces)+len(b.Interfaces)+len(a.Types)+len(b.Types) == 0 {
+			continue
+		}
+		fragment := renderChangedDefinition(&a, &b, members.String(), headerChanged)
+		sharedBody := hasMemberBody(a.Kind) && hasMemberBody(b.Kind) &&
+			len(a.Fields)+len(b.Fields)+len(a.EnumValues)+len(b.EnumValues) > 0
+		selected := func(d *ast.Definition) string {
+			doc := canonicalize(&ast.SchemaDocument{Definitions: ast.DefinitionList{d}})
+			s := renderDefinition(doc.Definitions[0], !headerChanged)
+			// Keep the enclosing braces as shared diff context when all selected
+			// members are added or removed. Empty fragments are not full schemas.
+			if sharedBody && len(d.Fields)+len(d.EnumValues) == 0 {
+				s = strings.TrimRight(s, "\n") + " {\n}\n"
 			}
-			return renderDefinition(d, true)
+			return s
 		}
-		emit("", renderChange(added))
-		emit("Removed:", renderChange(removed))
-		if renderChange(changedBefore) != "" {
-			emit("Changed (before):", renderChange(changedBefore))
-			emit("Changed (after):", renderChange(changedAfter))
-		}
+		emit(fragment, selected(&a), selected(&b))
 	}
-	return out.String()
+	return schemaDiff{summary: summary.String(), details: details.String()}
+}
+
+func hasMemberBody(kind ast.DefinitionKind) bool {
+	return kind == ast.Object || kind == ast.Interface || kind == ast.InputObject || kind == ast.Enum
+}
+
+func definitionHeader(d *ast.Definition) string {
+	return renderDefinition(&ast.Definition{Kind: d.Kind, Name: d.Name, Description: d.Description, Directives: d.Directives}, false)
 }
 
 func renderDefinition(d *ast.Definition, extension bool) string {

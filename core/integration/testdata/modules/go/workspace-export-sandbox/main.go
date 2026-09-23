@@ -3,19 +3,24 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"dagger/test/internal/dagger"
 )
 
 type Test struct{}
 
-// TryExport stages a file on the received workspace and exports it from
-// inside the module sandbox.
+// TryExport verifies that an inherited workspace does not supply a default
+// export destination in a module sandbox without its own local checkout.
 func (m *Test) TryExport(ctx context.Context, workspace *dagger.Workspace) (string, error) {
-	if err := workspace.WithNewFile("sneaky.txt", "written from inside a module").Export(ctx); err != nil {
+	err := workspace.WithNewFile("sneaky.txt", "written from inside a module").Export(ctx)
+	if err == nil {
+		return "", fmt.Errorf("expected export to refuse a default checkout absent from the module sandbox")
+	}
+	if !strings.Contains(err.Error(), "export destination") {
 		return "", err
 	}
-	return "exported", nil
+	return "refused", nil
 }
 
 // TryExportTo exercises integration with an engine-side source. Receiving a

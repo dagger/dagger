@@ -17147,27 +17147,34 @@ class Workspace(Type):
         """Write this workspace's commits and pending changes to a checkout on
         the calling client.
 
-        With path, accept a frozen source, integrate divergent commits by
-        cherry-picking, preserve unrelated checkout edits, and refuse
-        conflicts. The source is unchanged. Pass from to save only work since
-        an earlier source value, including previously saved pending edits that
-        are now committed.
-
-        Without path, apply a local workspace's overlay changes at its host
-        root. Pass from to apply only changes since an earlier local workspace
-        state. Export paths are relative to the workspace root regardless of
-        its working directory. Like Directory.export, this writes only to the
+        Path selects the destination; omitting it uses the calling client's
+        current local workspace root, including when exporting a snapshot or
+        committed workspace. Exported file paths are relative to the workspace
+        root regardless of its working directory. This writes only to the
         client making the call, never the source's client.
+
+        A live workspace exported to its own checkout applies only its overlay
+        edits, without capturing the whole checkout. This also applies with an
+        explicit path. Pass from with the same live base to apply only changes
+        since that overlay state.
+
+        Other exports integrate divergent commits by cherry-picking, preserve
+        unrelated checkout edits, and refuse conflicts. Live inputs are
+        snapshotted automatically; capturing untracked source files requires
+        interactive approval. Stable inputs retain their baseline. Pass from
+        to save only work since an earlier source value, including previously
+        saved pending edits that are now committed.
 
         Parameters
         ----------
         path:
             Destination checkout path on the calling client. Relative paths
-            start at the client's working directory. Omit to apply a local
-            workspace's overlay changes at its host root.
+            start at the client's working directory. Omit to use the calling
+            client's current local workspace root.
         from_:
-            Earlier workspace state to compare against. With path, this must
-            be a previously exported frozen source workspace.
+            Earlier workspace state to compare against. For Git integration,
+            live inputs are snapshotted at export time; use a snapshot to
+            retain the baseline of a previous export.
 
         Returns
         -------
