@@ -34,6 +34,7 @@ import (
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -46,11 +47,12 @@ type cloudReceiver struct {
 	hold    bool
 	release chan struct{}
 
-	mu          sync.Mutex
-	auths       []string
-	spanNames   []string
-	logBodies   []string
-	metricNames []string
+	mu             sync.Mutex
+	auths          []string
+	spanNames      []string
+	logBodies      []string
+	payloadDigests []string
+	metricNames    []string
 }
 
 func newCloudReceiver(t *testing.T, hold bool) *cloudReceiver {
@@ -103,6 +105,11 @@ func (r *cloudReceiver) serve(w http.ResponseWriter, req *http.Request) {
 			for _, sl := range rl.GetScopeLogs() {
 				for _, rec := range sl.GetLogRecords() {
 					r.logBodies = append(r.logBodies, rec.GetBody().GetStringValue())
+					for _, kv := range rec.GetAttributes() {
+						if kv.GetKey() == telemetryattrs.CallPayloadDigestAttr {
+							r.payloadDigests = append(r.payloadDigests, kv.GetValue().GetStringValue())
+						}
+					}
 				}
 			}
 		}
@@ -586,4 +593,70 @@ func TestCloudRefreshGateWaitsForInflight(t *testing.T) {
 	defer cancel()
 	require.ErrorIs(t, stuck.close(ctx), context.DeadlineExceeded)
 	stuck.exit()
+}
+
+// A call payload the engine emitted and a nested CLI then posted back reaches
+// Cloud once, as it reaches the client once: the client routing suppresses a
+// payload it already delivered, and so does the Cloud path.
+func TestCallPayloadReachesCloudOnce(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	receiver := newCloudReceiver(t, false)
+	srv := &Server{}
+	sess, root := newCloudTestSession(t, srv, &engine.ClientMetadata{
+		CloudAuth:               basicCloudAuth("dag_test_token"),
+		CloudURL:                receiver.URL,
+		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+	})
+	sess.state.Store(sessionStateInitialized)
+	srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
+	const digest = "xxh3:cloud-payload-once"
+
+	// The engine emits the payload once.
+	emitCtx := engine.ContextWithClientMetadata(ctx, root.clientMetadata)
+	emitCtx = telemetry.WithLoggerProvider(emitCtx, sess.loggerProvider)
+	var rec otellog.Record
+	rec.SetTimestamp(time.Now())
+	rec.SetBody(otellog.BytesValue([]byte("payload")))
+	rec.AddAttributes(
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		otellog.String(telemetryattrs.CallPayloadDigestAttr, digest),
+	)
+	telemetry.Logger(emitCtx, "test").Emit(emitCtx, rec)
+	require.NoError(t, sess.FlushTelemetry(ctx, "test"))
+
+	// A nested CLI posts the same payload back.
+	body, err := proto.Marshal(&collogspb.ExportLogsServiceRequest{ResourceLogs: []*otlplogsv1.ResourceLogs{{
+		Resource: telemetry.ResourcePtrToPB(resource.NewSchemaless(attribute.String("service.name", "nested-cli"))),
+		ScopeLogs: []*otlplogsv1.ScopeLogs{{LogRecords: []*otlplogsv1.LogRecord{{
+			TimeUnixNano: uint64(time.Now().UnixNano()),
+			Body:         &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: []byte("payload")}},
+			Attributes: []*otlpcommonv1.KeyValue{
+				{Key: telemetry.ContentTypeAttr, Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: telemetryattrs.CallPayloadContentType}}},
+				{Key: telemetryattrs.CallPayloadDigestAttr, Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: digest}}},
+			},
+		}}}},
+	}}})
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	req.Header.Set("X-Dagger-Session-ID", sess.sessionID)
+	req.Header.Set("X-Dagger-Client-ID", root.clientID)
+	resp := httptest.NewRecorder()
+	srv.telemetryPubSub.ServeHTTP(resp, req)
+	require.Equal(t, http.StatusCreated, resp.Code, resp.Body.String())
+	require.NoError(t, sess.FlushTelemetry(ctx, "test"))
+
+	db, err := srv.clientDBs.Open(ctx, root.clientID)
+	require.NoError(t, err)
+	logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	require.Len(t, logs, 1, "the client gets the payload once")
+
+	sess.flushSessionCloudTelemetry(ctx)
+	require.NoError(t, sess.shutdownTelemetry(ctx))
+	receiver.mu.Lock()
+	defer receiver.mu.Unlock()
+	require.Equal(t, []string{digest}, receiver.payloadDigests, "Cloud gets the payload once")
 }

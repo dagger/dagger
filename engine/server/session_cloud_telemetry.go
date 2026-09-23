@@ -423,6 +423,37 @@ func (sess *daggerSession) postedMetricExporters(client sdkmetric.Exporter) []sd
 	return []sdkmetric.Exporter{client, enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics}}
 }
 
+// cloudPayloadOnce passes each call payload to the session's Cloud log
+// processor once, by digest. The client routing writes a payload at most
+// once per destination; Cloud is one destination, reached by the engine's own
+// emissions, by records posted from the session's containers (a nested CLI
+// re-posts the payloads it received) and by a scale-out engine's stream.
+type cloudPayloadOnce struct {
+	sdklog.Processor
+
+	mu   sync.Mutex
+	seen map[string]struct{}
+}
+
+func newCloudPayloadOnce(next sdklog.Processor) *cloudPayloadOnce {
+	return &cloudPayloadOnce{Processor: next, seen: map[string]struct{}{}}
+}
+
+func (p *cloudPayloadOnce) OnEmit(ctx context.Context, rec *sdklog.Record) error {
+	if rec != nil {
+		if digest, payload, err := classifyCallPayloadRecord(*rec); err == nil && payload && digest != "" {
+			p.mu.Lock()
+			_, sent := p.seen[digest]
+			p.seen[digest] = struct{}{}
+			p.mu.Unlock()
+			if sent {
+				return nil
+			}
+		}
+	}
+	return p.Processor.OnEmit(ctx, rec)
+}
+
 // sessionCloudSpanForwarder and sessionCloudLogForwarder feed the session's
 // Cloud processors, which the session shuts down itself.
 type sessionCloudSpanForwarder struct{ telemetry.SpanForwarder }
