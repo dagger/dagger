@@ -116,6 +116,51 @@ func TestRestoreNotifySuppressesHistoryButKeepsFutureEdges(t *testing.T) {
 	require.Error(t, registry.RestoreNotify(ctx, worker, chief, nil), "fresh dormant entries are not restored provenance")
 }
 
+func TestCloseControlWaitsForProducersAndPreservesCause(t *testing.T) {
+	rec, ctx := stateRecorderCtx(t)
+	rt := testRuntime(t, ctx)
+	registry := NewAgentRuntimes()
+	registry.entries[rt.key] = rt
+	rt.started = true
+	loopCtx, cancel := context.WithCancelCause(context.Background())
+	rt.cancel = cancel
+	rt.testTransition(func() { rt.paused = true })
+	closing, timeout := context.WithTimeout(t.Context(), 5*time.Millisecond)
+	defer timeout()
+	cause := errors.New("session transport closed")
+	require.Error(t, registry.KillAll(closing, cause))
+	require.ErrorIs(t, context.Cause(loopCtx), cause, "finalization retains teardown's original cancellation cause")
+	require.False(t, rt.controlClosed, "failed stop cannot fix an archive cut or close its publisher")
+	select {
+	case <-rt.control.done:
+		t.Fatal("capture publisher closed before producer quiescence")
+	default:
+	}
+	rt.testTransition(func() { rt.done = true }) // simulate loop's completed unwind
+	expect, err := registry.CloseControl(t.Context())
+	require.NoError(t, err)
+	lastRevision := rt.controlRevision
+	require.Error(t, rt.Resume(t.Context()))
+	require.Error(t, rt.Pause())
+	require.Error(t, rt.Interrupt())
+	require.NoError(t, rt.Stop(t.Context(), true, nil, AgentStopExplicit))
+	require.Equal(t, lastRevision, rt.controlRevision)
+	again, err := registry.CloseControl(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, expect, again, "successful fixed cut is idempotent")
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	var idx agentcontrol.Index
+	for _, record := range rec.control {
+		_, err := idx.ApplyRecord(record)
+		require.NoError(t, err)
+	}
+	require.NoError(t, idx.Verify(expect[""]))
+	state, err := idx.Agents()[0].RestoreState()
+	require.NoError(t, err)
+	require.Equal(t, "PAUSED", state, "capture pre-teardown facts before cancellation rewrites them")
+}
+
 func TestDiscardRestoreKeepsRemovalWitness(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
 	ctx = testAgentContext(t, ctx, "restored", "restored")
