@@ -142,11 +142,21 @@ func (sess *daggerSession) stopCloudTokenRefresh(ctx context.Context) {
 	if sess.cloudRefresh == nil {
 		return
 	}
-	// Stopping is unconditional; only the wait for a refresh in flight is
-	// bounded.
+	// Stopping is unconditional. The wait for a file operation in flight
+	// has its own bound, independent of the Cloud budget: a file operation
+	// takes milliseconds, and the attachables must not close under one
+	// even when a hanging Cloud has spent the budget.
 	sess.cloudRefresh.stop()
-	sess.cloudBound.bounded(ctx, "wait for token refresh", false, sess.cloudRefresh.wait)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cloudRefreshFileOpWait)
+	defer cancel()
+	if err := sess.cloudRefresh.wait(ctx); err != nil {
+		slog.Warn("credentials file operation still in flight as the attachables close", "session", sess.sessionID, "error", err)
+	}
 }
+
+// cloudRefreshFileOpWait bounds how long the main client's shutdown waits for
+// a credentials file operation in flight before closing the attachables.
+const cloudRefreshFileOpWait = time.Second
 
 // refreshSessionCloudToken refreshes the main client's expired OAuth token
 // from the credentials file on the client's host, and writes the refreshed

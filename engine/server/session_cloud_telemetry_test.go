@@ -792,3 +792,32 @@ func TestCloudMetricQueueShutdownIsBounded(t *testing.T) {
 		t.Fatal("the export in flight was not cancelled: the worker still waits on Cloud")
 	}
 }
+
+// Stopping refreshes waits for a file operation in flight even when the
+// Cloud budget is spent, within its own bound.
+func TestStopCloudTokenRefreshWaitsDespiteSpentBudget(t *testing.T) {
+	t.Parallel()
+	sess := &daggerSession{
+		sessionID:    "session",
+		cloudRefresh: &cloudRefreshGate{},
+		cloudBound:   cloudFlushBound{sessionID: "session", timeout: time.Millisecond, budget: &cloudShutdownBudget{}},
+	}
+	stopBudget := sess.startCloudShutdownBudget()
+	defer stopBudget()
+	time.Sleep(10 * time.Millisecond) // the budget is spent
+	require.True(t, sess.cloudRefresh.enter())
+	finished := make(chan struct{})
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		sess.cloudRefresh.exit()
+		close(finished)
+	}()
+	start := time.Now()
+	sess.stopCloudTokenRefresh(t.Context())
+	select {
+	case <-finished:
+	default:
+		t.Fatal("stopped waiting before the file operation finished")
+	}
+	require.Less(t, time.Since(start), cloudRefreshFileOpWait)
+}
