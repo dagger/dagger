@@ -2055,6 +2055,65 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		With(gitUserConfig).
+		WithWorkdir("/repos/log").
+		WithExec([]string{"sh", "-ec", `
+			git init
+			echo old > old.txt
+			git add . && git commit -m root
+			for i in $(seq 1 10); do git commit --allow-empty -m "commit$i"; done
+			git branch base HEAD~5
+			cp -a /repos/log /repos/base
+		`})
+	root, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~10"}).Stdout(ctx)
+	require.NoError(t, err)
+	root = strings.TrimSpace(root)
+	svc := ctr.WithExposedPort(9418).
+		WithDefaultArgs([]string{"git", "daemon", "--export-all", "--base-path=/repos"}).AsService()
+	host, err := svc.Hostname(ctx)
+	require.NoError(t, err)
+	_, err = svc.Start(ctx)
+	require.NoError(t, err)
+	defer svc.Stop(ctx)
+	repo := c.Git("git://"+host+"/log", dagger.GitOpts{ExperimentalServiceHost: svc})
+
+	commits, err := repo.Head().Log(ctx, dagger.GitRefLogOpts{Limit: 3})
+	require.NoError(t, err)
+	require.Len(t, commits, 3)
+	for i, commit := range commits {
+		message, err := commit.Message(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("commit%d", 10-i), message)
+	}
+	// Filtering must deepen past the bounded log: only the root touched this
+	// path. Returning an empty list from the shallow mirror would be wrong.
+	commits, err = repo.Head().Log(ctx, dagger.GitRefLogOpts{Limit: 3, Paths: []string{"old.txt"}})
+	require.NoError(t, err)
+	require.Len(t, commits, 1)
+	sha, err := commits[0].Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, root, sha)
+
+	// A separate cold mirror exercises base exclusions without relying on the
+	// filtered call's full fetch. The excluded ref is five generations ahead:
+	// depth-three fetches would miss their ancestry and return extra commits.
+	baseRepo := c.Git("git://"+host+"/base", dagger.GitOpts{ExperimentalServiceHost: svc})
+	commits, err = baseRepo.Branch("base").Log(ctx, dagger.GitRefLogOpts{Limit: 3, Base: baseRepo.Head()})
+	require.NoError(t, err)
+	require.Empty(t, commits)
+
+	commits, err = baseRepo.Head().Log(ctx, dagger.GitRefLogOpts{Limit: 20, Base: baseRepo.Branch("base")})
+	require.NoError(t, err)
+	require.Len(t, commits, 5)
+	message, err := commits[4].Message(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "commit6", message)
+}
+
 func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
