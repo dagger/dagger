@@ -885,8 +885,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		spanProcessors++
 	}
 	if sess.cloudLogs != nil {
-		processor := boundedCloudLogProcessor{Processor: newCloudPayloadOnce(sdklog.NewBatchProcessor(sess.cloudLogs,
-			sdklog.WithExportInterval(telemetry.NearlyImmediate))), bound: bound}
+		processor := boundedCloudLogProcessor{Processor: newCloudPayloadOnce(newCloudLogPipeline(sess.cloudLogs)), bound: bound}
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(processor))
 		sess.cloudLogProcessor = processor
 		sess.cloudFlushers = append(sess.cloudFlushers, processor.flush)

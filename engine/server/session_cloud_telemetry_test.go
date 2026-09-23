@@ -284,6 +284,10 @@ func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 	})
 	emitCloudTestTelemetry(t, sess, root)
+	// A call payload too: its path waits on Cloud no longer than the rest.
+	payloadCtx := engine.ContextWithClientMetadata(ctx, root.clientMetadata)
+	payloadCtx = telemetry.WithLoggerProvider(payloadCtx, sess.loggerProvider)
+	telemetry.Logger(payloadCtx, "test").Emit(payloadCtx, cloudPayloadRecordValue("xxh3:bounded"))
 
 	// serveShutdown's Cloud steps for the main client, in order.
 	start := time.Now()
@@ -739,6 +743,139 @@ func TestCallPayloadReachesCloudOnce(t *testing.T) {
 	receiver.mu.Lock()
 	defer receiver.mu.Unlock()
 	require.Equal(t, []string{digest}, receiver.payloadDigests, "Cloud gets the payload once")
+}
+
+// cloudLogTestExporter records what reaches it. Until open is closed its
+// exports wait; while failPayloads is positive, an export carrying a call
+// payload fails and decrements it.
+type cloudLogTestExporter struct {
+	open chan struct{}
+
+	mu           sync.Mutex
+	failPayloads int
+	payloads     []string
+	others       int
+}
+
+func newCloudLogTestExporter(gated bool) *cloudLogTestExporter {
+	e := &cloudLogTestExporter{open: make(chan struct{})}
+	if !gated {
+		close(e.open)
+	}
+	return e
+}
+
+func (e *cloudLogTestExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	select {
+	case <-e.open:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var digests []string
+	for _, rec := range records {
+		if digest, payload, err := classifyCallPayloadRecord(rec); err == nil && payload {
+			digests = append(digests, digest)
+		} else {
+			e.others++
+		}
+	}
+	if len(digests) > 0 && e.failPayloads > 0 {
+		e.failPayloads--
+		return fmt.Errorf("cloud unavailable")
+	}
+	e.payloads = append(e.payloads, digests...)
+	return nil
+}
+
+func (e *cloudLogTestExporter) Shutdown(context.Context) error   { return nil }
+func (e *cloudLogTestExporter) ForceFlush(context.Context) error { return nil }
+
+func (e *cloudLogTestExporter) received() (payloads []string, others int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]string(nil), e.payloads...), e.others
+}
+
+// cloudTestLogger emits through a provider whose one processor is p, so the
+// records carry their attributes as the session's do.
+func cloudTestLogger(p sdklog.Processor) otellog.Logger {
+	return sdklog.NewLoggerProvider(sdklog.WithProcessor(p)).Logger("test")
+}
+
+// cloudPayloadRecordValue is a call payload as an API record, to emit.
+func cloudPayloadRecordValue(digest string) otellog.Record {
+	var rec otellog.Record
+	rec.SetTimestamp(time.Now())
+	rec.SetBody(otellog.BytesValue([]byte("payload " + digest)))
+	rec.AddAttributes(
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		otellog.String(telemetryattrs.CallPayloadDigestAttr, digest),
+	)
+	return rec
+}
+
+func cloudOtherRecord(i int) otellog.Record {
+	var rec otellog.Record
+	rec.SetTimestamp(time.Now())
+	rec.SetBody(otellog.StringValue(fmt.Sprintf("exec output %d", i)))
+	return rec
+}
+
+// A call payload reaches Cloud through a burst of other records larger than
+// the batch processor's queue, which drops its oldest record when full, and a
+// repeated payload is sent once.
+func TestCloudLogPipelineKeepsPayloadsThroughBurst(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	exporter := newCloudLogTestExporter(true)
+	pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
+	logger := cloudTestLogger(pipeline)
+
+	// The batch processor hands at most three batches of 512 records to its
+	// exporter (one exporting, one buffered, one waiting) while exports wait;
+	// the payload queues behind them, and the burst then overflows the queue
+	// of 2048.
+	const lead, burst = 2000, 5000
+	for i := range lead {
+		logger.Emit(ctx, cloudOtherRecord(i))
+	}
+	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:first"))
+	for i := range burst {
+		logger.Emit(ctx, cloudOtherRecord(lead+i))
+	}
+	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:second"))
+	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:first"))
+	close(exporter.open)
+
+	require.NoError(t, pipeline.ForceFlush(ctx))
+	require.NoError(t, pipeline.Shutdown(ctx))
+	payloads, others := exporter.received()
+	require.Less(t, others, lead+burst, "the burst overflowed the batch queue")
+	require.ElementsMatch(t, []string{"xxh3:first", "xxh3:second"}, payloads, "each payload arrives once")
+}
+
+// A call payload whose export fails is retried until Cloud takes it, once.
+func TestCloudLogPipelineRetriesPayloads(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	exporter := newCloudLogTestExporter(false)
+	exporter.failPayloads = 3
+	pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
+	logger := cloudTestLogger(pipeline)
+
+	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:retried"))
+	require.Eventually(t, func() bool {
+		payloads, _ := exporter.received()
+		return len(payloads) > 0
+	}, 10*time.Second, 10*time.Millisecond, "the payload lands once Cloud recovers")
+	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:retried"))
+	require.NoError(t, pipeline.Shutdown(ctx))
+	payloads, _ := exporter.received()
+	require.Equal(t, []string{"xxh3:retried"}, payloads)
 }
 
 func histogramMetrics(counts []uint64, bounds []float64) *metricdata.ResourceMetrics {
