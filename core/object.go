@@ -483,12 +483,34 @@ func (obj *ModuleObject) AttachDependencyResults(
 	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if obj == nil || len(obj.Fields) == 0 {
+	if obj == nil {
 		return nil, nil
 	}
 
+	owned := make([]dagql.AnyResult, 0, 1+len(obj.Fields))
+	if obj.Module.Self() != nil {
+		// The object's class resolves its fields against this module, and its
+		// provider scopes it for every call. The object must own it: the
+		// module was loaded by some session, and the object outlives that
+		// session in the cache. This holds for empty objects too, and it is
+		// acyclic because a module owns only its source, typedefs, runtime,
+		// and dependency modules.
+		attached, err := attach(obj.Module)
+		if err != nil {
+			return nil, fmt.Errorf("attach module object module: %w", err)
+		}
+		module, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach module object module: unexpected result %T", attached)
+		}
+		obj.Module = module
+		owned = append(owned, module)
+	}
+	if len(obj.Fields) == 0 {
+		return owned, nil
+	}
+
 	if obj.Module.Self() == nil || obj.TypeDef == nil {
-		owned := make([]dagql.AnyResult, 0)
 		for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
 			updated, deps, err := attachModuleObjectValue(ctx, attach, obj.Fields[name])
 			if err != nil {
@@ -510,7 +532,6 @@ func (obj *ModuleObject) AttachDependencyResults(
 	}
 
 	modInst := NewUserMod(obj.Module)
-	owned := make([]dagql.AnyResult, 0)
 	for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
 		fieldTypeDef, ok := obj.TypeDef.FieldByOriginalName(name)
 		if !ok {
@@ -794,6 +815,18 @@ func (obj *ModuleObject) DecodePersistedObject(ctx context.Context, dec *dagql.P
 	}, nil
 }
 
+// DecodedDependencyResults reports the module a decoded object captured from
+// its decoding class. The persisted payload carries only the fields; the
+// module comes from whichever schema decoded the row, and that schema's
+// module is owned only by the decoding session. The decoded row must own it
+// so its class stays usable after that session ends.
+func (obj *ModuleObject) DecodedDependencyResults() []dagql.AnyResult {
+	if obj == nil || obj.Module.Self() == nil {
+		return nil
+	}
+	return []dagql.AnyResult{obj.Module}
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func encodePersistedModuleObjectValue(enc *dagql.PersistEncodeContext, val any) (persistedModuleObjectValue, error) {
 	if val == nil {
@@ -1073,7 +1106,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
 	}
-	fields, err := obj.fields(ctx)
+	fields, err := obj.fields()
 	if err != nil {
 		return err
 	}
@@ -1114,7 +1147,7 @@ func (obj *ModuleObject) isMainObject() bool {
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
 	objDef := obj.TypeDef
 	mod := obj.Module.Self()
-	moduleID, err := NewUserMod(obj.Module).ResultCallModule(ctx)
+	moduleID, moduleProvider, err := NewUserMod(obj.Module).FieldModule()
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for object %q constructor: %w", objDef.Name, err)
 	}
@@ -1133,6 +1166,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			Description:      desc,
 			Type:             obj,
 			Module:           moduleID,
+			ModuleProvider:   moduleProvider,
 			DeprecatedReason: objDef.Deprecated,
 			IsPersistable:    true,
 		}
@@ -1185,6 +1219,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		spec.Description = formatGqlDescription(mod.Description)
 	}
 	spec.Module = moduleID
+	spec.ModuleProvider = moduleProvider
 	spec.GetDynamicInput = fn.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, fn.cacheImplicitInputs()...)
 
@@ -1211,7 +1246,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 }
 
 func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagql.Server) error {
-	moduleID, err := NewUserMod(obj.Module).ResultCallModule(ctx)
+	moduleID, moduleProvider, err := NewUserMod(obj.Module).FieldModule()
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for entrypoint object %q: %w", obj.TypeDef.Name, err)
 	}
@@ -1247,13 +1282,14 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			withDesc = fmt.Sprintf("Configure the %s constructor arguments.", obj.Module.Self().Name())
 		}
 		withSpec := dagql.FieldSpec{
-			Name:        "with",
-			Description: withDesc,
-			Type:        &Query{},
-			Module:      moduleID,
-			Args:        dagql.NewInputSpecs(constructorArgs...),
-			DoNotCache:  "Pure routing; the inner module constructor has its own caching policy.",
-			NoTelemetry: true,
+			Name:           "with",
+			Description:    withDesc,
+			Type:           &Query{},
+			Module:         moduleID,
+			ModuleProvider: moduleProvider,
+			Args:           dagql.NewInputSpecs(constructorArgs...),
+			DoNotCache:     "Pure routing; the inner module constructor has its own caching policy.",
+			NoTelemetry:    true,
 		}
 		dag.Root().ObjectType().Extend(
 			withSpec,
@@ -1302,6 +1338,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		// Proxy specs only carry the method's own args — constructor args
 		// are stored on the Query via the `with` field.
 		proxySpec.Module = moduleID
+		proxySpec.ModuleProvider = moduleProvider
 		proxySpec.DoNotCache = "Entrypoint proxy is pure routing; the inner constructor and method calls cache on their own."
 		proxySpec.NoTelemetry = true
 
@@ -1346,12 +1383,13 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		fieldName := gqlFieldName(field.Self().Name)
 
 		proxySpec := dagql.FieldSpec{
-			Name:        fieldName,
-			Description: field.Self().Description,
-			Type:        field.Self().TypeDef.Self().ToTyped(),
-			Module:      moduleID,
-			NoTelemetry: true,
-			DoNotCache:  "Entrypoint proxy is pure routing; the inner constructor and field calls cache on their own.",
+			Name:           fieldName,
+			Description:    field.Self().Description,
+			Type:           field.Self().TypeDef.Self().ToTyped(),
+			Module:         moduleID,
+			ModuleProvider: moduleProvider,
+			NoTelemetry:    true,
+			DoNotCache:     "Entrypoint proxy is pure routing; the inner constructor and field calls cache on their own.",
 		}
 
 		proxiedFieldName := fieldName
@@ -1408,9 +1446,9 @@ func orderedNamedInputs(specs []dagql.InputSpec, args map[string]dagql.Input) []
 	return inputs
 }
 
-func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*ModuleObject], err error) {
+func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject], err error) {
 	for _, field := range obj.TypeDef.Fields {
-		objField, err := objField(ctx, obj.Module, field.Self())
+		objField, err := objField(obj.Module, field.Self())
 		if err != nil {
 			return nil, err
 		}
@@ -1431,8 +1469,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	return
 }
 
-func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
-	moduleID, err := NewUserMod(mod).ResultCallModule(ctx)
+func objField(mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
+	moduleID, moduleProvider, err := NewUserMod(mod).FieldModule()
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve module identity for field %q: %w", field.Name, err)
 	}
@@ -1441,6 +1479,7 @@ func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *Field
 		Description:      field.Description,
 		Type:             field.TypeDef.Self().ToTyped(),
 		Module:           moduleID,
+		ModuleProvider:   moduleProvider,
 		DeprecatedReason: field.Deprecated,
 		Trivial:          true,
 	}
@@ -1509,11 +1548,12 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
-	moduleID, err := NewUserMod(mod).ResultCallModule(ctx)
+	moduleID, moduleProvider, err := NewUserMod(mod).FieldModule()
 	if err != nil {
 		return f, fmt.Errorf("failed to resolve module identity for function %q: %w", fun.Name, err)
 	}
 	spec.Module = moduleID
+	spec.ModuleProvider = moduleProvider
 	spec.GetDynamicInput = modFun.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
 
