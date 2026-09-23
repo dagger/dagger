@@ -45,6 +45,9 @@ var (
 // ArchiveImportBatch carries exactly one OTLP export request. A bootstrap and
 // its remainder intentionally use the same batch type and importer.
 type ArchiveImportBatch struct {
+	// Cursor is the source remainder cursor, or zero for bootstrap. A retry
+	// after exporter enqueue only repeats the application barrier.
+	Cursor  int64
 	Spans   *coltracepb.ExportTraceServiceRequest
 	Logs    *collogspb.ExportLogsServiceRequest
 	Metrics *colmetricspb.ExportMetricsServiceRequest
@@ -83,6 +86,7 @@ type ArchiveTraceImporter struct {
 	mu        sync.Mutex
 	closed    map[ArchiveSignal]bool
 	abandoned map[ArchiveSignal]bool
+	enqueued  map[ArchiveSignal]int64
 }
 
 func NewArchiveTraceImporter(sinks TraceImportSinks, cut ArchiveCut) (*ArchiveTraceImporter, error) {
@@ -104,6 +108,7 @@ func NewArchiveTraceImporter(sinks TraceImportSinks, cut ArchiveCut) (*ArchiveTr
 		barrier:   sinks.Barrier,
 		closed:    map[ArchiveSignal]bool{},
 		abandoned: map[ArchiveSignal]bool{},
+		enqueued:  map[ArchiveSignal]int64{},
 	}, nil
 }
 
@@ -132,6 +137,13 @@ func (imp *ArchiveTraceImporter) ImportAndWait(ctx context.Context, cut ArchiveC
 		return fmt.Errorf("%w: %s", ErrArchiveSignalClosed, signal)
 	}
 
+	if batch.Cursor < 0 || batch.Cursor > imp.highWater(signal) {
+		return fmt.Errorf("archive %s cursor %d is outside fixed cut", signal, batch.Cursor)
+	}
+	if batch.Cursor > 0 && batch.Cursor <= imp.enqueued[signal] {
+		return imp.barrier.WaitForEventLoop(ctx)
+	}
+
 	switch signal {
 	case ArchiveSpans:
 		err = imp.trace.ImportSpans(ctx, batch.Spans)
@@ -142,6 +154,9 @@ func (imp *ArchiveTraceImporter) ImportAndWait(ctx context.Context, cut ArchiveC
 	}
 	if err != nil {
 		return err
+	}
+	if batch.Cursor > 0 {
+		imp.enqueued[signal] = batch.Cursor
 	}
 	return imp.barrier.WaitForEventLoop(ctx)
 }
