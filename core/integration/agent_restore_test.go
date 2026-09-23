@@ -21,9 +21,12 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -721,6 +724,122 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 	require.NoError(t, err)
 	require.Equal(t, "continued after restart", reply)
 	require.NoError(t, target.Close())
+}
+
+// TestCLIArchiveResumeIgnoresDestination runs the real from-source command and
+// drives its headless TUI prompt, rather than calling restore orchestration seams.
+func (AgentRestoreSuite) TestCLIArchiveResumeIgnoresDestination(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	provider := sdktrace.NewTracerProvider()
+	defer provider.Shutdown(context.WithoutCancel(ctx))
+	sourceCtx, sourceSpan := provider.Tracer("archive-cli-acceptance").Start(ctx, "source", trace.WithNewRoot())
+	defer sourceSpan.End()
+	source, sink := connectWithTrace(sourceCtx, t)
+	model := cannedRecordingModel(sourceCtx, t, source, source.LLM().
+		WithPrompt("before CLI restore").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "source conversation retained"}}).
+		WithPrompt("after CLI restore").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "RESTORED-PROMPT-TURN-SUCCEEDED"}}))
+	wsID, err := source.Directory().WithNewFile("authority.txt", "traced source").AsWorkspace().ID(sourceCtx)
+	require.NoError(t, err)
+	h := spawnAgent(sourceCtx, t, source, spawnOpts{model: model, name: "cli-restored", wsID: wsID})
+	_, reply, err := h.sendAndWait(sourceCtx, t, "before CLI restore")
+	require.NoError(t, err)
+	require.Equal(t, "source conversation retained", reply)
+	node := sink.awaitRestorable(t, 1)["cli-restored"]
+	require.NotNil(t, node.Control)
+	traceID := node.Control.Trace
+	require.NoError(t, source.Close())
+	sourceSpan.End()
+
+	destination := t.TempDir()
+	// A destination-module load would fail before reaching the prompt.
+	require.NoError(t, os.WriteFile(filepath.Join(destination, "dagger.toml"), []byte("[modules.broken]\nsource = \"definitely-missing-module\"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(destination, "authority.txt"), []byte("destination only"), 0o644))
+	state := t.TempDir()
+	legacyDir := filepath.Join(state, "dagger", "llm-sessions")
+	require.NoError(t, os.MkdirAll(legacyDir, 0o755))
+	legacyFile := filepath.Join(legacyDir, "existing.json")
+	require.NoError(t, os.WriteFile(legacyFile, []byte("not valid JSON: must never be read or deleted"), 0o600))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	address := listener.Addr().String()
+	require.NoError(t, listener.Close())
+	bin := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
+	require.NotEmpty(t, bin)
+	commandCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	cmd := exec.CommandContext(commandCtx, bin, "agent", "--trace", traceID)
+	cmd.Dir = destination
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		switch key {
+		case "DAGGER_SESSION_PORT", "DAGGER_SESSION_TOKEN", "TRACEPARENT", "TRACESTATE", "DAGGER_TUI_CONSOLE", "DAGGER_PROGRESS", "XDG_STATE_HOME":
+			continue
+		}
+		cmd.Env = append(cmd.Env, entry)
+	}
+	cmd.Env = append(cmd.Env, "DAGGER_TUI_CONSOLE="+address, "DAGGER_PROGRESS=tty", "XDG_STATE_HOME="+state)
+	logFile, err := os.CreateTemp(t.TempDir(), "cli-output")
+	require.NoError(t, err)
+	defer logFile.Close()
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	require.NoError(t, cmd.Start())
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	defer func() { stop(); <-done }()
+	defer func() {
+		if t.Failed() {
+			data, _ := os.ReadFile(logFile.Name())
+			t.Logf("CLI output:\n%s", data)
+		}
+	}()
+	client := &http.Client{Timeout: 5 * time.Second}
+	request := func(method, path, body string) (int, string) {
+		req, err := http.NewRequestWithContext(ctx, method, "http://"+address+path, strings.NewReader(body))
+		if err != nil {
+			return 0, err.Error()
+		}
+		res, err := client.Do(req)
+		if err != nil {
+			return 0, err.Error()
+		}
+		defer res.Body.Close()
+		data, err := io.ReadAll(res.Body)
+		if err != nil {
+			return 0, err.Error()
+		}
+		return res.StatusCode, string(data)
+	}
+	var last string
+	defer func() {
+		if t.Failed() {
+			_, screen := request(http.MethodGet, "/screen", "")
+			t.Logf("Last console response: %s\nScreen:\n%s", last, screen)
+		}
+	}()
+	require.Eventually(t, func() bool {
+		status, body := request(http.MethodGet, "/toolset", "")
+		last = body
+		return status == http.StatusOK
+	}, time.Minute, 100*time.Millisecond, "interactive restored session never attached: %s", last)
+	status, body := request(http.MethodPost, "/type", "after CLI restore")
+	require.Equal(t, http.StatusOK, status, "%s", body)
+	status, body = request(http.MethodPost, "/key", "enter")
+	require.Equal(t, http.StatusOK, status, "%s", body)
+	require.Eventually(t, func() bool {
+		_, body := request(http.MethodGet, "/screen", "")
+		last = body
+		return strings.Contains(body, "RESTORED-PROMPT-TURN-SUCCEEDED")
+	}, time.Minute, 100*time.Millisecond, "restored prompt did not complete a turn: %s", last)
+	entries, err := os.ReadDir(legacyDir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "trace-only CLI must not write JSON sessions")
+	data, err := os.ReadFile(legacyFile)
+	require.NoError(t, err)
+	require.Equal(t, "not valid JSON: must never be read or deleted", string(data))
+	data, err = os.ReadFile(filepath.Join(destination, "authority.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "destination only", string(data), "restore must not implicitly export")
 }
 
 // withoutSpanCallPayloads strips the dagger.io/dag.call attribute from every
