@@ -3960,7 +3960,7 @@ func (fe *frontendPretty) editlineHeight() int {
 	// Count newlines in current value + 1 for the input line itself
 	val := fe.textInput.Value()
 	height := strings.Count(val, "\n") + 1
-	// PromptFrame owns the framed prompt's two rule rows.
+	// PromptFrame owns the shaded prompt's two padding rows.
 	if fe.promptFrame != nil {
 		height += fe.promptFrame.ChromeHeight()
 	}
@@ -6849,10 +6849,9 @@ func (fe *frontendPretty) syncPrompt() {
 		prompt, init := fe.shell.Prompt(ctx, promptOut, fe.promptFg)
 		fe.textInput.Prompt = prompt
 		fe.textInput.Update()
-		// Frame the input (bars + shaded background) when the handler reports LLM
-		// prompt mode, so the live prompt mirrors how a submitted user message is
-		// shaded in scrollback (styleLLMMessageView). Handlers that don't
-		// distinguish modes (plain shell) leave it unframed.
+		// Shade and indent the input when the handler reports LLM prompt mode,
+		// matching a submitted user message in scrollback (styleLLMMessageView).
+		// Handlers that don't distinguish modes (plain shell) leave it bare.
 		if fe.promptFrame != nil {
 			previousHeight := fe.promptFrame.ChromeHeight()
 			promptMode := false

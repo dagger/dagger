@@ -8,25 +8,22 @@ import (
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
 
-// PromptFrame wraps the prompt TextInput in a full-width framed block: a
-// horizontal rule above and below the input, which sits flush to the left edge
-// with no prompt symbol or background chrome. The rules are faint so the input
-// reads as an inset region without shouting.
-//
-// The frame renders the wrapped TextInput itself, translating its cursor down
-// by one line to account for the top rule, so cursor positioning and key
-// handling stay entirely owned by the TextInput.
+// PromptFrame wraps the prompt TextInput in the same full-width shaded card as
+// a submitted user message, with blank padding rows and a two-space indent.
+// Cursor positioning and key handling stay owned by the TextInput; the frame
+// reserves the horizontal padding before rendering and translates its cursor.
 type PromptFrame struct {
 	tuist.Compo
 	input      *tuist.TextInput
 	profile    termenv.Profile
 	keyHandler func(tuist.Context, uv.KeyPressEvent) bool
-	// enabled gates the framed styling. When false the input is rendered bare
-	// (no rules), matching plain shell mode.
+	// enabled gates the shaded styling. When false the input is rendered bare,
+	// matching plain shell mode.
 	enabled     bool
 	attachments []string
 }
@@ -88,12 +85,22 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 		return
 	}
 
-	result := p.RenderChildResult(ctx, p.input)
+	childCtx := ctx
+	indent := 0
+	if p.enabled {
+		indent = 2
+		if ctx.Width > 0 {
+			indent = min(indent, ctx.Width-1)
+			// Leave room on the right too, including the cursor at end of line.
+			childCtx = ctx.Resize(max(1, ctx.Width-indent-2), ctx.Height)
+		}
+	}
+	result := p.RenderChildResult(childCtx, p.input)
 	lines := append([]string(nil), result.Lines...)
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(p.profile))
 	for _, label := range p.attachments {
-		if ctx.Width > 0 {
-			label = ansi.Truncate(label, ctx.Width, "…")
+		if childCtx.Width > 0 {
+			label = ansi.Truncate(label, childCtx.Width, "…")
 		}
 		lines = append(lines, out.String(label).Foreground(termenv.ANSICyan).String())
 	}
@@ -108,27 +115,38 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 
 	width := ctx.Width
 	if width <= 0 {
-		for _, line := range result.Lines {
-			width = max(width, lipgloss.Width(line))
+		for _, line := range lines {
+			width = max(width, lipgloss.Width(line)+2*indent)
 		}
 	}
 
-	// The rules read as faint bright-black dashes spanning the full width,
-	// framing the flush input without any background.
-	styleBar := func(bar string) string {
-		return out.String(bar).
-			Foreground(termenv.ANSIBrightBlack).
-			Faint().
-			String()
+	// Apply the background to cells rather than wrapping the ANSI string:
+	// embedded style resets in highlights, hints, and attachment labels must
+	// not punch holes in the card. Preserve their foreground and attributes.
+	shade := func(line string) string {
+		line = padANSI(ansi.Truncate(line, width, ""), width)
+		if p.profile == termenv.Ascii {
+			return ansi.Strip(line)
+		}
+		buf := cellbuf.NewBuffer(width, 1)
+		cellbuf.SetContent(buf, line)
+		for x := range width {
+			if cell := buf.Cell(x, 0); cell != nil && cell.Width > 0 {
+				cell = cell.Clone()
+				cell.Style.Bg = ansi.BrightBlack
+				buf.SetCell(x, 0, cell)
+			}
+		}
+		_, line = cellbuf.RenderLine(buf, 0)
+		return line
 	}
-	bar := styleBar(strings.Repeat(HorizBar, max(width, 0)))
+	ctx.Line(shade(""))
+	for _, line := range lines {
+		ctx.Line(shade(strings.Repeat(" ", indent) + line))
+	}
+	ctx.Line(shade(""))
 
-	ctx.Line(bar)
-	ctx.Lines(lines...)
-	ctx.Line(bar)
-
-	// Offset the cursor by one row to account for the top rule.
 	if result.Cursor != nil {
-		ctx.SetCursor(result.Cursor.Row+1, result.Cursor.Col)
+		ctx.SetCursor(result.Cursor.Row+1, min(result.Cursor.Col+indent, max(0, width-1)))
 	}
 }
