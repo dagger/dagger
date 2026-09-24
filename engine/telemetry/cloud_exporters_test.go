@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -185,4 +187,139 @@ func TestCloudLogExportStalledRequestTimesOut(t *testing.T) {
 		require.Equal(t, strconv.Itoa(i), body)
 	}
 	require.NoError(t, p.Shutdown(ctx))
+}
+
+// A token refresh against an OAuth endpoint that never answers gives up at
+// its bound.
+func TestBoundedTokenRefreshGivesUp(t *testing.T) {
+	t.Parallel()
+	stalled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-r.Context().Done()
+	}))
+	t.Cleanup(stalled.Close)
+	refresh := boundedTokenRefresh(func(ctx context.Context) (*oauth2.Token, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, stalled.URL+"/oauth/token", nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		resp.Body.Close()
+		return &oauth2.Token{AccessToken: "unexpected"}, nil
+	}, 100*time.Millisecond)
+
+	start := time.Now()
+	_, err := refresh(context.Background())
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Less(t, time.Since(start), 2*time.Second)
+}
+
+// With an expired OAuth token and a refresh that stalls, every export still
+// returns at its own request timeout instead of waiting on the refresh, and
+// so do the other signals' exporters sharing the token source.
+func TestCloudExportDoesNotWaitOnStalledRefresh(t *testing.T) {
+	t.Parallel()
+	srv, _ := cloudExporterTestServer(t)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	spans, logs, _, err := newCloudExporters(t.Context(), &auth.Cloud{
+		Token: &oauth2.Token{AccessToken: "expired", Expiry: time.Now().Add(-time.Hour)},
+		Org:   &auth.Org{ID: "test-org"},
+	}, func(context.Context) (*oauth2.Token, error) {
+		<-release // a refresh that ignores cancellation and never returns in time
+		return nil, context.Canceled
+	}, srv.URL, 50*time.Millisecond)
+	require.NoError(t, err)
+
+	for name, export := range map[string]func(context.Context) error{
+		"spans": func(ctx context.Context) error {
+			return spans.ExportSpans(ctx, tracetest.SpanStubs{{Name: "test-span"}}.Snapshots())
+		},
+		"logs": func(ctx context.Context) error {
+			var rec sdklog.Record
+			rec.SetBody(log.StringValue("record"))
+			return logs.Export(ctx, []sdklog.Record{rec})
+		},
+	} {
+		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+		start := time.Now()
+		require.Error(t, export(ctx), name)
+		require.Less(t, time.Since(start), 2*time.Second, "%s export waited on the stalled refresh", name)
+		cancel()
+	}
+}
+
+// Concurrent exports waiting on an expired token share one refresh: during a
+// stalled refresh, callers return at their own deadlines without starting
+// refreshes of their own, a failed refresh is not retried at once, and no
+// goroutine outlives the refresh's bound. A caller whose context has already
+// ended never starts a refresh.
+func TestSharedTokenSourceRefreshesOnce(t *testing.T) {
+	var refreshes atomic.Int32
+	source := &sharedTokenSource{
+		token: &oauth2.Token{AccessToken: "expired", Expiry: time.Now().Add(-time.Hour)},
+		refresh: boundedTokenRefresh(func(ctx context.Context) (*oauth2.Token, error) {
+			refreshes.Add(1)
+			<-ctx.Done() // a stalled OAuth endpoint
+			return nil, context.Cause(ctx)
+		}, 150*time.Millisecond),
+	}
+
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := source.Token(cancelled)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Zero(t, refreshes.Load(), "a cancelled caller starts no refresh")
+
+	var wg sync.WaitGroup
+	const callers = 20
+	start := time.Now()
+	for range callers {
+		wg.Go(func() {
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+			defer cancel()
+			_, err := source.Token(ctx)
+			require.Error(t, err)
+		})
+	}
+	wg.Wait()
+	require.Less(t, time.Since(start), 120*time.Millisecond, "callers return at their own deadlines")
+
+	time.Sleep(300 * time.Millisecond)
+	require.Equal(t, int32(1), refreshes.Load(), "one refresh for all callers, and no retry right after it failed")
+	_, err = source.Token(t.Context())
+	require.Error(t, err, "the failed refresh answers during its backoff")
+	require.Equal(t, int32(1), refreshes.Load())
+	source.mu.Lock()
+	inflight := source.inflight
+	source.mu.Unlock()
+	require.Nil(t, inflight, "the one refresh goroutine ended at its bound; callers started none")
+}
+
+// A refreshed token shorter-lived than oauth2's 10s expiry margin is still
+// used for part of its lifetime, instead of being refreshed on every export.
+func TestSharedTokenSourceUsesShortLivedTokens(t *testing.T) {
+	t.Parallel()
+	var refreshes atomic.Int32
+	source := &sharedTokenSource{
+		token: &oauth2.Token{AccessToken: "expired", Expiry: time.Now().Add(-time.Hour)},
+		refresh: func(context.Context) (*oauth2.Token, error) {
+			n := refreshes.Add(1)
+			return &oauth2.Token{AccessToken: fmt.Sprintf("fresh-%d", n), TokenType: "Bearer", Expiry: time.Now().Add(time.Second)}, nil
+		},
+	}
+	for range 50 {
+		token, err := source.Token(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, "fresh-1", token.AccessToken)
+	}
+	require.Equal(t, int32(1), refreshes.Load(), "one refresh for 50 exports within the token's first half-life")
+
+	require.Eventually(t, func() bool {
+		token, err := source.Token(t.Context())
+		return err == nil && token.AccessToken == "fresh-2"
+	}, 3*time.Second, 50*time.Millisecond, "refreshed again as it nears expiry")
 }

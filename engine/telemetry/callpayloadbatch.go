@@ -54,9 +54,16 @@ const (
 // them out of the ordinary processor), so it owns their retries too: a batch
 // whose export fails goes back to the head of the queue, in order, and is
 // retried with exponential backoff until it lands or
-// CallPayloadMaxExportAttempts is spent.
+// CallPayloadMaxExportAttempts is spent. Shutdown keeps retrying within its
+// context; when that ends, it cancels the export in flight and returns only
+// once the worker has stopped, so the caller may shut the exporter down.
 type CallPayloadBatchProcessor struct {
 	exporter sdklog.Exporter
+
+	// ctx ends the worker's own exports (the coalesced and retried ones);
+	// Shutdown cancels it when its own context ends.
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	mu       sync.Mutex
 	queue    []sdklog.Record
@@ -75,8 +82,11 @@ type callPayloadBatchRequest struct {
 }
 
 func NewCallPayloadBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchProcessor {
+	ctx, cancel := context.WithCancel(context.Background())
 	processor := &CallPayloadBatchProcessor{
 		exporter: exporter,
+		ctx:      ctx,
+		cancel:   cancel,
 		queue:    make([]sdklog.Record, 0, LogExportMaxBatchSize),
 		wake:     make(chan struct{}, 1),
 		flush:    make(chan callPayloadBatchRequest),
@@ -161,6 +171,10 @@ func (processor *CallPayloadBatchProcessor) Shutdown(ctx context.Context) error 
 	case err := <-request.done:
 		return err
 	case <-ctx.Done():
+		// Out of time: end the export in flight and wait for the worker, so
+		// no export outlives Shutdown.
+		processor.cancel()
+		<-processor.done
 		return ctx.Err()
 	}
 }
@@ -219,14 +233,60 @@ func (processor *CallPayloadBatchProcessor) run() {
 			// A pending retry backoff keeps its schedule; the new records
 			// queue up behind the failed batch and export with it.
 		case <-timerC:
-			if err := export(context.Background(), false); err != nil {
+			if err := export(processor.ctx, false); err != nil {
 				otel.Handle(err)
 			}
 		case request := <-processor.flush:
-			request.done <- export(request.ctx, true)
+			// A flush's export ends with the flush, or when Shutdown cancels
+			// the worker, whichever comes first.
+			ctx, stop := processor.withWorker(request.ctx)
+			request.done <- export(ctx, true)
+			stop()
 		case request := <-processor.shutdown:
-			request.done <- export(request.ctx, true)
+			disarm()
+			request.done <- processor.drain(request.ctx)
 			return
+		}
+	}
+}
+
+// withWorker returns ctx, also cancelled when Shutdown cancels the worker.
+func (processor *CallPayloadBatchProcessor) withWorker(ctx context.Context) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	stopAfter := context.AfterFunc(processor.ctx, cancel)
+	return ctx, func() {
+		stopAfter()
+		cancel()
+	}
+}
+
+// drain exports everything queued for Shutdown, retrying a failed batch
+// after its backoff for as long as ctx allows; a batch that spends
+// CallPayloadMaxExportAttempts is dropped as usual. It reports the drops,
+// and the last failure when ctx ends first, not failures a retry repaired.
+func (processor *CallPayloadBatchProcessor) drain(ctx context.Context) error {
+	defer processor.cancel()
+	var dropped, retrying error
+	for {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(dropped, retrying, err)
+		}
+		retryIn, more, err := processor.exportPass(ctx)
+		if retryIn > 0 {
+			retrying = err
+			retry := time.NewTimer(retryIn)
+			select {
+			case <-retry.C:
+				continue
+			case <-ctx.Done():
+				stopTimer(retry)
+				return errors.Join(dropped, retrying, ctx.Err())
+			}
+		}
+		retrying = nil
+		dropped = errors.Join(dropped, err)
+		if !more {
+			return dropped
 		}
 	}
 }

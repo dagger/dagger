@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/pkg/browser"
 	"golang.org/x/oauth2"
+
+	"github.com/dagger/dagger/internal/replacefile"
 )
 
 const (
@@ -42,12 +45,25 @@ var authConfig = &oauth2.Config{
 	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
 	ClientID: "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
 	Scopes:   []string{"openid", "offline_access"},
-	Endpoint: oauth2.Endpoint{
+	Endpoint: authEndpoint(authDomainFromEnv()),
+}
+
+// authDomainFromEnv is the OAuth domain, overridden by DAGGER_CLOUD_AUTH_URL
+// for integration tests, as DAGGER_CLOUD_URL overrides the API.
+func authDomainFromEnv() string {
+	if u := os.Getenv("DAGGER_CLOUD_AUTH_URL"); u != "" {
+		return u
+	}
+	return authDomain
+}
+
+func authEndpoint(domain string) oauth2.Endpoint {
+	return oauth2.Endpoint{
 		AuthStyle:     oauth2.AuthStyleInParams,
-		AuthURL:       authDomain + "/authorize",
-		TokenURL:      authDomain + "/oauth/token",
-		DeviceAuthURL: authDomain + "/oauth/device/code",
-	},
+		AuthURL:       domain + "/authorize",
+		TokenURL:      domain + "/oauth/token",
+		DeviceAuthURL: domain + "/oauth/device/code",
+	}
 }
 
 type LoginOption func(*loginOptions)
@@ -209,6 +225,11 @@ func RefreshToken(ctx context.Context, token *oauth2.Token) (*oauth2.Token, erro
 	return refreshed, nil
 }
 
+// CredentialsFile is the path of the `dagger login` credentials file.
+func CredentialsFile() string {
+	return credentialsFile
+}
+
 func Token(ctx context.Context) (*oauth2.Token, error) {
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
@@ -244,11 +265,25 @@ func saveToken(token *oauth2.Token) error {
 		return err
 	}
 
-	return writeFile(credentialsFile, data, 0o600)
+	return writeFile(credentialsFile, data)
 }
 
+// credentialsFileMode is the mode of the files writeFile writes: they hold
+// credentials, so only their owner may read them.
+const credentialsFileMode = 0o600
+
 // writeFile writes data to the named file with locking to prevent race conditions
-func writeFile(filename string, data []byte, perm os.FileMode) error {
+func writeFile(filename string, data []byte) error {
+	return writeFileWith(filename, data, replacefile.Rename, runtime.GOOS == "windows")
+}
+
+// writeFileWith replaces the file with rename; with inPlaceFallback, when the
+// rename keeps failing (on Windows, while another process such as a scanner
+// holds the file open), it writes the file in place instead, as writeFile
+// did before, under the lock it holds, so `dagger login` does not fail. An
+// engine's write-back, which does not take the lock, may interleave with that
+// fallback write; the engine's own write-back never falls back.
+func writeFileWith(filename string, data []byte, rename func(string, string) error, inPlaceFallback bool) error {
 	fileLock := flock.New(filename + ".lock")
 
 	locked, err := fileLock.TryLockContext(context.Background(), 3*time.Second)
@@ -261,7 +296,32 @@ func writeFile(filename string, data []byte, perm os.FileMode) error {
 
 	defer fileLock.Unlock()
 
-	return os.WriteFile(filename, data, perm)
+	// Replace the file atomically: an engine refreshing the same token
+	// writes it back through its own path, without this lock, so a reader
+	// must never see a partial or interleaved file.
+	tmp, err := os.CreateTemp(filepath.Dir(filename), "."+filepath.Base(filename)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // after a successful rename, a no-op
+	if err := tmp.Chmod(credentialsFileMode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := rename(tmp.Name(), filename); err != nil {
+		if !inPlaceFallback {
+			return err
+		}
+		return os.WriteFile(filename, data, credentialsFileMode)
+	}
+	return nil
 }
 
 type Org struct {
@@ -312,7 +372,7 @@ func SetCurrentOrg(org *Org) error {
 		return err
 	}
 
-	return writeFile(orgFile, data, 0o600)
+	return writeFile(orgFile, data)
 }
 
 var (

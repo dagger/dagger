@@ -32,6 +32,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/internal/replacefile"
 	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/dagger/dagger/util/grpcutil"
 )
@@ -315,29 +316,62 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	if opts.FileMode == 0 {
 		opts.FileMode = 0o600
 	}
-	destF, err := os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, opts.FileMode)
+	destF, removeTemp, err := createSyncTargetFile(destParentDir, finalDestPath, opts.ReplaceAtomically, opts.FileMode)
 	if err != nil {
 		return fmt.Errorf("failed to create synctarget dest file %s: %w", finalDestPath, err)
 	}
+	defer removeTemp() // after a successful rename, a no-op
 	defer destF.Close()
+	writePath := destF.Name()
 	if runtime.GOOS != "windows" {
 		if err := destF.Chown(int(t.uid), int(t.gid)); err != nil {
-			return fmt.Errorf("failed to chown synctarget dest file %s: %w", finalDestPath, err)
+			return fmt.Errorf("failed to chown synctarget dest file %s: %w", writePath, err)
 		}
 	}
 
 	for {
 		msg := filesync.BytesMessage{}
 		if err := stream.RecvMsg(&msg); err != nil {
-			if errors.Is(err, io.EOF) {
+			if !errors.Is(err, io.EOF) {
+				return err
+			}
+			if !opts.ReplaceAtomically {
 				return nil
 			}
-			return err
+			if err := destF.Close(); err != nil {
+				return fmt.Errorf("failed to write synctarget dest file %s: %w", writePath, err)
+			}
+			if err := replacefile.Rename(writePath, finalDestPath); err != nil {
+				return fmt.Errorf("failed to replace synctarget dest file %s: %w", finalDestPath, err)
+			}
+			return nil
 		}
 		if _, err := destF.Write(msg.Data); err != nil {
 			return err
 		}
 	}
+}
+
+// createSyncTargetFile opens the file DiffCopy writes into. With
+// replaceAtomically it is a temp file beside finalDestPath, to be renamed over
+// it once complete, and removeTemp removes it; otherwise it is finalDestPath
+// itself, truncated, and removeTemp does nothing.
+func createSyncTargetFile(destParentDir, finalDestPath string, replaceAtomically bool, mode os.FileMode) (_ *os.File, removeTemp func(), _ error) {
+	if !replaceAtomically {
+		f, err := os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		return f, func() {}, err
+	}
+	f, err := os.CreateTemp(destParentDir, "."+filepath.Base(finalDestPath)+".*.tmp")
+	if err != nil {
+		return nil, nil, err
+	}
+	removeTemp = func() { os.Remove(f.Name()) }
+	if err := f.Chmod(mode); err != nil {
+		f.Close()
+		removeTemp()
+		return nil, nil, err
+	}
+	return f, removeTemp, nil
 }
 
 func safeLocalExportRemovePath(absRoot, removePath string) (string, error) {

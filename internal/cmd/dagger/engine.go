@@ -189,6 +189,20 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		Processors: telemetry.LogProcessors,
 	}
 	params.EngineMetrics = telemetry.MetricExporters
+	if cloud := cliCloudTelemetry; cloud.configured() {
+		// Ask the engine to publish the session's telemetry to Cloud itself,
+		// and have what it would send us forwarded everywhere else.
+		params.EngineCloudTelemetry = true
+		params.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
+		params.CloudCredentialsPath = auth.CredentialsFile()
+		params.EngineTraceWithoutCloud = telemetry.SpanForwarder{
+			Processors: withoutIndex(telemetry.SpanProcessors, cloud.spans),
+		}
+		params.EngineLogsWithoutCloud = telemetry.LogForwarder{
+			Processors: withoutIndex(telemetry.LogProcessors, cloud.logs),
+		}
+		params.EngineMetricsWithoutCloud = withoutIndex(telemetry.MetricExporters, cloud.metrics)
+	}
 
 	params.WithTerminal = withTerminal
 
@@ -354,17 +368,50 @@ var skipSharedTelemetryExporters bool
 // telemetry warnings (e.g. the preflight session for a dynamic SDK command).
 // Such sessions render to a discard frontend and have no reason to export to
 // Cloud, so they simply skip the shared exporters.
-func engineTelemetryConfig(ctx context.Context) telemetry.Config {
+func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes) {
 	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
 }
 
 type configuredCloudExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool)
 
-func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) telemetry.Config {
+// cloudTelemetryIndexes locates the CLI's Dagger Cloud exporters in the
+// pipeline telemetry.Init builds: the span processor's index in the
+// telemetry.SpanProcessors Init sets, and the log and metric exporters'
+// indexes among the ones Init appends, in Config order, to
+// telemetry.LogProcessors and telemetry.MetricExporters. Each is -1 when the
+// CLI does not export to Cloud.
+type cloudTelemetryIndexes struct {
+	spans, logs, metrics int
+}
+
+func (idx cloudTelemetryIndexes) configured() bool {
+	return idx.spans >= 0 && idx.logs >= 0 && idx.metrics >= 0
+}
+
+var noCloudTelemetry = cloudTelemetryIndexes{spans: -1, logs: -1, metrics: -1}
+
+// cliCloudTelemetry is where initEngineTelemetry found the Cloud exporters in
+// the global telemetry slices, so that the engine's telemetry can be
+// forwarded without them when the engine publishes it to Cloud itself.
+var cliCloudTelemetry = noCloudTelemetry
+
+// withoutIndex returns a copy of all without its i-th element.
+func withoutIndex[T any](all []T, i int) []T {
+	out := make([]T, 0, len(all))
+	for j, v := range all {
+		if j != i {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) (telemetry.Config, cloudTelemetryIndexes) {
 	cfg := telemetry.Config{
 		Detect:   !skipSharedTelemetryExporters,
 		Resource: Resource(ctx),
 	}
+	cloud := noCloudTelemetry
 	if !frontendTelemetryDisabled(ctx) {
 		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, Frontend.SpanExporter())
 		cfg.LiveLogExporters = append(cfg.LiveLogExporters, Frontend.LogExporter())
@@ -379,16 +426,29 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 			// completeness carrier rides at the tail and was the first thing to drop;
 			// this keeps the exported trace complete. (SpanProcessors are prepended to
 			// the pipeline by telemetry.Init, same as a LiveTraceExporter would be.)
+			cloud = cloudTelemetryIndexes{
+				spans:   len(cfg.SpanProcessors),
+				logs:    len(cfg.LiveLogExporters),
+				metrics: len(cfg.LiveMetricExporters),
+			}
 			cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewLargeQueueLiveSpanProcessor(spans))
 			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
 			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
 		}
 	}
-	return cfg
+	return cfg, cloud
 }
 
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
-	ctx = telemetry.Init(ctx, engineTelemetryConfig(ctx))
+	cfg, cloud := engineTelemetryConfig(ctx)
+	// Init replaces telemetry.SpanProcessors but appends to LogProcessors and
+	// MetricExporters, which may hold an earlier Init's entries.
+	if cloud.configured() {
+		cloud.logs += len(telemetry.LogProcessors)
+		cloud.metrics += len(telemetry.MetricExporters)
+	}
+	ctx = telemetry.Init(ctx, cfg)
+	cliCloudTelemetry = cloud
 	// telemetry.Init extracts inherited OTel baggage from the environment.
 	// Re-apply explicit local process settings afterward so a nested Dagger
 	// command's own NO_COLOR/debug request wins over parent baggage.

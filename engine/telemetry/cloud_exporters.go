@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/dagger/dagger/internal/cloud/auth"
@@ -60,20 +61,17 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 	if cloudAuth.Org != nil {
 		headers["X-Dagger-Org"] = cloudAuth.Org.ID
 	}
-	var tokenSource oauth2.TokenSource
-	if cloudAuth.Token.TokenType == "Basic" || cloudAuth.Token.TokenType == "OIDC" {
+	var tokenSource *sharedTokenSource
+	if cloudAuthHasStaticHeader(cloudAuth) {
 		headers["Authorization"] = cloudAuthHeader(cloudAuth)
 	} else {
-		tokenSource = oauth2.StaticTokenSource(cloudAuth.Token)
-		if tokenRefreshFn != nil {
-			tokenSource = oauth2.ReuseTokenSource(cloudAuth.Token, tokenSourceFunc(tokenRefreshFn))
-		}
+		tokenSource = &sharedTokenSource{token: cloudAuth.Token, refresh: tokenRefreshFn}
 	}
 	httpClient := func(sequencer *exportSequencer) *http.Client {
 		client := sequencer.httpClient()
 		client.Timeout = requestTimeout
 		if tokenSource != nil {
-			client.Transport = &oauth2.Transport{Source: tokenSource, Base: client.Transport}
+			client.Transport = cloudTokenTransport{source: tokenSource, base: client.Transport}
 		}
 		return client
 	}
@@ -110,6 +108,13 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 		nil
 }
 
+// cloudAuthHasStaticHeader reports whether the credential is sent as a fixed
+// Authorization header: an engine token or an OIDC token. Otherwise it is an
+// OAuth access token that expires.
+func cloudAuthHasStaticHeader(ca *auth.Cloud) bool {
+	return ca.Token.TokenType == "Basic" || ca.Token.TokenType == "OIDC"
+}
+
 // cloudAuthHeader converts a Cloud credential into an HTTP Authorization
 // header value: engine tokens as HTTP basic auth with the token as user name,
 // OIDC tokens as a bearer JWT.
@@ -124,11 +129,125 @@ func cloudAuthHeader(ca *auth.Cloud) string {
 	}
 }
 
-// tokenSourceFunc adapts a context-taking token refresh callback to
-// oauth2.TokenSource. Refresh callbacks capture the context they need when
-// they are created, because OTel exports from background goroutines.
-type tokenSourceFunc func(context.Context) (*oauth2.Token, error)
+// CloudTokenRefreshTimeout bounds one refresh of an expired OAuth token.
+const CloudTokenRefreshTimeout = 5 * time.Second
 
-func (fn tokenSourceFunc) Token() (*oauth2.Token, error) {
-	return fn(context.Background())
+// BoundedTokenRefresh bounds each call of a token refresh callback by
+// CloudTokenRefreshTimeout, on a context of its own, since exports refresh
+// from background goroutines long after any request.
+func BoundedTokenRefresh(refresh func(context.Context) (*oauth2.Token, error)) func(context.Context) (*oauth2.Token, error) {
+	return boundedTokenRefresh(refresh, CloudTokenRefreshTimeout)
+}
+
+func boundedTokenRefresh(refresh func(context.Context) (*oauth2.Token, error), timeout time.Duration) func(context.Context) (*oauth2.Token, error) {
+	return func(context.Context) (*oauth2.Token, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		return refresh(ctx)
+	}
+}
+
+// cloudRefreshBackoff is how long a failed refresh answers for itself: a
+// queue of waiting exports does not become a queue of refreshes.
+const cloudRefreshBackoff = time.Second
+
+// sharedTokenSource hands the exporters of one credential its current OAuth
+// token. An expired token is refreshed with at most one refresh in flight:
+// concurrent callers wait for its result or for their own context, and a
+// caller whose context has already ended never starts one. A failed refresh
+// is not retried for cloudRefreshBackoff. With no refresh callback the token
+// is used as it is.
+type sharedTokenSource struct {
+	refresh func(context.Context) (*oauth2.Token, error)
+
+	mu          sync.Mutex
+	token       *oauth2.Token
+	refreshedAt time.Time     // when token came from refresh; zero for the initial one
+	inflight    chan struct{} // closed when the refresh in flight ends
+	failed      time.Time
+	err         error
+}
+
+// usableLocked reports whether the current token can be sent. A token this
+// source refreshed is used until its expiry less the smaller of oauth2's 10s
+// margin and half its lifetime: with a lifetime under that margin,
+// oauth2.Token.Valid would reject every token as soon as it arrives and each
+// export would refresh again. Requires s.mu.
+func (s *sharedTokenSource) usableLocked() bool {
+	if s.token == nil {
+		return false
+	}
+	if s.refreshedAt.IsZero() || s.token.Expiry.IsZero() {
+		return s.token.Valid()
+	}
+	margin := min(10*time.Second, s.token.Expiry.Sub(s.refreshedAt)/2)
+	return s.token.AccessToken != "" && time.Until(s.token.Expiry) > margin
+}
+
+func (s *sharedTokenSource) Token(ctx context.Context) (*oauth2.Token, error) {
+	for {
+		s.mu.Lock()
+		if s.refresh == nil || s.usableLocked() {
+			token := s.token
+			s.mu.Unlock()
+			return token, nil
+		}
+		if !s.failed.IsZero() && time.Since(s.failed) < cloudRefreshBackoff {
+			err := s.err
+			s.mu.Unlock()
+			return nil, err
+		}
+		if s.inflight == nil {
+			if err := context.Cause(ctx); err != nil {
+				s.mu.Unlock()
+				return nil, err
+			}
+			done := make(chan struct{})
+			s.inflight = done
+			// The refresh carries its own bound (BoundedTokenRefresh) and
+			// outlives the request that started it, so waiters can use it.
+			go func() {
+				token, err := s.refresh(context.Background())
+				s.mu.Lock()
+				if err == nil {
+					s.token, s.refreshedAt, s.failed, s.err = token, time.Now(), time.Time{}, nil
+				} else {
+					s.failed, s.err = time.Now(), err
+				}
+				s.inflight = nil
+				s.mu.Unlock()
+				close(done)
+			}()
+		}
+		wait := s.inflight
+		s.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return nil, context.Cause(ctx)
+		}
+	}
+}
+
+// cloudTokenTransport sets the current OAuth token on each request, like
+// oauth2.Transport, but waits for a refresh only as long as the request's
+// context allows, so an export's timeout or cancellation ends the wait while
+// a refresh stalls.
+type cloudTokenTransport struct {
+	source *sharedTokenSource
+	base   http.RoundTripper
+}
+
+func (t cloudTokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	token, err := t.source.Token(req.Context())
+	if err != nil {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		return nil, err
+	}
+	authorized := req.Clone(req.Context())
+	authorized.Header = req.Header.Clone()
+	token.SetAuthHeader(authorized)
+	return t.base.RoundTrip(authorized)
 }
