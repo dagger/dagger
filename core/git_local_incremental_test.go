@@ -151,6 +151,32 @@ func TestIncrementalGitCheckoutGates(t *testing.T) {
 	require.Equal(t, "gitlinks", reason)
 }
 
+func TestIncrementalGitCheckoutActualParent(t *testing.T) {
+	ctx := context.Background()
+	source := historyRepo(t, "sha1")
+	parent := historyCommit(t, source, "file", "base")
+	child := historyCommit(t, source, "file", "child")
+	other := historyCommit(t, source, "file", "other")
+	cli := gitutil.NewGitCLI(gitutil.WithDir(source))
+
+	// Revision traversal accepts this rewritten parent; checkout provenance
+	// must instead use the headers stored in the original commit object.
+	require.NoError(t, os.WriteFile(filepath.Join(source, ".git/info/grafts"), []byte(child+" "+other+"\n"), 0600))
+	require.Contains(t, gitMirrorTestRun(t, source, "rev-list", "--parents", "-n", "1", child), other)
+	_, reason, err := planIncrementalGitCheckout(ctx, cli, parent, child)
+	require.NoError(t, err)
+	require.Empty(t, reason)
+	_, reason, err = planIncrementalGitCheckout(ctx, cli, other, child)
+	require.NoError(t, err)
+	require.Equal(t, "parent-mismatch", reason)
+
+	require.NoError(t, os.Remove(filepath.Join(source, ".git/info/grafts")))
+	gitMirrorTestRun(t, source, "replace", child, other)
+	_, reason, err = planIncrementalGitCheckout(ctx, cli, parent, child)
+	require.NoError(t, err)
+	require.Empty(t, reason)
+}
+
 func TestIncrementalGitCheckoutProvenance(t *testing.T) {
 	sha := strings.Repeat("a", 40)
 	parent := dagql.ObjectResult[*GitRef]{} // no parent is never eligible

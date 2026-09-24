@@ -45,7 +45,7 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		return nil, false, err
 	}
 	var result *Directory
-	err = ref.mount(ctx, 0, false, func(source *gitutil.GitCLI) error {
+	err = ref.mount(ctx, 0, false, func(source *gitutil.GitCLI) (rerr error) {
 		// These gates run before selecting/evaluating the parent tree. Unsupported
 		// controls must re-checkout every file, including otherwise unchanged blobs.
 		plan, reason, err := planIncrementalGitCheckout(ctx, source, ref.repo.CheckoutBase.Parent.Self().Ref.SHA, ref.SHA)
@@ -99,7 +99,14 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		result.SetSnapshot(snap)
 		return nil
 	})
-	return result, supported, errors.Join(err, rerr)
+	err = errors.Join(err, ctx.Err())
+	if err != nil {
+		if result != nil {
+			err = errors.Join(err, result.OnRelease(context.WithoutCancel(ctx)))
+		}
+		return nil, supported, err
+	}
+	return result, supported, nil
 }
 
 type incrementalGitCheckoutPlan struct {
@@ -126,12 +133,20 @@ func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, par
 	// Do not trust annotation alone, nor accept merges: the retained recipe
 	// must be this commit's single actual parent in the current object database.
 	source = source.New(gitutil.WithArgs("--no-replace-objects"))
-	parents, err := source.Run(ctx, "rev-list", "--parents", "-n", "1", child)
+	// Read the raw object, not revision traversal: info/grafts rewrites parents
+	// even when replace refs are disabled. Only top-level commit headers count.
+	commit, err := source.Run(ctx, "cat-file", "commit", child)
 	if err != nil {
 		return nil, "", err
 	}
-	fields := strings.Fields(string(parents))
-	if len(fields) != 2 || fields[0] != child || fields[1] != parent {
+	headers, _, _ := strings.Cut(string(commit), "\n\n")
+	var parents []string
+	for _, line := range strings.Split(headers, "\n") {
+		if sha, ok := strings.CutPrefix(line, "parent "); ok {
+			parents = append(parents, sha)
+		}
+	}
+	if len(parents) != 1 || parents[0] != parent {
 		return nil, "parent-mismatch", nil
 	}
 	for _, sha := range []string{parent, child} {
