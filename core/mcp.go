@@ -2235,25 +2235,6 @@ func stableIDDigest(id *call.ID) digest.Digest {
 const llmLogsMaxLineLen = 2000
 const llmLogsBatchSize = 1000
 
-// captureLogs returns nicely Heroku-formatted lines of all logs emitted
-// beneath the given span. When excludeServiceLogs is set, logs from
-// long-lived service exec spans are skipped — they enter tool-call subtrees
-// via cause links and would otherwise drown out deliberate print output.
-func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs bool) ([]string, error) {
-	captured, err := m.captureLogLines(ctx, spanID, excludeServiceLogs, false)
-	if err != nil {
-		return nil, err
-	}
-	if len(captured.lines) == 0 {
-		return nil, nil
-	}
-	texts := make([]string, len(captured.lines))
-	for i, line := range captured.lines {
-		texts[i] = line.text
-	}
-	return texts, nil
-}
-
 // capturedLine is one assembled log line, tagged with whether it was printed
 // by the captured span itself (or one of its direct children — where a tool
 // function's own print output lands) rather than by nested work deeper in the
@@ -2296,8 +2277,40 @@ type capturedOutput struct {
 	directSpans map[string]bool
 }
 
-// captureLogLines is captureLogs' structured form: the same filtering and
-// line assembly, but each line retains its direct/nested provenance.
+// logCaptureScope narrows the legacy causal scope to own or raw-descendant
+// producers. A nil set leaves the causal capture unrestricted.
+func logCaptureScope(ctx context.Context, db *clientdb.DB, spanID string, scope ...string) (map[string]bool, error) {
+	if len(scope) == 0 || scope[0] == "causal" {
+		return nil, nil
+	}
+	allowed := map[string]bool{spanID: true}
+	if scope[0] != "descendants" {
+		return allowed, nil
+	}
+	rows, err := db.SelectSpansLatest(ctx, db.SpanLogScope(spanID))
+	if err != nil {
+		return nil, err
+	}
+	children := map[string][]string{}
+	for _, row := range rows {
+		children[row.ParentSpanID.String] = append(children[row.ParentSpanID.String], row.SpanID)
+	}
+	queue := []string{spanID}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		for _, child := range children[id] {
+			if !allowed[child] {
+				allowed[child] = true
+				queue = append(queue, child)
+			}
+		}
+	}
+	return allowed, nil
+}
+
+// captureLogLines assembles logs with producer and direct/nested provenance.
+// excludeServiceLogs keeps long-lived service output out of tool results.
 func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs, ownOnly bool, scope ...string) (capturedOutput, error) {
 	out := capturedOutput{directSpans: map[string]bool{}}
 	root, err := CurrentQuery(ctx)
@@ -2314,30 +2327,9 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 	}
 	defer q.Close()
 	q = inspectionStoreForSpan(q, spanID)
-	var allowed map[string]bool
-	if len(scope) > 0 && scope[0] != "causal" {
-		allowed = map[string]bool{spanID: true}
-		if scope[0] == "descendants" {
-			rows, err := q.SelectSpansLatest(ctx, q.SpanLogScope(spanID))
-			if err != nil {
-				return out, err
-			}
-			children := map[string][]string{}
-			for _, row := range rows {
-				children[row.ParentSpanID.String] = append(children[row.ParentSpanID.String], row.SpanID)
-			}
-			queue := []string{spanID}
-			for len(queue) > 0 {
-				id := queue[0]
-				queue = queue[1:]
-				for _, child := range children[id] {
-					if !allowed[child] {
-						allowed[child] = true
-						queue = append(queue, child)
-					}
-				}
-			}
-		}
+	allowed, err := logCaptureScope(ctx, q, spanID, scope...)
+	if err != nil {
+		return out, err
 	}
 
 	// segments accumulates log bodies in database record order, retaining the
@@ -2544,7 +2536,7 @@ func assembleLines(segments []capturedSegment) []capturedLine {
 // internal span. When skipServices is set, service exec spans
 // (dagger.io/service) are filtered the same way, keeping long-lived service
 // noise out of tool-result captures. Results are memoized per span so
-// captureLogs doesn't re-walk the parent chain for every log line.
+// captureLogLines doesn't re-walk the parent chain for every log line.
 type internalSpanFilter struct {
 	db           *clientdb.DB
 	root         string
@@ -3457,19 +3449,6 @@ func toolStructuredResponse(val any) (string, error) {
 		return "", fmt.Errorf("failed to encode response %T: %w", val, err)
 	}
 	return str.String(), nil
-}
-
-func limitLines(spanID string, logs []string, limit, maxLineLen int) []string {
-	if limit > 0 && len(logs) > limit {
-		snipped := fmt.Sprintf("... %d lines omitted (use ReadLogs(span: %s) to read more) ...", len(logs)-limit, spanID)
-		logs = append([]string{snipped}, logs[len(logs)-limit:]...)
-	}
-	for i, line := range logs {
-		if len(line) > maxLineLen {
-			logs[i] = line[:maxLineLen] + fmt.Sprintf("[... %d chars truncated]", len(line)-maxLineLen)
-		}
-	}
-	return logs
 }
 
 // limitIndirectLines abridges a captured log stream for a tool result: lines
