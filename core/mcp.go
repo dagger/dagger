@@ -2850,23 +2850,31 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Name: "FindSpans",
 		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
 			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call. Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
-			"Matching is a substring test on the span name (and a service's hostname); an empty query lists everything in scope. Only the newest `limit` matches are returned.",
+			"Matching is a substring test on span name, full test identity/ancestor path, or service hostname. Rows include bounded breadcrumbs; matching uses the full text. Empty query matches all. Only the newest limit matches are returned; offset skips that many newest matches after filtering, and the result gives an exact next-page call. Status filtering is navigation, never proof of error causality.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Substring of the span name (or service hostname) to match. Empty matches every span.",
+					"description": "Substring of span name, full test identity/ancestor path, or service hostname. Empty matches every span.",
 					"default":     "",
 				},
 				"span": map[string]any{
 					"type":        "string",
 					"description": "Restrict the search to this span's subtree (hex span ID). Empty searches the whole session.",
 				},
+				"status": map[string]any{
+					"type": "string", "enum": []string{"", "ERROR", "FAIL", "failed", "run", "ok"}, "default": "",
+					"description": "Filter by displayed span status; failed includes ERROR and FAIL. Does not establish causality or classify a span as a test.",
+				},
+				"offset": map[string]any{
+					"type": "integer", "minimum": 0, "default": 0,
+					"description": "Matching spans to skip from newest after query/status filtering. Use the returned next-page call; ordering is fixed for historical traces, live results may grow.",
+				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "Maximum matches to return; the newest are kept.",
+					"description": "Maximum matches to return; the newest are kept (also bounded by a byte budget).",
 					"minimum":     1,
 					"default":     findSpansDefaultLimit,
 				},
@@ -3267,9 +3275,11 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 // findSpansTool searches the session's trace by span name; see findSpans.
 func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Query string `default:""`
-		Span  string `default:""`
-		Limit int    `default:"100"`
+		Query  string `default:""`
+		Span   string `default:""`
+		Limit  int    `default:"100"`
+		Status string `default:""`
+		Offset int    `default:"0"`
 	}) (any, error) {
 		root := ""
 		if strings.TrimSpace(args.Span) != "" {
@@ -3281,7 +3291,7 @@ func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
 		if args.Limit <= 0 {
 			args.Limit = findSpansDefaultLimit
 		}
-		return findSpans(ctx, args.Query, root, args.Limit)
+		return findSpans(ctx, args.Query, root, args.Status, args.Limit, args.Offset)
 	})
 }
 
