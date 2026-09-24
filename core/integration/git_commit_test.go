@@ -5,7 +5,9 @@ package core
 
 import (
 	"context"
+	"encoding/hex"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
@@ -205,6 +207,295 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 	}
 	require.GreaterOrEqual(t, transactions, 5, "must execute native transactions, not only the fallback")
 	require.GreaterOrEqual(t, writes, 5, "must actually write native commits")
+}
+
+// The original storage deliberately has dirty tracked and untracked files.
+// It is not a valid seed for a committed checkout, even when its HEAD matches.
+func gitIncrementalCheckoutFixture(c *dagger.Client) (*dagger.Directory, *dagger.Container) {
+	inspector := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git", "python3"})
+	fixture := inspector.WithWorkdir("/repo").
+		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
+		WithEnvVariable("GIT_COMMITTER_DATE", workspaceCommitDate).
+		WithExec([]string{"sh", "-ec", `
+git init -b main
+git config user.name Oracle
+git config user.email oracle@example.com
+mkdir -p deep/dir nested
+printf 'base\n' > selected.txt
+printf 'base pending\n' > pending.txt
+printf 'delete\n' > delete.txt
+printf 'leaf\n' > deep/dir/leaf
+printf 'file\n' > deep/file
+printf 'file\n' > deep/to-link
+printf '#!/bin/sh\n' > run
+printf '*.txt text eol=lf\n*.id ident\n' > .gitattributes
+printf '*.txt text eol=crlf\n*.id ident\n' > nested/.gitattributes
+printf 'unchanged\n' > nested/unchanged.txt
+printf 'nested\n' > nested/edit.txt
+printf '$Id$\n' > nested/identity.id
+ln -s ../selected.txt deep/link
+git add .
+git commit -m base
+git tag baseline
+printf 'dirty tracked\n' > pending.txt
+printf 'dirty untracked\n' > untracked.txt
+`}).Directory("/repo")
+	return fixture, inspector
+}
+
+// Reopen plain metadata instead of obscuring changes.Before: withCommit can
+// attach checkout provenance to both native and legacy transaction results.
+func gitFullCheckoutOracle(ref *dagger.GitRef) *dagger.Directory {
+	return ref.AsWorkspace().Git().Directory().AsGit().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+}
+
+// Manifests intentionally exclude times. Source-only Git checkouts normalize
+// every path to 1s. Container mounting/copying replaces the root's mtime even
+// for the legacy oracle, so inspect its descendants here; backend tests check
+// the snapshot root directly, before this consumer wrapper changes it.
+func requireGitCheckoutTimes(ctx context.Context, t *testctx.T, inspector *dagger.Container, dir *dagger.Directory) {
+	t.Helper()
+	out, err := inspector.WithDirectory("/inspect", dir).
+		WithExec([]string{"python3", "-c", `
+import os, stat
+bad = []
+def visit(path):
+    s = os.lstat(path)
+    if path != '/inspect' and s.st_mtime_ns != 1000000000:
+        bad.append((path, s.st_mtime_ns))
+    if stat.S_ISDIR(s.st_mode):
+        for name in sorted(os.listdir(path)):
+            visit(os.path.join(path, name))
+visit('/inspect')
+assert not bad, bad
+print('all paths normalized')
+`}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "all paths normalized\n", out)
+}
+
+func (GitSuite) TestGitRefIncrementalCheckoutOracle(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture, inspector := gitIncrementalCheckoutFixture(c)
+	original := workspaceCommitManifest(ctx, t, inspector, fixture)
+	base := fixture.AsGit().Branch("main")
+	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	baseManifest := workspaceCommitManifest(ctx, t, inspector, before) // Warm canonical parent.
+	require.NotContains(t, baseManifest, "untracked.txt")
+	require.Equal(t, hex.EncodeToString([]byte("base pending\n")), baseManifest["pending.txt"].Contents)
+	for _, tc := range []struct {
+		name    string
+		edit    func(*dagger.Directory) *dagger.Directory
+		include []string
+		check   func(map[string]workspaceCommitManifestEntry)
+	}{
+		{name: "selected edit excludes pending", edit: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("selected.txt", "selected\n").WithNewFile("pending.txt", "must not leak\n").WithNewFile("pending-add", "must not leak\n")
+		}, include: []string{"selected.txt"}, check: func(m map[string]workspaceCommitManifestEntry) {
+			require.Equal(t, hex.EncodeToString([]byte("selected\n")), m["selected.txt"].Contents)
+			require.Equal(t, baseManifest["pending.txt"], m["pending.txt"])
+			require.NotContains(t, m, "pending-add")
+		}},
+		{name: "adds and deletes", edit: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithoutFile("delete.txt").WithNewFile("new/deep/added.txt", "added\n")
+		}},
+		{name: "deep file directory and symlink replacements", edit: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithoutDirectory("deep/dir").WithNewFile("deep/dir", "regular now\n").
+				WithoutFile("deep/file").WithNewFile("deep/file/sub/leaf", "replacement\n").
+				WithoutFile("deep/link").WithNewFile("deep/link/sub/leaf", "directory now\n").
+				WithoutFile("deep/to-link").WithSymlink("../selected.txt", "deep/to-link")
+		}},
+		{name: "executable bits", edit: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("run", "#!/bin/sh\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
+				WithNewFile("new-run", "#!/bin/sh\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755})
+		}},
+		{name: "static nested eol and ident", edit: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("nested/edit.txt", "new\n").WithNewFile("nested/identity.id", "$Id$\nnew\n")
+		}, check: func(m map[string]workspaceCommitManifestEntry) {
+			require.Equal(t, hex.EncodeToString([]byte("new\r\n")), m["nested/edit.txt"].Contents)
+			contents, err := hex.DecodeString(m["nested/identity.id"].Contents)
+			require.NoError(t, err)
+			require.Contains(t, string(contents), "$Id: ")
+		}},
+		{name: "changed attributes resmudge unchanged blob", edit: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("nested/.gitattributes", "*.txt text eol=lf\n*.id ident\n")
+		}, check: func(m map[string]workspaceCommitManifestEntry) {
+			require.Equal(t, hex.EncodeToString([]byte("unchanged\r\n")), baseManifest["nested/unchanged.txt"].Contents)
+			require.Equal(t, hex.EncodeToString([]byte("unchanged\n")), m["nested/unchanged.txt"].Contents)
+		}},
+		{name: "same tree allow empty", edit: func(d *dagger.Directory) *dagger.Directory { return d }},
+	} {
+		// Inline: testctx subtests run in parallel, which would race telemetry
+		// draining and client closure in related trace tests.
+		t.Logf("incremental checkout oracle: %s", tc.name)
+		changes := tc.edit(before).Changes(before)
+		if len(tc.include) > 0 {
+			changes = changes.Filter(dagger.ChangesetFilterOpts{Include: tc.include})
+		}
+		_, err := changes.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		committed := base.WithCommit(changes, tc.name, workspaceCommitDate, "Oracle", "oracle@example.com", dagger.GitRefWithCommitOpts{AllowEmpty: true})
+		fast := committed.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		legacy := gitFullCheckoutOracle(committed)
+		got := workspaceCommitManifest(ctx, t, inspector, fast)
+		require.Equal(t, workspaceCommitManifest(ctx, t, inspector, legacy), got, tc.name)
+		require.NotContains(t, got, "untracked.txt")
+		require.NotContains(t, got, ".git")
+		requireGitCheckoutTimes(ctx, t, inspector, fast)
+		requireGitCheckoutTimes(ctx, t, inspector, legacy)
+		if tc.check != nil {
+			tc.check(got)
+		}
+		if tc.name == "same tree allow empty" {
+			require.Equal(t, baseManifest, got)
+			baseSHA, err := base.CommitSHA(ctx)
+			require.NoError(t, err)
+			sha, err := committed.CommitSHA(ctx)
+			require.NoError(t, err)
+			require.NotEqual(t, baseSHA, sha, "allow-empty must create a new commit")
+		}
+		if tc.name == "changed attributes resmudge unchanged blob" {
+			metadata := committed.AsWorkspace().Git().Directory()
+			out, err := inspector.WithMountedDirectory("/repo/.git", metadata).WithWorkdir("/repo").
+				WithExec([]string{"sh", "-ec", `test "$(git rev-parse HEAD:nested/unchanged.txt)" = "$(git rev-parse HEAD^:nested/unchanged.txt)"`}).Stdout(ctx)
+			require.NoError(t, err, out)
+		}
+		if tc.name == "adds and deletes" {
+			baseSHA, err := base.CommitSHA(ctx)
+			require.NoError(t, err)
+			// Legacy commit storage may prune unrelated branches; the current
+			// branch must use the new tip, while a reachable tag and parent SHA
+			// must not inherit that tip's incremental checkout.
+			require.Equal(t, got, workspaceCommitManifest(ctx, t, inspector, committed.AsRepository().Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})))
+			for _, ref := range []*dagger.GitRef{
+				committed.AsRepository().Tag("baseline"),
+				committed.AsRepository().Ref("refs/tags/baseline"),
+				committed.AsRepository().Ref(baseSHA),
+			} {
+				// Repository-level provenance must not seed another tip's tree.
+				require.Equal(t, baseManifest, workspaceCommitManifest(ctx, t, inspector, ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})))
+			}
+		}
+	}
+	finalInspector := inspector.WithEnvVariable("INSPECTION_STAGE", "after commits")
+	require.Equal(t, baseManifest, workspaceCommitManifest(ctx, t, finalInspector, before), "canonical parent mutated")
+	require.Equal(t, original, workspaceCommitManifest(ctx, t, finalInspector, fixture), "original repository storage mutated")
+}
+
+func (GitSuite) TestGitRefIncrementalCheckoutTrace(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := gitIncrementalCheckoutFixture(c)
+	base := fixture.AsGit().Head()
+	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	workspaceCommitManifest(ctx, t, inspector, before) // Materialize outside optimized span.
+	changes := before.WithNewFile("selected.txt", "trace selected\n").Changes(before)
+	_, err := changes.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	committed := base.WithCommit(changes, "incremental trace", workspaceCommitDate, "Oracle", "oracle@example.com")
+	fast := committed.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	require.Equal(t, workspaceCommitManifest(ctx, t, inspector, gitFullCheckoutOracle(committed)), workspaceCommitManifest(ctx, t, inspector, fast))
+	requireGitCheckoutTimes(ctx, t, inspector, fast)
+	require.NoError(t, c.Close()) // All cases above are inline; drain finished spans.
+
+	traces, _ := sink.capture()
+	parents, names, supported, changed := map[string]string{}, map[string]string{}, map[string]bool{}, map[string]int64{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+					if span.Name != "materialize incremental git checkout" {
+						continue
+					}
+					for _, attr := range span.Attributes {
+						switch attr.Key {
+						case "dagger.git.checkout.incremental.supported":
+							supported[id] = attr.Value.GetBoolValue()
+						case "dagger.git.checkout.incremental.changed_paths":
+							changed[id] = attr.Value.GetIntValue()
+						}
+					}
+				}
+			}
+		}
+	}
+	var materializations, checkouts, fullCheckouts int
+	for id, name := range names {
+		if supported[id] {
+			materializations++
+			require.Equal(t, int64(1), changed[id], "must check out just the selected path")
+		}
+		if name == "materialize local git checkout" {
+			fullCheckouts++
+		}
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if !supported[parent] {
+				continue
+			}
+			require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "incremental checkout fetched: %s", name)
+			require.NotEqual(t, "materialize local git checkout", name, "warmed parent must not be checked out again")
+			require.NotEqual(t, "git checkout", name, "must not run a full checkout")
+			if name == "git checkout-index" {
+				checkouts++
+			}
+			break
+		}
+	}
+	require.Positive(t, fullCheckouts, "unannotated oracle must exercise full materialization")
+	require.Positive(t, materializations, "must execute supported incremental materialization")
+	require.Positive(t, checkouts, "must actually check out changed paths, not merely report eligibility")
+}
+
+func (GitSuite) TestGitRefRetainedCheckoutSurvivesSourceScope(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture, _ := gitIncrementalCheckoutFixture(c)
+	base := fixture.AsGit().Head()
+	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	committed := base.WithCommit(before.WithNewFile("selected.txt", "retained\n").Changes(before), "retained", workspaceCommitDate, "Oracle", "oracle@example.com")
+	sha, err := committed.CommitSHA(ctx)
+	require.NoError(t, err)
+	baseSHA, err := base.CommitSHA(ctx)
+	require.NoError(t, err)
+	id, err := committed.ID(ctx)
+	require.NoError(t, err)
+	var result struct {
+		Node struct {
+			Tree struct{ ID dagger.ID }
+		}
+	}
+	// Explicit depth zero requests full retained history; the SDK omits zero.
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { tree(depth: 0, discardGitDir: false) { id } } } }`,
+		Variables: map[string]any{"id": id},
+	}, &dagger.Response{Data: &result}))
+	exported := filepath.Join(t.TempDir(), "retained")
+	_, err = dagger.Ref[*dagger.Directory](c, result.Node.Tree.ID).Export(ctx, exported)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+
+	// A fresh client has only the exported filesystem, not the source scope's
+	// mounts. This catches borrowed alternates, gitfiles and temporary indexes.
+	consumer := connect(ctx, t)
+	out, err := consumer.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+		WithMountedDirectory("/repo", consumer.Host().Directory(exported)).WithWorkdir("/repo").
+		WithExec([]string{"sh", "-ec", `
+test -d .git
+test ! -s .git/objects/info/alternates
+git fsck --full --no-dangling >&2
+test -z "$(git status --porcelain)"
+test "$(cat selected.txt)" = retained
+git log --format=%H
+`}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{sha, baseSHA}, strings.Fields(out))
 }
 
 func (GitSuite) TestGitRefWithCommit(ctx context.Context, t *testctx.T) {
