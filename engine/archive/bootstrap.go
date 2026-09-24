@@ -11,7 +11,9 @@ import (
 )
 
 const BootstrapContentType = "application/vnd.dagger.telemetry.bootstrap"
-const maxBootstrapFrame = 64 << 20
+
+// MaxBootstrapPayloadSize bounds the encoded payload of each bootstrap frame.
+const MaxBootstrapPayloadSize = 64 << 20
 
 var bootstrapMagic = [4]byte{'D', 'A', 'B', 1}
 
@@ -105,8 +107,8 @@ type byteWriter []byte
 func (w *byteWriter) Write(p []byte) (int, error) { *w = append(*w, p...); return len(p), nil }
 
 func WriteBootstrapFrame(w io.Writer, kind BootstrapFrameKind, payload []byte) error {
-	if len(payload) > maxBootstrapFrame {
-		return fmt.Errorf("bootstrap payload is %d bytes (maximum %d)", len(payload), maxBootstrapFrame)
+	if len(payload) > MaxBootstrapPayloadSize {
+		return fmt.Errorf("bootstrap payload is %d bytes (maximum %d)", len(payload), MaxBootstrapPayloadSize)
 	}
 	var header [9]byte
 	copy(header[:4], bootstrapMagic[:])
@@ -136,8 +138,8 @@ func ReadBootstrapFrame(r io.Reader) (BootstrapFrameKind, []byte, error) {
 		return 0, nil, fmt.Errorf("invalid bootstrap frame kind %d", kind)
 	}
 	size := binary.BigEndian.Uint32(header[5:])
-	if size > maxBootstrapFrame {
-		return 0, nil, fmt.Errorf("bootstrap frame is %d bytes (maximum %d)", size, maxBootstrapFrame)
+	if size > MaxBootstrapPayloadSize {
+		return 0, nil, fmt.Errorf("bootstrap frame is %d bytes (maximum %d)", size, MaxBootstrapPayloadSize)
 	}
 	payload := make([]byte, int(size))
 	if _, err := io.ReadFull(r, payload); err != nil {
