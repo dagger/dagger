@@ -531,6 +531,20 @@ func TestConsoleSpanDetail(t *testing.T) {
 	}
 }
 
+func TestRenderSpanDetailTimingPrecision(t *testing.T) {
+	start := time.Unix(100, 0).UTC()
+	id := prettyTestSpanID(1)
+	for _, elapsed := range []time.Duration{100 * time.Nanosecond, 500 * time.Microsecond, time.Millisecond + time.Nanosecond} {
+		t.Run(elapsed.String(), func(t *testing.T) {
+			db := dagui.NewDB()
+			db.ImportSnapshots([]dagui.SpanSnapshot{{ID: id, Name: "short", StartTime: start, EndTime: start.Add(elapsed), Final: true}})
+			detail, ok := RenderSpanDetail(db, id)
+			require.True(t, ok)
+			require.Contains(t, detail, "duration: "+elapsed.String()+" (own span wall interval)")
+		})
+	}
+}
+
 func TestRenderSpanDetailErrors(t *testing.T) {
 	db := dagui.NewDB()
 	rootID, failedID, originID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)

@@ -65,6 +65,7 @@ func SpanFlags(sp *dagui.Span) []string {
 	set(sp.RollUpSpans, "rollUpSpans")
 	set(sp.Cached, "cached")
 	set(sp.Canceled, "canceled")
+	set(sp.LeftRunning, "leftRunning")
 	switch {
 	case sp.Service && sp.ServiceName != "":
 		flags = append(flags, "service="+sp.ServiceName)
@@ -158,14 +159,20 @@ func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
 		fmt.Fprintf(&b, "started:  (unknown)\n")
 	} else {
 		fmt.Fprintf(&b, "started:  %s\n", sp.StartTime.Format(time.RFC3339Nano))
-		if sp.IsRunning() {
+		switch {
+		case sp.LeftRunning:
+			// Imports and ended traces synthesize an end for unfinished
+			// spans. It is not evidence of when this operation completed.
+			fmt.Fprintf(&b, "ended:    (completion unrecorded; synthetic end: %s)\n", sp.EndTime.Format(time.RFC3339Nano))
+			fmt.Fprintf(&b, "duration: unknown (own span wall interval; completion unrecorded)\n")
+		case sp.IsRunning():
 			// Running spans have no end time yet (dagui encodes that as
 			// EndTime < StartTime); show elapsed time instead.
 			fmt.Fprintf(&b, "ended:    (still running)\n")
-			fmt.Fprintf(&b, "duration: %s (so far)\n", time.Since(sp.StartTime).Truncate(time.Millisecond))
-		} else {
+			fmt.Fprintf(&b, "duration: %s (so far; own span wall interval)\n", time.Since(sp.StartTime))
+		default:
 			fmt.Fprintf(&b, "ended:    %s\n", sp.EndTime.Format(time.RFC3339Nano))
-			fmt.Fprintf(&b, "duration: %s\n", sp.EndTime.Sub(sp.StartTime).Truncate(time.Millisecond))
+			fmt.Fprintf(&b, "duration: %s (own span wall interval)\n", sp.EndTime.Sub(sp.StartTime))
 		}
 	}
 	if flags := SpanFlags(sp); len(flags) > 0 {
@@ -257,23 +264,29 @@ func RenderSpanTimings(db *dagui.DB, id dagui.SpanID, minDuration time.Duration,
 	var b strings.Builder
 	fmt.Fprintf(&b, "root: %s  %q\n", root.ID, root.Name)
 	fmt.Fprintln(&b, "Loaded spans only (including internal); incomplete if telemetry is missing or not fetched. No logs fetched.")
-	fmt.Fprintln(&b, "Durations are wall time, may overlap, and are not CPU self time; 'so far' uses the current clock. Unknown timings survive the duration filter.")
+	fmt.Fprintln(&b, "Scope: raw parent edges only; cause links and the UI's linked tree are not traversed.")
+	fmt.Fprintln(&b, "Durations are each span's own wall interval, may overlap, and are not CPU self time or total execution time; 'so far' uses the current clock. Unknown timings survive the duration filter; synthetic ends do not establish completion.")
 	fmt.Fprintln(&b, "span_id  parent_id  start_offset  duration  name")
 	shown, filtered, capped := 0, 0, 0
 	for _, sp := range spans {
 		offset, duration := "unknown", "unknown"
+		if sp.LeftRunning {
+			duration = "unknown (completion unrecorded)"
+		}
 		if !sp.StartTime.IsZero() {
-			elapsed := sp.EndTime.Sub(sp.StartTime)
-			if sp.IsRunning() {
-				elapsed = now.Sub(sp.StartTime)
-			}
-			if elapsed < minDuration {
-				filtered++
-				continue
-			}
-			duration = elapsed.String()
-			if sp.IsRunning() {
-				duration += " (so far)"
+			if !sp.LeftRunning {
+				elapsed := sp.EndTime.Sub(sp.StartTime)
+				if sp.IsRunning() {
+					elapsed = now.Sub(sp.StartTime)
+				}
+				if elapsed < minDuration {
+					filtered++
+					continue
+				}
+				duration = elapsed.String()
+				if sp.IsRunning() {
+					duration += " (so far)"
+				}
 			}
 			if !root.StartTime.IsZero() {
 				offset = sp.StartTime.Sub(root.StartTime).String()
