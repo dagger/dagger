@@ -311,6 +311,7 @@ type frontendPretty struct {
 	notifications         map[string]*NotificationBubble // keyed by section title
 	notificationContainer *tuist.Container
 	notificationOverlay   *tuist.OverlayHandle
+	notificationsHidden   bool
 
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
@@ -1039,6 +1040,7 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 					Anchor: tuist.AnchorTopRight,
 					Margin: tuist.OverlayMargin{Right: 1},
 				})
+				fe.notificationOverlay.SetHidden(fe.notificationsHidden)
 			}
 
 			// Untitled goes first, titled appends
@@ -1055,6 +1057,15 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 
 		fe.Update()
 	})
+}
+
+// toggleNotifications hides the bubbles without discarding their content, so
+// updates received while hidden are visible when they are shown again.
+func (fe *frontendPretty) toggleNotifications() {
+	fe.notificationsHidden = !fe.notificationsHidden
+	if fe.notificationOverlay != nil {
+		fe.notificationOverlay.SetHidden(fe.notificationsHidden)
+	}
 }
 
 // SetStatusLine updates the compact status line with LLM token/cost/context
@@ -2961,6 +2972,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	if fe.inputFocused() {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
+			key.NewBinding(key.WithKeys("ctrl+o"), key.WithHelp("ctrl+o", "toggle overlays")),
 		}
 		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
 			bnds = append(bnds,
@@ -2994,6 +3006,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
 			KeyEnabled(fe.shell != nil)),
+		key.NewBinding(key.WithKeys("ctrl+o"),
+			key.WithHelp("ctrl+o", "toggle overlays"),
+			KeyEnabled(fe.shell != nil || fe.notificationOverlay != nil)),
 		key.NewBinding(key.WithKeys("w"),
 			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
 			KeyEnabled(fe.cloudURL != "")),
@@ -5566,6 +5581,9 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 	}
 
 	switch keyStr {
+	case "ctrl+o":
+		fe.toggleNotifications()
+		return true
 	case "ctrl+v":
 		if fe.acceptsPromptImages() {
 			fe.pastePromptImage()
@@ -5718,6 +5736,10 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	keyStr := k.String()
 	lastKey := fe.pressedKey
 	fe.recordKeyPress(keyStr)
+	if keyStr == "ctrl+o" {
+		fe.toggleNotifications()
+		return
+	}
 	if fe.logPager != nil {
 		switch keyStr {
 		case "q", "esc", "alt+esc":
