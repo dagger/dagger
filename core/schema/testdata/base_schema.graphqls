@@ -1363,7 +1363,7 @@ type Container implements Exportable & Node & Syncer {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
-  ): Container!
+  ): Container! @deprecated(reason: "Use withShell.")
 
   """
   Opens an interactive terminal for this container using its configured default
@@ -1376,7 +1376,7 @@ type Container implements Exportable & Node & Syncer {
     cmd: [String!] = []
 
     """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    experimentalPrivilegedNesting: Boolean
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -1385,7 +1385,7 @@ type Container implements Exportable & Node & Syncer {
     option. It should only be used when absolutely necessary and only with
     trusted commands.
     """
-    insecureRootCapabilities: Boolean = false
+    insecureRootCapabilities: Boolean
   ): Terminal!
 
   """
