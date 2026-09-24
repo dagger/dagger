@@ -16,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -128,7 +129,7 @@ func (sink *realBenchTrace) report(t *testing.T) {
 		fetch := strings.HasPrefix(span.Name, "git fetch") || strings.HasPrefix(span.Name, "fetching ")
 		interesting := fetch
 		switch span.Name {
-		case "Workspace.withCommit", "Changeset.__mergeWithChangeset", "git commit", "git commit-tree", "git native commit transaction", "git native workspace merge", "materialize incremental git checkout", "materialize local git checkout", "GitRef.log":
+		case "Workspace.withCommit", "Changeset.__mergeWithChangeset", "git commit", "git commit-tree", "git native commit transaction", "git native workspace merge", "git promote remote commit base", "git pack remote commit closure", "git pack-objects", "materialize incremental git checkout", "materialize local git checkout", "GitRef.log":
 			interesting = true
 		}
 		if !interesting {
@@ -183,6 +184,17 @@ func realBenchStatus(ctx context.Context, t *testing.T, delta *dagger.Changeset,
 }
 
 func TestWorkspaceRealRepositoryPerformance(t *testing.T) {
+	realRepositoryPerformance(t, false)
+}
+
+// The source commit alone does not pin capture provenance: live advertised refs
+// can move beyond the fixture's known ancestry and trigger a bundle import.
+// Serve the same packed history with a frozen advertisement for matched runs.
+func TestWorkspaceRealRepositoryPerformanceControlledOrigin(t *testing.T) {
+	realRepositoryPerformance(t, true)
+}
+
+func realRepositoryPerformance(t *testing.T, controlledOrigin bool) {
 	// A full-history network fixture is too expensive for ordinary CI runs.
 	// Require the benchmark's name explicitly, not a broad selector such as .*.
 	run := flag.Lookup("test.run")
@@ -284,6 +296,54 @@ func TestWorkspaceRealRepositoryPerformance(t *testing.T) {
 	engineBaseVersion := strings.SplitN(version, "+", 2)[0]
 	require.Contains(t, string(cliVersion), engineBaseVersion, "engine and CLI release versions must agree")
 	realBenchLog(t, map[string]any{"kind": "connect", "ms": float64(time.Since(started)) / float64(time.Millisecond), "engine_version": version})
+	if controlledOrigin {
+		started = time.Now()
+		// Use upload-pack over smart HTTP: the test image includes Git but not
+		// the separately packaged git-daemon executable. This server advertises
+		// only the fixture's frozen refs and reads the same packed repository.
+		originServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			args := []string{"upload-pack", "--stateless-rpc"}
+			if r.Method == http.MethodGet && r.URL.Path == "/repo/info/refs" && r.URL.Query().Get("service") == "git-upload-pack" {
+				w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+				_, _ = io.WriteString(w, "001e# service=git-upload-pack\n0000")
+				args = append(args, "--advertise-refs")
+			} else if r.Method == http.MethodPost && r.URL.Path == "/repo/git-upload-pack" {
+				w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+			} else {
+				http.NotFound(w, r)
+				return
+			}
+			args = append(args, checkout)
+			cmd := exec.CommandContext(r.Context(), "git", args...)
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+			if protocol := r.Header.Get("Git-Protocol"); protocol != "" {
+				cmd.Env = append(cmd.Env, "GIT_PROTOCOL="+protocol)
+			}
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = r.Body, w, io.Discard
+			if err := cmd.Run(); err != nil {
+				t.Logf("controlled origin upload-pack: %v", err)
+			}
+		}))
+		t.Cleanup(originServer.Close)
+		port := originServer.Listener.Addr().(*net.TCPAddr).Port
+		tunnel, err := c.Host().Service([]dagger.PortForward{{Frontend: 80, Backend: port}}).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = tunnel.Stop(context.Background()) })
+		host, err := tunnel.Hostname(ctx)
+		require.NoError(t, err)
+		origin := "http://" + host + "/repo"
+		git("remote", "set-url", "origin", origin)
+		// Only the capturing client's HTTP transport uses this loopback proxy.
+		// Unlike url.insteadOf, it leaves `git remote get-url` unchanged, so
+		// snapshot reconstruction records the engine-reachable service URL.
+		git("config", "http."+origin+".proxy", originServer.URL)
+		require.Equal(t, origin, git("remote", "get-url", "origin"))
+		require.Equal(t, realBenchFixtureSHA+"\tHEAD", git("ls-remote", "origin", "HEAD"))
+		remoteSHA, err := c.Git(origin, dagger.GitOpts{ExperimentalServiceHost: tunnel}).Head().CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, realBenchFixtureSHA, remoteSHA)
+		realBenchLog(t, map[string]any{"kind": "controlled_origin", "ms": float64(time.Since(started)) / float64(time.Millisecond), "origin": origin, "advertised_sha": remoteSHA, "host_http_proxy": "loopback fixture transport only"})
+	}
 	started = time.Now()
 	id, err := c.CurrentWorkspace().Snapshot().ID(ctx)
 	require.NoError(t, err)
@@ -433,6 +493,21 @@ func TestWorkspaceRealRepositoryPerformance(t *testing.T) {
 	require.Equal(t, nested, readHost("core/workspace.go"))
 	require.Equal(t, pending, readHost("go.mod"))
 	require.NoError(t, c.Close())
+	if controlledOrigin {
+		sink.mu.Lock()
+		var captures, bundles int
+		for _, span := range sink.spans {
+			if span.Name == "checkpoint import captured bundle" {
+				bundles++
+			}
+			if span.Name == "checkpoint reconstruct repository" {
+				captures++
+			}
+		}
+		sink.mu.Unlock()
+		require.Zero(t, bundles, "input must stay remote, not silently become a local bundle")
+		require.Positive(t, captures, "must observe snapshot reconstruction to validate input provenance")
+	}
 	sink.report(t)
 	realBenchLog(t, map[string]any{"kind": "validated", "commits": 6, "host_unchanged": true})
 }
