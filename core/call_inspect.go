@@ -25,9 +25,9 @@ import (
 // The rebuild is dagui.DB.CallIDForDigest, the same path the TUI takes to
 // address an agent from its roster or resume a conversation, fed by a scoped
 // load: starting from the digest, each frame's references (receiver, module,
-// ID-valued arguments) are followed through the store's call index
-// (clientdb.SelectCallFrames), so the cost is linear in the recipe rather
-// than the session, and nothing is retained between calls. A frame the
+// ID-valued arguments or implicit inputs) are followed through the store's
+// call index (clientdb.SelectCallFrames), so the cost is linear in the recipe
+// rather than the session, and nothing is retained between calls. A frame the
 // client never received surfaces as CallIDForDigest's gap report, naming
 // the frame that referenced it.
 
@@ -226,8 +226,8 @@ func ingestCallFrames(ctx context.Context, db *dagui.DB, frames []clientdb.CallF
 }
 
 // callReferences lists the digests a frame references: its receiver, its
-// module's call, and every ID literal among its arguments (inside lists and
-// objects included) -- the same edges CallIDForDigest's extraction follows.
+// module's call, and every ID literal among its arguments and implicit inputs
+// (inside lists and objects included) -- the same edges CallIDForDigest follows.
 func callReferences(frame *callpbv1.Call) []string {
 	var refs []string
 	if frame.ReceiverDigest != "" {
@@ -238,6 +238,9 @@ func callReferences(frame *callpbv1.Call) []string {
 	}
 	for _, arg := range frame.Args {
 		refs = appendLiteralReferences(refs, arg.GetValue())
+	}
+	for _, input := range frame.ImplicitInputs {
+		refs = appendLiteralReferences(refs, input.GetValue())
 	}
 	return refs
 }

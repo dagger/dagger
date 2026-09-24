@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -114,6 +116,94 @@ func callInspectStore(t *testing.T, id *call.ID, withhold ...string) (*clientdb.
 	_, err = store.AppendLogs(logs)
 	require.NoError(t, err)
 	return store, recipe.RootDigest, byField
+}
+
+func TestInspectCallPreservesImplicitInputs(t *testing.T) {
+	for _, transport := range []string{"span", "payload log"} {
+		t.Run(transport, func(t *testing.T) {
+			id := callInspectRecipe(t).With(call.WithImplicitInputs(
+				call.NewArgument("cachePerClient", call.NewLiteralString("client-a"), false),
+			))
+			if transport == "payload log" {
+				id = id.Append(&ast.Type{NamedType: "Container", NonNull: true}, "sync")
+			}
+			store, root, frames := callInspectStore(t, id)
+			ctx := t.Context()
+			want := frames["withDirectory"].ImplicitInputs
+			require.Len(t, want, 1)
+
+			// Prove both telemetry transports retain the input before ID extraction.
+			db := dagui.NewDB()
+			require.NoError(t, loadCallClosure(ctx, store, db, root))
+			frame := db.Call(frames["withDirectory"].Digest)
+			require.NotNil(t, frame)
+			require.Len(t, frame.ImplicitInputs, 1)
+			require.Equal(t, "cachePerClient", frame.ImplicitInputs[0].Name)
+			require.Equal(t, "client-a", frame.ImplicitInputs[0].Value.GetString_())
+
+			t.Run("recipe", func(t *testing.T) {
+				loaded, err := loadRecipe(ctx, store, root)
+				require.NoError(t, err)
+				pb, err := loaded.id.ToProto()
+				require.NoError(t, err)
+				got := pb.GetRecipe().CallsByDigest[frames["withDirectory"].Digest]
+				require.NotNil(t, got)
+				require.Len(t, got.ImplicitInputs, len(want))
+				require.True(t, proto.Equal(want[0], got.ImplicitInputs[0]))
+			})
+			t.Run("stats", func(t *testing.T) {
+				got, err := inspectCallIn(ctx, store, root, callInspectOpts{View: callViewStats})
+				require.NoError(t, err)
+				t.Logf("stats:\n%s", got)
+				require.Contains(t, got, "implicitInputs=1")
+			})
+			t.Run("find", func(t *testing.T) {
+				got, err := inspectCallIn(ctx, store, root, callInspectOpts{
+					View: callViewFind, Find: regexp.MustCompile(`withDirectory`),
+				})
+				require.NoError(t, err)
+				t.Logf("find:\n%s", got)
+				require.Contains(t, got, `implicit cachePerClient: "client-a"`)
+			})
+		})
+	}
+}
+
+func TestInspectCallPreservesRecipeMetadata(t *testing.T) {
+	implicit := call.New().Append(&ast.Type{NamedType: "Directory", NonNull: true}, "implicitDirectory")
+	id := callInspectRecipe(t).With(
+		call.WithImplicitInputs(call.NewArgument("scope", call.NewLiteralList(
+			call.NewLiteralObject(call.NewArgument("directory", call.NewLiteralID(implicit), false)),
+		), false)),
+		call.WithEffectIDs([]string{"effect-a"}),
+		call.WithExtraDigest(call.ExtraDigest{Digest: digest.FromString("content-a"), Label: "content"}),
+	)
+	want, err := id.ToProto()
+	require.NoError(t, err)
+	store, root, _ := callInspectStore(t, id)
+
+	t.Run("complete", func(t *testing.T) {
+		loaded, err := loadRecipe(t.Context(), store, root)
+		require.NoError(t, err)
+		got, err := loaded.id.ToProto()
+		require.NoError(t, err)
+		require.True(t, proto.Equal(want, got), "all recipe frames and metadata must round-trip unchanged")
+		stats, err := inspectCallIn(t.Context(), store, root, callInspectOpts{View: callViewStats})
+		require.NoError(t, err)
+		require.Contains(t, stats, "distinct calls: 6")
+		require.Contains(t, stats, "extraDigests=1 effectIds=1 implicitInputs=1")
+		found, err := inspectCallIn(t.Context(), store, root, callInspectOpts{
+			View: callViewFind, Find: regexp.MustCompile(`implicitDirectory`),
+		})
+		require.NoError(t, err)
+		require.Contains(t, found, "digest:     "+implicit.Digest().String())
+	})
+	t.Run("missing implicit frame", func(t *testing.T) {
+		store, root, _ := callInspectStore(t, id, implicit.Digest().String())
+		_, err := loadRecipe(t.Context(), store, root)
+		require.ErrorContains(t, err, implicit.Digest().String()+" never reached this client")
+		require.ErrorContains(t, err, `referenced as implicit input "scope"`)
+	})
 }
 
 func TestInspectCallIn(t *testing.T) {
