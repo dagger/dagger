@@ -93,20 +93,6 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 	); err != nil {
 		return inst, err
 	}
-	changesID, err := changes.ID()
-	if err != nil {
-		return inst, err
-	}
-	// An empty uncommitted changeset may have an empty After tree. Apply the
-	// delta to HEAD to recover the complete source tree, excluding mounts.
-	var workingTree dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, frozen, &workingTree,
-		dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"},
-		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}},
-		dagql.Selector{Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}}},
-	); err != nil {
-		return inst, err
-	}
 	opts, err := args.opts()
 	if err != nil {
 		return inst, err
@@ -115,27 +101,61 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return inst, err
 	}
-	beforeID, err := incoming.Self().Before.ID()
+	var head dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, frozen, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
+		return inst, err
+	}
+	workingOnHead, err := core.GitCommitChangesetNativeBase(ctx, head, changes.Self())
 	if err != nil {
 		return inst, err
 	}
-	// Merge the same delta into the approved working tree as well as HEAD.
-	// Restoring the old tree after committing would undo off-baseline input.
-	var working dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, workingTree, &working, dagql.Selector{
-		Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
-	}); err != nil {
+	incomingOnHead, err := core.GitCommitChangesetNativeBase(ctx, head, incoming.Self())
+	if err != nil {
 		return inst, err
 	}
-	var merged dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, working, &merged, dagql.Selector{Field: "withChangeset", Args: []dagql.NamedInput{
-		{Name: "changes", Value: args.Changes}, {Name: "onConflict", Value: core.FailOnMergeConflict},
+	var working dagql.ObjectResult[*core.Changeset]
+	if workingOnHead && incomingOnHead {
+		// A Git-backed overlay already compares the complete approved source
+		// tree against this HEAD. Preserve that delta instead of applying it
+		// to HEAD and computing the same changes again. This is provenance
+		// reuse, not a shortcut around Git reconciliation or normalization.
+		working = changes
+	} else {
+		// An empty uncommitted changeset may have an empty After tree. Apply
+		// the delta to HEAD to recover the complete source tree, excluding
+		// mounts, and reconcile off-baseline input against its own base.
+		changesID, err := changes.ID()
+		if err != nil {
+			return inst, err
+		}
+		var workingTree dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, head, &workingTree,
+			dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}},
+			dagql.Selector{Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}}},
+		); err != nil {
+			return inst, err
+		}
+		beforeID, err := incoming.Self().Before.ID()
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, workingTree, &working, dagql.Selector{
+			Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+		}); err != nil {
+			return inst, err
+		}
+	}
+	// Merge the same delta into the approved working tree as well as HEAD.
+	// Restoring the old tree after committing would undo off-baseline input.
+	var mergedAfter dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, working, &mergedAfter, dagql.Selector{Field: "__mergeForWorkspaceCommit", Args: []dagql.NamedInput{
+		{Name: "changes", Value: args.Changes},
 	}}); err != nil {
 		return inst, fmt.Errorf("apply commit changes to working tree: %w", err)
 	}
 	commitArgs := gitRefWithCommitArgs{Changes: args.Changes, Message: opts.Message, Date: opts.Date, AuthorName: opts.AuthorName, AuthorEmail: opts.AuthorEmail, Signoff: opts.Signoff}
 	var committed dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, frozen, &committed, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}, dagql.Selector{Field: "withCommit", Args: commitArgs.selectors()}); err != nil {
+	if err := srv.Select(ctx, head, &committed, dagql.Selector{Field: "withCommit", Args: commitArgs.selectors()}); err != nil {
 		return inst, err
 	}
 	if err := srv.Select(ctx, committed, &inst,
@@ -159,7 +179,7 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 		return inst, err
 	}
 	var remaining dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, merged.Self().After, &remaining, dagql.Selector{
+	if err := srv.Select(ctx, mergedAfter, &remaining, dagql.Selector{
 		Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](baseID)}},
 	}); err != nil {
 		return inst, err
@@ -175,6 +195,34 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 		return inst, err
 	}
 	return checkpointWorkspaceMetadataComposition(ctx, srv, overlaid, frozen.Self(), frozen.Self().SelectedEnv())
+}
+
+// changesetMergeForWorkspaceCommit keeps the native reconciliation result on a
+// deterministic private recipe over the approved inputs. It never captures host
+// state and does not change the general Directory/Changeset merge contract.
+func (s *directorySchema) changesetMergeForWorkspaceCommit(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct {
+	Changes dagql.ID[*core.Changeset]
+}) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	incoming, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+	if dir, supported, err := core.TryNativeWorkspaceMerge(ctx, parent.Self(), incoming.Self()); err != nil {
+		return inst, err
+	} else if supported {
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	}
+	// Unsupported storage, metadata and divergent baselines preserve the
+	// existing fail-on-conflict merge, including its filesystem behavior.
+	err = srv.Select(ctx, parent, &inst, dagql.Selector{Field: "__mergeWithChangeset", Args: []dagql.NamedInput{
+		{Name: "changes", Value: args.Changes},
+		{Name: "onConflict", Value: core.FailOnMergeConflict},
+	}})
+	return inst, err
 }
 
 func (s *workspaceSchema) workspaceGitDirectory(ctx context.Context, parent dagql.ObjectResult[*core.WorkspaceGit], _ struct{}) (inst dagql.ObjectResult[*core.Directory], err error) {
