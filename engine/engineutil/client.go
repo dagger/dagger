@@ -895,6 +895,11 @@ type TerminalClient struct {
 	ResizeCh chan bkgw.WinSize
 	ErrCh    chan error
 	Close    func(exitCode int) error
+
+	// SendInfo sends session metadata describing the terminal's target to the
+	// client. It must be called before any output is written to Stdout/Stderr
+	// so it arrives as the first message of the session.
+	SendInfo func(info *terminal.SessionInfo) error
 }
 
 func (c *Client) OpenTerminal(
@@ -1009,6 +1014,14 @@ func (c *Client) OpenTerminal(
 		Stderr:   stderrW,
 		ErrCh:    errCh,
 		ResizeCh: resizeCh,
+		SendInfo: func(info *terminal.SessionInfo) error {
+			if info == nil {
+				return nil
+			}
+			return term.Send(&terminal.SessionRequest{
+				Msg: &terminal.SessionRequest_Info{Info: info},
+			})
+		},
 		Close: onceValueWithArg(func(exitCode int) error {
 			defer stdinR.Close()
 			defer stdoutW.Close()

@@ -11,7 +11,7 @@ import (
 	"syscall"
 )
 
-func (s TerminalAttachable) listenForResize(ctx context.Context, srv Terminal_SessionServer, stdout io.Writer) {
+func (s TerminalAttachable) listenForResize(ctx context.Context, sender *lockedSessionSender, stdout io.Writer) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGWINCH)
 	defer signal.Stop(sig)
@@ -20,7 +20,7 @@ func (s TerminalAttachable) listenForResize(ctx context.Context, srv Terminal_Se
 		case <-ctx.Done():
 			return
 		case <-sig:
-			s.sendSize(srv, stdout)
+			s.sendSize(sender, stdout)
 		}
 	}
 }

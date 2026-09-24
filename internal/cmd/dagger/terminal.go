@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/session/terminal"
 )
 
 var (
@@ -198,7 +199,7 @@ func listTerminalTargets(ctx context.Context, dag *dagger.Client, terminals *dag
 
 var terminalMu sync.Mutex
 
-func withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
+func withTerminal(session *terminal.SessionHandle) error {
 	// only allow one terminal session at a time
 	terminalMu.Lock()
 	defer terminalMu.Unlock()
@@ -207,7 +208,7 @@ func withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) erro
 		return fmt.Errorf("running shell in silent mode is not supported")
 	}
 	return Frontend.Background(&terminalSession{
-		fn: fn,
+		fn: session.Run,
 	}, true)
 }
 

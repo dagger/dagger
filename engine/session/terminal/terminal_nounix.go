@@ -8,5 +8,5 @@ import (
 	"io"
 )
 
-func (s TerminalAttachable) listenForResize(ctx context.Context, srv Terminal_SessionServer, stdout io.Writer) {
+func (s TerminalAttachable) listenForResize(ctx context.Context, sender *lockedSessionSender, stdout io.Writer) {
 }

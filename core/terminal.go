@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
+	terminalsession "github.com/dagger/dagger/engine/session/terminal"
 )
 
 const (
@@ -223,7 +224,9 @@ func (container *Container) terminal(
 		return fmt.Errorf("failed to clone terminal container: %w", err)
 	}
 
-	term, output, err := prepTerminal(ctx, selectedID, execErr)
+	terminalID := rand.Text()
+	sessionInfo := terminalSessionInfo(terminalID, containerRes, execMeta, execErr)
+	term, output, err := prepTerminal(ctx, selectedID, sessionInfo, execErr)
 	if err != nil {
 		return err
 	}
@@ -380,7 +383,7 @@ func (*Service) Terminal(
 	if err != nil {
 		return fmt.Errorf("service terminal ID: %w", err)
 	}
-	term, output, err := prepTerminal(ctx, svcID, nil)
+	term, output, err := prepTerminal(ctx, svcID, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -413,7 +416,43 @@ func (*Service) Terminal(
 	})
 }
 
-func prepTerminal(ctx context.Context, svcID *call.ID, execErr error) (*engineutil.TerminalClient, *termenv.Output, error) {
+// terminalSessionInfo describes the terminal's target container for the
+// client, enabling richer client-side UIs (e.g. a file explorer next to the
+// terminal). The container ID is the session-attached result the terminal
+// runs in, so the client can load it without re-executing anything.
+func terminalSessionInfo(
+	terminalID string,
+	containerRes dagql.ObjectResult[*Container],
+	execMeta *executor.Meta,
+	execErr error,
+) *terminalsession.SessionInfo {
+	if containerRes.Self() == nil {
+		return nil
+	}
+	ctrID, err := containerRes.ID()
+	if err != nil {
+		return nil
+	}
+	encodedID, err := ctrID.Encode()
+	if err != nil {
+		return nil
+	}
+	workdir := containerRes.Self().Config.WorkingDir
+	if execMeta != nil && execMeta.Cwd != "" {
+		workdir = execMeta.Cwd
+	}
+	if workdir == "" {
+		workdir = "/"
+	}
+	return &terminalsession.SessionInfo{
+		ContainerId:   encodedID,
+		Workdir:       workdir,
+		FromExecError: execErr != nil,
+		TerminalId:    terminalID,
+	}
+}
+
+func prepTerminal(ctx context.Context, svcID *call.ID, sessionInfo *terminalsession.SessionInfo, execErr error) (*engineutil.TerminalClient, *termenv.Output, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get current query: %w", err)
@@ -426,6 +465,13 @@ func prepTerminal(ctx context.Context, svcID *call.ID, execErr error) (*engineut
 	term, err := bk.OpenTerminal(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open terminal: %w", err)
+	}
+
+	// Send session info as the very first message, before any banner output is
+	// written to Stderr, so the client can read it as the session's first
+	// message and choose a richer UI.
+	if err := term.SendInfo(sessionInfo); err != nil {
+		return nil, nil, fmt.Errorf("failed to send terminal session info: %w", err)
 	}
 
 	output := idtui.NewOutput(term.Stderr)

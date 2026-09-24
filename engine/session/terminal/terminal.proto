@@ -13,7 +13,24 @@ message SessionRequest {
 		bytes stdout = 1;
 		bytes stderr = 2;
 		int32 exit = 3;
+		SessionInfo info = 4;
 	}
+}
+
+// SessionInfo describes the object the terminal is attached to. It is sent by
+// the engine as the first message of a session so the client can offer richer
+// UIs (e.g. a file explorer alongside the terminal). Older engines never send
+// it; clients must treat it as optional.
+message SessionInfo {
+	// The dagql ID of the (session-attached) container the terminal runs in.
+	string container_id = 1;
+	// The working directory of the terminal inside the container.
+	string workdir = 2;
+	// True when the terminal was opened because an exec failed (-i flag).
+	bool from_exec_error = 3;
+	// Opaque ID of the running terminal, usable (by the same session) to
+	// snapshot the terminal container's live filesystem.
+	string terminal_id = 4;
 }
 
 message SessionResponse {
