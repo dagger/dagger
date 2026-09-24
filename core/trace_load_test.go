@@ -193,7 +193,7 @@ func TestLoadTraceInspectionTools(t *testing.T) {
 	}
 	require.Contains(t, invoke("ReadTrace", map[string]any{"span": rootID}), "cloud:check")
 	require.Contains(t, invoke("ReadTrace", map[string]any{"span": callID}), "cloud build output")
-	require.Equal(t, "     1→cloud build output", invoke("ReadLogs", map[string]any{"span": rootID}))
+	require.Contains(t, invoke("ReadLogs", map[string]any{"span": rootID}), "1→[span="+callID+" stream=0 time=unknown] cloud build output")
 	require.Contains(t, invoke("ReadLogs", map[string]any{"span": unfinishedID}), "no logs recorded beneath")
 	require.Contains(t, invoke("FindCalls", map[string]any{"query": "example.com/repo"}), "git(")
 	require.Contains(t, invoke("InspectCall", map[string]any{"span": callID, "view": "tree"}), "https://example.com/repo")

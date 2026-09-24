@@ -294,24 +294,48 @@ func TestTraceFailureNavigationSurvivesDispatch(t *testing.T) {
 	check.Status = sdktrace.Status{Code: codes.Error}
 	failed := snapshot(3, "installer", 2)
 	failed.TestCaseName = "SDK/Installer/checksum"
+	failed.Boundary = true
 	failed.TestStatus = dagui.TestStatusFailure
 	failed.Status = sdktrace.Status{Code: codes.Error}
 	origin := snapshot(4, "sha256sum --check", 0) // outside containment
 	origin.Status = sdktrace.Status{Code: codes.Error}
+	root.Status = sdktrace.Status{Code: codes.Error, Description: "runner boundary failed"}
 	snaps := []dagui.SpanSnapshot{root, check, failed, origin}
-	for i := byte(5); i < 250; i++ {
+	// Expected failed probes under successful work must never become origins.
+	for i := byte(5); i < 120; i++ {
+		success := snapshot(i, "successful operation", 3)
+		probe := snapshot(i+120, "expected failed probe", i)
+		probe.Status = sdktrace.Status{Code: codes.Error}
+		snaps = append(snaps, success, probe)
+	}
+	for i := byte(240); i < 250; i++ {
 		success := snapshot(i, "successful case "+strings.Repeat("x", 200), 2)
 		success.TestCaseName = fmt.Sprintf("SDK/success/%d", i)
 		success.TestStatus = dagui.TestStatusSuccess
 		snaps = append(snaps, success)
 	}
+	teardown := snapshot(250, "late teardown", 3)
+	teardown.TestCaseName = "SDK/Installer/checksum/teardown"
+	teardown.TestStatus = dagui.TestStatusFailure
+	teardown.Status = sdktrace.Status{Code: codes.Error, Description: "teardown assertion"}
+	snaps = append(snaps, teardown)
 	db := dagui.NewDB()
 	db.ImportSnapshots(snaps)
-	for _, id := range []byte{1, 2, 3} {
-		db.Spans.Map[traceTargetSpanID(id)].ErrorOrigins.Add(db.Spans.Map[origin.ID])
-	}
+	db.Spans.Map[root.ID].ErrorOrigins.Add(db.Spans.Map[origin.ID])
+	expanded := failureReportExpansion(db, db.Spans.Map[root.ID])
+	require.True(t, expanded[teardown.ID])
+	require.False(t, expanded[traceTargetSpanID(5)])
+	require.False(t, expanded[traceTargetSpanID(125)])
+	focused, err := renderTraceReportSession(idtui.NewReportSession(db), root.ID.String(), readTraceReportOpts())
+	require.NoError(t, err)
+	require.NotContains(t, focused.body, "expected failed probe")
+	require.Contains(t, focused.failures, "SDK/Installer/checksum/teardown")
+	require.NotContains(t, focused.body, "FindSpans(")
 	report, err := renderTraceReportSession(idtui.NewReportSession(db), root.ID.String(), toolCallReportOpts())
 	require.NoError(t, err)
+	require.Contains(t, report.failures, `test "SDK/Installer/checksum/teardown"`)
+	require.Contains(t, report.failures, "teardown assertion")
+	require.NotContains(t, report.failures, "expected failed probe")
 	require.Contains(t, report.failures, `test "SDK/Installer/checksum"`)
 	require.Contains(t, report.failures, `check "sdk:installer:check"`)
 	require.NotContains(t, report.failures, "success")

@@ -1156,7 +1156,16 @@ func (m *MCP) inspectSpanResult(ctx context.Context, spanID string, opts traceRe
 	if strings.TrimSpace(report.body) == "" && report.failures == "" {
 		return flatLogs(spanID, captured.lines), err
 	}
-	return combineSpanResult(spanID, directLogs(captured.lines), report.body, report.failures), err
+	own := directLogs(captured.lines)
+	if opts.FocusFailures && report.failures != "" {
+		own = guardText(own, textGuard{
+			maxBytes: 4096, maxLineLen: llmLogsMaxLineLen, headBytes: 2048,
+			marker: func(lines, bytes int) string {
+				return fmt.Sprintf("... %d own log lines omitted; ReadLogs(span: %q, scope: \"own\", fromLine: 1) ...", lines, spanID)
+			},
+		})
+	}
+	return combineSpanResult(spanID, own, report.body, report.failures), err
 }
 
 // combineSpanResult assembles and bounds the sections. A root ReadLogs

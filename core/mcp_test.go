@@ -68,7 +68,10 @@ func TestToolErrorResponseScopesLogs(t *testing.T) {
 	marker := fmt.Sprintf("[traceparent:%s-%s]", traceID, originID)
 	fullLogs, err := m.readLogsTool(&dagql.Server{})(ctx, map[string]any{"span": marker})
 	require.NoError(t, err)
-	require.Equal(t, "     1→source diagnostic\n     2→exec stdout\n     3→exec stderr", fullLogs)
+	require.Contains(t, fullLogs, "1→[span="+originID+" stream=0 time=unknown] source diagnostic")
+	require.Contains(t, fullLogs, "2→[span="+originID+" stream=0 time=unknown] exec stdout")
+	require.Contains(t, fullLogs, "3→[span="+originID+" stream=0 time=unknown] exec stderr")
+	require.NotContains(t, fullLogs, "unrelated output")
 	tool := LLMTool{
 		Name: "broken",
 		Call: func(context.Context, any) (any, error) { return nil, failure },
@@ -546,7 +549,7 @@ func TestAssembleLines(t *testing.T) {
 				t.Fatalf("assembleLines() = %v, want %v", got, tc.want)
 			}
 			for i := range got {
-				if got[i] != tc.want[i] {
+				if got[i].text != tc.want[i].text || got[i].direct != tc.want[i].direct {
 					t.Errorf("line %d = %+v, want %+v", i, got[i], tc.want[i])
 				}
 			}
@@ -627,7 +630,9 @@ func TestCallPayloadRecordsExcludedFromLLMLogs(t *testing.T) {
 	t.Run("ReadLogs", func(t *testing.T) {
 		got, err := m.readLogsTool(&dagql.Server{})(ctx, map[string]any{"span": spanID})
 		require.NoError(t, err)
-		require.Equal(t, "     1→before\n     2→after", got)
+		require.Contains(t, got, "1→[span="+spanID+" stream=0 time=unknown] before")
+		require.Contains(t, got, "2→[span="+spanID+" stream=0 time=unknown] after")
+		require.Contains(t, got, "2 lines available")
 	})
 
 	t.Run("automatic tool result", func(t *testing.T) {
@@ -696,7 +701,16 @@ func TestCaptureLogLinesIsolatesProducers(t *testing.T) {
 	}
 	got, err := m.captureLogLines(ctx, rootID, false, false)
 	require.NoError(t, err)
-	require.Equal(t, want, got.lines)
+	for i := range want {
+		require.Equal(t, want[i].text, got.lines[i].text)
+		require.Equal(t, want[i].direct, got.lines[i].direct)
+		want[i].producer = got.lines[i].producer
+		want[i].timestamp = got.lines[i].timestamp
+	}
+	require.Equal(t, childID, got.lines[1].producer.spanID)
+	require.Equal(t, int64(1), got.lines[1].producer.stream)
+	require.Equal(t, int64(2), got.lines[2].producer.stream)
+	require.Equal(t, rootID, got.lines[3].producer.spanID)
 	require.Equal(t, map[string]bool{rootID: true, childID: true}, got.directSpans)
 
 	own, err := m.captureLogLines(ctx, rootID, false, true)
@@ -713,7 +727,13 @@ func TestCaptureLogLinesIsolatesProducers(t *testing.T) {
 	})
 	require.False(t, toolResult.Errored)
 	require.Equal(t, "read-isolated-logs", toolResult.CallID)
-	require.Equal(t, "     1→nested done\n     2→output\n     3→error\n     4→direct report\n     5→plain\n     6→tail", toolResult.ContentText())
+	require.Contains(t, toolResult.ContentText(), "scope=causal")
+	require.Contains(t, toolResult.ContentText(), "span="+childID+" stream=1")
+	require.Contains(t, toolResult.ContentText(), "nested done")
+	isolated := m.CallContent(ctx, tools.Order, &LLMToolCall{Name: "ReadLogs", Arguments: JSON(fmt.Sprintf(`{"span":%q,"scope":"own","grep":"direct","context":1,"fromLine":1}`, rootID))})
+	require.False(t, isolated.Errored)
+	require.Contains(t, isolated.ContentText(), "direct report")
+	require.NotContains(t, isolated.ContentText(), "nested done")
 }
 
 func persistedCaptureLog(t *testing.T, traceID, spanID, scope string, body *otlpcommonv1.AnyValue, attrs ...*otlpcommonv1.KeyValue) clientdb.Log {
@@ -1246,90 +1266,111 @@ func TestNormalizeSpanArg(t *testing.T) {
 	}
 }
 
-// TestRenderReadLogs covers ReadLogs result shaping: offset/grep/limit
-// handling, and — for agent recovery — that the failure and empty cases
-// report how many lines actually exist.
+// A split line retains the first record's timestamp and full producer.
+func TestLogLineProducerTimestamp(t *testing.T) {
+	p := logProducer{traceID: "trace", spanID: "producer", stream: 2}
+	lines := assembleLines([]capturedSegment{
+		{text: "assert", producer: p, timestamp: 123},
+		{text: "other\n", producer: logProducer{traceID: "trace", spanID: "other"}, timestamp: 456},
+		{text: "ion\n", producer: p, timestamp: 789},
+	})
+	require.Equal(t, p, lines[1].producer)
+	require.Equal(t, int64(123), lines[1].timestamp)
+	require.Equal(t, "assertion", lines[1].text)
+}
+
+func TestReadLogsContextPagination(t *testing.T) {
+	var lines []capturedLine
+	for i := 1; i <= 10; i++ {
+		lines = append(lines, capturedLine{text: fmt.Sprintf("line-%d", i)})
+	}
+	for _, tc := range []struct {
+		opt  logPageOpts
+		want []int
+	}{
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2}, []int{7, 8}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, offset: 4}, []int{5, 6}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, offset: 6}, []int{3, 4}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, offset: 8}, []int{2}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, fromLine: 6}, []int{6, 7}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, fromLine: 8}, []int{8}},
+	} {
+		got, err := renderLogPage("s", lines, tc.opt)
+		require.NoError(t, err)
+		require.Equal(t, len(tc.want), strings.Count(got, "→"))
+		for _, i := range tc.want {
+			require.Contains(t, got, fmt.Sprintf("line-%d\n", i))
+		}
+	}
+	got, err := renderLogPage("s", lines, logPageOpts{grep: "line-5$", context: 3, limit: 100})
+	require.NoError(t, err)
+	require.NotContains(t, got, "Earlier:")
+	require.NotContains(t, got, "Next:")
+	// Validate even without a telemetry store (including otherwise empty captures).
+	_, err = newMCP().readLogsTool(&dagql.Server{})(t.Context(), map[string]any{"span": "0000000000000001", "grep": "("})
+	require.ErrorContains(t, err, "invalid grep")
+}
+
+func TestReadLogsScopes(t *testing.T) {
+	const tid = "000102030405060708090a0b0c0d0e0f"
+	const root, child, linked = "0000000000000001", "0000000000000002", "0000000000000003"
+	dbs := clientdb.NewDBs(t.TempDir())
+	store, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	_, err = store.AppendSpans([]clientdb.Span{
+		{TraceID: tid, SpanID: root, Attributes: marshalSpanAttrs(t)},
+		{TraceID: tid, SpanID: child, ParentSpanID: validSpanID(root), Attributes: marshalSpanAttrs(t)},
+		{TraceID: tid, SpanID: linked, Attributes: marshalSpanAttrs(t), Links: marshalCauseLink(t, tid, root)},
+	})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]clientdb.Log{
+		persistedCaptureLog(t, tid, root, "test", stringLogBody("own-output\n")),
+		persistedCaptureLog(t, tid, child, "test", stringLogBody("child-output\n")),
+		persistedCaptureLog(t, tid, linked, "test", stringLogBody("linked-output\n")),
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{mockServer: &mockServer{}, dbs: dbs}})
+	m := newMCP()
+	tools := NewLLMToolSet()
+	m.loadBuiltins(&dagql.Server{}, tools)
+	for _, scope := range []string{"own", "descendants", "causal"} {
+		got := m.CallContent(ctx, tools.Order, &LLMToolCall{Name: "ReadLogs", Arguments: JSON(fmt.Sprintf(`{"span":%q,"scope":%q}`, root, scope))})
+		require.False(t, got.Errored)
+		text := got.ContentText()
+		require.Contains(t, text, "own-output")
+		require.Equal(t, scope != "own", strings.Contains(text, "child-output"))
+		require.Equal(t, scope == "causal", strings.Contains(text, "linked-output"))
+	}
+}
+
 func TestRenderReadLogs(t *testing.T) {
-	logLines := func() []string { return []string{"alpha", "beta", "gamma"} }
-
-	t.Run("numbers the lines", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 0, 100, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "     1→alpha\n     2→beta\n     3→gamma"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("offset trims from the end", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 1, 100, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "     1→alpha\n     2→beta"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("negative offset reads the tail", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), -5, 100, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(got, "gamma") {
-			t.Errorf("got %q, want the full tail", got)
-		}
-	})
-
-	t.Run("offset past the start reports the total", func(t *testing.T) {
-		_, err := renderReadLogs("s", logLines(), 3, 100, "")
-		if err == nil {
-			t.Fatal("want error")
-		}
-		if !strings.Contains(err.Error(), "3 available lines") {
-			t.Errorf("error %q should report the available line count", err)
-		}
-	})
-
-	t.Run("grep filters and keeps original numbering", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 0, 100, "ta$")
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "     2→beta"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("grep with no matches reports the searched count", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 0, 100, "nope")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(got, `"nope"`) || !strings.Contains(got, "3 lines") {
-			t.Errorf("got %q, want a no-matches message with the searched count", got)
-		}
-	})
-
-	t.Run("invalid grep pattern errors", func(t *testing.T) {
-		_, err := renderReadLogs("s", logLines(), 0, 100, "(")
-		if err == nil {
-			t.Fatal("want error")
-		}
-	})
-
-	t.Run("limit keeps the tail with a counted marker", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 0, 2, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "... 1 lines omitted (use ReadLogs(span: s) to read more) ...\n     2→beta\n     3→gamma"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
+	lines := []capturedLine{{text: "alpha"}, {text: "assertion"}, {text: "registry connection reset"}}
+	for i := 0; i < 1000; i++ {
+		lines = append(lines, capturedLine{text: "cleanup hash"})
+	}
+	got, err := renderLogPage("s", lines, logPageOpts{scope: "causal", grep: "assertion", context: 1, limit: 100})
+	require.NoError(t, err)
+	require.Contains(t, got, "1→")
+	require.Contains(t, got, "3→")
+	require.Contains(t, got, "registry connection reset")
+	require.Contains(t, got, "fromLine: 1, limit: 3")
+	require.NotContains(t, got, "cleanup hash")
+	got, err = renderLogPage("s", lines, logPageOpts{scope: "own", fromLine: 2, limit: 2})
+	require.NoError(t, err)
+	require.Contains(t, got, "assertion")
+	require.NotContains(t, got, "alpha")
+	require.Contains(t, got, "fromLine: 4")
+	got, err = renderLogPage("s", lines, logPageOpts{scope: "own", offset: 1000, limit: 2})
+	require.NoError(t, err)
+	require.Contains(t, got, "assertion")
+	require.NotContains(t, got, "alpha")
+	for _, opt := range []logPageOpts{{offset: 1003}, {grep: "("}, {fromLine: 1004}, {fromLine: 1, offset: 1}, {context: 101}} {
+		_, err := renderLogPage("s", lines, opt)
+		require.Error(t, err)
+	}
+	got, err = renderLogPage("s", lines, logPageOpts{grep: "nope"})
+	require.NoError(t, err)
+	require.Contains(t, got, "0 grep matches")
+	require.Contains(t, got, "1003 lines available")
 }

@@ -1,9 +1,9 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,21 +37,9 @@ const (
 	traceViewTimings = "timings"
 )
 
-// findSpans lists the spans whose name (or service hostname) contains query,
-// session-wide or beneath root, ordered by start time, then trace ID and
-// span ID, keeping the newest limit matches.
-//
-// The store's row index seeds the load -- every span, or root's log scope --
-// and a raw byte prefilter on the query trims it before anything is decoded
-// into dagui: a span whose name or attributes (the service hostname lives
-// there) don't contain the query bytes can't match. The prefilter is a
-// superset (the bytes may match inside an unrelated attribute); the shared
-// renderer applies the exact name/service-name test. Only the candidates are
-// loaded -- a flat listing needs no ancestors to frame it, and the renderer
-// skips the placeholders their parent pointers allocate -- plus each
-// candidate's cause-linked children, which are what a FAIL status (a failure
-// riding on a link) is computed from.
-func findSpans(ctx context.Context, query, root string, limit int) (string, error) {
+// findSpans loads a throwaway search view including ancestors: full test
+// identities and breadcrumbs cannot be filtered by a leaf-name byte search.
+func findSpans(ctx context.Context, query, root, status string, limit, offset int) (string, error) {
 	clientDB, err := traceReportClientDB(ctx)
 	if err != nil {
 		return "", err
@@ -59,16 +47,29 @@ func findSpans(ctx context.Context, query, root string, limit int) (string, erro
 	defer clientDB.Close()
 	stores := clientDB.InspectionStores()
 	if root != "" {
-		return findSpansIn(ctx, inspectionStoreForSpan(clientDB, root), query, root, limit)
+		return findSpanPageIn(ctx, inspectionStoreForSpan(clientDB, root), query, root, status, limit, offset)
 	}
-	return findSpansIn(ctx, clientDB, query, root, limit, stores[1:]...)
+	return findSpanPageIn(ctx, clientDB, query, root, status, limit, offset, stores[1:]...)
 }
 
-// findSpansIn is findSpans against an already-open store.
+// findSpansIn keeps the default tail-page behavior for internal callers.
 func findSpansIn(ctx context.Context, read *clientdb.DB, query, root string, limit int, extra ...*clientdb.DB) (string, error) {
+	return findSpanPageIn(ctx, read, query, root, "", limit, 0, extra...)
+}
+
+func findSpanPageIn(ctx context.Context, read *clientdb.DB, query, root, status string, limit, offset int, extra ...*clientdb.DB) (string, error) {
+	if offset < 0 {
+		return "", fmt.Errorf("offset must be non-negative")
+	}
+	switch status {
+	case "", "ERROR", "FAIL", "failed", "run", "ok":
+	default:
+		return "", fmt.Errorf("invalid status %q: want ERROR, FAIL, failed, run or ok", status)
+	}
 	primary := read
 	db := dagui.NewDB()
 	searched := 0
+	eligible := map[string]bool{}
 	for _, read := range append([]*clientdb.DB{read}, extra...) {
 		var seed map[string]struct{}
 		if root != "" {
@@ -79,33 +80,118 @@ func findSpansIn(ctx context.Context, read *clientdb.DB, query, root string, lim
 		} else {
 			seed = read.SpanIDs()
 		}
-		rows, err := read.SelectSpansLatest(ctx, seed)
-		if err != nil {
-			return "", fmt.Errorf("select spans: %w", err)
+		searched += len(seed)
+		for id := range seed {
+			eligible[id] = true
 		}
-		needle := []byte(query)
-		scope := make(map[string]struct{})
-		for _, row := range rows {
-			if query != "" && !strings.Contains(row.Name, query) && !bytes.Contains(row.Attributes, needle) {
-				continue
-			}
-			scope[row.SpanID] = struct{}{}
-			for _, linked := range read.CausalChildren(row.SpanID) {
-				scope[linked] = struct{}{}
-			}
-		}
-		searched += len(rows)
-		if len(scope) > 0 {
-			if err := ingestInspectionSpanScope(ctx, primary, read, db, scope); err != nil {
+		if len(seed) > 0 {
+			if err := ingestInspectionSpanScope(ctx, primary, read, db, read.AncestorClosure(seed)); err != nil {
 				return "", err
 			}
 		}
 	}
-	listing := idtui.RenderSpanList(db, query, limit)
+	listing := renderSpanSearch(db, eligible, query, root, status, limit, offset)
 	if listing == "" {
+		if status != "" {
+			return fmt.Sprintf("(no spans matching query %q and status %q among %d searched spans)", query, status, searched), nil
+		}
 		return findSpansEmpty(query, root, searched), nil
 	}
 	return listing, nil
+}
+
+// spanSearchIdentity uses the test index's full identity (including parallel
+// continuations), not guesses from error status or a leaf named "cleanup".
+func spanSearchIdentity(sp *dagui.Span, tests *dagui.TestView) string {
+	var tail []string
+	seen := map[dagui.SpanID]bool{}
+	for p := sp; p != nil && !seen[p.ID]; p = p.ParentSpan {
+		seen[p.ID] = true
+		if node := tests.BySpan[p.ID]; node != nil {
+			slices.Reverse(tail)
+			return strings.Join(append([]string{node.FullName}, tail...), "/")
+		}
+		tail = append(tail, p.Name)
+	}
+	slices.Reverse(tail)
+	return strings.Join(tail, "/")
+}
+
+func renderSpanSearch(db *dagui.DB, eligible map[string]bool, query, root, status string, limit, offset int) string {
+	tests := db.TestView()
+	type match struct {
+		span     *dagui.Span
+		identity string
+	}
+	var matches []match
+	for _, sp := range db.Spans.Order {
+		if !sp.Received || !eligible[sp.ID.String()] {
+			continue
+		}
+		identity := spanSearchIdentity(sp, tests)
+		if query != "" && !strings.Contains(sp.Name, query) && !strings.Contains(sp.ServiceName, query) && !strings.Contains(identity, query) {
+			continue
+		}
+		state := idtui.SpanStatus(sp)
+		if status == "failed" {
+			if state != "ERROR" && state != "FAIL" {
+				continue
+			}
+		} else if status != "" && state != status {
+			continue
+		}
+		matches = append(matches, match{sp, identity})
+	}
+	slices.SortFunc(matches, func(a, b match) int {
+		if c := a.span.StartTime.Compare(b.span.StartTime); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.span.TraceID.String(), b.span.TraceID.String()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.span.ID.String(), b.span.ID.String())
+	})
+	if len(matches) == 0 {
+		return ""
+	}
+	if offset >= len(matches) {
+		return fmt.Sprintf("offset %d skips all %d matching spans; retry offset 0", offset, len(matches))
+	}
+	end := len(matches) - offset
+	start := 0
+	if limit > 0 {
+		start = max(0, end-limit)
+	}
+	var rows []string
+	bytes := 0
+	for i := end - 1; i >= start; i-- {
+		m := matches[i]
+		sp := m.span
+		name := clampLineBytes(strings.ReplaceAll(sp.Name, "\n", " "), 240)
+		if sp.Service {
+			name += "  [service " + sp.ServiceName + "]"
+		}
+		if m.identity != sp.Name {
+			name += "  [path=" + clampLineBytes(strings.ReplaceAll(m.identity, "\n", " "), 500) + "]"
+		}
+		row := fmt.Sprintf("%s  %-5s  %s\n", sp.ID, idtui.SpanStatus(sp), name)
+		if bytes+len(row) > 24*1024 {
+			start = i + 1
+			break
+		}
+		rows = append(rows, row)
+		bytes += len(row)
+	}
+	slices.Reverse(rows)
+	var out strings.Builder
+	if status != "" {
+		out.WriteString("Status matches are navigation, not proof of error causality.\n")
+	}
+	if start > 0 {
+		fmt.Fprintf(&out, "... %d earlier matching spans omitted; next: FindSpans(query: %q, span: %q, status: %q, offset: %d, limit: %d) ...\n", start, query, root, status, offset+len(rows), max(limit, 1))
+	}
+	out.WriteString(strings.Join(rows, ""))
+	return out.String()
 }
 
 // findSpansEmpty phrases a no-match answer with the numbers a reader needs

@@ -96,15 +96,17 @@ func TestFindSpansIn(t *testing.T) {
 	got, err := findSpansIn(ctx, store, "go ", "", 0)
 	require.NoError(t, err)
 	require.Equal(t, strings.Join([]string{
-		ids["build"] + "  ERROR  go build",
-		ids["test"] + "  ok     go test",
+		ids["build"] + "  ERROR  go build  [path=root/go build]",
+		ids["compile"] + "  ERROR  compile  [path=root/go build/compile]",
+		ids["test"] + "  ok     go test  [path=root/go test]",
+		ids["link"] + "  ok     link  [path=root/go build/link]",
 	}, "\n")+"\n", got)
 
 	// A service is found by its hostname (an attribute, not the span name),
 	// tagged as such, and reported running.
 	got, err = findSpansIn(ctx, store, "cache", "", 0)
 	require.NoError(t, err)
-	require.Equal(t, ids["exec"]+"  run    redis exec  [service cache]\n", got)
+	require.Equal(t, ids["exec"]+"  run    redis exec  [service cache]  [path=root/Container.asService/redis exec]\n", got)
 
 	// Scoped to a subtree: the root itself plus everything beneath, over
 	// child edges and cause links; nothing from outside it.
@@ -114,14 +116,14 @@ func TestFindSpansIn(t *testing.T) {
 	require.Contains(t, got, "compile")
 	require.Contains(t, got, "link")
 	require.NotContains(t, got, "go test")
-	require.NotContains(t, got, "root")
+	require.NotContains(t, got, ids["root"]+"  ")
 
 	// The limit keeps the newest matches and counts the dropped ones.
 	got, err = findSpansIn(ctx, store, "", "", 2)
 	require.NoError(t, err)
 	require.Contains(t, got, "... 5 earlier matching spans omitted")
 	require.Contains(t, got, "redis exec")
-	require.NotContains(t, got, "go build")
+	require.NotContains(t, got, ids["build"]+"  ")
 
 	// No match says how much was searched and where.
 	got, err = findSpansIn(ctx, store, "nope", "", 0)
@@ -134,6 +136,38 @@ func TestFindSpansIn(t *testing.T) {
 	// An unknown root is an error, not an empty listing.
 	_, err = findSpansIn(ctx, store, "", "00000000000000ff", 0)
 	require.ErrorContains(t, err, "no span")
+}
+
+func TestFindSpansFullTestIdentity(t *testing.T) {
+	store, ids := traceInspectStore(t)
+	attr := func(key, value string) *otlpcommonv1.KeyValue {
+		return &otlpcommonv1.KeyValue{Key: key, Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: value}}}
+	}
+	rows := []clientdb.Span{
+		{SpanID: "0000000000000011", Name: "cleanup", ParentSpanID: validSpanID(ids["test"]), Attributes: marshalSpanAttrs(t, attr("test.case.name", "TestProvision/docker/cleanup"), attr("test.status", "failure")), StatusCode: int64(codes.Error)},
+		{SpanID: "0000000000000012", Name: "cleanup", ParentSpanID: validSpanID(ids["test"]), Attributes: marshalSpanAttrs(t, attr("test.case.name", "TestProvision/podman/cleanup"), attr("test.status", "success"))},
+		{SpanID: "0000000000000013", Name: "continue", ParentSpanID: validSpanID("0000000000000011"), Attributes: marshalSpanAttrs(t), StatusCode: int64(codes.Error)},
+	}
+	for i := range rows {
+		rows[i].TraceID = "000102030405060708090a0b0c0d0e0f"
+		rows[i].StartTime = int64(100 + i)
+		rows[i].EndTime = sql.NullInt64{Int64: 200, Valid: true}
+		rows[i].Links = []byte("[]")
+	}
+	_, err := store.AppendSpans(rows)
+	require.NoError(t, err)
+	got, err := findSpanPageIn(t.Context(), store, "TestProvision/docker/cleanup", "", "failed", 1, 0)
+	require.NoError(t, err)
+	require.Contains(t, got, "0000000000000013  ERROR  continue")
+	require.Contains(t, got, "path=TestProvision/docker/cleanup/continue")
+	require.Contains(t, got, "offset: 1, limit: 1")
+	require.NotContains(t, got, "podman")
+	got, err = findSpanPageIn(t.Context(), store, "TestProvision/docker/cleanup", "", "failed", 1, 1)
+	require.NoError(t, err)
+	require.Contains(t, got, "0000000000000011  ERROR  cleanup")
+	require.NotContains(t, got, "continue")
+	_, err = findSpanPageIn(t.Context(), store, "", "", "bogus", 1, 0)
+	require.Error(t, err)
 }
 
 func TestFindSpansImportedOrder(t *testing.T) {
