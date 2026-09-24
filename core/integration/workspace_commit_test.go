@@ -2,10 +2,16 @@ package core
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
@@ -178,6 +184,251 @@ func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Cont
 		}
 	}
 	require.GreaterOrEqual(t, walks, 7, "must observe the six real log walks and merge-base, not an empty trace")
+}
+
+// TestWorkspaceScopedCommitPerformance is a deterministic, non-LLM latency
+// harness. Run it alone with -v on a fresh engine for a cold capture followed by
+// three sequential commits. Timings are observations, not performance gates.
+// Fixture creation, connection and capture are reported separately; engine/CLI
+// build time is outside this test. The fixture has no remote and uses packed
+// objects, so fetch spans describe local copying rather than network traffic.
+func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	const files, fileBytes, iterations = 12000, 8192, 3
+	started := time.Now()
+	checkout := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = checkout
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+workspaceCommitDate, "GIT_COMMITTER_DATE="+workspaceCommitDate)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-b", "main")
+	git("config", "user.name", "Performance Fixture")
+	git("config", "user.email", "performance@example.com")
+	git("config", "commit.gpgsign", "false")
+	git("config", "core.hooksPath", "/dev/null")
+	git("config", "gc.auto", "0")
+	// Fixed-seed unique text avoids an unrealistically tiny pack from repeated
+	// identical blobs. These are logical fixture bytes, not measured I/O bytes.
+	rng := rand.New(rand.NewSource(1))
+	buf := make([]byte, fileBytes/2)
+	for i := range files {
+		path := filepath.Join(checkout, fmt.Sprintf("tree/%03d/%05d.txt", i/100, i))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		_, err := rng.Read(buf)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(path, []byte(hex.EncodeToString(buf)), 0o644))
+	}
+	for _, name := range []string{"selected.txt", "pending.txt"} {
+		require.NoError(t, os.WriteFile(filepath.Join(checkout, name), []byte("base\n"), 0o644))
+	}
+	git("add", ".")
+	git("commit", "-m", "fixture")
+	git("gc", "--prune=now")
+	hostSHA := git("rev-parse", "HEAD")
+	t.Logf("PERF fixture files=%d payload_bytes=%d setup=%s git_objects=%q", files+2, files*fileBytes+10, time.Since(started), git("count-objects", "-v"))
+
+	started = time.Now()
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout), dagger.WithLogOutput(io.Discard))...)
+	t.Logf("PERF connect=%s", time.Since(started))
+	started = time.Now()
+	ws := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, hostSHA, baseSHA)
+	t.Logf("PERF capture=%s", time.Since(started))
+	ws = ws.WithNewFile("pending.txt", "keep pending\n").WithNewFile("selected.txt", "edit 1\n")
+
+	for i := 1; i <= iterations; i++ {
+		cycle := time.Now()
+		started = time.Now()
+		paths, err := ws.Git().Uncommitted().ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"selected.txt", "pending.txt"}, paths)
+		selectedID, err := ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{"selected.txt"}}).ID(ctx)
+		require.NoError(t, err)
+		before := ws.Git().Head()
+		beforeSHA, err := before.CommitSHA(ctx)
+		require.NoError(t, err)
+		preStatus := time.Since(started)
+
+		started = time.Now()
+		id, err := ws.WithCommit(dagger.Ref[*dagger.Changeset](c, selectedID), fmt.Sprintf("perf: edit %d", i), workspaceCommitDate,
+			dagger.WorkspaceWithCommitOpts{AuthorName: "Performance Fixture", AuthorEmail: "performance@example.com"}).ID(ctx)
+		require.NoError(t, err)
+		commitTime := time.Since(started)
+		next := dagger.Ref[*dagger.Workspace](c, id)
+
+		started = time.Now()
+		pending := next.Git().Uncommitted()
+		paths, err = pending.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"pending.txt"}, paths)
+		paths, err = pending.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, paths)
+		paths, err = pending.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, paths)
+		postStatus := time.Since(started)
+
+		started = time.Now()
+		head := next.Git().Head()
+		ahead, err := head.Log(ctx, dagger.GitRefLogOpts{Base: before, Limit: 101})
+		require.NoError(t, err)
+		require.Len(t, ahead, 1)
+		message, err := ahead[0].Message(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("perf: edit %d", i), strings.TrimSpace(message))
+		parents, err := ahead[0].ParentShas(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{beforeSHA}, parents)
+		behind, err := before.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
+		require.NoError(t, err)
+		require.Empty(t, behind)
+		recent, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+		require.NoError(t, err)
+		require.Len(t, recent, 2)
+		history := time.Since(started)
+
+		started = time.Now()
+		// Consume the committed tree as well as the overlaid workspace: an ID
+		// alone could hide deferred filesystem materialization.
+		tree := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		delta := tree.Changes(before.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}))
+		paths, err = delta.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"selected.txt"}, paths)
+		paths, err = delta.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, paths)
+		paths, err = delta.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, paths)
+		contents, err := tree.File("selected.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("edit %d\n", i), contents)
+		contents, err = tree.File("pending.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "base\n", contents)
+		contents, err = next.File("pending.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep pending\n", contents)
+		consume := time.Since(started)
+
+		started = time.Now()
+		ws = next.WithNewFile("selected.txt", fmt.Sprintf("edit %d\n", i+1))
+		contents, err = ws.File("selected.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("edit %d\n", i+1), contents)
+		t.Logf("PERF iteration=%d pre_status=%s withCommit=%s post_status=%s history=%s consume=%s next_edit=%s cycle=%s", i, preStatus, commitTime, postStatus, history, consume, time.Since(started), time.Since(cycle))
+	}
+	require.Equal(t, hostSHA, git("rev-parse", "HEAD"), "engine commits must leave the host alone")
+	require.Empty(t, git("status", "--porcelain"))
+	require.NoError(t, c.Close()) // Drain live spans before counting or timing them.
+	logWorkspaceCommitPerformanceTrace(t, sink, iterations)
+}
+
+// Report completed, deduplicated engine spans separately from client wall time.
+// Durations are inclusive and overlap: do not add these rows together. No byte
+// traffic, filesystem-write or object-copy counts are inferred from spans.
+func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iterations int) {
+	t.Helper()
+	type sample struct {
+		id, parent, name string
+		start, end       uint64
+		discard          bool
+	}
+	byID := map[string]sample{}
+	traces, _ := sink.capture()
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					s := sample{id: id, parent: string(span.TraceId) + string(span.ParentSpanId), name: span.Name, start: span.StartTimeUnixNano, end: span.EndTimeUnixNano}
+					for _, attr := range span.Attributes {
+						if attr.Key == "dagger.git.checkout.discard_git_dir" {
+							s.discard = attr.Value.GetBoolValue()
+						}
+					}
+					byID[id] = s
+				}
+			}
+		}
+	}
+	var ordered []sample
+	for _, s := range byID {
+		ordered = append(ordered, s)
+	}
+	slices.SortFunc(ordered, func(a, b sample) int {
+		if a.start < b.start {
+			return -1
+		}
+		if a.start > b.start {
+			return 1
+		}
+		return strings.Compare(a.id, b.id)
+	})
+	var commits, merges, fetches, walks, gitCommits int
+	for _, s := range ordered {
+		fetch := strings.HasPrefix(s.name, "git fetch") || strings.HasPrefix(s.name, "fetching ")
+		if fetch {
+			for parent, ok := byID[s.parent]; ok; parent, ok = byID[parent.parent] {
+				require.NotEqual(t, "GitRef.log", parent.name, "history query fetched objects: %s", s.name)
+				require.False(t, parent.name == "materialize local git checkout" && parent.discard, "source-only checkout fetched objects: %s", s.name)
+			}
+		}
+		// API selection and execution may have distinct spans with the same
+		// name. Keep only the outer one, in addition to deduplicating live
+		// updates by span ID, so a log query is not counted twice.
+		duplicate := false
+		for parent, ok := byID[s.parent]; ok; parent, ok = byID[parent.parent] {
+			if parent.name == s.name {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		if fetch {
+			fetches++
+		}
+		interesting := fetch
+		switch s.name {
+		case "Workspace.withCommit":
+			commits++
+			interesting = true
+		case "Changeset.__mergeWithChangeset":
+			merges++
+			interesting = true
+		case "git commit":
+			gitCommits++
+			interesting = true
+		case "GitRef.log":
+			walks++
+			interesting = true
+		case "materialize local git checkout", "GitRef.asWorkspace":
+			interesting = true
+		}
+		if interesting {
+			t.Logf("PERF span=%q id=%x duration=%s discard_git_dir=%t", s.name, []byte(s.id)[16:], time.Duration(s.end-s.start), s.discard)
+		}
+	}
+	t.Logf("PERF spans workspace_commits=%d merges=%d fetches=%d history_calls=%d git_commits=%d (inclusive, deduplicated; counts are not bytes)", commits, merges, fetches, walks, gitCommits)
+	require.Equal(t, iterations, commits, "must observe actual commit calls, not an empty trace")
+	require.GreaterOrEqual(t, walks, iterations*3)
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, t *testctx.T) {
