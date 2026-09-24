@@ -174,6 +174,13 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 }
 
 func buildArchiveBootstrap(ctx context.Context, db *clientdb.DB, manifest archive.Manifest, cut clientdb.HighWater, want agentcontrol.Expectation) ([]byte, int64, error) {
+	return buildArchiveBootstrapWithPayloadLimit(ctx, db, manifest, cut, want, archive.MaxBootstrapPayloadSize)
+}
+
+func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB, manifest archive.Manifest, cut clientdb.HighWater, want agentcontrol.Expectation, maxPayloadSize int) ([]byte, int64, error) {
+	if maxPayloadSize <= 0 || maxPayloadSize > archive.MaxBootstrapPayloadSize {
+		return nil, 0, fmt.Errorf("invalid bootstrap payload limit %d", maxPayloadSize)
+	}
 	rows, err := db.ControlRows(ctx, manifest.TraceID, cut.Logs, want)
 	if err != nil {
 		return nil, 0, err
@@ -224,15 +231,25 @@ func buildArchiveBootstrap(ctx context.Context, db *clientdb.DB, manifest archiv
 	var signals []archive.BootstrapSignal
 	var batches []archive.BootstrapBatch
 	var exclusions archive.BootstrapExclusions
-	for start := 0; start < len(rows); start += otlpBatchSize {
+	for start := 0; start < len(rows); {
 		end := min(start+otlpBatchSize, len(rows))
 		req := &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows[start:end])}
+		// As with live telemetry, shrink an oversized batch to a smaller prefix.
+		// A single oversized record is fatal: a verified closure cannot omit it.
+		for proto.Size(req) > maxPayloadSize {
+			if end-start == 1 {
+				return nil, 0, fmt.Errorf("bootstrap log row %d is %d bytes (maximum %d)", rows[start].ID, proto.Size(req), maxPayloadSize)
+			}
+			end = start + (end-start)/2
+			req = &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows[start:end])}
+		}
 		payload, err := proto.Marshal(req)
 		if err != nil {
 			return nil, 0, err
 		}
 		signals = append(signals, archive.BootstrapSignal{Kind: archive.BootstrapFrameLogs, Payload: payload, Records: int64(end - start)})
 		batches = append(batches, archive.BootstrapBatch{Logs: req})
+		start = end
 	}
 	for _, row := range rows {
 		exclusions.LogRowIDs = append(exclusions.LogRowIDs, row.ID)
@@ -366,7 +383,15 @@ func serveArchiveBootstrap(w http.ResponseWriter, lease *archive.Lease) error {
 	return err
 }
 
-func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m archive.Manifest, signal string) (rerr error) {
+func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m archive.Manifest, signal string) error {
+	return srv.serveArchiveSignalWithPayloadLimit(w, r, m, signal, enginetel.MaxLivePayloadSize)
+}
+
+//nolint:gocyclo // Keep bounded batching, exclusions, and cursor advancement in one stream state machine.
+func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *http.Request, m archive.Manifest, signal string, maxPayloadSize int) (rerr error) {
+	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
+		return fmt.Errorf("invalid archive payload limit %d", maxPayloadSize)
+	}
 	cursor := int64(0)
 	if s := r.Header.Get(enginetel.LiveCursorHeader); s != "" {
 		var err error
@@ -409,21 +434,24 @@ func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m 
 			_ = enginetel.WriteLiveError(w, cursor, rerr)
 		}
 	}()
+	batchLimit := otlpBatchSize
 	for cursor < high {
 		if err := r.Context().Err(); err != nil {
 			return err
 		}
 		var message proto.Message
+		var next int64
+		var rowCount int
 		switch signal {
 		case "traces":
-			rows, err := db.SelectSpansRange(r.Context(), clientdb.SelectSpansRangeParams{AfterID: cursor, ThroughID: high, Limit: otlpBatchSize})
+			rows, err := db.SelectSpansRange(r.Context(), clientdb.SelectSpansRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
 			if err != nil {
 				return err
 			}
 			if len(rows) == 0 {
 				return errors.New("archive span stream truncated before cut")
 			}
-			cursor = rows[len(rows)-1].ID
+			next, rowCount = rows[len(rows)-1].ID, len(rows)
 			var spans []sdktrace.ReadOnlySpan
 			for _, row := range rows {
 				if row.TraceID == m.TraceID && !excludedSpans[row.SpanID] {
@@ -432,37 +460,48 @@ func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m 
 			}
 			message = &coltracepb.ExportTraceServiceRequest{ResourceSpans: telemetry.SpansToPB(spans)}
 		case "logs":
-			rows, err := db.SelectLogsRange(r.Context(), clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: otlpBatchSize})
+			rows, err := db.SelectLogsRange(r.Context(), clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
 			if err != nil {
 				return err
 			}
 			if len(rows) == 0 {
 				return errors.New("archive log stream truncated before cut")
 			}
-			cursor = rows[len(rows)-1].ID
+			next, rowCount = rows[len(rows)-1].ID, len(rows)
 			filtered, err := archiveHistoryLogs(rows, m.TraceID, excludedLogs)
 			if err != nil {
 				return err
 			}
 			message = &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}
 		case "metrics":
-			rows, err := db.SelectMetricsRange(r.Context(), clientdb.SelectMetricsRangeParams{AfterID: cursor, ThroughID: high, Limit: otlpBatchSize})
+			rows, err := db.SelectMetricsRange(r.Context(), clientdb.SelectMetricsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
 			if err != nil {
 				return err
 			}
 			if len(rows) == 0 {
 				return errors.New("archive metric stream truncated before cut")
 			}
-			cursor = rows[len(rows)-1].ID
+			next, rowCount = rows[len(rows)-1].ID, len(rows)
 			message = &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.MetricsToPB(rows)}
+		}
+		if size := proto.Size(message); size > maxPayloadSize {
+			if rowCount == 1 {
+				return fmt.Errorf("archive %s row %d is %d bytes (maximum %d)", signal, next, size, maxPayloadSize)
+			}
+			// Retry a smaller prefix at the last written cursor, including rows
+			// filtered out above so exclusions do not change resume semantics.
+			batchLimit = max(1, rowCount/2)
+			continue
 		}
 		payload, err := proto.Marshal(message)
 		if err != nil {
 			return err
 		}
-		if err := enginetel.WriteLiveFrame(w, cursor, payload); err != nil {
+		if err := enginetel.WriteLiveFrame(w, next, payload); err != nil {
 			return err
 		}
+		cursor = next
+		batchLimit = otlpBatchSize
 	}
 	return enginetel.WriteLiveTerminal(w, high)
 }
