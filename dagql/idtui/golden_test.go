@@ -535,7 +535,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 
 	cmd := exec.Command(daggerBin, daggerArgs...)
 	cmd.Env = append(
-		testEnv,
+		slices.Clone(testEnv),
 		fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
 		"NO_COLOR=1",
 		"OTEL_EXPORTER_OTLP_TRACES_LIVE=1",
