@@ -697,7 +697,7 @@ class MyModule:
 A `@generate` function is your own generator. `dagger generate` runs these functions and the registered SDK scopes that regenerate the Python client in `sdk/`. See [Regenerate bindings](#regenerate-bindings).
 :::
 
-A **service** returns a `dagger.Service` and is started by `dagger start`. Combine `@function` with `@start`:
+A **service** returns a `dagger.Service` and is run by `dagger start`. Combine `@function` with `@start`:
 
 ```python
 import dagger
@@ -718,7 +718,7 @@ class MyModule:
         )
 ```
 
-`dagger start` starts every `@start` service and exposes its ports. A plain `@function` returning `dagger.Service` can still be bound into other containers with `with_service_binding`, but only `@start` functions are started by `dagger start`. See [Services](#services).
+`dagger start` runs every `@start` service and exposes its ports. A plain `@function` returning `dagger.Service` can still be bound into other containers with `with_service_binding`, but only `@start` functions are run by `dagger start`. See [Services](#services).
 
 See [Generating code](../../using/generating.mdx).
 

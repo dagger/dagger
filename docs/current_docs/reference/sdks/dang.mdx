@@ -87,7 +87,7 @@ engineVersion = "v{{ version }}"
 
 Setting `runtime.source` to `"dang"` tells Dagger to run this module with the Dang runtime. `engineVersion` declares the engine version the module requires. See [Engine version](#engine-version).
 
-The generated `main.dang` entry point is a working example of the things a module does. It has a private base container, a Check, a test environment that mounts workspace files and binds a service, a service that `dagger start` can start, and a generator that writes a test script:
+The generated `main.dang` entry point is a working example of the things a module does. It has a private base container, a Check, a test environment that mounts workspace files and binds a service, a service that `dagger start` can run, and a generator that writes a test script:
 
 ````dang title=".dagger/modules/my-ci/main.dang"
 """
@@ -877,7 +877,7 @@ pub generateProto: Changeset @generate {
 
 ### Services {#up-services}
 
-A service function returns a long-running `Service!`. Mark it with `@start` and `dagger start` starts it. Build the service from a container with `.asService`, and expose the ports it should listen on:
+A service function returns a long-running `Service!`. Mark it with `@start` and `dagger start` runs it. Build the service from a container with `.asService`, and expose the ports it should listen on:
 
 ```dang
 pub web: Service! @start {
@@ -888,7 +888,7 @@ pub web: Service! @start {
 }
 ```
 
-A module can expose several `@start` services, and `dagger start` starts each one. This differs from the private `let db: Service { ... }` pattern shown under [Services](#services) above. A `let` service is internal plumbing, such as a database wired into a check with `withServiceBinding`. An `@start` service is a public entry point that users start directly.
+A module can expose several `@start` services, and `dagger start` runs each one. This differs from the private `let db: Service { ... }` pattern shown under [Services](#services) above. A `let` service is internal plumbing, such as a database wired into a check with `withServiceBinding`. An `@start` service is a public entry point that users start directly.
 
 ### Caching directives
 

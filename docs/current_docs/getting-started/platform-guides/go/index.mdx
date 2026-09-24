@@ -278,7 +278,7 @@ Add a `postgres` function to the module and bind it into `test-runtime`:
 ```dang file=./snippets/go-runtime-with-services/main.dang
 ```
 
-`postgres` describes the database. The `@start` directive also makes it a service that `dagger start` starts for local development, so one definition serves both purposes.
+`postgres` describes the database. The `@start` directive also makes it a service that `dagger start` runs for local development, so one definition serves both purposes.
 
 `testRuntime` gains two lines. The binding survives: every container the `go` module derives from this base keeps the `db` service, so Postgres is running whenever `go test` runs. `DATABASE_URL` points at it, which is the variable the tests read.
 
