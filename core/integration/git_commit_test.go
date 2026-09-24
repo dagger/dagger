@@ -16,6 +16,70 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Reftable refs cannot be published by the native loose-ref writer. Exercise
+// the public fallback, not just the backend eligibility predicate.
+func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-ec", `
+		git init -b main --ref-format=reftable
+		git config user.name Author
+		git config user.email author@example.com
+		printf 'base\n' > file.txt
+		git add .
+		git commit -m base
+		git tag baseline
+		`}).Directory("/repo")
+	base := fixture.AsGit().Head()
+	baseSHA, err := base.CommitSHA(ctx)
+	require.NoError(t, err)
+	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	changes := before.WithNewFile("file.txt", "edited\n").Changes(before)
+	_, err = changes.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	result := base.WithCommit(changes, "edit reftable source", workspaceCommitDate, "Author", "author@example.com")
+	parents, err := result.TargetCommit().ParentShas(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{baseSHA}, parents)
+	contents, err := result.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "edited\n", contents)
+	// Bypass the original ref's cached result to verify storage was untouched.
+	originalSHA, err := fixture.AsGit().Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, originalSHA)
+	tagSHA, err := fixture.AsGit().Tag("baseline").CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, tagSHA)
+	require.NoError(t, c.Close())
+
+	traces, _ := sink.capture()
+	fallbacks := 0
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.Name != "git native commit transaction" {
+						continue
+					}
+					for _, attr := range span.Attributes {
+						if attr.Key == "dagger.git.native.fallback_reason" && attr.Value.GetStringValue() == "ref-storage" {
+							fallbacks++
+						}
+					}
+				}
+			}
+		}
+	}
+	require.Positive(t, fallbacks, "must reject reftable storage before native publication")
+}
+
 // Native transactions must produce the same commit object as the general
 // reconciliation path, not merely equivalent checked-out bytes. The oracle
 // deliberately obscures Git-tree provenance without changing the source tree.
