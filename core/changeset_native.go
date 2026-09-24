@@ -133,6 +133,15 @@ func validateNativeWorkspaceContent(ctx context.Context, base string, content *c
 }
 
 func validateNativeWorkspaceDelta(ctx context.Context, base, delta string, paths *ChangesetPaths) error {
+	root, err := os.OpenRoot(base)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	// WalkDir visits parents first. Once a delta directory replaces a
+	// non-directory (including a symlink), or is newly introduced, none of
+	// its descendants exist in Before. Do not look through the old ancestor.
+	introducedDirs := map[string]bool{}
 	declared := map[string]bool{}
 	for _, p := range slices.Concat(paths.Added, paths.Modified) {
 		declared[p] = true
@@ -165,9 +174,15 @@ func validateNativeWorkspaceDelta(ctx context.Context, base, delta string, paths
 		if err != nil {
 			return err
 		}
-		before, err := os.Lstat(filepath.Join(base, rel))
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+		var before os.FileInfo
+		if !introducedDirs[path.Dir(rel)] {
+			before, err = root.Lstat(filepath.FromSlash(rel))
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+		if before == nil || !before.IsDir() {
+			introducedDirs[rel] = true
 		}
 		stat := info.Sys().(*syscall.Stat_t)
 		if before != nil && before.IsDir() {
