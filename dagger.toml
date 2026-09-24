@@ -171,6 +171,9 @@ daggerConfig = "file://~/.config/dagger/config.toml"
 [modules.mcp-lab]
 source = ".dagger/modules/mcp-lab"
 
+[modules.mcp-lab.settings]
+cloudCredentials = "file://~/.config/dagger/credentials.json"
+
 [modules.editor]
 source = "github.com/vito/editor"
 
