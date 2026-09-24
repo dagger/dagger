@@ -275,7 +275,10 @@ print('all paths normalized')
 }
 
 func (GitSuite) TestGitRefIncrementalCheckoutOracle(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
 	fixture, inspector := gitIncrementalCheckoutFixture(c)
 	original := workspaceCommitManifest(ctx, t, inspector, fixture)
 	base := fixture.AsGit().Branch("main")
@@ -442,8 +445,8 @@ func (GitSuite) TestGitRefIncrementalCheckoutTrace(ctx context.Context, t *testc
 			}
 			require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "incremental checkout fetched: %s", name)
 			require.NotEqual(t, "materialize local git checkout", name, "warmed parent must not be checked out again")
-			require.NotEqual(t, "git checkout", name, "must not run a full checkout")
-			if name == "git checkout-index" {
+			require.False(t, name == "git checkout" || strings.HasPrefix(name, "git checkout "), "must not run a full checkout")
+			if name == "git checkout-index" || strings.HasPrefix(name, "git checkout-index ") {
 				checkouts++
 			}
 			break
@@ -455,6 +458,9 @@ func (GitSuite) TestGitRefIncrementalCheckoutTrace(ctx context.Context, t *testc
 }
 
 func (GitSuite) TestGitRefRetainedCheckoutSurvivesSourceScope(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
 	c := connect(ctx, t)
 	fixture, _ := gitIncrementalCheckoutFixture(c)
 	base := fixture.AsGit().Head()
@@ -499,7 +505,10 @@ git log --format=%H
 }
 
 func (GitSuite) TestGitRefWithCommit(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
 	const date = "2026-09-05T12:00:00Z"
 	const baseText = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("file.txt", baseText).WithNewFile("delete.txt", "delete"))
