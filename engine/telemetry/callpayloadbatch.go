@@ -222,6 +222,7 @@ func (processor *CallPayloadBatchProcessor) run() {
 		}
 		timerC = nil
 	}
+	defer disarm()
 	// export runs exportPass over the queue. A failed batch arms its retry
 	// backoff. Records that arrived during a pass are coalesced like a fresh
 	// burst — the delay is re-armed rather than draining them at once, so a
@@ -241,6 +242,9 @@ func (processor *CallPayloadBatchProcessor) run() {
 						continue
 					case <-ctx.Done():
 						stopTimer(timer)
+						// Only this drain was canceled. The failed batch is
+						// still queued, so resume its background retries.
+						arm(retryIn)
 						return errors.Join(err, context.Cause(ctx), processor.deliveryError())
 					}
 				}
