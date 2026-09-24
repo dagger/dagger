@@ -804,7 +804,7 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 // TestCompatMigrationToolchainSkipFields covers the legacy → workspace-config
 // migration of the per-toolchain ignore lists (ignoreChecks, ignoreGenerators,
 // ignoreServices), which translate into [modules.<name>] check.skip /
-// generate.skip / up.skip in the workspace config.
+// generate.skip / start.skip in the workspace config.
 func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -909,7 +909,7 @@ func (WorkspaceCompatSuite) TestCompatMigrationPortMappings(ctx context.Context,
 	require.Contains(t, configOut, "[modules.hello-with-services]")
 	require.Contains(t, configOut, `source = "./modules/hello-with-services"`,
 		"the toolchain's local source is rebased to the repo root")
-	require.Contains(t, configOut, `up.skip = ["redis", "infra:database"]`)
+	require.Contains(t, configOut, `start.skip = ["redis", "infra:database"]`)
 	require.Contains(t, configOut, "[ports.3000]")
 	require.Contains(t, configOut, `backendService = "hello-with-services:web"`)
 	require.Contains(t, configOut, "backendPort = 80")

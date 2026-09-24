@@ -695,19 +695,24 @@ func (UpSuite) TestUpRunService(ctx context.Context, t *testctx.T) {
 
 func (UpSuite) TestWorkspaceUpSkip(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	modGen, err := upTestEnv(t, c)
-	require.NoError(t, err)
+	// up.skip is the deprecated name of start.skip.
+	for _, key := range []string{"start.skip", "up.skip"} {
+		t.Run(key, func(ctx context.Context, t *testctx.T) {
+			modGen, err := upTestEnv(t, c)
+			require.NoError(t, err)
 
-	ctr := modGen.WithNewFile("dagger.toml", `[modules.hello-with-services]
+			ctr := modGen.WithNewFile("dagger.toml", fmt.Sprintf(`[modules.hello-with-services]
 source = "hello-with-services"
-up.skip = ["redis"]
-`)
+%s = ["redis"]
+`, key))
 
-	out, err := ctr.With(daggerExec("start", "-l")).CombinedOutput(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "hello-with-services:web")
-	require.NotContains(t, out, "hello-with-services:redis")
-	require.Contains(t, out, "hello-with-services:infra:database")
+			out, err := ctr.With(daggerExec("start", "-l")).CombinedOutput(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "hello-with-services:web")
+			require.NotContains(t, out, "hello-with-services:redis")
+			require.Contains(t, out, "hello-with-services:infra:database")
+		})
+	}
 }
 
 func (UpSuite) TestWorkspaceUpPortMapping(ctx context.Context, t *testctx.T) {
@@ -717,7 +722,7 @@ func (UpSuite) TestWorkspaceUpPortMapping(ctx context.Context, t *testctx.T) {
 
 	ctr := modGen.WithNewFile("dagger.toml", `[modules.hello-with-services]
 source = "hello-with-services"
-up.skip = ["redis", "infra:database"]
+start.skip = ["redis", "infra:database"]
 
 [ports.3000]
 backendService = "hello-with-services:web"

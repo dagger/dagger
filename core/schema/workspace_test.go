@@ -572,7 +572,7 @@ func TestWorkspaceConfigWithCompatFallback(t *testing.T) {
 		ws.SetCompatWorkspace(compat)
 		cfg, err := workspaceConfigWithCompatFallback(ctx, ws)
 		require.NoError(t, err)
-		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["hello-with-services"].Up.Skip)
+		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["hello-with-services"].Start.Skip)
 		require.Equal(t, workspace.PortMapping{
 			BackendService: "hello-with-services:web",
 			BackendPort:    80,

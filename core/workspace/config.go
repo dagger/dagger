@@ -107,7 +107,7 @@ type ModuleEntry struct {
 	Settings          map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
 	Entrypoint        bool           `json:"entrypoint,omitempty" toml:"entrypoint,omitempty"`
 	LegacyDefaultPath bool           `json:"legacy-default-path,omitempty" toml:"legacy-default-path,omitempty"`
-	Up                ModuleSkip     `json:"up,omitempty" toml:"up,omitempty"`
+	Start             ModuleSkip     `json:"start,omitempty" toml:"start,omitempty"`
 	Generate          ModuleSkip     `json:"generate,omitempty" toml:"generate,omitempty"`
 	Check             ModuleSkip     `json:"check,omitempty" toml:"check,omitempty"`
 }
@@ -223,10 +223,42 @@ func ParseConfig(data []byte) (*Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse dagger.toml: %w", err)
 	}
+	if err := applyLegacyUpSkip(data, &cfg); err != nil {
+		return nil, err
+	}
 	if err := ValidateSDKs(&cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// legacyUpConfig holds modules.<name>.up, the name of modules.<name>.start
+// before `dagger up` became `dagger start`. It is kept out of ModuleEntry so
+// that config keys, writes, and errors only name start.
+type legacyUpConfig struct {
+	Modules map[string]struct {
+		Start struct {
+			Skip *[]string `toml:"skip"`
+		} `toml:"start"`
+		Up ModuleSkip `toml:"up"`
+	} `toml:"modules"`
+}
+
+// applyLegacyUpSkip reads up.skip for the modules that do not set start.skip.
+func applyLegacyUpSkip(data []byte, cfg *Config) error {
+	var legacy legacyUpConfig
+	if err := toml.Unmarshal(data, &legacy); err != nil {
+		return fmt.Errorf("parse dagger.toml: %w", err)
+	}
+	for name, mod := range legacy.Modules {
+		if mod.Start.Skip != nil || len(mod.Up.Skip) == 0 {
+			continue
+		}
+		entry := cfg.Modules[name]
+		entry.Start.Skip = mod.Up.Skip
+		cfg.Modules[name] = entry
+	}
+	return nil
 }
 
 // ApplyEnvOverlay returns a copy of cfg with the named environment overlay
@@ -447,7 +479,7 @@ func cloneConfig(cfg *Config) *Config {
 				Settings:          cloneConfigMap(entry.Settings),
 				Entrypoint:        entry.Entrypoint,
 				LegacyDefaultPath: entry.LegacyDefaultPath,
-				Up:                ModuleSkip{Skip: append([]string(nil), entry.Up.Skip...)},
+				Start:             ModuleSkip{Skip: append([]string(nil), entry.Start.Skip...)},
 				Generate:          ModuleSkip{Skip: append([]string(nil), entry.Generate.Skip...)},
 				Check:             ModuleSkip{Skip: append([]string(nil), entry.Check.Skip...)},
 			}
@@ -537,8 +569,8 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		if entry.LegacyDefaultPath {
 			b.WriteString("legacy-default-path = true\n")
 		}
-		if len(entry.Up.Skip) > 0 {
-			fmt.Fprintf(b, "up.skip = %s\n", formatConfigValue(entry.Up.Skip))
+		if len(entry.Start.Skip) > 0 {
+			fmt.Fprintf(b, "start.skip = %s\n", formatConfigValue(entry.Start.Skip))
 		}
 		if len(entry.Generate.Skip) > 0 {
 			fmt.Fprintf(b, "generate.skip = %s\n", formatConfigValue(entry.Generate.Skip))
@@ -1282,7 +1314,7 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 				entry.Settings = map[string]any{}
 			}
 			entry.Settings[parts[3]] = value
-		case "up", "generate", "check":
+		case "start", "generate", "check":
 			if len(parts) != 4 || parts[3] != "skip" {
 				return fmt.Errorf("invalid key %q; expected modules.%s.%s.skip", strings.Join(parts, "."), moduleName, parts[2])
 			}
@@ -1291,8 +1323,8 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 				skip = append([]string(nil), s...)
 			}
 			switch parts[2] {
-			case "up":
-				entry.Up.Skip = skip
+			case "start":
+				entry.Start.Skip = skip
 			case "generate":
 				entry.Generate.Skip = skip
 			case "check":

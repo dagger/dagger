@@ -229,7 +229,7 @@ func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
 			if !ok {
 				continue
 			}
-			entry.Up.Skip = append([]string(nil), tc.IgnoreServices...)
+			entry.Start.Skip = append([]string(nil), tc.IgnoreServices...)
 			entry.Generate.Skip = append([]string(nil), tc.IgnoreGenerators...)
 			entry.Check.Skip = append([]string(nil), tc.IgnoreChecks...)
 			cfg.Modules[tc.Name] = entry

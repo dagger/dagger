@@ -95,7 +95,7 @@
         "legacy-default-path": {
           "type": "boolean"
         },
-        "up": {
+        "start": {
           "$ref": "#/$defs/ModuleSkip"
         },
         "generate": {

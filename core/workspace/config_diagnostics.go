@@ -44,6 +44,11 @@ func ConfigWarnings(data []byte, filename string) ([]string, error) {
 			}
 			if !known {
 				pos := tree.GetPositionPath([]string{key})
+				if legacyUpConfigPath(parts) {
+					warnings = append(warnings, fmt.Sprintf("%s:%d:%d: field %s is deprecated; use %s instead",
+						filename, pos.Line, pos.Col, JoinConfigPath(parts...), JoinConfigPath(parts[0], parts[1], "start")))
+					continue
+				}
 				message := fmt.Sprintf("%s:%d:%d: unsupported field %s is ignored", filename, pos.Line, pos.Col, JoinConfigPath(parts...))
 				if legacySDKConfigPath(parts) {
 					message += "; run `dagger ws migrate` to migrate it"
@@ -58,6 +63,12 @@ func ConfigWarnings(data []byte, filename string) ([]string, error) {
 	}
 	visit(tree, reflect.TypeFor[Config](), nil)
 	return warnings, nil
+}
+
+// legacyUpConfigPath reports modules.<name>.up, which ParseConfig reads as
+// modules.<name>.start when start.skip is not set.
+func legacyUpConfigPath(parts []string) bool {
+	return len(parts) == 3 && configDecoderKeyMatches(parts[0], "modules") && configDecoderKeyMatches(parts[2], "up")
 }
 
 func legacySDKConfigPath(parts []string) bool {
