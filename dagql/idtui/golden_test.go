@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -410,6 +411,12 @@ type Example struct {
 }
 
 func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB) {
+	// Each CLI must establish its own session rooted at the fixture's working
+	// directory, not reuse the test runner's nested session and workspace.
+	// Keep the runner host so the new session still uses the test engine.
+	testEnv := slices.DeleteFunc(os.Environ(), func(env string) bool {
+		return strings.HasPrefix(env, "DAGGER_SESSION_PORT=") || strings.HasPrefix(env, "DAGGER_SESSION_TOKEN=")
+	})
 	db, otlpL := testDB(t)
 
 	if ex.Module == "" {
@@ -462,7 +469,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		defer span.End()
 		warmup := exec.Command(daggerBin, daggerArgs...)
 		warmup.Env = append(
-			os.Environ(),
+			slices.Clone(testEnv),
 			fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
 		)
 		warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
@@ -491,7 +498,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 
 	cmd := exec.Command(daggerBin, daggerArgs...)
 	cmd.Env = append(
-		os.Environ(),
+		testEnv,
 		fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
 		"NO_COLOR=1",
 		"OTEL_EXPORTER_OTLP_TRACES_LIVE=1",
