@@ -284,6 +284,8 @@ source = "./entrypoint"
 		var runtimeSpans int
 		for span := range db.Spans.Iter() {
 			switch {
+			case span.Name == entrypointSpan:
+				assert.True(t, span.Internal, "the entrypoint's plumbing is internal")
 			case span.Name == "load sdk runtime":
 				runtimeSpans++
 			case spanHasStringArg(span, "entrypoint-body"):
