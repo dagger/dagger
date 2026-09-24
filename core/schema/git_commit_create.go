@@ -71,6 +71,22 @@ func (s *gitSchema) gitRefWithCommit(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return inst, err
 	}
+	var repo dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__withCommitRepository", Args: args.selectors()}); err != nil {
+		return inst, err
+	}
+	err = srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"})
+	return inst, err
+}
+
+// Keep the parent relationship in a private, replayable repository recipe. A
+// source-only checkout can then reuse the parent's canonical materialization;
+// public withContents must not infer provenance from arbitrary supplied storage.
+func (s *gitSchema) gitRefWithCommitRepository(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args gitRefWithCommitArgs) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
 	var dir dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, parent, &dir, dagql.Selector{Field: "__withCommitDirectory", Args: args.selectors()}); err != nil {
 		return inst, err
@@ -79,8 +95,26 @@ func (s *gitSchema) gitRefWithCommit(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return inst, err
 	}
-	err = srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"})
-	return inst, err
+	if _, local := parent.Self().Backend.(*core.LocalGitRef); !local {
+		// Reusing a remote parent after cache eviction could fetch it again,
+		// despite the new repository already owning all required objects.
+		return repo, nil
+	}
+	remote, err := repo.Self().LoadRemote(ctx)
+	if err != nil {
+		return inst, err
+	}
+	head, err := remote.Lookup("HEAD")
+	if err != nil {
+		return inst, fmt.Errorf("resolve committed repository HEAD: %w", err)
+	}
+	backend := &core.LocalGitRepository{
+		Directory: dir,
+		CheckoutBase: &core.GitCheckoutBase{
+			Parent: parent, CommitSHA: head.SHA,
+		},
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo.Self().CloneWithBackend(backend))
 }
 
 // This private field gives the materialized Git storage an identity that can be

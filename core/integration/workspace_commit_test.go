@@ -271,7 +271,10 @@ git commit -m attributes
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitReconciliationOracle(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
 	fixture, inspector := workspaceReconciliationFixture(c)
 	const text = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
 	for _, tc := range []workspaceReconciliationCase{
@@ -685,6 +688,8 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 		newObjects       int64
 		newObjectBytes   int64
 		scopedStagePaths int64
+		incremental      bool
+		changedPaths     int64
 	}
 	byID := map[string]sample{}
 	traces, _ := sink.capture()
@@ -711,6 +716,10 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 							s.newObjectBytes = attr.Value.GetIntValue()
 						case "dagger.git.native_merge.scoped_stage_paths":
 							s.scopedStagePaths = attr.Value.GetIntValue()
+						case "dagger.git.checkout.incremental.supported":
+							s.incremental = attr.Value.GetBoolValue()
+						case "dagger.git.checkout.incremental.changed_paths":
+							s.changedPaths = attr.Value.GetIntValue()
 						}
 					}
 					byID[id] = s
@@ -731,7 +740,7 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 		}
 		return strings.Compare(a.id, b.id)
 	})
-	var commits, merges, fetches, walks, gitCommits, nativeCommits, nativeMerges, scratchCommits int
+	var commits, merges, fetches, walks, gitCommits, nativeCommits, nativeMerges, scratchCommits, incrementalCheckouts int
 	for _, s := range ordered {
 		fetch := strings.HasPrefix(s.name, "git fetch") || strings.HasPrefix(s.name, "fetching ")
 		if fetch {
@@ -797,24 +806,39 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 		case "GitRef.log":
 			walks++
 			interesting = true
-		case "materialize local git checkout", "GitRef.asWorkspace":
+		case "materialize incremental git checkout":
+			require.True(t, s.incremental, "ordinary commit source checkout must use its parent materialization")
+			require.EqualValues(t, 1, s.changedPaths, "only the committed file needs a checkout update")
+			incrementalCheckouts++
+			t.Logf("PERF incremental_checkout id=%x changed_paths=%d", []byte(s.id)[16:], s.changedPaths)
+			interesting = true
+		case "materialize local git checkout":
+			for parent, ok := byID[s.parent]; ok; parent, ok = byID[parent.parent] {
+				require.NotEqual(t, "Workspace.withCommit", parent.name, "ordinary commit rematerialized a full source tree")
+			}
+			interesting = true
+		case "GitRef.asWorkspace":
 			interesting = true
 		}
 		if interesting {
 			t.Logf("PERF span=%q id=%x duration=%s discard_git_dir=%t", s.name, []byte(s.id)[16:], time.Duration(s.end-s.start), s.discard)
 		}
 	}
-	t.Logf("PERF spans workspace_commits=%d merges=%d fetches=%d history_calls=%d git_commits=%d native_commits=%d native_merges=%d scratch_commits=%d (inclusive, deduplicated; counts are not bytes)", commits, merges, fetches, walks, gitCommits, nativeCommits, nativeMerges, scratchCommits)
+	t.Logf("PERF spans workspace_commits=%d merges=%d fetches=%d history_calls=%d git_commits=%d native_commits=%d native_merges=%d scratch_commits=%d incremental_checkouts=%d (inclusive, deduplicated; counts are not bytes)", commits, merges, fetches, walks, gitCommits, nativeCommits, nativeMerges, scratchCommits, incrementalCheckouts)
 	require.Equal(t, iterations, commits, "must observe actual commit calls, not an empty trace")
 	require.Equal(t, iterations, nativeCommits, "captured-workspace commits must execute native transactions")
 	require.Equal(t, iterations, nativeMerges, "captured-workspace commits must execute native reconciliation")
+	require.GreaterOrEqual(t, incrementalCheckouts, iterations, "each committed tree must materialize incrementally")
 	require.Zero(t, gitCommits, "must not fall back to retained-checkout commits")
 	require.Zero(t, merges, "ordinary workspace commits must not reconstruct general merge repositories")
 	require.GreaterOrEqual(t, walks, iterations*3)
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
 	daemon, url := gitService(ctx, t, c, c.Directory().
 		WithNewFile("src/a.txt", "old-a").WithNewFile("src/b.txt", "old-b").
 		WithNewFile("keep.txt", "untouched"))

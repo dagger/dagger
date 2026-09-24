@@ -25,10 +25,12 @@ import (
 )
 
 // runWithPrivateTraceSession re-execs just this test when engine-dev supplies a
-// shared nested session. That session cannot change workdir or install a trace
-// sink. The child uses the same engine and CLI, with its own session, without
-// mutating the parallel test process's environment. Callers must return when it
-// returns true. Removing the session variables also prevents recursive re-exec.
+// shared nested session. Inherited SDK session variables can bypass the explicit
+// from-source runner; they also prevent changing workdir or installing a trace
+// sink. The child uses the explicitly configured runner and CLI, with its own
+// session, without mutating the parallel test process's environment. Callers
+// must return when it returns true. Removing the session variables also prevents
+// recursive re-exec.
 func runWithPrivateTraceSession(ctx context.Context, t *testctx.T) bool {
 	t.Helper()
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); !nested {
