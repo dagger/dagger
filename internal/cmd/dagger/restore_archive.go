@@ -80,9 +80,15 @@ func appliedArchivePlan(fe idtui.AgentRestorer, completion archive.Completion) (
 		if err != nil {
 			return plan, nil, err
 		}
+		// A stopped failure retains its diagnostic, but spawn only accepts an
+		// error when restoring FAILED (including a session-stopped failure).
+		failure := ""
+		if state == "FAILED" {
+			failure = a.Failure
+		}
 		plan.plan = append(plan.plan, dagui.AgentRestore{
 			Source: a.Key, ID: a.Handle, Name: a.Name, ParentAgentID: a.Parent,
-			SnapshotDigest: a.Digest, State: state, Error: a.Failure, LastActivity: a.Activity,
+			SnapshotDigest: a.Digest, State: state, Error: failure, LastActivity: a.Activity,
 		})
 	}
 	// Keep removal witnesses in verification above, but never install them.

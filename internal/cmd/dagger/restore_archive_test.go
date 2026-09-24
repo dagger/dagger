@@ -142,6 +142,47 @@ func canonicalArchive() (*restoreTestArchive, agentcontrol.Agent, agentcontrol.A
 	}, chief, worker, edge
 }
 
+func TestRestorePlansOnlyPassErrorsForFailedAgents(t *testing.T) {
+	for _, sourceKind := range []string{"archive", "cloud"} {
+		for _, tc := range []struct {
+			name, state, stopReason, preTeardownState, restoredState, restoredError string
+		}{
+			{name: "failed", state: "FAILED", restoredState: "FAILED", restoredError: "original failure"},
+			{name: "explicitly stopped failure", state: "STOPPED", stopReason: "EXPLICIT", restoredState: "STOPPED"},
+			{name: "session stopped failure", state: "STOPPED", stopReason: "SESSION", preTeardownState: "FAILED", restoredState: "FAILED", restoredError: "original failure"},
+		} {
+			t.Run(sourceKind+"/"+tc.name, func(t *testing.T) {
+				source, chief, worker, edge := canonicalArchive()
+				// Stopping a failed runtime seals its tombstone without clearing
+				// its recorded failure. That diagnostic is not always a spawn arg.
+				worker.State, worker.StopReason, worker.PreTeardownState = tc.state, tc.stopReason, tc.preTeardownState
+				fe := newRestoreTestFrontend()
+				importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Logs: fe.LogExporter()})
+				require.NoError(t, importer.ImportLogs(t.Context(), controlLogs(chief.Record(), worker.Record(), edge.Record())))
+
+				var plan appliedRestorePlan
+				var err error
+				if sourceKind == "archive" {
+					plan, _, err = appliedArchivePlan(fe, source.header.Completion)
+				} else {
+					plan, _, err = cloudRestorePlan(fe, restoreRequest(), nil)
+				}
+				require.NoError(t, err)
+				require.Len(t, plan.plan, 2)
+				found := false
+				for _, entry := range plan.plan {
+					if entry.ID == worker.Handle {
+						found = true
+						require.Equal(t, tc.restoredState, entry.State)
+						require.Equal(t, tc.restoredError, entry.Error, "spawn only accepts an error for FAILED")
+					}
+				}
+				require.True(t, found, "stopped agents must still be restored")
+			})
+		}
+	}
+}
+
 func TestArchiveSelectionFlags(t *testing.T) {
 	for _, tc := range []struct {
 		name, trace, source, generation, focus string
