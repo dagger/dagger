@@ -162,6 +162,28 @@ func (WorkspaceSuite) TestWorkspaceSnapshotContentOnlyTreesPreserveHistory(ctx c
 	require.Equal(t, "first", contents, "prior dagql result remains immutable")
 }
 
+// requireWorkspaceRecipeUsesHostGit checks that recording a committed leaf has
+// not made session-local repository history portable. Publication itself does
+// not preflight replayability; the recipe must retain its originating-client
+// dependency instead of silently replacing it with a portable history source.
+func requireWorkspaceRecipeUsesHostGit(t *testctx.T, recipe dagger.ID) {
+	t.Helper()
+	id := new(call.ID)
+	require.NoError(t, id.Decode(string(recipe)))
+	pb, err := id.ToProto()
+	require.NoError(t, err)
+	for _, frame := range pb.GetRecipe().CallsByDigest {
+		if frame.Field != "__gitDir" {
+			continue
+		}
+		receiver := pb.GetRecipe().CallsByDigest[frame.ReceiverDigest]
+		if receiver != nil && receiver.Type.GetNamedType() == "Host" {
+			return
+		}
+	}
+	t.Fatal("recorded local workspace must retain its Host.__gitDir dependency")
+}
+
 func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	git := func(args ...string) {
@@ -188,8 +210,9 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	frozen := snapshotWorkspace(ctx, t, c, live)
 	_, err = frozen.ID(ctx)
 	require.NoError(t, err)
-	_, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(frozen))
-	require.ErrorContains(t, err, "Host.__gitDir", "local history remains session-dependent")
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(frozen))
+	require.NoError(t, err)
+	requireWorkspaceRecipeUsesHostGit(t, recipe)
 	modified, err := frozen.Git().Uncommitted().ModifiedPaths(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"tracked.txt"}, modified)
@@ -241,8 +264,9 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	contents, err = localRemote.File("tracked.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "later", contents)
-	_, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(localRemote))
-	require.ErrorContains(t, err, "Host.__gitDir", "filesystem remote history remains session-dependent")
+	recipe, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(localRemote))
+	require.NoError(t, err)
+	requireWorkspaceRecipeUsesHostGit(t, recipe)
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotWithoutGitBaseline(ctx context.Context, t *testctx.T) {
