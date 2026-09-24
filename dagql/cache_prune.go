@@ -284,11 +284,17 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	compactedNeeded := false
 	for policyIdx, policy := range policies {
 		activeRoots := c.snapshotSessionResultIDs()
-		c.measureAllResultSizes(ctx)
+		if err := c.measureAllResultSizes(ctx); err != nil {
+			if err == errCacheUsageChanged {
+				slog.Debug("dagql prune defer policy: incomplete usage measurement", "policyIndex", policyIdx)
+				continue
+			}
+			return report, err
+		}
 		snapshot, err := c.snapshotPruneStateCancelable(activeRoots, pruneSnapshotDisk, 0, newPruneCancellationChecker(ctx))
 		if err == errCacheUsageChanged {
 			// Unknown identity membership could overstate physical reclaim.
-			// Defer this policy rather than treating unsampled rows as empty.
+			slog.Debug("dagql prune defer policy: incomplete identity population", "policyIndex", policyIdx)
 			continue
 		}
 		if err != nil {
@@ -407,7 +413,7 @@ func (c *Cache) snapshotPruneStateCancelable(
 			ctx = checker.ctx
 		}
 		var err error
-		usage, err = c.collectUsageMeasurementInputs(ctx)
+		usage, err = c.collectUsageMeasurementInputs(ctx, false)
 		if err != nil {
 			return pruneSnapshot{}, err
 		}
@@ -431,7 +437,7 @@ func (c *Cache) snapshotPruneStateCancelable(
 	return c.snapshotPruneStateLocked(activeRoots, mode, directResultBytes, checker, identities)
 }
 
-// pruneUsageIdentitiesLocked removes measurement holds and rejects an incomplete
+// pruneUsageIdentitiesLocked removes measurement holds and validates the live
 // identity population before any graph or ownership counts are copied.
 func (c *Cache) pruneUsageIdentitiesLocked(usage *cacheUsageSnapshot) (map[sharedResultID][]string, error) {
 	identities := make(map[sharedResultID][]string)
@@ -439,14 +445,11 @@ func (c *Cache) pruneUsageIdentitiesLocked(usage *cacheUsageSnapshot) (map[share
 		return identities, nil
 	}
 	usage.releaseLocked(context.Background())
-	for _, input := range usage.inputs {
-		if input.validLocked(c) {
-			identities[input.resultID] = input.identities
-		}
+	identities, err := usage.finalizeLocked()
+	if err != nil {
+		return nil, err
 	}
-	if len(identities) != len(usage.inputs) || len(identities) != len(c.resultsByID) {
-		return nil, errCacheUsageChanged
-	}
+	c.publishUsageMeasurementsLocked(usage, identities)
 	return identities, nil
 }
 

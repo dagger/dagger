@@ -4781,7 +4781,9 @@ func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
 
 func (c *Cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
 	activeRoots := c.snapshotSessionResultIDs()
-	c.measureAllResultSizes(ctx)
+	if err := c.measureAllResultSizes(ctx); err != nil {
+		slog.Warn("measure cache usage", "err", err)
+	}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	entries := c.usageEntriesLocked(activeRoots)
@@ -4934,15 +4936,29 @@ type cacheUsageIdentityMeasurement struct {
 	recordType string
 }
 
-func (c *Cache) measureAllResultSizes(ctx context.Context) {
-	snapshot, err := c.collectUsageMeasurementInputs(ctx)
+func (c *Cache) measureAllResultSizes(ctx context.Context) (rerr error) {
+	snapshot, err := c.collectUsageMeasurementInputs(ctx, true)
 	if err != nil {
 		slog.Warn("collect cache usage inputs", "err", err)
-		return
+		return err
 	}
-	defer snapshot.closeAndLog(ctx)
-	measurements := buildCacheUsageMeasurements(ctx, c.snapshotManager, snapshot.inputs)
-	c.publishUsageMeasurements(snapshot.inputs, measurements)
+	defer func() {
+		if err := snapshot.close(ctx); err != nil {
+			rerr = errors.Join(rerr, err)
+		}
+	}()
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	snapshot.releaseLocked(context.WithoutCancel(ctx))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	identities, err := snapshot.finalizeLocked()
+	if err != nil {
+		return err
+	}
+	c.publishUsageMeasurementsLocked(snapshot, identities)
+	return nil
 }
 
 func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.SnapshotManager, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]cacheUsageIdentityMeasurement {
@@ -5040,41 +5056,49 @@ func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.Sn
 	return published
 }
 
-func (c *Cache) publishUsageMeasurements(inputs []cacheUsageMeasurementInput, measurements map[sharedResultID]map[string]cacheUsageIdentityMeasurement) {
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
-	// Keep one complete population: a new or replaced sharer invalidates
-	// the whole sample, not just its own contribution to deduplication.
-	if len(inputs) != len(c.resultsByID) {
-		return
-	}
-	for _, input := range inputs {
-		if !input.validLocked(c) {
-			return
-		}
-	}
-	for _, input := range inputs {
-		res := input.row
-		resultMeasurements, ok := measurements[input.resultID]
-		if !ok {
-			res.cacheUsageSizeByIdentity = nil
-			res.cacheUsageRecordTypeByID = nil
-			continue
-		}
-		sizeByIdentity := make(map[string]int64, len(resultMeasurements))
-		recordTypeByIdentity := make(map[string]string, len(resultMeasurements))
-		for identity, measurement := range resultMeasurements {
-			sizeByIdentity[identity] = measurement.sizeBytes
-			if measurement.recordType != "" {
-				recordTypeByIdentity[identity] = measurement.recordType
+// publishUsageMeasurementsLocked assigns each identity to one surviving holder.
+// Captured bytes outlive the old size owner, which may have been collected when
+// measurement holds were released. Do not publish an incomplete population.
+func (c *Cache) publishUsageMeasurementsLocked(snapshot *cacheUsageSnapshot, identities map[sharedResultID][]string) {
+	measurements := make(map[string]cacheUsageIdentityMeasurement)
+	for _, input := range snapshot.inputs {
+		for identity, size := range input.existingSizeByID {
+			if prior, ok := measurements[identity]; !ok || size > prior.sizeBytes {
+				measurements[identity] = cacheUsageIdentityMeasurement{sizeBytes: size, recordType: input.row.cacheUsageRecordTypeByID[identity]}
 			}
 		}
-		res.cacheUsageSizeByIdentity = sizeByIdentity
-		res.cacheUsageRecordTypeByID = recordTypeByIdentity
-
-		recordTypes := cacheUsageRecordTypesFromMap(recordTypeByIdentity)
-		if len(recordTypes) > 0 {
-			res.recordType = cacheUsagePrimaryRecordType(recordTypes, "")
+	}
+	for identity, measurement := range snapshot.measurements {
+		measurements[identity] = measurement
+	}
+	owners := make(map[string]sharedResultID)
+	for id, ids := range identities {
+		for _, identity := range ids {
+			if owner := owners[identity]; owner == 0 || id < owner {
+				owners[identity] = id
+			}
+		}
+	}
+	for id, res := range c.resultsByID {
+		sizes := make(map[string]int64)
+		recordTypes := make(map[string]string)
+		for _, identity := range identities[id] {
+			if owners[identity] != id {
+				continue
+			}
+			measurement, ok := measurements[identity]
+			if !ok {
+				continue
+			}
+			sizes[identity] = measurement.sizeBytes
+			if measurement.recordType != "" {
+				recordTypes[identity] = measurement.recordType
+			}
+		}
+		res.cacheUsageSizeByIdentity = sizes
+		res.cacheUsageRecordTypeByID = recordTypes
+		if types := cacheUsageRecordTypesFromMap(recordTypes); len(types) > 0 {
+			res.recordType = cacheUsagePrimaryRecordType(types, "")
 		}
 	}
 }

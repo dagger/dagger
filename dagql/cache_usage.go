@@ -13,61 +13,144 @@ import (
 // detects replacement of a row payload, not mutations inside its provider.
 // The same sampled identities feed both disk-prune accounting passes.
 type cacheUsageSnapshot struct {
-	cache      *Cache
-	op         cacheOperation
-	inputs     []cacheUsageMeasurementInput
-	released   bool
-	callbacks  []OnReleaseFunc
-	releaseErr error
+	cache        *Cache
+	op           cacheOperation
+	inputs       map[sharedResultID]cacheUsageMeasurementInput
+	holds        map[*sharedResult]struct{}
+	measurements map[string]cacheUsageIdentityMeasurement
+	released     bool
+	callbacks    []OnReleaseFunc
+	releaseErr   error
 }
 
-func (c *Cache) collectUsageMeasurementInputs(ctx context.Context) (*cacheUsageSnapshot, error) {
+const cacheUsageMaxSamplingRounds = 3
+
+func (c *Cache) collectUsageMeasurementInputs(ctx context.Context, measure bool) (*cacheUsageSnapshot, error) {
 	op, err := c.beginCacheOperation()
 	if err != nil {
 		return nil, err
 	}
-	snapshot := &cacheUsageSnapshot{cache: c, op: op}
-	c.egraphMu.Lock()
-	for _, res := range c.resultsByID {
-		if res == nil {
-			continue
-		}
-		state := res.loadPayloadState()
-		input := cacheUsageMeasurementInput{
-			resultID:         res.id,
-			row:              res,
-			payloadRevision:  state.payloadRevision,
-			existingSizeByID: make(map[string]int64, len(res.cacheUsageSizeByIdentity)),
-		}
-		if state.hasValue && state.self != nil {
-			input.self = state.self
-		} else {
-			input.snapshotLinks = cloneSnapshotRefLinks(state.snapshotOwnerLinks)
-		}
-		for identity, size := range res.cacheUsageSizeByIdentity {
-			input.existingSizeByID[identity] = size
-		}
-		c.incrementIncomingOwnershipLocked(ctx, res)
-		snapshot.inputs = append(snapshot.inputs, input)
+	snapshot := &cacheUsageSnapshot{
+		cache: c, op: op,
+		inputs:       make(map[sharedResultID]cacheUsageMeasurementInput),
+		holds:        make(map[*sharedResult]struct{}),
+		measurements: make(map[string]cacheUsageIdentityMeasurement),
 	}
-	c.egraphMu.Unlock()
-
-	for i := range snapshot.inputs {
+	for round := range cacheUsageMaxSamplingRounds {
 		if err := ctx.Err(); err != nil {
 			return nil, errors.Join(err, snapshot.close(ctx))
 		}
-		input := &snapshot.inputs[i]
-		if input.self != nil {
-			input.identities = cacheUsageIdentitiesFromSelf(input.self)
-			input.sizeMayChange = cacheUsageSizeMayChangeFromSelf(input.self)
-		} else {
-			input.identities = cacheUsageIdentitiesFromSnapshotLinks(input.snapshotLinks)
+		c.egraphMu.Lock()
+		pending := snapshot.capturePendingLocked(ctx)
+		c.egraphMu.Unlock()
+		if len(pending) == 0 {
+			break
+		}
+		if round > 0 {
+			slog.Debug("cache usage resampling changed population", "round", round+1, "rows", len(pending))
+		}
+		for i := range pending {
+			if err := ctx.Err(); err != nil {
+				return nil, errors.Join(err, snapshot.close(ctx))
+			}
+			input := &pending[i]
+			if input.self != nil {
+				input.identities = cacheUsageIdentitiesFromSelf(input.self)
+				input.sizeMayChange = cacheUsageSizeMayChangeFromSelf(input.self)
+			} else {
+				input.identities = cacheUsageIdentitiesFromSnapshotLinks(input.snapshotLinks)
+			}
+			snapshot.inputs[input.resultID] = *input
+		}
+		if measure {
+			measured := buildCacheUsageMeasurements(ctx, c.snapshotManager, pending)
+			for _, byIdentity := range measured {
+				for identity, measurement := range byIdentity {
+					snapshot.measurements[identity] = measurement
+				}
+			}
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, errors.Join(err, snapshot.close(ctx))
 	}
 	return snapshot, nil
+}
+
+func cacheUsageInputLocked(res *sharedResult) cacheUsageMeasurementInput {
+	state := res.loadPayloadState()
+	input := cacheUsageMeasurementInput{
+		resultID: res.id, row: res, payloadRevision: state.payloadRevision,
+		existingSizeByID: make(map[string]int64, len(res.cacheUsageSizeByIdentity)),
+	}
+	if state.hasValue && state.self != nil {
+		input.self = state.self
+	} else {
+		input.snapshotLinks = cloneSnapshotRefLinks(state.snapshotOwnerLinks)
+	}
+	for identity, size := range res.cacheUsageSizeByIdentity {
+		input.existingSizeByID[identity] = size
+	}
+	return input
+}
+
+// Identity-free values need no provider callback. Unmaterialized values instead
+// contribute their actual snapshot links, which may share measured identities.
+func (input *cacheUsageMeasurementInput) identitiesWithoutCallbacks() bool {
+	if input.self == nil {
+		input.identities = cacheUsageIdentitiesFromSnapshotLinks(input.snapshotLinks)
+		return true
+	}
+	if _, provider := input.self.(hasCacheUsageIdentity); provider {
+		return false
+	}
+	input.identities = nil
+	return true
+}
+
+func (snapshot *cacheUsageSnapshot) capturePendingLocked(ctx context.Context) []cacheUsageMeasurementInput {
+	var pending []cacheUsageMeasurementInput
+	for id, res := range snapshot.cache.resultsByID {
+		if input, ok := snapshot.inputs[id]; ok && input.validLocked(snapshot.cache) {
+			continue
+		}
+		if _, held := snapshot.holds[res]; !held {
+			snapshot.cache.incrementIncomingOwnershipLocked(ctx, res)
+			snapshot.holds[res] = struct{}{}
+		}
+		input := cacheUsageInputLocked(res)
+		if input.identitiesWithoutCallbacks() && len(input.identities) == 0 {
+			snapshot.inputs[id] = input
+			continue
+		}
+		pending = append(pending, input)
+	}
+	return pending
+}
+
+// finalizeLocked must run after real hold collection and before graph/count
+// copying. Unknown provider membership prevents ALL physical reclaim credit;
+// never feed a zero-credit fallback into a planner that can evict every root.
+func (snapshot *cacheUsageSnapshot) finalizeLocked() (map[sharedResultID][]string, error) {
+	identities := make(map[sharedResultID][]string, len(snapshot.cache.resultsByID))
+	unknown := 0
+	for id, res := range snapshot.cache.resultsByID {
+		input, sampled := snapshot.inputs[id]
+		if !sampled || !input.validLocked(snapshot.cache) {
+			input = cacheUsageInputLocked(res)
+			if !input.identitiesWithoutCallbacks() {
+				unknown++
+				continue
+			}
+			snapshot.inputs[id] = input
+		}
+		identities[id] = input.identities
+	}
+	if unknown > 0 {
+		slog.Debug("cache usage sampling incomplete; preserving previous sizes and deferring prune", "unsampledRows", unknown, "maxRounds", cacheUsageMaxSamplingRounds)
+		return nil, errCacheUsageChanged
+	}
+	return identities, nil
 }
 
 func (input cacheUsageMeasurementInput) validLocked(c *Cache) bool {
@@ -82,9 +165,9 @@ func (snapshot *cacheUsageSnapshot) releaseLocked(ctx context.Context) {
 	}
 	snapshot.released = true
 	var queue []*sharedResult
-	for _, input := range snapshot.inputs {
+	for row := range snapshot.holds {
 		var err error
-		queue, err = snapshot.cache.decrementIncomingOwnershipLocked(ctx, input.row, queue)
+		queue, err = snapshot.cache.decrementIncomingOwnershipLocked(ctx, row, queue)
 		snapshot.releaseErr = errors.Join(snapshot.releaseErr, err)
 	}
 	var err error
@@ -106,10 +189,4 @@ func (snapshot *cacheUsageSnapshot) close(ctx context.Context) error {
 		snapshot.cache.recordReleaseCleanupError("", true, err)
 	}
 	return err
-}
-
-func (snapshot *cacheUsageSnapshot) closeAndLog(ctx context.Context) {
-	if err := snapshot.close(ctx); err != nil {
-		slog.Warn("release cache usage snapshot", "err", err)
-	}
 }
