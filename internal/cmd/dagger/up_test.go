@@ -6,14 +6,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUpReportsStartRename(t *testing.T) {
 	root := testRootCommand()
-	oldArgs, oldProgress, oldWorkspaceRef := os.Args, progress, workspaceRef
+	oldArgs, oldProgress, oldWorkspaceRef, oldPreRun := os.Args, progress, workspaceRef, root.PersistentPreRunE
+	// The real hook reaches the network for analytics and the update check.
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		cmd.SilenceUsage = true
+		return nil
+	}
 	t.Cleanup(func() {
-		os.Args, progress, workspaceRef = oldArgs, oldProgress, oldWorkspaceRef
+		os.Args, progress, workspaceRef, root.PersistentPreRunE = oldArgs, oldProgress, oldWorkspaceRef, oldPreRun
+		root.SetArgs(nil)
 	})
 
 	for _, tc := range []struct {
@@ -33,12 +40,12 @@ func TestUpReportsStartRename(t *testing.T) {
 	} {
 		t.Run(strings.Join(tc.cmdline, " "), func(t *testing.T) {
 			require.NoError(t, validateFlagCapabilities(root, tc.cmdline))
-			cmd, args, err := root.Traverse(tc.cmdline)
-			require.NoError(t, err)
-			require.Same(t, upCmd, cmd)
 
 			os.Args = append([]string{"/usr/local/bin/dagger"}, tc.cmdline...)
-			require.EqualError(t, cmd.RunE(cmd, args),
+			root.SetArgs(tc.cmdline)
+			cmd, err := root.ExecuteC()
+			require.Same(t, upCmd, cmd)
+			require.EqualError(t, err,
 				"\"dagger up\" has been renamed to \"dagger start\". Run this instead:\n\n  "+tc.start)
 		})
 	}
