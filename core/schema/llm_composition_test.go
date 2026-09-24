@@ -222,7 +222,7 @@ func TestLLMCommittedLeafRestore(t *testing.T) {
 	})
 	require.NoError(t, err)
 	var committed dagql.ObjectResult[*core.LLM]
-	var receiver dagql.AnyObjectResult = srv.Root()
+	receiver := srv.Root()
 	for _, sel := range []dagql.Selector{
 		{Field: "llm", Args: []dagql.NamedInput{{Name: "model", Value: dagql.Opt(dagql.String("test-model"))}}},
 		{Field: "withPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.String("hello")}}},
