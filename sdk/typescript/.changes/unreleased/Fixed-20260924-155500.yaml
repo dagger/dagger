@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Custom decorators whose names start with a Dagger decorator name, such as
+  `@startTimer()` or `@checkInput()`, are no longer treated as Dagger
+  decorators.
+time: 2026-09-24T15:55:00Z
+custom:
+  Author: eunomie
+  PR: "14328"

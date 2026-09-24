@@ -16,7 +16,7 @@ type SerializedModule = {
 }
 
 describe("serializeModule", function () {
-  it("marks @start and @up functions as services", async function () {
+  it("marks only @start and @up functions as services", async function () {
     this.timeout(60000)
     const files = await listFiles(`${rootDirectory}/decorators`)
     const module = serializeModule(
@@ -27,5 +27,6 @@ describe("serializeModule", function () {
     assert.equal(methods["startSomething"].isUp, true)
     assert.equal(methods["upSomething"].isUp, true)
     assert.equal(methods["checkSomething"].isUp, false)
+    assert.equal(methods["timed"].isUp, false)
   })
 })

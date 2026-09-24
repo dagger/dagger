@@ -273,6 +273,14 @@
             "name": "Service"
           }
         },
+        "timed": {
+          "name": "timed",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
         "agentSomething": {
           "name": "agentSomething",
           "description": "",

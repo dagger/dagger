@@ -26,6 +26,11 @@ const DEFAULT_ADDRESS = "alpine:3.21"
 const ALIAS = "renamedReference"
 const CACHE = "session"
 
+// Its name starts with "start", but it is not the Dagger @start marker.
+function startTimer(): MethodDecorator {
+  return () => {}
+}
+
 @object()
 export class Decorators {
   /**
@@ -163,6 +168,12 @@ export class Decorators {
   @up()
   upSomething(): Service {
     throw new Error("not implemented")
+  }
+
+  @func()
+  @startTimer()
+  timed(): string {
+    return "timed"
   }
 
   @func()
