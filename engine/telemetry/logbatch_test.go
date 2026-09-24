@@ -431,6 +431,41 @@ func testCallPayloadBatchProcessorRetriesFailedBatchInOrder(t *testing.T) {
 	require.NoError(t, proc.Shutdown(ctx))
 }
 
+// Canceling a flush must not cancel the processor's background retry schedule.
+func TestCallPayloadBatchProcessorRetriesAfterCanceledFlush(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		exp := &flakyLogExporter{failures: 2}
+		proc := NewCallPayloadBatchProcessor(exp)
+		provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+		defer func() { require.NoError(t, proc.Shutdown(t.Context())) }()
+		logger := provider.Logger("test.core")
+		logger.Emit(t.Context(), payloadRecordWithBody("first"))
+		time.Sleep(CallPayloadExportDelay)
+		synctest.Wait()
+		attempts, _, _ := exp.stats()
+		require.Equal(t, 1, attempts)
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+		defer cancel()
+		require.ErrorIs(t, proc.ForceFlush(ctx), context.DeadlineExceeded)
+		synctest.Wait()
+		// The exporter recovers now. A new record must also eventually land,
+		// even though it joins the nonempty queue left by the canceled flush.
+		logger.Emit(t.Context(), payloadRecordWithBody("second"))
+		time.Sleep(CallPayloadExportDelay)
+		synctest.Wait()
+		attempts, _, _ = exp.stats()
+		require.Equal(t, 2, attempts, "cancellation must retain the retry backoff")
+		time.Sleep(callPayloadRetryDelay(2))
+		synctest.Wait()
+		attempts, bodies, _ := exp.stats()
+		require.Equal(t, 3, attempts)
+		require.Equal(t, []string{"first", "second"}, bodies)
+	})
+}
+
 // A batch that never lands must eventually be dropped rather than wedge the
 // queue. The drop is reported with the records' digests: the session exporter
 // released their delivery claims, but only a walk that reaches them through a
