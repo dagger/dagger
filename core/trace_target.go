@@ -25,8 +25,23 @@ type traceTarget struct {
 	Test  string
 }
 
-func (t traceTarget) empty() bool {
-	return t.Span == "" && t.Check == "" && t.Test == ""
+func (t traceTarget) validate() error {
+	count := 0
+	for _, value := range []string{t.Span, t.Check, t.Test} {
+		if value != "" {
+			count++
+		}
+	}
+	if count != 1 {
+		return fmt.Errorf("ReadTrace needs exactly one target: pass span (a hex span ID), " +
+			"check (a check name, e.g. \"lint:check\"), or test (a test case or suite name)")
+	}
+	if t.Span != "" {
+		if _, err := trace.SpanIDFromHex(t.Span); err != nil {
+			return fmt.Errorf("invalid span ID %q: %w", t.Span, err)
+		}
+	}
+	return nil
 }
 
 // resolveTraceTarget resolves a ReadTrace target to the span ID its report
@@ -39,6 +54,9 @@ func (t traceTarget) empty() bool {
 // containment walks need. Nothing session-wide is retained -- name lookups
 // were the last consumer of the whole-session cached trace DB.
 func resolveTraceTarget(ctx context.Context, target traceTarget) (string, error) {
+	if err := target.validate(); err != nil {
+		return "", err
+	}
 	clientDB, err := traceReportClientDB(ctx)
 	if err != nil {
 		return "", err
@@ -48,7 +66,6 @@ func resolveTraceTarget(ctx context.Context, target traceTarget) (string, error)
 	for _, read := range clientDB.InspectionStores() {
 		var scope map[string]struct{}
 		switch {
-		case target.empty():
 		case target.Span != "":
 			if read.HasSpan(target.Span) {
 				scope = map[string]struct{}{target.Span: {}}
@@ -90,11 +107,10 @@ func resolveTraceTarget(ctx context.Context, target traceTarget) (string, error)
 // test case run under more than one suite), the latest one is the one they
 // mean.
 func resolveTraceTargetIn(db *dagui.DB, target traceTarget) (string, error) {
+	if err := target.validate(); err != nil {
+		return "", err
+	}
 	switch {
-	case target.empty():
-		return "", fmt.Errorf("ReadTrace needs a target: pass span (a hex span ID), " +
-			"check (a check name, e.g. \"lint:check\"), or test (a test case or suite name)")
-
 	case target.Span != "":
 		id, err := trace.SpanIDFromHex(target.Span)
 		if err != nil {

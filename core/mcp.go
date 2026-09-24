@@ -3097,6 +3097,9 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 		Grep   string `default:""`
 	}) (any, error) {
 		spanID := normalizeSpanArg(args.Span)
+		if _, err := trace.SpanIDFromHex(spanID); err != nil {
+			return nil, fmt.Errorf("invalid span ID %q: %w", spanID, err)
+		}
 		// Include service logs: ReadLogs is the deliberate affordance for
 		// reading them (e.g. via span IDs from ListServices).
 		logs, err := m.captureLogs(ctx, spanID, false)
@@ -3104,16 +3107,7 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 			return nil, fmt.Errorf("failed to capture logs: %w", err)
 		}
 		if len(logs) == 0 {
-			// An empty capture is only an error when the span itself is
-			// unknown: a known span with nothing logged yet is a normal
-			// answer (e.g. tailing a service that hasn't printed).
-			known, err := m.spanKnown(ctx, spanID)
-			if err != nil {
-				slog.Warn("failed to check span existence", "span", spanID, "error", err)
-			} else if !known {
-				return nil, fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
-			}
-			return fmt.Sprintf("(no logs beneath span %s yet)", spanID), nil
+			return m.emptyLogsResult(ctx, spanID)
 		}
 		return renderReadLogs(spanID, logs, args.Offset, args.Limit, args.Grep)
 	})
@@ -3153,16 +3147,26 @@ func isHexID(s string, length int) bool {
 	return true
 }
 
-// spanKnown reports whether the span ID appears in the session's recorded
-// telemetry, so an empty ReadLogs capture can distinguish a quiet span from a
-// mistyped one.
-func (m *MCP) spanKnown(ctx context.Context, spanID string) (bool, error) {
+// emptyLogsResult distinguishes quiet live telemetry from a fixed historical
+// capture. Failure to inspect the store must not masquerade as "no logs".
+func (m *MCP) emptyLogsResult(ctx context.Context, spanID string) (string, error) {
 	store, err := traceReportClientDB(ctx)
 	if err != nil {
-		return false, err
+		return "", fmt.Errorf("check log availability for span %s: %w", spanID, err)
 	}
 	defer store.Close()
-	return inspectionStoreForSpan(store, spanID).HasSpan(spanID), nil
+	return emptyLogsResultIn(store, spanID)
+}
+
+func emptyLogsResultIn(store *clientdb.DB, spanID string) (string, error) {
+	selected := inspectionStoreForSpan(store, spanID)
+	if !selected.HasSpan(spanID) {
+		return "", fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
+	}
+	if selected != store {
+		return fmt.Sprintf("(no logs recorded beneath span %s in this historical trace)", spanID), nil
+	}
+	return fmt.Sprintf("(no logs beneath span %s yet)", spanID), nil
 }
 
 // renderReadLogs shapes captured log lines into a ReadLogs result: trims the
@@ -3242,7 +3246,7 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		}
 		spanID, err := resolveTraceTarget(ctx, target)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolve trace target: %w", err)
 		}
 		switch args.View {
 		case traceViewInspect:
@@ -3250,7 +3254,11 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		case traceViewTimings:
 			return spanTimings(ctx, spanID, minDuration, args.Limit)
 		}
-		if result := m.spanResult(ctx, spanID, readTraceReportOpts(target)); result != "" {
+		result, err := m.inspectSpanResult(ctx, spanID, readTraceReportOpts(target))
+		if err != nil {
+			return nil, err
+		}
+		if result != "" {
 			return result, nil
 		}
 		// A subtree can legitimately render to nothing (dagui hides internal,

@@ -183,6 +183,26 @@ func TestResolveTraceTargetChecksUnderToolBoundary(t *testing.T) {
 	}
 }
 
+func TestResolveTraceTargetRejectsMultipleTargets(t *testing.T) {
+	db := traceTargetDB(t)
+	for _, target := range []traceTarget{
+		{Span: traceTargetSpanID(1).String(), Check: "lint:check"},
+		{Span: traceTargetSpanID(1).String(), Test: "TestFoo"},
+		{Check: "lint:check", Test: "TestFoo"},
+		{Span: traceTargetSpanID(1).String(), Check: "lint:check", Test: "TestFoo"},
+	} {
+		_, err := resolveTraceTargetIn(db, target)
+		if err == nil || !strings.Contains(err.Error(), "exactly one target") {
+			t.Fatalf("target %+v: want exactly-one error, got %v", target, err)
+		}
+		// Validation happens before opening telemetry, too.
+		_, err = resolveTraceTarget(t.Context(), target)
+		if err == nil || !strings.Contains(err.Error(), "exactly one target") {
+			t.Fatalf("target %+v: validation required before telemetry, got %v", target, err)
+		}
+	}
+}
+
 func TestResolveTraceTargetSpanErrors(t *testing.T) {
 	db := traceTargetDB(t)
 

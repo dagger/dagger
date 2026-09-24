@@ -1130,19 +1130,33 @@ const spanResultOutputHeading = "== OUTPUT =="
 // that renders to nothing -- the result is the flat capture, byte for byte as
 // before: no headings, no separators, no empty sections.
 func (m *MCP) spanResult(ctx context.Context, spanID string, opts traceReportOpts) string {
-	// Exclude service exec span logs: long-lived services stream noise into
-	// the subtree via cause links, drowning out deliberate prints. ReadLogs
-	// remains the discovery path for service logs.
-	captured, err := m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly)
+	result, err := m.inspectSpanResult(ctx, spanID, opts)
 	if err != nil {
-		slog.Warn("failed to capture tool logs", "span", spanID, "error", err)
+		// Automatic decoration must not replace the actual tool result with a
+		// telemetry failure. Explicit inspection returns this error instead.
+		slog.Warn("incomplete tool trace decoration", "span", spanID, "error", err)
 	}
+	return result
+}
 
-	report := m.traceReport(ctx, spanID, captured.directSpans, opts)
-	if strings.TrimSpace(report.body) == "" && report.failures == "" {
-		return flatLogs(spanID, captured.lines)
+// inspectSpanResult preserves component errors even when the other half of a
+// report is available. ReadTrace must never present partial telemetry as a
+// successful inspection; spanResult deliberately keeps the best-effort text.
+func (m *MCP) inspectSpanResult(ctx context.Context, spanID string, opts traceReportOpts) (string, error) {
+	captured, captureErr := m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly)
+	opts.HideLogSpans = captured.directSpans
+	report, reportErr := renderTraceReport(ctx, spanID, opts)
+	if captureErr != nil {
+		captureErr = fmt.Errorf("capture logs for span %s: %w", spanID, captureErr)
 	}
-	return combineSpanResult(spanID, directLogs(captured.lines), report.body, report.failures)
+	if reportErr != nil {
+		reportErr = fmt.Errorf("render report for span %s: %w", spanID, reportErr)
+	}
+	err := errors.Join(captureErr, reportErr)
+	if strings.TrimSpace(report.body) == "" && report.failures == "" {
+		return flatLogs(spanID, captured.lines), err
+	}
+	return combineSpanResult(spanID, directLogs(captured.lines), report.body, report.failures), err
 }
 
 // combineSpanResult assembles and bounds the sections. A root ReadLogs
@@ -1202,19 +1216,6 @@ func toolCallReportOpts() traceReportOpts {
 		// the tree asks for it with ReadTrace, which keeps rendering it.
 		HideSpanTree: true,
 	}
-}
-
-// traceReport renders spanID's subtree as the pretty report, with the spans
-// whose output the caller prints itself suppressed. An empty result means
-// there is no report to show and the flat capture should be used instead.
-func (m *MCP) traceReport(ctx context.Context, spanID string, hideLogSpans map[string]bool, opts traceReportOpts) traceReportResult {
-	opts.HideLogSpans = hideLogSpans
-	report, err := renderTraceReport(ctx, spanID, opts)
-	if err != nil {
-		slog.Warn("failed to render trace report", "span", spanID, "error", err)
-		return traceReportResult{}
-	}
-	return report
 }
 
 // directLogs joins the lines the captured span printed itself, verbatim save

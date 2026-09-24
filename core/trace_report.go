@@ -219,6 +219,9 @@ func traceReportClientDB(ctx context.Context) (*clientdb.DB, error) {
 // are fetched for the walk only: ancestors above root frame the tree but
 // render no output of their own in a scoped report.
 func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root string) (*idtui.ReportSession, error) {
+	if !clientDB.HasSpan(root) {
+		return nil, fmt.Errorf("no span %q in this trace", root)
+	}
 	read := clientDB.Read()
 	walk := read.SpanLogScope(root)
 	scope := read.AncestorClosure(walk)
@@ -314,6 +317,9 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 	}
 	primary := dagui.SpanID{SpanID: spanID}
 	db := session.DB()
+	if span := db.Spans.Map[primary]; span == nil || !span.Received {
+		return traceReportResult{}, fmt.Errorf("no span %q in this trace", root)
+	}
 
 	renderOpts := idtui.ReportRenderOpts{
 		// Show completed spans; without this the final render bails out

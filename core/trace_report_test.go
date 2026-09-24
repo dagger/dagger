@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,7 +15,9 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -363,4 +366,208 @@ func TestTraceFailureNavigationLoadsExternalOrigin(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, report.failures, `origin "checksum exec"`)
 	require.Contains(t, report.failures, fmt.Sprintf("ReadLogs(span: %q)", checksumID))
+}
+
+// Fail a specific telemetry access after target resolution, so dispatch tests
+// exercise the actual capture and render paths rather than mocked tool results.
+type inspectionFailureServer struct {
+	*logCaptureTestServer
+	calls, failAt int
+}
+
+func (s *inspectionFailureServer) ClientTelemetry(ctx context.Context, session, client string) (*clientdb.DB, error) {
+	s.calls++
+	if s.calls == s.failAt {
+		return nil, errors.New("telemetry unavailable")
+	}
+	return s.logCaptureTestServer.ClientTelemetry(ctx, session, client)
+}
+
+func TestInspectionErrorsThroughDispatch(t *testing.T) {
+	const spanID = "0000000000000001"
+	const traceID = "000102030405060708090a0b0c0d0e0f"
+	for _, tc := range []struct {
+		name, tool, want string
+		failAt           int
+	}{
+		{"target store", "ReadTrace", "resolve trace target", 1},
+		{"capture", "ReadTrace", "capture logs for span", 2},
+		{"report", "ReadTrace", "render report for span", 3},
+		{"log capture", "ReadLogs", "failed to capture logs", 1},
+		{"log availability", "ReadLogs", "check log availability", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dbs := clientdb.NewDBs(t.TempDir())
+			store, err := dbs.Open(t.Context(), "capture-test")
+			require.NoError(t, err)
+			defer store.Close()
+			_, err = store.AppendSpans([]clientdb.Span{{TraceID: traceID, SpanID: spanID, Name: "quiet", Attributes: []byte("[]"), Links: []byte("[]")}})
+			require.NoError(t, err)
+			if tc.tool == "ReadTrace" {
+				_, err = store.AppendLogs([]clientdb.Log{persistedCaptureLog(t, traceID, spanID, "stdout", stringLogBody("partial output must not disguise failure\n"))})
+				require.NoError(t, err)
+			}
+			srv := &inspectionFailureServer{logCaptureTestServer: &logCaptureTestServer{mockServer: &mockServer{}, dbs: dbs}, failAt: tc.failAt}
+			ctx := ContextWithQuery(t.Context(), &Query{Server: srv})
+			m := newMCP()
+			call := m.readTraceTool(&dagql.Server{})
+			if tc.tool == "ReadLogs" {
+				call = m.readLogsTool(&dagql.Server{})
+			}
+			got := m.CallContent(ctx, []LLMTool{{Name: tc.tool, Call: call}}, &LLMToolCall{Name: tc.tool, Arguments: JSON(`{"span":"` + spanID + `"}`)})
+			require.True(t, got.Errored, got.Text)
+			require.Contains(t, got.Text, tc.want)
+			require.Contains(t, got.Text, "telemetry unavailable")
+			require.NotContains(t, got.Text, "no trace report")
+			require.NotContains(t, got.Text, "no logs beneath")
+		})
+	}
+}
+
+func TestInspectionArgumentErrorsThroughDispatch(t *testing.T) {
+	m := newMCP()
+	for _, args := range []string{
+		`{}`,
+		`{"span":"0000000000000001","check":"unit:check"}`,
+		`{"span":"0000000000000001","test":"TestUnit","view":"inspect"}`,
+		`{"test":"TestUnit","check":"unit:check","view":"timings"}`,
+	} {
+		got := m.CallContent(t.Context(), []LLMTool{{Name: "ReadTrace", Call: m.readTraceTool(&dagql.Server{})}},
+			&LLMToolCall{Name: "ReadTrace", Arguments: JSON(args)})
+		require.True(t, got.Errored, got.Text)
+		require.Contains(t, got.Text, "exactly one target")
+	}
+	for _, tool := range []LLMTool{
+		{Name: "ReadTrace", Call: m.readTraceTool(&dagql.Server{})},
+		{Name: "ReadLogs", Call: m.readLogsTool(&dagql.Server{})},
+	} {
+		got := m.CallContent(t.Context(), []LLMTool{tool}, &LLMToolCall{Name: tool.Name, Arguments: JSON(`{"span":"invalid"}`)})
+		require.True(t, got.Errored, got.Text)
+		require.Contains(t, got.Text, "invalid span ID")
+	}
+}
+
+func TestAutomaticDecorationRemainsBestEffort(t *testing.T) {
+	const spanID = "0000000000000001"
+	const traceID = "000102030405060708090a0b0c0d0e0f"
+	dbs := clientdb.NewDBs(t.TempDir())
+	store, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	defer store.Close()
+	_, err = store.AppendSpans([]clientdb.Span{{TraceID: traceID, SpanID: spanID, Name: "work", Attributes: []byte("[]"), Links: []byte("[]")}})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]clientdb.Log{persistedCaptureLog(t, traceID, spanID, "stdout", stringLogBody("own output\n"))})
+	require.NoError(t, err)
+	srv := &inspectionFailureServer{logCaptureTestServer: &logCaptureTestServer{mockServer: &mockServer{}, dbs: dbs}, failAt: 2}
+	ctx := ContextWithQuery(t.Context(), &Query{Server: srv})
+	m := newMCP()
+	got := m.CallContent(ctx, []LLMTool{{Name: "ordinary", Call: func(ctx context.Context, _ any) (any, error) {
+		return "tool succeeded\n" + m.spanResult(ctx, spanID, toolCallReportOpts()), nil
+	}}}, &LLMToolCall{Name: "ordinary"})
+	require.False(t, got.Errored)
+	require.Contains(t, got.Text, "tool succeeded")
+	require.Contains(t, got.Text, "own output")
+	require.NotContains(t, got.Text, "telemetry unavailable")
+
+	// Failure decoration must keep the real tool error, not replace it with
+	// the inspection error, even when neither telemetry component is available.
+	original := errors.New("installer failed [traceparent:" + traceID + "-" + spanID + "]")
+	got = m.CallContent(t.Context(), []LLMTool{{Name: "ordinary", Call: func(context.Context, any) (any, error) {
+		return nil, original
+	}}}, &LLMToolCall{Name: "ordinary"})
+	require.True(t, got.Errored)
+	require.Equal(t, original.Error(), got.Text)
+}
+
+func TestImportedFailureNavigationThroughTools(t *testing.T) {
+	const (
+		traceID  = "000102030405060708090a0b0c0d0e0f"
+		rootID   = "0000000000000001"
+		checkID  = "0000000000000002"
+		testID   = "0000000000000003"
+		originID = "0000000000000004"
+	)
+	dbs := clientdb.NewDBs(t.TempDir())
+	live, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	defer live.Close()
+	attr := func(key, value string) *otlpcommonv1.KeyValue {
+		return &otlpcommonv1.KeyValue{Key: key, Value: stringLogBody(value)}
+	}
+	_, err = live.ImportTrace(t.Context(), traceID, func(store *clientdb.DB) error {
+		spans := []clientdb.Span{
+			{TraceID: traceID, SpanID: rootID, Name: "SDK checks"},
+			{TraceID: traceID, SpanID: checkID, ParentSpanID: validSpanID(rootID), Name: "installer check", StatusCode: int64(codes.Error),
+				Attributes: marshalSpanAttrs(t, attr(telemetry.CheckNameAttr, "sdk:installer:check")),
+				Links:      marshalPurposeLink(t, traceID, originID, telemetry.LinkPurposeErrorOrigin)},
+			{TraceID: traceID, SpanID: testID, ParentSpanID: validSpanID(checkID), Name: "installer test", StatusCode: int64(codes.Error),
+				Attributes: marshalSpanAttrs(t, attr("test.case.name", "SDK/Installer/checksum"), attr("test.status", "failure")),
+				Links:      marshalPurposeLink(t, traceID, originID, telemetry.LinkPurposeErrorOrigin)},
+			// Deliberately outside the root's containment; only the error-origin
+			// second pass finds it. Its logs must be retrieved by its own ID.
+			{TraceID: traceID, SpanID: originID, Name: "checksum exec", StatusCode: int64(codes.Error)},
+		}
+		logs := []clientdb.Log{persistedCaptureLog(t, traceID, originID, "stderr", stringLogBody("sha256sum: installer.tar.gz: FAILED\nexpected checksum did not match\n"))}
+		for i := 5; i < 250; i++ {
+			id := fmt.Sprintf("%016x", i)
+			spans = append(spans, clientdb.Span{TraceID: traceID, SpanID: id, ParentSpanID: validSpanID(rootID), Name: fmt.Sprintf("success %d", i),
+				Attributes: marshalSpanAttrs(t, attr("test.case.name", fmt.Sprintf("SDK/success/%d", i)), attr("test.status", "success"))})
+			logs = append(logs, persistedCaptureLog(t, traceID, id, "stdout", stringLogBody(strings.Repeat("successful output\n", 30))))
+		}
+		for i := range spans {
+			spans[i].StartTime = 100
+			spans[i].EndTime = sql.NullInt64{Int64: 200, Valid: true}
+			if spans[i].Attributes == nil {
+				spans[i].Attributes = []byte("[]")
+			}
+			if spans[i].Links == nil {
+				spans[i].Links = []byte("[]")
+			}
+			spans[i].Events = []byte("[]")
+			spans[i].Resource = []byte("{}")
+			spans[i].InstrumentationScope = []byte("{}")
+		}
+		if _, err := store.AppendSpans(spans); err != nil {
+			return err
+		}
+		_, err := store.AppendLogs(logs)
+		return err
+	})
+	require.NoError(t, err)
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{mockServer: &mockServer{}, dbs: dbs}})
+	m := newMCP()
+	tools := NewLLMToolSet()
+	m.loadBuiltins(&dagql.Server{}, tools)
+	root := m.CallContent(ctx, tools.Order, &LLMToolCall{Name: "ReadTrace", Arguments: JSON(`{"span":"` + rootID + `"}`)})
+	require.False(t, root.Errored, root.Text)
+	require.Contains(t, root.Text, `test "SDK/Installer/checksum"`)
+	require.Contains(t, root.Text, `check "sdk:installer:check"`)
+	require.Contains(t, root.Text, `origin "checksum exec"`)
+	require.Contains(t, root.Text, fmt.Sprintf("ReadLogs(span: %q)", originID))
+	require.NotContains(t, root.Text, "expected checksum did not match", "external origin evidence should be linked, not embedded")
+	// Follow only the precise origin link, never the run's root logs.
+	logs := m.CallContent(ctx, tools.Order, &LLMToolCall{Name: "ReadLogs", Arguments: JSON(`{"span":"` + originID + `"}`)})
+	require.False(t, logs.Errored, logs.Text)
+	require.Contains(t, logs.Text, "sha256sum: installer.tar.gz: FAILED")
+	require.Contains(t, logs.Text, "expected checksum did not match")
+	require.NotContains(t, logs.Text, "successful output")
+}
+
+func TestEmptyLogsDistinguishesHistorical(t *testing.T) {
+	live, ids := traceInspectStore(t)
+	text, err := emptyLogsResultIn(live, ids["test"])
+	require.NoError(t, err)
+	require.Contains(t, text, "yet")
+	const historicalID = "00000000000000ff"
+	_, err = live.ImportTrace(t.Context(), "history", func(store *clientdb.DB) error {
+		_, err := store.AppendSpans([]clientdb.Span{{TraceID: "000102030405060708090a0b0c0d0e0f", SpanID: historicalID, Name: "old"}})
+		return err
+	})
+	require.NoError(t, err)
+	text, err = emptyLogsResultIn(live, historicalID)
+	require.NoError(t, err)
+	require.Contains(t, text, "no logs recorded")
+	require.NotContains(t, text, "yet")
+	_, err = emptyLogsResultIn(live, "00000000000000ee")
+	require.ErrorContains(t, err, "not found")
 }
