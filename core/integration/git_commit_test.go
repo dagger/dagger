@@ -656,7 +656,11 @@ git log --format=%H
 		}
 	}
 	require.NoError(t, c.Close())
+	requireNativeCommitHistoryTrace(t, sink, chainLength+branches*branchLength)
+}
 
+func requireNativeCommitHistoryTrace(t *testctx.T, sink *agentTraceSink, commits int) {
+	t.Helper()
 	// Semantic equality alone would also pass on the legacy implementation.
 	// Require supported, completed native transactions and incremental checkouts
 	// throughout the chain, with actual Git object writes and delta checkouts.
@@ -710,7 +714,6 @@ git log --format=%H
 			break
 		}
 	}
-	const commits = chainLength + branches*branchLength
 	require.Equal(t, commits, transactions)
 	require.Equal(t, commits, writes, "every history commit must write native objects")
 	require.GreaterOrEqual(t, materializations, commits, "every committed source must materialize incrementally")
