@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	_ "modernc.org/sqlite"
 
+	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/dagql/call"
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	"github.com/dagger/dagger/engine"
@@ -426,12 +427,16 @@ func NewCache(
 	dbPath string,
 	snapshotManager bkcache.SnapshotManager,
 	snapshotGC func(context.Context) error,
+	opts ...CacheOption,
 ) (*Cache, error) {
 	c := &Cache{
 		traceBootID:       newTraceBootID(),
 		snapshotManager:   snapshotManager,
 		snapshotGC:        snapshotGC,
 		partContentSource: NewPartContentSource(nil),
+	}
+	for _, opt := range opts {
+		opt(c)
 	}
 
 	if dbPath == "" {
@@ -504,6 +509,9 @@ func NewCache(
 			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
 		}
 		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, partContentSource: c.partContentSource, persistenceResetReason: CachePersistenceResetImportFailure, sqlDB: db, pdb: persistDB}
+		for _, opt := range opts {
+			opt(c)
+		}
 		if err := c.reconcileEmptyOwnerLeases(ctx); err != nil {
 			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
 		}
@@ -521,6 +529,10 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
 	}
+	// The restore fully succeeded: describe what it installed, once.
+	c.egraphMu.Lock()
+	c.announceBootLocked()
+	c.egraphMu.Unlock()
 	return c, nil
 }
 
@@ -1284,7 +1296,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 		queue, err = c.removeSessionResultLocked(ctx, plan.sessionID, resultID, len(plan.resultIDs), queue)
 		rerr = errors.Join(rerr, err)
 	}
-	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
+	collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(ctx, queue, cachefact.RemovedSessionRelease)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
 	c.egraphMu.Unlock()
@@ -1375,20 +1387,30 @@ func (c *Cache) snapshotSessionResultIDsCancelable(checker *pruneCancellationChe
 	return roots, nil
 }
 
-// upsertPersistedEdgeLocked requires egraphMu for writing.
+// upsertPersistedEdgeLocked requires egraphMu for writing. It emits a
+// retention fact when the edge is created or changes.
 func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) {
+	if edge, changed := c.upsertPersistedEdgeNoFactLocked(ctx, res, expiresAtUnix, unpruneable); changed {
+		c.emitRetentionLocked(res, edge, true)
+	}
+}
+
+// upsertPersistedEdgeNoFactLocked requires egraphMu for writing. It reports
+// the resulting edge and whether the edge was created or changed.
+func (c *Cache) upsertPersistedEdgeNoFactLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) (persistedEdge, bool) {
 	if c == nil || res == nil || res.id == 0 {
-		return
+		return persistedEdge{}, false
 	}
 	// Collection can legitimately win a race with deferred callers, so a stale
 	// upsert is a no-op rather than an error.
 	if _, found := c.resultsByID[res.id]; !found {
-		return
+		return persistedEdge{}, false
 	}
 	if c.persistedEdgesByResult == nil {
 		c.persistedEdgesByResult = make(map[sharedResultID]persistedEdge)
 	}
 	edge, found := c.persistedEdgesByResult[res.id]
+	oldEdge := edge
 	if !found {
 		createdAtUnixNano := res.loadPayloadState().createdAtUnixNano
 		if createdAtUnixNano == 0 {
@@ -1409,6 +1431,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
 	}
 	c.persistedEdgesByResult[res.id] = edge
+	return edge, !found || edge != oldEdge
 }
 
 func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error {
@@ -1453,11 +1476,12 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 	delete(c.persistedEdgesByResult, resultID)
 	res = c.resultsByID[resultID]
 	if res != nil {
+		c.emitRetentionLocked(res, edge, false)
 		var err error
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, res, queue)
 		rerr = errors.Join(rerr, err)
 	}
-	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
+	collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(ctx, queue, cachefact.RemovedPrune)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
 	c.egraphMu.Unlock()
@@ -1500,6 +1524,12 @@ func (c *Cache) decrementIncomingOwnershipLocked(ctx context.Context, res *share
 }
 
 func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*sharedResult) ([]OnReleaseFunc, error) {
+	return c.collectUnownedResultsForReasonLocked(ctx, queue, cachefact.RemovedReleased)
+}
+
+// collectUnownedResultsForReasonLocked collects like collectUnownedResultsLocked
+// and emits one removed fact with reason for the results it removed.
+func (c *Cache) collectUnownedResultsForReasonLocked(ctx context.Context, queue []*sharedResult, reason cachefact.RemovedReason) ([]OnReleaseFunc, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -1507,7 +1537,11 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 	var (
 		rerr       error
 		onReleases []OnReleaseFunc
+		removed    []*sharedResult
 	)
+	defer func() {
+		c.emitRemovedLocked(removed, reason)
+	}()
 
 	for len(queue) > 0 {
 		res := queue[len(queue)-1]
@@ -1532,6 +1566,9 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		}
 
 		c.removeResultFromEgraphLocked(ctx, res)
+		if c.factsEnabled() {
+			removed = append(removed, res)
+		}
 		if res.onRelease != nil {
 			onReleases = append(onReleases, res.onRelease)
 		}
@@ -1878,6 +1915,9 @@ type Cache struct {
 	// egraphMu protects all e-graph state and indexes.
 	egraphMu sync.RWMutex
 
+	// Cache fact emission, guarded by egraphMu. See cache_facts.go.
+	cacheFactState
+
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
 	operationWaitMu        sync.Mutex
@@ -2194,6 +2234,12 @@ type sharedResult struct {
 	offerParents map[offerOwnerID]struct{}
 	// id is the stable cache-local identity for this materialized result.
 	id sharedResultID
+	// factAnnounced records that a result fact announced this result and no
+	// removed fact has retracted it; factDepsAnnounced that its dependency set
+	// was announced, so later explicit dependencies emit the grown set. Both
+	// are guarded by egraphMu.
+	factAnnounced     bool
+	factDepsAnnounced bool
 
 	// Immutable payload shared by all per-call Result values.
 	self     Typed
@@ -3059,6 +3105,12 @@ func (c *Cache) addExplicitDependencyLocked(
 	c.rememberDependencyEdgeLocked(parentRes, depRes)
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
+	// During publication the parent's set is still being attached; the deps
+	// fact at the end of publication covers it. Afterwards, announce the
+	// grown set.
+	if parentRes.factDepsAnnounced {
+		c.emitDepsLocked(parentRes)
+	}
 
 	// The new dep can extend the parent's stored required set, and every
 	// result already depending on the parent derives its own stored set from
@@ -5757,6 +5809,7 @@ func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *share
 		depIDs = append(depIDs, depID)
 	}
 	c.removeResultFromEgraphLocked(ctx, res)
+	c.emitRemovedLocked([]*sharedResult{res}, cachefact.RemovedRollback)
 	res.deps = nil
 	res.depParents = nil
 
@@ -5774,7 +5827,7 @@ func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *share
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, depRes, queue)
 		rerr = errors.Join(rerr, err)
 	}
-	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
+	collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(ctx, queue, cachefact.RemovedRollback)
 	rerr = errors.Join(rerr, collectErr)
 	if res.onRelease != nil {
 		collectReleases = append([]OnReleaseFunc{res.onRelease}, collectReleases...)
@@ -6167,7 +6220,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if err := c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
 			c.egraphMu.Lock()
 			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+			collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(context.WithoutCancel(ctx), queue, cachefact.RemovedRollback)
 			c.egraphMu.Unlock()
 			oc.handoffHoldActive = false
 			attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
@@ -6195,7 +6248,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}(); err != nil {
 		c.egraphMu.Lock()
 		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+		collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(context.WithoutCancel(ctx), queue, cachefact.RemovedRollback)
 		c.egraphMu.Unlock()
 		oc.handoffHoldActive = false
 		attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
@@ -6203,6 +6256,13 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		return attachErr
 	}
 	c.registerLazyEvaluation(oc.res, oc.val, resolver)
+	if !resWasCacheBacked && c.factsEnabled() {
+		// The dependency set is complete: announce it before the barrier
+		// opens, under the lock that orders it with the cache's other facts.
+		c.egraphMu.Lock()
+		c.emitDepsLocked(oc.res)
+		c.egraphMu.Unlock()
+	}
 	finishAttachDeps(nil)
 	// Eager completion: attachment, lease synchronization and lazy
 	// registration have all succeeded, and the publication handoff hold still

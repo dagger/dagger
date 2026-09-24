@@ -809,19 +809,24 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, cloudEngine b
 		// Stamp origin before the live processor freezes its start snapshot.
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: sess.sessionID}),
 	}
-	if cloudEngine {
-		cloudResource, err := cloudEngineTelemetryResource()
-		if err != nil {
-			slog.Warn("failed to create Cloud Engine telemetry resource", "error", err)
-		} else {
-			tracerOpts = append(tracerOpts, sdktrace.WithResource(cloudResource))
-		}
+	// Every session span names this engine instance, so a span's
+	// dagger.io/cache.result.id joins the instance's cache facts.
+	tracerResource, err := sessionTracerResource(srv.engineInstanceID, cloudEngine)
+	if err != nil {
+		slog.Warn("failed to create session telemetry resource", "error", err)
+	} else {
+		tracerOpts = append(tracerOpts, sdktrace.WithResource(tracerResource))
 	}
 	tracerOpts = append(tracerOpts,
 		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter)),
 	)
+	loggerResource, err := withEngineInstanceResource(telemetry.Resource, srv.engineInstanceID)
+	if err != nil {
+		slog.Warn("failed to create session log resource", "error", err)
+		loggerResource = telemetry.Resource
+	}
 	loggerOpts := []sdklog.LoggerProviderOption{
-		sdklog.WithResource(telemetry.Resource),
+		sdklog.WithResource(loggerResource),
 		// Stamp origin before either batch processor copies the record. Call
 		// payloads take their own lossless, retrying, on-demand batch path so
 		// sparse closures reach clients before fast calls finish and recipe

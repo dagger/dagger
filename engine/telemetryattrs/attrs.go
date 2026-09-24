@@ -580,4 +580,11 @@ const (
 	// gain its content digest only after this span ends; that later fact is
 	// simply not claimed here.
 	CacheOutputContentDigestAttr = "dagger.io/cache.output.content_digest"
+
+	// CacheResultIDAttr is the decimal-string engine-local result number of
+	// the call's cache-backed result, stamped for any stamped outcome that
+	// returned one. Together with the engine instance resource attribute
+	// (dagger.io/engine.instance) it names the result the engine's cache facts
+	// (dagql/cachefact) describe, so a span can be joined with them.
+	CacheResultIDAttr = "dagger.io/cache.result.id"
 )

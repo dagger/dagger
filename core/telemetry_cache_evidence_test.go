@@ -9,6 +9,7 @@ package core
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -330,4 +331,32 @@ func TestAroundFuncCacheEvidenceLifecycle(t *testing.T) {
 			}
 		}
 	}
+}
+
+type evidenceTestTypeResolver struct{}
+
+func (evidenceTestTypeResolver) ObjectType(string) (dagql.ObjectType, bool) { return nil, false }
+func (evidenceTestTypeResolver) ScalarType(string) (dagql.ScalarType, bool) { return nil, false }
+
+// A cache-backed result names its engine-local result number, the number the
+// cache's facts use, so the span joins them. A detached result stamps none
+// (TestRecordCacheEvidenceMappingHit's exact attribute set).
+func TestRecordCacheEvidenceResultID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	t.Cleanup(func() { assert.NilError(t, cache.CloseDiscardingPersistence()) })
+	frame := evidenceTestFrame("resultNumber")
+	res, err := cache.GetOrInitCall(ctx, "evidence-session", evidenceTestTypeResolver{}, &dagql.CallRequest{ResultCall: frame}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewResultForCall(dagql.NewInt(1), frame)
+	})
+	assert.NilError(t, err)
+	number, ok := dagql.CacheResultNumber(res)
+	assert.Assert(t, ok)
+
+	sr, span := evidenceTestRecordingSpan(t)
+	recordCacheEvidence(span, &dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissUnknownInputIndex: -1}, res)
+	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	assert.Equal(t, got[telemetryattrs.CacheResultIDAttr], strconv.FormatUint(number, 10))
 }

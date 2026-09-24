@@ -388,6 +388,7 @@ func (c *Cache) applyPartDependenciesLocked(ctx context.Context, receiver *share
 	if receiver.deps == nil {
 		receiver.deps = map[sharedResultID]struct{}{}
 	}
+	grown := false
 	for _, dep := range deps {
 		if _, ok := receiver.deps[dep.id]; ok {
 			continue
@@ -396,6 +397,12 @@ func (c *Cache) applyPartDependenciesLocked(ctx context.Context, receiver *share
 		receiver.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(receiver, dep)
 		c.incrementIncomingOwnershipLocked(ctx, dep)
+		grown = true
+	}
+	// An installed part can bring dependencies the receiver's announced set
+	// lacks; announce the grown set.
+	if grown && receiver.factDepsAnnounced {
+		c.emitDepsLocked(receiver)
 	}
 	for row, req := range requirements {
 		if !sessionResourceSetsEqual(row.requiredSessionResources, req) {
