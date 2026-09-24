@@ -345,6 +345,10 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 		id, parent, name string
 		start, end       uint64
 		discard          bool
+		nativeSupported  bool
+		fallbackReason   string
+		newObjects       int64
+		newObjectBytes   int64
 	}
 	byID := map[string]sample{}
 	traces, _ := sink.capture()
@@ -358,8 +362,17 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 					id := string(span.TraceId) + string(span.SpanId)
 					s := sample{id: id, parent: string(span.TraceId) + string(span.ParentSpanId), name: span.Name, start: span.StartTimeUnixNano, end: span.EndTimeUnixNano}
 					for _, attr := range span.Attributes {
-						if attr.Key == "dagger.git.checkout.discard_git_dir" {
+						switch attr.Key {
+						case "dagger.git.checkout.discard_git_dir":
 							s.discard = attr.Value.GetBoolValue()
+						case "dagger.git.native.supported":
+							s.nativeSupported = attr.Value.GetBoolValue()
+						case "dagger.git.native.fallback_reason":
+							s.fallbackReason = attr.Value.GetStringValue()
+						case "dagger.git.native.new_objects":
+							s.newObjects = attr.Value.GetIntValue()
+						case "dagger.git.native.new_object_bytes":
+							s.newObjectBytes = attr.Value.GetIntValue()
 						}
 					}
 					byID[id] = s
@@ -380,12 +393,13 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 		}
 		return strings.Compare(a.id, b.id)
 	})
-	var commits, merges, fetches, walks, gitCommits int
+	var commits, merges, fetches, walks, gitCommits, nativeCommits int
 	for _, s := range ordered {
 		fetch := strings.HasPrefix(s.name, "git fetch") || strings.HasPrefix(s.name, "fetching ")
 		if fetch {
 			for parent, ok := byID[s.parent]; ok; parent, ok = byID[parent.parent] {
 				require.NotEqual(t, "GitRef.log", parent.name, "history query fetched objects: %s", s.name)
+				require.NotEqual(t, "Workspace.withCommit", parent.name, "commit fetched objects: %s", s.name)
 				require.False(t, parent.name == "materialize local git checkout" && parent.discard, "source-only checkout fetched objects: %s", s.name)
 			}
 		}
@@ -416,6 +430,15 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 		case "git commit":
 			gitCommits++
 			interesting = true
+		case "git commit-tree":
+			nativeCommits++
+			interesting = true
+		case "git native commit transaction":
+			t.Logf("PERF native id=%x supported=%t fallback=%q new_objects=%d new_object_file_bytes=%d", []byte(s.id)[16:], s.nativeSupported, s.fallbackReason, s.newObjects, s.newObjectBytes)
+			require.True(t, s.nativeSupported, "ordinary captured-workspace commit fell back: %s", s.fallbackReason)
+			interesting = true
+		case "git read-tree", "git write-tree":
+			interesting = true
 		case "GitRef.log":
 			walks++
 			interesting = true
@@ -426,8 +449,11 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 			t.Logf("PERF span=%q id=%x duration=%s discard_git_dir=%t", s.name, []byte(s.id)[16:], time.Duration(s.end-s.start), s.discard)
 		}
 	}
-	t.Logf("PERF spans workspace_commits=%d merges=%d fetches=%d history_calls=%d git_commits=%d (inclusive, deduplicated; counts are not bytes)", commits, merges, fetches, walks, gitCommits)
+	t.Logf("PERF spans workspace_commits=%d merges=%d fetches=%d history_calls=%d git_commits=%d native_commits=%d (inclusive, deduplicated; counts are not bytes)", commits, merges, fetches, walks, gitCommits, nativeCommits)
 	require.Equal(t, iterations, commits, "must observe actual commit calls, not an empty trace")
+	require.Equal(t, iterations, nativeCommits, "captured-workspace commits must execute native transactions")
+	require.Zero(t, gitCommits, "must not fall back to retained-checkout commits")
+	require.LessOrEqual(t, merges, iterations, "only workspace reconciliation may still use a general merge")
 	require.GreaterOrEqual(t, walks, iterations*3)
 }
 
