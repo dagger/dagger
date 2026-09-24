@@ -1,6 +1,6 @@
 # Git-native workspace commits: design and continuation
 
-**Status:** implemented Direction A prototype in [PR #14314](https://github.com/dagger/dagger/pull/14314), still draft. No new public GraphQL API. The implementation checkpoint described here is `460380658e5b95975ab084db71f706676a432bad`; use the PR's current head for continuation, not this historical hash.
+**Status:** implemented Direction A prototype in [PR #14314](https://github.com/dagger/dagger/pull/14314), still draft. No new public GraphQL API. The remote-native implementation and matched benchmark checkpoint is `756122ed24d8bc351c568ba87a1d3d88d7c71262`; the earlier incremental-local checkpoint was `460380658e5b95975ab084db71f706676a432bad`. Use the PR's current head for continuation, not a historical hash.
 
 This is the starting document for a fresh session asked to **"continue https://github.com/dagger/dagger/pull/14314"**. It supersedes the implementation status and next steps in the [earlier investigation handoff](https://gist.github.com/vito/aead3f59d5aec76d824797c4c00f7f3a). The code is authoritative when it differs from this document.
 
@@ -54,12 +54,13 @@ The PR also retains the earlier foundation: read-only cached local history joins
 `GitRef.withCommit` first attempts `GitCommitChangesetNative`:
 
 1. Prove a direct discard-Git tree baseline with the same repository recipe identity and commit SHA as the parent. Recipe identity retains authorization scope; equal-looking filesystem contents are insufficient.
-2. Hold the local repository's read-only mount.
-3. Initialize private Git metadata, an operation-local index, and a sparse staging worktree.
-4. Use `read-tree` for the parent, hydrate ancestor attribute/ignore controls, and stage only the selected delta.
-5. Use `write-tree` and `commit-tree` with explicit identity, message, dates and parentage.
-6. Write new objects into scratch storage, then copy only new loose objects into a copy-on-write child of the existing repository snapshot.
-7. Return its self-contained Git storage. Persist no scratch index or mount-path alternate.
+2. For a remote parent, hydrate its pinned history through the existing authenticated/locked mirror path and pack only its reachable closure into private immutable storage. The shared mutable mirror may contain unrelated authorization scopes, so copying all its packs or refs is forbidden. An engine-computed exact-recipe cache input prevents content aliases from sharing promotion across authorization recipes; reconciliation and construction share one promotion.
+3. Hold the resulting local repository's read-only mount.
+4. Initialize private Git metadata, an operation-local index, and a sparse staging worktree.
+5. Use `read-tree` for the parent, hydrate ancestor attribute/ignore controls, and stage only the selected delta.
+6. Use `write-tree` and `commit-tree` with explicit identity, message, dates and parentage.
+7. Write new objects into scratch storage, then copy only new loose objects into a copy-on-write child of the existing repository snapshot.
+8. Return its self-contained Git storage. Persist no scratch index or mount-path alternate.
 
 Git may freshen the timestamp of an existing pack in either a primary or alternate object database. Pointing it at a writable inherited pack risks a history-sized copy-up. The borrowed parent mount must actually be **read-only**, not merely chmod-protected.
 
@@ -69,7 +70,7 @@ A schema resolver can represent a detached ref as `Name == SHA`, not only an emp
 
 `Workspace.withCommit` still freezes the receiver and resolves author identity before constructing replayable results. It uses the private `Changeset.__mergeForWorkspaceCommit` field for reconciliation; generic Directory/Changeset merge APIs are unchanged.
 
-For verified same-base local inputs, the already-approved changeset is reused instead of applying it to HEAD and computing the same delta again. Empty or off-baseline inputs retain the complete-tree reconstruction path.
+For verified same-base inputs with owned or promotable remote storage, the already-approved changeset is reused instead of applying it to HEAD and computing the same delta again. Empty or off-baseline inputs retain the complete-tree reconstruction path.
 
 `TryNativeWorkspaceMerge` uses private sparse indexes and cached objects to build temporary working/incoming trees, then runs `merge-tree` with an explicit base. It does **not** return an apparently identical raw Directory. Instead it replays the filesystem transitions the legacy checkout sequence would perform:
 
@@ -88,21 +89,22 @@ Only declared changed files and the sparse delta's directory metadata are checke
 
 ### 3. Incremental canonical source materialization
 
-The private `GitRef.__withCommitRepository` recipe records the exact local parent and the resulting resolved HEAD. `LocalGitRepository.CheckoutBase` contains:
+The private `GitRef.__withCommitRepository` recipe records the exact parent and the resulting resolved HEAD. `LocalGitRepository.CheckoutBase` contains:
 
 ```go
 type GitCheckoutBase struct {
     Parent    dagql.ObjectResult[*GitRef]
     CommitSHA string
+    Tree      dagql.ObjectResult[*Directory] // exact evaluated tree for a remote parent
 }
 ```
 
-This is an owned DAG dependency, with a persistence codec and reference visitor. It is not an expired mount path, a guess based on a dirty worktree, or public `withContents` metadata supplied by a caller.
+These are owned DAG dependencies, with persistence codecs and reference visitors. They are not expired mount paths, guesses based on a dirty worktree, or public `withContents` metadata supplied by a caller. A retained remote parent tree is validated against its exact canonical source-only producer recipe on attachment, persistence and use.
 
 For a source-only checkout of exactly the annotated SHA:
 
 1. Validate the current local storage, actual single-parent commit headers, and checkout controls before evaluating the parent tree.
-2. Select the parent's canonical `tree(discardGitDir: true)` through DagQL, reusing its cached materialization when available.
+2. Reuse the pinned remote parent's evaluated canonical tree, or select a local parent's `tree(discardGitDir: true)` through DagQL.
 3. Create a COW child of that canonical snapshot.
 4. Borrow current repository objects read-only; use private Git metadata/index to check out only the Git tree delta.
 5. Normalize rewritten paths, touched ancestors and the root to Unix second 1. Leave untouched files/inodes alone.
@@ -111,16 +113,20 @@ Other refs must not inherit the annotated tip's materialization. Retained `.git`
 
 A cold parent may still need materialization. This design removes repeated full materialization; it does not promise that no filesystem is ever constructed.
 
+### 4. Reuse of the exact owned remote parent for history
+
+Mixed remote/local history comparisons may borrow the committed child's complete owned objects when its current tip, actual single-parent headers, retained parent SHA and remote repository recipe all match. Substitution is operation-local; public refs and shared mirrors are not changed. This removes first-commit ahead/behind refetches without a global URL/SHA alias. Other comparisons retain the general join, and real object/cancellation/cleanup errors remain errors.
+
 ## Semantics, fallbacks and safety
 
 | Area | Current boundary |
 | --- | --- |
-| Commit transaction | Direct same-base local SHA-1 provenance; complete supported local storage. Unsupported refs/storage/submodule edits use the existing path. |
-| Workspace reconciliation | Same-base local Git inputs. Changed controls, ignored paths, empty directories, unsupported delta metadata and storage layouts can fall back. |
-| Incremental checkout | Source-only, exact annotated SHA, supported complete local SHA-1 storage, local parent, actual single parent. Changed `.gitattributes`/`.gitmodules` and any gitlinks fall back. |
+| Commit transaction | Direct same-base SHA-1 provenance; complete supported owned storage, including exact-scope promoted remote history. Unsupported refs/storage/submodule edits use the existing path. |
+| Workspace reconciliation | Same-base Git inputs with owned or promotable storage. Changed controls, ignored paths, empty directories, unsupported delta metadata and storage layouts can fall back. |
+| Incremental checkout | Source-only, exact annotated SHA, supported complete local SHA-1 storage, actual single parent; remote parents require the pinned canonical tree. Changed `.gitattributes`/`.gitmodules` and any gitlinks fall back. |
 | Public APIs | Existing methods and signatures remain. New schema fields are internal-only. |
 | Rich filesystem metadata | Match existing checkout behavior, including checkout-skip retention. Do not equate Git tree equality with filesystem equality. |
-| Ref namespace | Native commit storage deliberately retains unrelated source refs/tags rather than reproducing a fresh fetch's pruning. Review this intentional difference before merging. |
+| Ref namespace | Native local-source storage deliberately retains unrelated source refs/tags rather than reproducing a fresh fetch's pruning; review this difference. Remote promotion retains only the requested history closure, never unrelated mirror objects or refs. |
 | Errors | Fallback only when every error leaf is explicitly unsupported. Missing objects, cancellation, deadlines and cleanup errors remain errors. |
 
 Rooted filesystem operations prevent writes or metadata inspection through replaced symlink ancestors. Produced snapshots are released if cancellation or source-unmount failure arrives after their creation. Cleanup uses an uncancelled context and preserves release failures.
@@ -163,7 +169,54 @@ Do not discard outliers. A previous reconciliation-stage run had a **5.14s commi
 
 The original 17.182s live-agent result was a different workload/environment. The synthetic numbers measure core API work, **not LLM latency or the complete committer module/TUI tool call**. The fresh smoke test below measures the latter separately.
 
-### Real `dagger/dagger` comparison against true main
+### Controlled-origin comparison after remote-native commits
+
+**Latest matched measurements:** remote promotion and parent-history reuse at `756122ed24d8bc351c568ba87a1d3d88d7c71262`, compared with pre-fix PR production `71bfa41` and true-main production `06eca99`. Test-only baseline builds were `f2eccf3d3793caca6317200f8f80998685f84213` and `86befe1120fb435ec2f407e0e6618ed376bf6443`, respectively.
+
+Pinning the checkout alone proved insufficient: after live GitHub refs moved, capture discarded advertised tips not present in the pinned checkout, selected older known ancestors, and imported a bundle. That silently made the base local. The controlled variant instead serves the same real-repository history through smart HTTP plus a session-owned tunnel with a frozen advertisement. A per-origin host HTTP proxy reaches that same server without rewriting the captured origin URL. Host and engine both verify HEAD `06eca99`; telemetry must show snapshot reconstruction and **zero bundle imports**. Origin transport setup is timed separately. These measurements are **not directly matched to the historical live-GitHub transport runs below**.
+
+All six runs (two per variant) used identical measured harness blob `591ed9351287f5a3fad1edd43dc84ab9b5aaa513`, SHA256 `5cd7ec38ec68b98f5e70f14c333658d712ca938e3c0b2dbfd8a52ff60b6ec726`. The same six-edit workload, real repository, pending edit and full-file consumers were retained; every source/workspace hash matched across variants. Runs were serial with fresh engine state, explicit from-source targets and private SDK sessions. Host/build caches and compressed pack representations were not identical; this remains a small observational comparison. A subsequent lint-only helper extraction does not change the measured loop.
+
+Medians, seconds:
+
+| Population | Main commit | Pre-fix PR commit | Remote-native commit | Main full loop | Pre-fix PR full loop | Remote-native full loop |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| First remote-backed commit (2 per variant) | 25.956 | 23.990 | **9.771** | 41.526 | 39.297 | **17.141** |
+| Subsequent varied commits (10 per variant) | 19.018 | 5.943 | **1.590** | 35.820 | 11.130 | **7.000** |
+
+Both final first-commit observations: **9.933 / 9.608s**, full loops **17.701 / 16.581s**. Capture was **3.706 / 2.919s**, and capture plus first loop **21.407 / 19.500s**; the improvement was not deferred into capture. Pre-fix PR capture was 3.380 / 3.064s; main capture was 3.213 / 7.949s. The cold first loop is about 2.29x faster than the pre-fix PR and 2.42x faster than true main in this sample, **not yet steady-state local-path latency**.
+
+Final post-fix samples, **commit / full loop seconds**:
+
+| Step | Run 1 | Run 2 |
+| --- | ---: | ---: |
+| README edit, remote base | 9.933 / 17.701 | 9.608 / 16.581 |
+| Nested existing-file edit | 1.486 / 6.709 | 1.867 / 6.886 |
+| Nested addition | 3.138 / 8.411 | 1.421 / 9.245 |
+| Nested rename | 1.450 / 6.481 | 1.490 / 7.177 |
+| README edit again | 1.810 / 6.953 | 1.691 / 7.048 |
+| Nested deletion | 1.831 / 7.074 | 1.404 / 6.422 |
+
+Each final run executed **one remote promotion/pack, six native history writes, six native reconciliations, eleven incremental checkouts, zero legacy commits/general merges, and zero history-join fetches**. Four actual Git fetch process spans remain: initial remote capture and complete-history hydration, plus two shallow local source materializations. The broad `fetches=6` trace counter includes two enclosing `fetching` wrappers. Pre-fix PR had five native writes and three directory-metadata reconciliation fallbacks; those nested cases now pass natively without weakening the metadata gate.
+
+**Remaining cost:** promotion took 8.754 / 8.117s, including 7.003 / 6.323s complete-history hydration and 1.745 / 1.788s isolated packing. Fetching the complete cold history dominates; no zero-copy or zero-cold-fetch claim is justified. Full-file consumers still cost roughly 3s per later loop. Retain run 2's 2.410s history outlier on cycle 3 (no fetch), and the early pre-history-reuse exploratory run's 18.726s capture / 21.680s first commit / 52.648s first loop (`07c687b752a59a4e`); it is not included in final medians. A separate live-origin run that silently imported a bundle was rejected as evidence for remote-native first-commit performance.
+
+Reproduce using separate invocations to avoid memoizing the engine-test call:
+
+```text
+^TestWorkspaceRealRepositoryPerformanceControlledOrigin$
+^(TestWorkspaceRealRepositoryPerformanceControlledOrigin)$
+```
+
+Raw logs in trace `0ad63cdfeee7172c2fa61c05bd5dbabd`, `ReadLogs(scope: "own", fromLine: 1)`:
+
+- True main: `61556b72c65f8390`, `335e215be0529413`.
+- Pre-fix PR: `f8f13d5d58e48bb9`, `cdde0d78e534930c`.
+- Remote-native: `c9714d49532860ac`, `0b6c2a99b4d25c49` (fresh runners `b0tbluif32tl8`, `jtm068do636ri`).
+
+Validation after integration: full `go test -race ./core ./core/schema -count=1`, seven from-source remote/local commit/history/reconciliation regressions, and CI-matching root lint pass. Tests cover authorization/content-alias separation, exact packed object inventory with unrelated shared-mirror objects and replacement refs, concurrent promotion, donor removal, canonical tree producer validation and ownership across two cache restarts. This is **not** a full engine restart/GC stress test or physical storage-allocation measurement. The existing inherited-session local-history test still skips under its guard; it was not counted as a passing remote regression.
+
+### Historical live-origin comparison against true main
 
 Production sources were pinned to **main `06eca9957aa99cdf55855110846e8ee2546ef306`** and **PR `71bfa41e8bb442a9ca57246575de54cf979a63b0`**. Both received the identical standalone test-only harness, with no production changes: main measured build `4c91b5e183b1be041c190ed7d8c0b9077db855b2`, PR measured build `99f0a93b9352e0422a82dc12ae2f5c63c1040ec1`. The measured harness Git blob is `af56c317205b7721e88e4fed2d5b006cec4a501d` (SHA256 `01bedeef1899852b900b600a328747f58e2ca49204f55809ef80c305d4842d72`). The subsequently retained harness adds an explicit opt-in gate so normal CI does not fetch full history.
 
@@ -285,7 +338,7 @@ Validation on the combined continuation tree:
 
 Remote checks observed at merge SHA `699c5755d61a5de5b7992aa2410cc210d649cf66` had five lint violations, addressed through helper extraction and staticcheck simplifications. The seven other failing checks showed HTTP 502/connection resets, session removal/closure, or a client-caller deadline, with passing inner checks or recorded test passes. These are transport/session failures, **not proven PR test regressions or proven unrelated infrastructure defects**; their underlying cause remains unestablished. Re-read and rerun remote checks before claiming green CI.
 
-Full CI, engine restart/eviction and GC stress, longer-lived/varied repository measurements and physical storage accounting remain release gates. The real-repository comparison and interactive smoke above close the earlier absence of those measurements, but expose remote-first-commit and directory-metadata eligibility gaps; the smoke used default rather than configured human identity.
+Full CI, engine restart/eviction and GC stress, longer-lived/varied repository measurements and physical storage accounting remain release gates. The remote-native follow-up addresses the first-commit and measured nested-reconciliation fallbacks, but cold complete-history acquisition remains expensive. The earlier interactive smoke used default rather than configured human identity and predates that follow-up.
 
 ## Source map
 
@@ -294,6 +347,7 @@ Full CI, engine restart/eviction and GC stress, longer-lived/varied repository m
 | Approval, identity, pending overlay composition | [`core/schema/workspace_commit.go`](../core/schema/workspace_commit.go), [`workspace_checkpoint.go`](../core/schema/workspace_checkpoint.go) |
 | Commit repository/storage recipes | [`core/schema/git_commit_create.go`](../core/schema/git_commit_create.go), [`core/schema/git.go`](../core/schema/git.go) |
 | Private index, object insertion, eligibility, cleanup | [`core/git_commit_create.go`](../core/git_commit_create.go) |
+| Remote closure promotion and exact-parent history reuse | [`core/git_commit_remote.go`](../core/git_commit_remote.go), [`core/git_history_native.go`](../core/git_history_native.go) |
 | Reconciliation and checkout-transition replay | [`core/changeset_native.go`](../core/changeset_native.go) |
 | Incremental source materialization | [`core/git_local_incremental.go`](../core/git_local_incremental.go), [`core/git_local.go`](../core/git_local.go) |
 | Provenance ownership and persistence | [`core/git.go`](../core/git.go), [`core/persisted_visitors.go`](../core/persisted_visitors.go), [`core/git_persistence_test.go`](../core/git_persistence_test.go) |
@@ -306,7 +360,7 @@ Related architecture: [lazy evaluation](lazy_evaluation.md), [cache persistence]
 
 1. **Establish the current PR state and address CI.** Verify the actual head, inspect failures, and keep unrelated host changes out of the branch. No broad rebase/history rewrite or force push is implied by "continue".
 2. **Prepare the existing slices for independent review.** Review fallback coverage and the intentional native ref/tag retention difference. Test long sequential and concurrent histories, graceful restart/eviction, cancellation around publication, and retained snapshots during GC. Respect existing cache durability semantics rather than promising crash recovery it does not provide.
-3. **Follow the real-repository evidence.** The true-main comparison above is now the baseline, not the earlier partially optimized synthetic baseline. Investigate remote-backed first-commit fallback and `directory-metadata` reconciliation fallback, without weakening provenance, authorization or filesystem semantics. Preserve the matched workload when measuring any fixes. Add physical allocation and longer-lived growth measurements; they remain absent.
+3. **Follow the controlled-origin evidence.** Keep the stable advertised ref as well as the source SHA pinned, and prove remote input provenance; live-ref movement otherwise invalidates comparisons. The remote-native first commit is now faster but still dominated by complete-history hydration, with a smaller isolated-packing cost. Measure cold versus cached-mirror behavior before choosing another optimization; never shift cost into capture or weaken object isolation. Add physical allocation and longer-lived growth measurements, which remain absent.
 4. **Broaden the interactive smoke.** The isolated two-commit run passed against verified from-source binaries and exposed the cold/remote versus local distinction. Repeat with configured human identity, pending unselected edits and representative agent use. Do not push test commits or silently switch to another engine for authentication.
 5. **Continue A only where measurements justify it.** Remaining loop cost includes status/diff preparation, checkpoint/overlay composition, initial materialization and metadata walks. Reducing the duration of `withCommit` alone by deferring work to the next tool is not success. Do not widen eligibility by guessing filesystem equivalence.
 6. **Explore C separately when requested.** Compare per-repository/session stores and immutable pack sharing before proposing a global store. Specify reachability/pinning, graceful persistence versus crash durability, GC, authorization boundaries, shallow/partial/object-format support, concurrency/repacking, and logical versus physical byte accounting. Existing snapshot-owned objects are the current foundation, not an implemented object service.
