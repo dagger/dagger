@@ -10,10 +10,234 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+// The oracle uses a complete worktree and git commit, not commit-tree. Exact
+// SHA equality covers the tree, parent, dates, identities and message bytes.
+func TestGitNativeCommitMatchesCheckout(t *testing.T) {
+	for _, scenario := range []string{"ordinary", "packed", "attributes", "changed attributes", "deleted attributes", "signoff", "ignored", "empty"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := t.Context()
+			source := t.TempDir()
+			run := func(dir string, env []string, args ...string) string {
+				t.Helper()
+				out, err := runWorkspaceCommitGit(ctx, dir, env, args...)
+				require.NoError(t, err)
+				return strings.TrimSpace(out)
+			}
+			write := func(dir, name, data string, mode os.FileMode) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(data), mode))
+			}
+			run(source, nil, "init", "-b", "main")
+			write(source, "unchanged", "must remain without being staged or checked out", 0600)
+			write(source, "edit", "before", 0600)
+			write(source, "remove", "remove", 0600)
+			write(source, "file-to-dir", "file", 0600)
+			write(source, "dir-to-file/child", "child", 0600)
+			write(source, ".gitignore", "*.ignored\n", 0600)
+			write(source, "nested/.gitignore", "ignored\n", 0600)
+			write(source, ".gitattributes", "*.txt text eol=lf ident\n", 0600)
+			write(source, "nested/.gitattributes", "*.txt text eol=crlf ident\n", 0600)
+			run(source, nil, "add", ".")
+			run(source, nil, "commit", "-m", "base")
+			parent := run(source, nil, "rev-parse", "HEAD")
+			run(source, nil, "tag", "unrelated-tag")
+			run(source, nil, "branch", "unrelated-branch")
+			if scenario == "packed" {
+				run(source, nil, "gc", "--prune=now")
+			}
+			oracle, native := filepath.Join(t.TempDir(), "oracle"), filepath.Join(t.TempDir(), "native")
+			run(source, nil, "clone", "--no-hardlinks", source, oracle)
+			run(source, nil, "clone", "--no-hardlinks", source, native)
+			packTimes := map[string]time.Time{}
+			if scenario == "packed" {
+				// The production donor is mounted read-only. This filesystem-only
+				// unit cannot enforce that mount, so assert the writable output's
+				// packs are never freshened (which would trigger COW copy-up).
+				packs, err := filepath.Glob(filepath.Join(native, ".git/objects/pack/*"))
+				require.NoError(t, err)
+				require.NotEmpty(t, packs)
+				for _, pack := range packs {
+					old := time.Unix(1000000000, 0)
+					require.NoError(t, os.Chtimes(pack, old, old))
+					packTimes[pack] = old
+				}
+			}
+			paths := &ChangesetPaths{}
+			apply := func(work string) error {
+				// A sparse staging area must never hydrate ordinary parent files.
+				if work != oracle {
+					_, err := os.Lstat(filepath.Join(work, "unchanged"))
+					require.ErrorIs(t, err, os.ErrNotExist)
+				}
+				switch scenario {
+				case "ordinary", "packed", "signoff":
+					paths.Modified = []string{"edit"}
+					paths.Added = []string{"file-to-dir/child", "dir-to-file", "exec", "link", "a\n:[literal]"}
+					paths.AllRemoved = []string{"remove", "file-to-dir", "dir-to-file/child"}
+					for _, name := range []string{"remove", "file-to-dir", "dir-to-file"} {
+						require.NoError(t, os.RemoveAll(filepath.Join(work, name)))
+					}
+					write(work, "edit", "after", 0600)
+					write(work, "file-to-dir/child", "child", 0600)
+					write(work, "dir-to-file", "file", 0600)
+					write(work, "exec", "#!/bin/sh\n", 0700)
+					write(work, "a\n:[literal]", "\x00binary\xff", 0600)
+					if scenario == "packed" {
+						paths.Added = append(paths.Added, "reuse-packed-blob")
+						write(work, "reuse-packed-blob", "must remain without being staged or checked out", 0600)
+					}
+					require.NoError(t, os.Symlink("edit", filepath.Join(work, "link")))
+				case "attributes", "changed attributes", "deleted attributes":
+					paths.Added = []string{"new.txt", "nested/new.txt"}
+					write(work, "new.txt", "$Id: abc $\r\nhello\r\n", 0600)
+					write(work, "nested/new.txt", "$Id: def $\r\nhello\r\n", 0600)
+					if scenario == "changed attributes" {
+						paths.Modified = []string{"nested/.gitattributes"}
+						write(work, "nested/.gitattributes", "*.txt -text -ident\n", 0600)
+					}
+					if scenario == "deleted attributes" {
+						paths.AllRemoved = []string{".gitattributes", "nested/.gitattributes"}
+						require.NoError(t, os.Remove(filepath.Join(work, ".gitattributes")))
+						require.NoError(t, os.Remove(filepath.Join(work, "nested/.gitattributes")))
+					}
+				case "ignored":
+					paths.Added = []string{"nested/ignored"}
+					write(work, "nested/ignored", "ignored", 0600)
+				}
+				return nil
+			}
+			require.NoError(t, apply(oracle)) // also defines the changeset paths
+			opts := GitCommitOpts{Message: "subject\n\nbody", Date: "2025-01-02T03:04:05Z", AuthorName: "Author", AuthorEmail: "author@example.com", CommitterName: "Committer", CommitterEmail: "committer@example.com", CommitterDate: "2025-01-03T03:04:05Z", Signoff: scenario == "signoff"}
+			env := []string{"GIT_LITERAL_PATHSPECS=1", "GIT_AUTHOR_NAME=" + opts.AuthorName, "GIT_AUTHOR_EMAIL=" + opts.AuthorEmail, "GIT_COMMITTER_NAME=" + opts.CommitterName, "GIT_COMMITTER_EMAIL=" + opts.CommitterEmail, "GIT_AUTHOR_DATE=" + opts.Date, "GIT_COMMITTER_DATE=" + opts.CommitterDate}
+			var oracleErr error
+			if stage := commitStagePaths(paths); len(stage) != 0 {
+				_, oracleErr = runWorkspaceCommitGit(ctx, oracle, env, append([]string{"add", "-A", "--"}, stage...)...)
+			}
+			parentRef := &gitutil.Ref{SHA: parent, Name: "refs/heads/main"}
+			if scenario == "attributes" {
+				parentRef.Name = "" // commit-ID parents keep a detached HEAD
+			}
+			err := withNativeCommitIndex(ctx, filepath.Join(native, ".git"), filepath.Join(source, ".git", "objects"), parentRef, paths, opts, apply)
+			if scenario == "ignored" {
+				require.Error(t, oracleErr)
+				require.Error(t, err)
+				return
+			}
+			if scenario == "empty" {
+				require.ErrorIs(t, err, ErrNothingToCommit)
+				opts.AllowEmpty = true
+				err = withNativeCommitIndex(ctx, filepath.Join(native, ".git"), filepath.Join(source, ".git", "objects"), parentRef, paths, opts, apply)
+			}
+			require.NoError(t, oracleErr)
+			require.NoError(t, err)
+			args := []string{"commit", "--allow-empty", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "-m", opts.Message}
+			if opts.Signoff {
+				args = append(args, "--trailer", "Signed-off-by: Author <author@example.com>")
+			}
+			run(oracle, env, args...)
+			nativeGit := filepath.Join(native, ".git")
+			require.Equal(t, run(oracle, nil, "rev-parse", "HEAD"), run(nativeGit, nil, "rev-parse", "HEAD"))
+			require.Equal(t, parent, run(source, nil, "rev-parse", "HEAD"))
+			require.Equal(t, parent, run(source, nil, "rev-parse", "refs/heads/main"))
+			require.Equal(t, parent, run(nativeGit, nil, "rev-parse", "refs/tags/unrelated-tag"))
+			require.Equal(t, parent, run(nativeGit, nil, "rev-parse", "refs/remotes/origin/unrelated-branch"))
+			if parentRef.Name != "" {
+				require.Equal(t, run(nativeGit, nil, "rev-parse", "HEAD"), run(nativeGit, nil, "rev-parse", "refs/heads/main"))
+			} else {
+				require.Equal(t, parent, run(nativeGit, nil, "rev-parse", "refs/heads/main"))
+				head, err := os.ReadFile(filepath.Join(nativeGit, "HEAD"))
+				require.NoError(t, err)
+				require.True(t, IsFullGitSHA(strings.TrimSpace(string(head))))
+			}
+			for pack, mtime := range packTimes {
+				info, err := os.Stat(pack)
+				require.NoError(t, err)
+				require.Equal(t, mtime, info.ModTime(), "Git must not freshen inherited packs: %s", pack)
+			}
+			require.Equal(t, source, run(nativeGit, nil, "config", "remote.origin.url"))
+			run(nativeGit, nil, "fsck", "--full")
+			_, err = os.Stat(filepath.Join(nativeGit, "objects/info/alternates"))
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+func TestGitNativeCommitPublicationIsRooted(t *testing.T) {
+	outside, repo := t.TempDir(), t.TempDir()
+	victim := filepath.Join(outside, "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("unchanged"), 0600))
+	root, err := os.OpenRoot(repo)
+	require.NoError(t, err)
+	defer root.Close()
+	// Final symlinks and hardlinks must be replaced, not followed/truncated.
+	require.NoError(t, os.Symlink(victim, filepath.Join(repo, "HEAD")))
+	require.NoError(t, os.Link(victim, filepath.Join(repo, "config")))
+	require.NoError(t, nativeCommitWriteFile(root, "HEAD", []byte("new head")))
+	require.NoError(t, nativeCommitWriteFile(root, "config", []byte("new config")))
+	contents, err := os.ReadFile(victim)
+	require.NoError(t, err)
+	require.Equal(t, "unchanged", string(contents))
+	// Neither external nor internal ancestor symlinks may redirect refs or
+	// object fanouts. Only paths receiving new writes are inspected.
+	require.NoError(t, os.Symlink(outside, filepath.Join(repo, "refs")))
+	require.ErrorIs(t, nativeCommitWriteFile(root, "refs/heads/main", []byte("head")), errNativeCommitUnsupported)
+	newObjects := t.TempDir()
+	object := "aa/" + strings.Repeat("b", 38)
+	require.NoError(t, os.Mkdir(filepath.Join(newObjects, "aa"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(newObjects, object), []byte("new object"), 0600))
+	require.NoError(t, os.Symlink(outside, filepath.Join(repo, "aa")))
+	require.ErrorIs(t, copyNativeCommitObjects(t.Context(), newObjects, repo), errNativeCommitUnsupported)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, copyNativeCommitObjects(ctx, newObjects, repo), context.Canceled)
+}
+
+func TestGitNativeCommitRejectsGitlinks(t *testing.T) {
+	ctx := t.Context()
+	repo := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		out, err := runWorkspaceCommitGit(ctx, repo, nil, args...)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	run("init", "-b", "main")
+	run("commit", "--allow-empty", "-m", "root")
+	parent := run("rev-parse", "HEAD")
+	run("update-index", "--add", "--cacheinfo", "160000,"+parent+",module")
+	run("commit", "-m", "gitlink")
+	parent = run("rev-parse", "HEAD")
+	gitDir := filepath.Join(repo, ".git")
+	err := withNativeCommitIndex(ctx, gitDir, filepath.Join(gitDir, "objects"), &gitutil.Ref{SHA: parent}, &ChangesetPaths{Modified: []string{"module/file"}}, GitCommitOpts{Message: "edit", Date: "2025-01-02T03:04:05Z"}, func(string) error {
+		t.Fatal("unsupported submodule change must not apply")
+		return nil
+	})
+	require.ErrorIs(t, err, errNativeCommitUnsupported)
+	require.Equal(t, parent, run("rev-parse", "HEAD"))
+}
+
+func TestGitNativeCommitStorageEligibility(t *testing.T) {
+	for _, unsupported := range []string{"shallow", "objects/info/alternates", "commondir", "objects/pack/partial.promisor"} {
+		t.Run(unsupported, func(t *testing.T) {
+			root := t.TempDir()
+			_, err := runWorkspaceCommitGit(t.Context(), root, nil, "init", "--bare")
+			require.NoError(t, err)
+			gitDir, err := nativeCommitGitDir(t.Context(), root)
+			require.NoError(t, err)
+			require.Equal(t, root, gitDir)
+			require.NoError(t, os.WriteFile(filepath.Join(root, unsupported), []byte("unsupported\n"), 0600))
+			_, err = nativeCommitGitDir(t.Context(), root)
+			require.ErrorIs(t, err, errNativeCommitUnsupported)
+		})
+	}
+}
 
 type boundedGitLogBackend struct {
 	GitRefBackend
