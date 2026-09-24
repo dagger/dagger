@@ -1114,7 +1114,7 @@ func (SecretSuite) TestCrossSessionSecretURIRecipeReplay(ctx context.Context, t 
 			})
 			after, err := dagger.Ref[*dagger.Container](target, dagger.ID(recipe)).Stdout(ctx)
 			require.NoError(t, err)
-			plaintext, secretErr := dagger.Ref[*dagger.Secret](target, dagger.ID(secretID)).Plaintext(ctx)
+			plaintext, secretErr := dagger.Ref[*dagger.Secret](target, secretID).Plaintext(ctx)
 			if customCacheKey {
 				// Explicit cache keys deliberately equate different plaintexts.
 				// The new binding supplies B, but cached computations still use A.
