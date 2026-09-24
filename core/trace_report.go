@@ -59,6 +59,9 @@ const traceReportHeadBytes = traceReportMaxBytes * 2 / 3
 // traceReportOpts tunes a single scoped render. The zero value shows
 // completed spans expanded, prunes nothing, and leaves log lines unbounded.
 type traceReportOpts struct {
+	// FocusFailures collapses successful work when inspecting a failed scope.
+	FocusFailures bool
+
 	// ExpandWrappers unwraps the scoped subtree just far enough for the tool's
 	// own output to reach the reader: the scope root and the pure wrapper spans
 	// beneath it are force-expanded, stopping at the first real work span. See
@@ -132,19 +135,17 @@ type traceReportOpts struct {
 	HideSpanTree bool
 }
 
-// readTraceRerunSuggestion is the LLM-facing replacement for the report's
-// "RUN LOCALLY" section: find the failed checks' spans before reading them.
-//
-// Note this lives in core, not in dagql/idtui: the inspection tools are core
-// builtins (see MCP.loadBuiltins), so core owns the vocabulary, while the
-// frontend keeps owning the layout.
-func readTraceRerunSuggestion(checkNames []string) (string, []string) {
-	body := make([]string, 0, len(checkNames)+1)
-	for _, name := range checkNames {
-		body = append(body, fmt.Sprintf("FindSpans(query: %q)", name))
-	}
-	if len(checkNames) > 0 {
-		body = append(body, "Then use ReadTrace(span: <span ID>) to read a matching span.")
+// readTraceRerunSuggestion uses already loaded check IDs rather than asking
+// readers to rediscover spans the report already knows.
+func readTraceRerunSuggestion(db *dagui.DB, names []string) (string, []string) {
+	var body []string
+	for _, name := range names {
+		for _, span := range db.Spans.Order {
+			if span.CheckName == name && span.IsFailedOrCausedFailure() {
+				body = append(body, fmt.Sprintf("ReadTrace(span: %q)", span.ID.String()))
+				break
+			}
+		}
 	}
 	return "SEE FULL TRACE", body
 }
@@ -348,7 +349,15 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 		renderOpts.Filter = reportNoiseFilter(db, primary)
 	}
 	if opt.SuggestReadTrace {
-		renderOpts.RerunSuggestion = readTraceRerunSuggestion
+		renderOpts.RerunSuggestion = func(names []string) (string, []string) {
+			return readTraceRerunSuggestion(db, names)
+		}
+	}
+	failureNav := traceFailureNavigation(db, db.Spans.Map[primary])
+	if opt.FocusFailures && failureNav != "" {
+		renderOpts.ExpandCompleted = false
+		renderOpts.ExpandSpans = failureReportExpansion(db, db.Spans.Map[primary])
+		renderOpts.NestedLogLimit = 10
 	}
 	if len(opt.HideLogSpans) > 0 {
 		hide := make(map[dagui.SpanID]bool, len(opt.HideLogSpans))
@@ -373,8 +382,41 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 	}
 	return traceReportResult{
 		body:     buf.String(),
-		failures: traceFailureNavigation(db, db.Spans.Map[primary]),
+		failures: failureNav,
 	}, nil
+}
+
+// Expand only the selected span and paths to failed tests/checks or recorded
+// origins. Successful operations containing failed probes stay collapsed.
+// This is navigation policy, not inference of which error caused a failure.
+func failureReportExpansion(db *dagui.DB, root *dagui.Span) map[dagui.SpanID]bool {
+	expanded := map[dagui.SpanID]bool{}
+	for _, span := range db.Spans.Order {
+		expanded[span.ID] = false
+	}
+	mark := func(span *dagui.Span) {
+		seen := map[dagui.SpanID]bool{}
+		for p := span; p != nil && !seen[p.ID]; p = p.ParentSpan {
+			seen[p.ID] = true
+			expanded[p.ID] = true
+			if p == root {
+				break
+			}
+		}
+	}
+	mark(root)
+	for _, span := range db.Spans.Order {
+		if (span.TestCaseName != "" && (span.TestStatus.IsFailing() || span.IsFailedOrCausedFailure())) || (span.CheckName != "" && span.IsFailedOrCausedFailure()) {
+			mark(span)
+			for _, origin := range span.ErrorOrigins.Order {
+				mark(origin)
+			}
+		}
+	}
+	for _, origin := range root.ErrorOrigins.Order {
+		mark(origin)
+	}
+	return expanded
 }
 
 // Keep failure navigation independent of the tree and OUTPUT budgets. Names
@@ -404,8 +446,12 @@ func traceFailureNavigation(db *dagui.DB, root *dagui.Span) string {
 		for _, child := range span.ChildSpans.Order {
 			failedCheckBelow = walk(child) || failedCheckBelow
 		}
-		if node := view.BySpan[span.ID]; node != nil && node.SelfCounts().Failing > 0 {
-			named = append(named, entry{"test", node.FullName, span})
+		if span.TestCaseName != "" && (span.TestStatus.IsFailing() || span.IsFailedOrCausedFailure()) {
+			name := span.TestCaseName
+			if node := view.BySpan[span.ID]; node != nil {
+				name = node.FullName
+			}
+			named = append(named, entry{"test", name, span})
 		}
 		failedCheck := span.CheckName != "" && span.IsFailedOrCausedFailure()
 		if failedCheck && !failedCheckBelow {
@@ -451,6 +497,9 @@ func traceFailureNavigation(db *dagui.DB, root *dagui.Span) string {
 			name := clampLineBytes(strings.ReplaceAll(item.name, "\n", " "), 200)
 			id := item.span.ID.String()
 			line := fmt.Sprintf("%s %q [span=%s]\n  ReadTrace(span: %q)\n  ReadLogs(span: %q)\n", item.kind, name, id, id, id)
+			if msg := strings.TrimSpace(item.span.Status.Description); msg != "" {
+				line += "  error: " + clampLineBytes(strings.ReplaceAll(msg, "\n", " "), 300) + "\n"
+			}
 			if used+len(line) > budget-80 {
 				fmt.Fprintf(&out, "... %d more %s entries; follow a listed trace to narrow ...\n", len(entries)-i, item.kind)
 				break

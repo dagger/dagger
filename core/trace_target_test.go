@@ -65,15 +65,19 @@ func TestReadTraceSpanOnlySchema(t *testing.T) {
 	require.Contains(t, tool.Description, "FindSpans first")
 }
 
-// The LLM render path suggests finding a span before reading its trace, never
-// a check/test name selector or a `dagger check` command.
+// Known check IDs are used directly, without a redundant name search.
 func TestReadTraceRerunSuggestion(t *testing.T) {
-	heading, body := readTraceRerunSuggestion([]string{"ci:bootstrap", "go:lint"})
-	require.Equal(t, "SEE FULL TRACE", heading)
-	joined := strings.Join(body, "\n")
-	for _, want := range []string{`FindSpans(query: "ci:bootstrap")`, `FindSpans(query: "go:lint")`, "ReadTrace(span: <span ID>)"} {
-		require.Contains(t, joined, want)
+	store, ids := traceInspectStore(t)
+	session, err := loadTraceReportSession(t.Context(), store, ids["build"])
+	require.NoError(t, err)
+	db := session.DB()
+	// Select the failed build, independent of ingestion order.
+	for _, span := range db.Spans.Order {
+		if span.ID.String() == ids["build"] {
+			span.CheckName = "go:lint"
+		}
 	}
-	require.NotContains(t, joined, "ReadTrace(check:")
-	require.NotContains(t, joined, "dagger check")
+	heading, body := readTraceRerunSuggestion(db, []string{"go:lint"})
+	require.Equal(t, "SEE FULL TRACE", heading)
+	require.Equal(t, []string{`ReadTrace(span: "` + ids["build"] + `")`}, body)
 }

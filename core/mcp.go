@@ -2811,7 +2811,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
 		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of three views." + "\n" +
-			"- report (default): the trace report -- the span tree plus the CHECKS and TESTS sections, exactly as they appear at the end of a run. Tool results are abridged; this is how you see the full detail behind one." + "\n" +
+			"- report (default): a bounded trace report with recorded error origins first, failed check/test links separately, and diagnostic output. Failed scopes collapse successful work; follow the supplied span IDs to expand a branch rather than searching again." + "\n" +
 			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
 			"- timings: the span's raw-parent subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included; cause links are not traversed. Durations are each span's own wall interval, may overlap, and are not total execution or CPU self time. Imported spans with unrecorded completion have unknown duration." + "\n" +
 			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here." + "\n" +
@@ -3389,6 +3389,7 @@ func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
 func readTraceReportOpts() traceReportOpts {
 	opts := toolCallReportOpts()
 	opts.OwnOutputOnly = true
+	opts.FocusFailures = true
 	// ReadTrace is the "show me the shape of what ran" tool: it keeps the span
 	// tree the tool-call result drops.
 	opts.HideSpanTree = false
