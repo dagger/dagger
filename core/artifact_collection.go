@@ -276,9 +276,6 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 	group, ctx := errgroup.WithContext(ctx)
 	for i, template := range bound.Entries {
 		dims := template.DimensionDefinitions()
-		if !bound.matchesDimensionFilters(dims) {
-			continue
-		}
 		// An exact collection path without its dimension selects the collection.
 		if template.Node != nil && template.Node.CollectionDimension != nil && bound.hasExactPath(template.Path) && !bound.selectsDimension(template.Node.CollectionDimension.Identifier) {
 			continue

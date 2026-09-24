@@ -84,7 +84,7 @@ func TestArtifactEmptyDimensionKey(t *testing.T) {
 	}
 }
 
-func TestArtifactDimensionFlagPreparation(t *testing.T) {
+func TestArtifactDiscoveryRequired(t *testing.T) {
 	for _, tc := range []struct {
 		args     []string
 		discover bool
@@ -93,9 +93,7 @@ func TestArtifactDimensionFlagPreparation(t *testing.T) {
 		{[]string{"--go-module=."}, true}, {[]string{"--help"}, true}, {[]string{"--", "--literal-path"}, false},
 	} {
 		cmd := newListCommand()
-		discover, err := prepareArtifactDimensionFlags(cmd, tc.args)
-		require.NoError(t, err)
-		require.Equal(t, tc.discover, discover)
+		require.Equal(t, tc.discover, needsArtifactDiscovery(cmd, tc.args))
 		require.Nil(t, cmd.Flag("go-modules"), "preparation must not guess whether a flag takes a key")
 	}
 }

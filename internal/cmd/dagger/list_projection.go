@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 )
 
@@ -17,22 +16,18 @@ type artifactListPath struct {
 	Dimensions []string
 }
 
-type artifactListSchema struct {
-	DimensionDefinitions artifact.Dimensions
-	PathDefinitions      []artifactListPath
-}
-
-func readArtifactListSchema(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts) (artifactListSchema, error) {
+func readArtifactListPaths(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts) ([]artifactListPath, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
-		return artifactListSchema{}, err
+		return nil, err
 	}
-	var response struct{ Node artifactListSchema }
+	var response struct {
+		Node struct{ PathDefinitions []artifactListPath }
+	}
 	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!) { node(id: $id) { ... on Artifacts {
-  dimensionDefinitions { kind identifier name qualifiedName collectionType itemType keyName keyDescription }
   pathDefinitions(typeAssertion: true) { uri dimensions }
 } } }`, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
-	return response.Node, err
+	return response.Node.PathDefinitions, err
 }
 
 // Collection keys can select the item and its descendants. Omit the item's

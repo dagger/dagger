@@ -776,5 +776,9 @@ func (a *Artifacts) WithoutURI(address *dagaddress.Address) (*Artifacts, error) 
 	if err != nil {
 		return nil, err
 	}
+	excluded, err = excluded.SchemaSelection()
+	if err != nil {
+		return nil, err
+	}
 	return a.WithoutArtifacts(excluded)
 }

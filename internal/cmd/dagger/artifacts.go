@@ -303,11 +303,11 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 			filter := *addr
 			filter.Query = append(slices.Clone(addr.Query), flags...)
 			if slices.ContainsFunc(filter.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
-				schema, err := readArtifactListSchema(ctx, ec.Dagger(), artifacts)
+				paths, err := readArtifactListPaths(ctx, ec.Dagger(), artifacts)
 				if err != nil {
 					return err
 				}
-				if err := resolveArtifactTypeKeys(schema.PathDefinitions, filter.Query); err != nil {
+				if err := resolveArtifactTypeKeys(paths, filter.Query); err != nil {
 					return err
 				}
 			}

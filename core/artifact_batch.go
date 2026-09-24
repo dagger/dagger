@@ -65,7 +65,6 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 			receiver := *item
 			receiver.Name, receiver.Type, receiver.DagqlServer = "batch", typ.Value, srv
 			replacement, err := receiver.Child(ctx, target.Name)
-			replacement = projectArtifactNode(replacement)
 			if err != nil {
 				return nil, err
 			}

@@ -61,11 +61,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 	}
 	if !discover {
 		_, rawCommandArgs := resolveCommand(root, rawArgs)
-		var err error
-		discover, err = prepareArtifactDimensionFlags(cmd, rawCommandArgs)
-		if err != nil {
-			return err
-		}
+		discover = needsArtifactDiscovery(cmd, rawCommandArgs)
 	}
 	if cmd == listCmd {
 		var all bool
@@ -95,14 +91,8 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 			if err := withEngineSilent(ctx, params, loadListCommands); err != nil {
 				return err
 			}
-			cmd, _ = resolveCommand(root, args)
 		}
 		if err := listCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes); err != nil {
-			return err
-		}
-		if cmd != listCmd {
-			_, rawCommandArgs := resolveCommand(root, rawArgs)
-			_, err := prepareArtifactDimensionFlags(cmd, rawCommandArgs)
 			return err
 		}
 		return nil
@@ -191,7 +181,7 @@ func addListCommand(name, short, group, key, value string) {
 
 // Unknown flags require schema metadata before Cobra can distinguish keys from
 // whole-collection booleans. Do not guess from singular or plural spelling.
-func prepareArtifactDimensionFlags(cmd *cobra.Command, args []string) (bool, error) {
+func needsArtifactDiscovery(cmd *cobra.Command, args []string) bool {
 	cmd.InitDefaultHelpFlag()
 	flags := copyCommandFlags(cmd, "artifact dimensions")
 	flags.ParseErrorsAllowlist.UnknownFlags = false
@@ -202,8 +192,5 @@ func prepareArtifactDimensionFlags(cmd *cobra.Command, args []string) (bool, err
 		}
 		return nil
 	})
-	if err != nil {
-		return true, nil
-	}
-	return help, nil
+	return err != nil || help
 }

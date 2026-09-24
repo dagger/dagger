@@ -314,10 +314,6 @@ func (s *artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifa
 	if err != nil {
 		return nil, err
 	}
-	dimension, err = parent.ResolveDimension(args.Dimension)
-	if err != nil {
-		return nil, err
-	}
 	return (&core.Artifacts{Entries: items}).DimensionKeys(dimension), nil
 }
 func (*artifactsSchema) dimensionItems(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]*core.Artifact, error) {

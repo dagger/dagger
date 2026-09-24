@@ -37,15 +37,15 @@ func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.C
 			return nil, err
 		}
 	}
-	schema, err := readArtifactListSchema(ctx, dag, all)
+	paths, err := readArtifactListPaths(ctx, dag, all)
 	if err != nil {
 		return nil, err
 	}
-	index, err := newArtifactNameIndex(schema.PathDefinitions)
+	index, err := newArtifactNameIndex(paths)
 	if err != nil {
 		return nil, err
 	}
-	if err := omitCollectionTypeKeys(items, schema.PathDefinitions); err != nil {
+	if err := omitCollectionTypeKeys(items, paths); err != nil {
 		return nil, err
 	}
 

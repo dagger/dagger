@@ -114,11 +114,11 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 			if err != nil {
 				return nil, err
 			}
-			schema, err := readArtifactListSchema(ctx, dag, targets)
+			paths, err := readArtifactListPaths(ctx, dag, targets)
 			if err != nil {
 				return nil, err
 			}
-			if err := resolveArtifactTypeKeys(schema.PathDefinitions, filter.Query); err != nil {
+			if err := resolveArtifactTypeKeys(paths, filter.Query); err != nil {
 				return nil, err
 			}
 		}

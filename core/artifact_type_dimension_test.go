@@ -5,8 +5,40 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/stretchr/testify/require"
 )
+
+func TestArtifactStaticDimensionExclusions(t *testing.T) {
+	all := &Artifacts{Entries: []*Artifact{
+		{Path: []string{"lint"}, TypeName: "Check"},
+		{Path: []string{"test"}, TypeName: "Check"},
+		{Path: []string{"build"}, TypeName: "Container"},
+	}}
+	for _, tc := range []struct {
+		uri  string
+		want []string
+	}{
+		{"dag://?type:Check=lint", []string{"test", "build"}},
+		{"dag://?type:Check=missing", []string{"lint", "test", "build"}},
+		{"dag://?type:Check", []string{"build"}},
+		{"dag://?unknown=value", []string{"lint", "test", "build"}},
+	} {
+		t.Run(tc.uri, func(t *testing.T) {
+			address, err := dagaddress.Parse(tc.uri)
+			require.NoError(t, err)
+			selected, err := all.WithoutURI(address)
+			require.NoError(t, err)
+			selected, err = selected.Expand(t.Context())
+			require.NoError(t, err)
+			var paths []string
+			for _, entry := range selected.Entries {
+				paths = append(paths, entry.Path[0])
+			}
+			require.Equal(t, tc.want, paths)
+		})
+	}
+}
 
 func TestArtifactTypeDimensionPrunesBeforeExpansion(t *testing.T) {
 	all := &Artifacts{Entries: []*Artifact{{Path: []string{"static"}, TypeName: "Container"}}}
