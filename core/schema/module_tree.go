@@ -91,7 +91,7 @@ func hostTreeModuleSource(
 	}
 	// The module's files are on the host of the client that loaded it, not of
 	// the process calling serveModule.
-	hostMetadata, err := query.NonModuleParentClientMetadata(ctx)
+	hostMetadata, err := query.ModuleParentHostClientMetadata(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -111,19 +111,20 @@ func hostTreeModuleSource(
 	if rel, err := filepath.Rel(realRoot, realTarget); err != nil || (!filepath.IsLocal(rel) && rel != ".") {
 		return inst, fmt.Errorf("%q leaves the module's own tree through a symlink", target)
 	}
-	err = dag.Select(hostCtx, dag.Root(), &inst, dagql.Selector{
-		Field: "moduleSource",
-		Args: []dagql.NamedInput{
-			{Name: "refString", Value: dagql.String(filepath.Join(root, target))},
-			{Name: "disableFindUp", Value: dagql.Boolean(true)},
-			{Name: "requireKind", Value: dagql.Opt(core.ModuleSourceKindLocal)},
+	// Loaded as a directory, like a git tree: a local module source reads its
+	// files through the calling process, whose container does not hold them.
+	var tree dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(hostCtx, dag.Root(), &tree,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(root)},
+				{Name: "exclude", Value: dagql.ArrayInput[dagql.String]{".git"}},
+			},
 		},
-	})
-	if err != nil {
+	); err != nil {
 		return inst, err
 	}
-	if !inst.Self().ConfigExists {
-		return inst, fmt.Errorf("%q holds no module config", target)
-	}
-	return inst, nil
+	return directoryTreeModuleSource(ctx, dag, tree, target)
 }
