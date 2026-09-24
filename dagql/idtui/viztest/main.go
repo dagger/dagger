@@ -13,6 +13,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -125,35 +126,68 @@ func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
 	return errors.Join(err1, err2)
 }
 
-const testSummarySuite = "viztest summary"
+const testSummarySuite = "github.com/dagger/dagger/dagql/idtui/viztest"
 
 // TestSummary emits a deterministic OpenTelemetry test summary.
 // +cache="never"
 // +check
 func (*Viztest) TestSummary(ctx context.Context) error {
-	ctx, suite := Tracer().Start(ctx, "viztest summary suite",
+	ctx, suite := Tracer().Start(ctx, "viztest",
 		trace.WithAttributes(
 			attribute.String("test.suite.name", testSummarySuite),
-			attribute.String("test.suite.run.status", "success"),
+			attribute.String("test.suite.run.status", "failure"),
 		))
 	defer suite.End()
+
+	fullName := "TestProvision"
+	ctx, continuation := startParallelTestSummaryCase(ctx, fullName, fullName)
+	defer continuation.End()
 
 	emitTestSummaryCase(ctx, "passing test 01", "pass")
 	emitTestSummaryCase(ctx, "passing test 02", "pass")
 	for i := 1; i <= 2; i++ {
 		emitTestSummaryCase(ctx, fmt.Sprintf("skipped test %02d", i), "skipped")
 	}
-	emitTestSummaryCase(ctx, "failed test 01", "fail")
-	return nil
+	// Abbreviate TestImageDriverGarbageCollectEngines to keep the complete
+	// failing leaf visible within the report's normal 80-column width.
+	for _, name := range []string{"TestEngineGC", "docker", "cleanup"} {
+		fullName += "/" + name
+		ctx, continuation = startParallelTestSummaryCase(ctx, name, fullName)
+		defer continuation.End()
+	}
+
+	// gotest keeps logs on the original test span, even after PAUSE ends it.
+	stdio := telemetry.SpanStdio(ctx, "")
+	fmt.Fprintln(stdio.Stdout, "cleanup: unable to garbage collect engine")
+	stdio.Close()
+	return errors.New("nested test failed")
+}
+
+func startParallelTestSummaryCase(ctx context.Context, name, fullName string) (context.Context, trace.Span) {
+	// Match gotest at every level, including the failing leaf: the boundary
+	// setup span ends at PAUSE with no status. Only the linked continuation
+	// fails. Subtests and logs still belong to the original setup span.
+	ctx, setup := Tracer().Start(ctx, name,
+		trace.WithAttributes(
+			attribute.String("test.case.name", fullName),
+			attribute.String("test.suite.name", testSummarySuite),
+		), telemetry.Boundary())
+	setup.End()
+	_, continuation := Tracer().Start(ctx, "continue",
+		telemetry.Passthrough(),
+		trace.WithLinks(trace.Link{SpanContext: setup.SpanContext()}))
+	continuation.SetStatus(codes.Error, "test failed")
+	continuation.SetAttributes(attribute.String("test.suite.run.status", "failure"))
+	return ctx, continuation
 }
 
 func emitTestSummaryCase(ctx context.Context, name, status string) {
 	ctx, span := Tracer().Start(ctx, name,
 		trace.WithAttributes(
-			attribute.String("test.case.name", testSummarySuite+"/"+name),
+			attribute.String("test.case.name", "TestProvision/"+name),
 			attribute.String("test.suite.name", testSummarySuite),
 			attribute.String("test.case.result.status", status),
-		))
+		), telemetry.Boundary())
 	stdio := telemetry.SpanStdio(ctx, "")
 	fmt.Fprintf(stdio.Stdout, "%s log line 1\n", name)
 	fmt.Fprintf(stdio.Stdout, "%s log line 2\n", name)

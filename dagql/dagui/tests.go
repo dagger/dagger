@@ -467,7 +467,7 @@ func (idx *TestIndex) buildViewForSpan(root *Span) *TestView {
 		if span == nil {
 			continue
 		}
-		if !spanMayRollUp(span, root, nil) {
+		if !testMayRollUp(span, root, nil) {
 			continue
 		}
 		kind, name, fullName, suiteName, ok := testNodeMetadata(span)
@@ -607,7 +607,7 @@ func (idx *TestIndex) globalTestStructureChanged(updated *Span) bool {
 			continue
 		}
 		idx.structureCheckCount++
-		included := spanMayRollUp(span, nil, nil)
+		included := testMayRollUp(span, nil, nil)
 		previous, signed := idx.globalIncluded[id]
 		if !signed {
 			if span.ParentID.IsValid() && span.ParentSpan == nil {
@@ -630,7 +630,7 @@ func (idx *TestIndex) globalTestStructureChanged(updated *Span) bool {
 		}
 		var parentID SpanID
 		if included {
-			spanMayRollUp(span, nil, func(parent *Span) {
+			testMayRollUp(span, nil, func(parent *Span) {
 				if !parentID.IsValid() && testSpanHasNode(parent) {
 					parentID = parent.ID
 				}
@@ -716,7 +716,7 @@ func (idx *TestIndex) rebuildStructure() {
 	idx.spanStructure = make(map[SpanID]testSpanStructure)
 	for id, span := range idx.knownTestSpans {
 		idx.indexTestAncestors(id, span)
-		included := spanMayRollUp(span, nil, nil)
+		included := testMayRollUp(span, nil, nil)
 		idx.globalIncluded[id] = included
 		if !included {
 			continue
@@ -898,6 +898,32 @@ func (idx *TestIndex) updateNodeAggregate(node *TestNode) {
 		current.Counts = counts.add(current.SelfCounts())
 		current.Category = aggregateTestCategory(current.Kind, current.SelfCategory, current.Counts)
 	}
+}
+
+// testMayRollUp follows the same root-relative containment as spanMayRollUp,
+// except that test boundaries contain implementation work, not subtests. Test
+// producers mark every case as a boundary; honoring those boundaries here would
+// reduce an entire test hierarchy to its outermost suite or case. Non-test
+// boundaries (notably agent tool calls) and encapsulation still contain tests.
+func testMayRollUp(span, root *Span, visit func(*Span)) bool {
+	if span == nil {
+		return false
+	}
+	if span == root {
+		return true
+	}
+	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+		if visit != nil {
+			visit(parent)
+		}
+		if parent == root {
+			return true
+		}
+		if parent.Encapsulate || (parent.Boundary && !testSpanHasNode(parent)) {
+			return false
+		}
+	}
+	return root == nil
 }
 
 func testSpanHasNode(span *Span) bool {
