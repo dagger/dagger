@@ -33,41 +33,41 @@ func (llm *LLM) WarnToolNameCollisions(ctx context.Context) {
 	}
 }
 
-// AgentMiddleware retains a callable @agent field, including its source workspace.
+// Expertise retains a callable @agent field, including its source workspace.
 // It does not evaluate the function until it receives a base conversation.
-type AgentMiddleware struct {
+type Expertise struct {
 	Artifact *Artifact
 }
 
-func (*AgentMiddleware) Type() *ast.Type {
-	return &ast.Type{NamedType: "AgentMiddleware", NonNull: true}
+func (*Expertise) Type() *ast.Type {
+	return &ast.Type{NamedType: "Expertise", NonNull: true}
 }
 
-func (*AgentMiddleware) TypeDescription() string {
+func (*Expertise) TypeDescription() string {
 	return "An agent function that can modify a conversation."
 }
 
-func NewAgentMiddleware(artifact *Artifact) (*AgentMiddleware, error) {
-	if artifact.TypeName != "AgentMiddleware" || !slices.Contains(artifact.Directives, "agent") || artifact.Node == nil || artifact.Node.OriginalModule.Self() == nil {
+func NewExpertise(artifact *Artifact) (*Expertise, error) {
+	if artifact.TypeName != "Expertise" || !slices.Contains(artifact.Directives, "agent") || artifact.Node == nil || artifact.Node.OriginalModule.Self() == nil {
 		uri, err := artifact.URI(ArtifactURIOpts{DimensionKeys: true})
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("%s is not an agent middleware", uri)
+		return nil, fmt.Errorf("%s is not a source of expertise", uri)
 	}
-	return &AgentMiddleware{Artifact: artifact.Clone()}, nil
+	return &Expertise{Artifact: artifact.Clone()}, nil
 }
 
-func (a *AgentMiddleware) Clone() *AgentMiddleware {
-	return &AgentMiddleware{Artifact: a.Artifact.Clone()}
+func (a *Expertise) Clone() *Expertise {
+	return &Expertise{Artifact: a.Artifact.Clone()}
 }
 
-func (a *AgentMiddleware) Name() string            { return a.Artifact.Node.CommandName() }
-func (a *AgentMiddleware) Description() string     { return a.Artifact.Node.Description }
-func (a *AgentMiddleware) Path() []string          { return a.Artifact.Node.Path() }
-func (a *AgentMiddleware) OriginalModule() *Module { return a.Artifact.Node.OriginalModule.Self() }
+func (a *Expertise) Name() string            { return a.Artifact.Node.CommandName() }
+func (a *Expertise) Description() string     { return a.Artifact.Node.Description }
+func (a *Expertise) Path() []string          { return a.Artifact.Node.Path() }
+func (a *Expertise) OriginalModule() *Module { return a.Artifact.Node.OriginalModule.Self() }
 
-func (a *AgentMiddleware) Run(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+func (a *Expertise) Run(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	var result dagql.ObjectResult[*LLM]
 	ctx, err := WorkspaceClientContext(ctx, a.Artifact.Workspace.Self())
 	if err != nil {
@@ -95,28 +95,28 @@ func (a *AgentMiddleware) Run(ctx context.Context, base dagql.ObjectResult[*LLM]
 	return result, fmt.Errorf("agent %q has no LLM argument", a.Name())
 }
 
-func (a *AgentMiddleware) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+func (a *Expertise) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
 	return a.Artifact.EncodePersistedObject(ctx, enc)
 }
-func (*AgentMiddleware) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
+func (*Expertise) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	artifact, err := (*Artifact)(nil).DecodePersistedObject(ctx, dec, raw)
 	if err != nil {
 		return nil, err
 	}
-	return &AgentMiddleware{Artifact: artifact.(*Artifact)}, nil
+	return &Expertise{Artifact: artifact.(*Artifact)}, nil
 }
-func (a *AgentMiddleware) AttachDependencyResults(ctx context.Context, owner dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+func (a *Expertise) AttachDependencyResults(ctx context.Context, owner dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	return a.Artifact.AttachDependencyResults(ctx, owner, attach)
 }
 
-// ComposeAgents passes the conversation through the middleware in list order.
-// Existing contributions are retained; use RecomposeAgents to replace them.
-func ComposeAgents(ctx context.Context, base dagql.ObjectResult[*LLM], agents []*AgentMiddleware) (dagql.ObjectResult[*LLM], error) {
+// ComposeExpertise passes the conversation through the expertise in list order.
+// Existing contributions are retained; use RecomposeExpertise to replace them.
+func ComposeExpertise(ctx context.Context, base dagql.ObjectResult[*LLM], expertise []*Expertise) (dagql.ObjectResult[*LLM], error) {
 	acc := base
-	for _, agent := range agents {
-		next, err := agent.Run(ctx, acc)
+	for _, entry := range expertise {
+		next, err := entry.Run(ctx, acc)
 		if err != nil {
-			return base, fmt.Errorf("compose agent %q: %w", agent.Name(), err)
+			return base, fmt.Errorf("compose agent %q: %w", entry.Name(), err)
 		}
 		acc = next
 	}

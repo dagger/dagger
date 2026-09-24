@@ -192,10 +192,10 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "--check=verify\n", out)
 	_, err = base.With(workspaceSelectionDaggerExec("check", "dag://"+ref+":verify")).Sync(ctx)
 	require.NoError(t, err)
-	for _, typ := range []string{"AgentMiddleware", "agent-middleware"} {
+	for _, typ := range []string{"Expertise", "expertise"} {
 		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "list", "-a", "-f=link", "--type", typ)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+agent-middleware://assistant\n", out)
+		require.Equal(t, "dag+expertise://assistant\n", out)
 	}
 
 	for _, tc := range []struct {
@@ -217,7 +217,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 				out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 				require.NoError(t, err)
 				var want []string
-				typ := map[string]string{"list": "container", "check": "check", "generate": "generator", "up": "service", "agent": "agent-middleware", "shell": "container"}[tc.args[0]]
+				typ := map[string]string{"list": "container", "check": "check", "generate": "generator", "up": "service", "agent": "expertise", "shell": "container"}[tc.args[0]]
 				for _, path := range tc.paths {
 					address := strings.Replace(strings.TrimSuffix(uri, "base")+path, "dag://", "dag+"+typ+"://", 1)
 					want = append(want, address)
@@ -1265,11 +1265,11 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *dagger.Wor
 			return nil, fmt.Errorf("%s", message)
 		}
 	}
-	agents, err := artifacts.FilterAgentCommand().AsAgentMiddlewares(ctx)
+	agents, err := artifacts.FilterAgentCommand().AsExpertise(ctx)
 	if err != nil {
 		return nil, err
 	}
-	refs := make([]*dagger.AgentMiddleware, len(agents))
+	refs := make([]*dagger.Expertise, len(agents))
 	for i := range agents {
 		refs[i] = &agents[i]
 	}

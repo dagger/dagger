@@ -168,13 +168,13 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cm
 		return "", err
 	}
 	selection := all.FilterAgentCommand()
-	middlewares, err := selection.AsAgentMiddlewares(ctx)
+	expertise, err := selection.AsExpertise(ctx)
 	if err != nil {
 		return "", err
 	}
-	refs := make([]*dagger.AgentMiddleware, len(middlewares))
-	for i := range middlewares {
-		refs[i] = &middlewares[i]
+	refs := make([]*dagger.Expertise, len(expertise))
+	for i := range expertise {
+		refs[i] = &expertise[i]
 	}
 	id, err := dag.LLM().WithWorkspace(workspace).Compose(refs).ID(ctx)
 	return string(id), err

@@ -63,13 +63,13 @@ func TestToolStateIdentity(t *testing.T) {
 	})
 }
 
-func TestAgentMiddlewareConversion(t *testing.T) {
+func TestExpertiseConversion(t *testing.T) {
 	srv := newCoreDagqlServerForTest(t, &Query{})
 	installModuleObjectTestModuleClass(srv)
 	mod := newTypeDefDetachedResult(t, srv, "agent-module", &Module{NameField: "agent"})
-	artifact := &Artifact{Path: []string{"agent", "configure"}, TypeName: "LLM", Directives: []string{"agent"},
+	artifact := &Artifact{Path: []string{"agent", "configure"}, TypeName: "Expertise", Directives: []string{"agent"},
 		Node: &ModTreeNode{Name: "configure", OriginalModule: mod}}
-	agent, err := NewAgentMiddleware(artifact)
+	agent, err := NewExpertise(artifact)
 	require.NoError(t, err)
 	require.Equal(t, "agent", agent.OriginalModule().Name())
 	// References keep their own metadata wrappers, independent of the selection.
@@ -79,7 +79,7 @@ func TestAgentMiddlewareConversion(t *testing.T) {
 		{Path: []string{"unmarked"}, TypeName: "LLM", Node: artifact.Node},
 		{Path: []string{"wrong-type"}, TypeName: "Container", Directives: []string{"agent"}, Node: artifact.Node},
 	} {
-		_, err := NewAgentMiddleware(invalid)
-		require.ErrorContains(t, err, "not an agent middleware")
+		_, err := NewExpertise(invalid)
+		require.ErrorContains(t, err, "not a source of expertise")
 	}
 }

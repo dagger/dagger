@@ -579,7 +579,7 @@ func artifactProjectedTypeName(node *ModTreeNode) string {
 		}
 	case "LLM":
 		if slices.Contains(node.Directives, "agent") {
-			target = "AgentMiddleware"
+			target = "Expertise"
 		}
 	}
 	return target

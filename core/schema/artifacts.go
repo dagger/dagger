@@ -52,7 +52,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		Description: "The evaluated value, or null when evaluation failed."}, s.resultValue)
 	dagql.Fields[*core.ArtifactDimensionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
-		dagql.NodeFunc("asAgentMiddlewares", s.asAgentMiddlewares).Doc("Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware."),
+		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise."),
 		dagql.NodeFunc("asGenerators", s.asGenerators).Doc("Convert the selection to Generators without running them. Fail if any artifact is not a Generator."),
 		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
@@ -64,7 +64,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
 		dagql.Func("filterCheckCommand", s.filterCheckCommand).Doc("Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.").Args(dagql.Arg("generated").Doc("Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.")),
 		dagql.Func("filterGenerateCommand", s.filterGenerateCommand).Doc("Select Generator artifacts, using each workspace's generator settings."),
-		dagql.Func("filterAgentCommand", s.filterAgentCommand).Doc("Select AgentMiddleware artifacts."),
+		dagql.Func("filterAgentCommand", s.filterAgentCommand).Doc("Select Expertise artifacts."),
 		dagql.Func("filterUpCommand", s.filterUpCommand).Doc("Select Service artifacts, using each workspace's service settings. Does not require the up directive."),
 		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive. Does not filter by type or workspace settings.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterParentTypes", s.filterParentTypes).Doc("Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
@@ -91,8 +91,8 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("__generator", func(ctx context.Context, a *core.Artifact, args struct{ Arguments core.JSON }) (*core.Generator, error) {
 			return newArtifactGenerator(ctx, a, args.Arguments)
 		}),
-		dagql.Func("__agentMiddleware", func(_ context.Context, a *core.Artifact, _ struct{}) (*core.AgentMiddleware, error) {
-			return core.NewAgentMiddleware(a)
+		dagql.Func("__expertise", func(_ context.Context, a *core.Artifact, _ struct{}) (*core.Expertise, error) {
+			return core.NewExpertise(a)
 		}),
 		dagql.Func("__remoteCheck", s.remoteCheck),
 		dagql.Func("__failedCheck", s.failedCheck),
@@ -452,11 +452,11 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 	case "Generator":
 		err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__generator", Args: []dagql.NamedInput{{Name: "arguments", Value: arguments}}})
 		return result, err
-	case "AgentMiddleware":
+	case "Expertise":
 		if len(inputs) != 0 {
-			return nil, fmt.Errorf("AgentMiddleware receives its LLM through LLM.compose; artifact arguments are not supported")
+			return nil, fmt.Errorf("Expertise receives its LLM through LLM.compose; artifact arguments are not supported")
 		}
-		err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__agentMiddleware"})
+		err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__expertise"})
 		return result, err
 	case "Check":
 		if artifact.Node != nil && artifact.Node.Name == "stale" && artifact.Node.Parent.ObjectType() != nil && artifact.Node.Parent.ObjectType().Name == "Generator" {
@@ -873,7 +873,7 @@ func (*artifactsSchema) filterUpCommand(ctx context.Context, parent *core.Artifa
 }
 
 func (*artifactsSchema) filterAgentCommand(_ context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
-	return parent.FilterTypes([]string{"AgentMiddleware"}, false), nil
+	return parent.FilterTypes([]string{"Expertise"}, false), nil
 }
 
 type artifactWorkspacePolicy struct {
@@ -1105,8 +1105,8 @@ func (*artifactsSchema) loadError(_ context.Context, artifact *core.Artifact, _ 
 	return "", nil
 }
 
-func (*artifactsSchema) asAgentMiddlewares(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.AgentMiddleware], error) {
-	return artifactValuesAs[*core.AgentMiddleware](ctx, parent)
+func (*artifactsSchema) asExpertise(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Expertise], error) {
+	return artifactValuesAs[*core.Expertise](ctx, parent)
 }
 func (*artifactsSchema) asGenerators(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Generator], error) {
 	return artifactValuesAs[*core.Generator](ctx, parent)

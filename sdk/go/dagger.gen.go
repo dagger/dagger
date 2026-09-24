@@ -945,114 +945,6 @@ func (r *AgentMessage) AsNode() Node {
 	}
 }
 
-// An agent function that can modify a conversation.
-type AgentMiddleware struct {
-	query *querybuilder.Selection
-
-	description *string
-	id          *ID
-	name        *string
-}
-
-func (r *AgentMiddleware) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddleware {
-	return &AgentMiddleware{
-		query: q,
-	}
-}
-
-// The agent function's description.
-func (r *AgentMiddleware) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this AgentMiddleware.
-func (r *AgentMiddleware) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *AgentMiddleware) XXX_GraphQLType() string {
-	return "AgentMiddleware"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *AgentMiddleware) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *AgentMiddleware) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *AgentMiddleware) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// The agent function's name.
-func (r *AgentMiddleware) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The module that defines the agent function.
-func (r *AgentMiddleware) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// The agent function's path within its module.
-func (r *AgentMiddleware) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// AsNode returns this AgentMiddleware as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *AgentMiddleware) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
 // One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
 type Artifact struct {
 	query *querybuilder.Selection
@@ -1774,39 +1666,6 @@ func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
 	}
 }
 
-// Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware.
-func (r *Artifacts) AsAgentMiddlewares(ctx context.Context) ([]AgentMiddleware, error) {
-	q := r.query.Select("asAgentMiddlewares")
-
-	q = q.Select("id")
-
-	type asAgentMiddlewares struct {
-		Id ID
-	}
-
-	convert := func(fields []asAgentMiddlewares) []AgentMiddleware {
-		out := []AgentMiddleware{}
-
-		for i := range fields {
-			val := AgentMiddleware{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "AgentMiddleware")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []asAgentMiddlewares
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
 // Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
 func (r *Artifacts) AsChangesets(ctx context.Context) ([]Changeset, error) {
 	q := r.query.Select("asChangesets")
@@ -1862,6 +1721,39 @@ func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
 		return out
 	}
 	var response []asChecks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+func (r *Artifacts) AsExpertise(ctx context.Context) ([]Expertise, error) {
+	q := r.query.Select("asExpertise")
+
+	q = q.Select("id")
+
+	type asExpertise struct {
+		Id ID
+	}
+
+	convert := func(fields []asExpertise) []Expertise {
+		out := []Expertise{}
+
+		for i := range fields {
+			val := Expertise{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Expertise")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asExpertise
 
 	q = q.Bind(&response)
 
@@ -2027,7 +1919,7 @@ func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Select AgentMiddleware artifacts.
+// Select Expertise artifacts.
 func (r *Artifacts) FilterAgentCommand() *Artifacts {
 	q := r.query.Select("filterAgentCommand")
 
@@ -8439,6 +8331,114 @@ func (r *ErrorValue) AsNode() Node {
 	}
 }
 
+// An agent function that can modify a conversation.
+type Expertise struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	name        *string
+}
+
+func (r *Expertise) WithGraphQLQuery(q *querybuilder.Selection) *Expertise {
+	return &Expertise{
+		query: q,
+	}
+}
+
+// The agent function's description.
+func (r *Expertise) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Expertise.
+func (r *Expertise) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Expertise) XXX_GraphQLType() string {
+	return "Expertise"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Expertise) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Expertise) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Expertise) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The agent function's name.
+func (r *Expertise) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module that defines the agent function.
+func (r *Expertise) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The agent function's path within its module.
+func (r *Expertise) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Expertise as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Expertise) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a field on a custom object defined in a Module.
 //
 // A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
@@ -9186,7 +9186,7 @@ func (r *Function) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Returns the function with a flag indicating it is an agent middleware.
+// Returns the function with a flag indicating it is a source of expertise.
 //
 // Experimental: Agent APIs are likely to change.
 func (r *Function) WithAgent() *Function {
@@ -12411,10 +12411,10 @@ func (r *LLM) Agent(handle string, name string) *Agent {
 	}
 }
 
-// Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.
-func (r *LLM) Compose(agents []*AgentMiddleware) *LLM {
+// Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+func (r *LLM) Compose(expertise []*Expertise) *LLM {
 	q := r.query.Select("compose")
-	q = q.Arg("agents", agents)
+	q = q.Arg("expertise", expertise)
 
 	return &LLM{
 		query: q,
@@ -12648,14 +12648,14 @@ func (r *LLM) ReasoningEffort(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.
+// Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
 //
 // Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
 //
 // A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
-func (r *LLM) Recompose(agents []*AgentMiddleware) *LLM {
+func (r *LLM) Recompose(expertise []*Expertise) *LLM {
 	q := r.query.Select("recompose")
-	q = q.Arg("agents", agents)
+	q = q.Arg("expertise", expertise)
 
 	return &LLM{
 		query: q,

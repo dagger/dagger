@@ -766,9 +766,9 @@ class Module:
         self,
         func: Func[P, R] | None = None,
     ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
-        """Mark a function as an agent middleware.
+        """Mark a function as a source of expertise.
 
-        Agent middlewares take a base :py:class:`dagger.LLM` and return an
+        These functions take a base :py:class:`dagger.LLM` and return an
         ``LLM`` with the module's tools and prompting folded onto it. They are
         discovered and composed by ``dagger agent``. Besides the base ``LLM``,
         an agent function may not declare any other required argument. This
@@ -786,7 +786,7 @@ class Module:
         Parameters
         ----------
         func:
-            The function to mark as an agent middleware. Should be an instance
+            The function to mark as a source of expertise. Should be an instance
             method in a class decorated with :py:meth:`object_type`.
         """
 

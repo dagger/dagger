@@ -50,6 +50,7 @@ func TestArtifactDimensionHelp(t *testing.T) {
 		{Identifier: "Go.modules", Name: "go-module", QualifiedName: "go-modules", ItemType: "GoModule", CollectionType: "GoModules", KeyName: "path"},
 		{Identifier: "type:GoModule", Kind: "TYPE", Name: "go-module", ItemType: "GoModule", KeyName: "name"},
 		{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check", KeyName: "name"},
+		{Identifier: "type:Expertise", Kind: "TYPE", Name: "expertise", ItemType: "Expertise", KeyName: "name"},
 	}
 	cmd := &cobra.Command{Use: "check"}
 	registerCommandArtifactFlags(cmd)
@@ -61,6 +62,7 @@ func TestArtifactDimensionHelp(t *testing.T) {
 	require.Contains(t, help, "--artifact-go-module NAME")
 	require.NotContains(t, help, "stringArray")
 	require.Contains(t, cmd.Flag("artifact-go-module").Usage, "values: 'dagger list -a --type=GoModule'")
+	require.Equal(t, "Select expertise by `name`. values: 'dagger list expertise'", cmd.Flag("expertise").Usage)
 	keys, err := artifactKeyFlags(cmd)
 	require.NoError(t, err)
 	require.Contains(t, keys, dagaddress.Pair{Dimension: "Go.modules"})

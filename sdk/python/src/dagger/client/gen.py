@@ -1420,108 +1420,6 @@ class AgentMessage(Type):
 
 
 @typecheck
-class AgentMiddleware(Type):
-    """An agent function that can modify a conversation."""
-
-    async def description(self) -> str:
-        """The agent function's description.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("description", _args)
-        return await _ctx.execute(str)
-
-    async def id(self) -> str:
-        """A unique identifier for this AgentMiddleware.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def name(self) -> str:
-        """The agent function's name.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-    def original_module(self) -> "Module":
-        """The module that defines the agent function."""
-        _args: list[Arg] = []
-        _ctx = self._select("originalModule", _args)
-        return Module(_ctx)
-
-    async def path(self) -> list[str]:
-        """The agent function's path within its module.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("path", _args)
-        return await _ctx.execute(list[str])
-
-
-@typecheck
 class Artifact(Type):
     """One workspace value with a complete path and all required dimension
     keys. Reading metadata does not evaluate the value. Different
@@ -1805,7 +1703,8 @@ class ArtifactDimension(Type):
         return await _ctx.execute(str)
 
     async def key_description(self) -> str:
-        """The collection key argument description, or empty for a type dimension.
+        """The collection key argument description, or empty for a type
+        dimension.
 
         Returns
         -------
@@ -2129,14 +2028,6 @@ class Artifacts(Type):
     alternatives and unknown names match nothing. Filters never change
     addresses or dimension identifiers."""
 
-    async def as_agent_middlewares(self) -> list[AgentMiddleware]:
-        """Convert the selection to agent middleware without running the
-        functions. Fail if any artifact is not an agent middleware.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("asAgentMiddlewares", _args)
-        return await _ctx.execute_object_list(AgentMiddleware)
-
     async def as_changesets(self) -> list["Changeset"]:
         """Convert the selection to Changesets. Fail if any artifact is not a
         Changeset. Does not apply command filters.
@@ -2152,6 +2043,14 @@ class Artifacts(Type):
         _args: list[Arg] = []
         _ctx = self._select("asChecks", _args)
         return await _ctx.execute_object_list(Check)
+
+    async def as_expertise(self) -> list["Expertise"]:
+        """Convert the selection to expertise without running the functions. Fail
+        if any artifact is not a source of expertise.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asExpertise", _args)
+        return await _ctx.execute_object_list(Expertise)
 
     async def as_generators(self) -> list["Generator"]:
         """Convert the selection to Generators without running them. Fail if any
@@ -2235,7 +2134,7 @@ class Artifacts(Type):
         return await _ctx.execute(list[str])
 
     def filter_agent_command(self) -> Self:
-        """Select AgentMiddleware artifacts."""
+        """Select Expertise artifacts."""
         _args: list[Arg] = []
         _ctx = self._select("filterAgentCommand", _args)
         return Artifacts(_ctx)
@@ -8170,6 +8069,108 @@ class ErrorValue(Type):
 
 
 @typecheck
+class Expertise(Type):
+    """An agent function that can modify a conversation."""
+
+    async def description(self) -> str:
+        """The agent function's description.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this Expertise.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The agent function's name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def original_module(self) -> "Module":
+        """The module that defines the agent function."""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The agent function's path within its module.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
 class FieldTypeDef(Type):
     """A definition of a field on a custom object defined in a Module.  A
     field on an object has a static value, as opposed to a function on an
@@ -8805,7 +8806,8 @@ class Function(Type):
         return await _ctx.execute(str)
 
     def with_agent(self) -> Self:
-        """Returns the function with a flag indicating it is an agent middleware.
+        """Returns the function with a flag indicating it is a source of
+        expertise.
 
         .. caution::
             Experimental: Agent APIs are likely to change.
@@ -11829,18 +11831,17 @@ class LLM(Type):
         _ctx = self._select("agent", _args)
         return Agent(_ctx)
 
-    def compose(self, agents: list[AgentMiddleware]) -> Self:
-        """Run agent middleware in list order, passing this conversation through
-        each function. Retain existing contributions.
+    def compose(self, expertise: list[Expertise]) -> Self:
+        """Run expertise in list order, passing this conversation through each
+        function. Retain existing contributions.
 
         Parameters
         ----------
-        agents:
-            The agent middleware to run. Each reference retains its source
-            workspace.
+        expertise:
+            The expertise to run. Each reference retains its source workspace.
         """
         _args = [
-            Arg("agents", agents),
+            Arg("expertise", expertise),
         ]
         _ctx = self._select("compose", _args)
         return LLM(_ctx)
@@ -12118,9 +12119,9 @@ class LLM(Type):
         _ctx = self._select("reasoningEffort", _args)
         return await _ctx.execute(str)
 
-    def recompose(self, agents: list[AgentMiddleware]) -> Self:
-        """Run agent middleware in list order, replacing their modules'
-        contributions and preserving compatible tool state.
+    def recompose(self, expertise: list[Expertise]) -> Self:
+        """Run expertise in list order, replacing their modules' contributions
+        and preserving compatible tool state.
 
         Clear each selected module's contributions once before execution.
         Retain unowned contributions and contributions from other modules.
@@ -12131,12 +12132,11 @@ class LLM(Type):
 
         Parameters
         ----------
-        agents:
-            The agent middleware to run. Each reference retains its source
-            workspace.
+        expertise:
+            The expertise to run. Each reference retains its source workspace.
         """
         _args = [
-            Arg("agents", agents),
+            Arg("expertise", expertise),
         ]
         _ctx = self._select("recompose", _args)
         return LLM(_ctx)
@@ -19694,7 +19694,6 @@ __all__ = [
     "Agent",
     "AgentMessage",
     "AgentMessageDelivery",
-    "AgentMiddleware",
     "AgentState",
     "Artifact",
     "ArtifactDimension",
@@ -19733,6 +19732,7 @@ __all__ = [
     "Error",
     "ErrorValue",
     "ExistsType",
+    "Expertise",
     "Exportable",
     "FieldTypeDef",
     "File",

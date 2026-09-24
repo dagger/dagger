@@ -48,7 +48,7 @@ type Function struct {
 	// IsUp indicates whether this function returns a service to be started with `dagger up`
 	IsUp bool
 
-	// IsAgent indicates whether this function is an agent middleware (base: LLM!): LLM!
+	// IsAgent indicates whether this function is a source of expertise (base: LLM!): LLM!
 	IsAgent bool
 
 	// OriginalName of the parent object

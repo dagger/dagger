@@ -22,6 +22,10 @@ const artifactListCollection = "dagger.io/list-collection"
 
 var listCmd = newListCommand()
 
+func init() {
+	inflection.AddUncountable("expertise")
+}
+
 func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list [TYPE | COLLECTION]",

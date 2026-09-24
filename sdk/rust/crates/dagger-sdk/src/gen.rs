@@ -994,73 +994,6 @@ impl Node for AgentMessage {
     }
 }
 #[derive(Clone)]
-pub struct AgentMiddleware {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for AgentMiddleware {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for AgentMiddleware {
-    fn graphql_type() -> &'static str {
-        "AgentMiddleware"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl AgentMiddleware {
-    /// A unique identifier for this AgentMiddleware.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The agent function's name.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The agent function's description.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The agent function's path within its module.
-    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("path");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The module that defines the agent function.
-    pub fn original_module(&self) -> Module {
-        let query = self.selection.select("originalModule");
-        Module {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-}
-impl Node for AgentMiddleware {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
 pub struct Artifact {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -1569,19 +1502,19 @@ impl Artifacts {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware.
-    pub async fn as_agent_middlewares(&self) -> Result<Vec<AgentMiddleware>, DaggerError> {
-        let query = self.selection.select("asAgentMiddlewares");
+    /// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+    pub async fn as_expertise(&self) -> Result<Vec<Expertise>, DaggerError> {
+        let query = self.selection.select("asExpertise");
         let query = query.select("id");
         let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| AgentMiddleware {
+            .map(|id| Expertise {
                 proc: self.proc.clone(),
                 selection: crate::querybuilder::query()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("AgentMiddleware"),
+                    .inline_fragment("Expertise"),
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
@@ -1828,7 +1761,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Select AgentMiddleware artifacts.
+    /// Select Expertise artifacts.
     pub fn filter_agent_command(&self) -> Artifacts {
         let query = self.selection.select("filterAgentCommand");
         Artifacts {
@@ -8728,6 +8661,73 @@ impl Node for ErrorValue {
     }
 }
 #[derive(Clone)]
+pub struct Expertise {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Expertise {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Expertise {
+    fn graphql_type() -> &'static str {
+        "Expertise"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Expertise {
+    /// A unique identifier for this Expertise.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The agent function's name.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The agent function's description.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The agent function's path within its module.
+    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The module that defines the agent function.
+    pub fn original_module(&self) -> Module {
+        let query = self.selection.select("originalModule");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for Expertise {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct FieldTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -9445,7 +9445,7 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Returns the function with a flag indicating it is an agent middleware.
+    /// Returns the function with a flag indicating it is a source of expertise.
     pub fn with_agent(&self) -> Function {
         let query = self.selection.select("withAgent");
         Function {
@@ -12343,30 +12343,30 @@ impl Llm {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.
+    /// Run expertise in list order, passing this conversation through each function. Retain existing contributions.
     ///
     /// # Arguments
     ///
-    /// * `agents` - The agent middleware to run. Each reference retains its source workspace.
-    pub fn compose(&self, agents: Vec<Id>) -> Llm {
+    /// * `expertise` - The expertise to run. Each reference retains its source workspace.
+    pub fn compose(&self, expertise: Vec<Id>) -> Llm {
         let mut query = self.selection.select("compose");
-        query = query.arg("agents", agents);
+        query = query.arg("expertise", expertise);
         Llm {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.
+    /// Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
     /// Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
     /// A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
     ///
     /// # Arguments
     ///
-    /// * `agents` - The agent middleware to run. Each reference retains its source workspace.
-    pub fn recompose(&self, agents: Vec<Id>) -> Llm {
+    /// * `expertise` - The expertise to run. Each reference retains its source workspace.
+    pub fn recompose(&self, expertise: Vec<Id>) -> Llm {
         let mut query = self.selection.select("recompose");
-        query = query.arg("agents", agents);
+        query = query.arg("expertise", expertise);
         Llm {
             proc: self.proc.clone(),
             selection: query,

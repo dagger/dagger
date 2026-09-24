@@ -182,7 +182,7 @@ var moduleDirectives = []dagql.DirectiveSpec{
 	},
 	{
 		Name:        "agent",
-		Description: dagql.FormatDescription(`EXPERIMENTAL: Agent APIs are likely to change.`, `Indicates that this function is an agent middleware, composed by dagger agent.`),
+		Description: dagql.FormatDescription(`EXPERIMENTAL: Agent APIs are likely to change.`, `Indicates that this function is a source of expertise, composed by dagger agent.`),
 		Args:        dagql.NewInputSpecs(), // none
 		Locations: []dagql.DirectiveLocation{
 			dagql.DirectiveLocationFieldDefinition,
@@ -460,7 +460,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("withAgent", s.functionWithAgent).
 			Experimental("Agent APIs are likely to change.").
 			View(AfterVersion("v1.0.0-0")).
-			Doc(`Returns the function with a flag indicating it is an agent middleware.`),
+			Doc(`Returns the function with a flag indicating it is a source of expertise.`),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).

@@ -236,7 +236,7 @@ func validateGeneratorFunction(obj *ObjectTypeDef, fn *Function) error {
 	return nil
 }
 
-// validateAgentFunction enforces the @agent middleware contract (hack/designs/workspace-agents.md
+// validateAgentFunction enforces the @expertise contract (hack/designs/workspace-agents.md
 // §3): the function must return LLM! and must declare exactly one required
 // argument, an LLM! (the base the compose fold supplies, whatever it is
 // named). A non-LLM! return, a missing base, or any other required argument is

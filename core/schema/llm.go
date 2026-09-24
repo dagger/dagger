@@ -36,14 +36,14 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.LLM]{
 		dagql.NodeFunc("compose", s.compose).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.").
-			Args(dagql.Arg("agents").Doc("The agent middleware to run. Each reference retains its source workspace.")),
+			Doc("Run expertise in list order, passing this conversation through each function. Retain existing contributions.").
+			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
 		dagql.NodeFunc("recompose", s.recompose).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.",
+			Doc("Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.",
 				"Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.",
 				"A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.").
-			Args(dagql.Arg("agents").Doc("The agent middleware to run. Each reference retains its source workspace.")),
+			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
 		dagql.Func("__withoutComposition", func(_ context.Context, llm *core.LLM, args struct {
 			Owner string
 		}) (*core.LLM, error) {
@@ -927,38 +927,38 @@ func (s *llmSchema) withoutSystemPrompts(ctx context.Context, llm *core.LLM, _ s
 	return llm.WithoutSystemPrompts(), nil
 }
 
-type agentMiddlewareArgs struct {
-	Agents []dagql.ID[*core.AgentMiddleware]
+type expertiseArgs struct {
+	Expertise []dagql.ID[*core.Expertise]
 }
 
-func (args agentMiddlewareArgs) load(ctx context.Context) ([]*core.AgentMiddleware, error) {
+func (args expertiseArgs) load(ctx context.Context) ([]*core.Expertise, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	agents := make([]*core.AgentMiddleware, len(args.Agents))
-	for i, id := range args.Agents {
-		agent, err := id.Load(ctx, srv)
+	expertise := make([]*core.Expertise, len(args.Expertise))
+	for i, id := range args.Expertise {
+		entry, err := id.Load(ctx, srv)
 		if err != nil {
 			return nil, err
 		}
-		agents[i] = agent.Self()
+		expertise[i] = entry.Self()
 	}
-	return agents, nil
+	return expertise, nil
 }
 
-func (*llmSchema) compose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args agentMiddlewareArgs) (dagql.ObjectResult[*core.LLM], error) {
-	agents, err := args.load(ctx)
+func (*llmSchema) compose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
+	expertise, err := args.load(ctx)
 	if err != nil {
 		return base, err
 	}
-	return core.ComposeAgents(ctx, base, agents)
+	return core.ComposeExpertise(ctx, base, expertise)
 }
 
-func (*llmSchema) recompose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args agentMiddlewareArgs) (dagql.ObjectResult[*core.LLM], error) {
-	agents, err := args.load(ctx)
+func (*llmSchema) recompose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
+	expertise, err := args.load(ctx)
 	if err != nil {
 		return base, err
 	}
-	return core.RecomposeAgents(ctx, base, agents)
+	return core.RecomposeExpertise(ctx, base, expertise)
 }

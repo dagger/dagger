@@ -38,7 +38,7 @@ type Swapper {
   }
 
   reload(llm: LLM!): LLM! {
-    llm.recompose(agents: llm.workspace.artifacts.filterAgentCommand.asAgentMiddlewares)
+    llm.recompose(expertise: llm.workspace.artifacts.filterAgentCommand.asExpertise)
   }
 %s
 }
@@ -57,16 +57,16 @@ func composeRecomposeFixture(ctx context.Context, t *testctx.T, c *dagger.Client
 	if base == nil {
 		base = c.LLM().WithWorkspace(ws)
 	}
-	result, err := applyAgentMiddlewares(ctx, c, ws, base, "compose", include...)
+	result, err := applyExpertise(ctx, c, ws, base, "compose", include...)
 	require.NoError(t, err)
 	return result
 }
 
 func recomposeLLM(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, base *dagger.LLM, include ...string) (*dagger.LLM, error) {
-	return applyAgentMiddlewares(ctx, c, ws, base.WithWorkspace(ws), "recompose", include...)
+	return applyExpertise(ctx, c, ws, base.WithWorkspace(ws), "recompose", include...)
 }
 
-func applyAgentMiddlewares(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, base *dagger.LLM, operation string, include ...string) (*dagger.LLM, error) {
+func applyExpertise(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, base *dagger.LLM, operation string, include ...string) (*dagger.LLM, error) {
 	wsID, err := ws.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -74,21 +74,21 @@ func applyAgentMiddlewares(ctx context.Context, c *dagger.Client, ws *dagger.Wor
 	var selected struct {
 		Node struct {
 			Artifacts struct {
-				FilterAgentCommand struct{ AsAgentMiddlewares []struct{ ID dagger.ID } }
+				FilterAgentCommand struct{ AsExpertise []struct{ ID dagger.ID } }
 			}
 		}
 	}
 	err = c.Do(ctx, &dagger.Request{
 		Query: `query($workspace: ID!, $include: [String!]) {
-   node(id: $workspace) { ... on Workspace { artifacts(include: $include) { filterAgentCommand { asAgentMiddlewares { id } } } } }
+   node(id: $workspace) { ... on Workspace { artifacts(include: $include) { filterAgentCommand { asExpertise { id } } } } }
   }`,
 		Variables: map[string]any{"workspace": wsID, "include": include},
 	}, &dagger.Response{Data: &selected})
 	if err != nil {
 		return nil, err
 	}
-	agents := make([]dagger.ID, 0, len(selected.Node.Artifacts.FilterAgentCommand.AsAgentMiddlewares))
-	for _, agent := range selected.Node.Artifacts.FilterAgentCommand.AsAgentMiddlewares {
+	agents := make([]dagger.ID, 0, len(selected.Node.Artifacts.FilterAgentCommand.AsExpertise))
+	for _, agent := range selected.Node.Artifacts.FilterAgentCommand.AsExpertise {
 		agents = append(agents, agent.ID)
 	}
 	baseID, err := base.ID(ctx)
@@ -99,10 +99,10 @@ func applyAgentMiddlewares(ctx context.Context, c *dagger.Client, ws *dagger.Wor
 		Node struct{ Result struct{ ID dagger.ID } }
 	}
 	err = c.Do(ctx, &dagger.Request{
-		Query: fmt.Sprintf(`query($base: ID!, $agents: [ID!]!) {
-   node(id: $base) { ... on LLM { result: %s(agents: $agents) { id } } }
+		Query: fmt.Sprintf(`query($base: ID!, $expertise: [ID!]!) {
+   node(id: $base) { ... on LLM { result: %s(expertise: $expertise) { id } } }
   }`, operation),
-		Variables: map[string]any{"base": baseID, "agents": agents},
+		Variables: map[string]any{"base": baseID, "expertise": agents},
 	}, &dagger.Response{Data: &result})
 	if err != nil {
 		return nil, err
@@ -194,7 +194,7 @@ func (LLMSuite) TestRecomposePrivateStateAndReplay(ctx context.Context, t *testc
 	require.Len(t, mapPattern.FindAllString(transcript, -1), 4)
 	require.NotContains(t, transcript, "is not available")
 
-	// Adding a middleware is the install path: initialize only the new module,
+	// Adding expertise is the install path: initialize only the new module,
 	// not the existing module's counter/map or its previously added field.
 	installed := llm.Workspace().
 		WithNewFile("dagger.toml", "[modules.swapper]\nsource = \".dagger/modules/swapper\"\n[modules.extra]\nsource = \"modules/extra\"\n").
@@ -233,7 +233,7 @@ func (LLMSuite) TestRecomposeRemoteToLocalStateAndReplay(ctx context.Context, t 
 
 	// Serve a real remote module without depending on an external repository.
 	// Replacing its installation must not make source identity part of state
-	// compatibility or ownership of the middleware's tools and prompts.
+	// compatibility or ownership of the expertise's tools and prompts.
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, recomposeFixture(c, initial).Directory(".dagger/modules/swapper"))
 	ws := c.Directory().WithNewFile("dagger.toml", fmt.Sprintf("[modules.swapper]\nsource = %q\n", remoteRef)).AsWorkspace()
 	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM().WithWorkspace(ws).WithSystemPrompt(remotePrompt))
@@ -624,7 +624,7 @@ func (LLMSuite) TestRecomposeOwnedPrompts(ctx context.Context, t *testctx.T) {
 	const otherSource = `
 type Other {
   agent(base: LLM!): LLM! @agent {
-    base.withSystemPrompt("The unrelated middleware prompt.").withTools(currentNode)
+    base.withSystemPrompt("The unrelated expertise prompt.").withTools(currentNode)
   }
   oldOtherTool: String! { "other original tool" }
 }
@@ -632,7 +632,7 @@ type Other {
 	fixture = fixture.WithNewFile("modules/other/main.dang", otherSource)
 	ws := fixture.AsWorkspace()
 	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM().WithWorkspace(ws).WithSystemPrompt(shared)).WithSystemPrompt(callerTail)
-	require.ElementsMatch(t, []string{shared, shared, callerTail, "The unrelated middleware prompt."},
+	require.ElementsMatch(t, []string{shared, shared, callerTail, "The unrelated expertise prompt."},
 		recomposeSystemPrompts(ctx, t, c, llm))
 
 	// Record against the actual composed prompts so the replay model checks
@@ -648,12 +648,12 @@ type Other {
 	updated := strings.ReplaceAll(source, shared, replacement)
 	updated = strings.ReplaceAll(updated, "Read the original private state.", "Read the selected owner's updated state.")
 	changedOther := strings.ReplaceAll(strings.ReplaceAll(otherSource,
-		"The unrelated middleware prompt.", "Unselected edit must not be applied."), "oldOtherTool", "newOtherTool")
+		"The unrelated expertise prompt.", "Unselected edit must not be applied."), "oldOtherTool", "newOtherTool")
 	ws = ws.WithNewFile(recomposeModulePath, updated).
 		WithNewFile("modules/other/main.dang", changedOther)
 	llm, err = recomposeLLM(ctx, c, ws, llm, "swapper")
 	require.NoError(t, err)
-	expected := []string{shared, replacement, callerTail, "The unrelated middleware prompt."}
+	expected := []string{shared, replacement, callerTail, "The unrelated expertise prompt."}
 	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm))
 	tools, err := llm.Tools(ctx)
 	require.NoError(t, err)
@@ -692,7 +692,7 @@ func (LLMSuite) TestRecomposeNestedCompositionPrompts(ctx context.Context, t *te
 		WithNewFile("outer/main.dang", `
 type Outer {
   agent(base: LLM!, ws: Workspace!): LLM! @agent {
-    base.withSystemPrompt("outer prompt").compose(agents: ws.artifacts(include: ["inner"]).filterAgentCommand.asAgentMiddlewares)
+    base.withSystemPrompt("outer prompt").compose(expertise: ws.artifacts(include: ["inner"]).filterAgentCommand.asExpertise)
   }
 }
 `).
@@ -744,7 +744,7 @@ func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t
 	ws = ws.WithNewFile(recomposeModulePath, strings.ReplaceAll(source, prompt, replacement))
 	for _, seed := range []*dagger.LLM{manual, composed} {
 		// The legacy/manual seed has no ownership metadata to infer. Preserve
-		// its prompt and capability while installing the new owned middleware.
+		// its prompt and capability while installing the new owned expertise.
 		llm, err := recomposeLLM(ctx, c, ws, seed)
 		require.NoError(t, err)
 		for range 2 {
@@ -768,7 +768,7 @@ func (LLMSuite) TestRecomposeNestedToolState(ctx context.Context, t *testctx.T) 
 	const outerSource = `
 type Outer {
   agent(base: LLM!, ws: Workspace!): LLM! @agent {
-    base.compose(agents: ws.artifacts(include: ["swapper"]).filterAgentCommand.asAgentMiddlewares)
+    base.compose(expertise: ws.artifacts(include: ["swapper"]).filterAgentCommand.asExpertise)
   }
 }
 `
@@ -799,7 +799,7 @@ type Outer {
 	// Refreshing nested tool state is explicit: Outer asks Swapper to
 	// recompose its own contributions rather than appending another binding.
 	ws = ws.WithNewFile(recomposeModulePath, updated).
-		WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource, ".compose(agents:", ".recompose(agents:"))
+		WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource, ".compose(expertise:", ".recompose(expertise:"))
 	llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
 	require.NoError(t, err)
 	llm = llm.WithPrompt("updated nested").Loop()
@@ -824,7 +824,7 @@ type Outer {
 	// Removing the nested call does not select Swapper: its independently
 	// owned binding survives rather than being discarded as an Outer subtree.
 	withoutNested := ws.WithNewFile("outer/main.dang", strings.ReplaceAll(outerSource,
-		`base.compose(agents: ws.artifacts(include: ["swapper"]).filterAgentCommand.asAgentMiddlewares)`, "base"))
+		`base.compose(expertise: ws.artifacts(include: ["swapper"]).filterAgentCommand.asExpertise)`, "base"))
 	llm, err = recomposeLLM(ctx, c, withoutNested, llm, "outer")
 	require.NoError(t, err)
 	tools, err := llm.Tools(ctx)
@@ -837,7 +837,7 @@ func (LLMSuite) TestRecomposeNestedOwnershipIsolation(ctx context.Context, t *te
 	const outerSource = `
 type Outer {
   agent(base: LLM!, ws: Workspace!): LLM! @agent {
-    base.withSystemPrompt("outer original").compose(agents: ws.artifacts(include: ["inner"]).filterAgentCommand.asAgentMiddlewares)
+    base.withSystemPrompt("outer original").compose(expertise: ws.artifacts(include: ["inner"]).filterAgentCommand.asExpertise)
   }
 }
 `
@@ -1052,7 +1052,7 @@ type Donor {
 	c = connect(ctx, t)
 	llm = dagger.Ref[*dagger.LLM](c, portable)
 
-	// Owner did not need to be middleware when it installed the binding.
+	// Owner did not need an @agent function when it installed the binding.
 	// Once selected for refresh, dropping its foreign tool must be rejected
 	// rather than silently treating the binding as unowned or Donor-owned.
 	ws = llm.Workspace().WithNewFile("owner/main.dang", `

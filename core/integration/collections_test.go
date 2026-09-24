@@ -314,7 +314,7 @@ func (*Part) Verify() error { return nil }
 	source = strings.Replace(source, `if item.Name != "item:a" { panic("excluded parent must stay deferred") }`, "", 1)
 	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
 	for _, tc := range []struct{ command, path, typ string }{
-		{"shell", "items/broken", "container"}, {"up", "items/serve", "service"}, {"generate", "items/write", "generator"}, {"agent", "items/assistant", "agent-middleware"},
+		{"shell", "items/broken", "container"}, {"up", "items/serve", "service"}, {"generate", "items/write", "generator"}, {"agent", "items/assistant", "expertise"},
 	} {
 		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(daggerExec(tc.command, "-l", tc.path)).Stdout(ctx)

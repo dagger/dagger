@@ -1,7 +1,7 @@
 """
 EXPERIMENTAL: Agent APIs are likely to change.
 
-Indicates that this function is an agent middleware, composed by dagger agent.
+Indicates that this function is a source of expertise, composed by dagger agent.
 """
 directive @agent on FIELD_DEFINITION
 
@@ -392,24 +392,6 @@ enum AgentMessageDelivery {
   QUEUED
 }
 
-"""An agent function that can modify a conversation."""
-type AgentMiddleware implements Node {
-  """A unique identifier for this AgentMiddleware."""
-  id: ID!
-
-  """The agent function's name."""
-  name: String!
-
-  """The agent function's description."""
-  description: String!
-
-  """The agent function's path within its module."""
-  path: [String!]!
-
-  """The module that defines the agent function."""
-  originalModule: Module!
-}
-
 """
 EXPERIMENTAL: Agent APIs are likely to change.
 
@@ -516,7 +498,9 @@ type ArtifactDimension implements Node {
   """The collection key argument name, or name for a type dimension."""
   keyName: String!
 
-  """The collection key argument description, or empty for a type dimension."""
+  """
+  The collection key argument description, or empty for a type dimension.
+  """
   keyDescription: String!
 }
 
@@ -577,9 +561,9 @@ type Artifacts implements Node {
   id: ID!
 
   """
-  Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware.
+  Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
   """
-  asAgentMiddlewares: [AgentMiddleware!]!
+  asExpertise: [Expertise!]!
 
   """
   Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
@@ -648,7 +632,7 @@ type Artifacts implements Node {
   """Select Generator artifacts, using each workspace's generator settings."""
   filterGenerateCommand: Artifacts!
 
-  """Select AgentMiddleware artifacts."""
+  """Select Expertise artifacts."""
   filterAgentCommand: Artifacts!
 
   """
@@ -3317,6 +3301,24 @@ enum ExistsType {
   SYMLINK_TYPE
 }
 
+"""An agent function that can modify a conversation."""
+type Expertise implements Node {
+  """A unique identifier for this Expertise."""
+  id: ID!
+
+  """The agent function's name."""
+  name: String!
+
+  """The agent function's description."""
+  description: String!
+
+  """The agent function's path within its module."""
+  path: [String!]!
+
+  """The module that defines the agent function."""
+  originalModule: Module!
+}
+
 """
 An object that can be exported to the host.
 
@@ -3565,7 +3567,9 @@ type Function implements Node {
   """
   withUp: Function!
 
-  """Returns the function with a flag indicating it is an agent middleware."""
+  """
+  Returns the function with a flag indicating it is a source of expertise.
+  """
   withAgent: Function! @experimental(reason: "Agent APIs are likely to change.")
 
   """Returns the function with the given source map."""
@@ -4544,17 +4548,15 @@ type LLM implements Node & Syncer {
   id: ID!
 
   """
-  Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.
+  Run expertise in list order, passing this conversation through each function. Retain existing contributions.
   """
   compose(
-    """
-    The agent middleware to run. Each reference retains its source workspace.
-    """
-    agents: [ID!]! @expectedType(name: "AgentMiddleware")
+    """The expertise to run. Each reference retains its source workspace."""
+    expertise: [ID!]! @expectedType(name: "Expertise")
   ): LLM!
 
   """
-  Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.
+  Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
 
   Clear each selected module's contributions once before execution. Retain
   unowned contributions and contributions from other modules. Keep this LLM's
@@ -4564,10 +4566,8 @@ type LLM implements Node & Syncer {
   changed identities, and incompatible state are errors.
   """
   recompose(
-    """
-    The agent middleware to run. Each reference retains its source workspace.
-    """
-    agents: [ID!]! @expectedType(name: "AgentMiddleware")
+    """The expertise to run. Each reference retains its source workspace."""
+    expertise: [ID!]! @expectedType(name: "Expertise")
   ): LLM!
 
   """

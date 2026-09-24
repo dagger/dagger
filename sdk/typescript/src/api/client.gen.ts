@@ -4821,90 +4821,6 @@ export class AgentMessage extends BaseClient {
 }
 
 /**
- * An agent function that can modify a conversation.
- */
-export class AgentMiddleware extends BaseClient {
-  private readonly _id?: ID = undefined
-  private readonly _description?: string = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
-    super(ctx)
-
-    this._id = _id
-    this._description = _description
-    this._name = _name
-  }
-
-  /**
-   * A unique identifier for this AgentMiddleware.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The agent function's description.
-   */
-  description = async (): Promise<string> => {
-    if (this._description) {
-      return this._description
-    }
-
-    const ctx = this._ctx.select("description")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The agent function's name.
-   */
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
-    }
-
-    const ctx = this._ctx.select("name")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The module that defines the agent function.
-   */
-  originalModule = (): Module_ => {
-    const ctx = this._ctx.select("originalModule")
-    return new Module_(ctx)
-  }
-
-  /**
-   * The agent function's path within its module.
-   */
-  path = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("path")
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
-  }
-}
-
-/**
  * One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
  */
 export class Artifact extends BaseClient {
@@ -5473,24 +5389,6 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware.
-   */
-  asAgentMiddlewares = async (): Promise<AgentMiddleware[]> => {
-    type asAgentMiddlewares = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("asAgentMiddlewares").select("id")
-
-    const response: Awaited<asAgentMiddlewares[]> = await ctx.execute()
-
-    return response.map(
-      (r) =>
-        new AgentMiddleware(ctx.copy().selectNode(r.id, "AgentMiddleware")),
-    )
-  }
-
-  /**
    * Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
    */
   asChangesets = async (): Promise<Changeset[]> => {
@@ -5520,6 +5418,23 @@ export class Artifacts extends BaseClient {
     const response: Awaited<asChecks[]> = await ctx.execute()
 
     return response.map((r) => new Check(ctx.copy().selectNode(r.id, "Check")))
+  }
+
+  /**
+   * Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+   */
+  asExpertise = async (): Promise<Expertise[]> => {
+    type asExpertise = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("asExpertise").select("id")
+
+    const response: Awaited<asExpertise[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new Expertise(ctx.copy().selectNode(r.id, "Expertise")),
+    )
   }
 
   /**
@@ -5614,7 +5529,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Select AgentMiddleware artifacts.
+   * Select Expertise artifacts.
    */
   filterAgentCommand = (): Artifacts => {
     const ctx = this._ctx.select("filterAgentCommand")
@@ -9901,6 +9816,90 @@ export class ErrorValue extends BaseClient {
 }
 
 /**
+ * An agent function that can modify a conversation.
+ */
+export class Expertise extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this Expertise.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The agent function's description.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The agent function's name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module that defines the agent function.
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * The agent function's path within its module.
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * An object that can be exported to the host.
  *
  * Calling export writes the object to a path on the host filesystem and returns the path that was written.
@@ -10489,7 +10488,7 @@ export class Function_ extends BaseClient {
   }
 
   /**
-   * Returns the function with a flag indicating it is an agent middleware.
+   * Returns the function with a flag indicating it is a source of expertise.
    * @experimental
    */
   withAgent = (): Function_ => {
@@ -12953,11 +12952,11 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Run agent middleware in list order, passing this conversation through each function. Retain existing contributions.
-   * @param agents The agent middleware to run. Each reference retains its source workspace.
+   * Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+   * @param expertise The expertise to run. Each reference retains its source workspace.
    */
-  compose = (agents: AgentMiddleware[]): LLM => {
-    const ctx = this._ctx.select("compose", { agents })
+  compose = (expertise: Expertise[]): LLM => {
+    const ctx = this._ctx.select("compose", { expertise })
     return new LLM(ctx)
   }
 
@@ -13129,15 +13128,15 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Run agent middleware in list order, replacing their modules' contributions and preserving compatible tool state.
+   * Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
    *
    * Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
    *
    * A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
-   * @param agents The agent middleware to run. Each reference retains its source workspace.
+   * @param expertise The expertise to run. Each reference retains its source workspace.
    */
-  recompose = (agents: AgentMiddleware[]): LLM => {
-    const ctx = this._ctx.select("recompose", { agents })
+  recompose = (expertise: Expertise[]): LLM => {
+    const ctx = this._ctx.select("recompose", { expertise })
     return new LLM(ctx)
   }
 

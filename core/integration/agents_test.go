@@ -1,7 +1,7 @@
 package core
 
 // These tests cover `dagger agent`, which discovers and composes module @agent
-// middlewares (hack/designs/workspace-agents.md §3). They verify cross-module discovery, the base
+// expertise (hack/designs/workspace-agents.md §3). They verify cross-module discovery, the base
 // argument being matched by type (not name), nested discovery through
 // object-returning functions, signature validation, and the composed toolset
 // (auto-exclusion of the entrypoint + collision-driven namespacing). Driving the
@@ -64,10 +64,15 @@ func (AgentsSuite) TestListAcrossModules(ctx context.Context, t *testctx.T) {
 
 	out, err := modGen.With(daggerExec("agent", "-l", "-f=link")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "dag+agent-middleware://editor/agent")
+	require.Contains(t, out, "dag+expertise://editor/agent")
 	// godoc's base argument is named `llm`, not `base`; it must still be
 	// discovered, since the base is matched by type rather than name.
-	require.Contains(t, out, "dag+agent-middleware://godoc/agent")
+	require.Contains(t, out, "dag+expertise://godoc/agent")
+	out, err = modGen.With(daggerExec("list", "expertise", "-f=table")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "EXPERTISE")
+	require.Contains(t, out, "editor/agent")
+	require.Contains(t, out, "godoc/agent")
 }
 
 // TestSDKAgents covers the @agent marker in the SDKs that carry their own
@@ -90,7 +95,7 @@ func (AgentsSuite) TestSDKAgents(ctx context.Context, t *testctx.T) {
 
 			out, err := modGen.With(daggerExec("agent", "-l", "-f=link")).CombinedOutput(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "dag+agent-middleware://"+tc.module+"/agent")
+			require.Contains(t, out, "dag+expertise://"+tc.module+"/agent")
 
 			out, err = agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), nil)
 			require.NoError(t, err)
@@ -108,8 +113,8 @@ func (AgentsSuite) TestSelection(ctx context.Context, t *testctx.T) {
 
 	out, err := modGen.With(daggerExec("agent", "-l", "-f=link", "editor")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "dag+agent-middleware://editor/agent")
-	require.NotContains(t, out, "dag+agent-middleware://godoc/agent")
+	require.Contains(t, out, "dag+expertise://editor/agent")
+	require.NotContains(t, out, "dag+expertise://godoc/agent")
 }
 
 func (AgentsSuite) TestNestedDiscovery(ctx context.Context, t *testctx.T) {
@@ -121,7 +126,7 @@ func (AgentsSuite) TestNestedDiscovery(ctx context.Context, t *testctx.T) {
 	// Nested.tools; the rollup recurses through functions, so it is discoverable.
 	out, err := modGen.With(daggerExec("agent", "-l", "-f=link")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "dag+agent-middleware://nested/tools/agent")
+	require.Contains(t, out, "dag+expertise://nested/tools/agent")
 }
 
 func (AgentsSuite) TestValidationRejectsExtraRequiredArg(ctx context.Context, t *testctx.T) {
