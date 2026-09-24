@@ -4,14 +4,14 @@ import io.dagger.client.Dagger;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
-import io.dagger.module.annotation.Up;
+import io.dagger.module.annotation.Start;
 
 @Object
 public class Infra {
 
   /** Returns a postgres database service */
   @Function
-  @Up
+  @Start
   public Service database() {
     return Dagger.dag()
       .container()
