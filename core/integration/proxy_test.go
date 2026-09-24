@@ -308,9 +308,9 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"}).
-					WithExec([]string{"curl", "-v", f.httpServerURL.String()}).
+					WithExec([]string{"curl", "-v", "--connect-timeout", "10", "--max-time", "30", f.httpServerURL.String()}).
 					Stderr(ctx)
-				require.NoError(t, err)
+				require.NoError(t, err, "HTTP route: client resolves/connects proxy %s; proxy forwards to origin %s", f.httpProxyURL.Host, f.httpServerURL.Host)
 				require.Regexp(t, `.*< HTTP/1\.1 200 OK.*`, out)
 				require.Regexp(t, `.*< Via: .* \(squid/.*\).*`, out)
 			}},
@@ -320,9 +320,9 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 					WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
 					WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
 					WithExec([]string{"update-ca-certificates"}).
-					WithExec([]string{"curl", "-v", f.httpsServerURL.String()}).
+					WithExec([]string{"curl", "-v", "--connect-timeout", "10", "--max-time", "30", f.httpsServerURL.String()}).
 					Stderr(ctx)
-				require.NoError(t, err)
+				require.NoError(t, err, "HTTPS route: client resolves/connects proxy %s; proxy tunnels to origin %s", f.httpsProxyURL.Host, f.httpsServerURL.Host)
 				require.Regexp(t, `.*< HTTP/1\.1 200 Connection established.*`, out)
 				require.Regexp(t, fmt.Sprintf(`.*Establish HTTP proxy tunnel to %s.*`, f.httpsServerURL.Host), out)
 			}},
@@ -330,9 +330,9 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 			proxyTest{name: "noproxy http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"}).
-					WithExec([]string{"curl", "-v", f.noproxyHTTPServerURL.String()}).
+					WithExec([]string{"curl", "-v", "--connect-timeout", "10", "--max-time", "30", f.noproxyHTTPServerURL.String()}).
 					Stderr(ctx)
-				require.NoError(t, err)
+				require.NoError(t, err, "NO_PROXY route: client resolves/connects origin %s directly", f.noproxyHTTPServerURL.Host)
 				require.Regexp(t, `.*< HTTP/1\.1 200 OK.*`, out)
 				require.NotRegexp(t, `.*< Via: .*`, out)
 			}},
@@ -348,9 +348,9 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 					WithExec([]string{"apk", "add", "curl"})
 
 				out, err := base.
-					WithExec([]string{"curl", "-v", f.httpServerURL.String()}).
+					WithExec([]string{"curl", "-v", "--connect-timeout", "10", "--max-time", "30", f.httpServerURL.String()}).
 					Stderr(ctx)
-				require.NoError(t, err)
+				require.NoError(t, err, "authenticated HTTP route: client resolves/connects proxy %s; proxy forwards to origin %s", f.httpProxyURL.Host, f.httpServerURL.Host)
 				require.Regexp(t, `.*< HTTP/1\.1 200 OK.*`, out)
 				require.Regexp(t, `.*< Via: .* \(squid/.*\).*`, out)
 
@@ -359,10 +359,10 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 				u.User = url.UserPassword("cooluser", "badpass")
 				out, err = base.
 					WithEnvVariable("HTTP_PROXY", u.String()).
-					WithExec([]string{"curl", "-v", f.httpServerURL.String()}).
+					WithExec([]string{"curl", "-v", "--connect-timeout", "10", "--max-time", "30", f.httpServerURL.String()}).
 					Stderr(ctx)
 				// curl will exit 0 if it gets a 407 on plain HTTP, so don't expect an error
-				require.NoError(t, err)
+				require.NoError(t, err, "HTTP bad-password route: client resolves/connects proxy %s for origin %s; expecting HTTP 407", u.Host, f.httpServerURL.Host)
 				require.Contains(t, out, "< HTTP/1.1 407 Proxy Authentication Required")
 			}},
 
@@ -373,9 +373,9 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 					WithExec([]string{"update-ca-certificates"})
 
 				out, err := base.
-					WithExec([]string{"curl", "-v", f.httpsServerURL.String()}).
+					WithExec([]string{"curl", "-v", "--connect-timeout", "10", "--max-time", "30", f.httpsServerURL.String()}).
 					Stderr(ctx)
-				require.NoError(t, err)
+				require.NoError(t, err, "authenticated HTTPS route: client resolves/connects proxy %s; proxy tunnels to origin %s", f.httpsProxyURL.Host, f.httpsServerURL.Host)
 				require.Regexp(t, `.*< HTTP/1\.1 200 Connection established.*`, out)
 				require.Regexp(t, fmt.Sprintf(`.*Establish HTTP proxy tunnel to %s.*`, f.httpsServerURL.Host), out)
 
@@ -384,10 +384,10 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 				u.User = url.UserPassword("cooluser", "badpass")
 				_, err = base.
 					WithEnvVariable("HTTPS_PROXY", u.String()).
-					WithExec([]string{"curl", "-v", f.httpsServerURL.String()}).
+					WithExec([]string{"curl", "-v", "--connect-timeout", "10", "--max-time", "30", f.httpsServerURL.String()}).
 					Stderr(ctx)
 				// curl WON'T exit 0 if it gets a 407 when using TLS, so DO expect an error
-				requireErrOut(t, err, "< HTTP/1.1 407 Proxy Authentication Required")
+				requireErrOut(t, err, "< HTTP/1.1 407 Proxy Authentication Required", "HTTPS bad-password route: client resolves/connects proxy %s for origin %s; expecting HTTP 407", u.Host, f.httpsServerURL.Host)
 			}},
 		)
 	})

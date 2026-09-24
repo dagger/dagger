@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/leases"
@@ -5208,7 +5209,10 @@ func TestCacheArrayResultStressDoesNotRaceExplicitDependencyAttachment(t *testin
 
 func TestCacheMixedSessionWaitersCancelDoNotLeak(t *testing.T) {
 	t.Parallel()
+	synctest.Test(t, testCacheMixedSessionWaitersCancelDoNotLeak)
+}
 
+func testCacheMixedSessionWaitersCancelDoNotLeak(t *testing.T) {
 	baseCtx := t.Context()
 	cacheIface, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
@@ -5283,8 +5287,12 @@ func TestCacheMixedSessionWaitersCancelDoNotLeak(t *testing.T) {
 
 		waiterSpecs := make([]waiterSpec, waitersPerAttempt)
 		waiterOutcomes := make([]waiterOutcome, waitersPerAttempt)
+		waiterDone := make([]chan struct{}, waitersPerAttempt)
 		initStarted := make(chan struct{})
 		unblockInit := make(chan struct{})
+		var unblockInitOnce sync.Once
+		releaseInit := func() { unblockInitOnce.Do(func() { close(unblockInit) }) }
+		defer releaseInit()
 		var initStartedOnce sync.Once
 		var initCalls atomic.Int32
 		var wg sync.WaitGroup
@@ -5305,9 +5313,11 @@ func TestCacheMixedSessionWaitersCancelDoNotLeak(t *testing.T) {
 				sessionID:  sessionID,
 			}
 
+			waiterDone[i] = make(chan struct{})
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
+				defer close(waiterDone[i])
 				res, err := c.GetOrInitCall(waiterSpecs[i].waitCtx, waiterSpecs[i].sessionID, srv, &CallRequest{
 					ResultCall:     parentCall,
 					ConcurrencyKey: concurrencyKey,
@@ -5330,33 +5340,35 @@ func TestCacheMixedSessionWaitersCancelDoNotLeak(t *testing.T) {
 			t.Fatalf("attempt %d: timed out waiting for init start", attempt)
 		}
 
-		waiterCountReached := false
-		waiterPollDeadline := time.Now().Add(5 * time.Second)
+		// The initializer is blocked; wait until every caller has joined and
+		// is waiting for completion or cancellation before inspecting its count.
+		synctest.Wait()
+		c.callsMu.Lock()
+		oc := c.ongoingCalls[callConcKeys]
 		lastObservedWaiters := -1
-		for time.Now().Before(waiterPollDeadline) {
-			c.callsMu.Lock()
-			oc := c.ongoingCalls[callConcKeys]
-			if oc != nil {
-				lastObservedWaiters = oc.waiters
-			}
-			c.callsMu.Unlock()
-
-			if oc != nil && lastObservedWaiters == waitersPerAttempt {
-				waiterCountReached = true
-				break
-			}
-			time.Sleep(5 * time.Millisecond)
+		if oc != nil {
+			lastObservedWaiters = oc.waiters
 		}
-		assert.Assert(t, waiterCountReached, "attempt %d: expected %d waiters, last observed %d", attempt, waitersPerAttempt, lastObservedWaiters)
+		c.callsMu.Unlock()
+		assert.Equal(t, waitersPerAttempt, lastObservedWaiters, "attempt %d: expected all waiters to join", attempt)
 
 		for i := 0; i < earlyCanceled; i++ {
 			waiterSpecs[i].cancel()
 		}
-		time.Sleep(1 * time.Millisecond)
+		// A canceled context alone does not make cancellation win Cache.wait's
+		// select once the result is ready. Join these returns while the
+		// initializer is still blocked, preserving strict early cancellation.
+		for i := 0; i < earlyCanceled; i++ {
+			select {
+			case <-waiterDone[i]:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("attempt %d waiter %d: timed out waiting for early cancellation", attempt, i)
+			}
+		}
 		for i := earlyCanceled; i < earlyCanceled+racingCanceled; i++ {
 			go waiterSpecs[i].cancel()
 		}
-		close(unblockInit)
+		releaseInit()
 
 		wg.Wait()
 		assert.Equal(t, int32(1), initCalls.Load(), "attempt %d: expected exactly one initializer", attempt)
