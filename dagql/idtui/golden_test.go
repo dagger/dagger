@@ -167,6 +167,20 @@ entrypoint = true
 	os.Create(filepath.Join(listDir, "test2.txt"))
 	os.Create(filepath.Join(listDir, "test3.txt"))
 
+	testSummaryDB := func(t *testctx.T, db *dagui.DB) {
+		view := db.TestView()
+		require.Equal(t, dagui.TestCounts{Failing: 1, Passing: 2, Skipped: 2}, view.Counts)
+		parent := view.FindCaseByName("TestNested")
+		require.NotNil(t, parent)
+		require.True(t, parent.Span.Boundary)
+		require.True(t, parent.Span.IsFailedOrCausedFailure(), "parallel continuation failure must reach the setup span")
+		failed := view.FindCaseByName("TestNested/failed test 01")
+		require.NotNil(t, failed)
+		require.Same(t, parent, failed.Parent)
+		require.True(t, failed.Span.Boundary)
+		require.Equal(t, dagui.TestCategoryFailing, failed.Category)
+	}
+
 	for _, ex := range []Example{
 		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
@@ -244,8 +258,8 @@ entrypoint = true
 		{Function: "call-bubbling-dep", Fail: true},
 		{Function: "fail-multi", Fail: true},
 		{Name: "fail-multi-noexpand", Function: "fail-multi", Fail: true, NoExpand: true},
-		{Name: "test-summary-check", Function: "test-summary", Check: true, NoExpand: true},
-		{Name: "test-summary-call", Function: "test-summary", NoExpand: true},
+		{Name: "test-summary-check", Function: "test-summary", Check: true, NoExpand: true, DBTest: testSummaryDB},
+		{Name: "test-summary-call", Function: "test-summary", NoExpand: true, DBTest: testSummaryDB},
 
 		// Used to be marked as flaky
 		{Function: "cached-execs"},

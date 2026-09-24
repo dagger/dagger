@@ -25,6 +25,8 @@ func TestConversationReportKeepsNestedAgentToolTestsAtBoundaries(t *testing.T) {
 		workerPromptByte
 		workerToolByte
 		workerTestByte
+		workerFailedByte
+		workerPassedByte
 	)
 	id := prettyTestSpanID
 	start := time.Unix(100, 0)
@@ -39,12 +41,17 @@ func TestConversationReportKeepsNestedAgentToolTestsAtBoundaries(t *testing.T) {
 	testCase := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
 		return dagui.SpanSnapshot{
 			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent,
-			Name: name, TestCaseName: name, TestStatus: dagui.TestStatusFailure,
+			Name: name, TestCaseName: name, TestStatus: dagui.TestStatusFailure, Boundary: true,
 			StartTime: start.Add(time.Duration(n) * time.Second),
 			EndTime:   start.Add(time.Duration(n+1) * time.Second), Final: true,
 		}
 	}
 
+	failed := testCase(workerFailedByte, id(workerTestByte), "nested worker test/failed")
+	failed.Name = "failed"
+	passed := testCase(workerPassedByte, id(workerTestByte), "nested worker test/passed")
+	passed.Name = "passed"
+	passed.TestStatus = dagui.TestStatusSuccess
 	db := dagui.NewDB()
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{ID: id(rootByte), TraceID: prettyTestTraceID(), Name: "agent session", StartTime: start, EndTime: start.Add(20 * time.Second), Final: true},
@@ -54,6 +61,8 @@ func TestConversationReportKeepsNestedAgentToolTestsAtBoundaries(t *testing.T) {
 		{ID: id(workerPromptByte), TraceID: prettyTestTraceID(), ParentID: id(spawnByte), Name: "worker prompt", LLMRole: "user", StartTime: start.Add(5 * time.Second), EndTime: start.Add(6 * time.Second), Final: true},
 		tool(workerToolByte, id(spawnByte), "worker-check"),
 		testCase(workerTestByte, id(workerToolByte), "nested worker test"),
+		failed,
+		passed,
 	})
 	db.SetPrimarySpan(id(rootByte))
 
@@ -65,8 +74,11 @@ func TestConversationReportKeepsNestedAgentToolTestsAtBoundaries(t *testing.T) {
 		t.Fatalf("spawn boundary did not keep only its direct test: %+v", spawnView.Counts)
 	}
 	workerView := db.TestViewForSpan(db.Spans.Map[id(workerToolByte)])
-	if workerView.FindCaseByName("nested worker test") == nil {
-		t.Fatal("nested worker boundary lost its own test")
+	if workerView.FindCaseByName("nested worker test/failed") == nil {
+		t.Fatal("nested worker boundary lost its failing subtest")
+	}
+	if workerView.Counts != (dagui.TestCounts{Failing: 1, Passing: 1}) {
+		t.Fatalf("expected only leaf counts in the worker report, got %+v", workerView.Counts)
 	}
 
 	fe := NewWithDB(io.Discard, db)
@@ -76,7 +88,7 @@ func TestConversationReportKeepsNestedAgentToolTestsAtBoundaries(t *testing.T) {
 		t.Fatal("T key predicate ignored focused tool tests when global HasTests is false")
 	}
 	fullscreen := fe.fullscreenTestViewForFocus()
-	if fullscreen == nil || fullscreen.currentView().FindCaseByName("nested worker test") == nil {
+	if fullscreen == nil || fullscreen.currentView().FindCaseByName("nested worker test/failed") == nil {
 		t.Fatal("T inspect did not open the focused worker tool's scoped view")
 	}
 
@@ -85,12 +97,12 @@ func TestConversationReportKeepsNestedAgentToolTestsAtBoundaries(t *testing.T) {
 	if strings.Count(joined, "TESTS") != 2 {
 		t.Fatalf("expected one inline TESTS report per owning tool boundary:\n%s", joined)
 	}
-	for _, name := range []string{"spawn ownership test", "nested worker test"} {
+	for _, name := range []string{"spawn ownership test", "nested worker test › failed", "1 passed"} {
 		if !strings.Contains(joined, name) {
 			t.Fatalf("final conversation report hid %q:\n%s", name, joined)
 		}
 	}
-	if !fe.claims.hasTestCase(id(spawnTestByte)) || !fe.claims.hasTestCase(id(workerTestByte)) {
+	if !fe.claims.hasTestCase(id(spawnTestByte)) || !fe.claims.hasTestCase(id(workerFailedByte)) || !fe.claims.hasTestCase(id(workerPassedByte)) {
 		t.Fatal("inline conversation test reports did not claim their cases")
 	}
 	if global := fe.renderGlobalTests(tuist.Context{Width: 120}, true); len(global) != 0 {

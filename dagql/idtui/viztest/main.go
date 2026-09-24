@@ -13,6 +13,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -134,9 +135,25 @@ func (*Viztest) TestSummary(ctx context.Context) error {
 	ctx, suite := Tracer().Start(ctx, "viztest summary suite",
 		trace.WithAttributes(
 			attribute.String("test.suite.name", testSummarySuite),
-			attribute.String("test.suite.run.status", "success"),
-		))
+			attribute.String("test.suite.run.status", "failure"),
+		), telemetry.Boundary())
 	defer suite.End()
+
+	// Match gotest's parallel test shape: the boundary-marked setup span
+	// ends at PAUSE, its continuation links back to it, and subtests keep
+	// the original test as their parent rather than the continuation.
+	ctx, parent := Tracer().Start(ctx, "TestNested",
+		trace.WithAttributes(
+			attribute.String("test.case.name", "TestNested"),
+			attribute.String("test.suite.name", testSummarySuite),
+		), telemetry.Boundary())
+	parent.End()
+	_, continuation := Tracer().Start(ctx, "continue",
+		telemetry.Passthrough(),
+		trace.WithLinks(trace.Link{SpanContext: parent.SpanContext()}))
+	defer continuation.End()
+	continuation.SetStatus(codes.Error, "test failed")
+	continuation.SetAttributes(attribute.String("test.suite.run.status", "failure"))
 
 	emitTestSummaryCase(ctx, "passing test 01", "pass")
 	emitTestSummaryCase(ctx, "passing test 02", "pass")
@@ -150,10 +167,10 @@ func (*Viztest) TestSummary(ctx context.Context) error {
 func emitTestSummaryCase(ctx context.Context, name, status string) {
 	ctx, span := Tracer().Start(ctx, name,
 		trace.WithAttributes(
-			attribute.String("test.case.name", testSummarySuite+"/"+name),
+			attribute.String("test.case.name", "TestNested/"+name),
 			attribute.String("test.suite.name", testSummarySuite),
 			attribute.String("test.case.result.status", status),
-		))
+		), telemetry.Boundary())
 	stdio := telemetry.SpanStdio(ctx, "")
 	fmt.Fprintf(stdio.Stdout, "%s log line 1\n", name)
 	fmt.Fprintf(stdio.Stdout, "%s log line 2\n", name)
