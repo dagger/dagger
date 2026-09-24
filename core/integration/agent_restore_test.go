@@ -302,11 +302,12 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// every anchor's payload (or the plan names conversations nothing can
 	// rebuild), and the dismissal's STOPPED record (or the plan puts the
 	// worker back into its pre-stop state).
-	rostered := sink.awaitRestorable(t, 3)
-	sink.awaitAgentState(t, "tests", "STOPPED")
-	require.Contains(t, rostered, "chief")
-	sourceTraceID := rostered["chief"].Span().TraceID.String()
-	traces, logs := sink.capture()
+	captured := sink.awaitRestorableCapture(ctx, t, 3, map[string]string{
+		"chief": "IDLE", "scout": "IDLE", "tests": "STOPPED",
+	})
+	require.Contains(t, captured.traceIDs, "chief")
+	sourceTraceID := captured.traceIDs["chief"]
+	traces, logs := captured.traces, captured.logs
 	require.NotEmpty(t, traces)
 	require.NotEmpty(t, logs)
 
@@ -366,10 +367,10 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// (5) Chained resume (§8): the resumed session's own trace has to carry
 	// the restored chains, or resuming IT would fail. Every restored agent
 	// publishes its identity and anchor into the new trace, and every anchor
-	// has to rebuild from the payloads that rode with it — awaitRestorable
+	// has to rebuild from the payloads that rode with it — awaitRestorableCapture
 	// fails the test if one never does.
-	chained := restoredSink.awaitRestorable(t, 3)
-	require.Contains(t, chained, "chief")
+	chained := restoredSink.awaitRestorableCapture(ctx, t, 3, nil)
+	require.Contains(t, chained.traceIDs, "chief")
 }
 
 // TestRestoreFromTraceRefusesAnUnrestorableAgent is the other half of §5.3.3,
@@ -410,9 +411,9 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	// Wait for the anchor to be rebuildable BEFORE stripping, so the refusal
 	// below is caused by the strip and not by a payload that had simply not
 	// arrived yet.
-	rostered := sink.awaitRestorable(t, 1)
-	traceID := rostered["solo"].Span().TraceID.String()
-	traces, logs := sink.capture()
+	captured := sink.awaitRestorableCapture(ctx, t, 1, nil)
+	traceID := captured.traceIDs["solo"]
+	traces, logs := captured.traces, captured.logs
 
 	// Serve the spans and the agent's own state/anchor records, but no call
 	// payloads on either channel: the anchor still names a conversation, and

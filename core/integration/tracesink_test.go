@@ -1,12 +1,15 @@
 package core
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -31,10 +34,11 @@ import (
 // It also KEEPS every export request it was handed, in arrival order, so a
 // capture of a real session can be served back as a recording.
 type agentTraceSink struct {
-	mu     sync.Mutex
-	db     *dagui.DB
-	logExp sdklog.Exporter
-	base   string
+	mu      sync.Mutex
+	db      *dagui.DB
+	logExp  sdklog.Exporter
+	base    string
+	changed chan struct{}
 
 	traces []*coltracepb.ExportTraceServiceRequest
 	logs   []*collogspb.ExportLogsServiceRequest
@@ -43,7 +47,7 @@ type agentTraceSink struct {
 func newAgentTraceSink(t testing.TB) *agentTraceSink {
 	t.Helper()
 	db := dagui.NewDB()
-	sink := &agentTraceSink{db: db, logExp: db.LogExporter()}
+	sink := &agentTraceSink{db: db, logExp: db.LogExporter(), changed: make(chan struct{})}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/traces", sink.tracesHandler)
@@ -87,6 +91,7 @@ func (sink *agentTraceSink) tracesHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	sink.notifyLocked()
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -108,6 +113,7 @@ func (sink *agentTraceSink) logsHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	sink.notifyLocked()
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -124,4 +130,79 @@ func (sink *agentTraceSink) capture() ([]*coltracepb.ExportTraceServiceRequest, 
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	return slices.Clone(sink.traces), slices.Clone(sink.logs)
+}
+
+// notifyLocked wakes every observer after either telemetry channel is ingested.
+// Reading the predicate and this channel under mu prevents lost wakeups.
+func (sink *agentTraceSink) notifyLocked() {
+	close(sink.changed)
+	sink.changed = make(chan struct{})
+}
+
+type restorableTraceCapture struct {
+	traceIDs map[string]string
+	traces   []*coltracepb.ExportTraceServiceRequest
+	logs     []*collogspb.ExportLogsServiceRequest
+}
+
+// restorableCaptureLocked validates the current received prefix and captures
+// that same prefix. AgentNode projections are replaced on every DB mutation;
+// copy the trace IDs here as their underlying Span pointers remain live.
+func (sink *agentTraceSink) restorableCaptureLocked(count int, states map[string]string) (restorableTraceCapture, error) {
+	agents := sink.db.Agents()
+	if len(agents) != count {
+		return restorableTraceCapture{}, fmt.Errorf("want %d agents, received %d", count, len(agents))
+	}
+	traceIDs := make(map[string]string, count)
+	for _, agent := range agents {
+		if agent.CallDigest == "" || agent.SnapshotDigest == "" {
+			return restorableTraceCapture{}, fmt.Errorf("agent %q lacks call or snapshot digest", agent.Name)
+		}
+		if state, ok := states[agent.Name]; ok && agent.State != state {
+			return restorableTraceCapture{}, fmt.Errorf("agent %q state %q, want %q", agent.Name, agent.State, state)
+		}
+		if _, err := sink.db.CallIDForDigest(agent.SnapshotDigest); err != nil {
+			return restorableTraceCapture{}, fmt.Errorf("agent %q anchor %s: %w", agent.Name, agent.SnapshotDigest, err)
+		}
+		traceIDs[agent.Name] = agent.Span().TraceID.String()
+	}
+	for name := range states {
+		if _, ok := traceIDs[name]; !ok {
+			return restorableTraceCapture{}, fmt.Errorf("required agent %q not in trace", name)
+		}
+	}
+	return restorableTraceCapture{
+		traceIDs: traceIDs,
+		traces:   slices.Clone(sink.traces),
+		logs:     slices.Clone(sink.logs),
+	}, nil
+}
+
+func (sink *agentTraceSink) restorableCapture(ctx context.Context, count int, states map[string]string) (restorableTraceCapture, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return restorableTraceCapture{}, err
+		}
+		sink.mu.Lock()
+		captured, err := sink.restorableCaptureLocked(count, states)
+		changed := sink.changed
+		sink.mu.Unlock()
+		if err == nil {
+			return captured, nil
+		}
+		select {
+		case <-ctx.Done():
+			return restorableTraceCapture{}, fmt.Errorf("waiting for restorable trace: %w: %v", ctx.Err(), err)
+		case <-changed:
+		}
+	}
+}
+
+func (sink *agentTraceSink) awaitRestorableCapture(ctx context.Context, t testing.TB, count int, states map[string]string) restorableTraceCapture {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	captured, err := sink.restorableCapture(ctx, count, states)
+	require.NoError(t, err)
+	return captured
 }
