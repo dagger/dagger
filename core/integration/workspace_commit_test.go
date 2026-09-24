@@ -306,7 +306,7 @@ os.setxattr('/work/file.txt', 'user.oracle', b'selected\x00metadata')
 		{name: "add delete type changes and symlinks", pending: func(d *dagger.Directory) *dagger.Directory {
 			return d.WithNewFile("added.txt", "added\n").WithoutFile("delete.txt").
 				WithoutDirectory("nested").WithNewFile("nested", "directory became file\n").
-				WithoutFile("file-to-dir").WithNewFile("file-to-dir/child", "file became directory\n").
+				WithoutFile("file-to-dir").WithNewFile("file-to-dir/sub/child", "file became nested directory\n").
 				WithoutFile("file-to-link").WithSymlink("pending.txt", "file-to-link").
 				WithoutFile("link").WithNewFile("link", "symlink became file\n").
 				WithNewFile("pending-add", "not selected\n").WithoutFile("run")
@@ -684,6 +684,7 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 		fallbackReason   string
 		newObjects       int64
 		newObjectBytes   int64
+		scopedStagePaths int64
 	}
 	byID := map[string]sample{}
 	traces, _ := sink.capture()
@@ -700,14 +701,16 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 						switch attr.Key {
 						case "dagger.git.checkout.discard_git_dir":
 							s.discard = attr.Value.GetBoolValue()
-						case "dagger.git.native.supported":
+						case "dagger.git.native.supported", "dagger.git.native_merge.supported":
 							s.nativeSupported = attr.Value.GetBoolValue()
-						case "dagger.git.native.fallback_reason":
+						case "dagger.git.native.fallback_reason", "dagger.git.native_merge.fallback_reason":
 							s.fallbackReason = attr.Value.GetStringValue()
 						case "dagger.git.native.new_objects":
 							s.newObjects = attr.Value.GetIntValue()
 						case "dagger.git.native.new_object_bytes":
 							s.newObjectBytes = attr.Value.GetIntValue()
+						case "dagger.git.native_merge.scoped_stage_paths":
+							s.scopedStagePaths = attr.Value.GetIntValue()
 						}
 					}
 					byID[id] = s
@@ -728,7 +731,7 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 		}
 		return strings.Compare(a.id, b.id)
 	})
-	var commits, merges, fetches, walks, gitCommits, nativeCommits int
+	var commits, merges, fetches, walks, gitCommits, nativeCommits, nativeMerges, scratchCommits int
 	for _, s := range ordered {
 		fetch := strings.HasPrefix(s.name, "git fetch") || strings.HasPrefix(s.name, "fetching ")
 		if fetch {
@@ -766,13 +769,30 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 			gitCommits++
 			interesting = true
 		case "git commit-tree":
-			nativeCommits++
+			// Reconciliation creates temporary branch objects too. Count only
+			// the actual history transaction as a new workspace commit.
+			for parent, ok := byID[s.parent]; ok; parent, ok = byID[parent.parent] {
+				if parent.name == "git native commit transaction" {
+					nativeCommits++
+					break
+				}
+				if parent.name == "git native workspace merge" {
+					scratchCommits++
+					break
+				}
+			}
+			interesting = true
+		case "git native workspace merge":
+			nativeMerges++
+			t.Logf("PERF native_merge id=%x supported=%t fallback=%q scoped_stage_paths=%d", []byte(s.id)[16:], s.nativeSupported, s.fallbackReason, s.scopedStagePaths)
+			require.True(t, s.nativeSupported, "ordinary workspace reconciliation fell back: %s", s.fallbackReason)
+			require.EqualValues(t, 3, s.scopedStagePaths, "stage the two pending paths and one selected path, not the baseline")
 			interesting = true
 		case "git native commit transaction":
 			t.Logf("PERF native id=%x supported=%t fallback=%q new_objects=%d new_object_file_bytes=%d", []byte(s.id)[16:], s.nativeSupported, s.fallbackReason, s.newObjects, s.newObjectBytes)
 			require.True(t, s.nativeSupported, "ordinary captured-workspace commit fell back: %s", s.fallbackReason)
 			interesting = true
-		case "git read-tree", "git write-tree":
+		case "git read-tree", "git write-tree", "git merge-tree":
 			interesting = true
 		case "GitRef.log":
 			walks++
@@ -784,11 +804,12 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 			t.Logf("PERF span=%q id=%x duration=%s discard_git_dir=%t", s.name, []byte(s.id)[16:], time.Duration(s.end-s.start), s.discard)
 		}
 	}
-	t.Logf("PERF spans workspace_commits=%d merges=%d fetches=%d history_calls=%d git_commits=%d native_commits=%d (inclusive, deduplicated; counts are not bytes)", commits, merges, fetches, walks, gitCommits, nativeCommits)
+	t.Logf("PERF spans workspace_commits=%d merges=%d fetches=%d history_calls=%d git_commits=%d native_commits=%d native_merges=%d scratch_commits=%d (inclusive, deduplicated; counts are not bytes)", commits, merges, fetches, walks, gitCommits, nativeCommits, nativeMerges, scratchCommits)
 	require.Equal(t, iterations, commits, "must observe actual commit calls, not an empty trace")
 	require.Equal(t, iterations, nativeCommits, "captured-workspace commits must execute native transactions")
+	require.Equal(t, iterations, nativeMerges, "captured-workspace commits must execute native reconciliation")
 	require.Zero(t, gitCommits, "must not fall back to retained-checkout commits")
-	require.LessOrEqual(t, merges, iterations, "only workspace reconciliation may still use a general merge")
+	require.Zero(t, merges, "ordinary workspace commits must not reconstruct general merge repositories")
 	require.GreaterOrEqual(t, walks, iterations*3)
 }
 
