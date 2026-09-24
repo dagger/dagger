@@ -351,49 +351,53 @@ type DaggerEngineTestOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:26:2)
+	Run string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:27:2)
 	//
 	// Skip these tests
 	//
-	Skip string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:29:2)
+	Skip string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:30:2)
 
 	// Default: "./..."
-	Pkg string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:32:2)
+	Pkg string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:33:2)
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:35:2)
+	Failfast bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:36:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:38:2)
+	Parallel int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:39:2)
 	//
 	// How long before timing out the test run
 	//
-	Timeout string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:41:2)
+	Timeout string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:42:2)
 
-	Race bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:43:2)
+	Race bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:44:2)
 
 	// Default: 1
-	Count int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:46:2)
+	Count int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:47:2)
 
-	EnvFile *Secret // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:48:2)
+	EnvFile *Secret // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:49:2)
 	//
 	// Enable verbose output
 	//
-	TestVerbose bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:51:2)
+	TestVerbose bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:52:2)
 	//
 	// Update golden files
 	//
-	Update bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:54:2)
+	Update bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:55:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:57:2)
+	EbpfProgs []string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:58:2)
+	//
+	// Elapsed times after the test runner starts at which to dump engine goroutines
+	//
+	DumpAfter []string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:61:2)
 }
 
 // Run core engine tests
-func (r *DaggerEngine) Test(ctx context.Context, opts ...DaggerEngineTestOpts) error { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:22:1)
+func (r *DaggerEngine) Test(ctx context.Context, opts ...DaggerEngineTestOpts) error { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:23:1)
 	if r.test != nil {
 		return nil
 	}
@@ -447,6 +451,10 @@ func (r *DaggerEngine) Test(ctx context.Context, opts ...DaggerEngineTestOpts) e
 		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
 			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
 		}
+		// `dumpAfter` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DumpAfter) {
+			q = q.Arg("dumpAfter", opts[i].DumpAfter)
+		}
 	}
 
 	return q.Execute(ctx)
@@ -457,36 +465,36 @@ type DaggerEngineTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:88:2)
+	Run string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:101:2)
 	//
 	// Skip these tests
 	//
-	Skip string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:91:2)
+	Skip string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:104:2)
 
-	Update bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:93:2)
+	Update bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:106:2)
 
-	Failfast bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:95:2)
+	Failfast bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:108:2)
 
-	Parallel int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:97:2)
+	Parallel int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:110:2)
 
-	Timeout string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:99:2)
+	Timeout string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:112:2)
 
-	Race bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:101:2)
+	Race bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:114:2)
 
 	// Default: 1
-	Count int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:103:2)
+	Count int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:116:2)
 
-	EnvFile *Secret // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:105:2)
+	EnvFile *Secret // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:118:2)
 
-	TestVerbose bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:107:2)
+	TestVerbose bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:120:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:110:2)
+	EbpfProgs []string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:123:2)
 }
 
 // Run telemetry tests
-func (r *DaggerEngine) TestTelemetry(opts ...DaggerEngineTestTelemetryOpts) *Changeset { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:84:1)
+func (r *DaggerEngine) TestTelemetry(opts ...DaggerEngineTestTelemetryOpts) *Changeset { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:97:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
@@ -541,7 +549,7 @@ func (r *DaggerEngine) TestTelemetry(opts ...DaggerEngineTestTelemetryOpts) *Cha
 }
 
 // List all core engine tests
-func (r *DaggerEngine) Tests(ctx context.Context) (string, error) { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:16:1)
+func (r *DaggerEngine) Tests(ctx context.Context) (string, error) { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:17:1)
 	if r.tests != nil {
 		return *r.tests, nil
 	}

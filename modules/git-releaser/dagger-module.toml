@@ -6,7 +6,7 @@ engineVersion = "v0.21.9"
 
 [[dependencies]]
   name = "alpine"
-  source = "../alpine"
+  source = "github.com/dagger/alpine@main"
 
 [codegen]
   automaticGitignore = false

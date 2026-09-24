@@ -38,7 +38,7 @@ Use `.cast` for time-sensitive behavior. Use text snapshots for "what the user s
 ```bash
 python3 skills/tui-qa/scripts/tui_qa.py run \
   --name workspace-install \
-  --command 'dagger module install github.com/dagger/dagger/modules/wolfi@main' \
+  --command 'dagger module install github.com/dagger/wolfi@main' \
   --workdir /path/to/repo \
   --snapshot-at 0.5 \
   --snapshot-at 2 \

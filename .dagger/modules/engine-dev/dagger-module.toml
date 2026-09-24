@@ -7,7 +7,7 @@ include = ["../../../engine/distconsts/**/*", "../../../sdk/typescript/runtime/*
 
 [[dependencies]]
   name = "alpine"
-  source = "../../../modules/alpine"
+  source = "github.com/dagger/alpine@main"
 
 [[dependencies]]
   name = "dagger-cli"
@@ -27,7 +27,7 @@ include = ["../../../engine/distconsts/**/*", "../../../sdk/typescript/runtime/*
 
 [[dependencies]]
   name = "wolfi"
-  source = "../../../modules/wolfi"
+  source = "github.com/dagger/wolfi@main"
 
 [codegen]
   automaticGitignore = false

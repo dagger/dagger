@@ -264,7 +264,7 @@ module = "go-sdk"
 
 [sdks.go.scopes.".dagger/modules/cli-dev"]
 is-module = true
-clients = ["./modules/alpine", "./.dagger/modules/go"]
+clients = ["github.com/dagger/alpine", "./.dagger/modules/go"]
 
 [sdks.go.scopes.".dagger/modules/docs-dev"]
 is-module = true
@@ -275,7 +275,7 @@ is-module = true
 
 [sdks.go.scopes.".dagger/modules/engine-dev"]
 is-module = true
-clients = ["./modules/alpine", "./cmd/codegen", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "./modules/wolfi", "./.dagger/modules/engine-dev/notify"]
+clients = ["github.com/dagger/alpine", "./cmd/codegen", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "github.com/dagger/wolfi", "./.dagger/modules/engine-dev/notify"]
 
 [sdks.go.scopes.".dagger/modules/engine-dev/notify"]
 is-module = true
@@ -286,14 +286,14 @@ clients = ["./.dagger/modules/engine-dev", "./modules/git-releaser"]
 
 [sdks.go.scopes.".dagger/modules/python-client-dev"]
 is-module = true
-clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest@cdf6dc0bce0fe8fdf87c6b26ecd991e6f96200b0", "./modules/wolfi"]
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest@cdf6dc0bce0fe8fdf87c6b26ecd991e6f96200b0", "github.com/dagger/wolfi"]
 
 [sdks.go.scopes.".dagger/modules/python-client-dev/dockerd"]
 is-module = true
 
 [sdks.go.scopes.".dagger/modules/release"]
 is-module = true
-clients = ["./.dagger/modules/changie", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/go-client-dev", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/release/gh", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "./modules/wolfi"]
+clients = ["./.dagger/modules/changie", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/go-client-dev", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/release/gh", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "github.com/dagger/wolfi"]
 
 [sdks.go.scopes.".dagger/modules/release/apko"]
 is-module = true
@@ -313,23 +313,16 @@ clients = ["./.dagger/modules/engine-dev"]
 [sdks.go.scopes.".dagger/modules/tla-check"]
 is-module = true
 
-[sdks.go.scopes."modules/alpine"]
-is-module = true
-
 [sdks.go.scopes."modules/git-releaser"]
 is-module = true
-clients = ["./modules/alpine"]
-
-[sdks.go.scopes."modules/wolfi"]
-is-module = true
-clients = ["./modules/alpine"]
+clients = ["github.com/dagger/alpine"]
 
 [sdks.dang.scopes.".dagger/modules/dev"]
 clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/cli-dev"]
 is-module = true
 
 [sdks.go.scopes.".dagger/modules/go"]
-clients = ["./modules/wolfi"]
+clients = ["github.com/dagger/wolfi"]
 is-module = true
 
 [modules.dagger-dev]
