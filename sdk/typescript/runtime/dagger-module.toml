@@ -1,0 +1,7 @@
+name = "typescript-sdk"
+engineVersion = "v0.21.9"
+
+# The engine packages this module with its generated Go bindings. Build those
+# files directly instead of regenerating the SDK's own runtime on first use.
+[runtime]
+source = "go"
