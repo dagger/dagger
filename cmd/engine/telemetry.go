@@ -43,8 +43,6 @@ const (
 
 var (
 	engineName string
-	// Each engine process is a separate epoch for cumulative cgroup counters.
-	engineInstanceID = identity.NewID()
 )
 
 func init() {
@@ -192,11 +190,10 @@ func initResourceMetrics(ctx context.Context, cfg config.TelemetryConfig) *sdkme
 		slog.Warn("failed to configure engine resource metric export", "error", err)
 		return nil
 	}
-	// Do not change the resource used by existing client, trace, or log exports.
-	resourceAttrs := append(telemetry.Resource.Attributes(), semconv.ServiceInstanceIDKey.String(engineInstanceID))
-	resourceIdentity := resource.NewWithAttributes(telemetry.Resource.SchemaURL(), resourceAttrs...)
+	// The process resource names the engine instance (service.instance.id),
+	// the epoch of the cumulative cgroup counters.
 	provider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(resourceIdentity),
+		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
 	)
 	// Keep the callback registered through provider shutdown so the final

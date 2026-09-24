@@ -319,8 +319,10 @@ func main() { //nolint:gocyclo
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
 	var resourceMetrics *sdkmetric.MeterProvider
 
-	// One random ID names this engine process in its telemetry, created
-	// before the process telemetry so its resource carries it.
+	// One random ID names this engine process in all its telemetry
+	// (service.instance.id), its cache facts included, and marks the epoch
+	// of its cumulative cgroup counters. It is created before the process
+	// telemetry so the process resource carries it.
 	engineInstanceID := uuid.NewString()
 	var factExport *cacheFactExport
 

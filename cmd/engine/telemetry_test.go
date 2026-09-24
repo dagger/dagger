@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -24,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
@@ -186,7 +188,8 @@ func TestEngineTelemetry(t *testing.T) {
 		clientProvider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewPeriodicReader(clientExporter)))
 		defer clientProvider.Shutdown(context.Background()) //nolint:errcheck
 		ctx = telemetry.WithMeterProvider(ctx, clientProvider)
-		ctx, _ = InitTelemetry(ctx, engineInstanceID)
+		// A fresh ID per process, as main creates it.
+		ctx, _ = InitTelemetry(ctx, uuid.NewString())
 		resources := initResourceMetrics(ctx, cfg.Telemetry)
 
 		// Resource telemetry must neither replace an existing context provider
@@ -320,9 +323,14 @@ func TestEngineTelemetry(t *testing.T) {
 					require.Equal(t, "engine", request.destination, "signal-specific headers must override generic headers")
 					for _, rm := range request.metrics.ResourceMetrics {
 						attrs := map[string]string{}
+						instanceAttrs := 0
 						for _, attr := range rm.GetResource().GetAttributes() {
 							attrs[attr.Key] = attr.GetValue().GetStringValue()
+							if attr.Key == "service.instance.id" {
+								instanceAttrs++
+							}
 						}
+						require.Equal(t, 1, instanceAttrs, "one engine instance ID on the resource")
 						require.Equal(t, "dagger-engine", attrs["service.name"])
 						require.Equal(t, engine.Version, attrs["service.version"])
 						require.Equal(t, "test-engine", attrs["dagger.io/engine.name"])
@@ -417,4 +425,10 @@ func (sink *telemetryReceiver) take() []telemetryRequest {
 	requests := sink.requests
 	sink.requests = nil
 	return requests
+}
+
+// The cache facts' engine instance attribute is OpenTelemetry's
+// service.instance.id.
+func TestEngineInstanceAttributeIsServiceInstanceID(t *testing.T) {
+	require.Equal(t, string(semconv.ServiceInstanceIDKey), cachefact.ResourceEngineInstance)
 }
