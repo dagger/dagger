@@ -98,6 +98,15 @@ func (s *gitSchema) gitRefWithCommitDirectory(ctx context.Context, parent dagql.
 	if err != nil {
 		return inst, err
 	}
+	// Same-base local edits can update an isolated Git index directly. The
+	// returned storage owns its new objects through snapshot ancestry, without
+	// a retained checkout or a copy of the parent's history. Divergent and
+	// unsupported inputs still use the general three-way reconciliation below.
+	if dir, supported, err := core.GitCommitChangesetNative(ctx, parent, changes.Self(), opts); err != nil {
+		return inst, err
+	} else if supported {
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	}
 	var tree dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, parent, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}}); err != nil {
 		return inst, err
