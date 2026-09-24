@@ -56,12 +56,12 @@ func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, 
 		c.Receiver = result.(dagql.ObjectResult[*ModuleObject])
 		owned = append(owned, result)
 	}
-	if c.Changeset.Self() != nil {
-		result, err := attach(c.Changeset)
+	if c.Generator.Self() != nil {
+		result, err := attach(c.Generator)
 		if err != nil {
 			return nil, err
 		}
-		c.Changeset = result.(dagql.ObjectResult[*Changeset])
+		c.Generator = result.(dagql.ObjectResult[*Generator])
 		owned = append(owned, result)
 	}
 	if c.Workspace.Self() != nil {

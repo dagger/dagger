@@ -48,7 +48,7 @@ func (*AgentMiddleware) TypeDescription() string {
 }
 
 func NewAgentMiddleware(artifact *Artifact) (*AgentMiddleware, error) {
-	if artifact.TypeName != "LLM" || !slices.Contains(artifact.Directives, "agent") || artifact.Node == nil || artifact.Node.OriginalModule.Self() == nil {
+	if artifact.TypeName != "AgentMiddleware" || !slices.Contains(artifact.Directives, "agent") || artifact.Node == nil || artifact.Node.OriginalModule.Self() == nil {
 		uri, err := artifact.URI(ArtifactURIOpts{DimensionKeys: true})
 		if err != nil {
 			return nil, err

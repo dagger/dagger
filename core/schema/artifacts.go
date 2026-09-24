@@ -26,7 +26,21 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.ArtifactPath](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.ArtifactPath]{}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.ArtifactDimension](srv).View(AfterVersion("v1.0.0-0")))
-	dagql.Fields[*core.ArtifactDimension]{}.Install(srv)
+	artifactDimensionKinds.Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.Fields[*core.ArtifactDimension]{
+		dagql.Func("kind", func(_ context.Context, d *core.ArtifactDimension, _ struct{}) (artifactDimensionKind, error) {
+			if d.Kind == "TYPE" {
+				return typeDimension, nil
+			}
+			return collectionDimension, nil
+		}).Doc("How this dimension gets its keys."),
+		dagql.Func("collectionType", func(_ context.Context, d *core.ArtifactDimension, _ struct{}) (dagql.Nullable[dagql.String], error) {
+			if d.Kind == "TYPE" {
+				return dagql.Null[dagql.String](), nil
+			}
+			return dagql.NonNull(dagql.String(d.CollectionType)), nil
+		}).Doc("The collection type, or null for a type dimension."),
+	}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.ArtifactDimensionKey](srv).View(AfterVersion("v1.0.0-0")))
 	artifactClass := dagql.NewClass[*core.Artifact](srv).View(AfterVersion("v1.0.0-0"))
 	srv.InstallObject(artifactClass)
@@ -39,17 +53,18 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.ArtifactDimensionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
 		dagql.NodeFunc("asAgentMiddlewares", s.asAgentMiddlewares).Doc("Convert the selection to agent middleware without running the functions. Fail if any artifact is not an agent middleware."),
+		dagql.NodeFunc("asGenerators", s.asGenerators).Doc("Convert the selection to Generators without running them. Fail if any artifact is not a Generator."),
 		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
 		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services."),
-		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme.")),
+		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme.")),
 		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		// Each invocation gets a new cache key. Retain its results so SDK clients can load their IDs.
 		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
-		dagql.Func("filterCheckCommand", s.filterCheckCommand).Doc("Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.").Args(dagql.Arg("generated").Doc("Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.")),
-		dagql.Func("filterGenerateCommand", s.filterGenerateCommand).Doc("Select Changeset artifacts marked generate, using each workspace's generator settings."),
-		dagql.Func("filterAgentCommand", s.filterAgentCommand).Doc("Select LLM artifacts marked agent."),
+		dagql.Func("filterCheckCommand", s.filterCheckCommand).Doc("Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.").Args(dagql.Arg("generated").Doc("Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.")),
+		dagql.Func("filterGenerateCommand", s.filterGenerateCommand).Doc("Select Generator artifacts, using each workspace's generator settings."),
+		dagql.Func("filterAgentCommand", s.filterAgentCommand).Doc("Select AgentMiddleware artifacts."),
 		dagql.Func("filterUpCommand", s.filterUpCommand).Doc("Select Service artifacts, using each workspace's service settings. Does not require the up directive."),
 		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive. Does not filter by type or workspace settings.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterParentTypes", s.filterParentTypes).Doc("Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
@@ -73,6 +88,12 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("uri", s.uri).Doc("The DAG address that selects this whole selection: filterUri(uri) selects the same set."),
 	}.Install(srv)
 	dagql.Fields[*core.Artifact]{
+		dagql.Func("__generator", func(ctx context.Context, a *core.Artifact, args struct{ Arguments core.JSON }) (*core.Generator, error) {
+			return newArtifactGenerator(ctx, a, args.Arguments)
+		}),
+		dagql.Func("__agentMiddleware", func(_ context.Context, a *core.Artifact, _ struct{}) (*core.AgentMiddleware, error) {
+			return core.NewAgentMiddleware(a)
+		}),
 		dagql.Func("__remoteCheck", s.remoteCheck),
 		dagql.Func("__failedCheck", s.failedCheck),
 		dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."),
@@ -95,7 +116,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 }
 
 func (*artifactsSchema) types(ctx context.Context, parent *core.Artifacts, _ struct{}) (dagql.ObjectResultArray[*core.TypeDef], error) {
-	parent, err := expandArtifacts(ctx, parent)
+	parent, err := parent.SchemaSelection()
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +241,11 @@ func checkArtifactAddressWorkspace(entries []*core.Artifact, addr *dagaddress.Ad
 }
 
 func (*artifactsSchema) dimensionDefinitions(_ context.Context, parent *core.Artifacts, _ struct{}) ([]*core.ArtifactDimension, error) {
+	var err error
+	parent, err = parent.SchemaSelection()
+	if err != nil {
+		return nil, err
+	}
 	return parent.DimensionDefinitions(), nil
 }
 
@@ -227,6 +253,11 @@ func (s *artifactsSchema) pathDefinitions(ctx context.Context, parent *core.Arti
 	Absolute      bool `default:"false"`
 	TypeAssertion bool `default:"false"`
 }) ([]*core.ArtifactPath, error) {
+	var err error
+	parent, err = parent.SchemaSelection()
+	if err != nil {
+		return nil, err
+	}
 	paths := map[string]*core.ArtifactPath{}
 	for _, entry := range parent.Entries {
 		uri, err := entry.URI(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion})
@@ -263,11 +294,27 @@ func (*artifactsSchema) dimensions(ctx context.Context, parent *core.Artifacts, 
 	return expanded.Dimensions(), nil
 }
 func (s *artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
+	dimension, err := parent.ResolveDimension(args.Dimension)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(dimension, "type:") {
+		selected, err := parent.FilterDimensions([]string{dimension}).SchemaSelection()
+		if err != nil {
+			return nil, err
+		}
+		var keys []string
+		for _, entry := range selected.Entries {
+			keys = append(keys, strings.Join(entry.Path, "/"))
+		}
+		slices.Sort(keys)
+		return slices.Compact(keys), nil
+	}
 	items, err := s.dimensionItems(ctx, parent, args)
 	if err != nil {
 		return nil, err
 	}
-	dimension, err := parent.ResolveDimension(args.Dimension)
+	dimension, err = parent.ResolveDimension(args.Dimension)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +357,9 @@ func (*artifactsSchema) one(ctx context.Context, parent *core.Artifacts, _ struc
 func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
 	var workspaceID uint64
 	for i, artifact := range parent.Entries {
-		if len(artifact.DimensionKeys) > 0 {
+		if slices.ContainsFunc(artifact.DimensionKeys, func(key *core.ArtifactDimensionKey) bool {
+			return !strings.HasPrefix(key.Dimension, "type:")
+		}) {
 			return "", fmt.Errorf("a selection with resolved collection keys has no single DAG address; use the individual artifact addresses")
 		}
 		id, err := artifact.Workspace.ID()
@@ -399,6 +448,32 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 		}
 	}
 	var result dagql.AnyObjectResult
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch artifact.TypeName {
+	case "Generator":
+		err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__generator", Args: []dagql.NamedInput{{Name: "arguments", Value: arguments}}})
+		return result, err
+	case "AgentMiddleware":
+		if len(inputs) != 0 {
+			return nil, fmt.Errorf("AgentMiddleware receives its LLM through LLM.compose; artifact arguments are not supported")
+		}
+		err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__agentMiddleware"})
+		return result, err
+	case "Check":
+		if artifact.Node != nil && artifact.Node.Name == "stale" && artifact.Node.Parent.ObjectType() != nil && artifact.Node.Parent.ObjectType().Name == "Generator" {
+			var gen dagql.ObjectResult[*core.Generator]
+			// Use a concrete constructor so retained IDs can reconstruct the target.
+			err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &gen, dagql.Selector{Field: "__generator", Args: []dagql.NamedInput{{Name: "arguments", Value: arguments}}})
+			if err != nil {
+				return nil, err
+			}
+			err = srv.Select(ctx, gen, &result, dagql.Selector{Field: "stale"})
+			return result, err
+		}
+	}
 	if err := evaluateArtifact(ctx, artifact, &result, inputs...); err != nil {
 		if artifact.TypeName != "Check" {
 			return nil, err
@@ -423,6 +498,54 @@ func (*artifactsSchema) remoteCheck(_ context.Context, artifact *core.Artifact, 
 
 func (*artifactsSchema) failedCheck(_ context.Context, _ *core.Artifact, args struct{ Message string }) (*core.Check, error) {
 	return &core.Check{Failure: args.Message}, nil
+}
+
+// Retain object arguments while the generator remains unevaluated.
+func newArtifactGenerator(ctx context.Context, a *core.Artifact, arguments core.JSON) (*core.Generator, error) {
+	g, err := core.NewGenerator(a, arguments)
+	if err != nil {
+		return nil, err
+	}
+	inputs, err := artifactInputs(ctx, g.Artifact, arguments)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var retain func(dagql.Input) error
+	retain = func(input dagql.Input) error {
+		switch input := input.(type) {
+		case dagql.IDable:
+			id, err := input.ID()
+			if err != nil {
+				return err
+			}
+			value, err := srv.Load(ctx, id)
+			if err != nil {
+				return err
+			}
+			g.Inputs = append(g.Inputs, value)
+		case dagql.DynamicOptional:
+			if input.Valid {
+				return retain(input.Value)
+			}
+		case dagql.DynamicArrayInput:
+			for _, value := range input.Values {
+				if err := retain(value); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	for _, input := range inputs {
+		if err := retain(input.Value); err != nil {
+			return nil, err
+		}
+	}
+	return g, nil
 }
 
 // Object inputs need recipes on another engine. Scalar strings remain opaque.
@@ -739,12 +862,12 @@ func (*artifactsSchema) filterDirectives(_ context.Context, parent *core.Artifac
 func (*artifactsSchema) filterCheckCommand(ctx context.Context, parent *core.Artifacts, args struct {
 	Generated dagql.Optional[dagql.Boolean]
 }) (*core.Artifacts, error) {
-	selected := parent.FilterDirectives([]string{"check"}, false).FilterTypes([]string{"Check"}, false)
+	selected := parent.FilterTypes([]string{"Check"}, false)
 	return applyArtifactCommandPolicy(ctx, parent, selected, "check", args.Generated)
 }
 
 func (*artifactsSchema) filterGenerateCommand(ctx context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
-	selected := parent.FilterDirectives([]string{"generate"}, false).FilterTypes([]string{"Changeset"}, false)
+	selected := parent.FilterTypes([]string{"Generator"}, false)
 	return applyArtifactCommandPolicy(ctx, parent, selected, "generate", dagql.Optional[dagql.Boolean]{})
 }
 
@@ -754,7 +877,7 @@ func (*artifactsSchema) filterUpCommand(ctx context.Context, parent *core.Artifa
 }
 
 func (*artifactsSchema) filterAgentCommand(_ context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
-	return parent.FilterDirectives([]string{"agent"}, false).FilterTypes([]string{"LLM"}, false), nil
+	return parent.FilterTypes([]string{"AgentMiddleware"}, false), nil
 }
 
 type artifactWorkspacePolicy struct {
@@ -814,10 +937,7 @@ func (policy artifactWorkspacePolicy) enabled(ctx context.Context, artifact *cor
 		return true, nil
 	}
 	if command == "check" {
-		if parent := artifact.Node.Parent.ObjectType(); parent != nil && parent.Name == "Changeset" {
-			if !slices.Contains(artifact.Node.Parent.Directives, "generate") {
-				return false, nil
-			}
+		if parent := artifact.Node.Parent.ObjectType(); parent != nil && parent.Name == "Generator" {
 			checkGenerated := true
 			if policy.config.CheckGenerated != nil {
 				checkGenerated = *policy.config.CheckGenerated
@@ -867,7 +987,7 @@ func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ 
 	}
 	generator := parent.Node.Parent
 	if parent.Node.Name == "stale" && generator != nil && slices.Contains(generator.Directives, "generate") {
-		if obj := generator.ObjectType(); obj != nil && obj.Name == "Changeset" && obj.SourceModuleName == "" {
+		if obj := generator.ObjectType(); obj != nil && obj.Name == "Generator" && obj.SourceModuleName == "" {
 			description, _, _ := strings.Cut(generator.Description, "\n")
 			description = strings.TrimRight(strings.TrimSpace(description), ".:;!?")
 			if description == "" {
@@ -937,8 +1057,10 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 					var completed dagql.AnyResult
 					err = srv.Select(ctx, result.Value, &completed, dagql.Selector{Field: "sync"})
 					if err == nil {
+						if value, ok := completed.(dagql.AnyObjectResult); ok && value.Type().Name() == result.Value.Type().Name() {
+							result.Value = value
+						}
 						if check, ok := completed.(dagql.ObjectResult[*core.Check]); ok {
-							result.Value = check
 							if check.Self().Error.Valid {
 								err = check.Self().Error.Value.Self()
 							}
@@ -987,23 +1109,11 @@ func (*artifactsSchema) loadError(_ context.Context, artifact *core.Artifact, _ 
 	return "", nil
 }
 
-func (*artifactsSchema) asAgentMiddlewares(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) ([]*core.AgentMiddleware, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var items dagql.ObjectResultArray[*core.Artifact]
-	if err := srv.Select(ctx, parent, &items, dagql.Selector{Field: "items"}); err != nil {
-		return nil, err
-	}
-	agents := make([]*core.AgentMiddleware, len(items))
-	for i, item := range items {
-		agents[i], err = core.NewAgentMiddleware(item.Self())
-		if err != nil {
-			return nil, err
-		}
-	}
-	return agents, nil
+func (*artifactsSchema) asAgentMiddlewares(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.AgentMiddleware], error) {
+	return artifactValuesAs[*core.AgentMiddleware](ctx, parent)
+}
+func (*artifactsSchema) asGenerators(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Generator], error) {
+	return artifactValuesAs[*core.Generator](ctx, parent)
 }
 
 func (*artifactsSchema) asChecks(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Check], error) {

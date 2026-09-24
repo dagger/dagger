@@ -8,10 +8,10 @@ import (
 	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/core/artifact"
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,58 +46,26 @@ func TestArtifactDimensionFlags(t *testing.T) {
 }
 
 func TestArtifactDimensionHelp(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		defs    artifact.Dimensions
-		visible []string
-		hidden  []string
-	}{
-		{
-			name: "short name",
-			defs: artifact.Dimensions{
-				{Identifier: "Go.modules", Name: "go-module", QualifiedName: "go-modules"},
-			},
-			visible: []string{"go-module"},
-			hidden:  []string{"go-modules", "Go.modules"},
-		},
-		{
-			name: "ambiguous short name",
-			defs: artifact.Dimensions{
-				{Identifier: "Go.modules", Name: "go-module", QualifiedName: "go-modules"},
-				{Identifier: "App.modules", Name: "go-module", QualifiedName: "app-modules"},
-			},
-			visible: []string{"go-modules", "app-modules"},
-			hidden:  []string{"go-module", "Go.modules", "App.modules"},
-		},
-		{
-			name: "flag collision",
-			defs: artifact.Dimensions{
-				{Identifier: "Go.all", Name: "all", QualifiedName: "go-all"},
-			},
-			visible: []string{"go-all"},
-			hidden:  []string{"Go.all"},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			cmd := &cobra.Command{Use: "check"}
-			cmd.InitDefaultHelpFlag()
-			registerCommandArtifactFlags(cmd)
-			registerArtifactDimensionHelp(cmd, tc.defs)
-			require.NoError(t, cmd.ParseFlags(nil))
-			help := artifactCommandFlags(cmd)
-			for _, name := range tc.visible {
-				require.Contains(t, help, "--"+name+" KEY ")
-			}
-			for _, name := range tc.hidden {
-				require.NotContains(t, help, "--"+name+" ")
-				// Hidden aliases still parse, including alongside --help.
-				require.NoError(t, cmd.ParseFlags([]string{"--" + name + "=./app", "--help"}))
-			}
-			require.NotContains(t, help, "--dimension-key")
-			require.NotContains(t, help, "stringArray")
-			require.False(t, cmd.Flag("all").Hidden)
-		})
+	defs := artifact.Dimensions{
+		{Identifier: "Go.modules", Name: "go-module", QualifiedName: "go-modules", ItemType: "GoModule", CollectionType: "GoModules", KeyName: "path"},
+		{Identifier: "type:GoModule", Kind: "TYPE", Name: "go-module", ItemType: "GoModule", KeyName: "name"},
+		{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check", KeyName: "name"},
 	}
+	cmd := &cobra.Command{Use: "check"}
+	registerCommandArtifactFlags(cmd)
+	registerArtifactDimensionHelp(cmd, defs)
+	require.NoError(t, cmd.ParseFlags([]string{"--go-modules", "--go-module=.", "--check=test"}))
+	help := artifactCommandFlags(cmd)
+	require.Contains(t, help, "--go-module PATH")
+	require.Contains(t, help, "--go-modules ")
+	require.Contains(t, help, "--artifact-go-module NAME")
+	require.NotContains(t, help, "stringArray")
+	require.Contains(t, cmd.Flag("artifact-go-module").Usage, "values: 'dagger list -a --type=GoModule'")
+	keys, err := artifactKeyFlags(cmd)
+	require.NoError(t, err)
+	require.Contains(t, keys, dagaddress.Pair{Dimension: "Go.modules"})
+	require.Contains(t, keys, dagaddress.Pair{Dimension: "Go.modules", Key: ".", HasKey: true})
+	require.Contains(t, keys, dagaddress.Pair{Dimension: "type:Check", Key: "test", HasKey: true})
 }
 
 func TestArtifactEmptyDimensionKey(t *testing.T) {
@@ -118,75 +86,17 @@ func TestArtifactEmptyDimensionKey(t *testing.T) {
 
 func TestArtifactDimensionFlagPreparation(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		args []string
-		help bool
-		want []string
-		err  string
+		args     []string
+		discover bool
 	}{
-		{name: "list"},
-		{name: "static flags", args: []string{"--type", "Container", "--env=dev"}},
-		{name: "dimensions", args: []string{"--go-module=sdk/go", "--go-test", "TestOne", "--go-test=TestTwo"}, want: []string{"go-module", "go-test"}},
-		{name: "flag value", args: []string{"--go-test", "--literal-key"}, want: []string{"go-test"}},
-		{name: "after separator", args: []string{"--", "--literal-path"}},
-		{name: "help", args: []string{"--go-test=TestOne", "--help"}, help: true},
-		{name: "unknown with help", args: []string{"--does-not-exist=x", "--help"}, help: true},
-		{name: "no help", args: []string{"--help=false"}},
-		{name: "missing value", args: []string{"--go-test"}, want: []string{"go-test"}, err: "flag needs an argument"},
-		{name: "unknown short flag", args: []string{"-z"}, err: "unknown shorthand flag"},
+		{nil, false}, {[]string{"--type=Container"}, false}, {[]string{"--go-modules"}, true},
+		{[]string{"--go-module=."}, true}, {[]string{"--help"}, true}, {[]string{"--", "--literal-path"}, false},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := &cobra.Command{Use: "dagger"}
-			root.PersistentFlags().String("env", "", "Workspace environment")
-			cmd := newListCommand()
-			root.AddCommand(cmd)
-			child, _, err := root.Find([]string{"list"})
-			require.NoError(t, err)
-			help, err := prepareArtifactDimensionFlags(child, tc.args)
-			if tc.err != "" {
-				require.ErrorContains(t, err, tc.err)
-			} else {
-				require.NoError(t, err)
-			}
-			require.Equal(t, tc.help, help)
-			var names []string
-			child.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
-				if len(flag.Annotations[artifactDimensionFlag]) > 0 {
-					names = append(names, flag.Name)
-				}
-			})
-			require.Equal(t, tc.want, names)
-			// Discovery must not apply values that Cobra will parse again.
-			types, err := child.Flags().GetStringArray("type")
-			require.NoError(t, err)
-			require.Empty(t, types)
-			env, err := root.PersistentFlags().GetString("env")
-			require.NoError(t, err)
-			require.Empty(t, env)
-		})
-	}
-}
-
-func TestArtifactDimensionFlagValidation(t *testing.T) {
-	defs := artifact.Dimensions{
-		{Identifier: "Golang.modules", Name: "go-module", QualifiedName: "golang-modules"},
-	}
-	for _, name := range []string{"go-module", "golang-modules", "Golang.modules", "does-not-exist"} {
-		t.Run(name, func(t *testing.T) {
-			cmd := newListCommand()
-			child, _, err := cmd.Find(nil)
-			require.NoError(t, err)
-			args := []string{"--" + name + "=sdk/go"}
-			_, err = prepareArtifactDimensionFlags(child, args)
-			require.NoError(t, err)
-			require.NoError(t, child.ParseFlags(args))
-			err = validateArtifactDimensionFlags(child, defs)
-			if name == "does-not-exist" {
-				require.EqualError(t, err, "unknown flag: --does-not-exist")
-			} else {
-				require.NoError(t, err)
-			}
-		})
+		cmd := newListCommand()
+		discover, err := prepareArtifactDimensionFlags(cmd, tc.args)
+		require.NoError(t, err)
+		require.Equal(t, tc.discover, discover)
+		require.Nil(t, cmd.Flag("go-modules"), "preparation must not guess whether a flag takes a key")
 	}
 }
 
@@ -196,7 +106,6 @@ func TestArtifactPreparationDoesNotConnect(t *testing.T) {
 	for _, args := range [][]string{
 		{"list", "-a"},
 		{"list", "-a", "--type=Container"},
-		{"list", "-a", "--go-module=sdk/go"},
 	} {
 		t.Run(args[1], func(t *testing.T) {
 			root := &cobra.Command{Use: "dagger"}
@@ -240,7 +149,6 @@ func TestArtifactAddressArguments(t *testing.T) {
 		_, err = selected.Types(t.Context())
 		require.ErrorIs(t, err, errArtifactQueryCaptured)
 		require.Contains(t, recorder.query, `filterUri(uri:"`+want+`")`)
-		require.NotContains(t, recorder.query, "filterTypes(")
 	}
 	require.Len(t, sel[0].Query, 2) // Flags do not mutate the input address.
 
@@ -286,4 +194,17 @@ func TestAbsoluteArtifactWorkspace(t *testing.T) {
 	}
 	_, err := artifactClientParams(client.Params{}, []string{"repo@main:one", "repo@other:two"})
 	require.ErrorContains(t, err, "different workspaces")
+}
+
+// Minimal flags for selection and serialization tests.
+func registerArtifactDimensionFlags(cmd *cobra.Command, dimensions []string) {
+	for _, dimension := range dimensions {
+		if cmd.Flag(dimension) != nil {
+			continue // Keep the command flag; use another dimension name or a link query.
+		}
+		cmd.PersistentFlags().StringArray(dimension, nil, "Select items with this `key` (repeat to select more)")
+		cmd.PersistentFlags().Lookup(dimension).Annotations = map[string][]string{
+			artifactDimensionFlag: {dimension},
+		}
+	}
 }

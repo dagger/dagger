@@ -60,7 +60,7 @@ func artifactWorkspaceConfig(ctx context.Context, ws *dagger.Workspace) (*worksp
 }
 
 // commandArtifacts keeps each address's filters scoped to its own path.
-func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, addresses []string, strict bool, keys ...dagaddress.Pair) (*dagger.Artifacts, error) {
+func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, cmd *cobra.Command, addresses []string, strict bool, keys ...dagaddress.Pair) (*dagger.Artifacts, error) {
 	parsed, err := parseArtifactAddresses(addresses)
 	if err != nil {
 		return nil, err
@@ -109,6 +109,19 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 		filter.Path = ""
 		filter.Absolute = false
 		filter.Query = append(slices.Clone(address.Query), keys...)
+		if slices.ContainsFunc(filter.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
+			targets, err := commandArtifactTargets(dag, cmd, selection)
+			if err != nil {
+				return nil, err
+			}
+			schema, err := readArtifactListSchema(ctx, dag, targets)
+			if err != nil {
+				return nil, err
+			}
+			if err := resolveArtifactTypeKeys(schema.PathDefinitions, filter.Query); err != nil {
+				return nil, err
+			}
+		}
 		selection = selection.FilterURI(filter.String())
 		if selected == nil {
 			selected = selection
@@ -151,17 +164,28 @@ func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *da
 func registerCommandArtifactFlags(cmd *cobra.Command) {
 	registerArtifactListFlags(cmd)
 	cmd.Flags().BoolP("all", "a", false, "Expand collections and list each item")
+	cmd.Flags().StringP("format", "f", "cli", "Output `FORMAT`: table, link, or cli (requires --list)")
 }
 
 func isArtifactCommand(cmd *cobra.Command) bool {
-	switch cmd {
-	case checksCmd, upCmd, shellCmd, generateCmd, agentCmd:
+	switch cmd.Name() {
+	case "check", "up", "shell", "generate", "agent":
 		return true
 	}
 	return false
 }
 
 func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, cmd *cobra.Command, addresses []string, strict bool) (*dagger.Artifacts, error) {
+	if cmd.Flags().Changed("format") {
+		list, _ := cmd.Flags().GetBool("list")
+		if !list {
+			return nil, fmt.Errorf("--format requires --list")
+		}
+	}
+	format, _ := cmd.Flags().GetString("format")
+	if err := validateArtifactListFormat(format); err != nil {
+		return nil, err
+	}
 	keys, err := artifactKeyFlags(cmd)
 	if err != nil {
 		return nil, err
@@ -182,7 +206,7 @@ func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *dagg
 			return nil, err
 		}
 	}
-	return commandArtifacts(ctx, dag, ws, addresses, strict, keys...)
+	return commandArtifacts(ctx, dag, ws, cmd, addresses, strict, keys...)
 }
 
 func commandArtifactTargets(dag *dagger.Client, cmd *cobra.Command, artifacts *dagger.Artifacts) (*dagger.Artifacts, error) {

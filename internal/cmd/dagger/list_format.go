@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
@@ -44,79 +43,123 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		return nil
 	}
 	if format == "cli" {
-		return writeArtifactCLI(cmd.OutOrStdout(), items, names, nil)
+		return writeArtifactCLI(cmd.OutOrStdout(), items, names, artifactListReplayArgs(cmd))
 	}
+	// Mixed types use separate tables, not sparse columns for every type.
+	groups := map[string][]listedArtifact{}
+	var order []string
+	for _, item := range items {
+		typ := ""
+		for _, key := range item.DimensionKeys {
+			if strings.HasPrefix(key.Dimension, "type:") {
+				typ = key.Dimension
+			}
+		}
+		if _, ok := groups[typ]; !ok {
+			order = append(order, typ)
+		}
+		groups[typ] = append(groups[typ], item)
+	}
+	for i, typ := range order {
+		if i > 0 {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+				return err
+			}
+		}
+		if err := writeArtifactTable(cmd.OutOrStdout(), groups[typ], names); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]string) error {
 	var dimensions []string
-	var rows [][]string
-	described, needsLink := false, false
-	baseLinks := map[string]bool{}
+	described, absolute := false, false
 	for _, item := range items {
 		for _, key := range item.DimensionKeys {
+			if item.CollectionItem && item.OmitTypeKey && strings.HasPrefix(key.Dimension, "type:") {
+				continue
+			}
 			if !slices.Contains(dimensions, key.Dimension) {
 				dimensions = append(dimensions, key.Dimension)
 			}
 		}
+		for _, id := range item.Presence {
+			if !slices.Contains(dimensions, id) {
+				dimensions = append(dimensions, id)
+			}
+		}
 		described = described || firstDescriptionLine(item.Description) != ""
-	}
-	for _, item := range items {
 		addr, err := dagaddress.Parse(item.URI)
 		if err != nil {
 			return err
 		}
-		values := make([]string, len(dimensions))
-		for _, key := range item.DimensionKeys {
-			value := key.Key
-			// An empty key differs from an absent dimension. Quote control
-			// characters and literal quoted strings so they remain distinct.
-			if value == "" || strings.HasPrefix(value, "\"") || strings.ContainsAny(value, "\t\r\n") {
-				value = strconv.Quote(value)
-			}
-			values[slices.Index(dimensions, key.Dimension)] = value
-		}
-
-		if described {
-			values = append(values, firstDescriptionLine(item.Description))
-		}
-		addr.Query = nil
-		baseLinks[addr.String()] = true
-		needsLink = needsLink || addr.Absolute
-		rows = append(rows, append(values, addr.String()))
+		absolute = absolute || addr.Absolute
 	}
-	// Different matrices need their links even when their current keys differ.
-	needsLink = needsLink || len(baseLinks) > 1
-	columns := artifactTableColumns(items, dimensions, rows)
-	var header []string
-	for _, i := range columns {
-		name := names[dimensions[i]]
+	// Collection dimensions precede the target type dimension.
+	slices.SortStableFunc(dimensions, func(a, b string) int {
+		if strings.HasPrefix(a, "type:") == strings.HasPrefix(b, "type:") {
+			return 0
+		}
+		if strings.HasPrefix(a, "type:") {
+			return 1
+		}
+		return -1
+	})
+	header := []string{}
+	if absolute {
+		header = append(header, "WORKSPACE")
+	}
+	for _, dimension := range dimensions {
+		name := names[dimension]
 		if name == "" {
-			name = dimensions[i]
+			name = dimension
 		}
 		header = append(header, strings.ToUpper(name))
-	}
-	seenKeys := map[string]bool{}
-	for i, row := range rows {
-		values := make([]string, 0, len(columns)+2)
-		for _, column := range columns {
-			values = append(values, row[column])
-		}
-		identity, _ := json.Marshal(values)
-		needsLink = needsLink || len(items[i].DimensionKeys) == 0 || seenKeys[string(identity)]
-		seenKeys[string(identity)] = true
-		rows[i] = append(values, row[len(dimensions):]...)
 	}
 	if described {
 		header = append(header, "DESCRIPTION")
 	}
-	if needsLink {
-		header = append(header, "LINK")
-	}
-	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+	writer := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(writer, strings.Join(header, "\t")); err != nil {
 		return err
 	}
-	for _, row := range rows {
-		if !needsLink {
-			row = row[:len(row)-1]
+	for _, item := range items {
+		row := []string{}
+		if absolute {
+			addr, err := dagaddress.Parse(item.URI)
+			if err != nil {
+				return err
+			}
+			workspace := ""
+			if addr.Absolute {
+				workspace = addr.Workspace + "@" + addr.Version
+			}
+			row = append(row, workspace)
+		}
+		for _, dimension := range dimensions {
+			var values []string
+			if slices.Contains(item.Presence, dimension) {
+				values = append(values, "*")
+			}
+			for _, key := range item.DimensionKeys {
+				if key.Dimension != dimension {
+					continue
+				}
+				value := key.Key
+				if display, ok := item.DisplayKeys[dimension]; ok {
+					value = display
+				}
+				if value == "" || strings.HasPrefix(value, "\"") || strings.ContainsAny(value, "\t\r\n") {
+					value = strconv.Quote(value)
+				}
+				values = append(values, value)
+			}
+			row = append(row, strings.Join(values, ", "))
+		}
+		if described {
+			row = append(row, firstDescriptionLine(item.Description))
 		}
 		for i, value := range row {
 			row[i] = strings.NewReplacer("\t", `\t`, "\r", `\r`, "\n", `\n`).Replace(value)
@@ -141,18 +184,51 @@ func writeArtifactCLI(w io.Writer, items []listedArtifact, names map[string]stri
 }
 
 func artifactCLIArguments(item listedArtifact, names map[string]string, options []string) (string, error) {
+	addr, err := dagaddress.Parse(item.URI)
+	if err != nil {
+		return "", err
+	}
 	var args []string
-	for _, key := range item.DimensionKeys {
-		name := names[key.Dimension]
-		if name == "" {
-			name = key.Dimension
-		}
-		value, err := quoteArtifactArgument(key.Key)
+	if addr.Absolute {
+		workspace, err := quoteArtifactArgument(addr.Workspace + "@" + addr.Version)
 		if err != nil {
 			return "", err
 		}
-		args = append(args, "--"+name+"="+value)
+		args = append(args, "-W", workspace)
 	}
+	for _, typeKeys := range []bool{false, true} {
+		for _, key := range item.DimensionKeys {
+			if strings.HasPrefix(key.Dimension, "type:") != typeKeys {
+				continue
+			}
+			if item.CollectionItem && item.OmitTypeKey && strings.HasPrefix(key.Dimension, "type:") {
+				continue
+			}
+			name := names[key.Dimension]
+			if name == "" {
+				name = key.Dimension
+			}
+			value := key.Key
+			if display, ok := item.DisplayKeys[key.Dimension]; ok {
+				value = display
+			}
+			quoted, err := quoteArtifactArgument(value)
+			if err != nil {
+				return "", err
+			}
+			args = append(args, "--"+name+"="+quoted)
+		}
+		if !typeKeys {
+			for _, id := range item.Presence {
+				name := item.PresenceNames[id]
+				if name == "" {
+					return "", fmt.Errorf("no collection flag for %q", id)
+				}
+				args = append(args, "--"+name)
+			}
+		}
+	}
+
 	for _, option := range options {
 		quoted, err := quoteArtifactArgument(option)
 		if err != nil {
@@ -160,68 +236,7 @@ func artifactCLIArguments(item listedArtifact, names map[string]string, options 
 		}
 		args = append(args, quoted)
 	}
-	if item.URI != "" && !item.CLIFlagsOnly {
-		addr, err := dagaddress.Parse(item.URI)
-		if err != nil {
-			return "", err
-		}
-		addr.Query = nil
-		if item.CollectionItem {
-			// Item filters must also reach operations below the collection.
-			addr.Types = nil
-		}
-		link, err := quoteArtifactArgument(addr.String())
-		if err != nil {
-			return "", err
-		}
-		args = append(args, link)
-	}
 	return strings.Join(args, " "), nil
-}
-
-// Keep each row's innermost dimension. Remove a parent column only if the
-// remaining columns still distinguish every complete dimension tuple.
-func artifactTableColumns(items []listedArtifact, dimensions []string, rows [][]string) []int {
-	columns := make([]int, len(dimensions))
-	innermost := map[string]bool{}
-	for _, item := range items {
-		if len(item.DimensionKeys) > 0 {
-			innermost[item.DimensionKeys[len(item.DimensionKeys)-1].Dimension] = true
-		}
-	}
-	full := make([]string, len(rows))
-	for i, row := range rows {
-		encoded, _ := json.Marshal(row[:len(dimensions)])
-		full[i] = string(encoded)
-	}
-	for i := range dimensions {
-		columns[i] = i
-	}
-	for column, dimension := range dimensions {
-		if innermost[dimension] {
-			continue
-		}
-		candidate := slices.DeleteFunc(slices.Clone(columns), func(i int) bool { return i == column })
-		seen := map[string]string{}
-		unique := true
-		for i, row := range rows {
-			values := make([]string, len(candidate))
-			for j, index := range candidate {
-				values[j] = row[index]
-			}
-			encoded, _ := json.Marshal(values)
-			key := string(encoded)
-			if previous, ok := seen[key]; ok && previous != full[i] {
-				unique = false
-				break
-			}
-			seen[key] = full[i]
-		}
-		if unique {
-			columns = candidate
-		}
-	}
-	return columns
 }
 
 func quoteArtifactArgument(value string) (string, error) {

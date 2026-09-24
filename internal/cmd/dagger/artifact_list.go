@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -41,33 +42,6 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	if err != nil {
 		return err
 	}
-	var paths []artifactListPath
-	names := map[string]string{}
-	if len(listedArtifactKeys(items)) > 0 {
-		// Resolve discovery once. Every formatting query must use this same set,
-		// since currentWorkspace has a new identity on each call.
-		id, err := dag.CurrentWorkspace().Artifacts().ID(ctx)
-		if err != nil {
-			return err
-		}
-		allArtifacts := dagger.Ref[*dagger.Artifacts](dag, id)
-		defs, err := artifactDimensions(ctx, dag, allArtifacts)
-		if err != nil {
-			return err
-		}
-		for _, def := range defs {
-			names[def.Identifier] = artifactDimensionFlagName(cmd, defs, def)
-		}
-		targets, err := commandArtifactTargets(dag, cmd, allArtifacts)
-		if err != nil {
-			return err
-		}
-		schema, err := readArtifactListSchema(ctx, dag, targets)
-		if err != nil {
-			return err
-		}
-		paths = schema.PathDefinitions
-	}
 	groups := map[string][]listedArtifact{}
 	for _, item := range items {
 		addr, err := dagaddress.Parse(item.URI)
@@ -82,20 +56,33 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	var output []listedArtifact
 	for _, path := range groupPaths {
 		for _, row := range artifactListRows(groups[path], all) {
-			item := listedArtifact{URI: path, Description: row[0].Description}
+			item := listedArtifact{URI: row[0].URI, Description: row[0].Description}
 			for _, key := range listedArtifactKeys(row) {
 				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
+			}
+			if len(row) > 1 {
+				addr, err := dagaddress.Parse(path)
+				if err != nil {
+					return err
+				}
+				for _, key := range item.DimensionKeys {
+					if !strings.HasPrefix(key.Dimension, "type:") {
+						addr.Query = append(addr.Query, dagaddress.Pair{Dimension: key.Dimension, Key: key.Key, HasKey: true})
+					}
+				}
+				item.URI = addr.String()
 			}
 			output = append(output, item)
 		}
 	}
-	if err := projectArtifactLinks(output, paths); err != nil {
+	names, err := prepareArtifactOutput(ctx, dag, cmd, output)
+	if err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := writeArtifactCLI(cmd.OutOrStdout(), output, names, artifactListReplayArgs(cmd)); err != nil {
+	if err := writeArtifactList(cmd, output, names); err != nil {
 		return err
 	}
 	if len(output) < len(items) {
@@ -126,10 +113,26 @@ func listArtifactPaths(ctx context.Context, dag *dagger.Client, selection *dagge
 	var items []listedArtifact
 	hasDimensions := false
 	for _, path := range response.Node.PathDefinitions {
-		items = append(items, listedArtifact{URI: path.URI, Description: path.Description})
-		hasDimensions = hasDimensions || len(path.Dimensions) > 0
+		item := listedArtifact{URI: path.URI, Description: path.Description}
+		addr, err := dagaddress.Parse(path.URI)
+		if err != nil {
+			return err
+		}
+		for _, dim := range path.Dimensions {
+			if strings.HasPrefix(dim, "type:") {
+				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{dim, addr.Path})
+			} else {
+				item.Presence = append(item.Presence, dim)
+				hasDimensions = true
+			}
+		}
+		items = append(items, item)
 	}
-	if err := writeArtifactCLI(cmd.OutOrStdout(), items, nil, artifactListReplayArgs(cmd)); err != nil {
+	names, err := prepareArtifactOutput(ctx, dag, cmd, items)
+	if err != nil {
+		return err
+	}
+	if err := writeArtifactList(cmd, items, names); err != nil {
 		return err
 	}
 	if hasDimensions {
@@ -149,11 +152,11 @@ func artifactListHasKeyFilters(cmd *cobra.Command) (bool, error) {
 		return false, err
 	}
 	for _, address := range addresses {
-		if len(address.Query) > 0 {
+		if slices.ContainsFunc(address.Query, func(p dagaddress.Pair) bool { return p.HasKey && !strings.HasPrefix(p.Dimension, "type:") }) {
 			return true, nil
 		}
 	}
-	return len(keys) > 0, nil
+	return slices.ContainsFunc(keys, func(p dagaddress.Pair) bool { return p.HasKey && !strings.HasPrefix(p.Dimension, "type:") }), nil
 }
 
 // Collapse only products that can be expressed with repeated dimension flags.

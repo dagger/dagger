@@ -52,7 +52,7 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
-					With(daggerExec("generate", "-l")).
+					With(daggerExec("generate", "-l", "-f=link")).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
 				require.Contains(t, out, "generate-files")
@@ -191,7 +191,7 @@ func (GeneratorsSuite) TestGenerateApplyDisposition(ctx context.Context, t *test
 
 	t.Run("agent list mode does not require a choice", func(ctx context.Context, t *testctx.T) {
 		out, err := agent.
-			With(daggerExec("generate", "-l")).
+			With(daggerExec("generate", "-l", "-f=link")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "generate-files")
@@ -266,7 +266,7 @@ func (GeneratorsSuite) TestGeneratorsViaLegacyBlueprintConfig(ctx context.Contex
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
-					With(daggerExec("generate", "-l")).
+					With(daggerExec("generate", "-l", "-f=link")).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
 				require.Contains(t, out, "generate-files")
@@ -322,11 +322,11 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
-					With(daggerExec("generate", "-l")).
+					With(daggerExec("generate", "-l", "-f=link")).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Contains(t, out, "dag+changeset://"+tc.path+"/generate-files")
-				require.Contains(t, out, "dag+changeset://"+tc.path+"/generate-other-files")
+				require.Contains(t, out, "dag+generator://"+tc.path+"/generate-files")
+				require.Contains(t, out, "dag+generator://"+tc.path+"/generate-other-files")
 			})
 
 			t.Run("generate", func(ctx context.Context, t *testctx.T) {
@@ -412,13 +412,11 @@ import (
 type Consumer struct{}
 
 func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspace) (string, error) {
-	items, err := workspace.Artifacts().FilterGenerateCommand().Items(ctx)
+	items, err := workspace.Artifacts().FilterGenerateCommand().AsGenerators(ctx)
 	if err != nil { return "", err }
 	var changes []*dagger.Changeset
-	for _, artifact := range items {
-		id, err := artifact.Value().ID(ctx)
-		if err != nil { return "", err }
-		changes = append(changes, dagger.Ref[*dagger.Changeset](dag, id))
+	for _, generator := range items {
+		changes = append(changes, generator.Changeset())
 	}
 	_, err = dag.Changeset().WithChangesets(changes).Sync(ctx)
 	if err != nil { return "", err }
@@ -430,7 +428,7 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 	// One synthetic generator reconciles complete SDK scopes. The target scope
 	// runs before the root scope because the root client targets it.
 	listOut, err := modGen.
-		With(daggerNonNestedExec("generate", "-l")).
+		With(daggerNonNestedExec("generate", "-l", "-f=link")).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, listOut, "go-sdk/generate")
@@ -1090,7 +1088,7 @@ module = "bad"
 		With(nonNestedDevEngine(c))
 
 	out, err := workspace.
-		With(daggerNonNestedExec("generate", "-l")).
+		With(daggerNonNestedExec("generate", "-l", "-f=link")).
 		CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "bad/generate")
@@ -1140,7 +1138,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 		// surfaced as a span on the run path (asserted below), not in the list
 		// table.
 		out, err := base.
-			With(daggerExec("generate", "-l")).
+			With(daggerExec("generate", "-l", "-f=link")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "good/generate")
@@ -1201,7 +1199,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Co
 
 	t.Run("listing enumerates healthy generators despite a broken entrypoint", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExec("generate", "-l")).
+			With(daggerExec("generate", "-l", "-f=link")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "good/generate")
@@ -1300,7 +1298,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateReportsLoadFailureDetail(ctx context
 
 	t.Run("listing cannot classify, so it reports every skip", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExec("generate", "-l")).
+			With(daggerExec("generate", "-l", "-f=link")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "good/generate")
@@ -1545,7 +1543,7 @@ source = "hello-with-generators"
 generate.skip = ["generate-other-files", "other-generators:*"]
 `)
 
-	listOut, err := ctr.With(daggerExec("generate", "-l")).CombinedOutput(ctx)
+	listOut, err := ctr.With(daggerExec("generate", "-l", "-f=link")).CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, listOut, "hello-with-generators/generate-files")
 	require.NotContains(t, listOut, "hello-with-generators/generate-other-files")
@@ -1578,11 +1576,11 @@ func (GeneratorsSuite) TestGeneratorArtifactEvaluation(ctx context.Context, t *t
 	require.NoError(t, err)
 	out, err := modGen.WithWorkdir("hello-with-generators").With(daggerQuery(`{
  currentWorkspace { artifacts(include: ["generate-files"]) { filterGenerateCommand {
-  values { error { message } value { ... on Changeset { isEmpty } } }
+  values { error { message } value { ... on Generator { changeset { isEmpty } } } }
  } } }
 }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterGenerateCommand":{"values":[{"error":null,"value":{"isEmpty":false}}]}}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterGenerateCommand":{"values":[{"error":null,"value":{"changeset":{"isEmpty":false}}}]}}}}`, out)
 }
 
 // TestClientSchemaIntrospectionJSON locks in that
@@ -1716,7 +1714,7 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 
 	t.Run("baseline reads input.txt from the workspace", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerQuery(`{currentWorkspace{artifacts(include:["repro/gen"]){filterTypes(types:["Changeset"]){one{value{... on Changeset {layer{file(path:"output.txt"){contents}}}}}}}}}`)).
+			With(daggerQuery(`{currentWorkspace{artifacts(include:["repro/gen"]){filterTypes(types:["Generator"]){one{value{... on Generator {changeset{layer{file(path:"output.txt"){contents}}}}}}}}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "generated from: A")
@@ -1724,7 +1722,7 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 
 	t.Run("generator sees an overlay edit applied to the workspace", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){artifacts(include:["repro/gen"]){filterTypes(types:["Changeset"]){one{value{... on Changeset {layer{file(path:"output.txt"){contents}}}}}}}}}}`)).
+			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){artifacts(include:["repro/gen"]){filterTypes(types:["Generator"]){one{value{... on Generator {changeset{layer{file(path:"output.txt"){contents}}}}}}}}}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "generated from: B-OVERLAY")

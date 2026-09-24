@@ -53,7 +53,7 @@ func artifactCommandFlags(cmd *cobra.Command) string {
 		switch flag.Name {
 		case "generated", "skip":
 			group = "Filters"
-		case "list", "all", "absolute":
+		case "list", "all", "absolute", "format":
 			group = "List options"
 		case "workspace":
 			group, copy.Usage = "Workspace options", "Select a workspace at `location` (local path or Git ref)"

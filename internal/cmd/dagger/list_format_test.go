@@ -9,97 +9,62 @@ import (
 )
 
 func TestArtifactListFormats(t *testing.T) {
-	items := []listedArtifact{
-		{URI: "dag+test://go/modules/tests?go-module=.%2Fapi&go-test=TestHealth", Description: "Check health\nExtra detail", DimensionKeys: []struct{ Dimension, Key string }{{"Go.modules", "./api"}, {"GoModule.tests", "TestHealth"}}},
-		{URI: "dag+test://go/modules/tests?go-module=.%2Fworker&go-test=TestHealth", DimensionKeys: []struct{ Dimension, Key string }{{"Go.modules", "./worker"}, {"GoModule.tests", "TestHealth"}}},
+	names := map[string]string{"Go.modules": "go-module", "type:Check": "check", "type:Container": "container"}
+	row := func(path, key, name string) listedArtifact {
+		return listedArtifact{URI: "dag+check://" + path + "?go-module=" + key, Description: "Check files\nExtra detail", DimensionKeys: []struct{ Dimension, Key string }{{"Go.modules", key}, {"type:Check", path}}, DisplayKeys: map[string]string{"type:Check": name}}
 	}
-	names := map[string]string{"Go.modules": "go-module", "GoModule.tests": "go-test"}
-	render := func(t *testing.T, format string, rows []listedArtifact) string {
-		t.Helper()
-		cmd := &cobra.Command{}
+	items := []listedArtifact{row("go/modules/generate/stale", ".", "stale"), row("go/modules/test", ".", "test")}
+	render := func(format string, rows []listedArtifact) string {
+		cmd := &cobra.Command{Use: "check"}
 		cmd.Flags().String("format", format, "")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		require.NoError(t, writeArtifactList(cmd, rows, names))
 		return out.String()
 	}
-	t.Run("parent keys distinguish duplicate child keys", func(t *testing.T) {
-		out := render(t, "table", items)
-		require.Contains(t, out, "GO-MODULE")
-		require.Contains(t, out, "GO-TEST")
+	t.Run("type dimension identifies operations on the same item", func(t *testing.T) {
+		out := render("table", items)
+		require.Regexp(t, `GO-MODULE +CHECK +DESCRIPTION`, out)
+		require.Regexp(t, `\. +stale +Check files`, out)
+		require.Regexp(t, `\. +test +Check files`, out)
 		require.NotContains(t, out, "LINK")
-		require.Regexp(t, `\./api +TestHealth +Check health`, out)
-		require.Regexp(t, `\./worker +TestHealth`, out)
 	})
-	t.Run("unique child keys do not need a parent column", func(t *testing.T) {
-		other := items[1]
-		other.DimensionKeys = []struct{ Dimension, Key string }{{"Go.modules", "./worker"}, {"GoModule.tests", "TestWorker"}}
-		out := render(t, "table", []listedArtifact{items[0], other})
-		require.NotContains(t, out, "GO-MODULE")
-		require.NotContains(t, out, "LINK")
-		require.Contains(t, out, "GO-TEST")
-		require.Contains(t, out, "TestWorker")
+	t.Run("cli uses filters", func(t *testing.T) {
+		require.Equal(t, "--go-module=. --check=stale   # Check files\n--go-module=. --check=test    # Check files\n", render("cli", items))
 	})
-
-	t.Run("different paths with the same keys need a link", func(t *testing.T) {
-		other := items[0]
-		other.URI = "dag+test://other/tests?go-module=.%2Fapi&go-test=TestHealth"
-		out := render(t, "table", []listedArtifact{items[0], other})
-		require.Regexp(t, `DESCRIPTION +LINK\n`, out)
-		require.Contains(t, out, "dag+test://go/modules/tests")
-		require.Contains(t, out, "dag+test://other/tests")
+	t.Run("link retains canonical identity", func(t *testing.T) {
+		require.Equal(t, items[0].URI+"\n"+items[1].URI+"\n", render("link", items))
 	})
-	t.Run("different matrices keep links even with disjoint keys", func(t *testing.T) {
-		other := items[1]
-		other.URI = "dag+test://other/tests?go-module=.%2Fworker&go-test=TestWorker"
-		other.DimensionKeys = []struct{ Dimension, Key string }{{"Go.modules", "./worker"}, {"GoModule.tests", "TestWorker"}}
-		out := render(t, "table", []listedArtifact{items[0], other})
-		require.Contains(t, out, "LINK")
-		require.Contains(t, out, "dag+test://go/modules/tests")
-		require.Contains(t, out, "dag+test://other/tests")
-	})
-	t.Run("absolute tables retain workspace and revision", func(t *testing.T) {
+	t.Run("schema matrices use collection presence", func(t *testing.T) {
 		item := items[0]
-		item.URI = "dag+test://github.com/acme/project@abc:go/modules/tests?go-test=TestHealth"
-		out := render(t, "table", []listedArtifact{item})
-		require.Contains(t, out, "LINK")
-		require.Contains(t, out, "dag+test://github.com/acme/project@abc:go/modules/tests")
+		item.URI = "dag+check://go/modules/generate/stale"
+		item.DimensionKeys = item.DimensionKeys[1:]
+		item.Presence = []string{"Go.modules"}
+		item.PresenceNames = map[string]string{"Go.modules": "go-modules"}
+		require.Equal(t, "--go-modules --check=stale   # Check files\n", render("cli", []listedArtifact{item}))
+		require.Regexp(t, `\* +stale`, render("table", []listedArtifact{item}))
 	})
-	t.Run("collection CLI scope does not change link output", func(t *testing.T) {
+	t.Run("static artifacts use qualified type keys", func(t *testing.T) {
+		item := listedArtifact{URI: "dag+container://backend/container", DimensionKeys: []struct{ Dimension, Key string }{{"type:Container", "backend/container"}}, DisplayKeys: map[string]string{"type:Container": "backend/container"}}
+		require.Equal(t, "CONTAINER\nbackend/container\n", render("table", []listedArtifact{item}))
+		require.Equal(t, "--container=backend/container\n", render("cli", []listedArtifact{item}))
+	})
+	t.Run("absolute output carries workspace and revision", func(t *testing.T) {
+		item := items[0]
+		item.URI = "dag+check://github.com/acme/ws@abc:go/modules/generate/stale?go-module=."
+		out := render("table", []listedArtifact{item})
+		require.Contains(t, out, "WORKSPACE")
+		require.Contains(t, out, "github.com/acme/ws@abc")
+		require.NotContains(t, out, "LINK")
+		require.Equal(t, "-W github.com/acme/ws@abc --go-module=. --check=stale   # Check files\n", render("cli", []listedArtifact{item}))
+	})
+	t.Run("collection filters can select descendants", func(t *testing.T) {
 		item := items[0]
 		item.CollectionItem = true
-		require.Equal(t, item.URI+"\n", render(t, "link", []listedArtifact{item}))
-		require.Equal(t, "--go-module=./api --go-test=TestHealth dag://go/modules/tests   # Check health\n", render(t, "cli", []listedArtifact{item}))
+		item.OmitTypeKey = true
+		require.Equal(t, "--go-module=.   # Check files\n", render("cli", []listedArtifact{item}))
 	})
-
-	t.Run("static artifacts need a link", func(t *testing.T) {
-		out := render(t, "table", []listedArtifact{{URI: "dag+container://dev", Description: "Development"}})
-		require.Regexp(t, `DESCRIPTION +LINK\nDevelopment +dag\+container://dev\n`, out)
-	})
-	t.Run("empty keys differ from missing dimensions", func(t *testing.T) {
-		out := render(t, "table", []listedArtifact{
-			{URI: "dag+test://one?go-test=", DimensionKeys: []struct{ Dimension, Key string }{{"GoModule.tests", ""}}},
-			{URI: "dag+test://two", DimensionKeys: nil},
-		})
-		require.Regexp(t, `(?m)^"" +dag\+test://one$`, out)
-		require.Regexp(t, `(?m)^ +dag\+test://two$`, out)
-	})
-
-	t.Run("links retain all keys", func(t *testing.T) {
-		require.Equal(t, items[0].URI+"\n"+items[1].URI+"\n", render(t, "link", items))
-	})
-	t.Run("cli keeps the path and protects shell arguments", func(t *testing.T) {
-		item := listedArtifact{URI: "dag+test://go/modules/tests?go-test=hello", Description: "Check health\nnot another command", DimensionKeys: []struct{ Dimension, Key string }{{"GoModule.tests", "hello; echo surprise!"}}}
-		out := render(t, "cli", []listedArtifact{item})
-		require.Equal(t, "--go-test='hello; echo surprise!' dag+test://go/modules/tests   # Check health\n", out)
-	})
-	t.Run("collection selectors can use flags alone", func(t *testing.T) {
-		item := items[0]
-		item.CLIFlagsOnly = true
-		require.Equal(t, "--go-module=./api --go-test=TestHealth   # Check health\n", render(t, "cli", []listedArtifact{item}))
-	})
-
 	t.Run("duplicate selections print once", func(t *testing.T) {
-		require.Equal(t, items[0].URI+"\n", render(t, "link", []listedArtifact{items[0], items[0]}))
+		require.Equal(t, items[0].URI+"\n", render("link", []listedArtifact{items[0], items[0]}))
 	})
 }

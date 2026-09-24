@@ -476,7 +476,7 @@ type Artifact implements Node {
   """
   path: [String!]!
 
-  """The selected keys for each dimension. Empty for static artifacts."""
+  """The collection keys and full path key in the artifact type dimension."""
   dimensionKeys: [ArtifactDimensionKey!]!
 
   """The directives carried by this artifact."""
@@ -493,25 +493,30 @@ type ArtifactDimension implements Node {
   """A unique identifier for this ArtifactDimension."""
   id: ID!
 
-  """The schema type name of the collection that supplies this dimension."""
-  collectionType: String!
+  """How this dimension gets its keys."""
+  kind: ArtifactDimensionKind!
 
-  """Exact GraphQL ParentType.field identifier."""
+  """The collection type, or null for a type dimension."""
+  collectionType: String
+
+  """
+  Stable identifier: ParentType.field for a collection or type:TypeName for an artifact type.
+  """
   identifier: String!
 
-  """Short name derived from the author item type."""
+  """Short name derived from the collection item type or artifact type."""
   name: String!
 
-  """Author parent type and field name, in CLI case."""
+  """Qualified name used when the short name is ambiguous."""
   qualifiedName: String!
 
-  """The author item type name."""
+  """The collection item type or artifact type name."""
   itemType: String!
 
-  """The name of the author get function's key argument."""
+  """The collection key argument name, or name for a type dimension."""
   keyName: String!
 
-  """The description of the author get function's key argument."""
+  """The collection key argument description, or empty for a type dimension."""
   keyDescription: String!
 }
 
@@ -524,6 +529,11 @@ type ArtifactDimensionKey implements Node {
 
   """The dimension item's key."""
   key: String!
+}
+
+enum ArtifactDimensionKind {
+  COLLECTION
+  TYPE
 }
 
 """
@@ -572,6 +582,11 @@ type Artifacts implements Node {
   asAgentMiddlewares: [AgentMiddleware!]!
 
   """
+  Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+  """
+  asGenerators: [Generator!]!
+
+  """
   Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
   """
   asChecks: [Check!]!
@@ -588,7 +603,9 @@ type Artifacts implements Node {
   asServices: [Service!]!
 
   """
-  List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+  List selected schema paths, including empty collections. Does not read runtime
+  values. Applies type keys and collection presence; collection key values
+  require items.
   """
   pathDefinitions(
     """Prefix each address with the workspace's Git address and commit."""
@@ -619,7 +636,7 @@ type Artifacts implements Node {
 
   """
   Select Check artifacts for dagger check, using each workspace's check and
-  generator settings. Include stale checks only for Changesets marked generate.
+  generator settings. Include staleness checks from Generators.
   """
   filterCheckCommand(
     """
@@ -628,12 +645,10 @@ type Artifacts implements Node {
     generated: Boolean
   ): Artifacts!
 
-  """
-  Select Changeset artifacts marked generate, using each workspace's generator settings.
-  """
+  """Select Generator artifacts, using each workspace's generator settings."""
   filterGenerateCommand: Artifacts!
 
-  """Select LLM artifacts marked agent."""
+  """Select AgentMiddleware artifacts."""
   filterAgentCommand: Artifacts!
 
   """
@@ -777,9 +792,6 @@ A comparison between two directories representing changes that can be applied.
 type Changeset implements Exportable & Node & Syncer {
   """A unique identifier for this Changeset."""
   id: ID!
-
-  """A check that passes when the changeset is empty."""
-  stale: Check! @check
 
   """Force evaluation in the engine."""
   sync: ID! @expectedType(name: "Changeset")
@@ -3755,6 +3767,23 @@ type GeneratedCode implements Node {
 
   """List of paths to ignore in version control (i.e. .gitignore)."""
   vcsIgnoredPaths: [String!]!
+}
+
+"""
+A generation function and its staleness check. Reading changeset runs the function.
+"""
+type Generator implements Node {
+  """A unique identifier for this Generator."""
+  id: ID!
+
+  """Run the generator and return its changes."""
+  changeset: Changeset!
+
+  """Run the generator and retain its result."""
+  sync: Generator!
+
+  """A check that passes when this generator would produce no changes."""
+  stale: Check! @check
 }
 
 """

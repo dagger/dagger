@@ -106,9 +106,9 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
   "types":[{"name":"Artifact"},{"name":"Artifacts"},{"name":"Consumer"},{"name":"Container"},{"name":"Directory"},{"name":"File"},{"name":"Provider"},{"name":"ProviderDocs"}],
   "uri":"dag://",
   "containers":{"types":[{"name":"Container"}],"uri":"dag+container://","items":[
-    {"path":["base"],"dimensionKeys":[],"uri":"dag://base"},
-    {"path":["broken"],"dimensionKeys":[],"uri":"dag://broken"},
-    {"path":["consumer","base"],"dimensionKeys":[],"uri":"dag://consumer/base"}
+    {"path":["base"],"dimensionKeys":[{"dimension":"type:Container","key":"base"}],"uri":"dag://base"},
+    {"path":["broken"],"dimensionKeys":[{"dimension":"type:Container","key":"broken"}],"uri":"dag://broken"},
+    {"path":["consumer","base"],"dimensionKeys":[{"dimension":"type:Container","key":"consumer/base"}],"uri":"dag://consumer/base"}
   ]},
   "nested":{"uri":"dag://docs/source","items":[{"uri":"dag://docs/source"}]},
   "sibling":{"items":[{"uri":"dag://other-docs/source"}]},
@@ -118,7 +118,7 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
   "exact":{"items":[]},"colon":{"items":[]},"slash":{"items":[]},"order":{"items":[]},"prefix":{"items":[{"uri":"dag://docs"}]},
   "first":{"filterPath":{"uri":"dag+container+directory://base","items":[{"uri":"dag://base"}]}},
   "second":{"filterTypes":{"uri":"dag+container+directory://base","items":[{"uri":"dag://base"}]}},
-  "contradiction":{"filterTypes":{"uri":"dag://{}","items":[]}},"dimensions":[],"dimensionKeys":[]
+  "contradiction":{"filterTypes":{"uri":"dag://{}","items":[]}},"dimensions":["type:Artifact","type:Artifacts","type:Consumer","type:Container","type:Directory","type:File","type:Provider","type:ProviderDocs"],"dimensionKeys":[]
 }}}`, string(*got))
 	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts { filterPath(path: ["absent"]) { one { uri } } } } }
@@ -189,13 +189,13 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "dag+container://base\n", out)
 	out, err = base.With(workspaceSelectionDaggerExec("check", "-l", "dag://"+ref+":verify")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag+check://verify\n", out)
+	require.Equal(t, "--check=verify\n", out)
 	_, err = base.With(workspaceSelectionDaggerExec("check", "dag://"+ref+":verify")).Sync(ctx)
 	require.NoError(t, err)
-	for _, typ := range []string{"LLM", "llm"} {
+	for _, typ := range []string{"AgentMiddleware", "agent-middleware"} {
 		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "list", "-a", "-f=link", "--type", typ)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+llm://assistant\n", out)
+		require.Equal(t, "dag+agent-middleware://assistant\n", out)
 	}
 
 	for _, tc := range []struct {
@@ -203,11 +203,11 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 		paths []string
 	}{
 		{[]string{"list", "-a", "-f=link", "base"}, []string{"base"}},
-		{[]string{"check", "-l", "verify"}, []string{"verify"}},
-		{[]string{"generate", "-l", "generate"}, []string{"generate"}},
-		{[]string{"up", "-l", "web"}, []string{"web"}},
-		{[]string{"agent", "-l", "assistant"}, []string{"assistant"}},
-		{[]string{"shell", "-l", "base"}, []string{"base"}},
+		{[]string{"check", "-l", "-f=link", "verify"}, []string{"verify"}},
+		{[]string{"generate", "-l", "-f=link", "generate"}, []string{"generate"}},
+		{[]string{"up", "-l", "-f=link", "web"}, []string{"web"}},
+		{[]string{"agent", "-l", "-f=link", "assistant"}, []string{"assistant"}},
+		{[]string{"shell", "-l", "-f=link", "base"}, []string{"base"}},
 		{[]string{"list", "containers", "-f=link"}, []string{"base", "broken", "consumer/base"}},
 	} {
 		for _, flag := range []string{"--absolute", "--abs"} {
@@ -217,7 +217,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 				out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 				require.NoError(t, err)
 				var want []string
-				typ := map[string]string{"list": "container", "check": "check", "generate": "changeset", "up": "service", "agent": "llm", "shell": "container"}[tc.args[0]]
+				typ := map[string]string{"list": "container", "check": "check", "generate": "generator", "up": "service", "agent": "agent-middleware", "shell": "container"}[tc.args[0]]
 				for _, path := range tc.paths {
 					address := strings.Replace(strings.TrimSuffix(uri, "base")+path, "dag://", "dag+"+typ+"://", 1)
 					want = append(want, address)
@@ -558,7 +558,7 @@ func (ArtifactsSuite) TestWorkspaceHelpDiscoveryFailures(ctx context.Context, t 
 				})
 			}
 			t.Run("shortcut keeps discovery error", func(ctx context.Context, t *testctx.T) {
-				out, err := fixture.ctr.With(daggerNonNestedExecFail("ws", "containers")).CombinedOutput(ctx)
+				out, err := fixture.ctr.With(daggerNonNestedExecFail("list", "containers")).CombinedOutput(ctx)
 				require.NoError(t, err, out)
 				require.NotContains(t, out, "unknown command")
 				require.Contains(t, out, fixture.err)
@@ -631,55 +631,6 @@ func (ArtifactsSuite) TestCoreSelection(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (ArtifactsSuite) TestCLI(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := nativeWorkspaceBase(t, c).WithDirectory("/work/selected", artifactSource(c))
-	for _, tc := range []struct {
-		command string
-		want    string
-	}{
-		{"containers", "dag://base\ndag://broken\ndag://consumer/base\n"},
-		{"directories", "dag://docs/source\ndag://other-docs/source\n"},
-		{"files", "dag://consumer/input\ndag://marker\n"},
-		{"Artifact", "dag://consumer/single\n"},
-		{"Artifacts", "dag://consumer/selected\n"},
-		{"provider-docs", "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
-	} {
-		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
-			out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "workspace", tc.command)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, tc.want, out)
-		})
-	}
-	for _, args := range [][]string{
-		{"workspace"},
-		{"workspace", "--help"},
-		{"ws", "--help"},
-		{"help", "ws"},
-	} {
-		out, err := base.WithWorkdir("/work/selected").With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
-		require.NoError(t, err)
-		for _, typeName := range []string{"Container", "Directory", "File", "Artifact", "Artifacts"} {
-			require.Contains(t, out, "List "+typeName+" artifacts")
-		}
-	}
-	out, err := base.With(workspaceSelectionDaggerExec("-W", "/work/selected", "ws", "containers", "--help")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "dagger workspace containers [flags]")
-	out, err = base.With(workspaceSelectionDaggerExec("__complete", "-W", "/work/selected", "workspace", "dir")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "directories\tList Directory artifacts\n")
-}
-
-func withoutArtifactListComments(output string) string {
-	var lines []string
-	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
-		name, _, _ := strings.Cut(line, "#")
-		lines = append(lines, strings.TrimSpace(name))
-	}
-	return strings.Join(lines, "\n") + "\n"
-}
-
 func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory("/work/selected", artifactSource(c))
@@ -688,40 +639,38 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		source = strings.Replace(source, "  pub broken:", "  \"\"\"A container that must not run.\nMore details.\"\"\"\n  pub broken:", 1)
 		out, err := base.WithNewFile("/work/selected/provider/main.dang", source).
-			With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "broken", "broken")).Stdout(ctx)
+			With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "broken", "broken", "-f=cli")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag://broken   # A container that must not run.\n", out)
+		require.Equal(t, "--container=broken   # A container that must not run.\n", out)
 	})
 
 	for _, tc := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "--type", "Container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
-		{[]string{"list", "-a", "--type", "container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
-		{[]string{"list", "-a", "--type", "ProviderDocs"}, "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
-		{[]string{"list", "-a", "--type", "provider-docs"}, "dag://docs\ndag://docs/again\ndag://other-docs\ndag://other-docs/again\n"},
+		{[]string{"list", "-a", "--type", "Container"}, "dag+container://base\ndag+container://broken\ndag+container://consumer/base\n"},
+		{[]string{"list", "-a", "--type", "container"}, "dag+container://base\ndag+container://broken\ndag+container://consumer/base\n"},
+		{[]string{"list", "-a", "--type", "ProviderDocs"}, "dag+provider-docs://docs\ndag+provider-docs://docs/again\ndag+provider-docs://other-docs\ndag+provider-docs://other-docs/again\n"},
+		{[]string{"list", "-a", "--type", "provider-docs"}, "dag+provider-docs://docs\ndag+provider-docs://docs/again\ndag+provider-docs://other-docs\ndag+provider-docs://other-docs/again\n"},
 		{[]string{"list", "-a", "--type="}, ""},
-		{[]string{"list", "-a", "--type=", "--type=container"}, "dag://base\ndag://broken\ndag://consumer/base\n"},
-		{[]string{"list", "-a", "consumer", "--type", "Container", "--type", "File"}, "dag://consumer/base\ndag://consumer/input\n"},
-		{[]string{"list", "-a", "consumer", "--type", "container", "--type", "File"}, "dag://consumer/base\ndag://consumer/input\n"},
-		{[]string{"list", "-a", "docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "-a", "dag://docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "-a", "provider/docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "-a", "provider:docs"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "-a", "**/source"}, "dag://docs/source\ndag://other-docs/source\n"},
-		{[]string{"list", "-a", "base", "consumer/base"}, "dag://base\ndag://consumer/base\n"},
-		{[]string{"list", "-a", "dag+container://consumer"}, "dag://consumer/base\n"},
+		{[]string{"list", "-a", "--type=", "--type=container"}, "dag+container://base\ndag+container://broken\ndag+container://consumer/base\n"},
+		{[]string{"list", "-a", "consumer", "--type", "Container", "--type", "File"}, "dag+container://consumer/base\ndag+file://consumer/input\n"},
+		{[]string{"list", "-a", "consumer", "--type", "container", "--type", "File"}, "dag+container://consumer/base\ndag+file://consumer/input\n"},
+		{[]string{"list", "-a", "docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
+		{[]string{"list", "-a", "dag://docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
+		{[]string{"list", "-a", "provider/docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
+		{[]string{"list", "-a", "provider:docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
+		{[]string{"list", "-a", "**/source"}, "dag+directory://docs/source\ndag+directory://other-docs/source\n"},
+		{[]string{"list", "-a", "base", "consumer/base"}, "dag+container://base\ndag+container://consumer/base\n"},
+		{[]string{"list", "-a", "dag+container://consumer"}, "dag+container://consumer/base\n"},
 		{[]string{"list", "-a", "dag://consumer?missing=anything"}, ""},
 		{[]string{"list", "-a", "dag://?go-module=sdk/go"}, ""},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected"}, tc.args...)
+			args = append(args, "-f=link")
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
-			if tc.args[0] == "types" {
-				out = withoutArtifactListComments(out)
-			}
 			require.Equal(t, tc.want, out)
 		})
 	}
@@ -744,9 +693,9 @@ entrypoint = true
 		WithNewFile("/work/selected/provider/main.dang", `type Provider {
   pub types: Directory! { directory }
 }`)
-	out, err := reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "types")).Stdout(ctx)
+	out, err := reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "types", "-f=link")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag://types\n", out)
+	require.Equal(t, "dag+directory://types\n", out)
 }
 
 func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T) {
@@ -757,18 +706,16 @@ func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T
 		want string
 	}{
 		{[]string{"list", "-a", "dag+container://docs", "dag+directory://consumer"}, ""},
-		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer"}, "dag://consumer/base\ndag://docs/source\n"},
-		{[]string{"list", "-a", "dag://docs?missing=value", "consumer/base"}, "dag://consumer/base\n"},
-		{[]string{"list", "-a", "docs", "docs/source"}, "dag://docs\ndag://docs/again\ndag://docs/source\n"},
-		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "dag://docs/source\n"},
+		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer"}, "dag+container://consumer/base\ndag+directory://docs/source\n"},
+		{[]string{"list", "-a", "dag://docs?missing=value", "consumer/base"}, "dag+container://consumer/base\n"},
+		{[]string{"list", "-a", "docs", "docs/source"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
+		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "dag+directory://docs/source\n"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected"}, tc.args...)
+			args = append(args, "-f=link")
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
-			if tc.args[0] == "types" {
-				out = withoutArtifactListComments(out)
-			}
 			require.Equal(t, tc.want, out)
 		})
 	}
@@ -787,15 +734,13 @@ source = "./does-not-exist"
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "provider/docs", "--type", "Directory"}, "dag://provider/docs/source\n"},
+		{[]string{"list", "-a", "provider/docs", "--type", "Directory"}, "dag+directory://provider/docs/source\n"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected"}, tc.args...)
+			args = append(args, "-f=link")
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
-			if tc.args[0] == "types" {
-				out = withoutArtifactListComments(out)
-			}
 			require.Equal(t, tc.want, out)
 		})
 	}
@@ -1034,33 +979,22 @@ More details."""
 	wsID, err := src.AsWorkspace().ID(ctx)
 	require.NoError(t, err)
 	opts := &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}}
-	// Both discovery and directive filtering retain unmarked Changesets'
-	// stale checks. The command selects generator checks through parent filters.
+	// Staleness belongs to Generator. An ordinary Changeset has no stale check.
 	unmarked, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: "dag://{edit,broken-edit}/stale") {
  items { uri directives }
  } } } }
 }`, opts)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"node":{"artifacts":{"filterUri":{"items":[
- {"uri":"dag://broken-edit/stale","directives":["check"]},
- {"uri":"dag://edit/stale","directives":["check"]}
- ]}}}}`, string(*unmarked))
-	stale := artifactValue[*dagger.Check](ctx, t, c, dagger.Ref[*dagger.Workspace](c, wsID).
-		Artifacts().FilterURI("dag://edit/stale").One())
-	pass, err := stale.Pass(ctx)
-	require.NoError(t, err)
-	require.False(t, pass)
+	require.JSONEq(t, `{"node":{"artifacts":{"filterUri":{"items":[]}}}}`, string(*unmarked))
 
 	metadata, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
  node(id: $ws) { ... on Workspace { artifacts { filterDirectives(directives: ["check"]) { items { uri directives } } } } }
 }`, opts)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{"filterDirectives":{"items":[
- {"uri":"dag://broken-edit/stale","directives":["check"]},
  {"uri":"dag://clean/stale","directives":["check"]},
  {"uri":"dag://dirty/stale","directives":["check"]},
- {"uri":"dag://edit/stale","directives":["check"]},
  {"uri":"dag://failing","directives":["check"]},
  {"uri":"dag://passing","directives":["check"]}
  ]}}}}`, string(*metadata))
@@ -1098,8 +1032,8 @@ More details."""
 		t.Run(command+" list", func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(daggerNonNestedExec(command, "-l")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "dag://clean")
-			require.Contains(t, out, "dag://dirty")
+			require.Contains(t, out, "=clean")
+			require.Contains(t, out, "=dirty")
 			if command == "check" {
 				require.Contains(t, out, `# staleness check: generate clean files`)
 				require.Contains(t, out, `# staleness check: regenerate dirty files`)
@@ -1107,6 +1041,16 @@ More details."""
 			require.NotContains(t, out, "edit")
 		})
 	}
+
+	// Generator objects are lazy. Explicit generation executes the stored function.
+	generators, err := dagger.Ref[*dagger.Workspace](c, wsID).Artifacts().FilterGenerateCommand().AsGenerators(ctx)
+	require.NoError(t, err)
+	require.Len(t, generators, 2)
+	clean, err := generators[0].Stale().Pass(ctx)
+	require.NoError(t, err)
+	require.True(t, clean)
+	_, err = base.With(daggerNonNestedExec("generate", "--generator=clean")).Sync(ctx)
+	require.NoError(t, err)
 	for _, flag := range []string{"", "--generated=true", "--generated=false"} {
 		t.Run("check "+flag, func(ctx context.Context, t *testctx.T) {
 			args := []string{"check", "--skip=failing", "--skip=dirty"}
@@ -1163,7 +1107,7 @@ up.skip = ["skipped-service", "skipped-unmarked-service"]
 } } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
 	require.NoError(t, err)
 	for name, want := range map[string][]string{
-		"rawChecks":        {"dag://edit/stale", "dag://gen/stale", "dag://skipped", "dag://skipped-generate/stale", "dag://verify"},
+		"rawChecks":        {"dag://gen/stale", "dag://skipped", "dag://skipped-generate/stale", "dag://verify"},
 		"checks":           {"dag://verify"},
 		"withGenerated":    {"dag://gen/stale", "dag://verify"},
 		"withoutGenerated": {"dag://verify"},
@@ -1224,13 +1168,13 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 	}{
 		{"types", func(names []string, exclude bool) *dagger.Artifacts {
 			return all.FilterTypes(names, dagger.ArtifactsFilterTypesOpts{Exclude: exclude})
-		}, "Changeset", []string{"dag://edit", "dag://gen"}},
+		}, "Changeset", []string{"dag://edit"}},
 		{"directives", func(names []string, exclude bool) *dagger.Artifacts {
 			return all.FilterDirectives(names, dagger.ArtifactsFilterDirectivesOpts{Exclude: exclude})
-		}, "check", []string{"dag://edit/stale", "dag://gen/stale"}},
+		}, "check", []string{"dag://gen/stale"}},
 		{"parent types", func(names []string, exclude bool) *dagger.Artifacts {
 			return all.FilterParentTypes(names, dagger.ArtifactsFilterParentTypesOpts{Exclude: exclude})
-		}, "Changeset", []string{"dag://edit/stale", "dag://gen/stale"}},
+		}, "Generator", []string{"dag://gen/stale"}},
 		{"parent directives", func(names []string, exclude bool) *dagger.Artifacts {
 			return all.FilterParentDirectives(names, dagger.ArtifactsFilterParentDirectivesOpts{Exclude: exclude})
 		}, "generate", []string{"dag://gen/stale"}},
@@ -1308,66 +1252,37 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *dagger.Wor
 	if artifacts == nil {
 		artifacts = ws.Artifacts()
 	}
-	var response struct {
-		Node struct {
-			Items []struct {
-				ID         dagger.ID
-				LoadError  string
-				Directives []string
-				Arguments  []struct {
-					Name    string
-					TypeDef struct{ AsObject *struct{ Name string } }
-				}
-			}
+	failures, err := artifacts.FilterURI("*/load").Items(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, artifact := range failures {
+		message, err := artifact.LoadError(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if message != "" {
+			return nil, fmt.Errorf("%s", message)
 		}
 	}
-	id, err := artifacts.ID(ctx)
+	agents, err := artifacts.FilterAgentCommand().AsAgentMiddlewares(ctx)
 	if err != nil {
 		return nil, err
 	}
-	err = c.Do(ctx, &dagger.Request{Query: `query($id: ID!) { node(id: $id) { ... on Artifacts {
-  items { id loadError directives arguments { name typeDef { asObject { name } } } }
- } } }`, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
-	if err != nil {
-		return nil, err
+	refs := make([]*dagger.AgentMiddleware, len(agents))
+	for i := range agents {
+		refs[i] = &agents[i]
 	}
 	llm := c.LLM().WithWorkspace(ws)
 	if len(base) > 0 {
 		llm = base[0]
 	}
-	for _, artifact := range response.Node.Items {
-		if artifact.LoadError != "" {
-			return nil, fmt.Errorf("%s", artifact.LoadError)
-		}
-		if !slices.Contains(artifact.Directives, "agent") {
-			continue
-		}
-		baseID, err := llm.ID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		inputs := map[string]any{}
-		for _, arg := range artifact.Arguments {
-			if arg.TypeDef.AsObject != nil && arg.TypeDef.AsObject.Name == "LLM" {
-				inputs[arg.Name] = baseID
-			}
-		}
-		encoded, err := json.Marshal(inputs)
-		if err != nil {
-			return nil, err
-		}
-		var result struct {
-			Node struct{ Value struct{ ID dagger.ID } }
-		}
-		err = c.Do(ctx, &dagger.Request{Query: `query($id: ID!, $arguments: JSON!) {
-   node(id: $id) { ... on Artifact { value(arguments: $arguments) { id } } }
-  }`, Variables: map[string]any{"id": artifact.ID, "arguments": string(encoded)}}, &dagger.Response{Data: &result})
-		if err != nil {
-			return nil, err
-		}
-		llm = dagger.Ref[*dagger.LLM](c, result.Node.Value.ID)
+	composed := llm.Compose(refs)
+	id, err := composed.ID(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return llm, nil
+	return dagger.Ref[*dagger.LLM](c, id), nil
 }
 
 func (ArtifactsSuite) TestCheckCachePolicy(ctx context.Context, t *testctx.T) {
@@ -1600,4 +1515,72 @@ func (ArtifactsSuite) TestUnknownEnvironment(ctx context.Context, t *testctx.T) 
 			require.Contains(t, out, `env "missing" is not defined`)
 		})
 	}
+}
+
+func (ArtifactsSuite) TestGeneratorCachePolicy(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
+		WithNewFile("probe/main.go", `package main
+import ("crypto/rand"; "fmt"; "dagger/probe/internal/dagger")
+type Probe struct{}
+// +generate
+// +cache="never"
+func (*Probe) Fresh() *dagger.Changeset {
+ return dag.Directory().WithNewFile("nonce", rand.Text()).Changes(dag.Directory())
+}
+// +generate
+// +cache="never"
+func (*Probe) Broken() (*dagger.Changeset, error) { return nil, fmt.Errorf("generation %s", rand.Text()) }
+`)
+	out, err := base.With(daggerQuery(`{
+ currentWorkspace { artifacts(include: ["fresh"]) { filterTypes(types: ["Generator"]) {
+  a: values { value { ... on Generator { first: changeset { after { file(path: "nonce") { contents } } } second: changeset { after { file(path: "nonce") { contents } } } } } }
+  b: values { value { ... on Generator { first: changeset { after { file(path: "nonce") { contents } } } second: changeset { after { file(path: "nonce") { contents } } } } } }
+ } } }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+	type result struct {
+		Value struct {
+			First, Second struct {
+				After struct{ File struct{ Contents string } }
+			}
+		}
+	}
+	var got struct {
+		CurrentWorkspace struct {
+			Artifacts struct{ FilterTypes struct{ A, B []result } }
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	a, b := got.CurrentWorkspace.Artifacts.FilterTypes.A, got.CurrentWorkspace.Artifacts.FilterTypes.B
+	require.Len(t, a, 1)
+	require.Len(t, b, 1)
+	for _, run := range []result{a[0], b[0]} {
+		require.NotEmpty(t, run.Value.First.After.File.Contents)
+		require.Equal(t, run.Value.First.After.File.Contents, run.Value.Second.After.File.Contents)
+	}
+	require.NotEqual(t, a[0].Value.First.After.File.Contents, b[0].Value.First.After.File.Contents)
+	out, err = base.With(daggerQuery(`{
+ currentWorkspace { artifacts(include: ["broken/stale"]) { one { value { ... on Check {
+  a: error { message }
+  b: error { message }
+ } } } } }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+	var failed struct {
+		CurrentWorkspace struct {
+			Artifacts struct {
+				One struct {
+					Value struct{ A, B struct{ Message string } }
+				}
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &failed))
+	messages := failed.CurrentWorkspace.Artifacts.One.Value
+	require.Contains(t, messages.A.Message, "generation ")
+	require.Contains(t, messages.B.Message, "generation ")
+	require.NotEqual(t, messages.A.Message, messages.B.Message)
 }

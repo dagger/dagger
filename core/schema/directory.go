@@ -341,10 +341,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
 	dagql.Fields[*core.DiffStat]{}.Install(srv)
 
-	stale := dagql.NodeFunc("stale", s.changesetStale).View(AfterVersion("v1.0.0-0")).Doc("A check that passes when the changeset is empty.")
-	stale.Spec.Directives = append(stale.Spec.Directives, &ast.Directive{Name: "check"})
 	dagql.Fields[*core.Changeset]{
-		stale,
 		Syncer[*core.Changeset]().
 			Doc(`Force evaluation in the engine.`),
 		dagql.NodeFunc("filter", s.changesetFilter).
@@ -2162,8 +2159,4 @@ func (s *directorySchema) changesetFilter(ctx context.Context, parent dagql.Obje
 	}
 	err = srv.Select(ctx, fullAfter, &inst, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](fullBeforeID)}}})
 	return inst, err
-}
-
-func (s *directorySchema) changesetStale(_ context.Context, parent dagql.ObjectResult[*core.Changeset], _ struct{}) (*core.Check, error) {
-	return &core.Check{Changeset: parent, Assertion: dagql.NonNull(dagql.String("generated files are up to date"))}, nil
 }

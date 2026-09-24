@@ -211,7 +211,7 @@ func TestArtifactCollectionDimensionBinding(t *testing.T) {
 		expanded, err := selected.Expand(context.Background())
 		require.NoError(t, err)
 		require.Len(t, expanded.Entries, 1)
-		require.Equal(t, []*ArtifactDimensionKey{{Dimension: "App.items", Key: "a"}}, expanded.Entries[0].DimensionKeys)
+		require.Equal(t, []*ArtifactDimensionKey{{Dimension: "App.items", Key: "a"}, {Dimension: "type:Item", Key: "items"}}, expanded.Entries[0].DimensionKeys)
 		uri, err := expanded.Entries[0].URI(ArtifactURIOpts{DimensionKeys: true})
 		require.NoError(t, err)
 		require.Equal(t, "dag://items?item=a", uri)
@@ -276,8 +276,8 @@ func TestArtifactCollectionExclusions(t *testing.T) {
 	expanded, err := selected.Expand(t.Context())
 	require.NoError(t, err)
 	require.Len(t, expanded.Entries, 2)
-	require.Empty(t, expanded.Entries[0].DimensionKeys)
-	require.Equal(t, []*ArtifactDimensionKey{{Dimension: "App.items", Key: "b"}}, expanded.Entries[1].DimensionKeys)
+	require.Equal(t, []*ArtifactDimensionKey{{Dimension: "type:Items", Key: "items"}}, expanded.Entries[0].DimensionKeys)
+	require.Equal(t, []*ArtifactDimensionKey{{Dimension: "App.items", Key: "b"}, {Dimension: "type:Item", Key: "items"}}, expanded.Entries[1].DimensionKeys)
 	for _, key := range []string{"a", "b"} {
 		narrowed := all.FilterDimensionKeys("item", []string{key})
 		narrowed, err = narrowed.WithoutURI(exclusion)
@@ -288,7 +288,7 @@ func TestArtifactCollectionExclusions(t *testing.T) {
 			require.Empty(t, expanded.Entries)
 		} else {
 			require.Len(t, expanded.Entries, 1)
-			require.Equal(t, []*ArtifactDimensionKey{{Dimension: "App.items", Key: "b"}}, expanded.Entries[0].DimensionKeys)
+			require.Equal(t, []*ArtifactDimensionKey{{Dimension: "App.items", Key: "b"}, {Dimension: "type:Item", Key: "items"}}, expanded.Entries[0].DimensionKeys)
 		}
 	}
 }

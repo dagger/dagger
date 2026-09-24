@@ -44,6 +44,9 @@ func (a *Artifact) DimensionDefinitions() []*ArtifactDimension {
 		}
 	}
 	slices.Reverse(dims)
+	if a.TypeName != "" {
+		dims = append(dims, &ArtifactDimension{Kind: "TYPE", Identifier: "type:" + a.TypeName, Name: ArtifactTypeName(a.TypeName), QualifiedName: "artifact-" + ArtifactTypeName(a.TypeName), ItemType: a.TypeName, KeyName: "name"})
+	}
 	return dims
 }
 
@@ -101,7 +104,7 @@ func (a *Artifacts) ResolveDimension(name string) (string, error) {
 }
 
 func (a *Artifacts) hasCollections() bool {
-	return len(a.DimensionDefinitions()) != 0
+	return slices.ContainsFunc(a.DimensionDefinitions(), func(d *ArtifactDimension) bool { return d.Kind != "TYPE" })
 }
 
 func (a *Artifacts) matchesDimensionFilters(dims []*ArtifactDimension) bool {
@@ -129,9 +132,9 @@ func (a *Artifacts) ForDimensionKeys(dimension string) *Artifacts {
 		return a
 	}
 	return a.filter(func(candidate *Artifact) bool {
-		childDims := candidate.DimensionDefinitions()
+		childDims := collectionDimensions(candidate)
 		for _, ancestor := range a.Entries {
-			parentDims := ancestor.DimensionDefinitions()
+			parentDims := collectionDimensions(ancestor)
 			if len(ancestor.Path) > len(candidate.Path) || len(parentDims) > len(childDims) ||
 				len(ancestor.Path) == len(candidate.Path) && len(parentDims) == len(childDims) {
 				continue
@@ -151,6 +154,9 @@ func (a *Artifacts) ForDimensionKeys(dimension string) *Artifacts {
 // DimensionItems projects expanded artifacts to the collection item that
 // supplies dimension. Parent keys remain attached; descendant keys are removed.
 func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
+	if strings.HasPrefix(dimension, "type:") {
+		return nil, fmt.Errorf("dimensionItems requires a collection dimension, got %q", dimension)
+	}
 	items := []*Artifact{}
 	seen := map[string]bool{}
 	for _, selected := range a.Entries {
@@ -185,6 +191,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 					break
 				}
 			}
+			item.setTypeDimension()
 			id, err := item.identity()
 			if err != nil {
 				return nil, err
@@ -252,20 +259,13 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 		result.Selector.ExcludedURIs = slices.Clone(a.Selector.ExcludedURIs)
 		return result, nil
 	}
-	bound, err := a.BindDimensions()
+	bound, err := a.SchemaSelection()
 	if err != nil {
 		return nil, err
 	}
-	if !a.hasCollections() {
-		for _, filter := range bound.Selector.Dimensions {
-			if filter.Keys == nil {
-				bound = bound.FilterDimensions([]string{filter.Dimension})
-			} else {
-				bound = bound.FilterDimensionKeys(filter.Dimension, filter.Keys)
-			}
-		}
-		for _, group := range bound.Selector.DimensionAlternatives {
-			bound = bound.FilterDimensions(group)
+	if !bound.hasCollections() {
+		for _, item := range bound.Entries {
+			item.setTypeDimension()
 		}
 		return bound, nil
 	}
@@ -303,6 +303,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 					}
 				}
 				slices.Reverse(item.DimensionKeys)
+				item.setTypeDimension()
 				item.DimensionNames = dimensionNames
 				entries[i] = append(entries[i], item)
 			}
@@ -423,6 +424,8 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			return nil
 		}
 	}
+	node = projectArtifactNode(node)
+	obj = node.ObjectType()
 	visit(node)
 	if visiting[obj.Name] {
 		return nil
@@ -441,7 +444,7 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			field = node.Name
 		}
 		dim := &ArtifactDimension{
-			CollectionType: obj.Name,
+			Kind: "COLLECTION", CollectionType: obj.Name,
 			Identifier:     parentName + "." + field,
 			Name:           ArtifactTypeName(members.Get.ReturnType.Self().AsObject.Value.Self().OriginalName),
 			QualifiedName:  ArtifactTypeName(parentOriginal) + "-" + ArtifactTypeName(field),
@@ -509,8 +512,8 @@ func walkArtifactBatch(ctx context.Context, batchNode, item *ModTreeNode, visit 
 				receiver := *batchNode
 				receiver.CollectionDimension = item.CollectionDimension
 				child.Parent = &receiver
-				// Checks and Changesets have no runtime collections to
-				// enumerate. Include Changeset.stale without calling the batch.
+				// Checks and Generators have no runtime collections to
+				// enumerate. Include Generator.stale without calling the batch.
 				if err := walkArtifactNodes(ctx, child, visit, visiting); err != nil {
 					return err
 				}
@@ -520,4 +523,67 @@ func walkArtifactBatch(ctx context.Context, batchNode, item *ModTreeNode, visit 
 		}
 	}
 	return nil
+}
+
+// Projection changes workspace metadata, not the module function's contract.
+// Evaluating the source node still calls the original Changeset or LLM field.
+func projectArtifactNode(node *ModTreeNode) *ModTreeNode {
+	if node == nil || node.ObjectType() == nil {
+		return node
+	}
+	target := artifactProjectedTypeName(node)
+	if target == node.ObjectType().Name {
+		return node
+	}
+	if typ, ok := node.types[target]; ok {
+		node = node.Clone()
+		node.Type = typ
+	}
+	return node
+}
+
+// SchemaSelection applies presence and exact type keys before reading any items.
+// Collection key values remain deferred until expansion.
+func (a *Artifacts) SchemaSelection() (*Artifacts, error) {
+	bound, err := a.BindDimensions()
+	if err != nil {
+		return nil, err
+	}
+	return bound.filter(func(item *Artifact) bool {
+		if !bound.matchesDimensionFilters(item.DimensionDefinitions()) {
+			return false
+		}
+		for _, filter := range bound.Selector.Dimensions {
+			if strings.HasPrefix(filter.Dimension, "type:") && filter.Keys != nil && !slices.Contains(filter.Keys, strings.Join(item.Path, "/")) {
+				return false
+			}
+		}
+		return true
+	}), nil
+}
+
+func (a *Artifact) setTypeDimension() {
+	a.DimensionKeys = slices.DeleteFunc(slices.Clone(a.DimensionKeys), func(key *ArtifactDimensionKey) bool { return strings.HasPrefix(key.Dimension, "type:") })
+	if a.TypeName != "" {
+		a.DimensionKeys = append(a.DimensionKeys, &ArtifactDimensionKey{Dimension: "type:" + a.TypeName, Key: strings.Join(a.Path, "/")})
+	}
+}
+
+func collectionDimensions(a *Artifact) []*ArtifactDimension {
+	return slices.DeleteFunc(a.DimensionDefinitions(), func(d *ArtifactDimension) bool { return d.Kind == "TYPE" })
+}
+
+func artifactProjectedTypeName(node *ModTreeNode) string {
+	target := node.ObjectType().Name
+	switch node.ObjectType().Name {
+	case "Changeset":
+		if slices.Contains(node.Directives, "generate") {
+			target = "Generator"
+		}
+	case "LLM":
+		if slices.Contains(node.Directives, "agent") {
+			target = "AgentMiddleware"
+		}
+	}
+	return target
 }

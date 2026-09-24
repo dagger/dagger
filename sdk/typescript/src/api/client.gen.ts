@@ -228,6 +228,44 @@ export type ArtifactValueOpts = {
   arguments: JSON
 }
 
+export enum ArtifactDimensionKind {
+  Collection = "COLLECTION",
+  Type = "TYPE",
+}
+
+/**
+ * Utility function to convert a ArtifactDimensionKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function ArtifactDimensionKindValueToName(
+  value: ArtifactDimensionKind,
+): string {
+  switch (value) {
+    case ArtifactDimensionKind.Collection:
+      return "COLLECTION"
+    case ArtifactDimensionKind.Type:
+      return "TYPE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ArtifactDimensionKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function ArtifactDimensionKindNameToValue(
+  name: string,
+): ArtifactDimensionKind {
+  switch (name) {
+    case "COLLECTION":
+      return ArtifactDimensionKind.Collection
+    case "TYPE":
+      return ArtifactDimensionKind.Type
+    default:
+      return name as ArtifactDimensionKind
+  }
+}
 export type ArtifactsFilterCheckCommandOpts = {
   /**
    * Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
@@ -4941,7 +4979,7 @@ export class Artifact extends BaseClient {
   }
 
   /**
-   * The selected keys for each dimension. Empty for static artifacts.
+   * The collection keys and full path key in the artifact type dimension.
    */
   dimensionKeys = async (): Promise<ArtifactDimensionKey[]> => {
     type dimensionKeys = {
@@ -5032,6 +5070,7 @@ export class ArtifactDimension extends BaseClient {
   private readonly _itemType?: string = undefined
   private readonly _keyDescription?: string = undefined
   private readonly _keyName?: string = undefined
+  private readonly _kind?: ArtifactDimensionKind = undefined
   private readonly _name?: string = undefined
   private readonly _qualifiedName?: string = undefined
 
@@ -5046,6 +5085,7 @@ export class ArtifactDimension extends BaseClient {
     _itemType?: string,
     _keyDescription?: string,
     _keyName?: string,
+    _kind?: ArtifactDimensionKind,
     _name?: string,
     _qualifiedName?: string,
   ) {
@@ -5057,6 +5097,7 @@ export class ArtifactDimension extends BaseClient {
     this._itemType = _itemType
     this._keyDescription = _keyDescription
     this._keyName = _keyName
+    this._kind = _kind
     this._name = _name
     this._qualifiedName = _qualifiedName
   }
@@ -5077,7 +5118,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * The schema type name of the collection that supplies this dimension.
+   * The collection type, or null for a type dimension.
    */
   collectionType = async (): Promise<string> => {
     if (this._collectionType) {
@@ -5092,7 +5133,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * Exact GraphQL ParentType.field identifier.
+   * Stable identifier: ParentType.field for a collection or type:TypeName for an artifact type.
    */
   identifier = async (): Promise<string> => {
     if (this._identifier) {
@@ -5107,7 +5148,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * The author item type name.
+   * The collection item type or artifact type name.
    */
   itemType = async (): Promise<string> => {
     if (this._itemType) {
@@ -5122,7 +5163,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * The description of the author get function's key argument.
+   * The collection key argument description, or empty for a type dimension.
    */
   keyDescription = async (): Promise<string> => {
     if (this._keyDescription) {
@@ -5137,7 +5178,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * The name of the author get function's key argument.
+   * The collection key argument name, or name for a type dimension.
    */
   keyName = async (): Promise<string> => {
     if (this._keyName) {
@@ -5152,7 +5193,22 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * Short name derived from the author item type.
+   * How this dimension gets its keys.
+   */
+  kind = async (): Promise<ArtifactDimensionKind> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<ArtifactDimensionKind> = await ctx.execute()
+
+    return ArtifactDimensionKindNameToValue(response)
+  }
+
+  /**
+   * Short name derived from the collection item type or artifact type.
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -5167,7 +5223,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * Author parent type and field name, in CLI case.
+   * Qualified name used when the short name is ambiguous.
    */
   qualifiedName = async (): Promise<string> => {
     if (this._qualifiedName) {
@@ -5467,6 +5523,23 @@ export class Artifacts extends BaseClient {
   }
 
   /**
+   * Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+   */
+  asGenerators = async (): Promise<Generator[]> => {
+    type asGenerators = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("asGenerators").select("id")
+
+    const response: Awaited<asGenerators[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new Generator(ctx.copy().selectNode(r.id, "Generator")),
+    )
+  }
+
+  /**
    * Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
    */
   asServices = async (): Promise<Service[]> => {
@@ -5541,7 +5614,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Select LLM artifacts marked agent.
+   * Select AgentMiddleware artifacts.
    */
   filterAgentCommand = (): Artifacts => {
     const ctx = this._ctx.select("filterAgentCommand")
@@ -5549,7 +5622,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+   * Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.
    * @param opts.generated Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
    */
   filterCheckCommand = (opts?: ArtifactsFilterCheckCommandOpts): Artifacts => {
@@ -5586,7 +5659,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Select Changeset artifacts marked generate, using each workspace's generator settings.
+   * Select Generator artifacts, using each workspace's generator settings.
    */
   filterGenerateCommand = (): Artifacts => {
     const ctx = this._ctx.select("filterGenerateCommand")
@@ -5685,7 +5758,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+   * List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
    * @param opts.absolute Prefix each address with the workspace's Git address and commit.
    * @param opts.typeAssertion Include the artifact type in each address scheme.
    */
@@ -5978,14 +6051,6 @@ export class Changeset extends BaseClient {
     const response: Awaited<string[]> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * A check that passes when the changeset is empty.
-   */
-  stale = (): Check => {
-    const ctx = this._ctx.select("stale")
-    return new Check(ctx)
   }
 
   /**
@@ -11000,6 +11065,70 @@ export class GeneratedCode extends BaseClient {
    * This is useful for reusability and readability by not breaking the calling chain.
    */
   with = (arg: (param: GeneratedCode) => GeneratedCode) => {
+    return arg(this)
+  }
+}
+
+/**
+ * A generation function and its staleness check. Reading changeset runs the function.
+ */
+export class Generator extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Generator.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Run the generator and return its changes.
+   */
+  changeset = (): Changeset => {
+    const ctx = this._ctx.select("changeset")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * A check that passes when this generator would produce no changes.
+   */
+  stale = (): Check => {
+    const ctx = this._ctx.select("stale")
+    return new Check(ctx)
+  }
+
+  /**
+   * Run the generator and retain its result.
+   */
+  sync = (): Generator => {
+    const ctx = this._ctx.select("sync")
+    return new Generator(ctx)
+  }
+
+  /**
+   * Call the provided function with current Generator.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Generator) => Generator) => {
     return arg(this)
   }
 }

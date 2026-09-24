@@ -697,8 +697,8 @@ name = "beta"
 			With(daggerNonNestedExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		// The generated Changeset exposes its stale check at a child address.
-		require.Regexp(t, `(?m)^dag\+check://alpha-sdk/generate/stale\s+# staleness check:`, out)
+		// Generator exposes its stale check at a child address.
+		require.Regexp(t, `(?m)^--check=(alpha-sdk/generate/)?stale\s+# staleness check:`, out)
 	})
 
 	t.Run("the generator keeps the un-suffixed name", func(ctx context.Context, t *testctx.T) {
@@ -707,7 +707,7 @@ name = "beta"
 			With(daggerNonNestedExec("generate", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `(?m)^dag\+changeset://alpha-sdk/generate\s+#`, out)
+		require.Regexp(t, `(?m)^--generator=(alpha-sdk/)?generate\s+#`, out)
 		require.NotContains(t, out, "/stale")
 	})
 
@@ -784,7 +784,7 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("check", "-l", "alpha-sdk/generate/stale")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `(?m)^dag\+check://alpha-sdk/generate/stale\s+# staleness check:`, out)
+		require.Regexp(t, `(?m)^--check=(alpha-sdk/generate/)?stale\s+# staleness check:`, out)
 		require.NotContains(t, out, "beta-sdk")
 
 		out, err = base.

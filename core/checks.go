@@ -29,7 +29,7 @@ type Check struct {
 	Workspace       dagql.ObjectResult[*Workspace]
 	Function        string
 	Inputs          []CallInput
-	Changeset       dagql.ObjectResult[*Changeset]
+	Generator       dagql.ObjectResult[*Generator]
 	CacheTTL        int64
 	Failure         string
 	Completed       bool
@@ -59,7 +59,7 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 	if c.RemoteArtifact == nil && name == "" {
 		name = c.Function
 		if name == "" {
-			name = "changeset stale"
+			name = "generator stale"
 		}
 		var span trace.Span
 		ctx, span = Tracer(ctx).Start(ctx, name, trace.WithAttributes(
@@ -79,11 +79,19 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 		failure = fmt.Errorf("%s", c.Failure)
 	case c.Receiver.Self() != nil:
 		failure = c.runFunction(ctx)
-	case c.Changeset.Self() != nil:
-		var empty bool
-		empty, failure = c.Changeset.Self().IsEmpty(ctx)
-		if failure == nil && !empty {
-			failure = fmt.Errorf("generated files are not up to date")
+	case c.Generator.Self() != nil:
+		var changes dagql.ObjectResult[*Changeset]
+		var srv *dagql.Server
+		srv, failure = CurrentDagqlServer(ctx)
+		if failure == nil {
+			failure = srv.Select(ctx, c.Generator, &changes, dagql.Selector{Field: "changeset"})
+		}
+		if failure == nil {
+			var empty bool
+			empty, failure = changes.Self().IsEmpty(ctx)
+			if failure == nil && !empty {
+				failure = fmt.Errorf("generated files are not up to date")
+			}
 		}
 	default:
 		failure = fmt.Errorf("check has no assertion")

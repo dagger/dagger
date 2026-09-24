@@ -48,7 +48,7 @@ func (*ArtifactPath) TypeDescription() string {
 type Artifact struct {
 	DimensionNames map[string]string
 	Path           []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
-	DimensionKeys  []*ArtifactDimensionKey `field:"true" doc:"The selected keys for each dimension. Empty for static artifacts."`
+	DimensionKeys  []*ArtifactDimensionKey `field:"true" doc:"The collection keys and full path key in the artifact type dimension."`
 	TypeName       string
 	Directives     []string `field:"true" doc:"The directives carried by this artifact."`
 	LoadFailure    *ModuleLoadFailure
@@ -90,6 +90,9 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 	}
 	if opts.DimensionKeys {
 		for _, key := range a.DimensionKeys {
+			if strings.HasPrefix(key.Dimension, "type:") {
+				continue
+			}
 			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
 		}
 	}
@@ -425,49 +428,17 @@ func (a *Artifact) matchesPattern(pattern string) (bool, error) {
 }
 
 func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
-	if a.hasCollections() {
-		selected := a.filter(func(*Artifact) bool { return true })
-		if len(dimensions) == 1 {
-			selected.Selector.addDimension(ArtifactDimensionFilter{Dimension: dimensions[0]})
-		} else {
-			selected.Selector.DimensionAlternatives = append(selected.Selector.DimensionAlternatives, slices.Clone(dimensions))
-		}
-		return selected
-	}
-	selected := a.filter(func(artifact *Artifact) bool {
-		for _, key := range artifact.DimensionKeys {
-			if slices.Contains(dimensions, key.Dimension) {
-				return true
-			}
-		}
-		return false
-	})
+	selected := a.filter(func(*Artifact) bool { return true })
 	if len(dimensions) == 1 {
 		selected.Selector.addDimension(ArtifactDimensionFilter{Dimension: dimensions[0]})
 	} else {
-		// Alternatives across dimensions have no query form; keep the paths.
-		selected.Selector.Paths = selected.exactPaths()
+		selected.Selector.DimensionAlternatives = append(selected.Selector.DimensionAlternatives, slices.Clone(dimensions))
 	}
 	return selected
 }
 
 func (a *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
-	if a.hasCollections() {
-		selected := a.filter(func(*Artifact) bool { return true })
-		if keys == nil {
-			keys = []string{}
-		}
-		selected.Selector.addDimension(ArtifactDimensionFilter{Dimension: dimension, Keys: slices.Clone(keys)})
-		return selected
-	}
-	selected := a.filter(func(artifact *Artifact) bool {
-		for _, key := range artifact.DimensionKeys {
-			if key.Dimension == dimension && slices.Contains(keys, key.Key) {
-				return true
-			}
-		}
-		return false
-	})
+	selected := a.filter(func(*Artifact) bool { return true })
 	if keys == nil {
 		keys = []string{}
 	}

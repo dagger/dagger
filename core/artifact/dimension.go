@@ -10,13 +10,14 @@ import (
 
 // Dimension describes a schema axis, independent of its runtime keys.
 type Dimension struct {
-	CollectionType string `field:"true" doc:"The schema type name of the collection that supplies this dimension."`
-	Identifier     string `field:"true" doc:"Exact GraphQL ParentType.field identifier."`
-	Name           string `field:"true" doc:"Short name derived from the author item type."`
-	QualifiedName  string `field:"true" doc:"Author parent type and field name, in CLI case."`
-	ItemType       string `field:"true" doc:"The author item type name."`
-	KeyName        string `field:"true" doc:"The name of the author get function's key argument."`
-	KeyDescription string `field:"true" doc:"The description of the author get function's key argument."`
+	Kind           string
+	CollectionType string
+	Identifier     string `field:"true" doc:"Stable identifier: ParentType.field for a collection or type:TypeName for an artifact type."`
+	Name           string `field:"true" doc:"Short name derived from the collection item type or artifact type."`
+	QualifiedName  string `field:"true" doc:"Qualified name used when the short name is ambiguous."`
+	ItemType       string `field:"true" doc:"The collection item type or artifact type name."`
+	KeyName        string `field:"true" doc:"The collection key argument name, or name for a type dimension."`
+	KeyDescription string `field:"true" doc:"The collection key argument description, or empty for a type dimension."`
 }
 
 func (*Dimension) Type() *ast.Type {
@@ -34,11 +35,19 @@ func (dims Dimensions) Resolve(name string) (string, error) {
 			return name, nil
 		}
 	}
-	var matches []string
+	var matches, types []string
 	for _, dim := range dims {
 		if dim.Name == name || dim.QualifiedName == name {
-			matches = append(matches, dim.Identifier)
+			if dim.Kind == "TYPE" {
+				types = append(types, dim.Identifier)
+			} else {
+				matches = append(matches, dim.Identifier)
+			}
 		}
+	}
+	// Collection aliases retain their meaning when an item type has the same name.
+	if len(matches) == 0 {
+		matches = types
 	}
 	switch len(matches) {
 	case 0:

@@ -124,10 +124,10 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 	}
 	changes := make([]*dagger.Changeset, 0, len(results))
 	for _, result := range results {
-		if result.Value == nil || result.Value.Type != "Changeset" {
-			return fmt.Errorf("%s did not return a Changeset", result.Artifact.URI)
+		if result.Value == nil || result.Value.Type != "Generator" {
+			return fmt.Errorf("%s did not return a Generator", result.Artifact.URI)
 		}
-		changes = append(changes, dagger.Ref[*dagger.Changeset](dag, result.Value.ID))
+		changes = append(changes, dagger.Ref[*dagger.Generator](dag, result.Value.ID).Changeset())
 	}
 	cwd, err := dag.CurrentWorkspace().Cwd(ctx)
 	if err != nil {

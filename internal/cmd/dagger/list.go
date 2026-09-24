@@ -2,7 +2,6 @@ package daggercmd
 
 import (
 	"context"
-	"errors"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
@@ -84,7 +83,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		if !completing && len(commandArgs) == 0 && !all {
 			return nil
 		}
-		if !all && (completing || len(commandArgs) > 0 || discover) {
+		if !all && (completing || len(commandArgs) > 0) || discover {
 			paths := commandArgs
 			if !all && len(paths) > 0 {
 				paths = paths[1:]
@@ -111,16 +110,12 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 	if !discover {
 		return nil
 	}
-	addresses, err := parseArtifactAddresses(commandArgs)
-	if err != nil {
-		return err
-	}
 	params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, commandArgs)
 	if err != nil {
 		return err
 	}
 	return withEngineSilent(ctx, params, func(ctx context.Context, ec *client.Client) error {
-		definitions, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(addresses)}))
+		definitions, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts())
 		if err != nil {
 			return err
 		}
@@ -156,7 +151,9 @@ func loadListCommands(ctx context.Context, ec *client.Client) error {
 	}
 	collectionTypes := map[string]bool{}
 	for _, dimension := range dimensions {
-		collectionTypes[dimension.CollectionType] = true
+		if dimension.Kind != "TYPE" {
+			collectionTypes[dimension.CollectionType] = true
+		}
 	}
 	registerArtifactDimensionHelp(listCmd, dimensions)
 	for name, typeName := range artifactTypeCommands(artifactTypeNames(types), collectionTypes) {
@@ -192,30 +189,21 @@ func addListCommand(name, short, group, key, value string) {
 	listCmd.AddCommand(cmd)
 }
 
-// Register supplied dimension flags before workspace discovery. Execution
-// validates them against the schema inside the visible engine session.
+// Unknown flags require schema metadata before Cobra can distinguish keys from
+// whole-collection booleans. Do not guess from singular or plural spelling.
 func prepareArtifactDimensionFlags(cmd *cobra.Command, args []string) (bool, error) {
 	cmd.InitDefaultHelpFlag()
 	flags := copyCommandFlags(cmd, "artifact dimensions")
 	flags.ParseErrorsAllowlist.UnknownFlags = false
-	var names []string
-	for {
-		var help bool
-		err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
-			if flag.Name == "help" && value == "true" {
-				help = true
-			}
-			return nil
-		})
-		var unknown *pflag.NotExistError
-		if !errors.As(err, &unknown) || unknown.GetSpecifiedShortnames() != "" {
-			if !help {
-				registerArtifactDimensionFlags(cmd, names)
-			}
-			return help, err
+	help := false
+	err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
+		if flag.Name == "help" && value == "true" {
+			help = true
 		}
-		name := unknown.GetSpecifiedName()
-		names = append(names, name)
-		flags.StringArray(name, nil, "")
+		return nil
+	})
+	if err != nil {
+		return true, nil
 	}
+	return help, nil
 }

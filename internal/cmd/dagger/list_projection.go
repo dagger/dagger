@@ -29,16 +29,16 @@ func readArtifactListSchema(ctx context.Context, dag *dagger.Client, selection *
 	}
 	var response struct{ Node artifactListSchema }
 	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!) { node(id: $id) { ... on Artifacts {
-  dimensionDefinitions { identifier name qualifiedName }
+  dimensionDefinitions { kind identifier name qualifiedName collectionType itemType keyName keyDescription }
   pathDefinitions(typeAssertion: true) { uri dimensions }
 } } }`, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
 	return response.Node, err
 }
 
-// Prove link omission against the full schema scope, not the displayed rows.
-// Key values do not affect this proof: empty sibling collections count too.
-// Cache per matrix so more keys do not repeat the schema scan.
-func projectArtifactLinks(items []listedArtifact, paths []artifactListPath) error {
+// Collection keys can select the item and its descendants. Omit the item's
+// type key only when no other schema path matches those collection dimensions.
+// Empty collections count too. Cache the proof per path and dimension set.
+func omitCollectionTypeKeys(items []listedArtifact, paths []artifactListPath) error {
 	addresses := make([]*dagaddress.Address, len(paths))
 	for i, path := range paths {
 		addr, err := dagaddress.Parse(path.URI)
@@ -49,29 +49,27 @@ func projectArtifactLinks(items []listedArtifact, paths []artifactListPath) erro
 	}
 	cache := map[string]bool{}
 	for i, item := range items {
+		if !item.CollectionItem {
+			continue
+		}
 		addr, err := dagaddress.Parse(item.URI)
 		if err != nil {
 			return err
 		}
-		items[i].CLIFlagsOnly = false
-		if addr.Absolute || len(item.DimensionKeys) == 0 {
-			continue
-		}
 		var dimensions []string
 		for _, key := range item.DimensionKeys {
-			dimensions = append(dimensions, key.Dimension)
+			if !strings.HasPrefix(key.Dimension, "type:") {
+				dimensions = append(dimensions, key.Dimension)
+			}
+		}
+		if len(dimensions) == 0 {
+			continue
 		}
 		slices.Sort(dimensions)
 		dimensions = slices.Compact(dimensions)
-		addr.Query = nil
-		encoded, _ := json.Marshal(struct {
-			Link       string
-			Dimensions []string
-			Collection bool
-		}{addr.String(), dimensions, item.CollectionItem})
-		cacheKey := string(encoded)
+		cacheKey := addr.Path + "\x00" + strings.Join(dimensions, "\x00")
 		if omit, ok := cache[cacheKey]; ok {
-			items[i].CLIFlagsOnly = omit
+			items[i].OmitTypeKey = omit
 			continue
 		}
 		matched, safe := false, true
@@ -80,27 +78,18 @@ func projectArtifactLinks(items []listedArtifact, paths []artifactListPath) erro
 				continue
 			}
 			candidate := addresses[j]
-			inside := candidate.Path == addr.Path
-			if item.CollectionItem {
-				inside = inside || strings.HasPrefix(candidate.Path, addr.Path+"/")
-			} else {
-				inside = inside && slices.Equal(candidate.Types, addr.Types)
-			}
-			if !inside || candidate.Absolute {
+			if candidate.Path != addr.Path && !strings.HasPrefix(candidate.Path, addr.Path+"/") {
 				safe = false
 				break
 			}
 			matched = true
 		}
 		cache[cacheKey] = matched && safe
-		items[i].CLIFlagsOnly = matched && safe
+		items[i].OmitTypeKey = matched && safe
 	}
 	return nil
 }
 
-// Repeated flags form a Cartesian product: alternatives within a dimension,
-// AND across dimensions. Collapse only complete products. A sparse selection
-// stays as separate rows, so copying it cannot introduce unselected pairs.
 func artifactRowsFormProduct(items []listedArtifact) bool {
 	if len(items) == 0 {
 		return false

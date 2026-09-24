@@ -19,7 +19,7 @@ func (s checksSchema) Install(srv *dagql.Server) {
 }
 func (s checksSchema) cachePolicy(_ context.Context, check dagql.ObjectResult[*core.Check], _ struct{}, req *dagql.CallRequest) error {
 	req.TTL = check.Self().CacheTTL
-	req.DoNotCache = check.Self().Completed || check.Self().RemoteArtifact != nil
+	req.DoNotCache = check.Self().Completed || check.Self().RemoteArtifact != nil || check.Self().Generator.Self() != nil
 	return nil
 }
 func (s checksSchema) sync(ctx context.Context, check *core.Check, _ struct{}) (*core.Check, error) {

@@ -1115,7 +1115,7 @@ func (r *Artifact) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The selected keys for each dimension. Empty for static artifacts.
+// The collection keys and full path key in the artifact type dimension.
 func (r *Artifact) DimensionKeys(ctx context.Context) ([]ArtifactDimensionKey, error) {
 	q := r.query.Select("dimensionKeys")
 
@@ -1299,6 +1299,7 @@ type ArtifactDimension struct {
 	itemType       *string
 	keyDescription *string
 	keyName        *string
+	kind           *ArtifactDimensionKind
 	name           *string
 	qualifiedName  *string
 }
@@ -1309,7 +1310,7 @@ func (r *ArtifactDimension) WithGraphQLQuery(q *querybuilder.Selection) *Artifac
 	}
 }
 
-// The schema type name of the collection that supplies this dimension.
+// The collection type, or null for a type dimension.
 func (r *ArtifactDimension) CollectionType(ctx context.Context) (string, error) {
 	if r.collectionType != nil {
 		return *r.collectionType, nil
@@ -1362,7 +1363,7 @@ func (r *ArtifactDimension) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Exact GraphQL ParentType.field identifier.
+// Stable identifier: ParentType.field for a collection or type:TypeName for an artifact type.
 func (r *ArtifactDimension) Identifier(ctx context.Context) (string, error) {
 	if r.identifier != nil {
 		return *r.identifier, nil
@@ -1375,7 +1376,7 @@ func (r *ArtifactDimension) Identifier(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The author item type name.
+// The collection item type or artifact type name.
 func (r *ArtifactDimension) ItemType(ctx context.Context) (string, error) {
 	if r.itemType != nil {
 		return *r.itemType, nil
@@ -1388,7 +1389,7 @@ func (r *ArtifactDimension) ItemType(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The description of the author get function's key argument.
+// The collection key argument description, or empty for a type dimension.
 func (r *ArtifactDimension) KeyDescription(ctx context.Context) (string, error) {
 	if r.keyDescription != nil {
 		return *r.keyDescription, nil
@@ -1401,7 +1402,7 @@ func (r *ArtifactDimension) KeyDescription(ctx context.Context) (string, error) 
 	return response, q.Execute(ctx)
 }
 
-// The name of the author get function's key argument.
+// The collection key argument name, or name for a type dimension.
 func (r *ArtifactDimension) KeyName(ctx context.Context) (string, error) {
 	if r.keyName != nil {
 		return *r.keyName, nil
@@ -1414,7 +1415,20 @@ func (r *ArtifactDimension) KeyName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Short name derived from the author item type.
+// How this dimension gets its keys.
+func (r *ArtifactDimension) Kind(ctx context.Context) (ArtifactDimensionKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response ArtifactDimensionKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Short name derived from the collection item type or artifact type.
 func (r *ArtifactDimension) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -1427,7 +1441,7 @@ func (r *ArtifactDimension) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Author parent type and field name, in CLI case.
+// Qualified name used when the short name is ambiguous.
 func (r *ArtifactDimension) QualifiedName(ctx context.Context) (string, error) {
 	if r.qualifiedName != nil {
 		return *r.qualifiedName, nil
@@ -1859,6 +1873,39 @@ func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
 	return convert(response), nil
 }
 
+// Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+func (r *Artifacts) AsGenerators(ctx context.Context) ([]Generator, error) {
+	q := r.query.Select("asGenerators")
+
+	q = q.Select("id")
+
+	type asGenerators struct {
+		Id ID
+	}
+
+	convert := func(fields []asGenerators) []Generator {
+		out := []Generator{}
+
+		for i := range fields {
+			val := Generator{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Generator")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asGenerators
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
 func (r *Artifacts) AsServices(ctx context.Context) ([]Service, error) {
 	q := r.query.Select("asServices")
@@ -1980,7 +2027,7 @@ func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Select LLM artifacts marked agent.
+// Select AgentMiddleware artifacts.
 func (r *Artifacts) FilterAgentCommand() *Artifacts {
 	q := r.query.Select("filterAgentCommand")
 
@@ -1995,7 +2042,7 @@ type ArtifactsFilterCheckCommandOpts struct {
 	Generated bool
 }
 
-// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.
 func (r *Artifacts) FilterCheckCommand(opts ...ArtifactsFilterCheckCommandOpts) *Artifacts {
 	q := r.query.Select("filterCheckCommand")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -2053,7 +2100,7 @@ func (r *Artifacts) FilterDirectives(directives []string, opts ...ArtifactsFilte
 	}
 }
 
-// Select Changeset artifacts marked generate, using each workspace's generator settings.
+// Select Generator artifacts, using each workspace's generator settings.
 func (r *Artifacts) FilterGenerateCommand() *Artifacts {
 	q := r.query.Select("filterGenerateCommand")
 
@@ -2249,7 +2296,7 @@ type ArtifactsPathDefinitionsOpts struct {
 	TypeAssertion bool
 }
 
-// List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+// List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
 func (r *Artifacts) PathDefinitions(ctx context.Context, opts ...ArtifactsPathDefinitionsOpts) ([]ArtifactPath, error) {
 	q := r.query.Select("pathDefinitions")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -2698,15 +2745,6 @@ func (r *Changeset) RemovedPaths(ctx context.Context) ([]string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// A check that passes when the changeset is empty.
-func (r *Changeset) Stale() *Check {
-	q := r.query.Select("stale")
-
-	return &Check{
-		query: q,
-	}
 }
 
 // Force evaluation in the engine.
@@ -9864,6 +9902,102 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 // AsNode returns this GeneratedCode as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *GeneratedCode) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A generation function and its staleness check. Reading changeset runs the function.
+type Generator struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+type WithGeneratorFunc func(r *Generator) *Generator
+
+// With calls the provided function with current Generator.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Generator) With(f WithGeneratorFunc) *Generator {
+	return f(r)
+}
+
+func (r *Generator) WithGraphQLQuery(q *querybuilder.Selection) *Generator {
+	return &Generator{
+		query: q,
+	}
+}
+
+// Run the generator and return its changes.
+func (r *Generator) Changeset() *Changeset {
+	q := r.query.Select("changeset")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// A unique identifier for this Generator.
+func (r *Generator) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Generator) XXX_GraphQLType() string {
+	return "Generator"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Generator) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Generator) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Generator) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// A check that passes when this generator would produce no changes.
+func (r *Generator) Stale() *Check {
+	q := r.query.Select("stale")
+
+	return &Check{
+		query: q,
+	}
+}
+
+// Run the generator and retain its result.
+func (r *Generator) Sync() *Generator {
+	q := r.query.Select("sync")
+
+	return &Generator{
+		query: q,
+	}
+}
+
+// AsNode returns this Generator as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Generator) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -21068,6 +21202,60 @@ const (
 
 	// The loop failed; snapshot holds the completed prefix. Resume retries.
 	AgentStateFailed AgentState = "FAILED"
+)
+
+type ArtifactDimensionKind string
+
+func (ArtifactDimensionKind) IsEnum() {}
+
+func (v ArtifactDimensionKind) Name() string {
+	switch v {
+	case ArtifactDimensionKindCollection:
+		return "COLLECTION"
+	case ArtifactDimensionKindType:
+		return "TYPE"
+	default:
+		return ""
+	}
+}
+
+func (v ArtifactDimensionKind) Value() string {
+	return string(v)
+}
+
+func (v *ArtifactDimensionKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ArtifactDimensionKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "COLLECTION":
+		*v = ArtifactDimensionKindCollection
+	case "TYPE":
+		*v = ArtifactDimensionKindType
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	ArtifactDimensionKindCollection ArtifactDimensionKind = "COLLECTION"
+
+	ArtifactDimensionKindType ArtifactDimensionKind = "TYPE"
 )
 
 // Sharing mode of the cache volume.

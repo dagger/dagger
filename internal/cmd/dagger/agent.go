@@ -2,8 +2,6 @@ package daggercmd
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -170,55 +168,16 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cm
 		return "", err
 	}
 	selection := all.FilterAgentCommand()
-	id, err := selection.ID(ctx)
+	middlewares, err := selection.AsAgentMiddlewares(ctx)
 	if err != nil {
 		return "", err
 	}
-	var response struct {
-		Selection struct {
-			Items []struct {
-				ID        dagger.ID
-				URI       string
-				Arguments []struct {
-					Name    string
-					TypeDef struct{ AsObject *struct{ Name string } }
-				}
-			}
-		}
+	refs := make([]*dagger.AgentMiddleware, len(middlewares))
+	for i := range middlewares {
+		refs[i] = &middlewares[i]
 	}
-	err = dag.Do(ctx, &dagger.Request{Query: `query AgentArtifacts($id: ID!) {
-	 selection: node(id: $id) { ... on Artifacts { items { id uri arguments { name typeDef { asObject { name } } } } } }
-	}`, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
-	if err != nil {
-		return "", err
-	}
-	base, err := dag.LLM().WithWorkspace(workspace).ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	for _, artifact := range response.Selection.Items {
-		inputs := map[string]any{}
-		for _, arg := range artifact.Arguments {
-			if arg.TypeDef.AsObject != nil && arg.TypeDef.AsObject.Name == "LLM" {
-				inputs[arg.Name] = base
-			}
-		}
-		encoded, err := json.Marshal(inputs)
-		if err != nil {
-			return "", err
-		}
-		var evaluated struct {
-			Artifact struct{ Value struct{ ID dagger.ID } }
-		}
-		err = dag.Do(ctx, &dagger.Request{Query: `query ComposeAgentArtifact($id: ID!, $arguments: JSON!) {
-		 artifact: node(id: $id) { ... on Artifact { value(arguments: $arguments) { ... on LLM { id } } } }
-		}`, Variables: map[string]any{"id": artifact.ID, "arguments": string(encoded)}}, &dagger.Response{Data: &evaluated})
-		if err != nil {
-			return "", fmt.Errorf("compose %s: %w", artifact.URI, err)
-		}
-		base = evaluated.Artifact.Value.ID
-	}
-	return string(base), nil
+	id, err := dag.LLM().WithWorkspace(workspace).Compose(refs).ID(ctx)
+	return string(id), err
 }
 
 // Attempt the effectful capture once before binding or composing tools. Capture

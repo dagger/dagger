@@ -1166,7 +1166,7 @@ impl Artifact {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The selected keys for each dimension. Empty for static artifacts.
+    /// The collection keys and full path key in the artifact type dimension.
     pub async fn dimension_keys(&self) -> Result<Vec<ArtifactDimensionKey>, DaggerError> {
         let query = self.selection.select("dimensionKeys");
         let query = query.select("id");
@@ -1245,37 +1245,42 @@ impl ArtifactDimension {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The schema type name of the collection that supplies this dimension.
+    /// How this dimension gets its keys.
+    pub async fn kind(&self) -> Result<ArtifactDimensionKind, DaggerError> {
+        let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The collection type, or null for a type dimension.
     pub async fn collection_type(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("collectionType");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Exact GraphQL ParentType.field identifier.
+    /// Stable identifier: ParentType.field for a collection or type:TypeName for an artifact type.
     pub async fn identifier(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("identifier");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Short name derived from the author item type.
+    /// Short name derived from the collection item type or artifact type.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Author parent type and field name, in CLI case.
+    /// Qualified name used when the short name is ambiguous.
     pub async fn qualified_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("qualifiedName");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The author item type name.
+    /// The collection item type or artifact type name.
     pub async fn item_type(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("itemType");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The name of the author get function's key argument.
+    /// The collection key argument name, or name for a type dimension.
     pub async fn key_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("keyName");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The description of the author get function's key argument.
+    /// The collection key argument description, or empty for a type dimension.
     pub async fn key_description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("keyDescription");
         query.execute(self.graphql_client.clone()).await
@@ -1581,6 +1586,23 @@ impl Artifacts {
             })
             .collect())
     }
+    /// Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+    pub async fn as_generators(&self) -> Result<Vec<Generator>, DaggerError> {
+        let query = self.selection.select("asGenerators");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Generator {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Generator"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
     /// Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
     pub async fn as_checks(&self) -> Result<Vec<Check>, DaggerError> {
         let query = self.selection.select("asChecks");
@@ -1632,7 +1654,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+    /// List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
     ///
     /// # Arguments
     ///
@@ -1653,7 +1675,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+    /// List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
     ///
     /// # Arguments
     ///
@@ -1768,7 +1790,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+    /// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.
     ///
     /// # Arguments
     ///
@@ -1781,7 +1803,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
+    /// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.
     ///
     /// # Arguments
     ///
@@ -1797,7 +1819,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Select Changeset artifacts marked generate, using each workspace's generator settings.
+    /// Select Generator artifacts, using each workspace's generator settings.
     pub fn filter_generate_command(&self) -> Artifacts {
         let query = self.selection.select("filterGenerateCommand");
         Artifacts {
@@ -1806,7 +1828,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Select LLM artifacts marked agent.
+    /// Select AgentMiddleware artifacts.
     pub fn filter_agent_command(&self) -> Artifacts {
         let query = self.selection.select("filterAgentCommand");
         Artifacts {
@@ -2260,15 +2282,6 @@ impl Changeset {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// A check that passes when the changeset is empty.
-    pub fn stale(&self) -> Check {
-        let query = self.selection.select("stale");
-        Check {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
     }
     /// Force evaluation in the engine.
     pub async fn sync(&self) -> Result<Changeset, DaggerError> {
@@ -9977,6 +9990,76 @@ impl GeneratedCode {
     }
 }
 impl Node for GeneratedCode {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct Generator {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Generator {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Generator {
+    fn graphql_type() -> &'static str {
+        "Generator"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Generator {
+    /// A unique identifier for this Generator.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Run the generator and return its changes.
+    pub fn changeset(&self) -> Changeset {
+        let query = self.selection.select("changeset");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Run the generator and retain its result.
+    pub fn sync(&self) -> Generator {
+        let query = self.selection.select("sync");
+        Generator {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A check that passes when this generator would produce no changes.
+    pub fn stale(&self) -> Check {
+        let query = self.selection.select("stale");
+        Check {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for Generator {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -20120,6 +20203,13 @@ pub enum AgentState {
     Stopped,
     #[serde(rename = "WAITING_INPUT")]
     WaitingInput,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ArtifactDimensionKind {
+    #[serde(rename = "COLLECTION")]
+    Collection,
+    #[serde(rename = "TYPE")]
+    Type,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum CacheSharingMode {

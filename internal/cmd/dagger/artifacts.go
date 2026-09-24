@@ -57,67 +57,53 @@ func registerArtifactListFlags(cmd *cobra.Command) {
 	cmd.Flags().Lookup("abs").Hidden = true
 }
 
-func registerArtifactDimensionFlags(cmd *cobra.Command, dimensions []string) {
-	for _, dimension := range dimensions {
-		if cmd.Flag(dimension) != nil {
-			continue // Keep the command flag; use another dimension name or a link query.
-		}
-		cmd.PersistentFlags().StringArray(dimension, nil, "Select items with this `key` (repeat to select more)")
-		cmd.PersistentFlags().Lookup(dimension).Annotations = map[string][]string{
-			artifactDimensionFlag: {dimension},
-		}
-	}
-}
-
-// Show one unambiguous name per dimension. Other names remain accepted aliases.
+// Register only the allocated names. Plural flags select a collection; they do not take keys.
 func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions artifact.Dimensions) {
-	visible := map[string]bool{}
+	names := artifactDimensionFlagNames(cmd, dimensions)
+	var types []string
+	collections := map[string]bool{}
 	for _, dimension := range dimensions {
-		registerArtifactDimensionFlags(cmd, []string{dimension.Name, dimension.QualifiedName, dimension.Identifier})
-		name := artifactDimensionFlagName(cmd, dimensions, dimension)
-		visible[name] = true
-		flag := cmd.Flag(name)
-		if flag == nil || len(flag.Annotations[artifactDimensionFlag]) == 0 {
-			continue
-		}
-		key := cliName(dimension.KeyName)
-		if key == "" {
-			key = "key"
-		}
-		placeholder := strings.ToUpper(key)
-		flag.Usage = fmt.Sprintf("Select %s by `%s`. values: 'dagger list %s'", artifactItemLabel(dimension.ItemType), key, cliName(dimension.CollectionType))
-		if description := strings.TrimSpace(dimension.KeyDescription); description != "" {
-			flag.Usage += "\n" + placeholder + ": " + description
+		if dimension.Kind == "TYPE" {
+			types = append(types, dimension.ItemType)
+		} else if dimension.CollectionType != "" {
+			types = append(types, dimension.CollectionType)
+			collections[dimension.CollectionType] = true
 		}
 	}
-	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
-		if len(flag.Annotations[artifactDimensionFlag]) > 0 {
-			flag.Hidden = !visible[flag.Name]
-		}
-	})
-
-}
-
-// Use one name across artifact commands. A collection row printed by list
-// must not turn into a command option when copied to check, shell, or a peer.
-func artifactDimensionFlagName(cmd *cobra.Command, dimensions artifact.Dimensions, dimension *artifact.Dimension) string {
-	for _, name := range []string{dimension.Name, dimension.QualifiedName} {
-		peers := append([]*cobra.Command{cmd}, cmd.Root().Commands()...)
-		reserved := slices.ContainsFunc(peers, func(peer *cobra.Command) bool {
-			if peer != cmd && !slices.Contains([]string{"list", "check", "generate", "up", "shell", "agent"}, peer.Name()) {
-				return false
+	slices.Sort(types)
+	typeCommands := artifactTypeCommands(slices.Compact(types), collections)
+	for _, dimension := range dimensions {
+		allocated := names[dimension.Identifier]
+		if cmd.Flag(allocated.Key) == nil {
+			key := cliName(dimension.KeyName)
+			if key == "" {
+				key = "key"
 			}
-			flag := peer.Flag(name)
-			return flag != nil && len(flag.Annotations[artifactDimensionFlag]) == 0
-		})
-		if reserved {
-			continue
+			values := "dagger list " + cliName(dimension.CollectionType)
+			if dimension.Kind == "TYPE" {
+				values = "dagger list -a --type=" + dimension.ItemType
+				if !collections[dimension.ItemType] {
+					for name, typ := range typeCommands {
+						if typ == dimension.ItemType {
+							values = "dagger list " + name
+							break
+						}
+					}
+				}
+				key = "name"
+			}
+			usage := fmt.Sprintf("Select %s by `%s`. values: '%s'", artifactItemLabel(dimension.ItemType), key, values)
+			if description := strings.TrimSpace(dimension.KeyDescription); description != "" {
+				usage += "\n" + strings.ToUpper(key) + ": " + description
+			}
+			cmd.PersistentFlags().StringArray(allocated.Key, nil, usage)
+			cmd.PersistentFlags().Lookup(allocated.Key).Annotations = map[string][]string{artifactDimensionFlag: {dimension.Identifier}}
 		}
-		if id, err := dimensions.Resolve(name); err == nil && id == dimension.Identifier {
-			return name
+		if allocated.Presence != "" && cmd.Flag(allocated.Presence) == nil {
+			cmd.PersistentFlags().Bool(allocated.Presence, false, "Select all "+artifactItemLabel(dimension.ItemType))
+			cmd.PersistentFlags().Lookup(allocated.Presence).Annotations = map[string][]string{artifactDimensionFlag: {dimension.Identifier}, artifactPresenceFlag: {"true"}}
 		}
 	}
-	return dimension.Identifier
 }
 
 func artifactItemLabel(typeName string) string {
@@ -221,6 +207,12 @@ func artifactKeyFlags(cmd *cobra.Command) ([]dagaddress.Pair, error) {
 	var pairs []dagaddress.Pair
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		if dimension := flag.Annotations[artifactDimensionFlag]; len(dimension) > 0 {
+			if len(flag.Annotations[artifactPresenceFlag]) > 0 {
+				if flag.Value.String() == "true" {
+					pairs = append(pairs, dagaddress.Pair{Dimension: dimension[0]})
+				}
+				return
+			}
 			// GetStringArray serializes through CSV and loses a single empty key.
 			values := flag.Value.(pflag.SliceValue).GetSlice()
 			for _, value := range values {
@@ -276,8 +268,13 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		return err
 	}
 	return withEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
+		workspaceID, err := ec.Dagger().CurrentWorkspace().ID(ctx)
+		if err != nil {
+			return err
+		}
+		ws := dagger.Ref[*dagger.Workspace](ec.Dagger(), workspaceID)
 		// Flags bind in the combined path scope; address queries bind in their own scope.
-		defs, err := artifactDimensions(ctx, ec.Dagger(), ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}))
+		defs, err := artifactDimensions(ctx, ec.Dagger(), ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed)}))
 		if err != nil {
 			return err
 		}
@@ -287,13 +284,9 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		if err := bindArtifactDimensions(flags, defs); err != nil {
 			return err
 		}
-		names := map[string]string{}
-		for _, dimension := range defs {
-			names[dimension.Identifier] = artifactDimensionFlagName(cmd, defs, dimension)
-		}
 		var rows []listedArtifact
 		for _, addr := range parsed {
-			artifacts := ec.Dagger().CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr})})
+			artifacts := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr})})
 			var pathDefs artifact.Dimensions
 			if len(addr.Query) > 0 || collectionType != "" {
 				pathDefs, err = artifactDimensions(ctx, ec.Dagger(), artifacts)
@@ -307,7 +300,18 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 			if typeName := cmd.Annotations[artifactListType]; typeName != "" {
 				artifacts = artifacts.FilterTypes([]string{typeName})
 			}
-			artifacts = applyArtifactFilters(cmd, addr, flags, artifacts)
+			filter := *addr
+			filter.Query = append(slices.Clone(addr.Query), flags...)
+			if slices.ContainsFunc(filter.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
+				schema, err := readArtifactListSchema(ctx, ec.Dagger(), artifacts)
+				if err != nil {
+					return err
+				}
+				if err := resolveArtifactTypeKeys(schema.PathDefinitions, filter.Query); err != nil {
+					return err
+				}
+			}
+			artifacts = applyArtifactFilters(cmd, &filter, nil, artifacts)
 			absolute, _ := cmd.Flags().GetBool("absolute")
 			if collectionType != "" {
 				for _, dimension := range pathDefs {
@@ -328,11 +332,9 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 				rows = append(rows, items...)
 			}
 		}
-		if format == "cli" && collectionType != "" && len(rows) > 0 {
-			names, err = prepareCollectionCLI(ctx, ec.Dagger(), cmd, rows)
-			if err != nil {
-				return err
-			}
+		names, err := prepareArtifactOutput(ctx, ec.Dagger(), cmd, rows)
+		if err != nil {
+			return err
 		}
 		return writeArtifactList(cmd, rows, names)
 	})
@@ -347,7 +349,7 @@ func artifactDimensions(ctx context.Context, dag *dagger.Client, artifacts *dagg
 		Node struct{ DimensionDefinitions artifact.Dimensions }
 	}
 	err = dag.Do(ctx, &dagger.Request{
-		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { identifier name qualifiedName collectionType itemType keyName keyDescription } } } }`,
+		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { kind identifier name qualifiedName collectionType itemType keyName keyDescription } } } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &res})
 	return res.Node.DimensionDefinitions, err
@@ -360,7 +362,7 @@ func validateArtifactDimensionFlags(cmd *cobra.Command, defs artifact.Dimensions
 			return
 		}
 		var id string
-		id, err = defs.Resolve(flag.Name)
+		id, err = defs.Resolve(flag.Annotations[artifactDimensionFlag][0])
 		if err != nil {
 			return
 		}
@@ -430,8 +432,11 @@ func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *dagger.Art
 }
 
 type listedArtifact struct {
-	CLIFlagsOnly     bool `json:"-"`
-	CollectionItem   bool `json:"-"`
+	OmitTypeKey      bool              `json:"-"`
+	Presence         []string          `json:"-"`
+	DisplayKeys      map[string]string `json:"-"`
+	PresenceNames    map[string]string `json:"-"`
+	CollectionItem   bool              `json:"-"`
 	URI, Description string
 	DimensionKeys    []struct{ Dimension, Key string }
 }

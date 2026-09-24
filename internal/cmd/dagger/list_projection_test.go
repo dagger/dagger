@@ -9,65 +9,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestArtifactLinkProjection(t *testing.T) {
-	module := "Go.modules"
-	test := "GoModule.tests"
+func TestArtifactCollectionTypeKeys(t *testing.T) {
 	item := listedArtifact{
-		URI:           "dag+check://go/modules/tests/run?go-module=./api&go-test=TestHealth",
-		DimensionKeys: []struct{ Dimension, Key string }{{module, "./api"}, {test, "TestHealth"}},
+		URI: "dag+go-test://go/modules/tests?go-module=./api&go-test=TestHealth", CollectionItem: true,
+		DimensionKeys: []struct{ Dimension, Key string }{{"Go.modules", "./api"}, {"GoModule.tests", "TestHealth"}, {"type:GoTest", "go/modules/tests"}},
 	}
-	path := artifactListPath{URI: "dag+check://go/modules/tests/run", Dimensions: []string{module, test}}
-	tests := []struct {
+	path := artifactListPath{URI: "dag+check://go/modules/tests/run", Dimensions: []string{"Go.modules", "GoModule.tests", "type:Check"}}
+	for _, tc := range []struct {
 		name  string
-		item  listedArtifact
 		paths []artifactListPath
 		omit  bool
 	}{
-		{"one operation", item, []artifactListPath{path}, true},
-		{"module-wide checks do not match a test key", item, []artifactListPath{path,
-			{URI: "dag+check://go/modules/generate/stale", Dimensions: []string{module}},
-		}, true},
-		{"sibling operation counts even without runtime items", item, []artifactListPath{path,
-			{URI: "dag+check://go/modules/tests/bench", Dimensions: []string{module, test}},
-		}, false},
-		{"same dimensions at another path", item, []artifactListPath{path,
-			{URI: "dag+check://other/modules/tests/run", Dimensions: []string{module, test}},
-		}, false},
-		{"unknown schema keeps the link", item, nil, false},
-		{"unknown dimension keeps the link", item, []artifactListPath{
-			{URI: path.URI, Dimensions: []string{module}},
-		}, false},
-		{"static row keeps the link", listedArtifact{URI: "dag+check://lint"}, []artifactListPath{{URI: "dag+check://lint"}}, false},
-		{"absolute row keeps workspace and revision", listedArtifact{
-			URI:           "dag+check://github.com/acme/project@abc:go/modules/tests/run?go-module=./api&go-test=TestHealth",
-			DimensionKeys: item.DimensionKeys,
-		}, []artifactListPath{path}, false},
-		{"collection row includes descendant operations", listedArtifact{
-			URI: "dag+go-test://go/modules/tests?go-module=./api&go-test=TestHealth", CollectionItem: true,
-			DimensionKeys: item.DimensionKeys,
-		}, []artifactListPath{path,
-			{URI: "dag+container://go/modules/tests/container", Dimensions: []string{module, test}},
-		}, true},
-		{"path boundaries are literal", listedArtifact{
-			URI: "dag+go-test://go/modules/test", CollectionItem: true, DimensionKeys: item.DimensionKeys,
-		}, []artifactListPath{path}, false},
-		{"type assertions remain part of scope", item, []artifactListPath{
-			{URI: "dag+container://go/modules/tests/run", Dimensions: []string{module, test}},
-		}, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Different key values must produce the same schema decision.
-			other := tt.item
-			other.DimensionKeys = slices.Clone(tt.item.DimensionKeys)
-			for i := range other.DimensionKeys {
-				other.DimensionKeys[i].Key = "other"
-			}
-			items := []listedArtifact{tt.item, other}
-			require.NoError(t, projectArtifactLinks(items, tt.paths))
+		{"descendant operations", []artifactListPath{path}, true},
+		{"module checks do not match a test key", []artifactListPath{path, {URI: "dag+check://go/modules/test", Dimensions: []string{"Go.modules", "type:Check"}}}, true},
+		{"empty sibling counts", []artifactListPath{path, {URI: "dag+check://other/tests/run", Dimensions: path.Dimensions}}, false},
+		{"unknown schema", nil, false},
+		{"path boundaries", []artifactListPath{{URI: "dag+check://go/modules/tests-extra/run", Dimensions: path.Dimensions}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			other := item
+			other.DimensionKeys = slices.Clone(item.DimensionKeys)
+			other.DimensionKeys[0].Key = "other"
+			items := []listedArtifact{item, other}
+			require.NoError(t, omitCollectionTypeKeys(items, tc.paths))
 			for _, got := range items {
-				require.Equal(t, tt.omit, got.CLIFlagsOnly)
-				require.Equal(t, tt.item.URI, got.URI, "projection must not modify complete identity")
+				require.Equal(t, tc.omit, got.OmitTypeKey)
+				require.Equal(t, item.URI, got.URI, "display must preserve the complete link")
 			}
 		})
 	}
@@ -118,7 +85,7 @@ func TestArtifactProjectionFlagNames(t *testing.T) {
 	check.Flags().StringArray("skip", nil, "")
 	root.AddCommand(list, check)
 	for _, cmd := range []*cobra.Command{list, check} {
-		require.Equal(t, "build-skip", artifactDimensionFlagName(cmd, defs, defs[0]))
-		require.Equal(t, "go-test", artifactDimensionFlagName(cmd, defs, defs[1]))
+		require.Equal(t, "build-skip", artifactDimensionFlagNames(cmd, defs)[defs[0].Identifier].Key)
+		require.Equal(t, "go-test", artifactDimensionFlagNames(cmd, defs)[defs[1].Identifier].Key)
 	}
 }

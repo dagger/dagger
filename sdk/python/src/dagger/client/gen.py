@@ -68,6 +68,12 @@ class AgentState(Enum):
     """Blocked on input from the user (derived; see waitingOn)."""
 
 
+class ArtifactDimensionKind(Enum):
+    COLLECTION = "COLLECTION"
+
+    TYPE = "TYPE"
+
+
 class CacheSharingMode(Enum):
     """Sharing mode of the cache volume."""
 
@@ -1549,7 +1555,7 @@ class Artifact(Type):
         return await _ctx.execute(str)
 
     async def dimension_keys(self) -> list["ArtifactDimensionKey"]:
-        """The selected keys for each dimension. Empty for static artifacts."""
+        """The collection keys and full path key in the artifact type dimension."""
         _args: list[Arg] = []
         _ctx = self._select("dimensionKeys", _args)
         return await _ctx.execute_object_list(ArtifactDimensionKey)
@@ -1706,12 +1712,12 @@ class Artifact(Type):
 
 @typecheck
 class ArtifactDimension(Type):
-    async def collection_type(self) -> str:
-        """The schema type name of the collection that supplies this dimension.
+    async def collection_type(self) -> str | None:
+        """The collection type, or null for a type dimension.
 
         Returns
         -------
-        str
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -1725,7 +1731,7 @@ class ArtifactDimension(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("collectionType", _args)
-        return await _ctx.execute(str)
+        return await _ctx.execute(str | None)
 
     async def id(self) -> str:
         """A unique identifier for this ArtifactDimension.
@@ -1756,7 +1762,8 @@ class ArtifactDimension(Type):
         return await _ctx.execute(str)
 
     async def identifier(self) -> str:
-        """Exact GraphQL ParentType.field identifier.
+        """Stable identifier: ParentType.field for a collection or type:TypeName
+        for an artifact type.
 
         Returns
         -------
@@ -1777,7 +1784,7 @@ class ArtifactDimension(Type):
         return await _ctx.execute(str)
 
     async def item_type(self) -> str:
-        """The author item type name.
+        """The collection item type or artifact type name.
 
         Returns
         -------
@@ -1798,7 +1805,7 @@ class ArtifactDimension(Type):
         return await _ctx.execute(str)
 
     async def key_description(self) -> str:
-        """The description of the author get function's key argument.
+        """The collection key argument description, or empty for a type dimension.
 
         Returns
         -------
@@ -1819,7 +1826,7 @@ class ArtifactDimension(Type):
         return await _ctx.execute(str)
 
     async def key_name(self) -> str:
-        """The name of the author get function's key argument.
+        """The collection key argument name, or name for a type dimension.
 
         Returns
         -------
@@ -1839,8 +1846,22 @@ class ArtifactDimension(Type):
         _ctx = self._select("keyName", _args)
         return await _ctx.execute(str)
 
+    async def kind(self) -> ArtifactDimensionKind:
+        """How this dimension gets its keys.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(ArtifactDimensionKind)
+
     async def name(self) -> str:
-        """Short name derived from the author item type.
+        """Short name derived from the collection item type or artifact type.
 
         Returns
         -------
@@ -1861,7 +1882,7 @@ class ArtifactDimension(Type):
         return await _ctx.execute(str)
 
     async def qualified_name(self) -> str:
-        """Author parent type and field name, in CLI case.
+        """Qualified name used when the short name is ambiguous.
 
         Returns
         -------
@@ -2132,6 +2153,14 @@ class Artifacts(Type):
         _ctx = self._select("asChecks", _args)
         return await _ctx.execute_object_list(Check)
 
+    async def as_generators(self) -> list["Generator"]:
+        """Convert the selection to Generators without running them. Fail if any
+        artifact is not a Generator.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asGenerators", _args)
+        return await _ctx.execute_object_list(Generator)
+
     async def as_services(self) -> list["Service"]:
         """Convert the selection to Services. Fail if any artifact is not a
         Service. Does not apply command filters or start the services.
@@ -2206,15 +2235,14 @@ class Artifacts(Type):
         return await _ctx.execute(list[str])
 
     def filter_agent_command(self) -> Self:
-        """Select LLM artifacts marked agent."""
+        """Select AgentMiddleware artifacts."""
         _args: list[Arg] = []
         _ctx = self._select("filterAgentCommand", _args)
         return Artifacts(_ctx)
 
     def filter_check_command(self, *, generated: bool | None = None) -> Self:
         """Select Check artifacts for dagger check, using each workspace's check
-        and generator settings. Include stale checks only for Changesets
-        marked generate.
+        and generator settings. Include staleness checks from Generators.
 
         Parameters
         ----------
@@ -2268,9 +2296,7 @@ class Artifacts(Type):
         return Artifacts(_ctx)
 
     def filter_generate_command(self) -> Self:
-        """Select Changeset artifacts marked generate, using each workspace's
-        generator settings.
-        """
+        """Select Generator artifacts, using each workspace's generator settings."""
         _args: list[Arg] = []
         _ctx = self._select("filterGenerateCommand", _args)
         return Artifacts(_ctx)
@@ -2349,8 +2375,8 @@ class Artifacts(Type):
         return Artifacts(_ctx)
 
     def filter_up_command(self) -> Self:
-        """Select Service artifacts, using each workspace's service settings. Does
-        not require the up directive.
+        """Select Service artifacts, using each workspace's service settings.
+        Does not require the up directive.
         """
         _args: list[Arg] = []
         _ctx = self._select("filterUpCommand", _args)
@@ -2423,7 +2449,8 @@ class Artifacts(Type):
         type_assertion: bool | None = False,
     ) -> list[ArtifactPath]:
         """List selected schema paths, including empty collections. Does not read
-        runtime values or resolve dimension-key filters.
+        runtime values. Applies type keys and collection presence; collection
+        key values require items.
 
         Parameters
         ----------
@@ -2753,12 +2780,6 @@ class Changeset(Type):
         _args: list[Arg] = []
         _ctx = self._select("removedPaths", _args)
         return await _ctx.execute(list[str])
-
-    def stale(self) -> "Check":
-        """A check that passes when the changeset is empty."""
-        _args: list[Arg] = []
-        _ctx = self._select("stale", _args)
-        return Check(_ctx)
 
     async def sync(self) -> Self:
         """Force evaluation in the engine.
@@ -9464,6 +9485,65 @@ class GeneratedCode(Type):
         self, cb: Callable[["GeneratedCode"], "GeneratedCode"]
     ) -> "GeneratedCode":
         """Call the provided callable with current GeneratedCode.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
+class Generator(Type):
+    """A generation function and its staleness check. Reading changeset
+    runs the function."""
+
+    def changeset(self) -> Changeset:
+        """Run the generator and return its changes."""
+        _args: list[Arg] = []
+        _ctx = self._select("changeset", _args)
+        return Changeset(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this Generator.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def stale(self) -> Check:
+        """A check that passes when this generator would produce no changes."""
+        _args: list[Arg] = []
+        _ctx = self._select("stale", _args)
+        return Check(_ctx)
+
+    def sync(self) -> Self:
+        """Run the generator and retain its result."""
+        _args: list[Arg] = []
+        _ctx = self._select("sync", _args)
+        return Generator(_ctx)
+
+    def with_(self, cb: Callable[["Generator"], "Generator"]) -> "Generator":
+        """Call the provided callable with current Generator.
 
         This is useful for reusability and readability by not breaking the calling chain.
         """
@@ -19619,6 +19699,7 @@ __all__ = [
     "Artifact",
     "ArtifactDimension",
     "ArtifactDimensionKey",
+    "ArtifactDimensionKind",
     "ArtifactPath",
     "ArtifactResult",
     "Artifacts",
@@ -19662,6 +19743,7 @@ __all__ = [
     "FunctionCall",
     "FunctionCallArgValue",
     "GeneratedCode",
+    "Generator",
     "GitBundle",
     "GitBundleRef",
     "GitCommit",

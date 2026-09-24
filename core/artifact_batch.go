@@ -30,9 +30,9 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 	var result []*Artifact
 	for _, artifact := range a.Entries {
 		planned := artifact.Clone()
-		// A generated Changeset's stale check uses the generator's batch too.
+		// A Generator's stale check uses its batch too.
 		target := planned.Node
-		if target != nil && target.Name == "stale" && target.Parent != nil && target.Parent.Type.Self().ToType().Name() == "Changeset" {
+		if target != nil && target.Name == "stale" && target.Parent != nil && target.Parent.Type.Self().ToType().Name() == "Generator" {
 			target = target.Parent
 		}
 		if target == nil || target.Parent == nil || target.Parent.CollectionDimension == nil || artifactBatchDirective(target) == "" {
@@ -65,13 +65,15 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 			receiver := *item
 			receiver.Name, receiver.Type, receiver.DagqlServer = "batch", typ.Value, srv
 			replacement, err := receiver.Child(ctx, target.Name)
+			replacement = projectArtifactNode(replacement)
 			if err != nil {
 				return nil, err
 			}
-			if replacement == nil || artifactBatchDirective(replacement) != artifactBatchDirective(target) || replacement.Type.Self().ToType().Name() != target.Type.Self().ToType().Name() {
+			if replacement == nil || artifactBatchDirective(replacement) != artifactBatchDirective(target) || artifactProjectedTypeName(replacement) != target.Type.Self().ToType().Name() {
 				result = append(result, artifact)
 				continue
 			}
+			replacement.Type = target.Type
 			*target = *replacement
 			item = target.Parent
 		}
