@@ -71,3 +71,8 @@ func ShutdownGlobalNamespaceWorkerPool() error {
 func getContainerPID(containerID string) (int, error) {
 	panic("implemented only on linux")
 }
+
+// ContainerRootFSPath is only implemented on Linux.
+func ContainerRootFSPath(containerID string) (string, error) {
+	panic("implemented only on linux")
+}

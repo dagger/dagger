@@ -49,6 +49,13 @@ func (s *querySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("remoteURL").Doc("Normalized remote repository URL."),
 			),
+		dagql.NodeFunc("_interactiveTerminalSnapshot", s.interactiveTerminalSnapshot).
+			// Every call must capture the terminal's filesystem as it is now.
+			WithInput(dagql.PerCallInput).
+			Doc(`(Internal-only) Snapshots the live working directory of a running interactive terminal owned by the calling session.`).
+			Args(
+				dagql.Arg("terminalID").Doc("Opaque terminal ID sent to the client when the terminal was opened."),
+			),
 		dagql.NodeFunc("_clientFilesyncMirror", s.clientFilesyncMirror).
 			View(AfterVersion("v0.21.0")).
 			IsPersistable().
@@ -237,4 +244,12 @@ func (s *querySchema) schemaJSONFile(
 		Lazy:     &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: schemaJSONFilename, Contents: slices.Clone(moduleSchemaJSON), Permissions: perm},
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, file)
+}
+
+type interactiveTerminalSnapshotArgs struct {
+	TerminalID string `name:"terminalID"`
+}
+
+func (s *querySchema) interactiveTerminalSnapshot(ctx context.Context, _ dagql.ObjectResult[*core.Query], args interactiveTerminalSnapshotArgs) (dagql.ObjectResult[*core.Directory], error) {
+	return core.SnapshotInteractiveTerminal(ctx, args.TerminalID)
 }

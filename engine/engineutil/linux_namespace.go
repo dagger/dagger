@@ -442,3 +442,14 @@ func getContainerPID(containerID string) (int, error) {
 
 	return state.Pid, nil
 }
+
+// ContainerRootFSPath returns a host path through which the live filesystem of
+// a running container can be read, exactly as its processes see it (including
+// its mounts): /proc/<pid>/root of the container's init process.
+func ContainerRootFSPath(containerID string) (string, error) {
+	pid, err := getContainerPID(containerID)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("/proc/%d/root", pid), nil
+}

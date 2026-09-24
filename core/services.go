@@ -126,6 +126,12 @@ type RunningService struct {
 
 	workspaceMu sync.Mutex
 
+	// mountStates are the container's prepared mounts (base + active refs)
+	// while it runs, so its live filesystem can be captured cheaply (see
+	// WithMountStates). Cleared before the refs are released.
+	mountStatesMu sync.RWMutex
+	mountStates   []*execMountState
+
 	dependencyExitPropagationMu         sync.Mutex
 	dependencyExitPropagationSuppressed int
 	dependencyExitPropagationChanged    chan struct{}
@@ -1329,4 +1335,30 @@ func (ss *Services) startWithKey(
 			}, nil
 		}
 	}
+}
+
+func (svc *RunningService) setMountStates(states []*execMountState) {
+	svc.mountStatesMu.Lock()
+	defer svc.mountStatesMu.Unlock()
+	svc.mountStates = states
+}
+
+// clearMountStates forgets the mount states, waiting for any in-flight
+// WithMountStates callers so the refs are not released under them.
+func (svc *RunningService) clearMountStates() {
+	svc.mountStatesMu.Lock()
+	defer svc.mountStatesMu.Unlock()
+	svc.mountStates = nil
+}
+
+// WithMountStates runs fn with the running container's mount states, which
+// stay valid (not released) for the duration of fn. It fails if the service
+// has already stopped.
+func (svc *RunningService) WithMountStates(fn func([]*execMountState) error) error {
+	svc.mountStatesMu.RLock()
+	defer svc.mountStatesMu.RUnlock()
+	if svc.mountStates == nil {
+		return fmt.Errorf("service is not running")
+	}
+	return fn(svc.mountStates)
 }

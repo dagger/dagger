@@ -281,6 +281,22 @@ func (container *Container) terminal(
 	}
 	defer release()
 
+	// Let the owning client snapshot this terminal's live filesystem (e.g. the
+	// -i explorer's refresh) while it runs.
+	if sessionInfo != nil && runningSvc.ContainerID != "" {
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err == nil {
+			unregister := registerInteractiveTerminal(terminalID, &interactiveTerminal{
+				sessionID:   clientMetadata.SessionID,
+				running:     runningSvc,
+				containerID: runningSvc.ContainerID,
+				workdir:     sessionInfo.Workdir,
+				platform:    container.Platform,
+			})
+			defer unregister()
+		}
+	}
+
 	eg.Go(func() error {
 		err := <-term.ErrCh
 		if err != nil {

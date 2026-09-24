@@ -692,6 +692,11 @@ func (svc *Service) startContainer(
 	cleanup.Add("release output refs", func() error {
 		return p.releaseOutputRefs(context.WithoutCancel(ctx))
 	})
+	// Expose the mounts for live filesystem capture while running. Cleanups
+	// run LIFO, so this is forgotten (waiting out in-flight captures) before
+	// the refs above are released.
+	running.setMountStates(p.States)
+	cleanup.Add("forget mount states", cleanups.Infallible(running.clearMountStates))
 	protectedSnapshots := make(map[string]struct{})
 	for _, state := range p.States {
 		for _, ref := range []bkcache.Ref{
