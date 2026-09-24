@@ -2187,11 +2187,19 @@ func (s *moduleSchema) serveModule(ctx context.Context, self *core.Query, args s
 		if err := dag.Select(ctx, dag.Root(), &src, sel); err != nil {
 			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
 		}
+	} else if caller, err := self.Server.ModuleParent(ctx); err == nil {
+		// A module's code may run in a process the engine does not treat as the
+		// module, such as one its entrypoint starts; the nearest ancestor that
+		// is a module is the one whose tree the address names.
+		if src, err = callerTreeModuleSource(ctx, dag, caller, args.Address); err != nil {
+			return void, fmt.Errorf("serve module %q from module %q: %w", args.Address, caller.Self().Name(), err)
+		}
+	} else if !errors.Is(err, core.ErrNoCurrentModule) {
+		return void, fmt.Errorf("serve module %q: %w", args.Address, err)
 	} else {
-		// currentWorkspace is what makes this resolvable from a module: it
-		// prefers a Workspace bound into the context (a generator/check group,
-		// or an agent's overlaid workspace) over the session's, so the address
-		// resolves against the same tree the calling module was rolled up from.
+		// currentWorkspace prefers a Workspace bound into the context (a
+		// generator/check group, or an agent's overlaid workspace) over the
+		// session's, so the address resolves against the tree the caller works in.
 		var ws dagql.ObjectResult[*core.Workspace]
 		if err := dag.Select(ctx, dag.Root(), &ws, dagql.Selector{Field: "currentWorkspace"}); err != nil {
 			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
