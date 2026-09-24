@@ -103,15 +103,15 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 	) {
 		t.Helper()
 		if engineClient != nil {
-			require.NoError(t, engineClient.Close())
+			require.NoError(t, engineClient.Close(), "close nested engine client")
 		}
 		if upstreamSvc != nil {
 			_, err := upstreamSvc.Stop(ctx)
-			require.NoError(t, err)
+			require.NoError(t, err, "stop nested engine before restart")
 		}
 		if engineSvc != nil {
 			_, err := engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
-			require.NoError(t, err)
+			require.NoError(t, err, "stop nested engine tunnel")
 		}
 	}
 
