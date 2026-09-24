@@ -278,6 +278,21 @@ func (WorkspaceSuite) TestWorkspaceWithCommitReconciliationOracle(ctx context.Co
 		{name: "ordinary", pending: func(d *dagger.Directory) *dagger.Directory {
 			return d.WithNewFile("file.txt", "selected\n")
 		}, include: []string{"file.txt"}, wantFile: "selected\n"},
+		{name: "identical selected overlap with raw metadata", pending: func(d *dagger.Directory) *dagger.Directory {
+			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"python3", "-c", `
+import os
+with open('/work/file.txt', 'w') as f: f.write('selected raw metadata\n')
+os.chown('/work/file.txt', 123, 456)
+os.chmod('/work/file.txt', 0o600)
+os.setxattr('/work/file.txt', 'user.oracle', b'selected\x00metadata')
+`}).Directory("/work")
+		}, include: []string{"file.txt"}, wantFile: "selected raw metadata\n", checkInput: func(manifest map[string]workspaceCommitManifestEntry) {
+			file := manifest["file.txt"]
+			require.Equal(t, uint32(0o600), file.Mode&0o7777)
+			require.Equal(t, uint32(123), file.UID)
+			require.Equal(t, uint32(456), file.GID)
+			require.Equal(t, hex.EncodeToString([]byte("selected\x00metadata")), file.Xattrs["user.oracle"])
+		}},
 		{name: "compatible overlapping same file", pending: func(d *dagger.Directory) *dagger.Directory {
 			return d.WithNewFile("file.txt", strings.Replace(text, "one", "OURS", 1))
 		}, incoming: func(d *dagger.Directory) *dagger.Directory {
