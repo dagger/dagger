@@ -982,18 +982,38 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				absolutely necessary and only with trusted commands.`),
 			),
 
+		dagql.NodeFunc("withGPU", s.withAllGPUs).
+			View(AfterVersion(gpuAPIVersion)).
+			Doc(`Configures all GPUs available on the host to be accessible to this container.`,
+				`This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.`),
+
 		dagql.NodeFunc("experimentalWithGPU", s.withGPU).
+			View(BeforeVersion(gpuAPIVersion)).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures the provided list of devices to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`).
 			Args(
 				dagql.Arg("devices").Doc(`List of devices to be accessible to this container.`),
 			),
+		dagql.NodeFunc("experimentalWithGPU", s.withGPU).
+			View(AfterVersion(gpuAPIVersion)).
+			Doc(`Configures the provided list of devices to be accessible to this container.`,
+				`This currently works for Nvidia devices only.`).
+			Args(
+				dagql.Arg("devices").Doc(`List of devices to be accessible to this container.`),
+			).
+			Deprecated(`Use "withGPU" instead, which exposes all GPUs available on the host.`),
 
 		dagql.NodeFunc("experimentalWithAllGPUs", s.withAllGPUs).
+			View(BeforeVersion(gpuAPIVersion)).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
+		dagql.NodeFunc("experimentalWithAllGPUs", s.withAllGPUs).
+			View(AfterVersion(gpuAPIVersion)).
+			Doc(`Configures all available GPUs on the host to be accessible to this container.`,
+				`This currently works for Nvidia devices only.`).
+			Deprecated(`Use "withGPU" instead.`),
 	}.Install(srv)
 
 	dagql.Fields[*core.TerminalLegacy]{

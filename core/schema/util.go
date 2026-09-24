@@ -19,6 +19,12 @@ type SchemaResolvers interface {
 // experimentalPrivilegedNesting opt-in argument and behavior.
 const defaultNestingVersion = "v1.0.0-beta.15"
 
+// Container.withGPU is available starting with this API version. Older views
+// keep the experimentalWithGPU and experimentalWithAllGPUs names undecorated;
+// newer views still accept them, marked deprecated, so released callers keep
+// working.
+const gpuAPIVersion = "v1.0.0-beta.15"
+
 // Newer views still accept experimentalPrivilegedNesting so existing callers
 // keep working, but ignore it: nesting is already the default.
 var (
