@@ -54,7 +54,7 @@ func (ClientSuite) TestEngineCacheFactsToCloud(ctx context.Context, t *testctx.T
 			"from", "--address=" + alpineImage,
 			"with-exec", "--args", "echo," + marker,
 			"stdout",
-		}).
+		}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, marker)
