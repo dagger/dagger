@@ -233,6 +233,66 @@ func TestLoadTraceInspectionTools(t *testing.T) {
 	require.ErrorContains(t, err, "dagger login")
 }
 
+func TestLoadTracePreservesOrdinaryWorkInReport(t *testing.T) {
+	const traceID = "000102030405060708090a0b0c0d0e0f"
+	const rootID = "0000000000000001"
+	for _, revealed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("revealed=%v", revealed), func(t *testing.T) {
+			ctx := t.Context()
+			original, err := clientdb.NewDBs(t.TempDir()).Open(ctx, "original")
+			require.NoError(t, err)
+			defer original.Close()
+			live, err := clientdb.NewDBs(t.TempDir()).Open(ctx, "live")
+			require.NoError(t, err)
+			defer live.Close()
+			rows := []clientdb.Span{
+				{SpanID: rootID, Name: "ordinary root"},
+				{SpanID: "0000000000000002", ParentSpanID: validSpanID(rootID), Name: "ordinary successful work"},
+				{SpanID: "0000000000000003", ParentSpanID: validSpanID(rootID), Name: "other work"},
+			}
+			var spans []sdktrace.ReadOnlySpan
+			for i := range rows {
+				rows[i].TraceID = traceID
+				rows[i].StartTime = 1000000000
+				rows[i].EndTime.Valid = true
+				rows[i].EndTime.Int64 = 2000000000
+				rows[i].Attributes = marshalSpanAttrs(t)
+				rows[i].Events = []byte("[]")
+				rows[i].Links = []byte("[]")
+				rows[i].Resource = []byte("{}")
+				rows[i].InstrumentationScope = []byte("{}")
+				if revealed && i == 2 {
+					rows[i].Attributes = marshalSpanAttrs(t, &otlpcommonv1.KeyValue{
+						Key:   telemetry.UIRevealAttr,
+						Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BoolValue{BoolValue: true}},
+					})
+				}
+				spans = append(spans, rows[i].ReadOnly())
+			}
+			_, err = original.AppendSpans(rows)
+			require.NoError(t, err)
+			render := func(store *clientdb.DB) string {
+				t.Helper()
+				session, err := loadTraceReportSession(ctx, store, rootID)
+				require.NoError(t, err)
+				report, err := renderTraceReportSession(session, rootID, readTraceReportOpts())
+				require.NoError(t, err)
+				return report.body
+			}
+			before := render(original)
+			require.Contains(t, before, "ordinary successful work")
+			_, err = loadCloudTrace(ctx, live, traceID, func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
+				return sink.ImportSpans(ctx, &coltracepb.ExportTraceServiceRequest{ResourceSpans: telemetry.SpansToPB(spans)})
+			})
+			require.NoError(t, err)
+			after := render(inspectionStoreForSpan(live, rootID))
+			t.Logf("original report:\n%s\nloaded report:\n%s", before, after)
+			require.Contains(t, after, "ordinary successful work", "loading a trace must not drop unrevealed work")
+			require.Equal(t, before, after)
+		})
+	}
+}
+
 func TestImportedTraceCannotOverrideLive(t *testing.T) {
 	ctx := t.Context()
 	live, digest, frames := callInspectStore(t, callInspectRecipe(t))

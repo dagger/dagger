@@ -88,6 +88,9 @@ func loadCloudTrace(ctx context.Context, store *clientdb.DB, id string, fetch cl
 	imported, err := store.ImportTrace(ctx, id, func(dst *clientdb.DB) error {
 		sink := &inspectionTraceSink{db: dst, traceID: id}
 		sink.spans = enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: inspectionSpanExporter{dst}})
+		// Inspection zooms the imported root, rather than embedding it under
+		// live work. Preserve its children instead of promoting only reveals.
+		sink.spans.KeepRoots = true
 		if err := fetch(ctx, id, sink); err != nil {
 			// Cloud errors may contain response bodies or credential-refresh details.
 			// Keep those out of model-visible errors, including nested tool reports.
