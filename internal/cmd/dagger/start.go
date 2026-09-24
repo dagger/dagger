@@ -16,7 +16,7 @@ import (
 var startListMode bool
 
 //go:embed start.graphql
-var loadUpQuery string
+var loadStartQuery string
 
 func init() {
 	startCmd.Flags().BoolVarP(&startListMode, "list", "l", false, "List available services")
@@ -68,7 +68,7 @@ Examples:
 func loadUpGroupInfo(ctx context.Context, dag *dagger.Client, upGroup *dagger.UpGroup) (*UpGroupInfo, error) {
 	items, err := loadGroupListDetails(ctx, dag, "fetch service information",
 		func(ctx context.Context) (any, error) { return upGroup.ID(ctx) },
-		loadUpQuery, "UpGroupListDetails",
+		loadStartQuery, "UpGroupListDetails",
 	)
 	if err != nil {
 		return nil, err
