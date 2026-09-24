@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ErrNothingToCommit is returned when the changeset handed to
@@ -174,6 +175,16 @@ func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult
 
 var errNativeCommitUnsupported = errors.New("unsupported native git commit")
 
+// Reasons are fixed codes only, never paths, refs or repository configuration.
+// Keep them on the native span so a conservative fallback is distinguishable
+// from a successful transaction without exposing private source metadata.
+type nativeCommitUnsupportedReason string
+
+func (reason nativeCommitUnsupportedReason) Error() string { return string(reason) }
+func (reason nativeCommitUnsupportedReason) Is(target error) bool {
+	return target == errNativeCommitUnsupported
+}
+
 // GitCommitChangesetNative records a same-base changeset using sparse staging,
 // without checking out the parent tree or copying its history for the commit.
 // Computing a not-yet-evaluated Directory changeset can still materialize its
@@ -225,6 +236,10 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 		})
 	})
 	if errors.Is(err, errNativeCommitUnsupported) {
+		var reason nativeCommitUnsupportedReason
+		if errors.As(err, &reason) {
+			span.SetAttributes(attribute.String("dagger.git.native.fallback_reason", string(reason)))
+		}
 		return nil, false, nil
 	}
 	if err != nil {
@@ -245,15 +260,20 @@ func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
 	} else if err != nil {
 		return "", err
 	} else if !info.IsDir() {
-		return "", errNativeCommitUnsupported // gitfile or symlink
+		return "", nativeCommitUnsupportedReason("git-directory-layout") // gitfile or symlink
 	}
-	for _, name := range []string{"commondir", "shallow", "objects/info/alternates", "objects/info/http-alternates"} {
-		data, err := os.ReadFile(filepath.Join(gitDir, name))
+	for _, entry := range []struct{ path, reason string }{
+		{"commondir", "linked-worktree"},
+		{"shallow", "shallow-history"},
+		{"objects/info/alternates", "object-alternates"},
+		{"objects/info/http-alternates", "object-alternates"},
+	} {
+		data, err := os.ReadFile(filepath.Join(gitDir, entry.path))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", err
 		}
 		if len(data) != 0 {
-			return "", errNativeCommitUnsupported
+			return "", nativeCommitUnsupportedReason(entry.reason)
 		}
 	}
 	info, err = os.Lstat(filepath.Join(gitDir, "objects"))
@@ -261,21 +281,21 @@ func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
 		return "", err
 	}
 	if !info.IsDir() {
-		return "", errNativeCommitUnsupported
+		return "", nativeCommitUnsupportedReason("object-directory-layout")
 	}
 	promisors, err := filepath.Glob(filepath.Join(gitDir, "objects", "pack", "*.promisor"))
 	if err != nil {
 		return "", err
 	}
 	if len(promisors) != 0 {
-		return "", errNativeCommitUnsupported
+		return "", nativeCommitUnsupportedReason("partial-repository")
 	}
 	format, err := runWorkspaceCommitGit(ctx, root, []string{"GIT_NO_LAZY_FETCH=1"}, "rev-parse", "--show-object-format")
 	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(format) != "sha1" {
-		return "", errNativeCommitUnsupported
+		return "", nativeCommitUnsupportedReason("object-format")
 	}
 	config, err := runWorkspaceCommitGit(ctx, root, nil, "config", "--local", "--null", "--list")
 	if err != nil {
@@ -284,7 +304,7 @@ func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
 	for _, setting := range strings.Split(config, "\x00") {
 		key, _, _ := strings.Cut(setting, "\n")
 		if key == "extensions.partialclone" || (strings.HasPrefix(key, "remote.") && strings.HasSuffix(key, ".promisor")) {
-			return "", errNativeCommitUnsupported
+			return "", nativeCommitUnsupportedReason("partial-repository")
 		}
 	}
 	return gitDir, nil
@@ -299,8 +319,14 @@ func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
 // inherited pack if pointed at the writable COW child directly.
 func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, ref *gitutil.Ref, paths *ChangesetPaths, opts GitCommitOpts, apply func(string) error) error {
 	parent := ref.SHA
-	if ref.Name != "" && !strings.HasPrefix(ref.Name, "refs/heads/") {
-		return errNativeCommitUnsupported
+	branchName := ref.Name
+	// The schema's full-SHA and abbreviated-SHA resolvers retain the resolved
+	// SHA as Name. It is still a detached commit, not a branch to advance.
+	if branchName == parent && IsFullGitSHA(branchName) {
+		branchName = ""
+	}
+	if branchName != "" && !strings.HasPrefix(branchName, "refs/heads/") {
+		return nativeCommitUnsupportedReason("ref-kind")
 	}
 	if _, err := time.Parse(time.RFC3339, opts.Date); err != nil {
 		return fmt.Errorf("commit date must be RFC3339: %w", err)
@@ -372,7 +398,7 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 			return fmt.Errorf("invalid commit path %q", p)
 		}
 		if path.Base(p) == ".gitmodules" {
-			return errNativeCommitUnsupported
+			return nativeCommitUnsupportedReason("gitmodules-change")
 		}
 		ancestors[p] = true
 		for dir := path.Dir(p); ; dir = path.Dir(dir) {
@@ -407,7 +433,7 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 				return fmt.Errorf("invalid ls-tree entry")
 			}
 			if mode == "160000" {
-				return errNativeCommitUnsupported
+				return nativeCommitUnsupportedReason("gitlink-change")
 			}
 			if controls[name] && (mode == "100644" || mode == "100755") {
 				if _, err := run("checkout-index", "--force", "--", name); err != nil {
@@ -481,14 +507,14 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	}
 	defer root.Close()
 	head := strings.TrimSpace(sha) + "\n"
-	if ref.Name != "" {
-		if _, err := run("check-ref-format", ref.Name); err != nil {
+	if branchName != "" {
+		if _, err := run("check-ref-format", branchName); err != nil {
 			return err
 		}
-		if err := nativeCommitWriteFile(root, filepath.FromSlash(ref.Name), []byte(head)); err != nil {
+		if err := nativeCommitWriteFile(root, filepath.FromSlash(branchName), []byte(head)); err != nil {
 			return err
 		}
-		head = "ref: " + ref.Name + "\n"
+		head = "ref: " + branchName + "\n"
 	}
 	if err := nativeCommitWriteFile(root, "HEAD", []byte(head)); err != nil {
 		return err
@@ -526,7 +552,7 @@ func nativeCommitMkdirParents(root *os.Root, name string) error {
 		} else if err != nil {
 			return err
 		} else if !info.IsDir() {
-			return errNativeCommitUnsupported
+			return nativeCommitUnsupportedReason("unsafe-write-path")
 		}
 	}
 	return nil
@@ -551,6 +577,15 @@ func nativeCommitWriteFile(root *os.Root, name string, data []byte) error {
 // never the inherited object database. O_EXCL avoids freshening an existing
 // object, even when content deduplication made an insertion redundant.
 func copyNativeCommitObjects(ctx context.Context, source, dest string) error {
+	var newObjects, newObjectBytes int64
+	defer func() {
+		// These are compressed loose-object file bytes copied into the child,
+		// not logical blob bytes or physical snapshot disk allocation.
+		trace.SpanFromContext(ctx).SetAttributes(
+			attribute.Int64("dagger.git.native.new_objects", newObjects),
+			attribute.Int64("dagger.git.native.new_object_bytes", newObjectBytes),
+		)
+	}()
 	root, err := os.OpenRoot(dest)
 	if err != nil {
 		return err
@@ -584,7 +619,7 @@ func copyNativeCommitObjects(ctx context.Context, source, dest string) error {
 				return err
 			}
 			if !info.Mode().IsRegular() {
-				return errNativeCommitUnsupported
+				return nativeCommitUnsupportedReason("unsafe-write-path")
 			}
 			return nil
 		}
@@ -595,8 +630,13 @@ func copyNativeCommitObjects(ctx context.Context, source, dest string) error {
 		if err != nil {
 			return errors.Join(err, out.Close())
 		}
-		_, err = io.Copy(out, in)
-		return errors.Join(err, in.Close(), out.Close())
+		n, err := io.Copy(out, in)
+		newObjectBytes += n
+		err = errors.Join(err, in.Close(), out.Close())
+		if err == nil {
+			newObjects++
+		}
+		return err
 	})
 }
 

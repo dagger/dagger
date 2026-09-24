@@ -14,12 +14,14 @@ import (
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // The oracle uses a complete worktree and git commit, not commit-tree. Exact
 // SHA equality covers the tree, parent, dates, identities and message bytes.
 func TestGitNativeCommitMatchesCheckout(t *testing.T) {
-	for _, scenario := range []string{"ordinary", "packed", "attributes", "changed attributes", "deleted attributes", "signoff", "ignored", "empty"} {
+	for _, scenario := range []string{"ordinary", "named commit", "packed", "attributes", "changed attributes", "deleted attributes", "signoff", "ignored", "empty"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := t.Context()
 			source := t.TempDir()
@@ -77,7 +79,7 @@ func TestGitNativeCommitMatchesCheckout(t *testing.T) {
 					require.ErrorIs(t, err, os.ErrNotExist)
 				}
 				switch scenario {
-				case "ordinary", "packed", "signoff":
+				case "ordinary", "named commit", "packed", "signoff":
 					paths.Modified = []string{"edit"}
 					paths.Added = []string{"file-to-dir/child", "dir-to-file", "exec", "link", "a\n:[literal]"}
 					paths.AllRemoved = []string{"remove", "file-to-dir", "dir-to-file/child"}
@@ -123,8 +125,12 @@ func TestGitNativeCommitMatchesCheckout(t *testing.T) {
 			parentRef := &gitutil.Ref{SHA: parent, Name: "refs/heads/main"}
 			if scenario == "attributes" {
 				parentRef.Name = "" // commit-ID parents keep a detached HEAD
+			} else if scenario == "named commit" {
+				parentRef.Name = parent // schema ref(SHA) preserves SHA as Name
 			}
+			originalRef := *parentRef
 			err := withNativeCommitIndex(ctx, filepath.Join(native, ".git"), filepath.Join(source, ".git", "objects"), parentRef, paths, opts, apply)
+			require.Equal(t, originalRef, *parentRef, "the shared parent ref must not be mutated")
 			if scenario == "ignored" {
 				require.Error(t, oracleErr)
 				require.Error(t, err)
@@ -148,7 +154,7 @@ func TestGitNativeCommitMatchesCheckout(t *testing.T) {
 			require.Equal(t, parent, run(source, nil, "rev-parse", "refs/heads/main"))
 			require.Equal(t, parent, run(nativeGit, nil, "rev-parse", "refs/tags/unrelated-tag"))
 			require.Equal(t, parent, run(nativeGit, nil, "rev-parse", "refs/remotes/origin/unrelated-branch"))
-			if parentRef.Name != "" {
+			if strings.HasPrefix(parentRef.Name, "refs/heads/") {
 				require.Equal(t, run(nativeGit, nil, "rev-parse", "HEAD"), run(nativeGit, nil, "rev-parse", "refs/heads/main"))
 			} else {
 				require.Equal(t, parent, run(nativeGit, nil, "rev-parse", "refs/heads/main"))
@@ -223,8 +229,34 @@ func TestGitNativeCommitRejectsGitlinks(t *testing.T) {
 	require.Equal(t, parent, run("rev-parse", "HEAD"))
 }
 
+func TestGitNativeCommitObjectMetrics(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	defer provider.Shutdown(t.Context())
+	ctx, span := provider.Tracer("native-test").Start(t.Context(), "native")
+	source, dest := t.TempDir(), t.TempDir()
+	for _, root := range []string{source, dest} {
+		require.NoError(t, os.Mkdir(filepath.Join(root, "aa"), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(root, "aa", strings.Repeat("b", 38)), []byte("existing"), 0444))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(source, "aa", strings.Repeat("c", 38)), []byte("new object"), 0444))
+	require.NoError(t, copyNativeCommitObjects(ctx, source, dest))
+	span.End()
+	ended := recorder.Ended()
+	require.Len(t, ended, 1)
+	metrics := map[string]int64{}
+	for _, attr := range ended[0].Attributes() {
+		metrics[string(attr.Key)] = attr.Value.AsInt64()
+	}
+	require.Equal(t, int64(1), metrics["dagger.git.native.new_objects"], "existing objects must not be counted")
+	require.Equal(t, int64(len("new object")), metrics["dagger.git.native.new_object_bytes"])
+}
+
 func TestGitNativeCommitStorageEligibility(t *testing.T) {
-	for _, unsupported := range []string{"shallow", "objects/info/alternates", "commondir", "objects/pack/partial.promisor"} {
+	for unsupported, reason := range map[string]string{
+		"shallow": "shallow-history", "objects/info/alternates": "object-alternates",
+		"commondir": "linked-worktree", "objects/pack/partial.promisor": "partial-repository",
+	} {
 		t.Run(unsupported, func(t *testing.T) {
 			root := t.TempDir()
 			_, err := runWorkspaceCommitGit(t.Context(), root, nil, "init", "--bare")
@@ -235,6 +267,9 @@ func TestGitNativeCommitStorageEligibility(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(root, unsupported), []byte("unsupported\n"), 0600))
 			_, err = nativeCommitGitDir(t.Context(), root)
 			require.ErrorIs(t, err, errNativeCommitUnsupported)
+			var unsupportedReason nativeCommitUnsupportedReason
+			require.ErrorAs(t, err, &unsupportedReason)
+			require.Equal(t, reason, string(unsupportedReason))
 		})
 	}
 }
