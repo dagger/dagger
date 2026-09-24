@@ -7359,6 +7359,15 @@ func (fe *frontendPretty) renderProgressSpanRow(ctx tuist.Context, out TermOutpu
 // ErrorOrigins already propagated onto the span via causal links, and otherwise
 // walks the subtree for failed leaves (a failed span with no failed child).
 func (fe *frontendPretty) checkRootCauses(root *dagui.Span) []*dagui.Span {
+	return CheckRootCauses(root)
+}
+
+// CheckRootCauses returns causal error origins, falling back to failed leaves.
+// It is shared by the interactive frontend and bounded inspection reports.
+func CheckRootCauses(root *dagui.Span) []*dagui.Span {
+	if root == nil {
+		return nil
+	}
 	var origins []*dagui.Span
 	seen := map[dagui.SpanID]bool{}
 	add := func(s *dagui.Span) {
@@ -7374,8 +7383,13 @@ func (fe *frontendPretty) checkRootCauses(root *dagui.Span) []*dagui.Span {
 	if len(origins) > 0 {
 		return origins
 	}
+	visited := map[dagui.SpanID]bool{}
 	var walk func(s *dagui.Span)
 	walk = func(s *dagui.Span) {
+		if visited[s.ID] {
+			return
+		}
+		visited[s.ID] = true
 		if s.IsFailed() {
 			for _, o := range s.ErrorOrigins.Order {
 				add(o)

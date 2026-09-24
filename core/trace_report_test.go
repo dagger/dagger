@@ -1,16 +1,23 @@
 package core
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	telemetry "github.com/dagger/otel-go"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/clientdb"
 )
 
 // TestTraceReportGuardPassesThroughSmallReports verifies the common case: the
@@ -265,10 +272,95 @@ func TestTraceReportHidesInternalSpans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(report, internal.Name) {
-		t.Fatalf("internal span should be hidden from trace report:\n%s", report)
+	if strings.Contains(report.body, internal.Name) {
+		t.Fatalf("internal span should be hidden from trace report:\n%s", report.body)
 	}
-	if !strings.Contains(report, visible.Name) {
-		t.Fatalf("visible span should remain in trace report:\n%s", report)
+	if !strings.Contains(report.body, visible.Name) {
+		t.Fatalf("visible span should remain in trace report:\n%s", report.body)
 	}
+}
+
+func TestTraceFailureNavigationSurvivesDispatch(t *testing.T) {
+	start := time.Unix(100, 0)
+	snapshot := func(id byte, name string, parent byte) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: traceTargetSpanID(id), ParentID: traceTargetSpanID(parent),
+			TraceID: dagui.TraceID{TraceID: trace.TraceID{1}}, Name: name,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+		}
+	}
+	root := snapshot(1, "run", 0)
+	check := snapshot(2, "install", 1)
+	check.CheckName = "sdk:installer:check"
+	check.Status = sdktrace.Status{Code: codes.Error}
+	failed := snapshot(3, "installer", 2)
+	failed.TestCaseName = "SDK/Installer/checksum"
+	failed.TestStatus = dagui.TestStatusFailure
+	failed.Status = sdktrace.Status{Code: codes.Error}
+	origin := snapshot(4, "sha256sum --check", 0) // outside containment
+	origin.Status = sdktrace.Status{Code: codes.Error}
+	snaps := []dagui.SpanSnapshot{root, check, failed, origin}
+	for i := byte(5); i < 250; i++ {
+		success := snapshot(i, "successful case "+strings.Repeat("x", 200), 2)
+		success.TestCaseName = fmt.Sprintf("SDK/success/%d", i)
+		success.TestStatus = dagui.TestStatusSuccess
+		snaps = append(snaps, success)
+	}
+	db := dagui.NewDB()
+	db.ImportSnapshots(snaps)
+	for _, id := range []byte{1, 2, 3} {
+		db.Spans.Map[traceTargetSpanID(id)].ErrorOrigins.Add(db.Spans.Map[origin.ID])
+	}
+	report, err := renderTraceReportSession(idtui.NewReportSession(db), root.ID.String(), toolCallReportOpts())
+	require.NoError(t, err)
+	require.Contains(t, report.failures, `test "SDK/Installer/checksum"`)
+	require.Contains(t, report.failures, `check "sdk:installer:check"`)
+	require.NotContains(t, report.failures, "success")
+	require.Equal(t, 1, strings.Count(report.failures, "origin "))
+	require.LessOrEqual(t, len(report.failures), traceFailureMaxBytes)
+
+	result := combineSpanResult(root.ID.String(), strings.Repeat("own output\n", 10000), report.body, report.failures)
+	// Exercise the outer dispatch, not only the report guard. A large value
+	// appended by the ordinary tool adapter forces that final guard as well.
+	result += strings.Repeat("returned value\n", 10000)
+	got := newMCP().CallContent(t.Context(), []LLMTool{{Name: "run", Call: func(context.Context, any) (any, error) {
+		return result, nil
+	}}}, &LLMToolCall{Name: "run"})
+	require.False(t, got.Errored)
+	require.True(t, strings.HasPrefix(got.Text, "== FAILURES =="))
+	for _, span := range []dagui.SpanSnapshot{check, failed, origin} {
+		require.Contains(t, got.Text, fmt.Sprintf("ReadTrace(span: %q)", span.ID.String()))
+		require.Contains(t, got.Text, fmt.Sprintf("ReadLogs(span: %q)", span.ID.String()))
+	}
+	require.NotContains(t, got.Text, "use ReadLogs(span: "+root.ID.String()+")")
+
+	// Names never consume the exact calls, even when both sections overflow.
+	for _, span := range db.Spans.Order {
+		span.CheckName = strings.Repeat("long", 1000)
+		span.Status.Code = codes.Error
+	}
+	nav := traceFailureNavigation(db, db.Spans.Map[root.ID])
+	require.LessOrEqual(t, len(nav), traceFailureMaxBytes)
+	require.Contains(t, nav, "more check entries")
+	require.Contains(t, nav, fmt.Sprintf("ReadLogs(span: %q)", origin.ID.String()))
+}
+
+func TestTraceFailureNavigationLoadsExternalOrigin(t *testing.T) {
+	store, ids := traceInspectStore(t)
+	const traceID = "000102030405060708090a0b0c0d0e0f"
+	const checksumID = "00000000000000ff"
+	_, err := store.AppendSpans([]clientdb.Span{
+		{TraceID: traceID, SpanID: checksumID, Name: "checksum exec", StartTime: 100, EndTime: sql.NullInt64{Int64: 200, Valid: true},
+			StatusCode: int64(codes.Error), Attributes: marshalSpanAttrs(t), Links: []byte("[]")},
+		{TraceID: traceID, SpanID: ids["build"], Name: "failed installer", StartTime: 100, EndTime: sql.NullInt64{Int64: 200, Valid: true},
+			StatusCode: int64(codes.Error), Attributes: marshalSpanAttrs(t),
+			Links: marshalPurposeLink(t, traceID, checksumID, telemetry.LinkPurposeErrorOrigin)},
+	})
+	require.NoError(t, err)
+	session, err := loadTraceReportSession(t.Context(), store, ids["build"])
+	require.NoError(t, err)
+	report, err := renderTraceReportSession(session, ids["build"], toolCallReportOpts())
+	require.NoError(t, err)
+	require.Contains(t, report.failures, `origin "checksum exec"`)
+	require.Contains(t, report.failures, fmt.Sprintf("ReadLogs(span: %q)", checksumID))
 }

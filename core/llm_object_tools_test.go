@@ -389,17 +389,17 @@ func TestCombineSpanResult(t *testing.T) {
 
 	// Renders to nothing: dagui filters internal/passthrough/encapsulated
 	// spans, so a tool call with children can still produce a blank report.
-	require.Empty(t, combineSpanResult(spanID, "", ""))
-	require.Empty(t, combineSpanResult(spanID, "LINE-01", "\n \n\t\n"))
+	require.Empty(t, combineSpanResult(spanID, "", "", ""))
+	require.Empty(t, combineSpanResult(spanID, "LINE-01", "\n \n\t\n", ""))
 
 	// Report only: no empty OUTPUT section for a target that printed nothing,
 	// and no heading over the report itself.
-	quiet := combineSpanResult(spanID, "", "== CHECKS ==  ✔ 1 passed\n✔ lint:check 0.1s OK")
+	quiet := combineSpanResult(spanID, "", "== CHECKS ==  ✔ 1 passed\n✔ lint:check 0.1s OK", "")
 	require.NotContains(t, quiet, "OUTPUT")
 	require.NotContains(t, quiet, "TRACE REPORT")
 	require.True(t, strings.HasPrefix(quiet, "== CHECKS =="), "got %q", quiet)
 
-	got := combineSpanResult(spanID, "LINE-01\nLINE-02", "• Foo.bar 1.0s")
+	got := combineSpanResult(spanID, "LINE-01\nLINE-02", "• Foo.bar 1.0s", "")
 	// The tool's own output comes first, verbatim, under its own heading...
 	require.Contains(t, got, "== OUTPUT ==\nLINE-01\nLINE-02")
 	// ...then the report, bare.
