@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -386,78 +387,8 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 		"GIT_AUTHOR_DATE=" + opts.Date, "GIT_COMMITTER_DATE=" + opts.CommitterDate,
 	}
 	run := func(args ...string) (string, error) { return runWorkspaceCommitGit(ctx, work, env, args...) }
-	if _, err := run("read-tree", parent); err != nil {
+	if err := stageNativeChanges(run, parent, paths, func() error { return apply(work) }); err != nil {
 		return err
-	}
-	// Enumerate only ancestor entries, never the full tree. Checking gitlinks
-	// here also prevents treating materialized submodule contents as new files.
-	controls := map[string]bool{}
-	ancestors := map[string]bool{}
-	for _, p := range stagePaths {
-		if path.Clean(p) != p || path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") {
-			return fmt.Errorf("invalid commit path %q", p)
-		}
-		if path.Base(p) == ".gitmodules" {
-			return nativeCommitUnsupportedReason("gitmodules-change")
-		}
-		ancestors[p] = true
-		for dir := path.Dir(p); ; dir = path.Dir(dir) {
-			controls[path.Join(dir, ".gitattributes")] = true
-			controls[path.Join(dir, ".gitignore")] = true
-			if dir == "." {
-				break
-			}
-			ancestors[dir] = true
-		}
-	}
-	for p := range controls {
-		ancestors[p] = true
-	}
-	var inspect []string
-	for p := range ancestors {
-		inspect = append(inspect, p)
-	}
-	slices.Sort(inspect)
-	for _, batch := range batchPathSpecs(inspect) {
-		out, err := run(append([]string{"ls-tree", "-z", parent, "--"}, batch...)...)
-		if err != nil {
-			return err
-		}
-		for _, entry := range strings.Split(out, "\x00") {
-			mode, rest, ok := strings.Cut(entry, " ")
-			if !ok {
-				continue
-			}
-			_, name, ok := strings.Cut(rest, "\t")
-			if !ok {
-				return fmt.Errorf("invalid ls-tree entry")
-			}
-			if mode == "160000" {
-				return nativeCommitUnsupportedReason("gitlink-change")
-			}
-			if controls[name] && (mode == "100644" || mode == "100755") {
-				if _, err := run("checkout-index", "--force", "--", name); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	if err := apply(work); err != nil {
-		return err
-	}
-	// Remove first, including file/directory replacements. git add only sees
-	// added/modified files, so a sparse worktree cannot delete untouched files.
-	removed := commitStagePaths(&ChangesetPaths{AllRemoved: paths.AllRemoved})
-	for _, batch := range batchPathSpecs(removed) {
-		if _, err := run(append([]string{"update-index", "--force-remove", "--"}, batch...)...); err != nil {
-			return err
-		}
-	}
-	added := commitStagePaths(&ChangesetPaths{Added: paths.Added, Modified: paths.Modified})
-	for _, batch := range batchPathSpecs(added) {
-		if _, err := run(append([]string{"add", "-A", "--"}, batch...)...); err != nil {
-			return err
-		}
 	}
 	tree, err := run("write-tree")
 	if err != nil {
@@ -528,6 +459,84 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	}
 	for _, name := range []string{"index", "logs", "ORIG_HEAD", "COMMIT_EDITMSG"} {
 		if err := root.RemoveAll(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// stageNativeChanges seeds a private index from parent and stages only the
+// supplied delta. The caller supplies an empty worktree and operation-local
+// metadata/object storage. Only ancestor attribute/ignore blobs are hydrated.
+func stageNativeChanges(run func(...string) (string, error), parent string, paths *ChangesetPaths, apply func() error) error {
+	if _, err := run("read-tree", parent); err != nil {
+		return err
+	}
+	controls := map[string]bool{}
+	ancestors := map[string]bool{}
+	for _, p := range commitStagePaths(paths) {
+		if path.Clean(p) != p || path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") || gitMetaPath(p) {
+			return fmt.Errorf("invalid commit path %q", p)
+		}
+		if path.Base(p) == ".gitmodules" {
+			return nativeCommitUnsupportedReason("gitmodules-change")
+		}
+		ancestors[p] = true
+		for dir := path.Dir(p); ; dir = path.Dir(dir) {
+			controls[path.Join(dir, ".gitattributes")] = true
+			controls[path.Join(dir, ".gitignore")] = true
+			if dir == "." {
+				break
+			}
+			ancestors[dir] = true
+		}
+	}
+	for p := range controls {
+		ancestors[p] = true
+	}
+	var inspect []string
+	for p := range ancestors {
+		inspect = append(inspect, p)
+	}
+	slices.Sort(inspect)
+	for _, batch := range batchPathSpecs(inspect) {
+		out, err := run(append([]string{"ls-tree", "-z", parent, "--"}, batch...)...)
+		if err != nil {
+			return err
+		}
+		for _, entry := range strings.Split(out, "\x00") {
+			mode, rest, ok := strings.Cut(entry, " ")
+			if !ok {
+				continue
+			}
+			_, name, ok := strings.Cut(rest, "\t")
+			if !ok {
+				return fmt.Errorf("invalid ls-tree entry")
+			}
+			if mode == "160000" {
+				return nativeCommitUnsupportedReason("gitlink-change")
+			}
+			if controls[name] && (mode == "100644" || mode == "100755") {
+				if _, err := run("checkout-index", "--force", "--", name); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if err := apply(); err != nil {
+		return err
+	}
+	// Remove first, including file/directory replacements. git add only sees
+	// added/modified files, so a sparse worktree cannot delete untouched files.
+	removed := commitStagePaths(&ChangesetPaths{AllRemoved: paths.AllRemoved})
+	for _, batch := range batchPathSpecs(removed) {
+		if _, err := run(append([]string{"update-index", "--force-remove", "--"}, batch...)...); err != nil {
+			return err
+		}
+	}
+	added := commitStagePaths(&ChangesetPaths{Added: paths.Added, Modified: paths.Modified})
+	for _, batch := range batchPathSpecs(added) {
+		if _, err := run(append([]string{"add", "-A", "--"}, batch...)...); err != nil {
 			return err
 		}
 	}
@@ -705,8 +714,14 @@ func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, a
 	// Callers may supply -c key=value before the verb. Never include those
 	// values, pathspecs, commit messages, or identity inputs in the span name.
 	commandArgs := args
-	for len(commandArgs) >= 2 && commandArgs[0] == "-c" {
-		commandArgs = commandArgs[2:]
+	for len(commandArgs) > 0 {
+		if len(commandArgs) >= 2 && commandArgs[0] == "-c" {
+			commandArgs = commandArgs[2:]
+		} else if commandArgs[0] == "--no-literal-pathspecs" {
+			commandArgs = commandArgs[1:]
+		} else {
+			break
+		}
 	}
 	operation := "command"
 	if len(commandArgs) > 0 {
@@ -725,6 +740,12 @@ func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, a
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
+		// No ignored paths is a successful eligibility check, not a failed
+		// Git operation. Preserve real process failures and cancellation.
+		var exit *exec.ExitError
+		if operation == "check-ignore" && ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return stdout.String(), nil
+		}
 		return stdout.String(), fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
