@@ -1313,7 +1313,11 @@ func (specs InputSpecs) InputsFromResultCallArgs(ctx context.Context, args []*Re
 		}
 		switch {
 		case requestArg != nil:
-			inputVal, err := inputValueFromResultCallLiteral(ctx, requestArg.Value)
+			idFromRef := handleIDFromResultCallRef
+			if argSpec.LazyRef {
+				idFromRef = lazyIDFromResultCallRef
+			}
+			inputVal, err := inputValueFromResultCallLiteralWithIDs(ctx, requestArg.Value, idFromRef)
 			if err != nil {
 				return nil, fmt.Errorf("request arg %q: %w", argSpec.Name, err)
 			}

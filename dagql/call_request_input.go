@@ -458,6 +458,24 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 }
 
 func inputValueFromResultCallLiteral(ctx context.Context, lit *ResultCallLiteral) (any, error) {
+	return inputValueFromResultCallLiteralWithIDs(ctx, lit, handleIDFromResultCallRef)
+}
+
+// lazyIDFromResultCallRef preserves inline recipes even when their results are
+// still cached. Turning one into a handle loses the lazy argument's provenance
+// and can force a resource-bearing object from another session to load eagerly.
+// Explicit handles (such as currentNode) retain their existing behavior.
+func lazyIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.ID, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	if ref.Call != nil {
+		return ref.Call.RecipeID(ctx)
+	}
+	return handleIDFromResultCallRef(ctx, ref)
+}
+
+func inputValueFromResultCallLiteralWithIDs(ctx context.Context, lit *ResultCallLiteral, idFromRef func(context.Context, *ResultCallRef) (*call.ID, error)) (any, error) {
 	if lit == nil {
 		return nil, nil
 	}
@@ -479,11 +497,11 @@ func inputValueFromResultCallLiteral(ctx context.Context, lit *ResultCallLiteral
 	case ResultCallLiteralKindDigestedString:
 		return lit.DigestedStringValue, nil
 	case ResultCallLiteralKindResultRef:
-		return handleIDFromResultCallRef(ctx, lit.ResultRef)
+		return idFromRef(ctx, lit.ResultRef)
 	case ResultCallLiteralKindList:
 		values := make([]any, 0, len(lit.ListItems))
 		for _, item := range lit.ListItems {
-			val, err := inputValueFromResultCallLiteral(ctx, item)
+			val, err := inputValueFromResultCallLiteralWithIDs(ctx, item, idFromRef)
 			if err != nil {
 				return nil, err
 			}
@@ -496,7 +514,7 @@ func inputValueFromResultCallLiteral(ctx context.Context, lit *ResultCallLiteral
 			if field == nil {
 				continue
 			}
-			val, err := inputValueFromResultCallLiteral(ctx, field.Value)
+			val, err := inputValueFromResultCallLiteralWithIDs(ctx, field.Value, idFromRef)
 			if err != nil {
 				return nil, fmt.Errorf("field %q: %w", field.Name, err)
 			}
