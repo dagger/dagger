@@ -12,7 +12,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// Up represents a service function decorated with +up
+// Up represents a service function decorated with +start
 type Up struct {
 	Node         *ModTreeNode  `json:"node"`
 	PortMappings []PortForward `json:"portMappings,omitempty"`

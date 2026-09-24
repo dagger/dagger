@@ -208,18 +208,18 @@ func returnsCoreObject(fn *Function, name string) bool {
 		ret.AsObject.Value.Self().SourceModuleName == ""
 }
 
-// validateUpFunction enforces the @up contract: the function must return the
+// validateUpFunction enforces the @start contract: the function must return the
 // core Service! type and must be callable with no caller-supplied arguments,
 // since `dagger start` starts services without any.
 func validateUpFunction(obj *ObjectTypeDef, fn *Function) error {
 	if !returnsCoreObject(fn, "Service") {
-		return fmt.Errorf("object %q function %q is marked @up but returns %s; @up functions must return the core Service! type",
+		return fmt.Errorf("object %q function %q is marked as a service but returns %s; service functions must return the core Service! type",
 			obj.OriginalName, fn.OriginalName, fn.ReturnType.Self().ToType().String())
 	}
 	for _, argRes := range fn.Args {
 		arg := argRes.Self()
 		if argRequired(arg) {
-			return fmt.Errorf("object %q function %q is marked @up but declares required argument %q; @up functions must be callable with no arguments",
+			return fmt.Errorf("object %q function %q is marked as a service but declares required argument %q; service functions must be callable with no arguments",
 				obj.OriginalName, fn.OriginalName, arg.OriginalName)
 		}
 	}

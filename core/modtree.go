@@ -327,7 +327,7 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 // callers.
 const ServiceNameAttr = telemetryattrs.ServiceNameAttr
 
-// PrepareUp opens the service's display span and evaluates the +up function
+// PrepareUp opens the service's display span and evaluates the +start function
 // beneath it, returning the prepared service without starting anything. The
 // caller decides when (and whether) to Start it — UpGroup.Run evaluates every
 // service first and refuses to start any of them on a host-port collision.
@@ -352,7 +352,7 @@ func (node *ModTreeNode) PrepareUp(ctx context.Context, portMappings []PortForwa
 		}
 	}()
 
-	// Evaluate the +up function to get the Service
+	// Evaluate the +start function to get the Service
 	var svcResult dagql.ObjectResult[*Service]
 	if err := node.DagqlValue(ctx, &svcResult); err != nil {
 		return nil, err

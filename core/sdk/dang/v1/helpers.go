@@ -614,7 +614,8 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 }
 
 // functionDirectiveSelectors converts function-level directives (@check,
-// @generate, @up, @agent, @cache) into dagql selectors.
+// @generate, @start, @agent, @cache) into dagql selectors. @up is the
+// deprecated spelling of @start.
 func functionDirectiveSelectors(ctx context.Context, env dang.ValueScope, directives []*dang.DirectiveApplication) ([]dagql.Selector, error) {
 	var sels []dagql.Selector
 	for _, directive := range directives {
@@ -623,7 +624,7 @@ func functionDirectiveSelectors(ctx context.Context, env dang.ValueScope, direct
 			sels = append(sels, dagql.Selector{Field: "withCheck"})
 		case "generate":
 			sels = append(sels, dagql.Selector{Field: "withGenerator"})
-		case "up":
+		case "start", "up":
 			sels = append(sels, dagql.Selector{Field: "withUp"})
 		case "agent":
 			sels = append(sels, dagql.Selector{Field: "withAgent"})

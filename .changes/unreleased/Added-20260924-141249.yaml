@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  Add `start` to mark a function as a service for `dagger start`.
+
+  Write `+start` in Go, `@start` in Dang and Python, `@start()` in
+  TypeScript, and `@Start` in Java. The `up` spellings keep working but are
+  deprecated. Module schemas mark service functions with `@start`.
+time: 2026-09-24T14:12:49Z
+custom:
+  Author: eunomie
+  PR: "14328"
