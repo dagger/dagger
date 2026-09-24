@@ -2263,6 +2263,20 @@ type capturedLine struct {
 	direct bool
 }
 
+// capturedSegment retains the producer of a single log record until assembly.
+// A missing stdio stream is its own stream (zero), distinct from stdout/stderr.
+type capturedSegment struct {
+	text     string
+	direct   bool
+	producer logProducer
+}
+
+type logProducer struct {
+	traceID string
+	spanID  string
+	stream  int64
+}
+
 // capturedOutput is one capture: the assembled lines, plus the set of spans
 // whose records were classified `direct`.
 //
@@ -2296,14 +2310,13 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 		return out, err
 	}
 	defer q.Close()
+	q = inspectionStoreForSpan(q, spanID)
 
-	// segments accumulates log bodies in arrival order — one per record, each
-	// tagged with its provenance; lines are assembled from them afterwards,
-	// since a single log record needn't be line-aligned. Records are NOT
-	// coalesced here: appending onto an accumulated string goes quadratic on
-	// long same-provenance runs, and assembleLines merges across record
-	// boundaries anyway.
-	var segments []capturedLine
+	// segments accumulates log bodies in database record order, retaining the
+	// producer across batch boundaries. Records are NOT coalesced here:
+	// appending onto an accumulated string goes quadratic on long runs, and
+	// assembleLines merges same-producer fragments across records anyway.
+	var segments []capturedSegment
 
 	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
 	// roll-up behavior.
@@ -2352,9 +2365,12 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			}
 
 			var skip bool
+			var stream int64
 		dance:
 			for _, attr := range logAttrs {
 				switch attr.Key {
+				case telemetry.StdioStreamAttr:
+					stream = attr.Value.GetIntValue()
 				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr:
 					if attr.Value.GetBoolValue() {
 						skip = true
@@ -2405,49 +2421,81 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			if text == "" {
 				continue
 			}
-			segments = append(segments, capturedLine{text: text, direct: direct})
+			segments = append(segments, capturedSegment{
+				text: text, direct: direct,
+				producer: logProducer{traceID: log.TraceID.String, spanID: log.SpanID.String, stream: stream},
+			})
 		}
 	}
 	out.lines = assembleLines(segments)
 	return out, nil
 }
 
-// assembleLines splits accumulated log segments into lines, carrying a line
-// that straddles segments across the boundary. A line's provenance is that of
-// the segment that started it — log records aren't guaranteed to be
-// line-aligned, though a Dang `print` (Fprintln to the span's stdout) is.
-func assembleLines(segments []capturedLine) []capturedLine {
-	var lines []capturedLine
-	// pending accumulates a line across segment boundaries; its provenance is
-	// claimed by the first segment to contribute actual text, so the empty
-	// chunk that trails a newline-terminated record doesn't hand the next
-	// record's line to the wrong span.
-	var pending strings.Builder
-	var pendingDirect, pendingSet bool
-	for _, seg := range segments {
+// assembleLines joins fragments only within the same trace, span, and stdio
+// stream. Completed lines are ordered by their newline's record; unterminated
+// fragments are merged at their last contributing record. Lines from the same
+// record keep their text order. This is record order, not timestamp order.
+// A line retains the direct/nested attribution of its first actual text.
+func assembleLines(segments []capturedSegment) []capturedLine {
+	type partialLine struct {
+		text   strings.Builder
+		direct bool
+		last   int
+	}
+	type orderedLine struct {
+		capturedLine
+		record int
+	}
+	type producerKey struct {
+		logProducer
+		unknownRecord int
+	}
+	pending := map[producerKey]*partialLine{}
+	var ordered []orderedLine
+	for record, seg := range segments {
+		key := producerKey{logProducer: seg.producer}
+		if key.traceID == "" || key.spanID == "" {
+			// Without a complete producer identity, even adjacent records
+			// cannot safely be assumed to continue each other's output.
+			key.unknownRecord = record + 1
+		}
+		p := pending[key]
+		if p == nil {
+			p = &partialLine{}
+			pending[key] = p
+		}
 		chunks := strings.Split(seg.text, "\n")
 		for i, chunk := range chunks {
 			if chunk != "" {
-				if !pendingSet {
-					pendingDirect = seg.direct
-					pendingSet = true
+				if p.text.Len() == 0 {
+					p.direct = seg.direct
 				}
-				pending.WriteString(chunk)
+				p.text.WriteString(chunk)
+				p.last = record
 			}
 			if i < len(chunks)-1 {
-				// a "\n" followed this chunk: the line is complete
+				// A newline completes only this producer's pending line.
 				direct := seg.direct
-				if pendingSet {
-					direct = pendingDirect
+				if p.text.Len() > 0 {
+					direct = p.direct
 				}
-				lines = append(lines, capturedLine{text: pending.String(), direct: direct})
-				pending.Reset()
-				pendingDirect, pendingSet = false, false
+				ordered = append(ordered, orderedLine{capturedLine{p.text.String(), direct}, record})
+				p.text.Reset()
 			}
 		}
 	}
-	if pending.Len() > 0 {
-		lines = append(lines, capturedLine{text: pending.String(), direct: pendingDirect})
+	for _, p := range pending {
+		if p.text.Len() > 0 {
+			ordered = append(ordered, orderedLine{capturedLine{p.text.String(), p.direct}, p.last})
+		}
+	}
+	// Each record belongs to exactly one producer, so trailing fragments have
+	// distinct positions. Stable sorting keeps any completed lines from that
+	// record before its trailing fragment, independent of map iteration order.
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].record < ordered[j].record })
+	var lines []capturedLine
+	for _, line := range ordered {
+		lines = append(lines, line.capturedLine)
 	}
 	// ensure trailing linebreaks don't contribute to line limits
 	for len(lines) > 0 && lines[len(lines)-1].text == "" {
@@ -2668,6 +2716,21 @@ func (m *MCP) toolErrorResponse(ctx context.Context, err error) string {
 
 func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
+		Name: "LoadTrace",
+		Description: "Load a historical trace from Dagger Cloud into this session for inspection. Use this when asked to investigate a trace ID, Cloud trace URL, or `dagger trace <id>`; do not run the interactive CLI.\n" +
+			"Uses the connecting client's Cloud authentication. No recipes are executed or agents restored. Returns root span IDs for ReadTrace and ReadLogs; FindSpans, FindCalls and InspectCall also see loaded traces. Repeated loads reuse the snapshot; failed loads import nothing.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"trace": map[string]any{"type": "string", "description": "Trace ID (32 hex characters), a pasted dagger trace <id> command, or a Dagger Cloud trace URL."},
+			},
+			"required":             []string{"trace"},
+			"additionalProperties": false,
+		},
+		Call: m.loadTraceTool(srv),
+	})
+	allTools.Add(LLMTool{
 		Name: "ReadLogs",
 		Description: "Read the logs beneath a span: exec output, service logs, prints. Can filter with grep pattern or read the last N lines." + "\n" +
 			"Span IDs come from tool results, ListServices, or [traceparent:traceID-spanID] markers in errors (pasting the whole marker works).",
@@ -2702,31 +2765,144 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
-		Description: "Render the trace report for a span, check, or test: the span tree, plus the CHECKS and TESTS sections, exactly as they appear at the end of a run." + "\n" +
-			"Tool results are abridged; this is how you see the full detail behind one - pass the span ID from a report's footer, or the name of a check or test you saw run." + "\n" +
-			"Prefer ReadTrace when you want the shape of what ran (which steps, which checks/tests, where it failed); use ReadLogs when you want the raw log lines of a span." + "\n" +
-			"When a name matches several spans, the most recent one is rendered.",
+		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of three views." + "\n" +
+			"- report (default): the trace report -- the span tree plus the CHECKS and TESTS sections, exactly as they appear at the end of a run. Tool results are abridged; this is how you see the full detail behind one." + "\n" +
+			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
+			"- timings: the span's raw-parent subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included; cause links are not traversed. Durations are each span's own wall interval, may overlap, and are not total execution or CPU self time. Imported spans with unrecorded completion have unknown duration." + "\n" +
+			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here." + "\n" +
+			"Use ReadLogs when you want the raw log lines beneath a span.",
 		ReadOnly: true, // Read-only operation
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"span": map[string]any{
 					"type":        "string",
-					"description": "Span ID (hex) to render the report for, scoped to that span's subtree.",
+					"description": "Span ID (hex) to read, scoped to that span's subtree.",
 				},
-				"check": map[string]any{
+				"view": map[string]any{
 					"type":        "string",
-					"description": "Check name to render the report for, e.g. \"shellcheck:check\".",
+					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings},
+					"description": "Which view to render.",
+					"default":     traceViewReport,
 				},
-				"test": map[string]any{
+				"minDuration": map[string]any{
 					"type":        "string",
-					"description": "Test case or suite name to render the report for.",
+					"description": "timings view only: hide spans shorter than this Go duration, e.g. \"10ms\" or \"1s\". Spans with unknown timing are kept.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "timings view only: maximum number of rows (0 = unlimited).",
+					"minimum":     0,
+					"default":     200,
+				},
+			},
+			"required":             []string{"span"},
+			"additionalProperties": false,
+		},
+		Call: m.readTraceTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "FindSpans",
+		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
+			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call. Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
+			"Matching is a substring test on the span name (and a service's hostname); an empty query lists everything in scope. Only the newest `limit` matches are returned.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Substring of the span name (or service hostname) to match. Empty matches every span.",
+					"default":     "",
+				},
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Restrict the search to this span's subtree (hex span ID). Empty searches the whole session.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Maximum matches to return; the newest are kept.",
+					"minimum":     1,
+					"default":     findSpansDefaultLimit,
 				},
 			},
 			"required":             []string{},
 			"additionalProperties": false,
 		},
-		Call: m.readTraceTool(srv),
+		Call: m.findSpansTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "InspectCall",
+		Description: "Inspect the recipe (dagql call ID) behind a call in this session or a trace imported with LoadTrace: the whole chain of API calls that produced a value, rebuilt from telemetry." + "\n" +
+			"Pass the call digest (xxh3:...) named by an engine error, a FindCalls line, or ReadTrace's inspect view -- or the span ID of the call. Views:" + "\n" +
+			"- chain (default): every selector on the receiver chain, as the TUI renders it." + "\n" +
+			"- tree: the chain with ID-valued arguments expanded inline (each withDirectory/withTools/... argument hangs a whole other chain), numbered, with digests." + "\n" +
+			"- stats: distinct calls, chain depth, module provenance, and per-call expansion counts -- how many times a loader that walks the recipe without deduplicating would re-execute each call. The view for \"why did this run that call N times?\"." + "\n" +
+			"- find: every call in the recipe whose Type.field name matches `find` (a regexp), with its path, arguments and referrers." + "\n" +
+			"`diff` structurally compares this recipe against another digest's instead: size, where the chains diverge, calls only on either side. Use it for \"why did this miss the cache / how do these two differ\"." + "\n" +
+			"A frame the client never received is reported with the frame that referenced it.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"digest": map[string]any{
+					"type":        "string",
+					"description": "Call digest to inspect, e.g. \"xxh3:9d2f...\".",
+				},
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Alternatively, the span ID (hex) of the call to inspect.",
+				},
+				"view": map[string]any{
+					"type":        "string",
+					"enum":        []string{callViewChain, callViewTree, callViewStats, callViewFind},
+					"description": "Which view to render.",
+					"default":     callViewChain,
+				},
+				"find": map[string]any{
+					"type":        "string",
+					"description": "find view only: regexp matched against each call's Type.field name (e.g. \"withExec\" or \"Container\\\\.from\").",
+				},
+				"depth": map[string]any{
+					"type":        "integer",
+					"description": "tree view only: recurse at most this many levels into ID arguments (0 = unlimited).",
+					"minimum":     0,
+					"default":     0,
+				},
+				"diff": map[string]any{
+					"type":        "string",
+					"description": "Digest of another call to structurally diff this one against (ignores `view`).",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Call: m.inspectCallTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "FindCalls",
+		Description: "Content-search every dagql call in this session and traces imported with LoadTrace: one line per match -- \"<digest>  field(args) -> Type  recv=<receiver digest>\" -- sorted by digest." + "\n" +
+			"This is how you find which call references a path, image, module or value, and how you walk a chain: grep for the digest another line names as its receiver or argument, then InspectCall it." + "\n" +
+			"`query` searches the full rendered line before truncation. Displayed strings are capped at 200 characters, with excerpts around deep matches and explicit omitted-character counts. Lines are capped at 4 KiB and responses at 32 KiB; narrow the query if matches are omitted.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Regexp matched against each full call line before display truncation.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Maximum matches to return.",
+					"minimum":     1,
+					"default":     findCallsDefaultLimit,
+				},
+			},
+			"required":             []string{"query"},
+			"additionalProperties": false,
+		},
+		Call: m.findCallsTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "ListServices",
@@ -2913,6 +3089,9 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 		Grep   string `default:""`
 	}) (any, error) {
 		spanID := normalizeSpanArg(args.Span)
+		if _, err := trace.SpanIDFromHex(spanID); err != nil {
+			return nil, fmt.Errorf("invalid span ID %q: %w", spanID, err)
+		}
 		// Include service logs: ReadLogs is the deliberate affordance for
 		// reading them (e.g. via span IDs from ListServices).
 		logs, err := m.captureLogs(ctx, spanID, false)
@@ -2920,16 +3099,7 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 			return nil, fmt.Errorf("failed to capture logs: %w", err)
 		}
 		if len(logs) == 0 {
-			// An empty capture is only an error when the span itself is
-			// unknown: a known span with nothing logged yet is a normal
-			// answer (e.g. tailing a service that hasn't printed).
-			known, err := m.spanKnown(ctx, spanID)
-			if err != nil {
-				slog.Warn("failed to check span existence", "span", spanID, "error", err)
-			} else if !known {
-				return nil, fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
-			}
-			return fmt.Sprintf("(no logs beneath span %s yet)", spanID), nil
+			return m.emptyLogsResult(ctx, spanID)
 		}
 		return renderReadLogs(spanID, logs, args.Offset, args.Limit, args.Grep)
 	})
@@ -2969,38 +3139,26 @@ func isHexID(s string, length int) bool {
 	return true
 }
 
-// spanKnown reports whether the span ID appears in the session's recorded
-// telemetry, so an empty ReadLogs capture can distinguish a quiet span from a
-// mistyped one.
-func (m *MCP) spanKnown(ctx context.Context, spanID string) (bool, error) {
-	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	if !traceID.IsValid() {
-		// no trace to check against; treat the span as plausible
-		return true, nil
-	}
-	root, err := CurrentQuery(ctx)
+// emptyLogsResult distinguishes quiet live telemetry from a fixed historical
+// capture. Failure to inspect the store must not masquerade as "no logs".
+func (m *MCP) emptyLogsResult(ctx context.Context, spanID string) (string, error) {
+	store, err := traceReportClientDB(ctx)
 	if err != nil {
-		return false, err
+		return "", fmt.Errorf("check log availability for span %s: %w", spanID, err)
 	}
-	mainMeta, err := root.MainClientCallerMetadata(ctx)
-	if err != nil {
-		return false, fmt.Errorf("get main client caller metadata: %w", err)
+	defer store.Close()
+	return emptyLogsResultIn(store, spanID)
+}
+
+func emptyLogsResultIn(store *clientdb.DB, spanID string) (string, error) {
+	selected := inspectionStoreForSpan(store, spanID)
+	if !selected.HasSpan(spanID) {
+		return "", fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
 	}
-	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
-	if err != nil {
-		return false, err
+	if selected != store {
+		return fmt.Sprintf("(no logs recorded beneath span %s in this historical trace)", spanID), nil
 	}
-	defer q.Close()
-	if _, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
-		TraceID: traceID.String(),
-		SpanID:  spanID,
-	}); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
+	return fmt.Sprintf("(no logs beneath span %s yet)", spanID), nil
 }
 
 // renderReadLogs shapes captured log lines into a ReadLogs result: trims the
@@ -3045,69 +3203,171 @@ func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern
 	return strings.Join(logs, "\n"), nil
 }
 
-// readTraceTool renders the pretty trace report for a span, check or test --
-// in the same shape a tool call's own result is rendered as (the target's own
-// output, then the report), so what the reader gets back is in the vocabulary
-// it already sees, just scoped to the target it asked about.
+// readTraceTool reads the trace at a span in the requested
+// view. The report view renders the pretty trace report in the same shape a
+// tool call's own result is rendered as (the target's own output, then the
+// report), so what the reader gets back is in the vocabulary it already
+// sees, just scoped to the target it asked about. The inspect and timings
+// views are the TUI console's span views, answered from the engine.
 func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span  string `default:""`
-		Check string `default:""`
-		Test  string `default:""`
+		Span        string
+		View        string `default:"report"`
+		MinDuration string `default:""`
+		Limit       int    `default:"200"`
 	}) (any, error) {
-		target := traceTarget{
-			Span:  args.Span,
-			Check: args.Check,
-			Test:  args.Test,
+		var minDuration time.Duration
+		if args.MinDuration != "" {
+			var err error
+			minDuration, err = time.ParseDuration(args.MinDuration)
+			if err != nil || minDuration < 0 {
+				return nil, fmt.Errorf("invalid minDuration %q: want a non-negative Go duration such as \"10ms\"", args.MinDuration)
+			}
 		}
-		spanID, err := resolveTraceTarget(ctx, target)
+		switch args.View {
+		case traceViewReport, traceViewInspect, traceViewTimings:
+		default:
+			return nil, fmt.Errorf("unknown view %q: want %s, %s or %s", args.View, traceViewReport, traceViewInspect, traceViewTimings)
+		}
+		spanID, err := resolveTraceTarget(ctx, args.Span)
+		if err != nil {
+			return nil, fmt.Errorf("resolve trace target: %w", err)
+		}
+		switch args.View {
+		case traceViewInspect:
+			return inspectSpan(ctx, spanID)
+		case traceViewTimings:
+			return spanTimings(ctx, spanID, minDuration, args.Limit)
+		}
+		result, err := m.inspectSpanResult(ctx, spanID, readTraceReportOpts())
 		if err != nil {
 			return nil, err
 		}
-		if result := m.spanResult(ctx, spanID, readTraceReportOpts(target)); result != "" {
+		if result != "" {
 			return result, nil
 		}
 		// A subtree can legitimately render to nothing (dagui hides internal,
 		// passthrough and encapsulated spans); say so rather than returning an
-		// empty result, and point at the path that does show raw output.
-		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs)",
-			spanID, spanID), nil
+		// empty result, and point at the paths that do show something.
+		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs, or ReadTrace(span: %s, view: \"inspect\") to see the span itself)",
+			spanID, spanID, spanID), nil
 	})
 }
 
-// readTraceReportOpts picks the render options that suit the KIND of target
-// ReadTrace was given.
-//
-// A span target keeps the tool-call options: the caller named that subtree, so
-// it wants that subtree unwrapped.
-//
-// A test or check target does not. ExpandWrappers' unwrap ("descend through
-// wrapper spans to the first real work, then stop") is tuned for a tool-call
-// scope, where the scope root is a roll-up boundary that would otherwise
-// swallow the tool's output. A test or check span is not that: it is the head
-// of a roll-up the report already knows how to summarise, and force-expanding
-// it enumerates every dagql field call beneath -- measured on
-// ReadTrace(test: "TestToolLogsExcludeService") as hundreds of rows of
-// LLMMessage.role / LLMContentBlock.text micro-spans, which are the test's own
-// API traffic, not conversation. Left to the normal IsExpanded rules, those
-// collapse and the TESTS / CHECKS roll-ups (with their failing-case logs) are
-// what the reader gets -- the CLI's end-of-run report for that target. The
-// target's own logs still reach the reader: spanResult prints them as OUTPUT --
-// but only the records on the target span ITSELF (OwnOutputOnly). The depth-1
-// rule that OUTPUT normally uses exists because a module function's print lands
-// one hop below the tool-call span; a named target has no such indirection, and
-// its direct children ARE the nested work -- for a suite, its cases, whose logs
-// belong to the TESTS roll-up rather than hoisted into (and duplicated out of)
-// OUTPUT.
-func readTraceReportOpts(target traceTarget) traceReportOpts {
+// findSpansTool searches the session's trace by span name; see findSpans.
+func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Query string `default:""`
+		Span  string `default:""`
+		Limit int    `default:"100"`
+	}) (any, error) {
+		root := ""
+		if strings.TrimSpace(args.Span) != "" {
+			root = normalizeSpanArg(args.Span)
+			if !isHexID(root, 16) {
+				return nil, fmt.Errorf("invalid span ID %q: want a hex span ID", args.Span)
+			}
+		}
+		if args.Limit <= 0 {
+			args.Limit = findSpansDefaultLimit
+		}
+		return findSpans(ctx, args.Query, root, args.Limit)
+	})
+}
+
+// inspectCallTool rebuilds and renders the recipe behind a call digest or a
+// call's span; see inspectCall.
+func (m *MCP) inspectCallTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Digest string `default:""`
+		Span   string `default:""`
+		View   string `default:"chain"`
+		Find   string `default:""`
+		Depth  int    `default:"0"`
+		Diff   string `default:""`
+	}) (any, error) {
+		opts := callInspectOpts{View: args.View, Depth: args.Depth, Diff: normalizeDigestArg(args.Diff)}
+		switch args.View {
+		case callViewChain, callViewTree, callViewStats, callViewFind:
+		default:
+			return nil, fmt.Errorf("unknown view %q: want %s, %s, %s or %s", args.View, callViewChain, callViewTree, callViewStats, callViewFind)
+		}
+		if args.Find != "" {
+			re, err := regexp.Compile(args.Find)
+			if err != nil {
+				return nil, fmt.Errorf("invalid find pattern %q: %w", args.Find, err)
+			}
+			opts.Find = re
+			if args.View == callViewChain {
+				// A pattern implies the view that uses it.
+				opts.View = callViewFind
+			}
+		}
+		digest := normalizeDigestArg(args.Digest)
+		span := strings.TrimSpace(args.Span)
+		switch {
+		case digest != "" && span != "":
+			return nil, fmt.Errorf("pass either digest or span, not both")
+		case digest == "" && span == "":
+			return nil, fmt.Errorf("pass a call digest (xxh3:...) or the span ID of a call")
+		case span != "":
+			span = normalizeSpanArg(span)
+			if !isHexID(span, 16) {
+				return nil, fmt.Errorf("invalid span ID %q: want a hex span ID", args.Span)
+			}
+			clientDB, err := traceReportClientDB(ctx)
+			if err != nil {
+				return nil, err
+			}
+			defer clientDB.Close()
+			read := inspectionStoreForSpan(clientDB, span)
+			digest, err = spanCallDigest(ctx, read, span)
+			if err != nil {
+				return nil, err
+			}
+			return inspectCallIn(ctx, clientDB, digest, opts)
+		}
+		return inspectCall(ctx, digest, opts)
+	})
+}
+
+// normalizeDigestArg accepts the forms a call digest gets pasted in: bare,
+// or with the "digest=" / "load " prefixes engine errors and tool output
+// wrap it in.
+func normalizeDigestArg(arg string) string {
+	arg = strings.TrimSpace(arg)
+	for _, prefix := range []string{"digest=", "digest:", "load "} {
+		arg = strings.TrimPrefix(arg, prefix)
+	}
+	return strings.TrimSpace(arg)
+}
+
+// findCallsTool content-searches the session's calls; see findCalls.
+func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Query string
+		Limit int `default:"200"`
+	}) (any, error) {
+		re, err := regexp.Compile(args.Query)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query %q: %w", args.Query, err)
+		}
+		if args.Limit <= 0 {
+			args.Limit = findCallsDefaultLimit
+		}
+		return findCalls(ctx, re, args.Limit)
+	})
+}
+
+// readTraceReportOpts keeps the requested subtree visible, with only the
+// target span's own logs in OUTPUT. Descendant logs belong in the report's
+// roll-ups rather than being duplicated in OUTPUT.
+func readTraceReportOpts() traceReportOpts {
 	opts := toolCallReportOpts()
 	opts.OwnOutputOnly = true
 	// ReadTrace is the "show me the shape of what ran" tool: it keeps the span
 	// tree the tool-call result drops.
 	opts.HideSpanTree = false
-	if target.Span == "" {
-		opts.ExpandWrappers = false
-	}
 	return opts
 }
 

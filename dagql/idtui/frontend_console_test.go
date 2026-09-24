@@ -3,6 +3,7 @@ package idtui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,8 +14,11 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -270,8 +274,7 @@ func TestConsoleTimings(t *testing.T) {
 		{ID: prettyTestSpanID(5), ParentID: rootID, Name: "running", StartTime: start.Add(3 * time.Second), Final: true},
 		{ID: prettyTestSpanID(6), ParentID: rootID, Name: "unknown timing", Final: true},
 	})
-	fe := NewWithDB(io.Discard, db)
-	detail, ok := fe.consoleTimings(rootID, 0, 0, start.Add(5*time.Second))
+	detail, ok := RenderSpanTimings(db, rootID, 0, 0, start.Add(5*time.Second))
 	if !ok {
 		t.Fatal("root not found")
 	}
@@ -295,18 +298,18 @@ func TestConsoleTimings(t *testing.T) {
 	if strings.Index(detail, "\"internal parent\"") > strings.Index(detail, "\"leaf\\noperation\"") {
 		t.Errorf("not chronological:\n%s", detail)
 	}
-	filtered, _ := fe.consoleTimings(rootID, time.Second, 2, start.Add(5*time.Second))
+	filtered, _ := RenderSpanTimings(db, rootID, time.Second, 2, start.Add(5*time.Second))
 	if !strings.Contains(filtered, "\"leaf\\noperation\"") || strings.Contains(filtered, "\"internal parent\"") {
 		t.Errorf("filter pruned a descendant or retained short parent:\n%s", filtered)
 	}
 	if !strings.Contains(filtered, "shown: 2; omitted: 3 (1 below minDuration, 2 over limit)") {
 		t.Errorf("incorrect omission counts:\n%s", filtered)
 	}
-	unknown, _ := fe.consoleTimings(rootID, time.Hour, 0, start.Add(5*time.Second))
+	unknown, _ := RenderSpanTimings(db, rootID, time.Hour, 0, start.Add(5*time.Second))
 	if !strings.Contains(unknown, "unknown  unknown  \"unknown timing\"") {
 		t.Errorf("unknown timing was filtered out:\n%s", unknown)
 	}
-	if _, ok := fe.consoleTimings(prettyTestSpanID(99), 0, 0, start); ok {
+	if _, ok := RenderSpanTimings(db, prettyTestSpanID(99), 0, 0, start); ok {
 		t.Error("unknown root reported found")
 	}
 }
@@ -479,11 +482,10 @@ func TestConsoleSpanDetail(t *testing.T) {
 		},
 	})
 	db.SetPrimarySpan(rootID)
-	fe := NewWithDB(io.Discard, db)
 
-	detail, ok := fe.consoleSpanDetail(leafID)
+	detail, ok := RenderSpanDetail(db, leafID)
 	if !ok {
-		t.Fatalf("consoleSpanDetail(%s) = not found", leafID)
+		t.Fatalf("RenderSpanDetail(%s) = not found", leafID)
 	}
 	for _, want := range []string{
 		"span:     " + leafID.String() + "  leaf op",
@@ -495,6 +497,7 @@ func TestConsoleSpanDetail(t *testing.T) {
 		"parents (nearest first):",
 		"  " + midID.String() + "  middle span  [passthrough rollUpLogs]",
 		"  " + rootID.String() + "  root call",
+		"children (loaded): 0",
 	} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("span detail missing %q:\n%s", want, detail)
@@ -505,20 +508,137 @@ func TestConsoleSpanDetail(t *testing.T) {
 		t.Errorf("root ancestor line should have no flag bracket:\n%s", detail)
 	}
 
-	// A root span reports its (lack of a) parent chain explicitly.
-	rootDetail, ok := fe.consoleSpanDetail(rootID)
+	// A root span reports its (lack of a) parent chain explicitly, and lists
+	// its direct children (with their flags) as the way down.
+	rootDetail, ok := RenderSpanDetail(db, rootID)
 	if !ok {
-		t.Fatalf("consoleSpanDetail(%s) = not found", rootID)
+		t.Fatalf("RenderSpanDetail(%s) = not found", rootID)
 	}
-	if !strings.Contains(rootDetail, "(none — root span)") {
-		t.Errorf("root detail missing empty-parent marker:\n%s", rootDetail)
-	}
-	if !strings.Contains(rootDetail, "flags:    (none)") {
-		t.Errorf("root detail missing empty flags marker:\n%s", rootDetail)
+	for _, want := range []string{
+		"(none — root span)",
+		"flags:    (none)",
+		"children (loaded): 1",
+		"  " + midID.String() + "  ok     middle span  [passthrough rollUpLogs]",
+	} {
+		if !strings.Contains(rootDetail, want) {
+			t.Errorf("root detail missing %q:\n%s", want, rootDetail)
+		}
 	}
 
 	// Unknown spans are reported as such, not as an empty page.
-	if _, ok := fe.consoleSpanDetail(prettyTestSpanID(99)); ok {
-		t.Error("consoleSpanDetail of unknown span reported ok")
+	if _, ok := RenderSpanDetail(db, prettyTestSpanID(99)); ok {
+		t.Error("RenderSpanDetail of unknown span reported ok")
 	}
+}
+
+func TestRenderSpanDetailTimingPrecision(t *testing.T) {
+	start := time.Unix(100, 0).UTC()
+	id := prettyTestSpanID(1)
+	for _, elapsed := range []time.Duration{100 * time.Nanosecond, 500 * time.Microsecond, time.Millisecond + time.Nanosecond} {
+		t.Run(elapsed.String(), func(t *testing.T) {
+			db := dagui.NewDB()
+			db.ImportSnapshots([]dagui.SpanSnapshot{{ID: id, Name: "short", StartTime: start, EndTime: start.Add(elapsed), Final: true}})
+			detail, ok := RenderSpanDetail(db, id)
+			require.True(t, ok)
+			require.Contains(t, detail, "duration: "+elapsed.String()+" (own span wall interval)")
+		})
+	}
+}
+
+func TestRenderSpanDetailErrors(t *testing.T) {
+	db := dagui.NewDB()
+	rootID, failedID, originID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+	start := time.Unix(100, 0).UTC()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start, EndTime: start.Add(time.Second), Final: true},
+		{ID: originID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "exec false", StartTime: start, EndTime: start.Add(time.Second),
+			Status: sdktrace.Status{Code: codes.Error, Description: "exit code: 1"}, Final: true},
+		{ID: failedID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check", StartTime: start, EndTime: start.Add(time.Second),
+			Status: sdktrace.Status{Code: codes.Error, Description: "process failed\nsee above"},
+			Links: []dagui.SpanLink{{
+				SpanContext: dagui.SpanContext{TraceID: prettyTestTraceID(), SpanID: originID},
+				Purpose:     telemetry.LinkPurposeErrorOrigin,
+			}}, Final: true},
+	})
+	detail, ok := RenderSpanDetail(db, failedID)
+	if !ok {
+		t.Fatal("failed span not found")
+	}
+	for _, want := range []string{
+		"status:   ERROR",
+		// A multi-line status message stays aligned under its label.
+		"error:    process failed\n          see above",
+		"error origins:\n  " + originID.String() + "  exec false",
+	} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("failed span detail missing %q:\n%s", want, detail)
+		}
+	}
+	// Children are listed with their own status so a failing branch is
+	// visible from its parent.
+	rootDetail, _ := RenderSpanDetail(db, rootID)
+	if !strings.Contains(rootDetail, "  "+failedID.String()+"  ERROR  check") {
+		t.Errorf("root detail missing errored child:\n%s", rootDetail)
+	}
+}
+
+func TestRenderSpanList(t *testing.T) {
+	db := dagui.NewDB()
+	start := time.Unix(100, 0).UTC()
+	var snaps []dagui.SpanSnapshot
+	for i := 1; i <= 5; i++ {
+		snaps = append(snaps, dagui.SpanSnapshot{
+			ID: prettyTestSpanID(byte(i)), TraceID: prettyTestTraceID(), Name: fmt.Sprintf("step %d", i),
+			StartTime: start.Add(time.Duration(i) * time.Second), EndTime: start.Add(time.Duration(i+1) * time.Second), Final: true,
+		})
+	}
+	snaps = append(snaps, dagui.SpanSnapshot{
+		ID: prettyTestSpanID(9), TraceID: prettyTestTraceID(), Name: "exec redis", Service: true, ServiceName: "cache",
+		StartTime: start, Final: true,
+	})
+	// Arrival order is not start-time order (including across snapshots).
+	for i := len(snaps) - 1; i >= 0; i-- {
+		db.ImportSnapshots(snaps[i : i+1])
+	}
+	arrivalSecond := db.Spans.Order[1].ID
+
+	all := RenderSpanList(db, "", 0)
+	require.Equal(t, arrivalSecond, db.Spans.Order[1].ID, "rendering must not reorder the DB")
+	require.Less(t, strings.Index(all, "step 1"), strings.Index(all, "step 5"))
+	if n := strings.Count(all, "\n"); n != 6 {
+		t.Errorf("unlimited listing has %d lines, want 6:\n%s", n, all)
+	}
+	if !strings.Contains(all, prettyTestSpanID(9).String()+"  run    exec redis  [service cache]") {
+		t.Errorf("service span not tagged:\n%s", all)
+	}
+	// A service is findable by its hostname as well as its span name.
+	if byHost := RenderSpanList(db, "cache", 0); !strings.Contains(byHost, "exec redis") {
+		t.Errorf("service not found by hostname:\n%s", byHost)
+	}
+	// The limit keeps the newest matches and counts what it dropped.
+	limited := RenderSpanList(db, "step", 2)
+	for _, want := range []string{
+		"... 3 earlier matching spans omitted",
+		"step 4", "step 5",
+	} {
+		if !strings.Contains(limited, want) {
+			t.Errorf("limited listing missing %q:\n%s", want, limited)
+		}
+	}
+	if strings.Contains(limited, "step 3") {
+		t.Errorf("limited listing kept an older match:\n%s", limited)
+	}
+	// A placeholder parent (referenced, never received) is not listed.
+	db.ImportSnapshots([]dagui.SpanSnapshot{{
+		ID: prettyTestSpanID(10), TraceID: prettyTestTraceID(), ParentID: prettyTestSpanID(11), Name: "orphan", Final: true,
+	}})
+	if got := RenderSpanList(db, "", 0); strings.Contains(got, prettyTestSpanID(11).String()) {
+		t.Errorf("placeholder span listed:\n%s", got)
+	}
+	// Unknown starts sort first, not ahead of known starts as "newest".
+	require.True(t, strings.HasPrefix(RenderSpanList(db, "", 0), prettyTestSpanID(10).String()))
+	newest := RenderSpanList(db, "", 1)
+	require.Contains(t, newest, "... 6 earlier matching spans omitted")
+	require.Contains(t, newest, "step 5")
+	require.NotContains(t, newest, "orphan")
 }

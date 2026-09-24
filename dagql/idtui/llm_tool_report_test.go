@@ -349,7 +349,7 @@ func TestReportRenderOptsRerunSuggestion(t *testing.T) {
 		RerunSuggestion: func(names []string) (string, []string) {
 			body := make([]string, 0, len(names))
 			for _, name := range names {
-				body = append(body, `ReadTrace(check: "`+name+`")`)
+				body = append(body, `FindSpans(query: "`+name+`")`)
 			}
 			return "SEE FULL TRACE", body
 		},
@@ -362,7 +362,7 @@ func TestReportRenderOptsRerunSuggestion(t *testing.T) {
 	got := buf.String()
 	t.Logf("rendered report:\n%s", got)
 	if !strings.Contains(got, "SEE FULL TRACE") ||
-		!strings.Contains(got, `ReadTrace(check: "ci:bootstrap")`) {
+		!strings.Contains(got, `FindSpans(query: "ci:bootstrap")`) {
 		t.Fatalf("report missing the injected suggestion:\n%s", got)
 	}
 	if strings.Contains(got, `dagger check "ci:bootstrap"`) || strings.Contains(got, "RUN LOCALLY") {

@@ -496,13 +496,13 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 
 // TestToolReadTrace exercises the ReadTrace builtin end to end: it is
 // registered alongside ReadLogs, it is dispatchable by the model, and it
-// resolves its target against the session's real trace -- an unknown check
-// name comes back as an actionable error rather than an empty result.
+// resolves its target against the session's real trace -- an unknown span
+// comes back as an actionable error rather than an empty result.
 //
-// The happy path (a span/check name that exists) can't be canned: the span IDs
-// of a recording-driven run aren't known when the conversation is recorded, and no
-// check runs in this fixture. The rendering half is covered by the unit tests
-// in core (resolution) and dagql/idtui (report shape).
+// The happy path (a span that exists) can't be canned: the span IDs
+// of a recording-driven run aren't known when the conversation is recorded.
+// The rendering half is covered by the unit tests in core (resolution) and
+// dagql/idtui (report shape).
 func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -525,7 +525,7 @@ func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "Looking at the trace."},
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "ReadTrace",
-				Arguments: dagger.JSON(`{"check":"nope:check"}`)},
+				Arguments: dagger.JSON(`{"span":"ffffffffffffffff"}`)},
 		}).
 		WithToolResult("call_2", "", true).
 		WithResponse([]dagger.LLMContentBlockInput{
@@ -538,8 +538,115 @@ func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	// The builtin was dispatched and resolved against the real trace, which
-	// has no checks -- and said so in terms the caller can act on.
-	require.Contains(t, out, `no check named "nope:check"`)
+	// does not contain this span -- and points the caller at discovery.
+	require.Contains(t, out, `no span "ffffffffffffffff"`)
+	require.Contains(t, out, "FindSpans")
+}
+
+// TestToolFindSpans exercises the FindSpans builtin end to end: it is
+// registered, dispatchable, and searches the session's real trace -- a query
+// nothing matches comes back as a counted "no match" rather than an empty
+// result, and a query that does match lists the span with its ID.
+func (LLMSuite) TestToolFindSpans(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/report-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that writes a report.\n"+
+			"Use the report tool to do the work and write the report.\n"+
+			"\n"+
+			"Assignment: do the work and write the report\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
+				Arguments: dagger.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, identity.NewID()))},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Looking for spans."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "FindSpans",
+				Arguments: dagger.JSON(`{"query":"no such span anywhere"}`)},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "FindSpans",
+				Arguments: dagger.JSON(`{"query":"ReportAgent.report"}`)},
+		}).
+		WithToolResult("call_3", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "do the work and write the report" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	require.Contains(t, out, `(no spans matching "no such span anywhere" among the`)
+	// The module function the first tool call ran is a span in the session's
+	// trace, listed with its ID and status.
+	require.Regexp(t, `[0-9a-f]{16}  ok     [^\n]*ReportAgent\.report`, out)
+}
+
+// TestToolInspectCall exercises the FindCalls and InspectCall builtins end
+// to end against the session's real trace: a call is found by a literal
+// deep in its arguments, listed with its digest; a digest nothing delivered
+// is refused with the gap named rather than a truncated chain.
+//
+// The happy path of InspectCall (a real digest) can't be canned: digests
+// depend on the module's own source digest and aren't known when the
+// conversation is recorded. The rebuild and every view are covered by the
+// unit tests in core against a real store.
+func (LLMSuite) TestToolInspectCall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/report-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	buster := identity.NewID()
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that writes a report.\n"+
+			"Use the report tool to do the work and write the report.\n"+
+			"\n"+
+			"Assignment: do the work and write the report\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
+				Arguments: dagger.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, buster))},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Looking for the call."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "FindCalls",
+				Arguments: dagger.JSON(fmt.Sprintf(`{"query":%q}`, buster))},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "InspectCall",
+				Arguments: dagger.JSON(`{"digest":"xxh3:0000000000000000"}`)},
+		}).
+		WithToolResult("call_3", "", true).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "do the work and write the report" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// The module function call the first tool call made, found by its
+	// argument literal and listed with its digest.
+	require.Regexp(t, `xxh3:[0-9a-f]+  report\(cacheBuster: "`+regexp.QuoteMeta(buster)+`"\)`, out)
+	require.Contains(t, out, "call xxh3:0000000000000000 never reached this client")
 }
 
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {

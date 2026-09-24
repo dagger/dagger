@@ -471,11 +471,12 @@ type TuiQa {
   }
 
   """
-  Show one span in depth: name, status, timing, the dagui flags that shape how
-  the UI treats it (internal, passthrough, encapsulation, log/span roll-up,
-  service, …), and the parent chain up to the root with each ancestor's flags.
-  Get ids from `spans`; use this to answer "why is this span hidden / why
-  didn't its logs roll up".
+  Show one span in depth: name, status, error and its origins, timing, the
+  dagui flags that shape how the UI treats it (internal, passthrough,
+  encapsulation, log/span roll-up, service, …), the parent chain up to the
+  root with each ancestor's flags, and its loaded direct children. Get ids
+  from `spans`; use this to answer "why is this span hidden / why didn't its
+  logs roll up", or to walk up and down from a span.
   """
   span(spanHex: String!): String! @cache(policy: FunctionCachePolicy.Never) {
     get("/span?id=" + spanHex)
@@ -534,9 +535,10 @@ type TuiQa {
   """
   Content-search every call payload the TUI has ingested: a regex matched
   against one line per call — "digest field(args) -> Type recv=digest" — with
-  argument literals UNTRUNCATED. The tool for "which call references this
-  path/image/value" and for walking a chain by grepping the digest another
-  line names.
+  full argument literals searched before display truncation. Long strings show
+  bounded excerpts, and responses are size-limited. The tool for "which call
+  references this path/image/value" and for walking a chain by grepping the
+  digest another line names.
   """
   calls(grep: String!): String! @cache(policy: FunctionCachePolicy.Never) {
     get("/calls?grep=" + grep

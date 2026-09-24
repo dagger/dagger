@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	telemetry "github.com/dagger/otel-go"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -99,10 +100,10 @@ type traceReportOpts struct {
 	//
 	// A tool call needs those children: a module function's print lands on
 	// its dagql field-call span, one hop below the tool-call span, so the
-	// depth-1 rule is what makes a tool's own report survive. An explicitly
-	// named target has no such indirection, and the children ARE the nested
-	// work -- for a test suite they're its cases, whose logs belong to the
-	// TESTS roll-up, not hoisted into (and duplicated out of) OUTPUT.
+	// depth-1 rule is what makes a tool's own report survive. For an explicitly
+	// selected span, the children ARE the nested work -- for a test suite
+	// they're its cases, whose logs belong to the TESTS roll-up, not hoisted
+	// into (and duplicated out of) OUTPUT.
 	OwnOutputOnly bool
 
 	// HideLogSpans names spans (hex IDs) whose own logs the report must NOT
@@ -111,11 +112,10 @@ type traceReportOpts struct {
 	// other; see MCP.spanResult.
 	HideLogSpans map[string]bool
 
-	// SuggestReadTrace re-points the report's rerun section at the ReadTrace
-	// builtin instead of the `dagger check "<name>"` CLI commands. Set it on
-	// every render whose reader is an LLM: an agent has tools, not a shell, so
-	// a copy-paste command is noise to it -- while `ReadTrace(check: "…")` is
-	// something it can actually call to see the full detail behind an abridged
+	// SuggestReadTrace re-points the report's rerun section at trace inspection
+	// tools instead of the `dagger check "<name>"` CLI commands. Set it on
+	// every render whose reader is an LLM: use FindSpans to find a failed
+	// check's span ID, then ReadTrace for the full detail behind an abridged
 	// result. Interactive CLI rendering never sets this.
 	SuggestReadTrace bool
 
@@ -133,18 +133,25 @@ type traceReportOpts struct {
 }
 
 // readTraceRerunSuggestion is the LLM-facing replacement for the report's
-// "RUN LOCALLY" section: the same failed check names, expressed as ReadTrace
-// tool calls.
+// "RUN LOCALLY" section: find the failed checks' spans before reading them.
 //
-// Note this lives in core, not in dagql/idtui: ReadTrace is a core builtin
-// tool (see MCP.loadBuiltins), so core legitimately owns the vocabulary, while
-// the frontend keeps owning the layout.
+// Note this lives in core, not in dagql/idtui: the inspection tools are core
+// builtins (see MCP.loadBuiltins), so core owns the vocabulary, while the
+// frontend keeps owning the layout.
 func readTraceRerunSuggestion(checkNames []string) (string, []string) {
-	body := make([]string, 0, len(checkNames))
+	body := make([]string, 0, len(checkNames)+1)
 	for _, name := range checkNames {
-		body = append(body, fmt.Sprintf("ReadTrace(check: %q)", name))
+		body = append(body, fmt.Sprintf("FindSpans(query: %q)", name))
+	}
+	if len(checkNames) > 0 {
+		body = append(body, "Then use ReadTrace(span: <span ID>) to read a matching span.")
 	}
 	return "SEE FULL TRACE", body
+}
+
+type traceReportResult struct {
+	body     string
+	failures string
 }
 
 // renderTraceReport materializes root's telemetry scope from the client's
@@ -165,19 +172,19 @@ func readTraceRerunSuggestion(checkNames []string) (string, []string) {
 // kill). The cost moves to the render: a load linear in the SCOPE's size --
 // single-digit ms for a typical tool call's subtree -- instead of retained
 // memory linear in the session's.
-func renderTraceReport(ctx context.Context, root string, opts traceReportOpts) (string, error) {
+func renderTraceReport(ctx context.Context, root string, opts traceReportOpts) (traceReportResult, error) {
 	if root == "" {
-		return "", fmt.Errorf("render trace report: no root span")
+		return traceReportResult{}, fmt.Errorf("render trace report: no root span")
 	}
 	clientDB, err := traceReportClientDB(ctx)
 	if err != nil {
-		return "", err
+		return traceReportResult{}, err
 	}
 	defer clientDB.Close()
 
-	session, err := loadTraceReportSession(ctx, clientDB, root)
+	session, err := loadTraceReportSession(ctx, inspectionStoreForSpan(clientDB, root), root)
 	if err != nil {
-		return "", err
+		return traceReportResult{}, err
 	}
 	return renderTraceReportSession(session, root, opts)
 }
@@ -213,6 +220,9 @@ func traceReportClientDB(ctx context.Context) (*clientdb.DB, error) {
 // are fetched for the walk only: ancestors above root frame the tree but
 // render no output of their own in a scoped report.
 func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root string) (*idtui.ReportSession, error) {
+	if !clientDB.HasSpan(root) {
+		return nil, fmt.Errorf("no span %q in this trace", root)
+	}
 	read := clientDB.Read()
 	walk := read.SpanLogScope(root)
 	scope := read.AncestorClosure(walk)
@@ -262,6 +272,11 @@ func ingestSpanScope(ctx context.Context, read *clientdb.DB, db *dagui.DB, scope
 	if err != nil {
 		return fmt.Errorf("select spans: %w", err)
 	}
+	return ingestSpanRows(ctx, db, rows)
+}
+
+// ingestSpanRows feeds span rows into db in the given order.
+func ingestSpanRows(ctx context.Context, db *dagui.DB, rows []clientdb.Span) error {
 	for start := 0; start < len(rows); start += traceReportBatchSize {
 		batch := rows[start:min(start+traceReportBatchSize, len(rows))]
 		spans := make([]sdktrace.ReadOnlySpan, len(batch))
@@ -296,13 +311,16 @@ func unreceivedErrorOrigins(db *dagui.DB) map[string]struct{} {
 // render owns its session outright -- the DB was loaded for this render and
 // is discarded with it -- so no render can observe another render's scope,
 // expansion, claims, or promotions.
-func renderTraceReportSession(session *idtui.ReportSession, root string, opt traceReportOpts) (string, error) {
+func renderTraceReportSession(session *idtui.ReportSession, root string, opt traceReportOpts) (traceReportResult, error) {
 	spanID, err := trace.SpanIDFromHex(root)
 	if err != nil {
-		return "", fmt.Errorf("parse root span ID %q: %w", root, err)
+		return traceReportResult{}, fmt.Errorf("parse root span ID %q: %w", root, err)
 	}
 	primary := dagui.SpanID{SpanID: spanID}
 	db := session.DB()
+	if span := db.Spans.Map[primary]; span == nil || !span.Received {
+		return traceReportResult{}, fmt.Errorf("no span %q in this trace", root)
+	}
 
 	renderOpts := idtui.ReportRenderOpts{
 		// Show completed spans; without this the final render bails out
@@ -350,10 +368,95 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 		// report itself is still what we want.
 		var exitErr idtui.ExitError
 		if !errors.As(err, &exitErr) {
-			return "", fmt.Errorf("render trace report: %w", err)
+			return traceReportResult{}, fmt.Errorf("render trace report: %w", err)
 		}
 	}
-	return buf.String(), nil
+	return traceReportResult{
+		body:     buf.String(),
+		failures: traceFailureNavigation(db, db.Spans.Map[primary]),
+	}, nil
+}
+
+// Keep failure navigation independent of the tree and OUTPUT budgets. Names
+// are bounded separately from calls, so even pathological names cannot cut a
+// usable span ID off a link. No logs are embedded: follow a precise link instead
+// of recursively expanding the whole failing run.
+const traceFailureMaxBytes = 4 * 1024
+
+func traceFailureNavigation(db *dagui.DB, root *dagui.Span) string {
+	if root == nil {
+		return ""
+	}
+	type entry struct {
+		kind, name string
+		span       *dagui.Span
+	}
+	var named []entry
+	view := db.TestView()
+	visited := map[dagui.SpanID]bool{}
+	var walk func(*dagui.Span) bool
+	walk = func(span *dagui.Span) bool {
+		if visited[span.ID] {
+			return false
+		}
+		visited[span.ID] = true
+		failedCheckBelow := false
+		for _, child := range span.ChildSpans.Order {
+			failedCheckBelow = walk(child) || failedCheckBelow
+		}
+		if node := view.BySpan[span.ID]; node != nil && node.SelfCounts().Failing > 0 {
+			named = append(named, entry{"test", node.FullName, span})
+		}
+		failedCheck := span.CheckName != "" && span.IsFailedOrCausedFailure()
+		if failedCheck && !failedCheckBelow {
+			named = append(named, entry{"check", span.CheckName, span})
+		}
+		return failedCheck || failedCheckBelow
+	}
+	walk(root)
+
+	var origins []entry
+	seen := map[dagui.SpanID]bool{}
+	for _, item := range named {
+		seen[item.span.ID] = true
+	}
+	addOrigins := func(span *dagui.Span) {
+		for _, origin := range idtui.CheckRootCauses(span) {
+			if !seen[origin.ID] {
+				seen[origin.ID] = true
+				origins = append(origins, entry{"origin", origin.Name, origin})
+			}
+		}
+	}
+	for _, item := range named {
+		addOrigins(item.span)
+	}
+	addOrigins(root)
+	if len(named)+len(origins) == 0 {
+		return ""
+	}
+
+	var out strings.Builder
+	out.WriteString("== FAILURES ==\n")
+	// Reserve half for origins: a large test suite must not crowd out the
+	// checksum exec that explains all its failures (even outside containment).
+	appendEntries := func(entries []entry, budget int) {
+		used := 0
+		for i, item := range entries {
+			name := clampLineBytes(strings.ReplaceAll(item.name, "\n", " "), 200)
+			id := item.span.ID.String()
+			line := fmt.Sprintf("%s %q [span=%s]\n  ReadTrace(span: %q)\n  ReadLogs(span: %q)\n", item.kind, name, id, id, id)
+			if used+len(line) > budget-80 {
+				fmt.Fprintf(&out, "... %d more %s entries; follow a listed trace to narrow ...\n", len(entries)-i, item.kind)
+				break
+			}
+			out.WriteString(line)
+			used += len(line)
+		}
+	}
+	appendEntries(named, traceFailureMaxBytes/2)
+	appendEntries(origins, traceFailureMaxBytes/2)
+	return strings.TrimRight(out.String(), "\n")
 }
 
 // guardTraceReport bounds a rendered report: every line is clamped to

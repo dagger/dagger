@@ -1116,11 +1116,9 @@ const spanResultOutputHeading = "== OUTPUT =="
 //     per row, plus the CHECKS/TESTS roll-ups. It carries no heading of its
 //     own -- its sections are already labelled.
 //
-// OUTPUT comes first for two reasons: it is the answer, while the report is
-// the supporting evidence; and guardTraceReport drops the MIDDLE of an
-// over-budget result, so the head is the one place a section is guaranteed to
-// survive in full. The byte guard is applied to the COMBINED text -- the
-// budget is what reaches the reader, not what one half of it renders to.
+// Bounded failure links come first, when present, followed by OUTPUT and the
+// report. The byte guard applies to the COMBINED text; navigation stays at the
+// head so neither that guard nor the outer tool-result guard can discard it.
 //
 // There is no duplication between the two: the report is told to suppress the
 // inline logs of exactly the spans OUTPUT was built from (HideLogSpans).
@@ -1132,40 +1130,58 @@ const spanResultOutputHeading = "== OUTPUT =="
 // that renders to nothing -- the result is the flat capture, byte for byte as
 // before: no headings, no separators, no empty sections.
 func (m *MCP) spanResult(ctx context.Context, spanID string, opts traceReportOpts) string {
-	// Exclude service exec span logs: long-lived services stream noise into
-	// the subtree via cause links, drowning out deliberate prints. ReadLogs
-	// remains the discovery path for service logs.
-	captured, err := m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly)
+	result, err := m.inspectSpanResult(ctx, spanID, opts)
 	if err != nil {
-		slog.Warn("failed to capture tool logs", "span", spanID, "error", err)
+		// Automatic decoration must not replace the actual tool result with a
+		// telemetry failure. Explicit inspection returns this error instead.
+		slog.Warn("incomplete tool trace decoration", "span", spanID, "error", err)
 	}
-
-	report := m.traceReport(ctx, spanID, captured.directSpans, opts)
-	if report == "" {
-		return flatLogs(spanID, captured.lines)
-	}
-	return combineSpanResult(spanID, directLogs(captured.lines), report)
+	return result
 }
 
-// combineSpanResult assembles the sections, bounds the COMBINED text, and
-// closes with the ReadLogs breadcrumb. own may be empty -- a target that
-// printed nothing gets no OUTPUT section, not an empty one. The report is
-// appended unlabelled: its own sections (CHECKS, TESTS, SERVICES, ...) are
-// already headed, and the span tree needs no banner.
-func combineSpanResult(spanID, own, report string) string {
+// inspectSpanResult preserves component errors even when the other half of a
+// report is available. ReadTrace must never present partial telemetry as a
+// successful inspection; spanResult deliberately keeps the best-effort text.
+func (m *MCP) inspectSpanResult(ctx context.Context, spanID string, opts traceReportOpts) (string, error) {
+	captured, captureErr := m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly)
+	opts.HideLogSpans = captured.directSpans
+	report, reportErr := renderTraceReport(ctx, spanID, opts)
+	if captureErr != nil {
+		captureErr = fmt.Errorf("capture logs for span %s: %w", spanID, captureErr)
+	}
+	if reportErr != nil {
+		reportErr = fmt.Errorf("render report for span %s: %w", spanID, reportErr)
+	}
+	err := errors.Join(captureErr, reportErr)
+	if strings.TrimSpace(report.body) == "" && report.failures == "" {
+		return flatLogs(spanID, captured.lines), err
+	}
+	return combineSpanResult(spanID, directLogs(captured.lines), report.body, report.failures), err
+}
+
+// combineSpanResult assembles and bounds the sections. A root ReadLogs
+// breadcrumb is a fallback only when there are no narrower failure links.
+// own may be empty; the report's sections already carry their own headings.
+func combineSpanResult(spanID, own, report, failures string) string {
 	report = strings.TrimLeft(report, "\n")
-	if strings.TrimSpace(report) == "" {
+	if strings.TrimSpace(report) == "" && failures == "" {
 		return ""
 	}
 	var sections []string
+	if failures != "" {
+		// Put actionable failure links ahead of potentially huge OUTPUT. This
+		// bounded section survives both report and outer CallContent guards.
+		sections = append(sections, failures)
+	}
 	if own != "" {
 		sections = append(sections, spanResultOutputHeading+"\n"+own)
 	}
 	sections = append(sections, report)
-	// The report clamps nested log tails (and the byte guard may drop its
-	// middle), so tell the reader where the unabridged logs live.
-	return guardTraceReport(strings.Join(sections, "\n\n")) + "\n" +
-		fmt.Sprintf("... use ReadLogs(span: %s) to read the full logs ...", spanID)
+	result := guardTraceReport(strings.Join(sections, "\n\n"))
+	if failures == "" {
+		result += "\n" + fmt.Sprintf("... use ReadLogs(span: %s) to read the full logs ...", spanID)
+	}
+	return result
 }
 
 // toolCallReportOpts are the render options for the report embedded in a tool
@@ -1191,7 +1207,7 @@ func toolCallReportOpts() traceReportOpts {
 		// OUTPUT section carries the tool's own lines unabridged.
 		NestedLogLines: llmToolLogsMaxLines,
 		// The reader is an LLM, which has tools rather than a shell: suggest
-		// the ReadTrace builtin for the failed checks instead of `dagger
+		// FindSpans then ReadTrace for failed checks instead of `dagger
 		// check "<name>"` commands it cannot run.
 		SuggestReadTrace: true,
 		// A tool result is about the RESULT, not about the machinery: keep
@@ -1200,23 +1216,6 @@ func toolCallReportOpts() traceReportOpts {
 		// the tree asks for it with ReadTrace, which keeps rendering it.
 		HideSpanTree: true,
 	}
-}
-
-// traceReport renders spanID's subtree as the pretty report, with the spans
-// whose output the caller prints itself suppressed. It returns "" when there
-// is no report to show and the flat capture should be used instead.
-func (m *MCP) traceReport(ctx context.Context, spanID string, hideLogSpans map[string]bool, opts traceReportOpts) string {
-	opts.HideLogSpans = hideLogSpans
-	report, err := renderTraceReport(ctx, spanID, opts)
-	if err != nil {
-		slog.Warn("failed to render trace report", "span", spanID, "error", err)
-		return ""
-	}
-	report = strings.TrimRight(report, "\n")
-	if strings.TrimSpace(report) == "" {
-		return ""
-	}
-	return report
 }
 
 // directLogs joins the lines the captured span printed itself, verbatim save

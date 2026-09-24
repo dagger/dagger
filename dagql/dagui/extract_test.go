@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 // A chain is only rebuildable if EVERY frame it references has a call payload
@@ -97,6 +99,39 @@ func TestExtractIntoDAGReportsMissingFrames(t *testing.T) {
 			t.Errorf("resolvable call %s missing from the recipe", dgst)
 		}
 	}
+}
+
+func TestExtractIntoDAGPreservesMetadata(t *testing.T) {
+	db := NewDB()
+	root := &callpbv1.Call{
+		Digest: "xxh3:root", Field: "field", Type: &callpbv1.Type{NamedType: "String"},
+		ImplicitInputs: []*callpbv1.Argument{{
+			Name: "scope", Value: &callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: "xxh3:scope"}},
+		}},
+		EffectIds:    []string{"effect-a"},
+		ExtraDigests: []*callpbv1.ExtraDigest{{Digest: "xxh3:extra", Label: "content"}},
+	}
+	// A future protobuf field must survive extraction too.
+	root.ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
+	db.Calls[root.Digest] = root
+	db.Calls["xxh3:scope"] = &callpbv1.Call{
+		Digest: "xxh3:scope", Field: "scope", Type: &callpbv1.Type{NamedType: "String"},
+	}
+	original := proto.CloneOf(root)
+	recipe := &callpbv1.RecipeDAG{RootDigest: root.Digest, CallsByDigest: map[string]*callpbv1.Call{}}
+	require.Empty(t, extractIntoDAG(recipe, db, root.Digest))
+	require.Len(t, recipe.CallsByDigest, 2)
+	require.True(t, proto.Equal(original, recipe.CallsByDigest[root.Digest]))
+
+	// Rebuilding is read-only, including when a caller modifies the result.
+	recipe.CallsByDigest[root.Digest].ImplicitInputs[0].Name = "changed"
+	recipe.CallsByDigest[root.Digest].EffectIds[0] = "changed"
+	recipe.CallsByDigest[root.Digest].ExtraDigests[0].Label = "changed"
+	require.True(t, proto.Equal(original, db.Calls[root.Digest]))
+
+	delete(db.Calls, "xxh3:scope")
+	_, err := db.CallIDForDigest(root.Digest)
+	require.ErrorContains(t, err, `call xxh3:scope never reached this client, referenced as implicit input "scope"`)
 }
 
 // The ordinary case must stay silent: a complete chain reports nothing, so
