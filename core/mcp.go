@@ -2263,6 +2263,20 @@ type capturedLine struct {
 	direct bool
 }
 
+// capturedSegment retains the producer of a single log record until assembly.
+// A missing stdio stream is its own stream (zero), distinct from stdout/stderr.
+type capturedSegment struct {
+	text     string
+	direct   bool
+	producer logProducer
+}
+
+type logProducer struct {
+	traceID string
+	spanID  string
+	stream  int64
+}
+
 // capturedOutput is one capture: the assembled lines, plus the set of spans
 // whose records were classified `direct`.
 //
@@ -2298,13 +2312,11 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 	defer q.Close()
 	q = inspectionStoreForSpan(q, spanID)
 
-	// segments accumulates log bodies in arrival order — one per record, each
-	// tagged with its provenance; lines are assembled from them afterwards,
-	// since a single log record needn't be line-aligned. Records are NOT
-	// coalesced here: appending onto an accumulated string goes quadratic on
-	// long same-provenance runs, and assembleLines merges across record
-	// boundaries anyway.
-	var segments []capturedLine
+	// segments accumulates log bodies in database record order, retaining the
+	// producer across batch boundaries. Records are NOT coalesced here:
+	// appending onto an accumulated string goes quadratic on long runs, and
+	// assembleLines merges same-producer fragments across records anyway.
+	var segments []capturedSegment
 
 	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
 	// roll-up behavior.
@@ -2353,9 +2365,12 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			}
 
 			var skip bool
+			var stream int64
 		dance:
 			for _, attr := range logAttrs {
 				switch attr.Key {
+				case telemetry.StdioStreamAttr:
+					stream = attr.Value.GetIntValue()
 				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr:
 					if attr.Value.GetBoolValue() {
 						skip = true
@@ -2406,49 +2421,81 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			if text == "" {
 				continue
 			}
-			segments = append(segments, capturedLine{text: text, direct: direct})
+			segments = append(segments, capturedSegment{
+				text: text, direct: direct,
+				producer: logProducer{traceID: log.TraceID.String, spanID: log.SpanID.String, stream: stream},
+			})
 		}
 	}
 	out.lines = assembleLines(segments)
 	return out, nil
 }
 
-// assembleLines splits accumulated log segments into lines, carrying a line
-// that straddles segments across the boundary. A line's provenance is that of
-// the segment that started it — log records aren't guaranteed to be
-// line-aligned, though a Dang `print` (Fprintln to the span's stdout) is.
-func assembleLines(segments []capturedLine) []capturedLine {
-	var lines []capturedLine
-	// pending accumulates a line across segment boundaries; its provenance is
-	// claimed by the first segment to contribute actual text, so the empty
-	// chunk that trails a newline-terminated record doesn't hand the next
-	// record's line to the wrong span.
-	var pending strings.Builder
-	var pendingDirect, pendingSet bool
-	for _, seg := range segments {
+// assembleLines joins fragments only within the same trace, span, and stdio
+// stream. Completed lines are ordered by their newline's record; unterminated
+// fragments are merged at their last contributing record. Lines from the same
+// record keep their text order. This is record order, not timestamp order.
+// A line retains the direct/nested attribution of its first actual text.
+func assembleLines(segments []capturedSegment) []capturedLine {
+	type partialLine struct {
+		text   strings.Builder
+		direct bool
+		last   int
+	}
+	type orderedLine struct {
+		capturedLine
+		record int
+	}
+	type producerKey struct {
+		logProducer
+		unknownRecord int
+	}
+	pending := map[producerKey]*partialLine{}
+	var ordered []orderedLine
+	for record, seg := range segments {
+		key := producerKey{logProducer: seg.producer}
+		if key.traceID == "" || key.spanID == "" {
+			// Without a complete producer identity, even adjacent records
+			// cannot safely be assumed to continue each other's output.
+			key.unknownRecord = record + 1
+		}
+		p := pending[key]
+		if p == nil {
+			p = &partialLine{}
+			pending[key] = p
+		}
 		chunks := strings.Split(seg.text, "\n")
 		for i, chunk := range chunks {
 			if chunk != "" {
-				if !pendingSet {
-					pendingDirect = seg.direct
-					pendingSet = true
+				if p.text.Len() == 0 {
+					p.direct = seg.direct
 				}
-				pending.WriteString(chunk)
+				p.text.WriteString(chunk)
+				p.last = record
 			}
 			if i < len(chunks)-1 {
-				// a "\n" followed this chunk: the line is complete
+				// A newline completes only this producer's pending line.
 				direct := seg.direct
-				if pendingSet {
-					direct = pendingDirect
+				if p.text.Len() > 0 {
+					direct = p.direct
 				}
-				lines = append(lines, capturedLine{text: pending.String(), direct: direct})
-				pending.Reset()
-				pendingDirect, pendingSet = false, false
+				ordered = append(ordered, orderedLine{capturedLine{p.text.String(), direct}, record})
+				p.text.Reset()
 			}
 		}
 	}
-	if pending.Len() > 0 {
-		lines = append(lines, capturedLine{text: pending.String(), direct: pendingDirect})
+	for _, p := range pending {
+		if p.text.Len() > 0 {
+			ordered = append(ordered, orderedLine{capturedLine{p.text.String(), p.direct}, p.last})
+		}
+	}
+	// Each record belongs to exactly one producer, so trailing fragments have
+	// distinct positions. Stable sorting keeps any completed lines from that
+	// record before its trailing fragment, independent of map iteration order.
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].record < ordered[j].record })
+	var lines []capturedLine
+	for _, line := range ordered {
+		lines = append(lines, line.capturedLine)
 	}
 	// ensure trailing linebreaks don't contribute to line limits
 	for len(lines) > 0 && lines[len(lines)-1].text == "" {

@@ -425,14 +425,14 @@ func TestGenMCPToolPreservesSchema(t *testing.T) {
 func TestAssembleLines(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		segments []capturedLine
+		segments []capturedSegment
 		want     []capturedLine
 	}{
 		{
 			name: "whole lines keep their provenance",
-			segments: []capturedLine{
-				{text: "nested one\nnested two\n", direct: false},
-				{text: "printed\n", direct: true},
+			segments: []capturedSegment{
+				{text: "nested one\nnested two\n", direct: false, producer: logProducer{traceID: "trace", spanID: "a"}},
+				{text: "printed\n", direct: true, producer: logProducer{traceID: "trace", spanID: "a"}},
 			},
 			want: []capturedLine{
 				{text: "nested one", direct: false},
@@ -442,17 +442,17 @@ func TestAssembleLines(t *testing.T) {
 		},
 		{
 			name: "line split across records is assembled once",
-			segments: []capturedLine{
-				{text: "hello, ", direct: true},
-				{text: "world\n", direct: true},
+			segments: []capturedSegment{
+				{text: "hello, ", direct: true, producer: logProducer{traceID: "trace", spanID: "a"}},
+				{text: "world\n", direct: true, producer: logProducer{traceID: "trace", spanID: "a"}},
 			},
 			want: []capturedLine{{text: "hello, world", direct: true}},
 		},
 		{
 			name: "straddling line takes the starting record's provenance",
-			segments: []capturedLine{
-				{text: "start", direct: true},
-				{text: "-end\nnested\n", direct: false},
+			segments: []capturedSegment{
+				{text: "start", direct: true, producer: logProducer{traceID: "trace", spanID: "a"}},
+				{text: "-end\nnested\n", direct: false, producer: logProducer{traceID: "trace", spanID: "a"}},
 			},
 			want: []capturedLine{
 				{text: "start-end", direct: true},
@@ -461,13 +461,78 @@ func TestAssembleLines(t *testing.T) {
 		},
 		{
 			name:     "trailing newlines don't contribute lines",
-			segments: []capturedLine{{text: "only\n\n\n", direct: true}},
+			segments: []capturedSegment{{text: "only\n\n\n", direct: true}},
 			want:     []capturedLine{{text: "only", direct: true}},
 		},
 		{
 			name:     "unterminated final line is kept",
-			segments: []capturedLine{{text: "no trailing newline", direct: false}},
+			segments: []capturedSegment{{text: "no trailing newline", direct: false}},
 			want:     []capturedLine{{text: "no trailing newline", direct: false}},
+		},
+		{
+			name: "interleaved spans complete independently",
+			segments: []capturedSegment{
+				{text: "direct ", direct: true, producer: logProducer{traceID: "trace", spanID: "a"}},
+				{text: "nested\n", producer: logProducer{traceID: "trace", spanID: "b"}},
+				{text: "report\n", direct: true, producer: logProducer{traceID: "trace", spanID: "a"}},
+			},
+			want: []capturedLine{{text: "nested"}, {text: "direct report", direct: true}},
+		},
+		{
+			name: "trace IDs distinguish otherwise identical producers",
+			segments: []capturedSegment{
+				{text: "first ", producer: logProducer{traceID: "a", spanID: "same"}},
+				{text: "other\n", producer: logProducer{traceID: "b", spanID: "same"}},
+				{text: "trace\n", producer: logProducer{traceID: "a", spanID: "same"}},
+			},
+			want: []capturedLine{{text: "other"}, {text: "first trace"}},
+		},
+		{
+			name: "stdout stderr and unclassified streams are separate",
+			segments: []capturedSegment{
+				{text: "out", producer: logProducer{traceID: "trace", spanID: "a", stream: 1}},
+				{text: "err", producer: logProducer{traceID: "trace", spanID: "a", stream: 2}},
+				{text: "plain\n", producer: logProducer{traceID: "trace", spanID: "a"}},
+				{text: "put\n", producer: logProducer{traceID: "trace", spanID: "a", stream: 1}},
+				{text: "or\n", producer: logProducer{traceID: "trace", spanID: "a", stream: 2}},
+			},
+			want: []capturedLine{{text: "plain"}, {text: "output"}, {text: "error"}},
+		},
+		{
+			name: "trailing fragments merge by last contribution not first or map order",
+			segments: []capturedSegment{
+				{text: "first ", direct: true, producer: logProducer{traceID: "trace", spanID: "a"}},
+				{text: "second", producer: logProducer{traceID: "trace", spanID: "b"}},
+				{text: "complete\n", producer: logProducer{traceID: "trace", spanID: "c"}},
+				{text: "tail", direct: true, producer: logProducer{traceID: "trace", spanID: "a"}},
+				{text: "last\nfragment", producer: logProducer{traceID: "trace", spanID: "d"}},
+			},
+			want: []capturedLine{
+				{text: "second"}, {text: "complete"}, {text: "first tail", direct: true},
+				{text: "last"}, {text: "fragment"},
+			},
+		},
+		{
+			name: "newline cannot complete another producer's fragment",
+			segments: []capturedSegment{
+				{text: "partial", direct: true, producer: logProducer{traceID: "trace", spanID: "a"}},
+				{text: "\nnext\n", producer: logProducer{traceID: "trace", spanID: "b"}},
+				{text: "\n", producer: logProducer{traceID: "trace", spanID: "a"}},
+			},
+			want: []capturedLine{{text: ""}, {text: "next"}, {text: "partial", direct: true}},
+		},
+		{
+			name: "unknown producers never concatenate across records",
+			segments: []capturedSegment{
+				{text: "anonymous", direct: true},
+				{text: "other\n"},
+				{text: "trace only", producer: logProducer{traceID: "trace"}},
+				{text: "not a continuation\n", producer: logProducer{traceID: "trace"}},
+			},
+			want: []capturedLine{
+				{text: "anonymous", direct: true}, {text: "other"},
+				{text: "trace only"}, {text: "not a continuation"},
+			},
 		},
 		{
 			name:     "empty input",
@@ -568,6 +633,87 @@ func TestCallPayloadRecordsExcludedFromLLMLogs(t *testing.T) {
 	t.Run("automatic tool result", func(t *testing.T) {
 		require.Equal(t, "before\nafter", m.toolLogs(ctx))
 	})
+}
+
+// TestCaptureLogLinesIsolatesProducers exercises persisted records across the
+// database batch boundary, plus the ReadLogs dispatch path used by the LLM.
+func TestCaptureLogLinesIsolatesProducers(t *testing.T) {
+	const (
+		traceID = "000102030405060708090a0b0c0d0e0f"
+		rootID  = "0000000000000001"
+		childID = "0000000000000002"
+		deepID  = "0000000000000003"
+	)
+	dbs := clientdb.NewDBs(t.TempDir())
+	store, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	_, err = store.AppendSpans([]clientdb.Span{
+		{TraceID: traceID, SpanID: rootID, Attributes: marshalSpanAttrs(t)},
+		{TraceID: traceID, SpanID: childID, ParentSpanID: validSpanID(rootID), Attributes: marshalSpanAttrs(t)},
+		{TraceID: traceID, SpanID: deepID, ParentSpanID: validSpanID(childID), Attributes: marshalSpanAttrs(t)},
+	})
+	require.NoError(t, err)
+	stdio := func(stream int64) *otlpcommonv1.KeyValue {
+		return &otlpcommonv1.KeyValue{Key: telemetry.StdioStreamAttr,
+			Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_IntValue{IntValue: stream}}}
+	}
+	record := func(spanID, text string, attrs ...*otlpcommonv1.KeyValue) clientdb.Log {
+		return persistedCaptureLog(t, traceID, spanID, "test", stringLogBody(text), attrs...)
+	}
+	logs := []clientdb.Log{
+		record(rootID, "direct ", stdio(1)),
+		record(childID, "out", stdio(1)),
+		record(childID, "err", stdio(2)),
+		record(deepID, "nested ", stdio(1)),
+		persistedCaptureLog(t, traceID, rootID, "test", bytesLogBody([]byte("BINARY")), stdio(1)),
+	}
+	eof := &otlpcommonv1.KeyValue{Key: telemetry.StdioEOFAttr,
+		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BoolValue{BoolValue: true}}}
+	// Excluded records still fill a DB batch; no producer finishes its line
+	// until the next batch. EOF must not emit text or consume a partial line.
+	for len(logs) < llmLogsBatchSize {
+		logs = append(logs, record(rootID, "EOF-MUST-NOT-APPEAR\n", stdio(1), eof))
+	}
+	logs = append(logs,
+		record(deepID, "done\n", stdio(1)),
+		record(childID, "put\n", stdio(1)),
+		record(childID, "or", stdio(2)),
+		record(rootID, "report\n", stdio(1)),
+		record(childID, "plain"),
+		record(deepID, "tail", stdio(1)),
+	)
+	_, err = store.AppendLogs(logs)
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{
+		mockServer: &mockServer{}, dbs: dbs,
+	}})
+	m := newMCP()
+	want := []capturedLine{
+		{text: "nested done"}, {text: "output", direct: true},
+		{text: "error", direct: true}, {text: "direct report", direct: true},
+		{text: "plain", direct: true}, {text: "tail"},
+	}
+	got, err := m.captureLogLines(ctx, rootID, false, false)
+	require.NoError(t, err)
+	require.Equal(t, want, got.lines)
+	require.Equal(t, map[string]bool{rootID: true, childID: true}, got.directSpans)
+
+	own, err := m.captureLogLines(ctx, rootID, false, true)
+	require.NoError(t, err)
+	want[1].direct, want[2].direct, want[4].direct = false, false, false
+	require.Equal(t, want, own.lines)
+	require.Equal(t, map[string]bool{rootID: true}, own.directSpans)
+
+	tools := NewLLMToolSet()
+	m.loadBuiltins(&dagql.Server{}, tools)
+	toolResult := m.CallContent(ctx, tools.Order, &LLMToolCall{
+		Name: "ReadLogs", CallID: "read-isolated-logs",
+		Arguments: JSON(fmt.Sprintf(`{"span":%q}`, rootID)),
+	})
+	require.False(t, toolResult.Errored)
+	require.Equal(t, "read-isolated-logs", toolResult.CallID)
+	require.Equal(t, "     1→nested done\n     2→output\n     3→error\n     4→direct report\n     5→plain\n     6→tail", toolResult.ContentText())
 }
 
 func persistedCaptureLog(t *testing.T, traceID, spanID, scope string, body *otlpcommonv1.AnyValue, attrs ...*otlpcommonv1.KeyValue) clientdb.Log {
