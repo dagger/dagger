@@ -335,7 +335,7 @@ func TestReseedPublishesRewindMarker(t *testing.T) {
 	base := llmChainResult(t, srv, llmFrame)
 	tip := llmChainResult(t, srv, responseFrame)
 
-	rt := testRuntime(loopCtx)
+	rt := testRuntime(t, loopCtx)
 	rt.last = tip
 
 	// A replacement that is not a rewind leaves no marker.
