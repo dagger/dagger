@@ -50,7 +50,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("filterCheckCommand", s.filterCheckCommand).Doc("Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.").Args(dagql.Arg("generated").Doc("Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.")),
 		dagql.Func("filterGenerateCommand", s.filterGenerateCommand).Doc("Select Changeset artifacts marked generate, using each workspace's generator settings."),
 		dagql.Func("filterAgentCommand", s.filterAgentCommand).Doc("Select LLM artifacts marked agent."),
-		dagql.Func("filterUpCommand", s.filterUpCommand).Doc("Select Service artifacts marked up, using each workspace's service settings."),
+		dagql.Func("filterUpCommand", s.filterUpCommand).Doc("Select Service artifacts, using each workspace's service settings. Does not require the up directive."),
 		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive. Does not filter by type or workspace settings.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterParentTypes", s.filterParentTypes).Doc("Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterParentDirectives", s.filterParentDirectives).Doc("Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
@@ -739,15 +739,18 @@ func (*artifactsSchema) filterDirectives(_ context.Context, parent *core.Artifac
 func (*artifactsSchema) filterCheckCommand(ctx context.Context, parent *core.Artifacts, args struct {
 	Generated dagql.Optional[dagql.Boolean]
 }) (*core.Artifacts, error) {
-	return filterArtifactCommand(ctx, parent, "check", "Check", args.Generated)
+	selected := parent.FilterDirectives([]string{"check"}, false).FilterTypes([]string{"Check"}, false)
+	return applyArtifactCommandPolicy(ctx, parent, selected, "check", args.Generated)
 }
 
 func (*artifactsSchema) filterGenerateCommand(ctx context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
-	return filterArtifactCommand(ctx, parent, "generate", "Changeset", dagql.Optional[dagql.Boolean]{})
+	selected := parent.FilterDirectives([]string{"generate"}, false).FilterTypes([]string{"Changeset"}, false)
+	return applyArtifactCommandPolicy(ctx, parent, selected, "generate", dagql.Optional[dagql.Boolean]{})
 }
 
 func (*artifactsSchema) filterUpCommand(ctx context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
-	return filterArtifactCommand(ctx, parent, "up", "Service", dagql.Optional[dagql.Boolean]{})
+	selected := parent.FilterTypes([]string{"Service"}, false)
+	return applyArtifactCommandPolicy(ctx, parent, selected, "up", dagql.Optional[dagql.Boolean]{})
 }
 
 func (*artifactsSchema) filterAgentCommand(_ context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifacts, error) {
@@ -760,8 +763,7 @@ type artifactWorkspacePolicy struct {
 	wrappers map[string]bool
 }
 
-func filterArtifactCommand(ctx context.Context, parent *core.Artifacts, directive, typeName string, generated dagql.Optional[dagql.Boolean]) (*core.Artifacts, error) {
-	selected := parent.FilterDirectives([]string{directive}, false).FilterTypes([]string{typeName}, false)
+func applyArtifactCommandPolicy(ctx context.Context, parent, selected *core.Artifacts, command string, generated dagql.Optional[dagql.Boolean]) (*core.Artifacts, error) {
 	if len(selected.Entries) == 0 {
 		return selected, nil
 	}
@@ -781,7 +783,7 @@ func filterArtifactCommand(ctx context.Context, parent *core.Artifacts, directiv
 			return nil, err
 		}
 		policy := artifactWorkspacePolicy{config: cfg}
-		if directive == "check" || directive == "generate" {
+		if command == "check" || command == "generate" {
 			policy.modules, policy.wrappers, err = artifactGeneratorPolicies(ctx, entries, cfg)
 			if err != nil {
 				return nil, err
@@ -795,7 +797,7 @@ func filterArtifactCommand(ctx context.Context, parent *core.Artifacts, directiv
 		if err != nil {
 			return nil, err
 		}
-		enabled, err := policies[id.EngineResultID()].enabled(ctx, artifact, directive, generated)
+		enabled, err := policies[id.EngineResultID()].enabled(ctx, artifact, command, generated)
 		if err != nil {
 			return nil, err
 		}
@@ -806,12 +808,12 @@ func filterArtifactCommand(ctx context.Context, parent *core.Artifacts, directiv
 	return selected.WithoutArtifacts(excluded)
 }
 
-func (policy artifactWorkspacePolicy) enabled(ctx context.Context, artifact *core.Artifact, directive string, generated dagql.Optional[dagql.Boolean]) (bool, error) {
+func (policy artifactWorkspacePolicy) enabled(ctx context.Context, artifact *core.Artifact, command string, generated dagql.Optional[dagql.Boolean]) (bool, error) {
 	// Module-load failures remain visible to check commands.
 	if artifact.Node == nil || len(artifact.Node.Path()) == 0 {
 		return true, nil
 	}
-	if directive == "check" {
+	if command == "check" {
 		if parent := artifact.Node.Parent.ObjectType(); parent != nil && parent.Name == "Changeset" {
 			if !slices.Contains(artifact.Node.Parent.Directives, "generate") {
 				return false, nil
@@ -831,7 +833,7 @@ func (policy artifactWorkspacePolicy) enabled(ctx context.Context, artifact *cor
 	name := artifact.Node.Path()[0]
 	entry := policy.config.Modules[name]
 	var skip []string
-	switch directive {
+	switch command {
 	case "check":
 		skip = entry.Check.Skip
 	case "up":

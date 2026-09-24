@@ -25,6 +25,26 @@ func TestArtifactDirectiveFilterDoesNotRequireWorkspace(t *testing.T) {
 	require.Equal(t, []*core.Artifact{other}, excluded.Entries)
 }
 
+func TestArtifactUpCommandSelectsServices(t *testing.T) {
+	ctx, srv, cache, _ := resolverOutputFixture(t)
+	srv.InstallObject(dagql.NewClass[*core.Workspace](srv))
+	ws := resolverAttach(t, ctx, srv, cache, "workspace", &core.Workspace{})
+	marked := &core.Artifact{Workspace: ws, Path: []string{"marked"}, TypeName: "Service", Directives: []string{"up"}}
+	unmarked := &core.Artifact{Workspace: ws, Path: []string{"unmarked"}, TypeName: "Service"}
+	container := &core.Artifact{Workspace: ws, Path: []string{"container"}, TypeName: "Container"}
+	all := &core.Artifacts{Entries: []*core.Artifact{marked, unmarked, container}}
+
+	selected, err := (&artifactsSchema{}).filterUpCommand(ctx, all, struct{}{})
+	require.NoError(t, err)
+	var uris []string
+	for _, item := range selected.Entries {
+		uri, err := item.URI(core.ArtifactURIOpts{})
+		require.NoError(t, err)
+		uris = append(uris, uri)
+	}
+	require.Equal(t, []string{"dag://marked", "dag://unmarked"}, uris)
+}
+
 func TestArtifactTypedConversion(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

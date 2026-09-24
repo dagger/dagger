@@ -2349,8 +2349,8 @@ class Artifacts(Type):
         return Artifacts(_ctx)
 
     def filter_up_command(self) -> Self:
-        """Select Service artifacts marked up, using each workspace's service
-        settings.
+        """Select Service artifacts, using each workspace's service settings. Does
+        not require the up directive.
         """
         _args: list[Arg] = []
         _ctx = self._select("filterUpCommand", _args)

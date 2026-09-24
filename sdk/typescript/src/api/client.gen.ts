@@ -5641,7 +5641,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Select Service artifacts marked up, using each workspace's service settings.
+   * Select Service artifacts, using each workspace's service settings. Does not require the up directive.
    */
   filterUpCommand = (): Artifacts => {
     const ctx = this._ctx.select("filterUpCommand")

@@ -1128,7 +1128,7 @@ source = "./probe"
 entrypoint = true
 check.skip = ["skipped"]
 generate.skip = ["skipped-generate"]
-up.skip = ["skipped-service"]
+up.skip = ["skipped-service", "skipped-unmarked-service"]
 `
 	source := c.Directory().
 		WithNewFile("dagger.toml", config).
@@ -1141,6 +1141,8 @@ up.skip = ["skipped-service"]
  pub edit: Changeset! { raise "must not run" }
  pub serve: Service! @up { raise "must not run" }
  pub skippedService: Service! @up { raise "must not run" }
+ pub unmarkedService: Service! { raise "must not run" }
+ pub skippedUnmarkedService: Service! { raise "must not run" }
  pub assistant(base: LLM!): LLM! @agent { raise "must not run" }
 }`)
 	all := source.AsWorkspace().Artifacts()
@@ -1168,7 +1170,7 @@ up.skip = ["skipped-service"]
 		"rawGenerators":    {"dag://gen", "dag://skipped-generate"},
 		"generators":       {"dag://gen"},
 		"rawServices":      {"dag://serve", "dag://skipped-service"},
-		"services":         {"dag://serve"},
+		"services":         {"dag://serve", "dag://unmarked-service"},
 		"agents":           {"dag://assistant"},
 	} {
 		var names []string

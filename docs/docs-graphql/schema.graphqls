@@ -637,7 +637,7 @@ type Artifacts implements Node {
   filterAgentCommand: Artifacts!
 
   """
-  Select Service artifacts marked up, using each workspace's service settings.
+  Select Service artifacts, using each workspace's service settings. Does not require the up directive.
   """
   filterUpCommand: Artifacts!
 

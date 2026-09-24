@@ -2138,7 +2138,7 @@ func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts
 	}
 }
 
-// Select Service artifacts marked up, using each workspace's service settings.
+// Select Service artifacts, using each workspace's service settings. Does not require the up directive.
 func (r *Artifacts) FilterUpCommand() *Artifacts {
 	q := r.query.Select("filterUpCommand")
 

@@ -1815,7 +1815,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Select Service artifacts marked up, using each workspace's service settings.
+    /// Select Service artifacts, using each workspace's service settings. Does not require the up directive.
     pub fn filter_up_command(&self) -> Artifacts {
         let query = self.selection.select("filterUpCommand");
         Artifacts {
