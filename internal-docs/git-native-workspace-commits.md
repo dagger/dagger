@@ -135,6 +135,10 @@ Do not confuse counters for new compressed loose-object files with physical disk
 
 ## Measurements
 
+### Synthetic optimization checkpoints
+
+The baseline below is **not unmodified `dagger/dagger@main`**: it already includes earlier history/checkout optimizations. Use the real-repository comparison below for the true-main baseline.
+
 The deterministic harness uses a packed local repository with **12,002 files and 98,304,010 source bytes**, no remote, and three sequential scoped commits. It preserves an unselected edit and separately measures pre-status, commit, post-status, history, source consumption and the next edit. Engine/CLI build, fixture creation, connection and capture are outside commit timing.
 
 These are observations from separate engine runs, not controlled universal speedup ratios or tail-percentile estimates:
@@ -157,7 +161,67 @@ In that latest run:
 
 Do not discard outliers. A previous reconciliation-stage run had a **5.14s commit / 8.14s cycle** with slow Git index/history operations. The first incremental run included a **~916ms incremental checkout**. Their underlying latency causes remain unresolved.
 
-The original 17.182s live-agent result was a different workload/environment. The new numbers measure core API work, **not LLM latency or the complete committer module/TUI tool call**. No fresh interactive-agent smoke test was completed for these native slices.
+The original 17.182s live-agent result was a different workload/environment. The synthetic numbers measure core API work, **not LLM latency or the complete committer module/TUI tool call**. The fresh smoke test below measures the latter separately.
+
+### Real `dagger/dagger` comparison against true main
+
+Production sources were pinned to **main `06eca9957aa99cdf55855110846e8ee2546ef306`** and **PR `71bfa41e8bb442a9ca57246575de54cf979a63b0`**. Both received the identical standalone test-only harness, with no production changes: main measured build `4c91b5e183b1be041c190ed7d8c0b9077db855b2`, PR measured build `99f0a93b9352e0422a82dc12ae2f5c63c1040ec1`. The measured harness Git blob is `af56c317205b7721e88e4fed2d5b006cec4a501d` (SHA256 `01bedeef1899852b900b600a328747f58e2ca49204f55809ef80c305d4842d72`). The subsequently retained harness adds an explicit opt-in gate so normal CI does not fetch full history.
+
+Fixture: a full-ancestry checkout of that pinned main SHA, **13,935 commits, 183,548 objects, 16,201 tracked files and 176,838,006 regular source bytes**, retaining `origin=https://github.com/dagger/dagger.git` and branch tracking. Removing the remote would change snapshot provenance and hide the first-commit fallback. Git 2.55.0 and clone/config/single-thread repack procedures matched; pack representations were not byte-identical (Git-file sizes varied by about 14 KB out of 210 MB).
+
+Two fresh engines per variant, run serially (PR then main), each executing six changing-HEAD scoped commits while preserving an unselected `go.mod` edit. Each cycle measures status, actual patch review, `withCommit`, post-status, ahead/behind and latest-two history, complete source/workspace file hashing in a container, and evaluation of the next edit. Engine/CLI builds, fixture setup, connection, capture and consumer image setup are outside cycle timing. All four runs passed path/content/ancestry and source-isolation assertions; source and workspace content hashes matched across variants at every step.
+
+| Samples per variant | Main commit median | PR commit median | Main full-cycle median | PR full-cycle median |
+| --- | ---: | ---: | ---: | ---: |
+| First remote-backed commit (2) | 27.918s | 29.545s | 42.327s | 47.864s |
+| Subsequent varied commits (10) | 21.418s | 6.093s | 38.182s | 11.182s |
+
+Later median commits/full cycles were approximately **3.52x / 3.41x faster** in this sample. **The first commit did not improve and was slower in both observations.** This is a small observational comparison, not a universal speedup or a causal attribution of the first-commit difference. Engines had fresh state volumes, but shared host/build caches and run order were not randomized.
+
+Every sample below is **commit / full cycle in seconds**; do not discard the slower runs:
+
+| Step | Main run 1 | Main run 2 | PR run 1 | PR run 2 |
+| --- | ---: | ---: | ---: | ---: |
+| README edit, remote base | 28.192 / 42.960 | 27.643 / 41.694 | 29.550 / 50.151 | 29.540 / 45.577 |
+| Nested existing-file edit | 28.403 / 39.464 | 20.451 / 32.052 | 6.564 / 11.938 | 6.983 / 11.939 |
+| Nested addition | 21.518 / 40.383 | 19.212 / 34.865 | 6.026 / 11.152 | 7.975 / 13.075 |
+| Nested rename | 23.538 / 35.138 | 20.422 / 35.886 | 6.160 / 11.211 | 6.188 / 11.220 |
+| README edit again | 30.484 / 45.945 | 22.163 / 42.223 | 1.557 / 6.487 | 1.500 / 6.623 |
+| Nested deletion | 21.318 / 36.901 | 21.110 / 41.463 | 1.404 / 6.447 | 1.595 / 6.933 |
+
+Cold capture/status was 5.495/6.005s on main and 5.878/6.770s on the PR, separate from fixture setup (27–30s). Full-file consumption alone cost roughly 3s in later cycles. Subsequent history reads cost 6.4–15.9s on main versus 29–57ms on the PR; the loop gain is not just work deferred beyond `withCommit`.
+
+**Trace findings, per run:** main executed six legacy commits, twelve general merges and 45 actual Git fetch process spans. The PR executed one legacy commit, five native history writes, five general merges and nine actual Git fetch process spans. Broad harness fetch counters also include two `fetching` wrapper spans; they are not extra Git processes.
+
+Two concrete remaining eligibility limits surfaced:
+
+- A clean remotely reproducible snapshot retains a `RemoteGitRef`; native commit/reconciliation eligibility requires local storage. The first commit therefore uses the legacy path. Its output is local, enabling subsequent native construction. See `checkpointCapturedGitCompositionWithBase` and `GitCommitChangesetNativeBase`.
+- Nested edit/add/rename cycles 2–4 use native commit construction but fall back from native reconciliation with `directory-metadata`. Only cycles 5–6 use both native construction and reconciliation. Do not label all subsequent commits fully native or relax metadata preservation just to improve these timings.
+
+**Storage limitation:** fixture file sizes, host `du` and pack hashes were recorded; engine physical allocation, retained layer growth and GC effects were not measured. No storage-amplification claim follows from these timings or new-object counters.
+
+Reproduce with the opt-in `core/integration/workspace_realbench_test.go`, package `./core/integration`, verbose, in two separate engine-test invocations:
+
+```text
+^TestWorkspaceRealRepositoryPerformance$
+^(TestWorkspaceRealRepositoryPerformance)$
+```
+
+Distinct equivalent selectors avoid memoizing the entire engine-dev test invocation; each invocation allocates fresh random engine-state and `/run` volumes. Private children remove inherited SDK session variables and log explicit CLI/runner/engine versions. Observed PR runners: `78g223kdsab2a`, `6n2i4lnv2itn6`; main runners: `19fa708ui5ek4`, `b1ju0gjloiacq`.
+
+Raw full-precision JSON, per-step timings, patches, hashes and trace counters are available in session trace `0ad63cdfeee7172c2fa61c05bd5dbabd`, via `ReadLogs(scope: "own", fromLine: 1)`: PR spans `14adc50e0b29c707`, `488e350a8dd8d73c`; main spans `0fdf2213c3757294`, `9edd0f81cf5fb257`. The private child re-exec can leave a duplicate running test in outer telemetry; both parent and child output reported PASS.
+
+### Fresh interactive-agent smoke test
+
+An isolated copy of PR checkout `71bfa41` ran `dagger agent editor committer` with the from-source CLI against an explicitly supplied from-source engine. CLI identity reported `71bfa41e`; engine-lab built from that same workspace and served `v1.0.0-beta.15+d0bffb21`. LLM authentication worked without switching to the stock engine. The agent reviewed status/diff/log, changed one comment, committed only that file, read the latest two commits and confirmed no pending changes. A second scoped commit restored the comment. Neither commit was pushed or exported, and both test services were stopped.
+
+| Operation | First, remote-backed | Second, local-backed |
+| --- | ---: | ---: |
+| `Workspace.withCommit` span | 19.236s | 4.491s |
+| Committer module span | 20.211s | 5.813s |
+| Complete agent commit-tool span | 26.893s | 7.647s |
+
+The first operation visibly used general merges, retained checkout and fetch; the second had native merge/commit and incremental-checkout spans. These two observations are **not the matched main benchmark or complete LLM conversation latency**. Snapshot capture succeeded; the recorded author was the commit tool default `Dagger <dagger@localhost>`, so this was not validation of a configured human identity. Smoke-only commits: `80b9760b12d9140fafabdb11beb72c5a6b864eb9` and `127ab14030c00e6f87da79d050792256985fb54e`.
 
 ### Investigation evidence
 
@@ -221,7 +285,7 @@ Validation on the combined continuation tree:
 
 Remote checks observed at merge SHA `699c5755d61a5de5b7992aa2410cc210d649cf66` had five lint violations, addressed through helper extraction and staticcheck simplifications. The seven other failing checks showed HTTP 502/connection resets, session removal/closure, or a client-caller deadline, with passing inner checks or recorded test passes. These are transport/session failures, **not proven PR test regressions or proven unrelated infrastructure defects**; their underlying cause remains unestablished. Re-read and rerun remote checks before claiming green CI.
 
-Full CI, engine restart/eviction and GC stress, larger/varied repository measurements, physical storage accounting and an actual agent workflow remain release gates.
+Full CI, engine restart/eviction and GC stress, longer-lived/varied repository measurements and physical storage accounting remain release gates. The real-repository comparison and interactive smoke above close the earlier absence of those measurements, but expose remote-first-commit and directory-metadata eligibility gaps; the smoke used default rather than configured human identity.
 
 ## Source map
 
@@ -242,8 +306,8 @@ Related architecture: [lazy evaluation](lazy_evaluation.md), [cache persistence]
 
 1. **Establish the current PR state and address CI.** Verify the actual head, inspect failures, and keep unrelated host changes out of the branch. No broad rebase/history rewrite or force push is implied by "continue".
 2. **Prepare the existing slices for independent review.** Review fallback coverage and the intentional native ref/tag retention difference. Test long sequential and concurrent histories, graceful restart/eviction, cancellation around publication, and retained snapshots during GC. Respect existing cache durability semantics rather than promising crash recovery it does not provide.
-3. **Broaden end-to-end measurements.** Use the actual Dagger repository as well as the synthetic fixture. Vary edited paths, add/remove/rename files, consume trees in containers, and measure source/object storage amplification. Preserve outliers and distinguish cold capture, changing-HEAD reuse, and genuinely warm work.
-4. **Run a fresh interactive-agent smoke test against verified from-source binaries.** In an isolated workspace, ask it to make a one-line comment edit, review status/diff/log, commit only that file, then read the latest two commits. Do not push benchmark edits. Verify engine targeting and model authentication; do not silently fall back to another engine for convenience.
+3. **Follow the real-repository evidence.** The true-main comparison above is now the baseline, not the earlier partially optimized synthetic baseline. Investigate remote-backed first-commit fallback and `directory-metadata` reconciliation fallback, without weakening provenance, authorization or filesystem semantics. Preserve the matched workload when measuring any fixes. Add physical allocation and longer-lived growth measurements; they remain absent.
+4. **Broaden the interactive smoke.** The isolated two-commit run passed against verified from-source binaries and exposed the cold/remote versus local distinction. Repeat with configured human identity, pending unselected edits and representative agent use. Do not push test commits or silently switch to another engine for authentication.
 5. **Continue A only where measurements justify it.** Remaining loop cost includes status/diff preparation, checkpoint/overlay composition, initial materialization and metadata walks. Reducing the duration of `withCommit` alone by deferring work to the next tool is not success. Do not widen eligibility by guessing filesystem equivalence.
 6. **Explore C separately when requested.** Compare per-repository/session stores and immutable pack sharing before proposing a global store. Specify reachability/pinning, graceful persistence versus crash durability, GC, authorization boundaries, shallow/partial/object-format support, concurrency/repacking, and logical versus physical byte accounting. Existing snapshot-owned objects are the current foundation, not an implemented object service.
 
