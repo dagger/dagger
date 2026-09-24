@@ -284,24 +284,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup directories and paths
 	//
 
-	srv.rootDir, err = filepath.Abs(srv.rootDir)
-	if err != nil {
+	if err := srv.initRootPaths(); err != nil {
 		return nil, err
 	}
-	srv.rootDir, err = filepath.EvalSymlinks(srv.rootDir)
-	if err != nil {
-		return nil, err
-	}
-
-	srv.workerRootDir = filepath.Join(srv.rootDir, "worker")
-	srv.snapshotterRootDir = filepath.Join(srv.workerRootDir, "snapshots")
-	srv.snapshotterDBPath = filepath.Join(srv.snapshotterRootDir, "metadata.db")
-	srv.contentStoreRootDir = filepath.Join(srv.workerRootDir, "content")
-	srv.containerdMetaDBPath = filepath.Join(srv.workerRootDir, "containerdmeta.db")
-	srv.workerCacheMetaDBPath = filepath.Join(srv.workerRootDir, "metadata_v2.db")
-	srv.buildkitMountPoolDir = filepath.Join(srv.workerRootDir, "cachemounts")
-
-	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
 
 	// Opened before the local cache state: the snapshot manager takes the
 	// builtin store at construction, for chain imports of builtin layers.
@@ -527,6 +512,28 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	return srv, nil
+}
+
+func (srv *Server) initRootPaths() error {
+	var err error
+	srv.rootDir, err = filepath.Abs(srv.rootDir)
+	if err != nil {
+		return err
+	}
+	srv.rootDir, err = filepath.EvalSymlinks(srv.rootDir)
+	if err != nil {
+		return err
+	}
+
+	srv.workerRootDir = filepath.Join(srv.rootDir, "worker")
+	srv.snapshotterRootDir = filepath.Join(srv.workerRootDir, "snapshots")
+	srv.snapshotterDBPath = filepath.Join(srv.snapshotterRootDir, "metadata.db")
+	srv.contentStoreRootDir = filepath.Join(srv.workerRootDir, "content")
+	srv.containerdMetaDBPath = filepath.Join(srv.workerRootDir, "containerdmeta.db")
+	srv.workerCacheMetaDBPath = filepath.Join(srv.workerRootDir, "metadata_v2.db")
+	srv.buildkitMountPoolDir = filepath.Join(srv.workerRootDir, "cachemounts")
+	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
+	return nil
 }
 
 func loadSecretSalt(rootDir string) ([]byte, error) {
