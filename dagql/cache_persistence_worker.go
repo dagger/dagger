@@ -20,7 +20,13 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.applyPersistStateSnapshot(ctx, snapshot)
+	if err := c.applyPersistStateSnapshot(ctx, snapshot); err != nil {
+		return err
+	}
+	c.egraphMu.Lock()
+	c.persistedResults = len(snapshot.results)
+	c.egraphMu.Unlock()
+	return nil
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity

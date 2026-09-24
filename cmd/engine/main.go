@@ -33,12 +33,14 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/stack"
 	"github.com/dagger/dagger/internal/buildkit/version"
 	"github.com/gofrs/flock"
+	"github.com/google/uuid"
 	"github.com/moby/sys/reexec"
 	"github.com/moby/sys/userns"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -317,6 +319,13 @@ func main() { //nolint:gocyclo
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
 	var resourceMetrics *sdkmetric.MeterProvider
 
+	// One random ID names this engine process in all its telemetry
+	// (service.instance.id), its cache facts included, and marks the epoch
+	// of its cumulative cgroup counters. It is created before the process
+	// telemetry so the process resource carries it.
+	engineInstanceID := uuid.NewString()
+	var factExport *cacheFactExport
+
 	app.Action = func(c *cli.Context) error {
 		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
 		defer cancel(errors.New("main done"))
@@ -347,7 +356,8 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		ctx = InitTelemetry(ctx)
+		var processResource *resource.Resource
+		ctx, processResource = InitTelemetry(ctx, engineInstanceID)
 
 		bklog.G(ctx).Debug("loading buildkit config file")
 		bkcfg, err := bkconfig.LoadFile(c.GlobalString("config"))
@@ -361,6 +371,7 @@ func main() { //nolint:gocyclo
 			return err
 		}
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
+		factExport = newCacheFactExport(ctx, processResource, cfg.Telemetry)
 
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancelCause(context.Background())
@@ -481,9 +492,11 @@ func main() { //nolint:gocyclo
 
 		bklog.G(ctx).Debug("creating engine server")
 		srv, err := server.NewServer(ctx, &server.NewServerOpts{
-			Name:           engineName,
-			Config:         &cfg,
-			BuildkitConfig: &bkcfg,
+			Name:             engineName,
+			Config:           &cfg,
+			BuildkitConfig:   &bkcfg,
+			EngineInstanceID: engineInstanceID,
+			CacheFactExport:  serverCacheFactExport(factExport),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
@@ -597,6 +610,9 @@ func main() { //nolint:gocyclo
 	app.After = func(*cli.Context) error {
 		fmt.Println("shutting down telemetry...")
 		defer fmt.Println("telemetry shut down complete")
+		// The server's close emitted engine.stop and queued every fact on the
+		// fact provider; flush them before the global providers close.
+		factExport.shutdownAtExit(ctx)
 		closeResourceMetrics(ctx, resourceMetrics)
 		telemetry.Close()
 		return nil

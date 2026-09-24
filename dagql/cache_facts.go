@@ -48,6 +48,9 @@ type cacheFactState struct {
 	factSeq uint64
 	// bootRestoredResults is the number of results the boot restore installed.
 	bootRestoredResults int
+	// persistedResults is the number of results the last successful
+	// persistence wrote.
+	persistedResults int
 }
 
 func (c *Cache) factsEnabled() bool {
@@ -85,6 +88,17 @@ func (c *Cache) BootRestoredResults() int {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	return c.bootRestoredResults
+}
+
+// PersistedResults returns the number of results the cache's last successful
+// persistence, normally at Close, wrote.
+func (c *Cache) PersistedResults() int {
+	if c == nil {
+		return 0
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.persistedResults
 }
 
 // EmitFact emits one fact that describes no cache mutation, such as the

@@ -70,9 +70,15 @@ type Server struct {
 	// engineInstanceID names this engine process: a random ID created once at
 	// startup. It names the engine in the dagql cache's facts.
 	engineInstanceID string
-	// cacheFacts receives the dagql cache's facts; nil when the engine emits
-	// none.
-	cacheFacts *cacheFactEmitter
+	// cacheFacts receives the dagql cache's facts and cacheFactExport sends
+	// them; both nil when the engine emits none. The alive loop reports
+	// liveness between start and stop. cacheFactShutdownBudget bounds the
+	// facts' whole shutdown.
+	cacheFacts              *cacheFactEmitter
+	cacheFactExport         CacheFactExport
+	cacheFactAliveStop      chan struct{}
+	cacheFactAliveStopped   chan struct{}
+	cacheFactShutdownBudget time.Duration
 
 	//
 	// state directory/db paths
@@ -200,9 +206,9 @@ type NewServerOpts struct {
 	// EngineInstanceID names this engine process. NewServer creates a random
 	// one when it is empty.
 	EngineInstanceID string
-	// EmitCacheFacts makes the dagql cache emit its bookkeeping facts as OTel
-	// log records through the logger provider of NewServer's context.
-	EmitCacheFacts bool
+	// CacheFactExport, when set, makes the dagql cache emit its bookkeeping
+	// facts as OTel log records through its logger.
+	CacheFactExport CacheFactExport
 }
 
 const (
@@ -240,8 +246,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		locker: locker.New(),
 	}
-	if opts.EmitCacheFacts {
-		srv.cacheFacts = newCacheFactEmitter(ctx)
+	if opts.CacheFactExport != nil {
+		srv.cacheFactExport = opts.CacheFactExport
+		srv.cacheFacts = newCacheFactEmitter(opts.CacheFactExport.Logger())
+		srv.cacheFactShutdownBudget = cacheFactShutdownTimeout
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
@@ -297,6 +305,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
 		return nil, err
 	}
+	srv.startCacheFacts()
 
 	// Sweep any worker state moved aside by a cache reset — this startup's or
 	// an interrupted sweep from a previous one — in the background.
@@ -938,19 +947,16 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		}
 	}
 
+	cleanCacheClose := false
 	if srv.engineCache != nil {
 		if closeErr := srv.engineCache.CloseWithShutdownError(ctx, adapterStopErr); closeErr != nil {
 			slog.Error("failed to close base dagql cache", "error", closeErr)
 			err = errors.Join(err, closeErr)
+		} else {
+			cleanCacheClose = true
 		}
 	}
-	if srv.cacheFacts != nil {
-		// Hand every queued fact to the process logger provider; its own
-		// flush at process exit delivers them.
-		if closeErr := srv.cacheFacts.Close(ctx); closeErr != nil {
-			slog.Warn("cache facts not drained before shutdown", "error", closeErr, "dropped", srv.cacheFacts.Dropped())
-		}
-	}
+	srv.stopCacheFacts(ctx, cleanCacheClose)
 
 	err = errors.Join(err, srv.engineUtilOpts.Close())
 

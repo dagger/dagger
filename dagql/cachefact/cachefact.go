@@ -40,8 +40,9 @@ const (
 	AttrVersion = "dagger.io/cache.fact.version"
 
 	// ResourceEngineInstance is the resource attribute naming the engine
-	// instance: one random ID per engine process.
-	ResourceEngineInstance = "dagger.io/engine.instance"
+	// instance: one random ID per engine process. It is OpenTelemetry's
+	// service.instance.id (semconv.ServiceInstanceIDKey).
+	ResourceEngineInstance = "service.instance.id"
 )
 
 // Kind names the kind of a fact.
