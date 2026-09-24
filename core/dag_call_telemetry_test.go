@@ -239,7 +239,7 @@ func TestAroundFuncRoutesPayloadsBeforeSpanDeduplication(t *testing.T) {
 		"a sibling delivery domain must receive the closure despite session-wide span dedupe")
 }
 
-func TestAroundFuncLogsOnlyPayloadsMissingFromSpans(t *testing.T) {
+func TestAroundFuncPersistsPayloadsCarriedBySpans(t *testing.T) {
 	agent, _, _ := skillsChain()
 	recorder, ctx := payloadRecorderCtx(t)
 	rootDigest, err := agent.RecipeDigest(ctx)
@@ -254,10 +254,22 @@ func TestAroundFuncLogsOnlyPayloadsMissingFromSpans(t *testing.T) {
 	var callErr error
 	done(nil, false, &callErr)
 
-	require.Equal(t, 4, recorder.emissionCount(),
-		"the root payload rides its span; only the four unspanned frames need logs")
-	require.Nil(t, recorder.get(rootDigest.String()),
-		"a payload carried by a recording span must not also be logged")
+	require.Equal(t, 5, recorder.emissionCount(),
+		"archive and Cloud verification need payload logs even for recording spans")
+	require.NotNil(t, recorder.get(rootDigest.String()),
+		"a span copy is not a protected payload delivery")
+
+	// A new spanned descendant must publish its own frame without re-emitting
+	// the receiver closure. Re-selecting it must remain idempotent as well.
+	next := testResultCall("withResponse", &Void{}, agent)
+	nextDigest, err := next.RecipeDigest(ctx)
+	require.NoError(t, err)
+	for range 2 {
+		_, done := AroundFunc(ctx, &dagql.CallRequest{ResultCall: next})
+		done(nil, false, &callErr)
+	}
+	require.Equal(t, 6, recorder.emissionCount())
+	require.NotNil(t, recorder.get(nextDigest.String()))
 }
 
 func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
@@ -267,7 +279,7 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	rootDigest, err := agent.RecipeDigest(ctx)
 	require.NoError(t, err)
 
-	recordCallPayloads(ctx, &testSeenKeys{}, rootDigest.String(), agent, false)
+	recordCallPayloads(ctx, &testSeenKeys{}, rootDigest.String(), agent)
 	require.Equal(t, rootDigest.String(), rec.firstDigest(), "the requested root must lead its closure")
 
 	records := rec.snapshot()
@@ -308,30 +320,30 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rec.get(withSkillsDigest.String()))
 
-	// The root uses the same log transport as every transitive frame; newly
-	// emitted spans carry only its digest.
+	// The root uses the same log transport as every transitive frame, even
+	// when it also has a legacy span copy.
 	rootCall := rec.get(rootDigest.String())
 	require.NotNil(t, rootCall, "the root frame was not published")
 	require.Equal(t, "agent", rootCall.Field)
 }
 
-func TestRecordCallPayloadsSkipsFramesDeliveredBySpans(t *testing.T) {
+func TestRecordCallPayloadsSkipsClaimedFrames(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	agent, withSkills, _ := skillsChain()
 	rootDigest, err := agent.RecipeDigest(ctx)
 	require.NoError(t, err)
-	spannedDigest, err := withSkills.RecipeDigest(ctx)
+	claimedDigest, err := withSkills.RecipeDigest(ctx)
 	require.NoError(t, err)
 
 	seen := &testSeenKeys{}
-	seen.CallPayloadDelivered(spannedDigest.String())
-	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
+	require.True(t, seen.ClaimCallPayload(claimedDigest.String()))
+	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
 
 	require.Equal(t, 4, rec.emissionCount())
-	require.Nil(t, rec.get(spannedDigest.String()),
-		"a transitive frame carried by a span must not also be logged")
+	require.Nil(t, rec.get(claimedDigest.String()),
+		"a transitive frame already claimed for payload delivery must not be logged again")
 	require.NotNil(t, rec.get(rootDigest.String()),
-		"an unspanned root must retain the log fallback")
+		"an unclaimed root must reach the payload log lane")
 }
 
 func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
@@ -341,13 +353,13 @@ func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 	require.NoError(t, err)
 
 	seen := &testSeenKeys{}
-	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
+	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
 	first := rec.emissionCount()
 	require.Equal(t, 5, first, "the initial root and its complete closure must be emitted")
 
 	// A second selection of the same call publishes nothing in this synchronous
 	// delivery fixture: the first walk covered the whole transitive closure.
-	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
+	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
 	require.Equal(t, first, rec.emissionCount())
 
 	// A LONGER chain over the same frames publishes only what is NEW: its own
@@ -364,7 +376,7 @@ func TestRecordCallPayloadsDedupesPerDeliveryDomain(t *testing.T) {
 	}}
 	longerDigest, err := longer.RecipeDigest(ctx)
 	require.NoError(t, err)
-	recordCallPayloads(ctx, seen, longerDigest.String(), longer, false)
+	recordCallPayloads(ctx, seen, longerDigest.String(), longer)
 	require.Equal(t, first+2, rec.emissionCount(), "only the new root and referenced frame should be published")
 	require.NotNil(t, rec.get(longerDigest.String()), "the new root frame was not published")
 	promptDigest, err := prompt.RecipeDigest(ctx)
@@ -380,7 +392,7 @@ func TestRecordCallPayloadsRequiresSeenKeyStore(t *testing.T) {
 	rootDigest, err := agent.RecipeDigest(ctx)
 	require.NoError(t, err)
 
-	recordCallPayloads(ctx, nil, rootDigest.String(), agent, false)
+	recordCallPayloads(ctx, nil, rootDigest.String(), agent)
 	require.Equal(t, 0, rec.len())
 }
 
@@ -402,7 +414,7 @@ func TestRecordCallPayloadsClaimsBeforeConcurrentWalks(t *testing.T) {
 	for range walks {
 		wg.Go(func() {
 			<-start
-			recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
+			recordCallPayloads(ctx, seen, rootDigest.String(), agent)
 		})
 	}
 	close(start)
@@ -412,6 +424,6 @@ func TestRecordCallPayloadsClaimsBeforeConcurrentWalks(t *testing.T) {
 
 	// Nothing has been persisted yet, but the claims are already spent: a
 	// sequential walk in that window must not re-emit either.
-	recordCallPayloads(ctx, seen, rootDigest.String(), agent, false)
+	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
 	require.Equal(t, 5, rec.emissionCount())
 }
