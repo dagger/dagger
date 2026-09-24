@@ -197,6 +197,75 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLLMRestoreSkipsSupersededToolConstruction(t *testing.T) {
+	for _, warm := range []bool{false, true} {
+		for _, sameSession := range []bool{false, true} {
+			t.Run(fmt.Sprintf("warm=%t/sameSession=%t", warm, sameSession), func(t *testing.T) {
+				md := &engine.ClientMetadata{ClientID: "source", SessionID: "source"}
+				ctx := engine.ContextWithClientMetadata(t.Context(), md)
+				cache, err := dagql.NewCache(ctx, "", nil, nil)
+				require.NoError(t, err)
+				ctx = dagql.ContextWithCache(ctx, cache)
+				server := &compositionTestServer{currentTypeDefsTestServer: &currentTypeDefsTestServer{mainClient: md}}
+				root := core.NewRoot(server)
+				ctx = core.ContextWithQuery(ctx, root)
+				base, err := NewCoreSchemaBase(ctx, server)
+				require.NoError(t, err)
+				srv, err := base.Fork(ctx, root, "")
+				require.NoError(t, err)
+				server.dag = srv
+				const resource = dagql.SessionResourceHandle("superseded-tool-resource")
+				require.NoError(t, cache.BindSessionResource(ctx, md.SessionID, md.ClientID, resource, "source-only"))
+				calls := 0
+				fail := false
+				dagql.Fields[*core.Query]{
+					dagql.NodeFunc("replacementTool", func(ctx context.Context, _ dagql.ObjectResult[*core.Query], _ struct{ Name string }) (dagql.ObjectResult[*core.TypeDef], error) {
+						calls++
+						if fail {
+							return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("tool construction must remain lazy")
+						}
+						obj, err := dagql.NewObjectResultForCurrentCall(ctx, srv, &core.TypeDef{})
+						if err != nil {
+							return obj, err
+						}
+						return obj.WithSessionResourceHandle(ctx, resource)
+					}),
+				}.Install(srv)
+				var seed dagql.ObjectResult[*core.LLM]
+				require.NoError(t, srv.Select(ctx, srv.Root(), &seed, dagql.Selector{
+					Field: "llm", Args: []dagql.NamedInput{{Name: "model", Value: dagql.Opt(dagql.String("test-model"))}},
+				}))
+				recipe, err := seed.RecipeID(ctx)
+				require.NoError(t, err)
+				for _, name := range []string{"A", "B"} {
+					objectRecipe := call.New().Append((&core.TypeDef{}).Type(), "replacementTool",
+						call.WithArgs(call.NewArgument("name", call.NewLiteralString(name), false)))
+					if warm {
+						_, err := srv.Load(ctx, objectRecipe)
+						require.NoError(t, err)
+					}
+					recipe = recipe.Append((&core.LLM{}).Type(), "withTools", call.WithArgs(
+						call.NewArgument("object", call.NewLiteralID(objectRecipe), false),
+						call.NewArgument("owner", call.NewLiteralString("owner-"+name), false),
+					))
+				}
+				calls, fail = 0, true
+				if !sameSession {
+					ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "destination", SessionID: "destination"})
+				}
+				if !warm {
+					cache, err = dagql.NewCache(ctx, "", nil, nil)
+					require.NoError(t, err)
+					ctx = dagql.ContextWithCache(ctx, cache)
+				}
+				_, err = srv.Load(ctx, recipe)
+				require.NoError(t, err)
+				require.Zero(t, calls, "loading the final LLM must not construct either tool object")
+			})
+		}
+	}
+}
+
 func TestLLMCommittedLeafRestore(t *testing.T) {
 	newSession := func(name string) (context.Context, *dagql.Server) {
 		md := &engine.ClientMetadata{ClientID: name, SessionID: name}
