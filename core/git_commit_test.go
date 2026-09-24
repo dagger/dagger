@@ -252,6 +252,39 @@ func TestGitNativeCommitObjectMetrics(t *testing.T) {
 	require.Equal(t, int64(len("new object")), metrics["dagger.git.native.new_object_bytes"])
 }
 
+func TestGitNativeCommitRefStorageEligibility(t *testing.T) {
+	for _, storage := range []string{"files", "reftable"} {
+		for _, bare := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/bare=%t", storage, bare), func(t *testing.T) {
+				root := t.TempDir()
+				args := []string{"init", "-b", "main", "--ref-format=" + storage}
+				if bare {
+					args = append(args, "--bare")
+				}
+				_, err := runWorkspaceCommitGit(t.Context(), root, nil, args...)
+				require.NoError(t, err)
+				before := localTreeSnapshot(t, root)
+				gitDir, err := nativeCommitGitDir(t.Context(), root)
+				if storage == "files" {
+					require.NoError(t, err)
+					want := filepath.Join(root, ".git")
+					if bare {
+						want = root
+					}
+					require.Equal(t, want, gitDir)
+				} else {
+					require.ErrorIs(t, err, errNativeCommitUnsupported)
+					var reason nativeCommitUnsupportedReason
+					require.ErrorAs(t, err, &reason)
+					require.Equal(t, "ref-storage", string(reason))
+					require.True(t, nativeCommitFallback(err))
+				}
+				require.Equal(t, before, localTreeSnapshot(t, root), "eligibility must not mutate storage")
+			})
+		}
+	}
+}
+
 func TestGitNativeCommitStorageEligibility(t *testing.T) {
 	for unsupported, reason := range map[string]string{
 		"shallow": "shallow-history", "objects/info/alternates": "object-alternates",

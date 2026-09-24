@@ -336,7 +336,13 @@ func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
 		return "", err
 	}
 	for _, setting := range strings.Split(config, "\x00") {
-		key, _, _ := strings.Cut(setting, "\n")
+		key, value, _ := strings.Cut(setting, "\n")
+		// Publication writes loose refs and replaces the source config with a
+		// fresh files-backend config. Keeping a reftable while discarding its
+		// extension would lose every inherited ref (and may fail to write HEAD).
+		if key == "extensions.refstorage" && value != "files" {
+			return "", nativeCommitUnsupportedReason("ref-storage")
+		}
 		if key == "extensions.partialclone" || (strings.HasPrefix(key, "remote.") && strings.HasSuffix(key, ".promisor")) {
 			return "", nativeCommitUnsupportedReason("partial-repository")
 		}
