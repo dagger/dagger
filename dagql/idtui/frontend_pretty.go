@@ -311,6 +311,7 @@ type frontendPretty struct {
 	notifications         map[string]*NotificationBubble // keyed by section title
 	notificationContainer *tuist.Container
 	notificationOverlay   *tuist.OverlayHandle
+	notificationsHidden   bool
 
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
@@ -1039,6 +1040,7 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 					Anchor: tuist.AnchorTopRight,
 					Margin: tuist.OverlayMargin{Right: 1},
 				})
+				fe.notificationOverlay.SetHidden(fe.notificationsHidden)
 			}
 
 			// Untitled goes first, titled appends
@@ -1055,6 +1057,15 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 
 		fe.Update()
 	})
+}
+
+// toggleNotifications hides the bubbles without discarding their content, so
+// updates received while hidden are visible when they are shown again.
+func (fe *frontendPretty) toggleNotifications() {
+	fe.notificationsHidden = !fe.notificationsHidden
+	if fe.notificationOverlay != nil {
+		fe.notificationOverlay.SetHidden(fe.notificationsHidden)
+	}
 }
 
 // SetStatusLine updates the compact status line with LLM token/cost/context
@@ -2961,6 +2972,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	if fe.inputFocused() {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
+			key.NewBinding(key.WithKeys("ctrl+o"), key.WithHelp("ctrl+o", "toggle overlays")),
 		}
 		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
 			bnds = append(bnds,
@@ -2994,6 +3006,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
 			KeyEnabled(fe.shell != nil)),
+		key.NewBinding(key.WithKeys("ctrl+o"),
+			key.WithHelp("ctrl+o", "toggle overlays"),
+			KeyEnabled(fe.shell != nil || fe.notificationOverlay != nil)),
 		key.NewBinding(key.WithKeys("w"),
 			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
 			KeyEnabled(fe.cloudURL != "")),
@@ -5566,6 +5581,9 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 	}
 
 	switch keyStr {
+	case "ctrl+o":
+		fe.toggleNotifications()
+		return true
 	case "ctrl+v":
 		if fe.acceptsPromptImages() {
 			fe.pastePromptImage()
@@ -5620,35 +5638,7 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.syncPrompt()
 		return true
 	case "alt+up":
-		// Pull a queued message (one submitted while a non-prompt turn was
-		// running; see handleInputComplete) back into the input for editing.
-		// Slightly racy: if the turn just finished, handleShellDone already
-		// consumed the message to start it as a new turn. Legacy text handlers
-		// can fall back to the label; typed queues must not recreate attachments
-		// from their payload-free summary.
-		// Prompt-turn interjections never land here: they are sent to the
-		// agent immediately, with nothing left client-side to recall -- the
-		// Sent check below keeps alt+up from "recalling" a message the agent
-		// is already going to read.
-		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
-			shown := PromptInput{Text: fe.queuedMsgLabel.Message()}
-			if input := fe.clearQueuedPrompt(); !input.Empty() {
-				shown = input
-			} else if _, typed := fe.shell.(PromptInputHandler); typed {
-				// The typed queue already drained. Its payload-free label cannot
-				// reconstruct an image-bearing prompt or safely duplicate a send.
-				return true
-			}
-			fe.cancelImagePaste()
-			fe.historyIndex = -1
-			fe.historySaved = ""
-			fe.historyImages = nil
-			fe.textInput.SetValue(shown.Text)
-			fe.promptImages = shown.Images
-			fe.syncPrompt()
-			return true
-		}
-		return false
+		return fe.recallQueuedPrompt()
 	case "up", "down":
 		// Let TextInput move within multiline or wrapped input. At the visual
 		// boundary it bubbles the key to PromptFrame for history navigation.
@@ -5680,6 +5670,39 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 	}
 
 	return false // let TextInput handle it
+}
+
+// recallQueuedPrompt pulls a queued message (one submitted while a non-prompt
+// turn was running; see handleInputComplete) back into the input for editing.
+// It returns whether the key was consumed.
+func (fe *frontendPretty) recallQueuedPrompt() bool {
+	// Slightly racy: if the turn just finished, handleShellDone already
+	// consumed the message to start it as a new turn. Legacy text handlers
+	// can fall back to the label; typed queues must not recreate attachments
+	// from their payload-free summary.
+	// Prompt-turn interjections never land here: they are sent to the
+	// agent immediately, with nothing left client-side to recall -- the
+	// Sent check below keeps alt+up from "recalling" a message the agent
+	// is already going to read.
+	if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
+		shown := PromptInput{Text: fe.queuedMsgLabel.Message()}
+		if input := fe.clearQueuedPrompt(); !input.Empty() {
+			shown = input
+		} else if _, typed := fe.shell.(PromptInputHandler); typed {
+			// The typed queue already drained. Its payload-free label cannot
+			// reconstruct an image-bearing prompt or safely duplicate a send.
+			return true
+		}
+		fe.cancelImagePaste()
+		fe.historyIndex = -1
+		fe.historySaved = ""
+		fe.historyImages = nil
+		fe.textInput.SetValue(shown.Text)
+		fe.promptImages = shown.Images
+		fe.syncPrompt()
+		return true
+	}
+	return false
 }
 
 // handlePromptFrameKey handles editor keys that TextInput bubbled at a visual
@@ -5718,6 +5741,10 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	keyStr := k.String()
 	lastKey := fe.pressedKey
 	fe.recordKeyPress(keyStr)
+	if keyStr == "ctrl+o" {
+		fe.toggleNotifications()
+		return
+	}
 	if fe.logPager != nil {
 		switch keyStr {
 		case "q", "esc", "alt+esc":

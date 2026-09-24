@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -9,8 +10,71 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
+	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 )
+
+func TestNotificationToggle(t *testing.T) {
+	for _, mode := range []string{"prompt", "navigation"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "1")
+			fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+			fe.setupTUI()
+			fe.startShell(context.Background(), &stubShellHandler{})
+			fe.tui.Step()
+			fe.textInput.SetValue("unfinished draft")
+			if mode == "navigation" {
+				fe.tui.Inject(tuist.ParseKey("esc"))
+				fe.tui.Step()
+			}
+			focused := fe.tui.Focused()
+			require.Contains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "ctrl+o toggle overlays")
+
+			setSection := func(title, body string) {
+				fe.SetSidebarContent(SidebarSection{
+					Title:       title,
+					ContentFunc: func(int) string { return body },
+				})
+			}
+			screen := func() string { return strings.Join(fe.tui.Step(), "\n") }
+			toggle := func() string {
+				fe.tui.Inject(tuist.ParseKey("ctrl+o"))
+				frame := screen()
+				require.Equal(t, "unfinished draft", fe.textInput.Value())
+				require.Same(t, focused, fe.tui.Focused(), "toggle must not change focus")
+				return frame
+			}
+
+			// Remember the preference even before the first bubble arrives.
+			toggle()
+			setSection("Changes", "original change")
+			setSection("References", "original reference")
+			require.NotContains(t, screen(), "original change")
+			require.NotContains(t, screen(), "original reference")
+
+			frame := toggle()
+			require.Contains(t, frame, "original change")
+			require.Contains(t, frame, "original reference")
+			frame = toggle()
+			require.NotContains(t, frame, "original change")
+			require.NotContains(t, frame, "original reference")
+
+			// Both existing and new bubbles keep updating without reappearing.
+			setSection("Changes", "updated change")
+			setSection("References", "updated reference")
+			setSection("", "new untitled bubble")
+			frame = screen()
+			require.NotContains(t, frame, "updated change")
+			require.NotContains(t, frame, "updated reference")
+			require.NotContains(t, frame, "new untitled bubble")
+			frame = toggle()
+			require.Contains(t, frame, "updated change")
+			require.Contains(t, frame, "updated reference")
+			require.Contains(t, frame, "new untitled bubble")
+			require.NotContains(t, frame, "original change")
+		})
+	}
+}
 
 // TestNotificationTopBorderWidth guards against a width miscalculation in the
 // notification bubble's top border. When the title + keymap nearly fill the
