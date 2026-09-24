@@ -1,6 +1,6 @@
 # Demand-Driven Workspace Module Loading
 
-Scope: `dagger generate` / `check` / `up` and raw execution queries.
+Scope: `dagger generate` / `check` / `start` and raw execution queries.
 `dagger call` / `functions` are explicitly out of scope — see
 [Out of scope](#out-of-scope-dagger-call--functions).
 
@@ -26,7 +26,7 @@ Scope: `dagger generate` / `check` / `up` and raw execution queries.
    trying to fix by running generate.
 3. **Narrowing is SingleQuery-only** — `narrowPendingWorkspaceModulesForSingleQuery`
    drops pending modules based on root fields, which is only safe under the
-   single-request promise. `generate` / `check` / `up` are structurally
+   single-request promise. `generate` / `check` / `start` are structurally
    multi-request and cannot use it.
 
 ## Solution
@@ -140,12 +140,12 @@ Engine-only. Zero CLI changes, zero API changes:
 | Command | Today (main) | This change |
 |---|---|---|
 | `dagger generate good` | loads all | loads `good` — the CLI **already sends** `generators(include: ["good"])`; the resolver narrows from it |
-| `dagger check good` / `dagger up good` | loads all | loads `good` (same: `include` is already in the query) |
+| `dagger check good` / `dagger start good` | loads all | loads `good` (same: `include` is already in the query) |
 | `dagger query '{ good { verify } }'` | narrowed only with `--single-query` | narrowed for every client, root-field demand |
 | `dagger call good verify`, bare `dagger functions`, `shell`, `mcp` | loads all | loads all (unchanged — see below) |
 
 A broken or stale sibling module can no longer block a scoped `generate` /
-`check` / `up`, including the case where running `generate` is itself the fix.
+`check` / `start`, including the case where running `generate` is itself the fix.
 
 ## Out of scope: `dagger call` / `functions`
 

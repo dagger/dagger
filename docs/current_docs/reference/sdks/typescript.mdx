@@ -623,7 +623,7 @@ Commit generated SDK files so consumers and CI can build the module. Run `dagger
 
 A useful, reusable module provides at least one first-class function type:
 a **check** (run by `dagger check`), a **generator** (run by `dagger generate`),
-or a **service** (started by `dagger up`). Each is a regular `@func()` annotated
+or a **service** (started by `dagger start`). Each is a regular `@func()` annotated
 with an additional decorator.
 
 ### Checks {#checks}
@@ -731,11 +731,11 @@ project-specific output (API clients, config, scaffolding) and are run by
 ### Services {#up-services}
 
 A service is a long-running container, such as a database, web server, or other
-dependency. Mark a `@func()` with `@up()` and return a `Service`. `dagger up`
+dependency. Mark a `@func()` with `@start()` and return a `Service`. `dagger start`
 starts every service in the module. See [Services](../../using/services.mdx).
 
 ```typescript
-import { Service, dag, object, func, up } from "@dagger.io/dagger"
+import { Service, dag, object, func, start } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -743,7 +743,7 @@ class MyModule {
    * A web server service
    */
   @func()
-  @up()
+  @start()
   web(): Service {
     return dag.container().from("nginx:alpine").withExposedPort(80).asService()
   }
@@ -752,7 +752,7 @@ class MyModule {
    * A redis service
    */
   @func()
-  @up()
+  @start()
   redis(): Service {
     return dag.container().from("redis:alpine").withExposedPort(6379).asService()
   }
@@ -760,10 +760,10 @@ class MyModule {
 ```
 
 ```shell
-dagger up
+dagger start
 ```
 
-The `@up()` decorator goes below `@func()`, and the function returns a `Service`
+The `@start()` decorator goes below `@func()`, and the function returns a `Service`
 built from a container with `.asService()`.
 
 ### Cache directive

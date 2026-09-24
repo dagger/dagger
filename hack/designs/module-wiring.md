@@ -7,7 +7,7 @@
 Generic reusable modules cannot compose with each other when one module needs a
 running service provided by another. For example:
 
-- A **docusaurus** module knows how to start a documentation site (`+up` function).
+- A **docusaurus** module knows how to start a documentation site (`+start` function).
 - A **playwright** module knows how to run browser tests against a web app (`+check`
   function that accepts a `Service` constructor arg).
 - Both modules are installed in the same workspace, but neither is aware of the other.
@@ -22,7 +22,7 @@ Extend the address mechanism that already backs `settings.*` values and CLI flag
 support **module wiring**: a value that resolves to the output of a function on
 another installed workspace module. Five types are supported today:
 
-- **`Service`** — conventionally referencing a `+up` function (the original
+- **`Service`** — conventionally referencing a `+start` function (the original
   motivation), though any `Service`-returning function resolves.
 - **`Container`** — referencing any function that returns a `Container`.
 - **`Directory`** — referencing any function that returns a `Directory`.
@@ -65,8 +65,8 @@ leading segment keys on the workspace **install name** (the `[modules.X]` key in
 same `dagger.toml`), not the module's type name; these usually coincide but diverge
 when a module is installed under an alias, and the install name wins. The second
 segment is a zero-arg function on that module. Any correctly-typed zero-arg function
-resolves — `+up` is a *discovery convention* for services (its path is also a valid
-call path, so `dagger up -l` is a convenient place to copy a `Service` ref from), not
+resolves — `+start` is a *discovery convention* for services (its path is also a valid
+call path, so `dagger start -l` is a convenient place to copy a `Service` ref from), not
 a gate; `Container` refs have no verb at all.
 
 #### Precedence: commit-on-match
@@ -255,10 +255,10 @@ fully-qualified registry path is the documented remedy.
 
 ## Non-Goals
 
-- **Service groups / profiles**: Running a named subset of services via `dagger up` is
+- **Service groups / profiles**: Running a named subset of services via `dagger start` is
   out of scope for this design. Will be addressed separately.
 - **General-purpose cross-module wiring**: today's references are scoped to
-  `Service` (via `+up`), `Container`, `Directory`, `File`, and `Workspace`. Wiring
+  `Service` (via `+start`), `Container`, `Directory`, `File`, and `Workspace`. Wiring
   other types (such as `Secret`) across modules is a natural follow-up but not in
   scope yet.
 - **Config-time validation**: References are validated at runtime. Static config

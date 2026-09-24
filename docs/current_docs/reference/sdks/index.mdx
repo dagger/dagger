@@ -45,9 +45,9 @@ A module can expose plain functions that just return values. That's valid and co
 
 - **Checks** validate the project: tests, linters, scans, policy. They run with `dagger check`, locally, in CI, and as Cloud Checks.
 - **Generators** produce source changes as reviewable [changesets](../../using/generating.mdx): codegen, formatting, lockfile updates. They run with `dagger generate`.
-- **Services** expose a long-running process such as a database, web server, or proxy, started with `dagger up`.
+- **Services** expose a long-running process such as a database, web server, or proxy, started with `dagger start`.
 
-You mark a function as one of these in your SDK with `@check`, `@generate`, `@up`, or the language's equivalent; see your [SDK guide](#choose-your-sdk). A module that offers none of them is often better left as a plain function call than packaged as a module.
+You mark a function as one of these in your SDK with `@check`, `@generate`, `@start`, or the language's equivalent; see your [SDK guide](#choose-your-sdk). A module that offers none of them is often better left as a plain function call than packaged as a module.
 
 Round these out with the rest of the platform: settings and environments for team and per-context defaults, explicit `Secret` inputs for credentials, and Dagger Cloud for traces and remote execution.
 
@@ -64,5 +64,5 @@ Pick a language to build in. Each guide covers its syntax, project layout, devel
 - **[TypeScript](./typescript.mdx).** Decorators and a generated client, on Bun, Deno, or Node.
 - **[Python](./python.mdx).** Type hints, decorators, and a generated client.
 - **[Java](./java.mdx).** Annotations on plain classes. The SDK is vendored into the module and every generated file is committed, so `mvn package` builds it without Dagger.
-- **[PHP](./php.mdx).** Attributes on plain classes and a generated client. Checks work; generators and `up` services don't exist yet.
-- **[Elixir](./elixir.mdx).** `defn` and typespecs, with a generated client under `dagger_sdk/`. Checks work; generators and `up` services don't exist yet.
+- **[PHP](./php.mdx).** Attributes on plain classes and a generated client. Checks work; generators and services for `dagger start` don't exist yet.
+- **[Elixir](./elixir.mdx).** `defn` and typespecs, with a generated client under `dagger_sdk/`. Checks work; generators and services for `dagger start` don't exist yet.

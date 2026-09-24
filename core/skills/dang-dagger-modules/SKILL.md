@@ -150,7 +150,7 @@ type Test {
 ## Directives Dagger consumes
 
 - Function-level: `@check` (marks a check; typically on `Void` returns),
-  `@generate` (on Changeset-returning generators), `@up` (on `Service!`),
+  `@generate` (on Changeset-returning generators), `@start` (on `Service!`),
   `@agent` (see below), `@cache`.
 - Arg-level: `@defaultPath(path: ...)` on `Directory!` args — relative paths
   resolve against the module, `"/"` against the context root;
