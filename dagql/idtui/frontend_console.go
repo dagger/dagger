@@ -535,7 +535,7 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  GET  /span?id=<hex>  span detail: status, error, timing, flags, parent chain, direct children\n"+
 		"  GET  /timings?root=<hex>[&minDuration=10ms&limit=200]  loaded subtree wall timings (0 limit = unlimited)\n"+
 		"  GET  /id?dig=<dig>   encoded dagql ID rebuilt for a call digest\n"+
-		"  GET  /calls?grep=<re> content-search ingested call payloads (args untruncated)\n"+
+		"  GET  /calls?grep=<re> content-search ingested call payloads (full search, bounded previews)\n"+
 		"  GET  /toolset        the interactive LLM session's tool docs, when one is live\n"+
 		"  GET  /agents         trace-derived roster (handles, names, state, parent, spans)\n"+
 		"  GET  /transcript?agent=<handle|name>[&role=user&tool=...&grep=...&offset=0&limit=20]\n"+

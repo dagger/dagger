@@ -535,9 +535,10 @@ type TuiQa {
   """
   Content-search every call payload the TUI has ingested: a regex matched
   against one line per call — "digest field(args) -> Type recv=digest" — with
-  argument literals UNTRUNCATED. The tool for "which call references this
-  path/image/value" and for walking a chain by grepping the digest another
-  line names.
+  full argument literals searched before display truncation. Long strings show
+  bounded excerpts, and responses are size-limited. The tool for "which call
+  references this path/image/value" and for walking a chain by grepping the
+  digest another line names.
   """
   calls(grep: String!): String! @cache(policy: FunctionCachePolicy.Never) {
     get("/calls?grep=" + grep
