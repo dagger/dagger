@@ -186,6 +186,33 @@ func (reason nativeCommitUnsupportedReason) Is(target error) bool {
 	return target == errNativeCommitUnsupported
 }
 
+// nativeCommitFallback accepts an error only when every leaf is an explicit
+// unsupported marker. Mount cleanup joins errors with the operation's error;
+// errors.Is alone would hide a real unmount failure joined to a fallback reason.
+func nativeCommitFallback(err error) bool {
+	switch err := err.(type) {
+	case nil:
+		return false
+	case interface{ Unwrap() []error }:
+		children := err.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !nativeCommitFallback(child) {
+				return false
+			}
+		}
+		return true
+	case interface{ Unwrap() error }:
+		return nativeCommitFallback(err.Unwrap())
+	case nativeCommitUnsupportedReason:
+		return true
+	default:
+		return err == errNativeCommitUnsupported
+	}
+}
+
 // GitCommitChangesetNative records a same-base changeset using sparse staging,
 // without checking out the parent tree or copying its history for the commit.
 // Computing a not-yet-evaluated Directory changeset can still materialize its
@@ -236,7 +263,13 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 			})
 		})
 	})
-	if errors.Is(err, errNativeCommitUnsupported) {
+	err = errors.Join(err, ctx.Err())
+	if err != nil && dir != nil {
+		// A cancellation observed after snapshot commit still owns that
+		// snapshot. Do not abandon it when returning an error or fallback.
+		err = errors.Join(err, dir.OnRelease(context.WithoutCancel(ctx)))
+	}
+	if nativeCommitFallback(err) {
 		var reason nativeCommitUnsupportedReason
 		if errors.As(err, &reason) {
 			span.SetAttributes(attribute.String("dagger.git.native.fallback_reason", string(reason)))
