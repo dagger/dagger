@@ -276,6 +276,10 @@ func applyIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, de
 	for _, p := range plan.checkout {
 		touched[p] = true
 	}
+	return normalizeIncrementalGitCheckout(ctx, root, dest, touched)
+}
+
+func normalizeIncrementalGitCheckout(ctx context.Context, root *os.Root, dest string, touched map[string]bool) error {
 	times := []unix.Timespec{{Sec: 1}, {Sec: 1}}
 normalize:
 	for p := range touched {

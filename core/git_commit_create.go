@@ -160,7 +160,7 @@ func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult
 	if base.Repo.Self() == nil {
 		return false, nil
 	}
-	if !(lazy.DiscardGitDir || base.Repo.Self().DiscardGitDir) || base.Ref.SHA != ref.Ref.SHA {
+	if !lazy.DiscardGitDir && !base.Repo.Self().DiscardGitDir || base.Ref.SHA != ref.Ref.SHA {
 		return false, nil
 	}
 	baseRepo, err := base.Repo.RecipeDigest(ctx)
@@ -368,26 +368,8 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	if branchName != "" && !strings.HasPrefix(branchName, "refs/heads/") {
 		return nativeCommitUnsupportedReason("ref-kind")
 	}
-	if _, err := time.Parse(time.RFC3339, opts.Date); err != nil {
-		return fmt.Errorf("commit date must be RFC3339: %w", err)
-	}
-	if strings.TrimSpace(opts.Message) == "" || strings.ContainsRune(opts.Message, 0) {
-		return fmt.Errorf("commit message must be nonempty and contain no NUL")
-	}
-	if opts.AuthorName == "" {
-		opts.AuthorName = "Dagger"
-	}
-	if opts.AuthorEmail == "" {
-		opts.AuthorEmail = "dagger@localhost"
-	}
-	if opts.CommitterName == "" {
-		opts.CommitterName = opts.AuthorName
-	}
-	if opts.CommitterEmail == "" {
-		opts.CommitterEmail = opts.AuthorEmail
-	}
-	if opts.CommitterDate == "" {
-		opts.CommitterDate = opts.Date
+	if err := normalizeNativeCommitOpts(&opts); err != nil {
+		return err
 	}
 	paths = paths.withoutGitMeta()
 	stagePaths := commitStagePaths(paths)
@@ -465,6 +447,35 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	return publishNativeCommit(gitDir, meta, branchName, sha, run)
+}
+
+func normalizeNativeCommitOpts(opts *GitCommitOpts) error {
+	if _, err := time.Parse(time.RFC3339, opts.Date); err != nil {
+		return fmt.Errorf("commit date must be RFC3339: %w", err)
+	}
+	if strings.TrimSpace(opts.Message) == "" || strings.ContainsRune(opts.Message, 0) {
+		return fmt.Errorf("commit message must be nonempty and contain no NUL")
+	}
+	if opts.AuthorName == "" {
+		opts.AuthorName = "Dagger"
+	}
+	if opts.AuthorEmail == "" {
+		opts.AuthorEmail = "dagger@localhost"
+	}
+	if opts.CommitterName == "" {
+		opts.CommitterName = opts.AuthorName
+	}
+	if opts.CommitterEmail == "" {
+		opts.CommitterEmail = opts.AuthorEmail
+	}
+	if opts.CommitterDate == "" {
+		opts.CommitterDate = opts.Date
+	}
+	return nil
+}
+
+func publishNativeCommit(gitDir, meta, branchName, sha string, run func(...string) (string, error)) error {
 	// Publish only inside the private COW child. No source ref or index is
 	// modified. Unlike a fresh fetch, this prototype retains unrelated source
 	// refs/tags rather than traversing history to reproduce fetch's tag pruning.
