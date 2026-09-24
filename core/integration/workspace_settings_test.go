@@ -834,6 +834,44 @@ retries = 0
 	})
 }
 
+// TestWorkspaceSettingsObjectListValues locks in how settings typed as lists
+// of address-backed objects ([File!], [Container!], ...) are discovered and
+// written: they are list settings whose elements are address strings, so the
+// CLI stores them as TOML arrays and lists them like any other setting.
+func (WorkspaceSuite) TestWorkspaceSettingsObjectListValues(ctx context.Context, t *testctx.T) {
+	const pkgConfig = `[modules.packager]
+source = "modules/packager"
+`
+
+	t.Run("object list settings are discoverable", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, pkgConfig, workspaceSettingsFileListModule("modules/packager", "packager"))
+
+		out, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "packager")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "files")
+	})
+
+	t.Run("variadic values for an object list setting store an array of addresses", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, pkgConfig, workspaceSettingsFileListModule("modules/packager", "packager"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "packager", "files", "builder:binary", "frontend:assets")
+		require.NoError(t, err)
+		require.Equal(t,
+			[]any{"builder:binary", "frontend:assets"},
+			readInstalledWorkspaceConfig(t, workdir).Modules["packager"].Settings["files"])
+	})
+
+	t.Run("a bracketed value for an object list setting is read as an array literal", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, pkgConfig, workspaceSettingsFileListModule("modules/packager", "packager"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "packager", "files", `[builder:binary, frontend:assets]`)
+		require.NoError(t, err)
+		require.Equal(t,
+			[]any{"builder:binary", "frontend:assets"},
+			readInstalledWorkspaceConfig(t, workdir).Modules["packager"].Settings["files"])
+	})
+}
+
 // TestWorkspaceSettingsRemoteWorkspace covers settings discovery against a
 // remote workspace selected with -W: local module sources must resolve from
 // the cloned workspace tree instead of requiring a host path.
@@ -1006,6 +1044,30 @@ func New(
 		Retries:  retries,
 		Tags:     tags,
 	}
+}
+`,
+	}
+}
+
+func workspaceSettingsFileListModule(relDir, name string) workspaceSettingsModuleFixture {
+	return workspaceSettingsModuleFixture{
+		relDir: relDir,
+		name:   name,
+		main: `package main
+
+import "dagger/` + name + `/internal/dagger"
+
+type Packager struct {
+	Files []*dagger.File
+}
+
+func New(
+	// Artifacts to package, each an address string (a path or a
+	// "<module>:<function>" reference).
+	// +optional
+	files []*dagger.File,
+) *Packager {
+	return &Packager{Files: files}
 }
 `,
 	}

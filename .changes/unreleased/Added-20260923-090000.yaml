@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  Module wiring now supports lists of objects (e.g. `[File!]`): a constructor
+  argument typed as a list of `File`, `Directory`, `Container`, `Service`, or
+  other address-backed objects can be wired from workspace settings with an
+  array of `"<module>:<function>"` references, each element resolving through
+  the same address decoders as single-object settings.
+time: 2026-09-23T09:00:00Z
+custom:
+  Author: eternalphane
+  PR: 14324

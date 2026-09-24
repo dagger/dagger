@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"dagger/service-ref-consumer/internal/dagger"
 )
@@ -15,6 +16,7 @@ type ServiceRefConsumer struct {
 	Base            *dagger.Container
 	Directory       *dagger.Directory
 	File            *dagger.File
+	Files           []*dagger.File
 	WorkspaceMarker *dagger.File
 	Label           string
 }
@@ -29,6 +31,8 @@ func New(
 	// +optional
 	file *dagger.File,
 	// +optional
+	files []*dagger.File,
+	// +optional
 	sourceWorkspace *dagger.Workspace,
 	// +optional
 	label string,
@@ -38,7 +42,7 @@ func New(
 		workspaceMarker = sourceWorkspace.File("marker.txt")
 	}
 	return &ServiceRefConsumer{
-		App: app, Base: base, Directory: directory, File: file,
+		App: app, Base: base, Directory: directory, File: file, Files: files,
 		WorkspaceMarker: workspaceMarker,
 		Label:           label,
 	}
@@ -77,6 +81,23 @@ func (m *ServiceRefConsumer) FileProvidedBy(ctx context.Context) (string, error)
 		return "none", nil
 	}
 	return m.File.Contents(ctx)
+}
+
+// Returns the contents of the provided files joined by newlines, or "none" if
+// no files were provided.
+func (m *ServiceRefConsumer) FilesProvidedBy(ctx context.Context) (string, error) {
+	if len(m.Files) == 0 {
+		return "none", nil
+	}
+	contents := make([]string, 0, len(m.Files))
+	for _, f := range m.Files {
+		c, err := f.Contents(ctx)
+		if err != nil {
+			return "", err
+		}
+		contents = append(contents, c)
+	}
+	return strings.Join(contents, "\n"), nil
 }
 
 // Returns the contents of the marker in the provided workspace, or "none" if

@@ -97,9 +97,11 @@ func (*Module) TypeDescription() string {
 	return "A Dagger module."
 }
 
-var _ dagql.PersistedObject = (*Module)(nil)
-var _ dagql.PersistedObjectDecoder = (*Module)(nil)
-var _ dagql.HasDependencyResults = (*Module)(nil)
+var (
+	_ dagql.PersistedObject        = (*Module)(nil)
+	_ dagql.PersistedObjectDecoder = (*Module)(nil)
+	_ dagql.HasDependencyResults   = (*Module)(nil)
+)
 
 func (mod *Module) Name() string {
 	return mod.NameField
@@ -381,11 +383,28 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 	return modDefaults.Namespace(ctx, objName)
 }
 
+// isObjectOrObjectListTypeDef reports whether td is an object, or a list of
+// objects. Settings for these args store address strings (one per element for
+// lists) resolved through the Address decoders at call time, so they are
+// optionalized rather than given a JSON DefaultValue, which cannot decode as
+// an ID literal (see Function.FieldSpec in typedef.go).
+func isObjectOrObjectListTypeDef(td *TypeDef) bool {
+	if td.Kind == TypeDefKindObject {
+		return true
+	}
+	return td.Kind == TypeDefKindList &&
+		td.AsList.Valid &&
+		td.AsList.Value.Self() != nil &&
+		td.AsList.Value.Self().ElementTypeDef.Self() != nil &&
+		td.AsList.Value.Self().ElementTypeDef.Self().Kind == TypeDefKindObject
+}
+
 // ApplyWorkspaceDefaultsToTypeDefs updates constructor arg typedefs based on
 // workspace settings, so that --help displays the correct default values.
 // For primitive types (string, int, bool, float), it sets arg.DefaultValue
-// to the JSON representation. For object types (Secret, Directory, etc.),
-// it marks the arg as optional (since a default will be resolved at call time).
+// to the JSON representation. For object and object-list types (Secret,
+// Directory, [File!], etc.), it marks the arg as optional (since a default
+// will be resolved at call time).
 //
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *dagql.Server) error {
@@ -410,7 +429,12 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 				continue
 			}
 			updatedArg := arg
-			if argSelf.TypeDef.Self().Kind == TypeDefKindObject {
+			if isObjectOrObjectListTypeDef(argSelf.TypeDef.Self()) {
+				// Object and object-list settings store address strings; they
+				// resolve through the Address decoders at call time (UserDefault
+				// in modfunc.go), never as a schema default — a JSON default for
+				// these args would have to decode as an ID literal and fail
+				// schema installation.
 				if !argSelf.TypeDef.Self().Optional {
 					var updatedTypeDef dagql.ObjectResult[*TypeDef]
 					if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{
