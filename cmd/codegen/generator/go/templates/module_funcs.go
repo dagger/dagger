@@ -63,20 +63,21 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 	}
 
 	// +up is the deprecated spelling of +start.
-	for _, name := range []string{"start", "up"} {
-		v, ok := docPragmas[name]
-		if !ok {
-			continue
-		}
+	upPragma := "start"
+	v, ok := docPragmas[upPragma]
+	if !ok {
+		upPragma = "up"
+		v, ok = docPragmas[upPragma]
+	}
+	if ok {
 		if v == nil {
 			spec.isUp = true
-			continue
+		} else {
+			spec.isUp, ok = v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("%s pragma %q, must be a valid boolean", upPragma, v)
+			}
 		}
-		isUp, ok := v.(bool)
-		if !ok {
-			return nil, fmt.Errorf("%s pragma %q, must be a valid boolean", name, v)
-		}
-		spec.isUp = spec.isUp || isUp
 	}
 
 	if v, ok := docPragmas["agent"]; ok {
