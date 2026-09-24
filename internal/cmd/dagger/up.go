@@ -1,123 +1,53 @@
 package daggercmd
 
 import (
-	"context"
-	_ "embed"
+	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
-
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/engine/slog"
-	telemetry "github.com/dagger/otel-go"
 )
 
-var upListMode bool
+const upRenamedHelp = `"dagger up" is no longer used. Use "dagger start" instead.
 
-//go:embed up.graphql
-var loadUpQuery string
+Run "dagger start --help" for usage.
+`
+
+// Keep the old command name as guidance only. It must fail for every
+// invocation, including ones with the old flags, and must never fall through
+// to a local script named "up". Flag parsing is disabled so that any flag,
+// including -h and --help, reaches RunE.
+var upCmd = &cobra.Command{
+	Use:                "up",
+	Short:              `Renamed to "dagger start"`,
+	Hidden:             true,
+	DisableFlagParsing: true,
+	Args:               cobra.ArbitraryArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return fmt.Errorf("%q has been renamed to %q. Run this instead:\n\n  %s",
+			cmd.CommandPath(), cmd.Root().Name()+" start", startInvocation(cmd.Root().Name(), os.Args[1:], args))
+	},
+}
 
 func init() {
-	upCmd.Flags().BoolVarP(&upListMode, "list", "l", false, "List available services")
+	upCmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		fmt.Fprint(cmd.OutOrStdout(), upRenamedHelp)
+	})
 }
 
-var upCmd = &cobra.Command{
-	Use:   "up [options] [pattern...]",
-	Short: "Run your project's services for local development — databases, APIs, dev servers, etc.",
-	Long: `Run your project's services for local development — databases, APIs, dev servers, etc.
-
-Examples:
-  dagger up                       # Start all services
-  dagger up -l                    # List all available services
-  dagger up web                   # Start only the 'web' service
-`,
-	Args: cobra.ArbitraryArgs,
-	Annotations: map[string]string{
-		showFinalProgressKey: "true",
-	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if !upListMode {
-			previous := opts.RootFilter
-			opts.RootFilter = (*dagui.DB).ServiceDisplaySpans
-			defer func() { opts.RootFilter = previous }()
+// startInvocation rewrites a "dagger up" command line as "dagger start". The
+// root command consumes global flags given before "up", so they are recovered
+// from the full command line when it ends with "up" followed by args.
+func startInvocation(root string, cmdline, args []string) string {
+	words := []string{root}
+	if i := len(cmdline) - len(args) - 1; i >= 0 && cmdline[i] == "up" {
+		for _, word := range cmdline[:i] {
+			words = append(words, shellQuote(word))
 		}
-		return withEngine(
-			cmd.Context(),
-			client.Params{
-				LoadWorkspaceModules: true,
-			},
-			func(ctx context.Context, engineClient *client.Client) error {
-				dag := engineClient.Dagger()
-				ws := dag.CurrentWorkspace()
-				var services *dagger.UpGroup
-				if len(args) > 0 {
-					services = ws.Services(dagger.WorkspaceServicesOpts{Include: args})
-				} else {
-					services = ws.Services()
-				}
-				if upListMode {
-					return listServices(ctx, dag, services, cmd)
-				}
-				return runServices(ctx, services, cmd)
-			},
-		)
-	},
-}
-
-func loadUpGroupInfo(ctx context.Context, dag *dagger.Client, upGroup *dagger.UpGroup) (*UpGroupInfo, error) {
-	items, err := loadGroupListDetails(ctx, dag, "fetch service information",
-		func(ctx context.Context) (any, error) { return upGroup.ID(ctx) },
-		loadUpQuery, "UpGroupListDetails",
-	)
-	if err != nil {
-		return nil, err
 	}
-	info := &UpGroupInfo{Ups: make([]*UpInfo, 0, len(items))}
-	for _, item := range items {
-		info.Ups = append(info.Ups, &UpInfo{
-			Name:        cliName(item.Name),
-			Description: item.Description,
-		})
+	words = append(words, "start")
+	for _, arg := range args {
+		words = append(words, shellQuote(arg))
 	}
-	return info, nil
-}
-
-type UpGroupInfo struct {
-	Ups []*UpInfo
-}
-
-type UpInfo struct {
-	Name        string
-	Description string
-}
-
-func listServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.UpGroup, cmd *cobra.Command) error {
-	info, err := loadUpGroupInfo(ctx, dag, upGroup)
-	if err != nil {
-		return err
-	}
-	items := make([]commandListItem, 0, len(info.Ups))
-	for _, up := range info.Ups {
-		items = append(items, commandListItem{
-			Name:    up.Name,
-			Comment: firstDescriptionLine(up.Description),
-		})
-	}
-	return writeCommandList(cmd.OutOrStdout(), items)
-}
-
-func runServices(ctx context.Context, upGroup *dagger.UpGroup, _ *cobra.Command) (rerr error) {
-	ctx, zoomSpan := Tracer().Start(ctx, "services", telemetry.Passthrough())
-	// The report uses this span's failure to include the cause and its logs.
-	defer telemetry.EndWithCause(zoomSpan, &rerr)
-	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
-	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
-	// Run blocks until context cancellation (Ctrl+C). Treat that as a clean
-	// shutdown rather than surfacing a cancellation error to the user.
-	_, err := upGroup.Run().ID(ctx)
-	if ctx.Err() != nil {
-		return nil
-	}
-	return err
+	return strings.Join(words, " ")
 }

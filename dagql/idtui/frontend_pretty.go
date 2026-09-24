@@ -2667,7 +2667,7 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 				}
 				// The rolled-up lines land in the roll-up span's own Vterm, so
 				// its memoized LogsView must be invalidated too — an *expanded*
-				// roll-up row (a promoted `dagger up` service) renders through
+				// roll-up row (a promoted `dagger start` service) renders through
 				// it and would otherwise freeze at its first-paint content.
 				if lv, ok := fe.logsViews[logsViewKey{spanID: id}]; ok {
 					lv.Update()

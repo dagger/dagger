@@ -267,7 +267,7 @@ const listAgentsQuery = `query ListAgents($include: [String!]) {
 
 // listAgents renders 'dagger agent -l': the name and description of each
 // composable agent. The module-loading work is encapsulated under a single span
-// so list mode stays quiet, matching 'dagger up -l' / 'dagger checks -l'.
+// so list mode stays quiet, matching 'dagger start -l' / 'dagger checks -l'.
 func listAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) error {
 	ctx, span := Tracer().Start(ctx, "fetch agent information", telemetry.Encapsulate())
 	defer span.End()

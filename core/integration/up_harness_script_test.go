@@ -24,7 +24,7 @@ func TestDaggerUpVerifyHarness(t *testing.T) {
 		{"probe-timeout", "FAIL: service readiness timed out after", true},
 		{"body-timeout", "FAIL: service response read failed after", true},
 		{"wrong-body", "FAIL: expected nginx in response, got: wrong", true},
-		{"shutdown-timeout", "FAIL: dagger up shutdown timed out after", true},
+		{"shutdown-timeout", "FAIL: dagger start shutdown timed out after", true},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			t.Parallel()

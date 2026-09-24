@@ -1517,7 +1517,7 @@ func resolveIncludePatternModules(mods []pendingModule, served map[string]struct
 }
 
 // filterPendingWorkspaceModulesBySelectorInclude selects the modules named by
-// `dagger generate`/`check`/`up` patterns ("module" or "module:item"). A
+// `dagger generate`/`check`/`start` patterns ("module" or "module:item"). A
 // pattern naming no known module (an entrypoint-proxied item, or a typo)
 // selects all, so the usual error surfaces. served modules are recognized but
 // contribute nothing to load.

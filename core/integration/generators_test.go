@@ -1374,9 +1374,9 @@ func (GeneratorsSuite) TestWorkspaceCheckNarrowsToRequestedModule(ctx context.Co
 }
 
 // TestWorkspaceUpNarrowsToRequestedModule mirrors
-// TestWorkspaceGenerateNarrowsToRequestedModule for `dagger up`: an unrelated
+// TestWorkspaceGenerateNarrowsToRequestedModule for `dagger start`: an unrelated
 // broken/stale workspace module must not be loaded just to enumerate a healthy
-// module's services. `dagger up` starts services and blocks, so the assertions
+// module's services. `dagger start` starts services and blocks, so the assertions
 // use list mode (-l), which still loads workspace modules to enumerate services
 // and thus exercises the same narrowing.
 func (GeneratorsSuite) TestWorkspaceUpNarrowsToRequestedModule(ctx context.Context, t *testctx.T) {
@@ -1386,7 +1386,7 @@ func (GeneratorsSuite) TestWorkspaceUpNarrowsToRequestedModule(ctx context.Conte
 
 	t.Run("listing only the healthy module skips the broken one", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExec("up", "-l", "good")).
+			With(daggerExec("start", "-l", "good")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, out, "intentionally invalid")
@@ -1394,7 +1394,7 @@ func (GeneratorsSuite) TestWorkspaceUpNarrowsToRequestedModule(ctx context.Conte
 
 	t.Run("listing across all modules still loads the broken module", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExecFail("up", "-l")).
+			With(daggerExecFail("start", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "bad")

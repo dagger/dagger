@@ -952,7 +952,7 @@ func (WorkspaceCompatSuite) TestCompatUpSkipsAndPortMappingsBeforeMigration(ctx 
   ]
 }`)
 
-	listOut, err := ctr.With(compatDaggerExec("up", "-l")).CombinedOutput(ctx)
+	listOut, err := ctr.With(compatDaggerExec("start", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, listOut, "hello-with-services:web")
 	require.NotContains(t, listOut, "hello-with-services:redis")

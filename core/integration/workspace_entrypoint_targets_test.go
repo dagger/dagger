@@ -49,7 +49,7 @@ source = "other"
 		{"check", "verify"},
 		{"generate", "files"},
 		{"shell", "dev"},
-		{"up", "web"},
+		{"start", "web"},
 	} {
 		t.Run(test.command, func(ctx context.Context, t *testctx.T) {
 			for _, selection := range []struct {

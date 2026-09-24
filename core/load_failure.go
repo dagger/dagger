@@ -13,7 +13,7 @@ type ModuleLoadMode int
 
 const (
 	// ModuleLoadStrict fails the operation on the first module that cannot
-	// load: `dagger call`, `dagger up`.
+	// load: `dagger call`, `dagger start`.
 	ModuleLoadStrict ModuleLoadMode = iota
 	// ModuleLoadBestEffort skips a module that cannot load and records its
 	// failure for the caller to report: `dagger check`, which stands each

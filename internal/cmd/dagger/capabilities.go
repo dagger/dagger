@@ -266,6 +266,9 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		checksCmd,
 		generateCmd,
+		startCmd,
+		// Accept the flags of start, so the rename error is reported instead
+		// of a flag error.
 		upCmd,
 		agentCmd,
 		apiCallCmd.Command(),

@@ -334,7 +334,7 @@ const ServiceNameAttr = telemetryattrs.ServiceNameAttr
 //
 // The evaluation deliberately happens beneath the display span: the API spans
 // it creates are where dagui routes the service's stdio, so this is what puts
-// the service's log stream under its own row in `dagger up`. The display span
+// the service's log stream under its own row in `dagger start`. The display span
 // stays open until Start or Abort ends it.
 func (node *ModTreeNode) PrepareUp(ctx context.Context, portMappings []PortForward) (_ *preparedUp, rerr error) {
 	if !node.IsUp {

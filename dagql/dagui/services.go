@@ -131,7 +131,7 @@ func (db *DB) buildSurfacedServices(root *Span) []*ServiceNode {
 // readiness URLs (ServiceURLs, stamped once the health check passes), and the
 // `ready <url>` child span.
 //
-// Used as dagger up's RootFilter, so the regular trace UI leads with these
+// Used as dagger start's RootFilter, so the regular trace UI leads with these
 // spans from the moment evaluation begins, including build logs and readiness
 // URLs. The same zoom-relative containment as other surfaced kinds applies.
 // The result is cached per DB mutation and per root; callers must treat the

@@ -172,7 +172,7 @@ func init() {
 
 	checksCmd.GroupID = "daily"
 	generateCmd.GroupID = "daily"
-	upCmd.GroupID = "daily"
+	startCmd.GroupID = "daily"
 	shellCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
 
@@ -200,6 +200,7 @@ func init() {
 		apiCmd,
 		traceCmd,
 		checksCmd,
+		startCmd,
 		upCmd,
 		shellCmd,
 		agentCmd,

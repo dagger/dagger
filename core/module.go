@@ -210,7 +210,7 @@ func returnsCoreObject(fn *Function, name string) bool {
 
 // validateUpFunction enforces the @up contract: the function must return the
 // core Service! type and must be callable with no caller-supplied arguments,
-// since `dagger up` starts services without any.
+// since `dagger start` starts services without any.
 func validateUpFunction(obj *ObjectTypeDef, fn *Function) error {
 	if !returnsCoreObject(fn, "Service") {
 		return fmt.Errorf("object %q function %q is marked @up but returns %s; @up functions must return the core Service! type",
