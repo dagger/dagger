@@ -558,6 +558,12 @@ func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
 		if res == nil {
 			continue
 		}
+		if res.remote != nil {
+			// A remote entry keeps its class's terms until its engine removes
+			// it, expired or not: it is never served, and its identity is
+			// what the cache holds it for.
+			return true
+		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
@@ -615,6 +621,10 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		if res.attachmentState() == resultAttachmentFailed {
 			continue
 		}
+		// Remote entries have no value to serve.
+		if res.remote != nil {
+			continue
+		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
 			if sawExpired != nil {
 				*sawExpired = true
@@ -637,6 +647,9 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 				continue
 			}
 			if res.attachmentState() == resultAttachmentFailed {
+				continue
+			}
+			if res.remote != nil {
 				continue
 			}
 			if c.resultExpiredAtLocked(res, nowUnix) {
@@ -1913,7 +1926,10 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	if res == nil {
 		return
 	}
-	if len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0 {
+	if res.remote != nil {
+		delete(c.remoteEntries, res.remote.key)
+	}
+	if (len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0) && len(c.remoteEntries) == 0 {
 		c.maybeResetEgraphLocked()
 		return
 	}
@@ -1983,7 +1999,9 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 }
 
 func (c *Cache) maybeResetEgraphLocked() {
-	if len(c.egraphTerms) != 0 {
+	// Remote entries can hold classes without terms (restored entries), and each
+	// stays until its own engine removes it.
+	if len(c.egraphTerms) != 0 || len(c.remoteEntries) != 0 {
 		return
 	}
 
@@ -2005,6 +2023,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
+	c.remoteEntries = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs

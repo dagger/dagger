@@ -42,12 +42,16 @@ func (c *Cache) schemaModuleLookup(ctx context.Context, sessionID string, record
 	if recorded == nil {
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", recordedID)
 	}
+	if recorded.remote != nil {
+		return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", recordedID, errRemoteEntryHasNoValue)
+	}
 	classes := c.outputEqClassesForResultLocked(recorded.id)
 	var selected *sharedResult
 	for _, candidate := range installed {
 		operational := c.resultsByID[sharedResultID(candidate.ModuleResultID)]
 		scoped := c.resultsByID[sharedResultID(candidate.ScopedResultID)]
-		if operational == nil || scoped == nil || operational.attachmentState() != resultAttachmentClean || scoped.attachmentState() != resultAttachmentClean {
+		if operational == nil || scoped == nil || operational.remote != nil || scoped.remote != nil ||
+			operational.attachmentState() != resultAttachmentClean || scoped.attachmentState() != resultAttachmentClean {
 			continue
 		}
 		// An inaccessible installed candidate does not suppress the recorded
