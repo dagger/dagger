@@ -4919,6 +4919,8 @@ func cacheUsagePrimaryRecordType(recordTypes []string, fallback string) string {
 }
 
 type cacheUsageMeasurementInput struct {
+	row              *sharedResult
+	payloadRevision  uint64
 	resultID         sharedResultID
 	self             Typed
 	snapshotLinks    []PersistedSnapshotRefLink
@@ -4933,54 +4935,14 @@ type cacheUsageIdentityMeasurement struct {
 }
 
 func (c *Cache) measureAllResultSizes(ctx context.Context) {
-	inputs := c.collectUsageMeasurementInputs()
-	if len(inputs) == 0 {
+	snapshot, err := c.collectUsageMeasurementInputs(ctx)
+	if err != nil {
+		slog.Warn("collect cache usage inputs", "err", err)
 		return
 	}
-	measurements := buildCacheUsageMeasurements(ctx, c.snapshotManager, inputs)
-	c.publishUsageMeasurements(measurements)
-}
-
-func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	inputs := make([]cacheUsageMeasurementInput, 0, len(c.resultsByID))
-	for resID, res := range c.resultsByID {
-		if res == nil {
-			continue
-		}
-		state := res.loadPayloadState()
-		var (
-			self          Typed
-			snapshotLinks []PersistedSnapshotRefLink
-			identities    []string
-			sizeMayChange bool
-		)
-		if state.hasValue && state.self != nil {
-			self = state.self
-			identities = cacheUsageIdentitiesFromSelf(state.self)
-			sizeMayChange = cacheUsageSizeMayChangeFromSelf(state.self)
-		} else {
-			snapshotLinks = cloneSnapshotRefLinks(state.snapshotOwnerLinks)
-			identities = cacheUsageIdentitiesFromSnapshotLinks(snapshotLinks)
-		}
-		if len(identities) == 0 {
-			continue
-		}
-		existing := make(map[string]int64, len(res.cacheUsageSizeByIdentity))
-		for identity, sizeBytes := range res.cacheUsageSizeByIdentity {
-			existing[identity] = sizeBytes
-		}
-		inputs = append(inputs, cacheUsageMeasurementInput{
-			resultID:         resID,
-			self:             self,
-			snapshotLinks:    snapshotLinks,
-			identities:       identities,
-			existingSizeByID: existing,
-			sizeMayChange:    sizeMayChange,
-		})
-	}
-	return inputs
+	defer snapshot.closeAndLog(ctx)
+	measurements := buildCacheUsageMeasurements(ctx, c.snapshotManager, snapshot.inputs)
+	c.publishUsageMeasurements(snapshot.inputs, measurements)
 }
 
 func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.SnapshotManager, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]cacheUsageIdentityMeasurement {
@@ -5078,14 +5040,22 @@ func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.Sn
 	return published
 }
 
-func (c *Cache) publishUsageMeasurements(measurements map[sharedResultID]map[string]cacheUsageIdentityMeasurement) {
+func (c *Cache) publishUsageMeasurements(inputs []cacheUsageMeasurementInput, measurements map[sharedResultID]map[string]cacheUsageIdentityMeasurement) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	for resultID, res := range c.resultsByID {
-		if res == nil {
-			continue
+	// Keep one complete population: a new or replaced sharer invalidates
+	// the whole sample, not just its own contribution to deduplication.
+	if len(inputs) != len(c.resultsByID) {
+		return
+	}
+	for _, input := range inputs {
+		if !input.validLocked(c) {
+			return
 		}
-		resultMeasurements, ok := measurements[resultID]
+	}
+	for _, input := range inputs {
+		res := input.row
+		resultMeasurements, ok := measurements[input.resultID]
 		if !ok {
 			res.cacheUsageSizeByIdentity = nil
 			res.cacheUsageRecordTypeByID = nil
@@ -6431,17 +6401,6 @@ func cacheUsageIdentitiesFromSnapshotLinks(links []PersistedSnapshotRefLink) []s
 	}
 	slices.Sort(ids)
 	return slices.Compact(ids)
-}
-
-func cacheUsageIdentities(res *sharedResult) []string {
-	if res == nil {
-		return nil
-	}
-	state := res.loadPayloadState()
-	if state.hasValue && state.self != nil {
-		return cacheUsageIdentitiesFromSelf(state.self)
-	}
-	return cacheUsageIdentitiesFromSnapshotLinks(state.snapshotOwnerLinks)
 }
 
 func cacheUsageSizeMayChangeFromSelf(self Typed) bool {

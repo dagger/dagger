@@ -268,7 +268,7 @@ func TestCachePruneMetadataEstimateSkipsPhysicalMeasurementAndUsesColdOrder(t *t
 
 	before := c.MetadataEstimate()
 	directBytes := metadataDirectResultBytes(before)
-	snapshot := c.snapshotPruneState(nil, pruneSnapshotMetadata, directBytes)
+	snapshot := c.snapshotPruneState(pruneSnapshotMetadata, directBytes)
 	for _, res := range snapshot.results {
 		assert.Equal(t, directBytes, res.directResultBytes)
 		assert.Equal(t, "", res.entry.ID)
@@ -470,7 +470,7 @@ func TestRemovePersistedEdgeRechecksUnpruneableAfterPlanning(t *testing.T) {
 			if mode == pruneSnapshotMetadata {
 				direct = metadataDirectResultBytes(c.MetadataEstimate())
 			}
-			snapshot := c.snapshotPruneState(nil, mode, direct)
+			snapshot := c.snapshotPruneState(mode, direct)
 			candidates := c.collectPruneCandidates(ctx, 0, snapshot, nil, CachePrunePolicy{All: true}, time.Now())
 			plan, _, _ := buildPrunePlan(snapshot, candidates, 1)
 			assert.Assert(t, cmp.Len(plan, 1))
