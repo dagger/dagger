@@ -52,18 +52,24 @@ type Store struct {
 
 func NewStore(t testing.TB) *Store {
 	t.Helper()
+	return newStore(t, "native", native.NewSnapshotter)
+}
+
+// newStore builds a store over the named raw snapshotter.
+func newStore(t testing.TB, name string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error)) *Store {
+	t.Helper()
 	s := &Store{root: t.TempDir()}
 	rawContent, err := local.NewStore(filepath.Join(s.root, "content"))
 	require.NoError(t, err)
-	rawSnapshots, err := native.NewSnapshotter(filepath.Join(s.root, "snapshots"))
+	rawSnapshots, err := newSnapshotter(filepath.Join(s.root, "snapshots"))
 	require.NoError(t, err)
 	db, err := bolt.Open(filepath.Join(s.root, "metadata.db"), 0600, nil)
 	require.NoError(t, err)
-	s.DB = metadata.NewDB(db, rawContent, map[string]ctdsnapshots.Snapshotter{"native": rawSnapshots})
+	s.DB = metadata.NewDB(db, rawContent, map[string]ctdsnapshots.Snapshotter{name: rawSnapshots})
 	require.NoError(t, s.DB.Init(context.Background()))
 	s.Leases = bkcache.NewLeaseManager(metadata.NewLeaseManager(s.DB), Namespace)
 	s.Content = containerdsnapshot.NewContentStore(s.DB.ContentStore(), Namespace)
-	s.Snapshots = containerdsnapshot.NewSnapshotter("native", s.DB.Snapshotter("native"), Namespace)
+	s.Snapshots = containerdsnapshot.NewSnapshotter(name, s.DB.Snapshotter(name), Namespace)
 	s.openManager(t)
 	t.Cleanup(func() {
 		require.NoError(t, s.Manager.Close())
