@@ -351,6 +351,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("allowEmpty").Doc("Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false."),
 				dagql.Arg("signoff").Doc("Add a Signed-off-by trailer using the commit author's name and email."),
 			),
+		dagql.NodeFuncWithDynamicInputs("__nativeCommitBase", s.gitRefNativeCommitBase, s.gitRefNativeCommitBaseKey).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Own the selected remote commit's object closure."),
 		dagql.NodeFunc("__withCommitRepository", s.gitRefWithCommitRepository).
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().

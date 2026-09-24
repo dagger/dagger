@@ -20,7 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TryNativeWorkspaceMerge reconciles same-base local Git changes without
+// TryNativeWorkspaceMerge reconciles same-base Git changes without
 // restaging the baseline. The returned filesystem is a COW child of Before,
 // not a raw After tree: Git normalizes only changed paths, while unchanged
 // filesystem metadata survives. Temporary indexes, commits and objects never
@@ -58,9 +58,15 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 	}
 	span.SetAttributes(attribute.Int("dagger.git.native_merge.scoped_stage_paths",
 		len(commitStagePaths(contents[0].paths))+len(commitStagePaths(contents[1].paths))))
-	local := lazy.Ref.Self().Backend.(*LocalGitRef)
+	local, err := nativeCommitRepository(ctx, lazy.Ref)
+	if err != nil {
+		if nativeCommitFallback(err) {
+			return nil, false, nil
+		}
+		return nil, true, err
+	}
 	var result *Directory
-	err := local.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+	err = local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
 		out, err := source.Run(ctx, "rev-parse", "--absolute-git-dir")
 		if err != nil {
 			return err

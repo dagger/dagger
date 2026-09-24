@@ -493,12 +493,24 @@ func (repo *GitRepository) AttachDependencyResults(
 			owned = append(owned, typed)
 		}
 		if backend.CheckoutBase != nil {
+			if err := backend.CheckoutBase.validateTree(ctx); err != nil {
+				return nil, err
+			}
 			parent, err := attachLazyInput(attach, backend.CheckoutBase.Parent, "git checkout parent")
 			if err != nil {
 				return nil, err
 			}
-			backend.CheckoutBase = &GitCheckoutBase{Parent: parent, CommitSHA: backend.CheckoutBase.CommitSHA}
+			base := &GitCheckoutBase{Parent: parent, CommitSHA: backend.CheckoutBase.CommitSHA}
 			owned = append(owned, parent)
+			if backend.CheckoutBase.Tree.Self() != nil {
+				tree, err := attachLazyInput(attach, backend.CheckoutBase.Tree, "git checkout parent tree")
+				if err != nil {
+					return nil, err
+				}
+				base.Tree = tree
+				owned = append(owned, tree)
+			}
+			backend.CheckoutBase = base
 		}
 	case *RemoteGitRepository:
 		if backend.Mirror.Self() != nil {
@@ -640,6 +652,7 @@ type persistedLocalGitRepositoryPayload struct {
 
 type persistedGitCheckoutBase struct {
 	ParentResultID uint64 `json:"parentResultID"`
+	TreeResultID   uint64 `json:"treeResultID,omitempty"`
 	CommitSHA      string `json:"commitSHA"`
 }
 
@@ -763,11 +776,21 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, enc *dagql
 			DirectoryResultID: dirID,
 		}
 		if base := backend.CheckoutBase; base != nil {
+			if err := base.validateTree(ctx); err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
 			parentID, err := encodePersistedObjectRef(enc, base.Parent, "git checkout parent")
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
 			payload.Local.CheckoutBase = &persistedGitCheckoutBase{ParentResultID: parentID, CommitSHA: base.CommitSHA}
+			if base.Tree.Self() != nil {
+				treeID, err := encodePersistedObjectRef(enc, base.Tree, "git checkout parent tree")
+				if err != nil {
+					return dagql.PersistedObjectEncoding{}, err
+				}
+				payload.Local.CheckoutBase.TreeResultID = treeID
+			}
 			if err := payload.Local.CheckoutBase.validate(); err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
@@ -830,6 +853,16 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 				return nil, err
 			}
 			backend.CheckoutBase = &GitCheckoutBase{Parent: parent, CommitSHA: base.CommitSHA}
+			if base.TreeResultID != 0 {
+				tree, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, base.TreeResultID, "git checkout parent tree")
+				if err != nil {
+					return nil, err
+				}
+				backend.CheckoutBase.Tree = tree
+				if err := backend.CheckoutBase.validateTree(ctx); err != nil {
+					return nil, err
+				}
+			}
 		}
 		repo.Backend = backend
 	case persistedGitRepositoryFormRemote:

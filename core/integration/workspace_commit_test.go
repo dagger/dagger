@@ -164,14 +164,16 @@ git gc --prune=now
 }
 
 type workspaceReconciliationCase struct {
-	name       string
-	attributes bool
-	pending    func(*dagger.Directory) *dagger.Directory
-	incoming   func(*dagger.Directory) *dagger.Directory
-	include    []string
-	conflict   bool
-	wantFile   string
-	checkInput func(map[string]workspaceCommitManifestEntry)
+	base        *dagger.Workspace
+	name        string
+	attributes  bool
+	pending     func(*dagger.Directory) *dagger.Directory
+	incoming    func(*dagger.Directory) *dagger.Directory
+	include     []string
+	conflict    bool
+	wantFile    string
+	checkInput  func(map[string]workspaceCommitManifestEntry)
+	checkResult func(*dagger.Workspace)
 }
 
 func checkWorkspaceReconciliation(ctx context.Context, t *testctx.T, c *dagger.Client, fixture, inspector *dagger.Container, tc workspaceReconciliationCase) {
@@ -185,7 +187,10 @@ git add .
 git commit -m attributes
 `})
 	}
-	base := fixture.Directory("/repo").AsGit().Head().AsWorkspace()
+	base := tc.base
+	if base == nil {
+		base = fixture.Directory("/repo").AsGit().Head().AsWorkspace()
+	}
 	before := base.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
 	pending := before.WithNewFile("pending.txt", "keep pending\n")
 	if tc.pending != nil {
@@ -233,6 +238,9 @@ git commit -m attributes
 	require.Equal(t, legacySHA, fastSHA, "%s: exact commit objects", tc.name)
 	require.NotEqual(t, baseSHA, fastSHA)
 	for _, result := range []*dagger.Workspace{fast, legacy} {
+		if tc.checkResult != nil {
+			tc.checkResult(result)
+		}
 		parents, err := result.Git().Head().TargetCommit().ParentShas(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{baseSHA}, parents, tc.name)
@@ -360,6 +368,75 @@ with open('/work/file.txt', 'w') as f: f.write('selected\n')
 		// client lifetime sequential, and make the last log name the failure.
 		checkWorkspaceReconciliation(ctx, t, c, fixture, inspector, tc)
 	}
+}
+
+func (WorkspaceSuite) TestWorkspaceRemoteFirstNativeCommit(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := workspaceReconciliationFixture(c)
+	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("file.txt", "base\n").WithNewFile("pending.txt", "base\n"))
+	const pushURL = "ssh://git@push.example.test/repo"
+	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).WithRemote("origin", url, dagger.GitRepositoryWithRemoteOpts{PushURL: pushURL}).Head().AsWorkspace()
+	checkWorkspaceReconciliation(ctx, t, c, fixture, inspector, workspaceReconciliationCase{
+		base: base, name: "remote first commit", include: []string{"file.txt"}, wantFile: "selected\n",
+		pending: func(d *dagger.Directory) *dagger.Directory { return d.WithNewFile("file.txt", "selected\n") },
+		checkResult: func(result *dagger.Workspace) {
+			gotURL, err := result.Git().Head().AsRepository().URL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, url, gotURL)
+			routing, err := inspector.WithMountedDirectory("/committed", result.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: false})).WithWorkdir("/committed").WithExec([]string{"git", "remote", "get-url", "--push", "origin"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, pushURL, strings.TrimSpace(routing))
+		},
+	})
+	require.NoError(t, c.Close())
+	traces, _ := sink.capture()
+	parents, names, native := map[string]string{}, map[string]string{}, map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+					for _, attr := range span.Attributes {
+						if span.Name == "git native commit transaction" && attr.Key == "dagger.git.native.supported" {
+							native[id] = attr.Value.GetBoolValue()
+						}
+					}
+				}
+			}
+		}
+	}
+	var promotions, writes, incremental int
+	for id, name := range names {
+		if names[parents[id]] == name {
+			continue
+		}
+		if name == "git promote remote commit base" {
+			promotions++
+		}
+		if name == "materialize incremental git checkout" {
+			incremental++
+		}
+		if name != "git commit-tree" {
+			continue
+		}
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if native[parent] {
+				writes++
+				break
+			}
+		}
+	}
+	require.Equal(t, 1, promotions, "merge and commit reuse one exact-recipe owned promotion")
+	require.Positive(t, writes, "remote first commit must really execute native commit-tree, not merely pass eligibility")
+	require.Positive(t, incremental, "remote canonical parent must be reused")
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitNativeReconciliationTrace(ctx context.Context, t *testctx.T) {

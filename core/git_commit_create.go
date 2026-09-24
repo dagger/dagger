@@ -149,7 +149,12 @@ func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult
 	if ref == nil || ref.Ref == nil || ref.Repo.Self() == nil || len(ref.Ref.SHA) != 40 || !IsFullGitSHA(ref.Ref.SHA) || changes == nil || changes.Before.Self() == nil {
 		return false, nil
 	}
-	if _, ok := ref.Backend.(*LocalGitRef); !ok {
+	if ref.Ref.Name != "" && ref.Ref.Name != ref.Ref.SHA && !strings.HasPrefix(ref.Ref.Name, "refs/heads/") {
+		return false, nil
+	}
+	switch ref.Backend.(type) {
+	case *LocalGitRef, *RemoteGitRef:
+	default:
 		return false, nil
 	}
 	lazy, ok := changes.Before.Self().Lazy.(*DirectoryGitTreeLazy)
@@ -224,14 +229,18 @@ func nativeCommitFallback(err error) bool {
 //
 // The bool is false only for explicitly unsupported provenance/storage/semantics.
 // Errors (including cancellation and missing objects) must not trigger fallback.
-// Currently supported: complete local SHA-1 branches/commit IDs without
-// alternates or linked worktrees, and ordinary files/symlinks including Git
+// Currently supported: complete snapshot-owned SHA-1 branches/commit IDs without
+// alternates or linked worktrees. Remote inputs first acquire an owned closure
+// through their exact repository recipe. Ordinary files/symlinks include Git
 // attributes and ignore rules. Changes touching gitlinks or .gitmodules use the
 // existing checkout path.
 func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*GitRef], changes *Changeset, opts GitCommitOpts) (_ *Directory, supported bool, rerr error) {
 	ok, err := GitCommitChangesetNativeBase(ctx, parent, changes)
 	if err != nil || !ok {
 		return nil, false, err
+	}
+	if err := normalizeNativeCommitOpts(&opts); err != nil {
+		return nil, true, err
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "git native commit transaction", telemetry.Internal())
 	defer func() {
@@ -242,9 +251,15 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 	if err != nil {
 		return nil, true, fmt.Errorf("changeset content: %w", err)
 	}
-	local := parent.Self().Backend.(*LocalGitRef)
+	local, err := nativeCommitRepository(ctx, parent)
+	if err != nil {
+		if nativeCommitFallback(err) {
+			return nil, false, nil
+		}
+		return nil, true, err
+	}
 	var gitSubdir string
-	dir, err := withGitMergeWorkspace(ctx, local.repo.Directory, "GitRef native commit transaction", func(ws *gitMergeWorkspace) error {
+	dir, err := withGitMergeWorkspace(ctx, local.Directory, "GitRef native commit transaction", func(ws *gitMergeWorkspace) error {
 		gitDir, err := nativeCommitGitDir(ctx, ws.workDir)
 		if err != nil {
 			return err
@@ -253,7 +268,7 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 		if err != nil {
 			return err
 		}
-		return local.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+		return local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
 			objects, err := source.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			if err != nil {
 				return err
@@ -760,7 +775,11 @@ func batchPathSpecs(specs []string) [][]string {
 }
 
 // runWorkspaceCommitGit layers explicit commit inputs over the hermetic Git environment.
-func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, args ...string) (_ string, rerr error) {
+func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+	return runWorkspaceCommitGitInput(ctx, dir, extraEnv, nil, args...)
+}
+
+func runWorkspaceCommitGitInput(ctx context.Context, dir string, extraEnv []string, stdin io.Reader, args ...string) (_ string, rerr error) {
 	// Callers may supply -c key=value before the verb. Never include those
 	// values, pathspecs, commit messages, or identity inputs in the span name.
 	commandArgs := args
@@ -787,6 +806,7 @@ func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, a
 	}()
 	cmd := gitCmd(ctx, dir, args...)
 	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Stdin = stdin
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
