@@ -219,7 +219,7 @@ func (ProvisionSuite) TestImageDriverCacheFactsNeedEnable(ctx context.Context, t
 				"from", "--address=" + alpineImage,
 				"with-exec", "--args", "echo," + marker,
 				"stdout",
-			}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}).
+			}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true, DisableDaggerInDagger: true}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, marker)
