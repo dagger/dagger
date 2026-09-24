@@ -546,7 +546,7 @@ func TestAssembleLines(t *testing.T) {
 				t.Fatalf("assembleLines() = %v, want %v", got, tc.want)
 			}
 			for i := range got {
-				if got[i] != tc.want[i] {
+				if got[i].text != tc.want[i].text || got[i].direct != tc.want[i].direct {
 					t.Errorf("line %d = %+v, want %+v", i, got[i], tc.want[i])
 				}
 			}
@@ -696,7 +696,16 @@ func TestCaptureLogLinesIsolatesProducers(t *testing.T) {
 	}
 	got, err := m.captureLogLines(ctx, rootID, false, false)
 	require.NoError(t, err)
-	require.Equal(t, want, got.lines)
+	for i := range want {
+		require.Equal(t, want[i].text, got.lines[i].text)
+		require.Equal(t, want[i].direct, got.lines[i].direct)
+		want[i].producer = got.lines[i].producer
+		want[i].timestamp = got.lines[i].timestamp
+	}
+	require.Equal(t, childID, got.lines[1].producer.spanID)
+	require.Equal(t, int64(1), got.lines[1].producer.stream)
+	require.Equal(t, int64(2), got.lines[2].producer.stream)
+	require.Equal(t, rootID, got.lines[3].producer.spanID)
 	require.Equal(t, map[string]bool{rootID: true, childID: true}, got.directSpans)
 
 	own, err := m.captureLogLines(ctx, rootID, false, true)
@@ -713,7 +722,13 @@ func TestCaptureLogLinesIsolatesProducers(t *testing.T) {
 	})
 	require.False(t, toolResult.Errored)
 	require.Equal(t, "read-isolated-logs", toolResult.CallID)
-	require.Equal(t, "     1→nested done\n     2→output\n     3→error\n     4→direct report\n     5→plain\n     6→tail", toolResult.ContentText())
+	require.Contains(t, toolResult.ContentText(), "scope=causal")
+	require.Contains(t, toolResult.ContentText(), "span="+childID+" stream=1")
+	require.Contains(t, toolResult.ContentText(), "nested done")
+	isolated := m.CallContent(ctx, tools.Order, &LLMToolCall{Name: "ReadLogs", Arguments: JSON(fmt.Sprintf(`{"span":%q,"scope":"own","grep":"direct","context":1,"fromLine":1}`, rootID))})
+	require.False(t, isolated.Errored)
+	require.Contains(t, isolated.ContentText(), "direct report")
+	require.NotContains(t, isolated.ContentText(), "nested done")
 }
 
 func persistedCaptureLog(t *testing.T, traceID, spanID, scope string, body *otlpcommonv1.AnyValue, attrs ...*otlpcommonv1.KeyValue) clientdb.Log {
@@ -1246,90 +1261,46 @@ func TestNormalizeSpanArg(t *testing.T) {
 	}
 }
 
-// TestRenderReadLogs covers ReadLogs result shaping: offset/grep/limit
-// handling, and — for agent recovery — that the failure and empty cases
-// report how many lines actually exist.
+// A split line retains the first record's timestamp and full producer.
+func TestLogLineProducerTimestamp(t *testing.T) {
+	p := logProducer{traceID: "trace", spanID: "producer", stream: 2}
+	lines := assembleLines([]capturedSegment{
+		{text: "assert", producer: p, timestamp: 123},
+		{text: "other\n", producer: logProducer{traceID: "trace", spanID: "other"}, timestamp: 456},
+		{text: "ion\n", producer: p, timestamp: 789},
+	})
+	require.Equal(t, p, lines[1].producer)
+	require.Equal(t, int64(123), lines[1].timestamp)
+	require.Equal(t, "assertion", lines[1].text)
+}
+
 func TestRenderReadLogs(t *testing.T) {
-	logLines := func() []string { return []string{"alpha", "beta", "gamma"} }
-
-	t.Run("numbers the lines", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 0, 100, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "     1→alpha\n     2→beta\n     3→gamma"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("offset trims from the end", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 1, 100, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "     1→alpha\n     2→beta"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("negative offset reads the tail", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), -5, 100, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(got, "gamma") {
-			t.Errorf("got %q, want the full tail", got)
-		}
-	})
-
-	t.Run("offset past the start reports the total", func(t *testing.T) {
-		_, err := renderReadLogs("s", logLines(), 3, 100, "")
-		if err == nil {
-			t.Fatal("want error")
-		}
-		if !strings.Contains(err.Error(), "3 available lines") {
-			t.Errorf("error %q should report the available line count", err)
-		}
-	})
-
-	t.Run("grep filters and keeps original numbering", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 0, 100, "ta$")
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "     2→beta"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("grep with no matches reports the searched count", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 0, 100, "nope")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(got, `"nope"`) || !strings.Contains(got, "3 lines") {
-			t.Errorf("got %q, want a no-matches message with the searched count", got)
-		}
-	})
-
-	t.Run("invalid grep pattern errors", func(t *testing.T) {
-		_, err := renderReadLogs("s", logLines(), 0, 100, "(")
-		if err == nil {
-			t.Fatal("want error")
-		}
-	})
-
-	t.Run("limit keeps the tail with a counted marker", func(t *testing.T) {
-		got, err := renderReadLogs("s", logLines(), 0, 2, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "... 1 lines omitted (use ReadLogs(span: s) to read more) ...\n     2→beta\n     3→gamma"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
+	lines := []capturedLine{{text: "alpha"}, {text: "assertion"}, {text: "registry connection reset"}}
+	for i := 0; i < 1000; i++ {
+		lines = append(lines, capturedLine{text: "cleanup hash"})
+	}
+	got, err := renderLogPage("s", lines, logPageOpts{scope: "causal", grep: "assertion", context: 1, limit: 100})
+	require.NoError(t, err)
+	require.Contains(t, got, "1→")
+	require.Contains(t, got, "3→")
+	require.Contains(t, got, "registry connection reset")
+	require.Contains(t, got, "fromLine: 1, limit: 3")
+	require.NotContains(t, got, "cleanup hash")
+	got, err = renderLogPage("s", lines, logPageOpts{scope: "own", fromLine: 2, limit: 2})
+	require.NoError(t, err)
+	require.Contains(t, got, "assertion")
+	require.NotContains(t, got, "alpha")
+	require.Contains(t, got, "fromLine: 4")
+	got, err = renderLogPage("s", lines, logPageOpts{scope: "own", offset: 1000, limit: 2})
+	require.NoError(t, err)
+	require.Contains(t, got, "assertion")
+	require.NotContains(t, got, "alpha")
+	for _, opt := range []logPageOpts{{offset: 1003}, {grep: "("}, {fromLine: 1004}, {fromLine: 1, offset: 1}, {context: 101}} {
+		_, err := renderLogPage("s", lines, opt)
+		require.Error(t, err)
+	}
+	got, err = renderLogPage("s", lines, logPageOpts{grep: "nope"})
+	require.NoError(t, err)
+	require.Contains(t, got, "0 grep matches")
+	require.Contains(t, got, "1003 lines available")
 }

@@ -2259,16 +2259,19 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs
 // function's own print output lands) rather than by nested work deeper in the
 // subtree. Tool results keep direct output in full and abridge the rest.
 type capturedLine struct {
-	text   string
-	direct bool
+	text      string
+	direct    bool
+	producer  logProducer
+	timestamp int64 // timestamp of the first contributing record
 }
 
 // capturedSegment retains the producer of a single log record until assembly.
 // A missing stdio stream is its own stream (zero), distinct from stdout/stderr.
 type capturedSegment struct {
-	text     string
-	direct   bool
-	producer logProducer
+	text      string
+	direct    bool
+	producer  logProducer
+	timestamp int64
 }
 
 type logProducer struct {
@@ -2295,7 +2298,7 @@ type capturedOutput struct {
 
 // captureLogLines is captureLogs' structured form: the same filtering and
 // line assembly, but each line retains its direct/nested provenance.
-func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs, ownOnly bool) (capturedOutput, error) {
+func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs, ownOnly bool, scope ...string) (capturedOutput, error) {
 	out := capturedOutput{directSpans: map[string]bool{}}
 	root, err := CurrentQuery(ctx)
 	if err != nil {
@@ -2311,6 +2314,31 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 	}
 	defer q.Close()
 	q = inspectionStoreForSpan(q, spanID)
+	var allowed map[string]bool
+	if len(scope) > 0 && scope[0] != "causal" {
+		allowed = map[string]bool{spanID: true}
+		if scope[0] == "descendants" {
+			rows, err := q.SelectSpansLatest(ctx, q.SpanLogScope(spanID))
+			if err != nil {
+				return out, err
+			}
+			children := map[string][]string{}
+			for _, row := range rows {
+				children[row.ParentSpanID.String] = append(children[row.ParentSpanID.String], row.SpanID)
+			}
+			queue := []string{spanID}
+			for len(queue) > 0 {
+				id := queue[0]
+				queue = queue[1:]
+				for _, child := range children[id] {
+					if !allowed[child] {
+						allowed[child] = true
+						queue = append(queue, child)
+					}
+				}
+			}
+		}
+	}
 
 	// segments accumulates log bodies in database record order, retaining the
 	// producer across batch boundaries. Records are NOT coalesced here:
@@ -2342,6 +2370,9 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 
 		for _, log := range logs {
 			lastLogID = log.ID
+			if allowed != nil && !allowed[log.SpanID.String] {
+				continue
+			}
 
 			var logAttrs []*otlpcommonv1.KeyValue
 			if err := clientdb.UnmarshalProtoJSONs(log.Attributes, &otlpcommonv1.KeyValue{}, &logAttrs); err != nil {
@@ -2422,7 +2453,7 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 				continue
 			}
 			segments = append(segments, capturedSegment{
-				text: text, direct: direct,
+				text: text, direct: direct, timestamp: log.Timestamp,
 				producer: logProducer{traceID: log.TraceID.String, spanID: log.SpanID.String, stream: stream},
 			})
 		}
@@ -2438,9 +2469,10 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 // A line retains the direct/nested attribution of its first actual text.
 func assembleLines(segments []capturedSegment) []capturedLine {
 	type partialLine struct {
-		text   strings.Builder
-		direct bool
-		last   int
+		text      strings.Builder
+		direct    bool
+		last      int
+		timestamp int64
 	}
 	type orderedLine struct {
 		capturedLine
@@ -2469,24 +2501,25 @@ func assembleLines(segments []capturedSegment) []capturedLine {
 			if chunk != "" {
 				if p.text.Len() == 0 {
 					p.direct = seg.direct
+					p.timestamp = seg.timestamp
 				}
 				p.text.WriteString(chunk)
 				p.last = record
 			}
 			if i < len(chunks)-1 {
 				// A newline completes only this producer's pending line.
-				direct := seg.direct
+				direct, timestamp := seg.direct, seg.timestamp
 				if p.text.Len() > 0 {
-					direct = p.direct
+					direct, timestamp = p.direct, p.timestamp
 				}
-				ordered = append(ordered, orderedLine{capturedLine{p.text.String(), direct}, record})
+				ordered = append(ordered, orderedLine{capturedLine{p.text.String(), direct, seg.producer, timestamp}, record})
 				p.text.Reset()
 			}
 		}
 	}
-	for _, p := range pending {
+	for key, p := range pending {
 		if p.text.Len() > 0 {
-			ordered = append(ordered, orderedLine{capturedLine{p.text.String(), p.direct}, p.last})
+			ordered = append(ordered, orderedLine{capturedLine{p.text.String(), p.direct, key.logProducer, p.timestamp}, p.last})
 		}
 	}
 	// Each record belongs to exactly one producer, so trailing fragments have
@@ -2744,7 +2777,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "Number of lines to read from the end.",
+					"description": "Maximum output lines including context (capped at 500 and a byte budget). Reads the tail by default; fromLine reads forward. Returned calls page earlier/next.",
 					"minimum":     1,
 					"default":     100,
 				},
@@ -2753,9 +2786,21 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 					"description": "Number of lines to skip from the end. If not specified, starts from the end.",
 					"minimum":     0,
 				},
+				"fromLine": map[string]any{
+					"type": "integer", "minimum": 1,
+					"description": "One-based line address to read forward from (before grep); mutually exclusive with offset. Use with limit for a range. Stable for a fixed historical span/scope; live logs may grow.",
+				},
+				"context": map[string]any{
+					"type": "integer", "minimum": 0, "maximum": 100, "default": 0,
+					"description": "Lines before and after each grep match. Overlapping windows merge; limit includes context.",
+				},
+				"scope": map[string]any{
+					"type": "string", "enum": []string{"own", "descendants", "causal"}, "default": "causal",
+					"description": "own: only this producer; descendants: raw parent-child subtree; causal: also cause-linked work (legacy broad scope, not proof of error causality). Internal log filtering still applies.",
+				},
 				"grep": map[string]any{
 					"type":        "string",
-					"description": "Grep pattern to filter logs. If specified, only lines matching this pattern will be returned.",
+					"description": "Regex over log text; context includes neighboring lines. Addresses and producer span/stream/time are retained.",
 				},
 			},
 			"required":             []string{"span"},
@@ -3083,25 +3128,32 @@ func (m *MCP) listServicesTool(srv *dagql.Server) LLMToolFunc {
 
 func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span   string
-		Offset int    `default:"0"`
-		Limit  int    `default:"100"`
-		Grep   string `default:""`
+		Span     string
+		Offset   int    `default:"0"`
+		Limit    int    `default:"100"`
+		Grep     string `default:""`
+		FromLine int    `default:"0"`
+		Context  int    `default:"0"`
+		Scope    string `default:"causal"`
 	}) (any, error) {
+		if args.Scope != "causal" && args.Scope != "descendants" && args.Scope != "own" {
+			return nil, fmt.Errorf("invalid scope %q: want own, descendants or causal", args.Scope)
+		}
 		spanID := normalizeSpanArg(args.Span)
 		if _, err := trace.SpanIDFromHex(spanID); err != nil {
 			return nil, fmt.Errorf("invalid span ID %q: %w", spanID, err)
 		}
 		// Include service logs: ReadLogs is the deliberate affordance for
 		// reading them (e.g. via span IDs from ListServices).
-		logs, err := m.captureLogs(ctx, spanID, false)
+		logs, err := m.captureLogLines(ctx, spanID, false, false, args.Scope)
 		if err != nil {
 			return nil, fmt.Errorf("failed to capture logs: %w", err)
 		}
-		if len(logs) == 0 {
-			return m.emptyLogsResult(ctx, spanID)
+		if len(logs.lines) == 0 {
+			result, err := m.emptyLogsResult(ctx, spanID)
+			return fmt.Sprintf("scope=%s: %s", args.Scope, result), err
 		}
-		return renderReadLogs(spanID, logs, args.Offset, args.Limit, args.Grep)
+		return renderLogPage(spanID, logs.lines, logPageOpts{args.Scope, args.Grep, args.Offset, args.Limit, args.FromLine, args.Context})
 	})
 }
 
@@ -3159,48 +3211,6 @@ func emptyLogsResultIn(store *clientdb.DB, spanID string) (string, error) {
 		return fmt.Sprintf("(no logs recorded beneath span %s in this historical trace)", spanID), nil
 	}
 	return fmt.Sprintf("(no logs beneath span %s yet)", spanID), nil
-}
-
-// renderReadLogs shapes captured log lines into a ReadLogs result: trims the
-// last offset lines, applies the grep filter, numbers the lines, and caps the
-// output. The error and empty cases carry the numbers an agent needs to
-// recover — how many lines exist, how many were searched.
-func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern string) (string, error) {
-	if offset < 0 {
-		offset = 0
-	}
-	// Trim the last offset lines
-	if offset >= len(logs) {
-		return "", fmt.Errorf("offset %d skips all %d available lines; retry with a smaller offset (0 reads the tail)", offset, len(logs))
-	}
-	logs = logs[:len(logs)-offset]
-
-	// Apply grep filter if specified
-	if grepPattern != "" {
-		re, err := regexp.Compile(grepPattern)
-		if err != nil {
-			return "", fmt.Errorf("invalid grep pattern %q: %w", grepPattern, err)
-		}
-		var filteredLogs []string
-		for i, line := range logs {
-			if re.MatchString(line) {
-				filteredLogs = append(filteredLogs, fmt.Sprintf("%6d→%s", i+1, line))
-			}
-		}
-		if len(filteredLogs) == 0 {
-			return fmt.Sprintf("(no matches for %q in the %d lines beneath span %s)", grepPattern, len(logs), spanID), nil
-		}
-		logs = filteredLogs
-	} else {
-		for i, line := range logs {
-			logs[i] = fmt.Sprintf("%6d→%s", i+1, line)
-		}
-	}
-
-	// Apply line limit if specified
-	logs = limitLines(spanID, logs, limit, llmLogsMaxLineLen)
-
-	return strings.Join(logs, "\n"), nil
 }
 
 // readTraceTool reads the trace at a span in the requested
