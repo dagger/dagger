@@ -264,7 +264,7 @@ func (ClientSuite) TestTelemetrySplitPublishesOnce(ctx context.Context, t *testc
 			query := fmt.Sprintf(`{ container { from(address: %q) { withExec(args: ["sh", "-c", "echo $0-out", %q]) { exitCode } } } }`, alpineImage, marker)
 			_, err = telemetrySplitClient(ctx, t, c, cli, engine, cloud).
 				WithNewFile("/query.graphql", query).
-				WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}).
+				WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 				Sync(ctx)
 			require.NoError(t, err)
 
@@ -431,7 +431,7 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 				WithExec([]string{"git", "init"}).
 				WithDirectory("/work/mod", telemetrySplitScaleOutModule(c, marker)).
 				WithWorkdir("/work/mod").
-				WithExec([]string{"/bin/dagger", "--progress=plain", "check", "--scale-out", "split-check"}).
+				WithExec([]string{"/bin/dagger", "--progress=plain", "check", "--scale-out", "split-check"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 				Sync(ctx)
 			require.NoError(t, err)
 
@@ -524,10 +524,10 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 
 	mainID, nestedID := identity.NewID(), identity.NewID()
 	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
-		WithExec(markerExecArgs("main-marker-", mainID)).
+		WithExec(markerExecArgs("main-marker-", mainID), dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		WithDirectory("/work/marker", telemetrySplitMarkerModule(c)).
 		WithWorkdir("/work/marker").
-		WithExec([]string{"/bin/dagger", "call", "-m", ".", "emit", "--prefix=nested-marker-", "--id=" + nestedID}).
+		WithExec([]string{"/bin/dagger", "call", "-m", ".", "emit", "--prefix=nested-marker-", "--id=" + nestedID}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err)
 
@@ -604,7 +604,7 @@ func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *
 		WithNewFile("/root/.config/dagger/credentials.json", staleCreds).
 		WithNewFile("/root/.config/dagger/org", `{"id":"org-telemetry-test","name":"telemetry-test"}`).
 		WithEnvVariable("DAGGER_CLOUD_AUTH_URL", "http://cloud:8080/"+cloud.eventsID+"/client").
-		WithExec(markerExecArgs("refresh-marker-", markerID))
+		WithExec(markerExecArgs("refresh-marker-", markerID), dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
 	_, err = clientCtr.Sync(ctx)
 	require.NoError(t, err)
 
@@ -652,7 +652,7 @@ func (ClientSuite) TestEngineTelemetryCloudOutage(ctx context.Context, t *testct
 			"from", "--address=" + alpineImage,
 			"with-exec", "--args=true",
 			"stdout",
-		}).
+		}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err, "a hanging Cloud must never fail the build")
 }
