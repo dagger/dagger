@@ -77,7 +77,7 @@ func (b *bridge) connect(bin, workdir string, args []string) {
 		transport.WithCommandFunc(func(ctx context.Context, command string, env []string, cmdArgs []string) (*exec.Cmd, error) {
 			cmd := exec.CommandContext(ctx, command, cmdArgs...)
 			cmd.Dir = workdir
-			cmd.Env = append(os.Environ(), env...)
+			cmd.Env = directEngineEnv(append(os.Environ(), env...))
 			return cmd, nil
 		}),
 	)
@@ -111,6 +111,33 @@ func (b *bridge) connect(bin, workdir string, args []string) {
 
 	b.cli = cli
 	log.Printf("MCP session initialized")
+}
+
+// An explicit lab engine needs this CLI's own stdio pipe attachable. Older
+// launchers may inject a nesting session that takes precedence over the runner
+// host. Remove these keys entirely (LookupEnv treats an empty port as nesting).
+// Without an explicit direct-engine address, leave ordinary nesting untouched.
+func directEngineEnv(env []string) []string {
+	runner := ""
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		if key == "_EXPERIMENTAL_DAGGER_RUNNER_HOST" {
+			runner = value
+		}
+	}
+	if runner == "" {
+		return env
+	}
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		switch key {
+		case "DAGGER_SESSION_PORT", "DAGGER_SESSION_TOKEN", "DAGGER_SESSION_CLIENT_ID", "DAGGER_ENGINE_NUM_CPU":
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 // session blocks until the handshake settles and reports any init failure to
