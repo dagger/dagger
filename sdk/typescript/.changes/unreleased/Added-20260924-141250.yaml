@@ -1,0 +1,9 @@
+kind: Added
+body: |
+  Add the `@start()` decorator to mark a function as a service for `dagger start`.
+
+  `@up()` keeps working but is deprecated.
+time: 2026-09-24T14:12:50Z
+custom:
+  Author: eunomie
+  PR: "14328"

@@ -255,6 +255,15 @@
             "name": "Changeset"
           }
         },
+        "startSomething": {
+          "name": "startSomething",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Service"
+          }
+        },
         "upSomething": {
           "name": "upSomething",
           "description": "",

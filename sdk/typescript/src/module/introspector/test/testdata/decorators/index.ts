@@ -14,6 +14,7 @@ import {
   func,
   generate,
   object,
+  start,
   up,
 } from "../../../../decorators.js"
 
@@ -140,7 +141,7 @@ export class Decorators {
     return "cached"
   }
 
-  // --- @check / @generate / @up / @agent markers (combined with @func) ---
+  // --- @check / @generate / @start / @up / @agent markers (combined with @func) ---
 
   @func()
   @check()
@@ -149,6 +150,12 @@ export class Decorators {
   @func()
   @generate()
   generateSomething(): Changeset {
+    throw new Error("not implemented")
+  }
+
+  @func()
+  @start()
+  startSomething(): Service {
     throw new Error("not implemented")
   }
 

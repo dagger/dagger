@@ -6,6 +6,7 @@ import {
   field,
   check,
   generate,
+  start,
   up,
   agent,
 } from "../../decorators.js"
@@ -15,6 +16,7 @@ export type DaggerDecorators =
   | "func"
   | "check"
   | "generate"
+  | "start"
   | "up"
   | "agent"
   | "argument"
@@ -25,6 +27,7 @@ export const OBJECT_DECORATOR = object.name as DaggerDecorators
 export const FUNCTION_DECORATOR = func.name as DaggerDecorators
 export const CHECK_DECORATOR = check.name as DaggerDecorators
 export const GENERATOR_DECORATOR = generate.name as DaggerDecorators
+export const START_DECORATOR = start.name as DaggerDecorators
 export const UP_DECORATOR = up.name as DaggerDecorators
 export const AGENT_DECORATOR = agent.name as DaggerDecorators
 export const FIELD_DECORATOR = field.name as DaggerDecorators
