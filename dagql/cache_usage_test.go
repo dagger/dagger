@@ -69,7 +69,9 @@ func TestCacheUsageProviderCallbacksOutsideGraph(t *testing.T) {
 			}}
 			publishUsageValue(t, c, "callbacks", v)
 			if mode == "measurement" {
-				c.measureAllResultSizes(t.Context())
+				if err := c.measureAllResultSizes(t.Context()); err != nil {
+					t.Fatal(err)
+				}
 			} else {
 				_, err := c.snapshotPruneStateCancelable(nil, pruneSnapshotDisk, 0, nil)
 				if err != nil {
@@ -104,7 +106,9 @@ func TestCacheUsageRetainsRowsThroughSizing(t *testing.T) {
 		}
 	}
 	publishUsageValue(t, c, "size-lifetime", v)
-	c.measureAllResultSizes(t.Context())
+	if err := c.measureAllResultSizes(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if !released || c.Size() != 0 {
 		t.Fatal("measurement hold was not collected after sizing")
 	}
@@ -128,7 +132,7 @@ func TestCacheUsageCancellationReleasesRows(t *testing.T) {
 		}
 	}
 	publishUsageValue(t, c, "canceled-usage", v)
-	_, err = c.collectUsageMeasurementInputs(ctx)
+	_, err = c.collectUsageMeasurementInputs(ctx, false)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected cancellation, got %v", err)
 	}
@@ -137,7 +141,7 @@ func TestCacheUsageCancellationReleasesRows(t *testing.T) {
 	}
 }
 
-func TestCacheUsagePruneDefersChangedPopulation(t *testing.T) {
+func TestCacheUsagePruneConvergesChangedPopulation(t *testing.T) {
 	for _, change := range []string{"new-sharer", "replaced-payload", "released-row"} {
 		t.Run(change, func(t *testing.T) {
 			c, err := NewCache(t.Context(), "", nil, nil)
@@ -166,8 +170,8 @@ func TestCacheUsagePruneDefersChangedPopulation(t *testing.T) {
 			}
 			row = publishUsageValue(t, c, "changing-provider", v).cacheSharedResult()
 			_, err = c.snapshotPruneStateCancelable(nil, pruneSnapshotDisk, 0, nil)
-			if !errors.Is(err, errCacheUsageChanged) {
-				t.Fatalf("expected deferred sample, got %v", err)
+			if err != nil {
+				t.Fatalf("finite population change did not converge: %v", err)
 			}
 			if c.activeGlobalOperations.Load() != 0 {
 				t.Fatal("sample leaked operation")
@@ -299,9 +303,11 @@ func TestCacheUsageIdentityDoesNotStallPublication(t *testing.T) {
 			measurementDone := make(chan struct{})
 			go func() {
 				if mode == "measurement" {
-					snapshot, err := c.collectUsageMeasurementInputs(ctx)
+					snapshot, err := c.collectUsageMeasurementInputs(ctx, false)
 					if err == nil {
-						snapshot.closeAndLog(ctx)
+						if err := snapshot.close(ctx); err != nil {
+							t.Error(err)
+						}
 					} else {
 						t.Error(err)
 					}
