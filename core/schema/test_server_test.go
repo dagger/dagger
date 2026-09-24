@@ -74,6 +74,10 @@ func (s *currentTypeDefsTestServer) NonModuleParentClientMetadata(context.Contex
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) ModuleParentHostClientMetadata(context.Context) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error) {
 	return nil, nil
 }

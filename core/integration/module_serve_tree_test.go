@@ -9,6 +9,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
@@ -40,6 +41,28 @@ const serveTreeDecoySource = `type Hello {
   }
 }
 `
+
+// serveTreeNestedSource has the caller serve from a plain process it starts,
+// which the engine does not make the module.
+var serveTreeNestedSource = fmt.Sprintf(`package main
+
+import (
+	"context"
+
+	"dagger/caller/internal/dagger"
+)
+
+const nestedServe = "apk add -q curl && " +
+	"q() { curl -s -u \"$DAGGER_SESSION_TOKEN:\" -H 'Content-Type: application/json' -d \"$1\" \"http://127.0.0.1:$DAGGER_SESSION_PORT/query\"; echo; } && " +
+	"q '{\"query\":\"{serveModule(address: \\\"/modules/hello\\\")}\"}' && " +
+	"q '{\"query\":\"{hello{message}}\"}'"
+
+func (m *Caller) NestedMessage(ctx context.Context) (string, error) {
+	return dag.Container().From(%q).
+		WithExec([]string{"sh", "-c", nestedServe}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		Stdout(ctx)
+}
+`, alpineImage)
 
 // serveTreeModules is a tree holding a caller module and a sibling local
 // client that nothing declares.
@@ -114,6 +137,21 @@ source = "modules/caller"
 			With(daggerCallAt("caller", "message", "--address=/modules/escape")).
 			Stdout(ctx)
 		requireErrOut(t, err, "leaves the module's own tree through a symlink")
+	})
+
+	t.Run("process a host module starts serves from the module's tree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", `[modules.caller]
+source = "modules/caller"
+`).
+			WithDirectory(".", serveTreeModules(c)).
+			WithNewFile("modules/caller/nested.go", serveTreeNestedSource).
+			With(daggerCallAt("caller", "nested-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"message":"hi from hello"`)
 	})
 
 	t.Run("process without a module resolves in its workspace", func(ctx context.Context, t *testctx.T) {

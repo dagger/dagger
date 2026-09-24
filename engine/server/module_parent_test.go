@@ -10,7 +10,7 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-func TestModuleParentIsNearestModuleAncestor(t *testing.T) {
+func TestModuleParentAndItsHost(t *testing.T) {
 	t.Parallel()
 
 	sess := &daggerSession{sessionID: "session"}
@@ -64,4 +64,20 @@ func TestModuleParentIsNearestModuleAncestor(t *testing.T) {
 	_, err := srv.ModuleParent(engine.ContextWithClientMetadata(clientContext(plainExec), outer.clientMetadata))
 	require.ErrorIs(t, err, core.ErrNoCurrentModule,
 		"the caller is the client holding the scope, not the one its metadata names")
+
+	for client, want := range map[*clientRuntime]string{
+		outer:     "cli",
+		outerExec: "cli",
+		inner:     "outer-exec",
+		innerExec: "outer-exec",
+	} {
+		md, err := srv.ModuleParentHostClientMetadata(clientContext(client))
+		require.NoError(t, err, client.clientID)
+		require.Equal(t, want, md.ClientID, client.clientID)
+	}
+
+	for _, client := range []*clientRuntime{cli, plainExec} {
+		_, err := srv.ModuleParentHostClientMetadata(clientContext(client))
+		require.ErrorIs(t, err, core.ErrNoCurrentModule, client.clientID)
+	}
 }

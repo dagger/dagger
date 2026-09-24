@@ -3529,6 +3529,34 @@ func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.C
 	return client.daggerSession.clientMetadataSnapshot(client.clientRecord)
 }
 
+// The nearest non-module client above the module ModuleParent returns: the
+// client whose host that module was loaded from. Unlike
+// NonModuleParentClientMetadata, a nested exec under the module is skipped.
+func (srv *Server) ModuleParentHostClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	client, err := srv.executableClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ancestors, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return nil, fmt.Errorf("resolve module parent host ancestry: %w", err)
+	}
+	chain := append(slices.Clone(ancestors), client)
+	foundModule := false
+	for i := len(chain) - 1; i >= 0; i-- {
+		switch {
+		case chain[i].mod.Self() != nil:
+			foundModule = true
+		case foundModule:
+			return client.daggerSession.clientMetadataSnapshot(chain[i].clientRecord)
+		}
+	}
+	if !foundModule {
+		return nil, core.ErrNoCurrentModule
+	}
+	return nil, fmt.Errorf("no non-module parent found")
+}
+
 // The default deps of every user module (currently just core)
 func (srv *Server) DefaultDeps(ctx context.Context) (*core.SchemaBuilder, error) {
 	client, err := srv.executableClientFromContext(ctx)
