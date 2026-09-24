@@ -1386,15 +1386,19 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 		})
 	}
 
+	historyRefs, err := nativeParentHistoryRefs(ctx, refs)
+	if err != nil {
+		return err
+	}
 	allLocal := true
-	for _, ref := range refs {
+	for _, ref := range historyRefs {
 		if _, ok := ref.Backend.(*LocalGitRef); !ok {
 			allLocal = false
 			break
 		}
 	}
 	if allLocal {
-		err := mountCachedGitRefs(ctx, refs, fn)
+		err := mountCachedGitRefs(ctx, historyRefs, fn)
 		if !errors.Is(err, errShallowCachedGitHistory) {
 			return err
 		}
