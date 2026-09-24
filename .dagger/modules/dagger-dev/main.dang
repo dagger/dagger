@@ -6,10 +6,10 @@ type DaggerDev {
 
   """
   A base container image for various tasks related to developing Dagger.
-  It carries no particular dev tooling. For example it is used as a base for the playground.
+  It carries only basic shell tools (git, ripgrep). For example it is used as a base for the playground.
   """
   base: Container! = wolfi.
-    container(packages: ["apk-tools", "git"]).
+    container(packages: ["apk-tools", "git", "ripgrep"]).
     withEnvVariable("HOME", "/root").
     withWorkdir("$HOME", expand: true)
 
