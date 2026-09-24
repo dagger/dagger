@@ -87,16 +87,17 @@ func SpanFlags(sp *dagui.Span) []string {
 }
 
 // RenderSpanList lists the spans loaded in db -- one "id  status  name" line
-// each, in arrival order -- optionally filtered by a name (or service name)
-// substring, so a caller can find a span ID to zoom to, inspect, or read
-// logs beneath. Service-instance spans are tagged with their hostname so
-// running services (whose logs live beneath them) are cheap to find.
+// each, sorted by start time (oldest first), then trace ID and span ID --
+// optionally filtered by a name (or service name) substring, so a caller can
+// find a span ID to zoom to, inspect, or read logs beneath. Service-instance
+// spans are tagged with their hostname so running services (whose logs live
+// beneath them) are cheap to find. Unknown start times sort first.
 //
 // limit > 0 keeps only the NEWEST limit matches -- the most recent spans are
 // the ones a reader asking "what just ran" means -- and says how many earlier
 // matches were dropped. 0 lists them all.
 func RenderSpanList(db *dagui.DB, query string, limit int) string {
-	var lines []string
+	var spans []*dagui.Span
 	for _, sp := range db.Spans.Order {
 		if !sp.Received {
 			// A placeholder allocated for a parent pointer, not a span
@@ -106,6 +107,23 @@ func RenderSpanList(db *dagui.DB, query string, limit int) string {
 		if query != "" && !strings.Contains(sp.Name, query) && !strings.Contains(sp.ServiceName, query) {
 			continue
 		}
+		spans = append(spans, sp)
+	}
+	slices.SortFunc(spans, func(a, b *dagui.Span) int {
+		if cmp := a.StartTime.Compare(b.StartTime); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.TraceID.String(), b.TraceID.String()); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.ID.String(), b.ID.String())
+	})
+	var b strings.Builder
+	if limit > 0 && len(spans) > limit {
+		fmt.Fprintf(&b, "... %d earlier matching spans omitted (narrow the query, or raise the limit) ...\n", len(spans)-limit)
+		spans = spans[len(spans)-limit:]
+	}
+	for _, sp := range spans {
 		name := sp.Name
 		if sp.Service {
 			tag := "service"
@@ -114,16 +132,7 @@ func RenderSpanList(db *dagui.DB, query string, limit int) string {
 			}
 			name += "  [" + tag + "]"
 		}
-		lines = append(lines, fmt.Sprintf("%s  %-5s  %s", sp.ID, SpanStatus(sp), name))
-	}
-	var b strings.Builder
-	if limit > 0 && len(lines) > limit {
-		fmt.Fprintf(&b, "... %d earlier matching spans omitted (narrow the query, or raise the limit) ...\n", len(lines)-limit)
-		lines = lines[len(lines)-limit:]
-	}
-	for _, line := range lines {
-		b.WriteString(line)
-		b.WriteByte('\n')
+		fmt.Fprintf(&b, "%s  %-5s  %s\n", sp.ID, SpanStatus(sp), name)
 	}
 	return b.String()
 }

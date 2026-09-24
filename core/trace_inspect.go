@@ -38,8 +38,8 @@ const (
 )
 
 // findSpans lists the spans whose name (or service hostname) contains query,
-// session-wide or beneath root, in arrival order, keeping the newest limit
-// matches.
+// session-wide or beneath root, ordered by start time, then trace ID and
+// span ID, keeping the newest limit matches.
 //
 // The store's row index seeds the load -- every span, or root's log scope --
 // and a raw byte prefilter on the query trims it before anything is decoded

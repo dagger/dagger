@@ -596,9 +596,15 @@ func TestRenderSpanList(t *testing.T) {
 		ID: prettyTestSpanID(9), TraceID: prettyTestTraceID(), Name: "exec redis", Service: true, ServiceName: "cache",
 		StartTime: start, Final: true,
 	})
-	db.ImportSnapshots(snaps)
+	// Arrival order is not start-time order (including across snapshots).
+	for i := len(snaps) - 1; i >= 0; i-- {
+		db.ImportSnapshots(snaps[i : i+1])
+	}
+	arrivalSecond := db.Spans.Order[1].ID
 
 	all := RenderSpanList(db, "", 0)
+	require.Equal(t, arrivalSecond, db.Spans.Order[1].ID, "rendering must not reorder the DB")
+	require.Less(t, strings.Index(all, "step 1"), strings.Index(all, "step 5"))
 	if n := strings.Count(all, "\n"); n != 6 {
 		t.Errorf("unlimited listing has %d lines, want 6:\n%s", n, all)
 	}
@@ -629,4 +635,10 @@ func TestRenderSpanList(t *testing.T) {
 	if got := RenderSpanList(db, "", 0); strings.Contains(got, prettyTestSpanID(11).String()) {
 		t.Errorf("placeholder span listed:\n%s", got)
 	}
+	// Unknown starts sort first, not ahead of known starts as "newest".
+	require.True(t, strings.HasPrefix(RenderSpanList(db, "", 0), prettyTestSpanID(10).String()))
+	newest := RenderSpanList(db, "", 1)
+	require.Contains(t, newest, "... 6 earlier matching spans omitted")
+	require.Contains(t, newest, "step 5")
+	require.NotContains(t, newest, "orphan")
 }

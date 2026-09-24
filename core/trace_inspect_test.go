@@ -91,7 +91,7 @@ func TestFindSpansIn(t *testing.T) {
 	ctx := context.Background()
 	store, ids := traceInspectStore(t)
 
-	// Session-wide by name: only the matches, in arrival order, with the
+	// Session-wide by name: only the matches, in start-time order, with the
 	// span's own status.
 	got, err := findSpansIn(ctx, store, "go ", "", 0)
 	require.NoError(t, err)
@@ -134,6 +134,56 @@ func TestFindSpansIn(t *testing.T) {
 	// An unknown root is an error, not an empty listing.
 	_, err = findSpansIn(ctx, store, "", "00000000000000ff", 0)
 	require.ErrorContains(t, err, "no span")
+}
+
+func TestFindSpansImportedOrder(t *testing.T) {
+	ctx := t.Context()
+	live, err := clientdb.NewDBs(t.TempDir()).Open(ctx, "live")
+	require.NoError(t, err)
+	defer live.Close()
+	// Trace-ID order opposes chronology. Tied starts must sort by trace ID
+	// before span ID, regardless of store or row ingestion order.
+	newer, older := "11111111111111111111111111111111", "22222222222222222222222222222222"
+	groups := [][]clientdb.Span{
+		{
+			{TraceID: newer, SpanID: "0000000000000002", Name: "newest", StartTime: 300},
+			{TraceID: newer, SpanID: "0000000000000005", Name: "tie second", StartTime: 200},
+			{TraceID: newer, SpanID: "0000000000000004", Name: "tie first", StartTime: 200},
+		},
+		{
+			{TraceID: older, SpanID: "0000000000000003", Name: "tie third", StartTime: 200},
+			{TraceID: older, SpanID: "0000000000000001", Name: "oldest", StartTime: 100},
+		},
+	}
+	for _, rows := range groups {
+		for i := range rows {
+			rows[i].EndTime = sql.NullInt64{Int64: rows[i].StartTime + 1, Valid: true}
+			rows[i].Attributes, rows[i].Links, rows[i].Events = []byte("[]"), []byte("[]"), []byte("[]")
+			rows[i].Resource, rows[i].InstrumentationScope = []byte("{}"), []byte("{}")
+		}
+		_, err := live.ImportTrace(ctx, rows[0].TraceID, func(dst *clientdb.DB) error {
+			_, err := dst.AppendSpans(rows)
+			return err
+		})
+		require.NoError(t, err)
+	}
+	imports := live.InspectionStores()[1:]
+	require.Len(t, imports, 2)
+	want := "0000000000000001  ok     oldest\n" +
+		"0000000000000004  ok     tie first\n" +
+		"0000000000000005  ok     tie second\n" +
+		"0000000000000003  ok     tie third\n" +
+		"0000000000000002  ok     newest\n"
+	for _, stores := range [][]*clientdb.DB{imports, {imports[1], imports[0]}} {
+		got, err := findSpansIn(ctx, live, "", "", 0, stores...)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+		got, err = findSpansIn(ctx, live, "", "", 2, stores...)
+		require.NoError(t, err)
+		require.Contains(t, got, "... 3 earlier matching spans omitted")
+		require.True(t, strings.HasSuffix(got, "0000000000000003  ok     tie third\n0000000000000002  ok     newest\n"), got)
+		require.NotContains(t, got, "oldest")
+	}
 }
 
 func TestInspectSpanIn(t *testing.T) {
