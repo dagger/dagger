@@ -17,6 +17,10 @@
           ],
           "description": "LogLevel defines the engine's logging level."
         },
+        "telemetry": {
+          "$ref": "#/$defs/TelemetryConfig",
+          "description": "Telemetry configures the engine's own telemetry, separate from client telemetry."
+        },
         "gc": {
           "$ref": "#/$defs/GCConfig",
           "description": "GC configures the engine's garbage collector."
@@ -191,6 +195,17 @@
         "insecureRootCapabilities": {
           "type": "boolean",
           "description": "InsecureRootCapabilities controls whether the argument of the same name is permitted in Container.withExec - it is allowed by default. Disabling this option ensures that dagger build containers do not run as privileged, and is a basic form of security hardening."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "TelemetryConfig": {
+      "properties": {
+        "resourceMetrics": {
+          "type": "boolean",
+          "description": "ResourceMetrics enables cgroup v2 resource metrics for the engine process. It is disabled by default. Export requires OTEL_EXPORTER_OTLP_METRICS_ENDPOINT in the engine environment. Other OTLP settings use the standard environment variables. This does not change client or execution metric collection and export.",
+          "default": false
         }
       },
       "additionalProperties": false,
