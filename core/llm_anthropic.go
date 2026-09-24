@@ -30,7 +30,7 @@ type AnthropicClient struct {
 // latest and an installed copy is often below the floor a new model needs.
 // Between Dagger releases, users can override it with
 // ANTHROPIC_CLAUDE_CODE_VERSION (see LLMRouter.LoadConfig).
-const defaultClaudeCodeVersion = "2.1.273"
+const defaultClaudeCodeVersion = "2.1.281"
 
 // claudeCodeVersionPattern is the shape ANTHROPIC_CLAUDE_CODE_VERSION must
 // take: a bare X.Y.Z, exactly as Claude Code itself reports it.
