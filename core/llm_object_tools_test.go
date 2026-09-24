@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
@@ -563,6 +564,67 @@ func TestStandaloneToolsTreatLLMArgsAsUnsatisfiable(t *testing.T) {
 	// dispatching conversation is then a bug, not a silent null.
 	_, err = conversation.buildObjectMethodSelector(ctx, srv, runner.ObjectType(), annotateField, map[string]any{})
 	require.ErrorContains(t, err, "requires the current conversation")
+}
+
+func TestLazyToolReplacementDoesNotLoadSupersededObject(t *testing.T) {
+	for _, warm := range []bool{false, true} {
+		for _, sameSession := range []bool{false, true} {
+			t.Run(fmt.Sprintf("warm=%t/sameSession=%t", warm, sameSession), func(t *testing.T) {
+				ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "source", SessionID: "source"})
+				cache, err := dagql.NewCache(ctx, "", nil, nil)
+				require.NoError(t, err)
+				ctx = dagql.ContextWithCache(ctx, cache)
+				srv := newAddressLiftTestServer(t)
+				calls := map[string]int{}
+				failA := false
+				dagql.Fields[*Query]{
+					dagql.Func("replacementRunner", func(_ context.Context, _ *Query, args struct{ Name string }) (*liftTestRunner, error) {
+						calls[args.Name]++
+						if args.Name == "A" && failA {
+							return nil, fmt.Errorf("superseded A must not be loaded")
+						}
+						return &liftTestRunner{}, nil
+					}),
+				}.Install(srv)
+				idFor := func(name string) *call.ID {
+					return call.New().Append((&liftTestRunner{}).Type(), "replacementRunner",
+						call.WithArgs(call.NewArgument("name", call.NewLiteralString(name), false)))
+				}
+				if warm {
+					_, err := srv.Load(ctx, idFor("A"))
+					require.NoError(t, err)
+				}
+				calls = map[string]int{}
+				failA = true
+				if !sameSession {
+					ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "destination", SessionID: "destination"})
+				}
+				objType, ok := srv.ObjectType("LiftTestRunner")
+				require.True(t, ok)
+				mcp := newMCP().withLazyToolsOwner(idFor("A"), objType, srv.Schema(), nil, "owner-A", 1).
+					withLazyToolsOwner(idFor("B"), objType, srv.Schema(), nil, "owner-B", 2)
+				require.Len(t, mcp.boundTools, 1)
+				require.Equal(t, "owner-B", mcp.boundTools[0].Owner)
+				require.Equal(t, 2, mcp.boundTools[0].Version)
+				toolsets, err := mcp.boundToolsets(srv)
+				require.NoError(t, err)
+				require.Empty(t, calls, "listing must not load either object")
+				require.Len(t, toolsets, 1)
+				invoked := false
+				for _, tool := range toolsets[0].tools {
+					if tool.Name != "nullable" {
+						continue
+					}
+					out, err := tool.Call(ctx, map[string]any{"date": "B is active"})
+					require.NoError(t, err)
+					require.Contains(t, fmt.Sprint(out), "B is active")
+					invoked = true
+				}
+				require.True(t, invoked)
+				require.Equal(t, map[string]int{"B": 1}, calls)
+			})
+		}
+	}
 }
 
 // TestBoundToolsUseTheirDefiningSchemaAuthoritatively covers both lazy bindings
