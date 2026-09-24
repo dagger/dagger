@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  `-i` (`--shell-on-error`) now opens an interactive debugging view when a
+  container command fails: a file explorer of the failed container's working
+  directory next to the shell. Press `F5` to refresh the explorer with changes
+  made in the shell, `o` to export the selected file or directory to the host,
+  and `ctrl+q` to switch between the shell and the explorer. Terminals smaller
+  than 60×10 keep the plain shell.
+time: 2026-09-24T21:30:00Z
+custom:
+  Author: marcosnils
+  PR: ""

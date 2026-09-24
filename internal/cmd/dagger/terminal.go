@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -207,9 +208,29 @@ func withTerminal(session *terminal.SessionHandle) error {
 	if silent {
 		return fmt.Errorf("running shell in silent mode is not supported")
 	}
+
+	// Rich exec-error UI: when the engine tells us which container the
+	// terminal is attached to (-i / --shell-on-error), open the interactive
+	// explorer TUI (file tree + terminal) instead of a raw terminal.
+	if session.Info != nil && session.Info.FromExecError && hasTTY && ttyFitsExplorer() {
+		if dag := currentDaggerClient.Load(); dag != nil {
+			return Frontend.Background(newInteractiveTUISession(session, dag), true)
+		}
+	}
+
 	return Frontend.Background(&terminalSession{
 		fn: session.Run,
 	}, true)
+}
+
+// ttyFitsExplorer reports whether the user's terminal is large enough for the
+// explorer's split view; smaller terminals get the classic raw shell.
+func ttyFitsExplorer() bool {
+	cols, rows, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		return false
+	}
+	return explorerFits(cols, rows)
 }
 
 type terminalSession struct {

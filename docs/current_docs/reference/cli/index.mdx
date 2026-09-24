@@ -92,7 +92,7 @@ dagger agent [options] [name...]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -160,7 +160,7 @@ dagger api call [options] [function]...
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -208,7 +208,7 @@ dagger api functions [options] [function]...
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -273,7 +273,7 @@ EOF
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -334,7 +334,7 @@ dagger api with-session python main.py
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -387,7 +387,7 @@ dagger check [options] [pattern...]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -1094,7 +1094,7 @@ dagger generate [options] [pattern...]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -1134,7 +1134,7 @@ dagger init
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -1184,7 +1184,7 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -1441,7 +1441,7 @@ dagger module client add <module> [--sdk=SDK]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -1480,7 +1480,7 @@ dagger module client list [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -1522,7 +1522,7 @@ dagger module client rm <module> [--sdk=SDK]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -1553,7 +1553,7 @@ dagger module client scope [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -1600,7 +1600,7 @@ dagger module client update
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -1643,7 +1643,7 @@ dagger module init SDK [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -1693,7 +1693,7 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -1716,7 +1716,7 @@ dagger module list [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -1762,7 +1762,7 @@ dagger module migrate [PATH] [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -1800,7 +1800,7 @@ dagger module recommend [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -1870,7 +1870,7 @@ dagger module settings [module] [key] [value...] [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -1914,7 +1914,7 @@ dagger module uninstall hello
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -1957,7 +1957,7 @@ dagger module update [NAME|SOURCE...] [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -1988,7 +1988,7 @@ dagger module version NAME|SOURCE [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2031,7 +2031,7 @@ dagger sdk list [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2093,7 +2093,7 @@ dagger sdk scope is-module [BOOL] [flags]
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2125,7 +2125,7 @@ dagger sdk scope list [flags]
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2155,7 +2155,7 @@ dagger sdk scope name [NAME] [flags]
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2185,7 +2185,7 @@ dagger sdk scope sdk [SDK] [flags]
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2217,7 +2217,7 @@ dagger settings [module] [key] [value...]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2272,7 +2272,7 @@ dagger shell [options] [pattern]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -2318,7 +2318,7 @@ dagger module uninstall hello
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2360,7 +2360,7 @@ dagger up [options] [pattern...]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -2405,7 +2405,7 @@ dagger update [NAME|SOURCE...]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2460,7 +2460,7 @@ applies a named overlay; dagger.toml is the source of truth.
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2533,7 +2533,7 @@ dagger workspace cat PATH [PATH...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2578,7 +2578,7 @@ dagger workspace config [key] [value] [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2600,7 +2600,7 @@ dagger workspace config-file [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2622,7 +2622,7 @@ dagger workspace cwd [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2660,7 +2660,7 @@ dagger workspace entrypoint [NAME] [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2715,7 +2715,7 @@ dagger workspace exec [OPTIONS] [--] COMMAND [ARGS...] [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -2766,7 +2766,7 @@ dagger workspace export [PATH] -o DEST [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2807,7 +2807,7 @@ dagger workspace find [PATH...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2832,7 +2832,7 @@ They do not load installed modules.
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2867,7 +2867,7 @@ dagger workspace git dirty [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2907,7 +2907,7 @@ dagger workspace git log [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2929,7 +2929,7 @@ dagger workspace git ref [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2951,7 +2951,7 @@ dagger workspace git sha [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -2986,7 +2986,7 @@ dagger workspace git url [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -3040,7 +3040,7 @@ dagger workspace grep PATTERN [PATH...] [flags]
   -i, --ignore-case          Ignore case when matching
       --json                 Print a JSON array of structured matches
       --multiline            Allow matches to span multiple lines
-      --shell-on-error       Open a shell when a container exec fails (needs an interactive terminal)
+      --shell-on-error       Open a shell and file explorer when a container exec fails (needs an interactive terminal)
 ```
 
 ### Options inherited from parent commands
@@ -3080,7 +3080,7 @@ dagger workspace ls [PATH...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -3125,7 +3125,7 @@ dagger workspace migrate [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
@@ -3168,7 +3168,7 @@ dagger workspace remotes [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -3190,7 +3190,7 @@ dagger workspace root [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -3229,7 +3229,7 @@ dagger workspace update [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -i, --shell-on-error     Open a shell and file explorer when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```

@@ -151,6 +151,7 @@ func withEngine(
 		cleanup.Add("close dagger session", sess.Close)
 
 		Frontend.SetClient(sess.Dagger())
+		currentDaggerClient.Store(sess.Dagger())
 
 		return cleanup.Run, fn(ctx, sess)
 	})
@@ -298,6 +299,7 @@ func withSetupSessions(
 				return nil, nil, err
 			}
 			Frontend.SetClient(sess.Dagger())
+			currentDaggerClient.Store(sess.Dagger())
 			return sess, func() { _ = sess.Close() }, nil
 		}
 

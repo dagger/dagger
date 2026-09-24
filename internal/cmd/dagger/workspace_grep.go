@@ -111,7 +111,7 @@ Exit status is 0 if a match is found, 1 if no matches are found, and 2 on error.
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Print a JSON array of structured matches")
 	// grep owns -i. Shadow the global flag by name to prevent Cobra from
 	// merging its conflicting shorthand, while preserving its long form.
-	cmd.Flags().BoolVar(&shellOnError, "shell-on-error", false, "Open a shell when a container exec fails (needs an interactive terminal)")
+	cmd.Flags().BoolVar(&shellOnError, "shell-on-error", false, "Open a shell and file explorer when a container exec fails (needs an interactive terminal)")
 	shellFlag := cmd.Flags().Lookup("shell-on-error")
 	setFlagCapabilities(shellFlag, mayCallEngine)
 	shellFlag.Annotations[globalFlagAliasAnnotation] = []string{"true"}

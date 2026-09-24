@@ -70,3 +70,26 @@ Or save a returned file or directory to the host:
 ```shell
 dagger api call build --output=./dist
 ```
+
+## Debug a failed command
+
+Pass `-i` (`--shell-on-error`) to open an interactive debugging session when a container command fails:
+
+```shell
+dagger -i api call build
+```
+
+Instead of exiting, Dagger opens the failed container's state, with a file explorer on the left and a shell on the right. The explorer starts at the failed command's working directory. The shell runs in the container, so you can re-run commands and inspect what went wrong.
+
+| Key | Action |
+|---|---|
+| `ctrl+q` | Switch focus between the shell and the file explorer |
+| `F5` | Refresh the explorer with the shell's current filesystem (from either pane) |
+| `enter` | In the explorer: expand a directory, or preview a file |
+| `o` | In the explorer: export the selected file or directory to the host |
+| `r` | In the explorer: refresh (same as `F5`) |
+| `q`, `esc` | Close the file preview; `q` in the explorer closes the session |
+
+The explorer shows a snapshot of the filesystem: changes made in the shell appear after a refresh. Exports write what the explorer shows, relative to the directory you ran `dagger` from unless you give an absolute path.
+
+In terminals smaller than 60×10, `-i` opens a plain shell without the file explorer.

@@ -474,7 +474,7 @@ func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags.BoolVar(&cloudFlag, "cloud", false, "")
 	_ = engineFlags.MarkDeprecated("cloud", "use --engine=cloud instead")
 	engineFlags.Lookup("cloud").Hidden = true
-	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell when a container exec fails (needs an interactive terminal)")
+	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell and file explorer when a container exec fails (needs an interactive terminal)")
 	engineFlags.BoolVar(&shellOnError, "interactive", false, "")
 	_ = engineFlags.MarkDeprecated("interactive", "use --shell-on-error (-i) instead")
 	engineFlags.StringVar(&shellCommandOnError, "shell-command-on-error", defaultShellCommandOnError, "Command to run when --shell-on-error opens a shell")
