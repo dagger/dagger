@@ -129,6 +129,22 @@ func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsP
 	return &msg, nil
 }
 
+// RealCallerHostPath returns the absolute path of the given path on the
+// caller's host, with every symlink resolved.
+func (c *Client) RealCallerHostPath(ctx context.Context, path string) (string, error) {
+	msg := fsutiltypes.Stat{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:              path,
+		StatPathOnly:      true,
+		StatReturnAbsPath: true,
+		StatResolvePath:   true,
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat path: %w", err)
+	}
+	return msg.Path, nil
+}
+
 func (c *Client) SearchCallerHostPath(ctx context.Context, dir string, opts *engine.LocalSearchOpts) ([]engine.LocalSearchResult, error) {
 	msg := filesync.BytesMessage{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
