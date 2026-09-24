@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -182,6 +183,12 @@ func realBenchStatus(ctx context.Context, t *testing.T, delta *dagger.Changeset,
 }
 
 func TestWorkspaceRealRepositoryPerformance(t *testing.T) {
+	// A full-history network fixture is too expensive for ordinary CI runs.
+	// Require the benchmark's name explicitly, not a broad selector such as .*.
+	run := flag.Lookup("test.run")
+	if run == nil || !strings.Contains(run.Value.String(), "TestWorkspaceRealRepositoryPerformance") {
+		t.Skip("opt in with -run '^TestWorkspaceRealRepositoryPerformance$' on a fresh from-source engine")
+	}
 	if realBenchPrivateSession(t) {
 		return
 	}
