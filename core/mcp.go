@@ -3147,6 +3147,10 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 		if args.Scope != "causal" && args.Scope != "descendants" && args.Scope != "own" {
 			return nil, fmt.Errorf("invalid scope %q: want own, descendants or causal", args.Scope)
 		}
+		opts := logPageOpts{args.Scope, args.Grep, args.Offset, args.Limit, args.FromLine, args.Context}
+		if err := validateLogPageOpts(opts); err != nil {
+			return nil, err
+		}
 		spanID := normalizeSpanArg(args.Span)
 		if _, err := trace.SpanIDFromHex(spanID); err != nil {
 			return nil, fmt.Errorf("invalid span ID %q: %w", spanID, err)
@@ -3161,7 +3165,7 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 			result, err := m.emptyLogsResult(ctx, spanID)
 			return fmt.Sprintf("scope=%s: %s", args.Scope, result), err
 		}
-		return renderLogPage(spanID, logs.lines, logPageOpts{args.Scope, args.Grep, args.Offset, args.Limit, args.FromLine, args.Context})
+		return renderLogPage(spanID, logs.lines, opts)
 	})
 }
 

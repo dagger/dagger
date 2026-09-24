@@ -15,12 +15,24 @@ type logPageOpts struct {
 // Line addresses are one-based in a fixed span/scope capture, before grep.
 // Historical captures are immutable. Live captures may grow or complete a
 // trailing fragment, so callers should not treat them as snapshot cursors.
-func renderLogPage(span string, lines []capturedLine, opt logPageOpts) (string, error) {
+func validateLogPageOpts(opt logPageOpts) error {
 	if opt.fromLine < 0 || opt.context < 0 || opt.context > 100 {
-		return "", fmt.Errorf("fromLine must be non-negative; context must be between 0 and 100")
+		return fmt.Errorf("fromLine must be non-negative; context must be between 0 and 100")
 	}
 	if opt.fromLine > 0 && opt.offset != 0 {
-		return "", fmt.Errorf("fromLine and offset are mutually exclusive")
+		return fmt.Errorf("fromLine and offset are mutually exclusive")
+	}
+	if opt.grep != "" {
+		if _, err := regexp.Compile(opt.grep); err != nil {
+			return fmt.Errorf("invalid grep pattern %q: %w", opt.grep, err)
+		}
+	}
+	return nil
+}
+
+func renderLogPage(span string, lines []capturedLine, opt logPageOpts) (string, error) {
+	if err := validateLogPageOpts(opt); err != nil {
+		return "", err
 	}
 	if opt.limit <= 0 {
 		opt.limit = 100
@@ -43,16 +55,16 @@ func renderLogPage(span string, lines []capturedLine, opt logPageOpts) (string, 
 		}
 	}
 	// Merge overlapping context windows; every line keeps its original address.
-	selected := make([]bool, end)
+	selected := make([]bool, len(lines))
 	matches := 0
-	for i := 0; i < end; i++ {
+	for i := range lines {
 		if re == nil || re.MatchString(lines[i].text) {
-			if i >= start {
+			if i >= start && i < end {
 				matches++
 			}
 			lo, hi := i, i+1
 			if re != nil {
-				lo, hi = max(start, i-opt.context), min(end, i+opt.context+1)
+				lo, hi = max(0, i-opt.context), min(len(lines), i+opt.context+1)
 			}
 			for j := lo; j < hi; j++ {
 				selected[j] = true
@@ -71,11 +83,18 @@ func renderLogPage(span string, lines []capturedLine, opt logPageOpts) (string, 
 		out.WriteString("Causal scope includes descendants and cause-linked work, not just own logs; membership does not establish error causality.\n")
 	}
 	if re != nil {
-		fmt.Fprintf(&out, "%d grep matches; context=%d.\n", matches, opt.context)
+		fmt.Fprintf(&out, "%d grep matches in requested range; context=%d (windows may continue across page boundaries).\n", matches, opt.context)
 	}
 	if len(indices) == 0 {
 		out.WriteString("(no matching lines)\n")
 		return out.String(), nil
+	}
+	firstSelected, lastSelected := indices[0], indices[len(indices)-1]
+	for i := 0; i < firstSelected; i++ {
+		if selected[i] {
+			firstSelected = i
+			break
+		}
 	}
 	if len(indices) > opt.limit {
 		if opt.fromLine > 0 {
@@ -102,10 +121,10 @@ func renderLogPage(span string, lines []capturedLine, opt logPageOpts) (string, 
 		last = i
 	}
 	// Exact calls, rather than backwards arithmetic, make either direction usable.
-	if first > 0 {
+	if firstSelected < first {
 		fmt.Fprintf(&out, "Earlier: ReadLogs(span: %q, scope: %q, offset: %d, limit: %d, grep: %q, context: %d)\n", span, opt.scope, len(lines)-first, opt.limit, opt.grep, opt.context)
 	}
-	if last+1 < end {
+	if lastSelected > last {
 		fmt.Fprintf(&out, "Next: ReadLogs(span: %q, scope: %q, fromLine: %d, limit: %d, grep: %q, context: %d)\n", span, opt.scope, last+2, opt.limit, opt.grep, opt.context)
 	}
 	fmt.Fprintf(&out, "Range: ReadLogs(span: %q, scope: %q, fromLine: %d, limit: %d)\n", span, opt.scope, first+1, last-first+1)

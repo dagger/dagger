@@ -68,7 +68,10 @@ func TestToolErrorResponseScopesLogs(t *testing.T) {
 	marker := fmt.Sprintf("[traceparent:%s-%s]", traceID, originID)
 	fullLogs, err := m.readLogsTool(&dagql.Server{})(ctx, map[string]any{"span": marker})
 	require.NoError(t, err)
-	require.Equal(t, "     1→source diagnostic\n     2→exec stdout\n     3→exec stderr", fullLogs)
+	require.Contains(t, fullLogs, "1→[span="+originID+" stream=0 time=unknown] source diagnostic")
+	require.Contains(t, fullLogs, "2→[span="+originID+" stream=0 time=unknown] exec stdout")
+	require.Contains(t, fullLogs, "3→[span="+originID+" stream=0 time=unknown] exec stderr")
+	require.NotContains(t, fullLogs, "unrelated output")
 	tool := LLMTool{
 		Name: "broken",
 		Call: func(context.Context, any) (any, error) { return nil, failure },
@@ -627,7 +630,9 @@ func TestCallPayloadRecordsExcludedFromLLMLogs(t *testing.T) {
 	t.Run("ReadLogs", func(t *testing.T) {
 		got, err := m.readLogsTool(&dagql.Server{})(ctx, map[string]any{"span": spanID})
 		require.NoError(t, err)
-		require.Equal(t, "     1→before\n     2→after", got)
+		require.Contains(t, got, "1→[span="+spanID+" stream=0 time=unknown] before")
+		require.Contains(t, got, "2→[span="+spanID+" stream=0 time=unknown] after")
+		require.Contains(t, got, "2 lines available")
 	})
 
 	t.Run("automatic tool result", func(t *testing.T) {
@@ -1272,6 +1277,71 @@ func TestLogLineProducerTimestamp(t *testing.T) {
 	require.Equal(t, p, lines[1].producer)
 	require.Equal(t, int64(123), lines[1].timestamp)
 	require.Equal(t, "assertion", lines[1].text)
+}
+
+func TestReadLogsContextPagination(t *testing.T) {
+	var lines []capturedLine
+	for i := 1; i <= 10; i++ {
+		lines = append(lines, capturedLine{text: fmt.Sprintf("line-%d", i)})
+	}
+	for _, tc := range []struct {
+		opt  logPageOpts
+		want []int
+	}{
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2}, []int{7, 8}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, offset: 4}, []int{5, 6}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, offset: 6}, []int{3, 4}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, offset: 8}, []int{2}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, fromLine: 6}, []int{6, 7}},
+		{logPageOpts{grep: "line-5$", context: 3, limit: 2, fromLine: 8}, []int{8}},
+	} {
+		got, err := renderLogPage("s", lines, tc.opt)
+		require.NoError(t, err)
+		require.Equal(t, len(tc.want), strings.Count(got, "→"))
+		for _, i := range tc.want {
+			require.Contains(t, got, fmt.Sprintf("line-%d\n", i))
+		}
+	}
+	got, err := renderLogPage("s", lines, logPageOpts{grep: "line-5$", context: 3, limit: 100})
+	require.NoError(t, err)
+	require.NotContains(t, got, "Earlier:")
+	require.NotContains(t, got, "Next:")
+	// Validate even without a telemetry store (including otherwise empty captures).
+	_, err = newMCP().readLogsTool(&dagql.Server{})(t.Context(), map[string]any{"span": "0000000000000001", "grep": "("})
+	require.ErrorContains(t, err, "invalid grep")
+}
+
+func TestReadLogsScopes(t *testing.T) {
+	const tid = "000102030405060708090a0b0c0d0e0f"
+	const root, child, linked = "0000000000000001", "0000000000000002", "0000000000000003"
+	dbs := clientdb.NewDBs(t.TempDir())
+	store, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	_, err = store.AppendSpans([]clientdb.Span{
+		{TraceID: tid, SpanID: root, Attributes: marshalSpanAttrs(t)},
+		{TraceID: tid, SpanID: child, ParentSpanID: validSpanID(root), Attributes: marshalSpanAttrs(t)},
+		{TraceID: tid, SpanID: linked, Attributes: marshalSpanAttrs(t), Links: marshalCauseLink(t, tid, root)},
+	})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]clientdb.Log{
+		persistedCaptureLog(t, tid, root, "test", stringLogBody("own-output\n")),
+		persistedCaptureLog(t, tid, child, "test", stringLogBody("child-output\n")),
+		persistedCaptureLog(t, tid, linked, "test", stringLogBody("linked-output\n")),
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{mockServer: &mockServer{}, dbs: dbs}})
+	m := newMCP()
+	tools := NewLLMToolSet()
+	m.loadBuiltins(&dagql.Server{}, tools)
+	for _, scope := range []string{"own", "descendants", "causal"} {
+		got := m.CallContent(ctx, tools.Order, &LLMToolCall{Name: "ReadLogs", Arguments: JSON(fmt.Sprintf(`{"span":%q,"scope":%q}`, root, scope))})
+		require.False(t, got.Errored)
+		text := got.ContentText()
+		require.Contains(t, text, "own-output")
+		require.Equal(t, scope != "own", strings.Contains(text, "child-output"))
+		require.Equal(t, scope == "causal", strings.Contains(text, "linked-output"))
+	}
 }
 
 func TestRenderReadLogs(t *testing.T) {
