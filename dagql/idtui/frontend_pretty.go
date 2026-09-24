@@ -5638,35 +5638,7 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.syncPrompt()
 		return true
 	case "alt+up":
-		// Pull a queued message (one submitted while a non-prompt turn was
-		// running; see handleInputComplete) back into the input for editing.
-		// Slightly racy: if the turn just finished, handleShellDone already
-		// consumed the message to start it as a new turn. Legacy text handlers
-		// can fall back to the label; typed queues must not recreate attachments
-		// from their payload-free summary.
-		// Prompt-turn interjections never land here: they are sent to the
-		// agent immediately, with nothing left client-side to recall -- the
-		// Sent check below keeps alt+up from "recalling" a message the agent
-		// is already going to read.
-		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
-			shown := PromptInput{Text: fe.queuedMsgLabel.Message()}
-			if input := fe.clearQueuedPrompt(); !input.Empty() {
-				shown = input
-			} else if _, typed := fe.shell.(PromptInputHandler); typed {
-				// The typed queue already drained. Its payload-free label cannot
-				// reconstruct an image-bearing prompt or safely duplicate a send.
-				return true
-			}
-			fe.cancelImagePaste()
-			fe.historyIndex = -1
-			fe.historySaved = ""
-			fe.historyImages = nil
-			fe.textInput.SetValue(shown.Text)
-			fe.promptImages = shown.Images
-			fe.syncPrompt()
-			return true
-		}
-		return false
+		return fe.recallQueuedPrompt()
 	case "up", "down":
 		// Let TextInput move within multiline or wrapped input. At the visual
 		// boundary it bubbles the key to PromptFrame for history navigation.
@@ -5698,6 +5670,39 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 	}
 
 	return false // let TextInput handle it
+}
+
+// recallQueuedPrompt pulls a queued message (one submitted while a non-prompt
+// turn was running; see handleInputComplete) back into the input for editing.
+// It returns whether the key was consumed.
+func (fe *frontendPretty) recallQueuedPrompt() bool {
+	// Slightly racy: if the turn just finished, handleShellDone already
+	// consumed the message to start it as a new turn. Legacy text handlers
+	// can fall back to the label; typed queues must not recreate attachments
+	// from their payload-free summary.
+	// Prompt-turn interjections never land here: they are sent to the
+	// agent immediately, with nothing left client-side to recall -- the
+	// Sent check below keeps alt+up from "recalling" a message the agent
+	// is already going to read.
+	if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
+		shown := PromptInput{Text: fe.queuedMsgLabel.Message()}
+		if input := fe.clearQueuedPrompt(); !input.Empty() {
+			shown = input
+		} else if _, typed := fe.shell.(PromptInputHandler); typed {
+			// The typed queue already drained. Its payload-free label cannot
+			// reconstruct an image-bearing prompt or safely duplicate a send.
+			return true
+		}
+		fe.cancelImagePaste()
+		fe.historyIndex = -1
+		fe.historySaved = ""
+		fe.historyImages = nil
+		fe.textInput.SetValue(shown.Text)
+		fe.promptImages = shown.Images
+		fe.syncPrompt()
+		return true
+	}
+	return false
 }
 
 // handlePromptFrameKey handles editor keys that TextInput bubbled at a visual
