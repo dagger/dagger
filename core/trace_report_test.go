@@ -298,8 +298,16 @@ func TestTraceFailureNavigationSurvivesDispatch(t *testing.T) {
 	failed.Status = sdktrace.Status{Code: codes.Error}
 	origin := snapshot(4, "sha256sum --check", 0) // outside containment
 	origin.Status = sdktrace.Status{Code: codes.Error}
+	root.Status = sdktrace.Status{Code: codes.Error, Description: "runner boundary failed"}
 	snaps := []dagui.SpanSnapshot{root, check, failed, origin}
-	for i := byte(5); i < 250; i++ {
+	// Expected failed probes under successful work must never become origins.
+	for i := byte(5); i < 120; i++ {
+		success := snapshot(i, "successful operation", 3)
+		probe := snapshot(i+120, "expected failed probe", i)
+		probe.Status = sdktrace.Status{Code: codes.Error}
+		snaps = append(snaps, success, probe)
+	}
+	for i := byte(240); i < 250; i++ {
 		success := snapshot(i, "successful case "+strings.Repeat("x", 200), 2)
 		success.TestCaseName = fmt.Sprintf("SDK/success/%d", i)
 		success.TestStatus = dagui.TestStatusSuccess
@@ -307,9 +315,7 @@ func TestTraceFailureNavigationSurvivesDispatch(t *testing.T) {
 	}
 	db := dagui.NewDB()
 	db.ImportSnapshots(snaps)
-	for _, id := range []byte{1, 2, 3} {
-		db.Spans.Map[traceTargetSpanID(id)].ErrorOrigins.Add(db.Spans.Map[origin.ID])
-	}
+	db.Spans.Map[root.ID].ErrorOrigins.Add(db.Spans.Map[origin.ID])
 	report, err := renderTraceReportSession(idtui.NewReportSession(db), root.ID.String(), toolCallReportOpts())
 	require.NoError(t, err)
 	require.Contains(t, report.failures, `test "SDK/Installer/checksum"`)

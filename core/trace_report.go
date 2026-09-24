@@ -417,27 +417,32 @@ func traceFailureNavigation(db *dagui.DB, root *dagui.Span) string {
 
 	var origins []entry
 	seen := map[dagui.SpanID]bool{}
-	for _, item := range named {
-		seen[item.span.ID] = true
-	}
+	// Only recorded error-origin edges establish causality. Failed descendants
+	// (including expected probes) are not evidence that they caused this error.
 	addOrigins := func(span *dagui.Span) {
-		for _, origin := range idtui.CheckRootCauses(span) {
+		for _, origin := range span.ErrorOrigins.Order {
 			if !seen[origin.ID] {
 				seen[origin.ID] = true
 				origins = append(origins, entry{"origin", origin.Name, origin})
 			}
 		}
 	}
+	addOrigins(root)
 	for _, item := range named {
 		addOrigins(item.span)
 	}
-	addOrigins(root)
-	if len(named)+len(origins) == 0 {
+	if len(named)+len(origins) == 0 && !root.IsFailedOrCausedFailure() {
 		return ""
 	}
 
 	var out strings.Builder
 	out.WriteString("== FAILURES ==\n")
+	fmt.Fprintf(&out, "Selected span %s: %s\n", root.ID, clampLineBytes(strings.ReplaceAll(root.Status.Description, "\n", " "), 500))
+	if len(origins) == 0 {
+		out.WriteString("No recorded error origins. Failed spans below are navigation, not proven causes.\n")
+	} else {
+		out.WriteString("Recorded error origins (selected span first):\n")
+	}
 	// Reserve half for origins: a large test suite must not crowd out the
 	// checksum exec that explains all its failures (even outside containment).
 	appendEntries := func(entries []entry, budget int) {
@@ -454,8 +459,10 @@ func traceFailureNavigation(db *dagui.DB, root *dagui.Span) string {
 			used += len(line)
 		}
 	}
-	appendEntries(named, traceFailureMaxBytes/2)
-	appendEntries(origins, traceFailureMaxBytes/2)
+	budget := (traceFailureMaxBytes - out.Len() - 80) / 2
+	appendEntries(origins, budget)
+	out.WriteString("Failed checks/tests (not necessarily causes):\n")
+	appendEntries(named, budget)
 	return strings.TrimRight(out.String(), "\n")
 }
 
