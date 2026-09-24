@@ -33,8 +33,8 @@ dagger [options] [subcommand | file...]
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
 * [dagger settings](#dagger-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger shell](#dagger-shell)	 - Open a terminal for a container or directory in your project
+* [dagger start](#dagger-start)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
-* [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger update](#dagger-update)	 - Update installed module versions and lockfile state
 * [dagger version](#dagger-version)	 - Print dagger version
 * [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
@@ -109,7 +109,7 @@ Interact with the Dagger API (advanced)
 
 ### Synopsis
 
-Every Dagger command — check, up, generate, even install — ultimately
+Every Dagger command — check, start, generate, even install — ultimately
 runs against a GraphQL API served by the Dagger engine, combining
 Dagger's core types with schema extensions loaded from modules. The
 "api" group surfaces direct access for scripting and advanced
@@ -2283,6 +2283,50 @@ dagger shell [options] [pattern]
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 
+## dagger start
+
+Run your project's services for local development — databases, APIs, dev servers, etc.
+
+### Synopsis
+
+Run your project's services for local development — databases, APIs, dev servers, etc.
+
+Examples:
+  dagger start                    # Start all services
+  dagger start -l                 # List all available services
+  dagger start web                # Start only the 'web' service
+
+
+```
+dagger start [options] [pattern...]
+```
+
+### Options
+
+```
+  -l, --list   List available services
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string         Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+
 ## dagger uninstall
 
 Uninstall a module from your workspace
@@ -2320,50 +2364,6 @@ dagger module uninstall hello
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
-```
-
-### SEE ALSO
-
-* [dagger](#dagger)	 - A tool to run composable workflows in containers
-
-## dagger up
-
-Run your project's services for local development — databases, APIs, dev servers, etc.
-
-### Synopsis
-
-Run your project's services for local development — databases, APIs, dev servers, etc.
-
-Examples:
-  dagger up                       # Start all services
-  dagger up -l                    # List all available services
-  dagger up web                   # Start only the 'web' service
-
-
-```
-dagger up [options] [pattern...]
-```
-
-### Options
-
-```
-  -l, --list   List available services
-```
-
-### Options inherited from parent commands
-
-```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
 
@@ -2449,7 +2449,7 @@ Inspect or configure your workspace.
 
 A workspace is a project configured to use Dagger — a directory holding
 a dagger.toml that records installed modules, environment overlays, and
-settings. Most commands (install, check, generate, up, settings, ...)
+settings. Most commands (install, check, generate, start, settings, ...)
 operate on the workspace reachable from the current directory. The -W
 flag selects a different workspace (local path or git ref); --env
 applies a named overlay; dagger.toml is the source of truth.

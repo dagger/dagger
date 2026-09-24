@@ -285,7 +285,7 @@ defmodule Dagger.Function do
   end
 
   @doc """
-  Returns the function with a flag indicating it returns a service for dagger up.
+  Returns the function with a flag indicating it returns a service for dagger start.
   """
   @spec with_up(t()) :: Dagger.Function.t()
   def with_up(%__MODULE__{} = function) do

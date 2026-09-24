@@ -8211,7 +8211,7 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Returns the function with a flag indicating it returns a service for dagger up.
+    /// Returns the function with a flag indicating it returns a service for dagger start.
     pub fn with_up(&self) -> Function {
         let query = self.selection.select("withUp");
         Function {

@@ -65,7 +65,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Returns the function with a flag indicating it returns a service for dagger up.
+     * Returns the function with a flag indicating it returns a service for dagger start.
      */
     public function withUp(): Function_
     {
