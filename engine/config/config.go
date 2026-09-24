@@ -24,6 +24,9 @@ type Config struct {
 	// LogLevel defines the engine's logging level.
 	LogLevel LogLevel `json:"logLevel,omitempty" jsonschema:"enum=error,enum=warn,enum=info,enum=debug,enum=debugextra,enum=trace"`
 
+	// Telemetry configures the engine's own telemetry, separate from client telemetry.
+	Telemetry TelemetryConfig `json:"telemetry,omitempty"`
+
 	// GC configures the engine's garbage collector.
 	GC GCConfig `json:"gc,omitempty"`
 
@@ -33,6 +36,14 @@ type Config struct {
 	// Registries configures custom registry mirrors, root CAs, and
 	// insecure/HTTP access.
 	Registries map[string]RegistryConfig `json:"registries,omitempty"`
+}
+
+type TelemetryConfig struct {
+	// ResourceMetrics enables cgroup v2 resource metrics for the engine process.
+	// It is disabled by default. Export requires OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+	// in the engine environment. Other OTLP settings use the standard environment variables.
+	// This does not change client or execution metric collection and export.
+	ResourceMetrics bool `json:"resourceMetrics,omitempty" jsonschema:"default=false"`
 }
 
 type LogLevel string

@@ -38,6 +38,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -308,6 +309,7 @@ func main() { //nolint:gocyclo
 	addFlags(app)
 
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
+	var resourceMetrics *sdkmetric.MeterProvider
 
 	app.Action = func(c *cli.Context) error {
 		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
@@ -348,6 +350,7 @@ func main() { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
+		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
 
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancelCause(context.Background())
@@ -580,6 +583,7 @@ func main() { //nolint:gocyclo
 	app.After = func(*cli.Context) error {
 		fmt.Println("shutting down telemetry...")
 		defer fmt.Println("telemetry shut down complete")
+		closeResourceMetrics(ctx, resourceMetrics)
 		telemetry.Close()
 		return nil
 	}
