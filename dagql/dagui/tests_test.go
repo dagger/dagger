@@ -395,6 +395,107 @@ func TestTestViewsRespectRootRelativeContainment(t *testing.T) {
 	}
 }
 
+// Test producers mark every test as a boundary to contain its implementation
+// work. Those boundaries must not hide the subtests that make up the test report.
+func TestTestViewsRollUpThroughTestBoundaries(t *testing.T) {
+	for _, toolOwned := range []bool{false, true} {
+		for _, incremental := range []bool{false, true} {
+			t.Run(fmt.Sprintf("tool=%t/incremental=%t", toolOwned, incremental), func(t *testing.T) {
+				root := checkSnapshot(1, "root", SpanID{}, "")
+				if toolOwned {
+					root = toolCallSnapshot(1, 0, "test")
+				}
+				suite := testSnapshot(2, "suite", root.ID, TestStatusFailure)
+				suite.TestCaseName = ""
+				suite.TestSuiteName = "suite"
+				suite.Boundary = true
+				parent := testSnapshot(3, "parent", suite.ID, TestStatusFailure)
+				parent.Boundary = true
+				nested := testSnapshot(4, "nested", parent.ID, TestStatusFailure)
+				nested.Boundary = true
+				failed := testSnapshot(5, "failed", nested.ID, TestStatusFailure)
+				failed.Boundary = true
+				passed := testSnapshot(6, "passed", nested.ID, TestStatusSuccess)
+				skipped := testSnapshot(7, "skipped", nested.ID, TestStatusSkipped)
+				snapshots := []SpanSnapshot{root, suite, parent, nested, failed, passed, skipped}
+				db := NewDB()
+				if incremental {
+					db.TestView()
+					for _, snapshot := range snapshots {
+						db.ImportSnapshots([]SpanSnapshot{snapshot})
+						db.TestView()
+					}
+				} else {
+					db.ImportSnapshots(snapshots)
+				}
+
+				want := TestCounts{Failing: 1, Passing: 1, Skipped: 1}
+				assertView := func(view *TestView) {
+					t.Helper()
+					if view.Counts != want {
+						t.Fatalf("expected leaf counts %+v, got %+v", want, view.Counts)
+					}
+					for _, snapshot := range []SpanSnapshot{parent, nested, failed, passed, skipped} {
+						if view.BySpan[snapshot.ID] == nil {
+							t.Fatalf("lost test %q", snapshot.Name)
+						}
+					}
+					if view.BySpan[failed.ID].Parent != view.BySpan[nested.ID] || view.BySpan[nested.ID].Parent != view.BySpan[parent.ID] {
+						t.Fatal("lost subtest hierarchy")
+					}
+				}
+				if toolOwned {
+					if db.HasTests() {
+						t.Fatal("tool-owned tests escaped into the global report")
+					}
+				} else {
+					assertView(db.TestView())
+				}
+				assertView(db.TestViewForSpan(db.Spans.Map[root.ID]))
+				assertView(db.TestViewForSpan(db.Spans.Map[parent.ID]))
+				if spanMayRollUp(db.Spans.Map[failed.ID], db.Spans.Map[root.ID], nil) {
+					t.Fatal("test boundaries must still contain ordinary work roll-ups")
+				}
+			})
+		}
+	}
+}
+
+func TestTestBoundaryMetadataUpdates(t *testing.T) {
+	db := NewDB()
+	boundary := boundarySnapshot(1, 0)
+	child := testSnapshot(2, "child", boundary.ID, TestStatusFailure)
+	db.ImportSnapshots([]SpanSnapshot{boundary, child})
+	if db.HasTests() {
+		t.Fatal("ordinary boundary must contain its tests")
+	}
+
+	for _, suite := range []bool{false, true} {
+		if suite {
+			boundary.TestSuiteName = "suite"
+		} else {
+			boundary.TestCaseName = "parent"
+		}
+		db.ImportSnapshots([]SpanSnapshot{boundary})
+		view := db.TestView()
+		if view.BySpan[child.ID] == nil || view.BySpan[child.ID].Parent != view.BySpan[boundary.ID] {
+			t.Fatal("adding test metadata must reveal and adopt the subtest")
+		}
+		if view.Counts != (TestCounts{Failing: 1}) {
+			t.Fatalf("expected one failed leaf, got %+v", view.Counts)
+		}
+		boundary.TestCaseName = ""
+		boundary.TestSuiteName = ""
+		db.ImportSnapshots([]SpanSnapshot{boundary})
+		if db.HasTests() {
+			t.Fatal("removing test metadata must restore boundary containment")
+		}
+		if db.TestViewForSpan(db.Spans.Map[boundary.ID]).BySpan[child.ID] == nil {
+			t.Fatal("contained test must remain visible in its owning scope")
+		}
+	}
+}
+
 func TestTestViewRebuildsWhenAncestorBecomesBoundary(t *testing.T) {
 	db := NewDB()
 	root := SpanSnapshot{ID: testID(1), TraceID: TraceID{TraceID: trace.TraceID{1}}, Name: "root"}
@@ -817,8 +918,9 @@ func TestTestIndexContainedChangesKeepAncestry(t *testing.T) {
 			if db.TestView() != global || idx.ancestorReindexCount != reindexes {
 				t.Fatal("unchanged containment/ancestry caused rebuilding or reindexing")
 			}
-			if db.TestViewForSpan(db.Spans.Map[outer.ID]).BySpan[test.ID] != nil {
-				t.Fatal("inner containment flag did not hide test in outer scope")
+			contained := db.TestViewForSpan(db.Spans.Map[outer.ID]).BySpan[test.ID] == nil
+			if contained != (flag == "Encapsulate") {
+				t.Fatal("test boundaries must admit subtests; encapsulation must still contain them")
 			}
 			// Simultaneous metadata and flag removal must still process descendants.
 			inner.TestCaseName = ""
