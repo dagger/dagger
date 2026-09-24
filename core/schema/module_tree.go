@@ -95,20 +95,35 @@ func hostTreeModuleSource(
 	if err != nil {
 		return inst, err
 	}
-	if err := dag.Select(engine.ContextWithClientMetadata(ctx, hostMetadata), dag.Root(), &inst, dagql.Selector{
+	hostCtx := engine.ContextWithClientMetadata(ctx, hostMetadata)
+	bk, err := query.Engine(hostCtx)
+	if err != nil {
+		return inst, err
+	}
+	realRoot, err := bk.RealCallerHostPath(hostCtx, root)
+	if err != nil {
+		return inst, err
+	}
+	realTarget, err := bk.RealCallerHostPath(hostCtx, filepath.Join(root, target))
+	if err != nil {
+		return inst, err
+	}
+	if rel, err := filepath.Rel(realRoot, realTarget); err != nil || (!filepath.IsLocal(rel) && rel != ".") {
+		return inst, fmt.Errorf("%q leaves the module's own tree through a symlink", target)
+	}
+	err = dag.Select(hostCtx, dag.Root(), &inst, dagql.Selector{
 		Field: "moduleSource",
 		Args: []dagql.NamedInput{
 			{Name: "refString", Value: dagql.String(filepath.Join(root, target))},
 			{Name: "disableFindUp", Value: dagql.Boolean(true)},
 			{Name: "requireKind", Value: dagql.Opt(core.ModuleSourceKindLocal)},
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		return inst, err
 	}
-	loaded := inst.Self()
-	rel, err := filepath.Rel(root, filepath.Join(loaded.Local.ContextDirectoryPath, loaded.SourceRootSubpath))
-	if err != nil || (!filepath.IsLocal(rel) && rel != ".") {
-		return inst, fmt.Errorf("%q leaves the module's own tree", target)
+	if !inst.Self().ConfigExists {
+		return inst, fmt.Errorf("%q holds no module config", target)
 	}
 	return inst, nil
 }
