@@ -285,6 +285,37 @@ func TestNativeWorkspaceMergeBaseEvidence(t *testing.T) {
 	}
 }
 
+func TestNativeWorkspaceDeltaReplacedAncestors(t *testing.T) {
+	for _, beforeKind := range []string{"missing", "regular-file", "external-symlink"} {
+		t.Run(beforeKind, func(t *testing.T) {
+			base, delta, outside := t.TempDir(), t.TempDir(), t.TempDir()
+			// This external directory deliberately has unsupported metadata:
+			// consulting it through the old symlink would reject a valid delta.
+			require.NoError(t, os.Mkdir(filepath.Join(outside, "sub"), 0700))
+			sentinel := filepath.Join(outside, "sub", "sentinel")
+			require.NoError(t, os.WriteFile(sentinel, []byte("untouched"), 0600))
+			switch beforeKind {
+			case "regular-file":
+				require.NoError(t, os.WriteFile(filepath.Join(base, "replaced"), []byte("old file"), 0600))
+			case "external-symlink":
+				require.NoError(t, os.Symlink(outside, filepath.Join(base, "replaced")))
+			}
+			require.NoError(t, os.MkdirAll(filepath.Join(delta, "replaced", "sub", "deep"), 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(delta, "replaced", "sub", "deep", "file"), []byte("new file"), 0644))
+			paths := &ChangesetPaths{Added: []string{"replaced/", "replaced/sub/", "replaced/sub/deep/", "replaced/sub/deep/file"}}
+			require.NoError(t, validateNativeWorkspaceDelta(t.Context(), base, delta, paths))
+			contents, err := os.ReadFile(sentinel)
+			require.NoError(t, err)
+			require.Equal(t, "untouched", string(contents))
+			info, err := os.Stat(filepath.Join(outside, "sub"))
+			require.NoError(t, err)
+			require.Equal(t, os.FileMode(0700), info.Mode().Perm())
+			_, err = os.Lstat(filepath.Join(outside, "sub", "deep"))
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
 func TestNativeWorkspaceDeltaMetadataFallback(t *testing.T) {
 	base, delta := t.TempDir(), t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(delta, "unreported"), []byte("same bytes"), 0600))
