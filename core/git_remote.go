@@ -319,12 +319,12 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 }
 
 func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
-	return repo.initRemote(ctx, func(remote string) error {
+	return repo.initRemote(ctx, func(remote string) (rerr error) {
 		git, cleanup, err := repo.setup(ctx)
 		if err != nil {
 			return err
 		}
-		defer cleanup()
+		defer func() { rerr = errors.Join(rerr, cleanup()) }()
 		git = git.New(gitutil.WithGitDir(remote))
 		remoteRefs := make([]*RemoteGitRef, len(refs))
 		for i, ref := range refs {
@@ -616,10 +616,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		return err
 	}
 	defer func() {
-		err := lm.Unmount()
-		if retErr == nil {
-			retErr = err
-		}
+		retErr = errors.Join(retErr, lm.Unmount())
 	}()
 
 	git := gitutil.NewGitCLI(gitutil.WithGitDir(dir))

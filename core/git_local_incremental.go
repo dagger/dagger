@@ -31,7 +31,11 @@ func (ref *LocalGitRef) incrementalCheckoutEligible() bool {
 		return false
 	}
 	_, local := parent.Backend.(*LocalGitRef)
-	return local
+	if local {
+		return true
+	}
+	_, remote := parent.Backend.(*RemoteGitRef)
+	return remote && base.Tree.Self() != nil
 }
 
 func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, rerr error) {
@@ -40,6 +44,9 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		span.SetAttributes(attribute.Bool("dagger.git.checkout.incremental.supported", supported))
 		telemetry.EndWithCause(span, &rerr)
 	}()
+	if err := ref.repo.CheckoutBase.validateTree(ctx); err != nil {
+		return nil, false, err
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, false, err
@@ -58,9 +65,11 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		}
 		supported = true
 		span.SetAttributes(attribute.Int("dagger.git.checkout.incremental.changed_paths", len(plan.changed)))
-		var parent dagql.ObjectResult[*Directory]
-		if err := srv.Select(ctx, ref.repo.CheckoutBase.Parent, &parent, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
-			return err
+		parent := ref.repo.CheckoutBase.Tree
+		if parent.Self() == nil {
+			if err := srv.Select(ctx, ref.repo.CheckoutBase.Parent, &parent, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
+				return err
+			}
 		}
 		snapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
 		if err != nil {
