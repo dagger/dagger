@@ -21,10 +21,9 @@ import (
 
 // The chain from the live failure this side channel exists for: focusing an
 // agent needs llm.withSkills(directory: <dir>).agent(), where the withSkills
-// frame is synthesized (LLM.recipeSelectors) and its directory argument is an
-// ID literal whose own frame was never independently spanned. Only the agent
-// frame gets a span; without the log channel the other two can never reach a
-// client, and the chain is unrebuildable forever.
+// frame and its directory ID argument were never independently spanned. Only
+// the agent frame gets a span; without the log channel the other two can never
+// reach a client, and the chain is unrebuildable forever.
 func callPayloadTestChain() (root *callpbv1.Call, unspanned []*callpbv1.Call) {
 	dir := &callpbv1.Call{
 		Field: "directory",

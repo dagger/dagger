@@ -3598,24 +3598,6 @@ func (s *callPayloadDeliveryStore) ClaimCallPayload(digest string) bool {
 	return len(s.session.claimCallPayload(digest, s.targets)) > 0
 }
 
-// CallPayloadPersisted is an optional producer optimization for strict capture.
-// Unlike live-span claims it reports only successful protected log persistence
-// to every target in this producer's visibility route.
-func (s *callPayloadDeliveryStore) CallPayloadPersisted(digest string) bool {
-	s.session.callPayloadMu.Lock()
-	defer s.session.callPayloadMu.Unlock()
-	states := s.session.callPayloadStates(digest, false)
-	if len(s.targets) == 0 {
-		return false
-	}
-	for _, target := range s.targets {
-		if states[target] != callPayloadDelivered {
-			return false
-		}
-	}
-	return true
-}
-
 func (s *callPayloadDeliveryStore) CallPayloadDelivered(digest string) {
 	// The span producer reports capture/publication, not a DB persistence
 	// receipt. A bounded span queue can still lose this copy. Explicit payload
