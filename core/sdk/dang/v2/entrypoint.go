@@ -115,6 +115,8 @@ func (r *entrypointRuntime) Call(
 		}
 	}()
 
+	fnCall.SetProcessSpanContext(dagql.UserFacingSpanContext(ctx))
+
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return fmt.Errorf("get Dagger server for entrypoint call: %w", err)

@@ -2193,6 +2193,14 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 			// Same in-process pattern; a module runtime's parent metadata
 			// already names the function call instead.
 			SetExecutionIdentity(ctx, execMD)
+			// A function runtime's exec carries its own call and keeps its
+			// span; an API exec run for a call that set a process span, such
+			// as a module entrypoint's module process, reports to that call.
+			if state.FunctionCall == nil {
+				if fnCall, err := query.CurrentFunctionCall(ctx); err == nil && fnCall.ProcessSpanContext().IsValid() {
+					execMD.UserFacingSpanCtx = fnCall.ProcessSpanContext()
+				}
+			}
 		}
 		if emu != nil {
 			metaSpec.Args = append([]string{engineutil.DaggerQemuEmulatorMountPoint}, metaSpec.Args...)
