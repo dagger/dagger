@@ -215,7 +215,7 @@ func spanLines(r *http.Request, req *coltracepb.ExportTraceServiceRequest) []str
 				lines = append(lines, jsonLine(spanLine{
 					Writer:   exportWriter(r),
 					Service:  resourceAttr(attrs, "service.name"),
-					Instance: resourceAttr(attrs, "dagger.io/engine.instance"),
+					Instance: resourceAttr(attrs, "service.instance.id"),
 					SpanID:   hex.EncodeToString(span.SpanId),
 					Name:     span.Name,
 				}))
@@ -266,7 +266,7 @@ func logRecordLines(r *http.Request, body []byte) []string {
 	for _, resourceLogs := range req.ResourceLogs {
 		attrs := resourceLogs.GetResource().GetAttributes()
 		service := resourceAttr(attrs, "service.name")
-		instance := resourceAttr(attrs, "dagger.io/engine.instance")
+		instance := resourceAttr(attrs, "service.instance.id")
 		for _, scopeLogs := range resourceLogs.ScopeLogs {
 			if scopeLogs.GetScope().GetName() == "dagger.io/cache" {
 				continue
