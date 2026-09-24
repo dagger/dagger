@@ -22,7 +22,7 @@ export function func(alias?: string): MethodDecorator
 export function check(): MethodDecorator
 export function generate(): MethodDecorator
 export function start(): MethodDecorator
-/** @deprecated In favor of `start` */
+/** @deprecated In favor of `@start` */
 export function up(): MethodDecorator
 export function agent(): MethodDecorator
 export function argument(opts?: ArgumentOptions): ParameterDecorator
