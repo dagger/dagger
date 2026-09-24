@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const upRenamedHelp = `"dagger up" is no longer used. Use "dagger start" instead.
+const upRenamedHelp = `"dagger up" is no longer used. It has been renamed to "dagger start".
 
 Run "dagger start --help" for usage.
 `
