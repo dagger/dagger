@@ -195,6 +195,8 @@ Use the from-source engine test tool with `pkg: ./core/integration`, verbose out
 ```text
 ^TestWorkspace$/^TestWorkspaceScopedCommitPerformance$
 
+^TestGit$/(TestGitRefWithCommitReftable|TestGitRefNativeCommitHistory)$
+
 ^TestGit$/(TestGitRefIncrementalCheckoutOracle|TestGitRefIncrementalCheckoutTrace|TestGitRefRetainedCheckoutSurvivesSourceScope)$
 
 ^TestWorkspace$/(TestWorkspaceWithCommitReconciliationOracle|TestWorkspaceWithCommitNativeReconciliationTrace)$
@@ -204,9 +206,22 @@ Use the from-source engine test tool with `pkg: ./core/integration`, verbose out
 
 Coverage includes exact commit objects, pending path sets, conflicts, metadata, attributes, source immutability, concurrent detached commits, retained repository lifetime, and incremental/full-checkout equivalence. Backend tests assert canonical root timestamps; container inspection wrappers can replace root mtime, so consumer tests compare root metadata but assert timestamp 1 only for descendants.
 
-Persistence coverage verifies exact provenance dependency retention across **two cache restarts**. It is not a full engine restart/GC stress test. Full CI, larger/varied repositories, long commit chains and actual agent workflows remain release gates.
+Persistence coverage verifies exact provenance dependency retention across **two cache restarts**. It is not a full engine restart/GC stress test. Long-history coverage now exercises 32 sequential commits followed by three concurrent eight-commit branches (**56 commits**), varying additions, renames, executable edits and removals. It checks complete ancestry, `git fsck`, retained ancestor/source isolation and incremental/full-checkout equivalence. Trace gates require actual native writes and delta checkouts, allow one cold canonical parent checkout, and reject repeated full materialization or native fetches.
 
-The latest observed remote CI before this document's publication had `golangci-lint:lint-all` in `ERROR` at merge SHA `5c3546bb7d3e2dd740ea083daa9944f50c88d727`, for the previously published code. It was not investigated. **Re-read checks for the new PR head; do not assume the old error is unrelated or that these local results imply green CI.**
+### Continuation validation after `424cb01`
+
+The storage review found that native publication accepted reftable repositories despite writing loose refs and replacing their configuration. They now explicitly fall back (`ref-storage`); bare/worktree eligibility tests and a private-session public API test cover this. The intentional retention of unrelated source refs/tags remains unchanged and still needs review.
+
+Validation on the combined continuation tree:
+
+- `go test -race ./core ./core/schema -count=1` passed.
+- Seven explicitly from-source integration tests passed: `TestGitRefWithCommitReftable`, `TestGitRefNativeCommitHistory`, `TestGitRefWithCommitNative`, `TestGitRefIncrementalCheckoutOracle`, `TestGitRefIncrementalCheckoutTrace`, `TestWorkspaceWithCommitReconciliationOracle`, and `TestWorkspaceWithCommitNativeReconciliationTrace`.
+- The history test observed 56 native writes, 56 incremental materializations, 56 delta checkouts and one cold full parent checkout. This is bounded lifecycle validation, not an engine restart/GC stress test.
+- The synthetic performance harness passed after lint refactoring: commit times **0.613s, 0.738s, 0.749s** and full cycles **2.285s, 1.638s, 1.539s**, with three native commits/reconciliations, five incremental checkouts and no general merges or retained-checkout commits. This does not add real-repository or interactive-agent measurements.
+
+Remote checks observed at merge SHA `699c5755d61a5de5b7992aa2410cc210d649cf66` had five lint violations, addressed through helper extraction and staticcheck simplifications. The seven other failing checks showed HTTP 502/connection resets, session removal/closure, or a client-caller deadline, with passing inner checks or recorded test passes. These are transport/session failures, **not proven PR test regressions or proven unrelated infrastructure defects**; their underlying cause remains unestablished. Re-read and rerun remote checks before claiming green CI.
+
+Full CI, engine restart/eviction and GC stress, larger/varied repository measurements, physical storage accounting and an actual agent workflow remain release gates.
 
 ## Source map
 
