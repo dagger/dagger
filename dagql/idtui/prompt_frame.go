@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"fmt"
+	"image/color"
 	"slices"
 	"strings"
 
@@ -25,6 +26,7 @@ type PromptFrame struct {
 	// enabled gates the shaded styling. When false the input is rendered bare,
 	// matching plain shell mode.
 	enabled     bool
+	background  color.Color
 	attachments []string
 }
 
@@ -47,6 +49,13 @@ func (p *PromptFrame) SetAttachments(images []PromptImage, pasting bool) {
 // NewPromptFrame creates a PromptFrame wrapping the given TextInput.
 func NewPromptFrame(input *tuist.TextInput, profile termenv.Profile) *PromptFrame {
 	return &PromptFrame{input: input, profile: profile}
+}
+
+// SetBackground sets the theme-relative fill. Nil leaves the terminal's default
+// background untouched when color detection is unavailable.
+func (p *PromptFrame) SetBackground(background color.Color) {
+	p.background = background
+	p.Update()
 }
 
 // SetKeyHandler sets the handler for keys that bubble out of the wrapped input.
@@ -128,12 +137,15 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 		if p.profile == termenv.Ascii {
 			return ansi.Strip(line)
 		}
+		if p.background == nil {
+			return line
+		}
 		buf := cellbuf.NewBuffer(width, 1)
 		cellbuf.SetContent(buf, line)
 		for x := range width {
 			if cell := buf.Cell(x, 0); cell != nil && cell.Width > 0 {
 				cell = cell.Clone()
-				cell.Style.Bg = ansi.BrightBlack
+				cell.Style.Bg = p.background
 				buf.SetCell(x, 0, cell)
 			}
 		}

@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 
@@ -39,7 +40,7 @@ func requirePromptBackground(t *testing.T, lines []string, width int) {
 	t.Helper()
 	joined := strings.Join(lines, "\n")
 	require.NotContains(t, joined, HorizBar)
-	require.Contains(t, joined, "\x1b[100m")
+	require.Contains(t, joined, "\x1b[48;2;30;30;30m")
 	buf := cellbuf.NewBuffer(width, len(lines))
 	cellbuf.SetContent(buf, joined)
 	bg := buf.Cell(0, 0).Style.Bg
@@ -62,6 +63,7 @@ func TestPromptFrameRendersShadedInput(t *testing.T) {
 	input.SetValue("hello there\nsecond line")
 	frame := NewPromptFrame(input, termenv.ANSI)
 	frame.SetEnabled(true)
+	frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
 	result := renderPromptFrame(frame, width)
 
 	require.Len(t, result.Lines, 4)
@@ -79,6 +81,7 @@ func TestPromptFrameWrapAndResize(t *testing.T) {
 	input.SetValue("abcdefghijklmnop")
 	frame := NewPromptFrame(input, termenv.ANSI)
 	frame.SetEnabled(true)
+	frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
 	capture := &promptFrameCapture{frame: frame}
 	term := tuist.NewHeadlessTerminal(12, 20)
 	tui := tuist.New(term)
@@ -112,6 +115,7 @@ func TestPromptFrameStyledContentAndAttachments(t *testing.T) {
 	input.SuggestionStyle = func(s string) string { return termenv.String(s).Faint().String() }
 	frame := NewPromptFrame(input, termenv.ANSI)
 	frame.SetEnabled(true)
+	frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
 	frame.SetAttachments([]PromptImage{{MIMEType: "image/png", Data: []byte("secret")}}, false)
 	result := renderPromptFrame(frame, 40)
 
@@ -141,6 +145,7 @@ func TestPromptFrameEmptyAndUnicodeInput(t *testing.T) {
 		input.SetValue(value)
 		frame := NewPromptFrame(input, termenv.ANSI)
 		frame.SetEnabled(true)
+		frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
 		result := renderPromptFrame(frame, 16)
 		require.Len(t, result.Lines, 3)
 		requirePromptBackground(t, result.Lines, 16)
@@ -155,6 +160,7 @@ func TestPromptFrameNoColorAndNarrowWidths(t *testing.T) {
 		input.SetValue("abcdef")
 		frame := NewPromptFrame(input, termenv.Ascii)
 		frame.SetEnabled(true)
+		frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
 		frame.SetAttachments(nil, true)
 		result := renderPromptFrame(frame, width)
 		for _, line := range result.Lines {

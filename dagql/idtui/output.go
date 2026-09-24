@@ -28,9 +28,10 @@ func NewOutput(w io.Writer, opts ...termenv.OutputOption) *termenv.Output {
 // driven by an AI agent. Otherwise it returns termenv.ANSI, allowing colors to
 // be used.
 //
-// Note that color profiles beyond simple ANSI are not used by Progrock. 16
-// colors is all you need. Anything else disrespects the user's color scheme
-// preferences.
+// Most rendering stays in the 16-color terminal palette to respect the user's
+// theme. Interactive prompt backgrounds are the exception: after querying the
+// actual terminal background, they use a subtle blend at the supported color
+// depth (see prompt_colors.go). This does not change the default profile.
 //
 // This is process-level and CLI-oriented, so it stays purely env-based: it has
 // no FrontendOpts to consult. Engine-side report rendering doesn't need an opt

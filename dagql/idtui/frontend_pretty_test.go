@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"image/color"
 	"io"
 	"reflect"
 	"regexp"
@@ -2090,6 +2091,7 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	// Force a colour profile so we can assert the per-role SGR styling; the
 	// screen tool strips ANSI, so a unit test is the only way to see it.
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2123,9 +2125,8 @@ func TestConversationTranscriptStyling(t *testing.T) {
 			t.Fatalf("conversation transcript still shows role label %q:\n%s", word, plain)
 		}
 	}
-	// The user's prompt sits on a shaded background (ANSIBrightBlack bg = SGR
-	// 100).
-	if !containsStyledLine(frame, "hello there", "\x1b[100m") {
+	// The user's prompt uses the theme-relative RGB fill.
+	if !containsStyledLine(frame, "hello there", "\x1b[48;2;30;30;30m") {
 		t.Fatalf("user prompt is not rendered on a shaded background:\n%s", visibleEscapes(frame))
 	}
 	// Thinking is dim italic bright-black (SGR 90;3).
@@ -2180,6 +2181,7 @@ func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2203,11 +2205,11 @@ func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
 	if !strings.Contains(plain, "scout #3") {
 		t.Fatalf("agent message missing sender-attribution header:\n%s", plain)
 	}
-	if !containsStyledLine(frame, "scout #3", "\x1b[1;36;100m") {
+	if !containsStyledLine(frame, "scout #3", "\x1b[1;36;48;2;30;30;30m") {
 		t.Fatalf("attribution header name is not bold cyan on the shaded block:\n%s", visibleEscapes(frame))
 	}
-	// ...and its body keeps the shaded incoming-prompt background (SGR 100).
-	if !containsStyledLine(frame, "what branch should I target?", "\x1b[100m") {
+	// ...and its body keeps the shaded incoming-prompt background.
+	if !containsStyledLine(frame, "what branch should I target?", "\x1b[48;2;30;30;30m") {
 		t.Fatalf("agent message body lost the shaded background:\n%s", visibleEscapes(frame))
 	}
 
@@ -2222,7 +2224,7 @@ func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
 		t.Fatalf("event payload leaked into the transcript:\n%s", plain)
 	}
 	// ...with no shaded card: neither the line itself nor prompt padding.
-	if containsStyledLine(frame, `is now idle`, "\x1b[100m") {
+	if containsStyledLine(frame, `is now idle`, "\x1b[48;2;30;30;30m") {
 		t.Fatalf("event one-liner is drawn as a shaded prompt block:\n%s", visibleEscapes(frame))
 	}
 }
@@ -2244,6 +2246,7 @@ func TestConversationTranscriptCollapsesRewoundMessages(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, f.db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2267,7 +2270,7 @@ func TestConversationTranscriptCollapsesRewoundMessages(t *testing.T) {
 		t.Errorf("abandoned reply not elided behind a line count:\n%s", plain)
 	}
 	// The abandoned prompt is no longer a shaded card...
-	if containsStyledLine(frame, "run the tests", "\x1b[100m") {
+	if containsStyledLine(frame, "run the tests", "\x1b[48;2;30;30;30m") {
 		t.Errorf("abandoned prompt still drawn as a shaded prompt block:\n%s", visibleEscapes(frame))
 	}
 	// ...and none of the abandoned turn's remaining content leaks.
@@ -2288,7 +2291,7 @@ func TestConversationTranscriptCollapsesRewoundMessages(t *testing.T) {
 
 	// Kept and resumed prompts keep their shaded card; replies stay plain.
 	for _, want := range []string{"hello there", "run the linter instead"} {
-		if !containsStyledLine(frame, want, "\x1b[100m") {
+		if !containsStyledLine(frame, want, "\x1b[48;2;30;30;30m") {
 			t.Errorf("live prompt %q lost its shaded background:\n%s", want, visibleEscapes(frame))
 		}
 	}
@@ -2315,6 +2318,7 @@ func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, f.db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2323,7 +2327,7 @@ func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
 	// Before the rewind the turn is live: a shaded prompt card.
 	fe.recalculateViewLocked()
 	frame := strings.Join(fe.tui.Frame(), "\n")
-	if !containsStyledLine(frame, "run the tests", "\x1b[100m") {
+	if !containsStyledLine(frame, "run the tests", "\x1b[48;2;30;30;30m") {
 		t.Fatalf("prompt not rendered as a live card before the rewind:\n%s", visibleEscapes(frame))
 	}
 	if strings.Contains(stripANSICodes(frame), SupersededMarker) {
@@ -2341,13 +2345,13 @@ func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
 			t.Errorf("already-rendered message %q did not collapse after the rewind:\n%s", want, plain)
 		}
 	}
-	if containsStyledLine(frame, "run the tests", "\x1b[100m") {
+	if containsStyledLine(frame, "run the tests", "\x1b[48;2;30;30;30m") {
 		t.Errorf("abandoned prompt kept its cached prompt card:\n%s", visibleEscapes(frame))
 	}
 	if !strings.Contains(plain, RewindMarker+" rewound: 3 messages above abandoned") {
 		t.Errorf("rewind marker missing:\n%s", plain)
 	}
-	if !containsStyledLine(frame, "run the linter instead", "\x1b[100m") {
+	if !containsStyledLine(frame, "run the linter instead", "\x1b[48;2;30;30;30m") {
 		t.Errorf("resumed prompt lost its shaded card:\n%s", visibleEscapes(frame))
 	}
 }
@@ -2451,6 +2455,7 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 		term := tuist.NewHeadlessTerminal(120, 60)
 		fe := newWithTerminal(io.Discard, db, term)
 		fe.profile = termenv.ANSI
+		fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 		fe.logs.Profile = termenv.ANSI
 		fe.shell = stubShellHandler{}
 		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2485,24 +2490,24 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 
 	t.Run("unfocused", func(t *testing.T) {
 		// Focus the assistant reply so the prompt renders with its plain gutter.
-		// The line must open with the shaded-background SGR (ANSIBrightBlack bg =
-		// SGR 100): the gutter is shaded rather than two plain spaces before it.
+		// The line must open with the background SGR: the gutter is shaded
+		// rather than two plain spaces before it.
 		line := promptLine(t, asstID)
-		if !strings.HasPrefix(line, "\x1b[100m") {
+		if !strings.HasPrefix(line, "\x1b[48;2;30;30;30m") {
 			t.Fatalf("user prompt gutter is not shaded; line = %q", visibleEscapes(line))
 		}
 	})
 
 	t.Run("focused", func(t *testing.T) {
 		// The "❯ " cue replaces the gutter, so it must carry the same shaded
-		// background (SGR 100) -- otherwise it punches an unshaded hole in the
+		// background -- otherwise it punches an unshaded hole in the
 		// block. Check the styling that precedes the cue, independent of SGR order.
 		line := promptLine(t, userID)
 		before, _, found := strings.Cut(line, LLMPrompt)
 		if !found {
 			t.Fatalf("focused user prompt missing its %q cue; line = %q", LLMPrompt, visibleEscapes(line))
 		}
-		if !strings.Contains(before, "100") {
+		if !strings.Contains(before, "48;2;30;30;30") {
 			t.Fatalf("focused user prompt cue is not shaded; line = %q", visibleEscapes(line))
 		}
 	})
@@ -2539,6 +2544,7 @@ func TestFocusedAssistantMessageSinglePrompt(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2573,7 +2579,7 @@ func TestFocusedAssistantMessageSinglePrompt(t *testing.T) {
 }
 
 // TestUserPromptPaddedAndSeparatedFromTools verifies the live shell view sets
-// the user's prompt apart: a shaded (ANSIBrightBlack) blank line above and
+// the user's prompt apart: a theme-relative shaded blank line above and
 // below extends its block into a padded card, and a tool call that opens the
 // turn -- which carries no leading blank of its own -- gets a plain separating
 // blank so it doesn't sit flush beneath the card.
@@ -2601,6 +2607,7 @@ func TestUserPromptPaddedAndSeparatedFromTools(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2617,7 +2624,7 @@ func TestUserPromptPaddedAndSeparatedFromTools(t *testing.T) {
 
 	lines := fe.tui.Frame()
 	isShaded := func(l string) bool {
-		return strings.TrimSpace(stripANSICodes(l)) == "" && strings.Contains(l, "\x1b[100m")
+		return strings.TrimSpace(stripANSICodes(l)) == "" && strings.Contains(l, "\x1b[48;2;30;30;30m")
 	}
 	contentIdx, toolIdx := -1, -1
 	for i, l := range lines {

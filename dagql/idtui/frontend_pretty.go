@@ -132,6 +132,11 @@ type frontendPretty struct {
 	historyIndex   int      // -1 = not browsing history
 	historySaved   string   // saved input when browsing history
 
+	// Only the measured prompt fill uses extended colors; all other UI colors
+	// continue to use profile's terminal palette.
+	promptColorProfile termenv.Profile
+	promptBackground   promptBackground
+
 	// Attachments stay out of text history and are owned by the current draft.
 	promptImages     []PromptImage
 	historyImages    []PromptImage
@@ -984,11 +989,21 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 	// Graphics belong to the interactive terminal, never to a report writer or
 	// the headless console. The manager stays inactive until Terminal.Start and
 	// returns to text placeholders on Stop (including the final report).
+	_, realTerminal := term.(*tuist.StdTerminal)
 	var images *kittyImages
-	if _, realTerminal := term.(*tuist.StdTerminal); realTerminal && profile != termenv.Ascii && kittyImagesEnabled(os.Getenv) {
+	if realTerminal && profile != termenv.Ascii && kittyImagesEnabled(os.Getenv) {
 		if _, out := findTTYs(); out != nil {
 			images = newKittyImages()
 			term = images.wrapTerminal(term)
+		}
+	}
+	promptProfile := termenv.Ascii
+	if realTerminal && profile != termenv.Ascii {
+		// Detect capabilities without probing or reading stdin. The wrapper sends
+		// OSC 11 only once Tuist has started the terminal's sole input reader.
+		promptProfile = termenv.NewOutput(io.Discard, termenv.WithTTY(true)).EnvColorProfile()
+		if promptProfile == termenv.TrueColor || promptProfile == termenv.ANSI256 {
+			term = &promptColorTerminal{Terminal: term}
 		}
 	}
 	tui := tuist.New(term)
@@ -1004,17 +1019,19 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// initial TUI state
-		term:          term,
-		tui:           tui,
-		spinnerEpoch:  time.Now(),
-		window:        windowSize{Width: -1, Height: -1}, // be clear that it's not set
-		profile:       profile,
-		browserBuf:    new(strings.Builder),
-		notifications: make(map[string]*NotificationBubble),
-		writer:        w,
-		tuiTerm:       term,
-		claims:        newRenderClaims(),
+		term:               term,
+		tui:                tui,
+		spinnerEpoch:       time.Now(),
+		window:             windowSize{Width: -1, Height: -1}, // be clear that it's not set
+		profile:            profile,
+		browserBuf:         new(strings.Builder),
+		notifications:      make(map[string]*NotificationBubble),
+		writer:             w,
+		tuiTerm:            term,
+		claims:             newRenderClaims(),
+		promptColorProfile: promptProfile,
 	}
+	tui.AddInputListener(fe.handlePromptBackground)
 	tui.AddChild(fe)
 	return fe
 }
@@ -1166,6 +1183,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.promptFrame = NewPromptFrame(fe.textInput, fe.profile)
+	fe.promptFrame.SetBackground(fe.promptBackground.cell)
 	fe.promptFrame.SetKeyHandler(fe.handlePromptFrameKey)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
@@ -5434,7 +5452,7 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 }
 
 // padUserPrompt wraps a user prompt's rendered lines in a shaded blank line
-// above and below, extending its ANSIBrightBlack block by one row each way so
+// above and below, extending its theme-relative background by one row each way so
 // the prompt reads as a padded card set apart from the transcript. Only applies
 // in the live shell view; other rows, the final report, and plain mode are
 // unchanged. Event-origin messages render as bare one-liners, not cards, so
@@ -5452,7 +5470,7 @@ func (fe *frontendPretty) padUserPrompt(row *dagui.TraceRow, lines []string) []s
 		return lines
 	}
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	shaded := out.String(strings.Repeat(" ", width)).Background(termenv.ANSIBrightBlack).String()
+	shaded := out.String(strings.Repeat(" ", width)).Background(fe.promptBackground.term).String()
 	padded := make([]string, 0, len(lines)+2)
 	padded = append(padded, shaded)
 	padded = append(padded, lines...)
@@ -8013,7 +8031,7 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 			if focused {
 				cue = out.String(LLMPrompt + " ").Bold()
 			}
-			fmt.Fprint(out, cue.Background(termenv.ANSIBrightBlack))
+			fmt.Fprint(out, cue.Background(fe.promptBackground.term))
 		case row.Span.LLMRole == telemetry.LLMRoleAssistant && row.Span.LLMTool == "":
 			// The assistant's reply/thinking opens with a blank separator line and
 			// re-emits its own indent + focus cue on the content line below (see
@@ -8595,7 +8613,7 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 // message Vterm view, returning the restyled view (and true) for the roles it
 // handles. Failed messages render in red so a terminal agent failure remains
 // visible in the conversation above the prompt. Otherwise the user's prompt is
-// drawn on a shaded (ANSIBrightBlack) background padded to the content width;
+// drawn on a theme-relative background padded to the content width;
 // a message another agent sent renders as the same shaded block under a
 // sender-attribution header; an engine lifecycle event collapses to a compact
 // faint one-liner; and thinking is drawn dim and italic. Other roles -- the
@@ -8660,7 +8678,7 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 			if width > 0 {
 				padded = padANSI(clipPlain(plain, width), width)
 			}
-			b.WriteString(out.String(padded).Background(termenv.ANSIBrightBlack).String())
+			b.WriteString(out.String(padded).Background(fe.promptBackground.term).String())
 		default:
 			// Thinking: dim italic foreground, no background. The first line renders
 			// inline on the already-indented title line (redraw omits the gutter on
@@ -8711,7 +8729,7 @@ func (fe *frontendPretty) styleLLMEventView(out TermOutput, view string) string 
 // first line -- which rendered inline for plain user prompts -- moves down a
 // row and gains the message gutter the continuation lines already carry.
 func (fe *frontendPretty) styleLLMAgentMessageView(out TermOutput, span *dagui.Span, logPrefix, view string, width int) string {
-	shade := termenv.ANSIBrightBlack
+	shade := fe.promptBackground.term
 	name := span.LLMOriginAgentName
 	if name == "" {
 		name = "agent"
