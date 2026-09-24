@@ -227,9 +227,10 @@ defmodule Dagger.Container do
     Client.execute(container.client, query_builder)
   end
 
+  @deprecated """
+  Use \\"withGPU\\" instead.
+  """
   @doc """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
   Configures all available GPUs on the host to be accessible to this container.
 
   This currently works for Nvidia devices only.
@@ -245,9 +246,10 @@ defmodule Dagger.Container do
     }
   end
 
+  @deprecated """
+  Use \\"withGPU\\" instead, which exposes all GPUs available on the host.
+  """
   @doc """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
   Configures the provided list of devices to be accessible to this container.
 
   This currently works for Nvidia devices only.
@@ -1052,6 +1054,22 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("owner", optional_args[:owner])
       |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Configures all GPUs available on the host to be accessible to this container.
+
+  This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+  """
+  @spec with_gpu(t()) :: Dagger.Container.t()
+  def with_gpu(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("withGPU")
 
     %Dagger.Container{
       query_builder: query_builder,

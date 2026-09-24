@@ -2620,30 +2620,43 @@ class Container(Type):
         return await _ctx.execute(int)
 
     def experimental_with_all_gp_us(self) -> Self:
-        """EXPERIMENTAL API! Subject to change/removal at any time.
-
-        Configures all available GPUs on the host to be accessible to this
+        """Configures all available GPUs on the host to be accessible to this
         container.
 
         This currently works for Nvidia devices only.
+
+        .. deprecated::
+            Use "withGPU" instead.
         """
+        warnings.warn(
+            'Method "experimental_with_all_gp_us" is deprecated: Use "withGPU" instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("experimentalWithAllGPUs", _args)
         return Container(_ctx)
 
     def experimental_with_gpu(self, devices: list[str]) -> Self:
-        """EXPERIMENTAL API! Subject to change/removal at any time.
-
-        Configures the provided list of devices to be accessible to this
+        """Configures the provided list of devices to be accessible to this
         container.
 
         This currently works for Nvidia devices only.
+
+        .. deprecated::
+            Use "withGPU" instead, which exposes all GPUs available on the
+            host.
 
         Parameters
         ----------
         devices:
             List of devices to be accessible to this container.
         """
+        warnings.warn(
+            'Method "experimental_with_gpu" is deprecated: Use "withGPU" instead, which exposes all GPUs available on the host.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("devices", devices),
         ]
@@ -3851,6 +3864,17 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withFiles", _args)
+        return Container(_ctx)
+
+    def with_gpu(self) -> Self:
+        """Configures all GPUs available on the host to be accessible to this
+        container.
+
+        This currently works with NVIDIA devices only, and requires the engine
+        to run with GPU support enabled.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withGPU", _args)
         return Container(_ctx)
 
     def with_label(self, name: str, value: str) -> Self:

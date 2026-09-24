@@ -1313,8 +1313,17 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * EXPERIMENTAL API! Subject to change/removal at any time.
+     * Configures all GPUs available on the host to be accessible to this container.
      *
+     * This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+     */
+    public function withGPU(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGPU');
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Configures the provided list of devices to be accessible to this container.
      *
      * This currently works for Nvidia devices only.
@@ -1327,8 +1336,6 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * EXPERIMENTAL API! Subject to change/removal at any time.
-     *
      * Configures all available GPUs on the host to be accessible to this container.
      *
      * This currently works for Nvidia devices only.
