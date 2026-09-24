@@ -3,9 +3,9 @@
 Status: implementation in progress on
 [`vito/dagger:trace-native-agent-resume`](https://github.com/vito/dagger/tree/trace-native-agent-resume),
 replacing [#14193](https://github.com/dagger/dagger/pull/14193) and
-[#14197](https://github.com/dagger/dagger/pull/14197). The checklist below records
-implemented and verified work. The numbered sections retain the approved design
-and historical investigation; they are requirements, not a blanket completion claim.
+[#14197](https://github.com/dagger/dagger/pull/14197). The current checkpoint below
+records the leaf cutover and its focused validation. Earlier validation notes and
+commit references are historical, not evidence of current full-suite completion.
 
 ## Scope correction
 
@@ -34,7 +34,34 @@ corruption, incomplete local archives, and failures after bootstrap begins do no
 silently switch sources. `--source-session` can disambiguate either source;
 `--generation` is an optional engine-only pin and requires `--source-session`.
 
-## Current-main compatibility validation
+## Committed-leaf checkpoint (2026-09-24)
+
+The approved scope cut (`66d6b58`) removes `PortableRecipe`, `recipeSelectors`,
+agent capture jobs/leases, dependency preflights, and agent-specific whole-recipe
+payload re-emission. The runtime associates its actual committed LLM call-frame
+leaf via `RecipeDigest` with each lifecycle revision. It does not materialize a
+`RecipeID`, publish an engine-local handle, or infer the tip from descendant spans.
+Only the lightweight lifecycle publisher remains asynchronous.
+
+Ordinary call telemetry owns individual frame delivery; consumers reconstruct the
+graph. `f50540a` also sends recording-span roots through the protected payload-log
+lane: a legacy span copy is not durable-delivery evidence. Archive finalization
+still verifies the final roster/revisions, graph, persisted closure and integrity.
+These checks do not establish dependency portability or side-effect-free replay.
+Broader portability hardening is deferred, not a gate on removing flattening.
+
+Focused leaf-publication and fresh-cache reconstruction tests pass. All three
+reported restore failures were reproduced before the payload fix and pass against
+the from-source engine after it: `TestArchiveSurvivesEngineRestart`,
+`TestCLIArchiveResumeIgnoresDestination`, and
+`TestCLICloudFallbackIgnoresDestination`. Focused telemetry/archive unit tests and
+race-enabled producer regressions also pass. No current full `test-base`, complete
+portability matrix, or full CI-lint pass is claimed.
+
+## Historical pre-cutover compatibility validation
+
+The following validation predates the leaf cutover; its capture implementation
+and some associated tests have since been deleted.
 
 The earlier remote build failures included a concrete source incompatibility,
 not merely an infrastructure problem: upstream `f48dfd5` wrapped skill directories
@@ -55,7 +82,7 @@ the actual engine; full `golangci-lint:lint-all` passes. `docs:references` regen
 successfully with no schema drift. This is not a claim that every remote CI
 failure has recovered; remote reruns must establish that separately.
 
-## Latest scope-correction validation
+## Historical pre-cutover scope-correction validation
 
 - Repository-history rollback: `4edd6e0`; Cloud fallback: `85a57b8`; supported
   remote-backed portability fixtures: `416530a`; quiet capture-error regression:
@@ -82,8 +109,10 @@ failure has recovered; remote reruns must establish that separately.
 
 ## Implementation checkpoint
 
-Commit references in the original checklist name the pre-rebase implementation
-commits; the continuation commits are listed in the session handoff below.
+Commit references, the handoff, and test results in this section are historical
+pre-leaf-cutover evidence. The checklist reflects the retained scope, but its older
+suite results are not rerun claims for the current tree. Current validation is
+limited to the committed-leaf checkpoint above.
 
 Session handoff: draft [PR #14298](https://github.com/dagger/dagger/pull/14298)
 was rebased onto upstream `main` at `0ceaef6`, preserving upstream OAuth refresh
@@ -102,9 +131,8 @@ race run outside the engine harness failed because it lacked a `dagger` executab
 (and the release download returned 403); this is not a full-suite pass claim.
 
 - [x] Canonical typed, revisioned agent/subscription control, creation publication,
-  retained capture leases, strict dependency checks, independent close witness,
-  and protected payload/control delivery (`4255c9a`, `51aa5a7`, `158b585`,
-  `0a9f24e`). Producer suites have focused race coverage.
+  committed-leaf association, independent close witness, and protected payload/control
+  delivery. Capture leases and strict dependency preflights have been removed.
 - [x] Canonical live roster and inert whole-graph restoration with frontend
   application acknowledgment (`1813d56`, `0586867`, `b69faed`). Actual engine
   tests pass for dormant/paused/failed/explicitly stopped agents, repeated failure
@@ -120,9 +148,9 @@ race run outside the engine harness failed because it lacked a `dagger` executab
   missing destination module, no destination provider configuration, continued
   prompt turn, no implicit export, and untouched legacy JSON sentinel (`79a467b`).
 - [x] Repository-history embedding from `0cc698c` has been rolled back. Existing
-  session-local snapshots remain usable while the source session is connected;
-  strict agent capture reports their `Host.__gitDir` dependency as unsupported.
-  No all-repository-history portability guarantee is made.
+  session-local snapshots remain usable while the source session is connected.
+  Leaf publication does not preflight their `Host.__gitDir` dependencies or
+  promise all-repository-history portability.
 - [x] Local JSON persistence/picker/restore and public `portableID`/`emitHistory`
   removed (`4fbfde7`, `1176673`); obsolete TUI QA JSON mount removed (`df25dc7`).
   Public GraphQL schema and Go, Python, TypeScript, Rust, PHP, Elixir SDKs generated
@@ -155,9 +183,8 @@ race run outside the engine harness failed because it lacked a `dagger` executab
   showed they used the hosting engine's older API (including removed LLM methods)
   and rewrote local dependencies to remote SHA URLs. That output was discarded;
   successful execution is not evidence of correct module SDK generation.
-- [x] Local-Git capture/commit tests retain frozen-file/history/author assertions
-  and now assert that strict capture rejects their session-local history rather
-  than requiring its conversion into a portable bundle.
+- [x] Obsolete flattening and strict agent-capture rejection assertions are removed;
+  existing Workspace snapshot/commit behavior is not a general portability guarantee.
 - [x] Committed-local-Workspace capture no longer retains the original live
   incoming Changeset in either the commit recipe or pending remainder (`3db0f6c`).
   Capture materializes the selected resolved delta after the original eager
@@ -170,7 +197,7 @@ race run outside the engine harness failed because it lacked a `dagger` executab
   assertion, independently of local snapshot portability.
 - [ ] Broader acceptance/performance work in §13 remains. No constant-time startup,
   crash-completeness, Cloud finality parity, or end-to-end latency claim is made.
-  Internal recipe flattening remains; unsupported live dependencies fail capture.
+  Internal flattening is removed; broader dependency portability remains deferred.
 
 **One authoritative agent telemetry model, indexed for bootstrap-first restore.
 The trace owns the agents, their Workspaces, and their notification relationships;
@@ -197,9 +224,9 @@ Replace both PRs as designs, while reusing their useful implementation work:
 - Remove the old local-file JSON autosave/restore path and its public
   `LLM.portableID` and `LLM.emitHistory` dependencies. Older branches call the
   latter history-reemission API `replay`; audit actual callers when implementing.
-- Treat internal LLM recipe flattening as a removable implementation technique,
-  not a requirement of the archive protocol. Close capture/laziness gaps before
-  substituting raw committed recipes.
+- Use the actual committed call-frame leaf, without LLM recipe flattening or a
+  replacement capture subsystem. Defer broader portability/laziness hardening;
+  verified frame closure is not proof that every dependency can be replayed.
 
 A fresh implementation should be based on current main, not a mechanical rebase
 of the old checkpoint protocol. It may be reviewed in slices (§12), but the
@@ -320,12 +347,9 @@ can introduce direct host mounts; and `withWorkspace`, `withSkills`, and
 `withMCPServer` have eager loading paths. Loading a service object does not itself
 prove the service starts.
 
-`PortableRecipe` currently prunes superseded bindings and bounds reconstruction
-work. It carries the surviving Workspace recipe verbatim, however, and cannot make
-an unsafe surviving dependency portable. Some comments/tests describe older
-live-checkout startup and save/rebind behavior too broadly. Snapshot-at-capture is
-the fundamental correctness technique; flattening is not intrinsically necessary
-if historical dependencies are immutable and references appropriately lazy.
+The now-deleted `PortableRecipe` pruned superseded bindings but could not make an
+unsafe surviving dependency portable. Its removal does not establish universal
+snapshot-at-capture behavior; the gaps above remain follow-up work.
 
 ## 3. Required behavior and non-goals
 
@@ -387,8 +411,8 @@ A semantic agent projection contains:
 | Revision | Monotonic, producer-assigned committed projection revision |
 | Name | Display label, not identity |
 | Parent handle, if any | Explicit lineage; independent of subscriptions |
-| Conversation digest | Runtime's last committed reconstructible LLM recipe |
-| Snapshot capture status | Referenced committed conversation captured, or explicit failure; not a persistence acknowledgment |
+| Conversation digest | Actual committed LLM call-frame leaf, obtained via `RecipeDigest` |
+| Leaf association status | Leaf identified, or explicit failure; not a portability or persistence acknowledgment |
 | State | Projected lifecycle state |
 | Stop reason and pre-teardown state | Distinguish dismissal from session cleanup |
 | Failure information | Preserved even when a restored failure has no new loop |
@@ -411,25 +435,22 @@ Publish at creation, committed conversation advances, relevant lifecycle/error
 changes, and teardown. Creation includes fresh agents that have never started a
 loop. Subscription changes have their own control records (§6).
 
-At a completed runtime mutation, capture immutable state and the corresponding
-conversation reference, and assign a revision under the runtime lock. Retain the
-necessary lease while deriving/encoding its recipe outside that lock. Preserve
-revision association even if asynchronous derivations complete out of order.
+At a completed runtime mutation, associate `rt.last.RecipeDigest(ctx)` with the
+lifecycle facts and assign a revision under the runtime lock. This derives the
+actual committed call-frame leaf, not a materialized `RecipeID`, engine-local
+handle, or latest descendant span. State-only revisions retain that association.
 
-An unsuccessful capture must mark that revision unrestorable. Never attach a
-cached earlier digest to a newer committed conversation and call it complete. A
-state-only revision may reuse a capture of the same committed conversation; a new
-projection revision does not itself require a different recipe. Capture success
-establishes that association, not that every referenced payload or content object
-has persisted. Finalization verifies persistence and closure separately (§8).
-If processing coalesces superseded revisions, successful finalization must still
-prove that the latest required projection and its conversation were captured and
-persisted.
+Only the lightweight lifecycle publisher runs asynchronously, outside the runtime
+mutex. There are no agent capture jobs or leases, dependency preflights, recipe
+reconstruction, or agent-specific payload re-emission. Existing runtime/client
+lifecycle leases are separate and remain necessary.
 
-This also avoids claiming that moving JSON serialization out of the lock solves
-the expensive part: the old PR still constructs `PortableRecipe` under the runtime
-mutex. Recipe work and export must leave that critical section, without introducing
-lease-release, publication, or state/snapshot races.
+Failure to obtain the leaf clears the digest for that revision and records the
+existing capture-error metadata; never reuse an earlier conversation's digest as
+current. A valid association does not prove portability or persistence. Ordinary
+call telemetry supplies frames; finalization separately verifies the required
+final projections, persisted closure and integrity, even when publication coalesces
+superseded revisions (§8).
 
 ### 4.3 Protected delivery and persistence
 
@@ -446,8 +467,11 @@ carry that mechanism into the replacement.
 
 If retries or shutdown deadlines are exhausted, keep the archive unsealed and
 surface the failure. A valid archive cannot be declared from a best-effort drain.
-Call-payload closure must be available through verified persisted storage, even
-when live spans also carried those payloads through bounded queues.
+Call-payload closure must be available through verified persisted storage. Ordinary
+call telemetry sends recording-span roots through the protected payload-log lane
+as well as retaining their legacy span attributes. Span copies cannot satisfy
+archive or Cloud closure verification; per-route claims prevent repeated payload
+emission. Protected ingress is still not a successful persistence acknowledgment.
 
 ### 4.4 Indexing and history isolation
 
@@ -566,46 +590,30 @@ not automatic restore leakage. Whether to retain that command for restored sessi
 is a separate UX decision (§14); if retained, it must be an explicit user-directed
 state change, not part of `--trace` reconstruction.
 
-### 7.2 Strengthen capture at every ingress
+### 7.2 Deferred portability hardening
 
-Audit initial composition and subsequent bindings, not just the session's first
-Workspace:
+Initial composition, later `@` references, Workspace replacements, skills,
+services, tool/module bindings, and continuation-produced LLMs can still introduce
+live or eager dependencies. Existing Workspace snapshot/commit behavior remains;
+the agent producer no longer preflights or normalizes those dependencies.
 
-- Initial Workspace capture, including no-Git/unsupported cases and large-content
-  failures that currently return a live Workspace.
-- Prompt `@` paths and later host-mounted directories/files.
-- Workspace replacements and returned tool objects.
-- Skills, service/MCP bindings, module definitions, and continuation-produced LLMs.
-- Engine-local handles crossing into a recipe that must survive its source session.
+A complete, integrity-checked frame graph does not prove independence from source
+client state, external content, or credentials. Broader ingress hardening and its
+portability matrix are follow-ups, not prerequisites for this cutover. Restore
+must report missing required frames rather than substitute destination state.
 
-For the trace-native path, do not silently label a live fallback as a durable
-snapshot. Prefer a supported immutable capture; where unavailable, fail capture
-clearly and prevent a strict resumable archive from being sealed. Merely eliminating
-handle syntax does not establish independence from live client state.
+### 7.3 Committed leaves without flattening
 
-### 7.3 Remove flattening only after proving the stronger invariant
+The runtime publishes the actual committed leaf digest; consumers reconstruct its
+graph from delivered frames. No `PortableRecipe`, `recipeSelectors`, or replacement
+whole-conversation serialization is evaluated at commit time. Ordinary step
+recording retains `withResponse`, `withToolResult`, and state setters, rather than
+requiring model replay. Superseded dependencies remain in the original recipe.
 
-The protocol stores a committed conversation digest and its verified closure. It
-does not specify that the digest must come from `PortableRecipe` or that a public
-portable-ID query must be evaluated on every step.
-
-An ordinary materialized committed recipe is an acceptable anchor once its
-dependencies satisfy the snapshot invariant. It must describe committed data, not
-re-run the LLM's step or infer the latest conversation from arbitrary descendant
-spans. A span may describe an uncommitted intermediate response or unrelated LLM
-work; the runtime is the authority on its committed tip.
-
-During implementation, retain existing internal flattening where necessary until
-raw-recipe tests pass. This is a temporary safety measure, not justification for
-retaining public `portableID` or local JSON persistence. Audit still-eager binding
-paths separately; do not delete flattening and assume `withTools` laziness covers
-`withWorkspace`, skills, or services.
-
-After correctness is established, measure dependency closure size, recipe
-materialization, and reconstruction cost. General recipe pruning/laziness or
-optional compaction may be worthwhile, but should not introduce a second session
-serialization format. A superseded lazy recipe can cost storage/schema work without
-executing its object constructor.
+Focused direct-leaf publication and fresh-cache reconstruction tests cover this
+boundary. They do not establish safety for every eager binding or historical
+recipe. General pruning, laziness, compaction, and reconstruction-cost measurement
+remain separate follow-ups; they must not reintroduce a second session format.
 
 ## 8. Archive construction and graceful finalization
 
@@ -637,8 +645,9 @@ A successfully closed archive requires this ordering:
 2. Obtain the expected final roster and required agent/subscription revisions from
    the quiesced producers, within the archive's visibility scope. This expectation
    must not be inferred solely from the records the archive happened to receive.
-3. Finish snapshot capture and persist control records and required payloads.
-   Drain successfully; do not treat a timed-out or failed export as success.
+3. Drain lifecycle publication and ordinary protected call-payload delivery;
+   persist the required control records and frames. Do not treat a timed-out or
+   failed export as success.
 4. Establish a fixed persisted cut/generation. Compare the indexed projections
    against the expected final roster/revisions and graph.
 5. Verify every selected snapshot's complete recipe closure and integrity.
@@ -699,7 +708,7 @@ The CLI sequence is:
 
 Raw validation establishes bootstrap consistency, not side-effect-free recipe
 evaluation. Anchor resolution may load schemas/modules or exercise still-eager
-binding paths (§7); those must satisfy the capture and laziness requirements.
+binding paths; their broader portability hardening remains deferred (§7).
 The all-anchors barrier prevents a partial runtime graph from becoming usable,
 not every possible evaluation side effect.
 
@@ -767,7 +776,7 @@ never `emitHistory` as a substitute for an unavailable archive.
 These are useful without the old checkpoint wire format:
 
 - Compact stopped-agent telemetry contexts instead of retaining resolver/query
-  contexts. Retained conversation leases still protect necessary objects.
+  contexts. Runtime/client lifecycle leases remain; recipe-capture leases do not.
 - Acquire lifecycle leases outside the registry mutex, with duplicate-publication
   recheck and correct release on every failure/race path.
 - Preserve explicit parent handles across restoration.
@@ -793,10 +802,9 @@ One replacement effort covers both old PRs. Reviewable slices are:
 3. **CLI graph restore:** frontend barrier, all-agent rehydration, non-emitting
    subscription installation, trace-authoritative Workspace/reset behavior, and
    background history with revision isolation.
-4. **Snapshot hardening and recipe simplification:** cover all capture ingress,
-   remove live fallbacks from strict resumability, prove raw-recipe restoration,
-   then remove internal flattening where justified. This can land incrementally;
-   the archive contract does not depend on which safe anchor implementation is used.
+4. **Committed-leaf simplification:** remove internal flattening and agent capture
+   machinery, retain ordinary protected frame delivery, and test direct-leaf
+   association/reconstruction. Broader snapshot/laziness hardening is deferred.
 5. **Trace-only cutover:** remove local JSON persistence and public portable/history
    APIs, migrate callers and tests, regenerate SDKs/schema, and update CLI help.
 
@@ -816,10 +824,12 @@ slices remain follow-ups rather than describing the whole proposal as implemente
   delivered; verify the final indexed roster/graph and anchors.
 - Inject persistence failures before/after per-target claims. Retry failed targets
   without treating them as delivered; exhausted retries prevent a closed marker.
-- Fail capture of the latest conversation after a prior successful revision.
-  Strict finalization must reject it, not restore the earlier digest as current.
-- Exercise out-of-order capture completion, rapid state/snapshot changes, lease
+- Fail leaf association after a prior successful revision. Finalization must
+  reject it, not restore the earlier conversation's digest as current.
+- Verify committed-leaf/lifecycle association, coalesced publication, runtime lease
   release, registry races, and teardown under the race detector.
+- Recording-span roots and new descendants reach protected payload logs exactly
+  once per delivery claim; span presence must not suppress canonical frame delivery.
 - Missing entire agent, final update, subscription, or recipe dependency prevents
   strict sealing even if all received cursors are well formed.
 - Visibility-scoped archives do not fail on unrelated registry sequence gaps or
@@ -842,14 +852,12 @@ slices remain follow-ups rather than describing the whole proposal as implemente
 - Resume from an unrelated client checkout, a checkout with missing/different
   modules, and a changed source checkout. Agent-visible files, tools, module schema,
   and pending edits come from the trace, not any destination files.
-- Test no-Git/unsupported/failed capture and post-start `@` references. A live
-  dependency must not be silently accepted as a durable snapshot.
-- Raw same-type `withTools(slow).withTools(fast)` reload must not execute `slow`;
-  loading the conversation should not execute `fast` either. Verify behavior with
-  a fresh server, not just cache hits. Cover handle fallback separately.
-- Cover repeated Workspace rebinding, skills/services, continuations, pending
-  overlays, exported edits, and disappearance of the source session. Show when
-  the raw committed recipe is equivalent before removing flattening.
+- Direct-leaf publication and fresh-cache reconstruction retain recorded responses,
+  tool results, and state setters without rebuilding a flattened conversation.
+- Deferred portability coverage includes no-Git/unsupported snapshots, later `@`
+  references, handle fallback, lazy tool replacement, repeated Workspace rebinding,
+  skills/services, continuations, overlays and source-session disappearance. This
+  broader matrix is not a prerequisite for the completed flattening removal.
 - `.clear` never falls back to the client Workspace. Explicit export changes the
   destination only as requested and does not rebind the agent to it.
 
@@ -897,8 +905,8 @@ choices in the replacement PR:
   sessions, and how `.clear` defines a traced reset target independently of export
   bookkeeping. Neither may silently import client state during restore.
 - Archive retention defaults and durable content-reference availability guarantees.
-- Which binding paths need additional laziness/capture before internal flattening
-  can be removed, and whether later compaction is worth its measured cost.
+- Which binding paths warrant further portability/laziness work, and whether
+  general pruning or compaction is worth its measured cost. Flattening is removed.
 
 Pending-mailbox/exactly-once notification recovery and crash-complete archives are
 separate future designs, not unspecified promises hidden inside this one.
