@@ -1,0 +1,11 @@
+kind: Deprecated
+body: |
+  `Container.experimentalWithGPU` and `Container.experimentalWithAllGPUs` are
+  deprecated in favor of `withGPU`. Both keep working in every API version.
+  Schema views older than v1.0.0-beta.15 keep the undecorated fields they
+  shipped with. Per-device selection has no replacement yet; a portable
+  design is still to be settled.
+time: 2026-09-23T21:53:53Z
+custom:
+  Author: grouville
+  PR: 14320

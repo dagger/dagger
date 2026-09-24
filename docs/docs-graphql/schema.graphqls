@@ -1992,8 +1992,13 @@ type Container implements Exportable & Node & Syncer {
   ): Container!
 
   """
-  EXPERIMENTAL API! Subject to change/removal at any time.
+  Configures all GPUs available on the host to be accessible to this container.
 
+  This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+  """
+  withGPU: Container!
+
+  """
   Configures the provided list of devices to be accessible to this container.
 
   This currently works for Nvidia devices only.
@@ -2001,16 +2006,14 @@ type Container implements Exportable & Node & Syncer {
   experimentalWithGPU(
     """List of devices to be accessible to this container."""
     devices: [String!]!
-  ): Container!
+  ): Container! @deprecated(reason: "Use \"withGPU\" instead, which exposes all GPUs available on the host.")
 
   """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
   Configures all available GPUs on the host to be accessible to this container.
 
   This currently works for Nvidia devices only.
   """
-  experimentalWithAllGPUs: Container!
+  experimentalWithAllGPUs: Container! @deprecated(reason: "Use \"withGPU\" instead.")
 
   """
   Turn the container into a Service.

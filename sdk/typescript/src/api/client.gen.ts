@@ -5862,11 +5862,10 @@ export class Container extends BaseClient {
   }
 
   /**
-   * EXPERIMENTAL API! Subject to change/removal at any time.
-   *
    * Configures all available GPUs on the host to be accessible to this container.
    *
    * This currently works for Nvidia devices only.
+   * @deprecated Use "withGPU" instead.
    */
   experimentalWithAllGPUs = (): Container => {
     const ctx = this._ctx.select("experimentalWithAllGPUs")
@@ -5874,12 +5873,11 @@ export class Container extends BaseClient {
   }
 
   /**
-   * EXPERIMENTAL API! Subject to change/removal at any time.
-   *
    * Configures the provided list of devices to be accessible to this container.
    *
    * This currently works for Nvidia devices only.
    * @param devices List of devices to be accessible to this container.
+   * @deprecated Use "withGPU" instead, which exposes all GPUs available on the host.
    */
   experimentalWithGPU = (devices: string[]): Container => {
     const ctx = this._ctx.select("experimentalWithGPU", { devices })
@@ -6555,6 +6553,16 @@ export class Container extends BaseClient {
     opts?: ContainerWithFilesOpts,
   ): Container => {
     const ctx = this._ctx.select("withFiles", { path, sources, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Configures all GPUs available on the host to be accessible to this container.
+   *
+   * This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+   */
+  withGPU = (): Container => {
+    const ctx = this._ctx.select("withGPU")
     return new Container(ctx)
   }
 

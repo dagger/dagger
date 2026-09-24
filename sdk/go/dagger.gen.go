@@ -2365,11 +2365,11 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
-// EXPERIMENTAL API! Subject to change/removal at any time.
-//
 // Configures all available GPUs on the host to be accessible to this container.
 //
 // This currently works for Nvidia devices only.
+//
+// Deprecated: Use "withGPU" instead.
 func (r *Container) ExperimentalWithAllGPUs() *Container {
 	q := r.query.Select("experimentalWithAllGPUs")
 
@@ -2378,11 +2378,11 @@ func (r *Container) ExperimentalWithAllGPUs() *Container {
 	}
 }
 
-// EXPERIMENTAL API! Subject to change/removal at any time.
-//
 // Configures the provided list of devices to be accessible to this container.
 //
 // This currently works for Nvidia devices only.
+//
+// Deprecated: Use "withGPU" instead, which exposes all GPUs available on the host.
 func (r *Container) ExperimentalWithGPU(devices []string) *Container {
 	q := r.query.Select("experimentalWithGPU")
 	q = q.Arg("devices", devices)
@@ -3541,6 +3541,17 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("sources", sources)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Configures all GPUs available on the host to be accessible to this container.
+//
+// This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+func (r *Container) WithGPU() *Container {
+	q := r.query.Select("withGPU")
 
 	return &Container{
 		query: q,

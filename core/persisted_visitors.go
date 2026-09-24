@@ -306,6 +306,7 @@ var persistedContainerRecipeVisitors = map[string]persistedLazyVisitor{
 	"__withImageConfigMetadata": parentOnly(func(p *persistedContainerWithImageConfigMetadataLazy) *uint64 { return &p.ParentResultID }),
 	"withDockerHealthcheck":     parentOnly(func(p *persistedContainerWithHealthcheckLazy) *uint64 { return &p.ParentResultID }),
 	"withoutDockerHealthcheck":  parentOnly(func(p *persistedContainerWithoutHealthcheckLazy) *uint64 { return &p.ParentResultID }),
+	"withGPU":                   parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
 	"experimentalWithGPU":       parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
 	"experimentalWithAllGPUs":   parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
 	"withAnnotation":            parentOnly(func(p *persistedContainerWithAnnotationLazy) *uint64 { return &p.ParentResultID }),
