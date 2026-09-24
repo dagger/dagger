@@ -110,7 +110,10 @@ type TestSplit {
   Test Telemetry
   """
   pub testTelemetry: Void @check {
-    testSpecific(["^TestTelemetry$"], pkg: "./dagql/idtui")
+    # Rendering goldens require their warmup cache to survive session teardown.
+    engineDev(ws: self.ws)
+      .withEngineConfig("worker.oci", "gc = false")
+      .test(run: "^TestTelemetry$", pkg: "./dagql/idtui", testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
     testSpecific(["^TestTelemetry$"])
 
     null

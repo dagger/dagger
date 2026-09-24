@@ -833,11 +833,12 @@ func (*Viztest) TraceFunctionCalls(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// unlazy one of them to verify it shows up as cached
-	f := files[0]
-	_, err = f.Sync(ctx)
-	if err != nil {
-		return err
+	// The golden asserts completion for every file. Returning lazy file
+	// handles alone does not guarantee their contents have been evaluated.
+	for _, f := range files {
+		if _, err := f.Sync(ctx); err != nil {
+			return err
+		}
 	}
 
 	return nil
