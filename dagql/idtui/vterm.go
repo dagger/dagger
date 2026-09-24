@@ -10,7 +10,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -423,22 +422,12 @@ func (term *Vterm) redraw() {
 
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
-		renderer, _ := glamour.NewTermRenderer(
-			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
-			glamour.WithStyles(MarkdownStyle),
-			// Constrain rendering to the 16-color ANSI palette.
-			glamour.WithColorProfile(termenv.ANSI),
-			glamour.WithChromaFormatter("terminal16"),
-			glamour.WithPreservedNewLines(),
-			glamour.WithEmoji(),
-		)
-
-		rendered, err := renderer.Render(term.markdownBuf.String())
+		rendered, err := renderMarkdown(term.markdownBuf.String(), term.mediaWidth(), MarkdownStyle)
 		if err != nil {
 			fmt.Fprintf(term.viewBuf, "Error rendering Markdown: %s\n", err)
 		} else {
 			// Remove leading and trailing newlines
-			rendered = strings.TrimSpace(rendered)
+			rendered = trimMarkdownPadding(rendered)
 			// Add prefix to each line of rendered Markdown
 			lines := strings.Split(rendered, "\n")
 			for i, line := range lines {
@@ -496,31 +485,18 @@ func (m *Markdown) View() string {
 			st.Document.BackgroundColor = &bg
 		}
 	}
-	glamourOpts := []glamour.TermRendererOption{
-		glamour.WithStyles(st),
-		// Constrain rendering to the 16-color ANSI palette.
-		glamour.WithColorProfile(termenv.ANSI),
-		glamour.WithChromaFormatter("terminal16"),
-		glamour.WithPreservedNewLines(),
-		glamour.WithEmoji(),
-	}
+	width := 80
 	if m.Width != 0 {
 		// Subtract 2 for a margin on the right edge, matching the prefix
 		// margin on the left.
-		glamourOpts = append(glamourOpts,
-			glamour.WithWordWrap(m.Width-lipgloss.Width(m.Prefix)-2))
+		width = max(1, m.Width-lipgloss.Width(m.Prefix)-2)
 	}
-	renderer, err := glamour.NewTermRenderer(glamourOpts...)
-	if err != nil {
-		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
-	}
-
-	rendered, err := renderer.Render(m.Content)
+	rendered, err := renderMarkdown(m.Content, width, st)
 	if err != nil {
 		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
 	} else if m.Prefix != "" {
 		// Remove leading and trailing newlines
-		rendered = strings.TrimSpace(rendered)
+		rendered = trimMarkdownPadding(rendered)
 		// Add prefix to each line of rendered Markdown
 		lines := strings.Split(rendered, "\n")
 		for i, line := range lines {

@@ -7,7 +7,6 @@ import (
 	"unicode"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
@@ -156,15 +155,9 @@ func (term *Vterm) layoutMedia() {
 		}
 		var lines []string
 		if segment.markdown {
-			renderer, err := glamour.NewTermRenderer(
-				glamour.WithWordWrap(width), glamour.WithStyles(MarkdownStyle),
-				glamour.WithColorProfile(termenv.ANSI), glamour.WithChromaFormatter("terminal16"),
-				glamour.WithPreservedNewLines(), glamour.WithEmoji(),
-			)
+			rendered, err := renderMarkdown(segment.text.String(), width, MarkdownStyle)
 			if err == nil {
-				var rendered string
-				rendered, err = renderer.Render(segment.text.String())
-				lines = strings.Split(strings.TrimSpace(rendered), "\n")
+				lines = strings.Split(trimMarkdownPadding(rendered), "\n")
 			}
 			if err != nil {
 				lines = []string{fmt.Sprintf("Error rendering Markdown: %s", err)}
