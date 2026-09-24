@@ -85,17 +85,24 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 		})
 		return err
 	})
-	if ctx.Err() != nil {
-		return nil, true, ctx.Err()
+	err = errors.Join(err, ctx.Err())
+	if err != nil && result != nil {
+		// The inner workspace may already have committed its snapshot when
+		// the source mount fails to unmount, or cancellation arrives. Release
+		// that result before abandoning it, preserving cleanup failures too.
+		err = errors.Join(err, result.OnRelease(context.WithoutCancel(ctx)))
 	}
-	if errors.Is(err, errNativeCommitUnsupported) {
+	if nativeCommitFallback(err) {
 		var reason nativeCommitUnsupportedReason
 		if errors.As(err, &reason) {
 			span.SetAttributes(attribute.String("dagger.git.native_merge.fallback_reason", string(reason)))
 		}
 		return nil, false, nil
 	}
-	return result, true, err
+	if err != nil {
+		return nil, true, err
+	}
+	return result, true, nil
 }
 
 // validateNativeWorkspaceContent walks only the materialized delta, never the
