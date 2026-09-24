@@ -471,19 +471,6 @@ func (*Probe) Capture(ctx context.Context, source *dagger.Workspace) (string, er
 	require.Contains(t, out, "workspace snapshot capture is only available to the workspace's owning client")
 }
 
-func (WorkspaceSuite) TestWorkspaceSnapshotHostDirectoryIsSessionOnly(ctx context.Context, t *testctx.T) {
-	c, sink := connectWithTrace(ctx, t)
-	ws := snapshotWorkspace(ctx, t, c, c.Host().Directory(t.TempDir()).AsWorkspace())
-	id, err := ws.ID(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, id)
-	// The generic snapshot API may preserve a session-only value, but strict
-	// agent capture must not advertise its live host dependency as resumable.
-	_, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(ws))
-	require.ErrorContains(t, err, "capture failed")
-	require.ErrorContains(t, err, "Host.directory")
-}
-
 func (WorkspaceSuite) TestWorkspaceSnapshotReplayableValuePassesThrough(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ws := c.Directory().AsWorkspace().WithNewFile("overlay.txt", "portable")

@@ -6,16 +6,74 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/stretchr/testify/require"
 )
+
+func TestControlPublishesCommittedCallLeaf(t *testing.T) {
+	rec, ctx := stateRecorderCtx(t)
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass[*LLM](srv))
+	root := testResultCall("llm", &LLM{}, nil)
+	frame := testResultCall("withResponse", &LLM{}, root)
+	// No reconstructible in-memory MCP state: publication must use the actual
+	// committed call, not synthesize a conversation from the LLM's contents.
+	value, err := dagql.NewObjectResultForCall(&LLM{}, srv, frame)
+	require.NoError(t, err)
+	attached, err := cache.GetOrInitCall(ctx, "committed-leaf", srv,
+		&dagql.CallRequest{ResultCall: frame}, dagql.ValueFunc(value))
+	require.NoError(t, err)
+	committed := attached.(dagql.ObjectResult[*LLM])
+	handle, err := committed.ID()
+	require.NoError(t, err)
+	require.True(t, handle.IsHandle())
+	committedFrame, err := committed.ResultCall()
+	require.NoError(t, err)
+	payload, err := committedFrame.CallPB(ctx)
+	require.NoError(t, err)
+
+	// A later descendant call in the resolver context is not the committed tip.
+	descendant := testResultCall("withToolResult", &LLM{}, frame)
+	ctx = dagql.ContextWithCall(ctx, descendant)
+	rt := testRuntime(t, ctx)
+	rt.testTransition(func() { rt.commitLast(ctx, committed) })
+	rt.testTransition(func() { rt.paused = true })
+	next, err := dagql.NewObjectResultForCall(&LLM{}, srv, descendant)
+	require.NoError(t, err)
+	nextPayload, err := descendant.CallPB(ctx)
+	require.NoError(t, err)
+	rt.testTransition(func() { rt.commitLast(ctx, next) })
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	require.Len(t, rec.control, 3)
+	require.Len(t, rec.records, 3, "agent publication does not re-emit call payloads")
+	for i, record := range rec.control {
+		projection, _, err := agentcontrol.Decode(record)
+		require.NoError(t, err)
+		require.Empty(t, projection.CaptureError)
+		require.EqualValues(t, i+1, projection.Revision)
+		want := payload.Digest
+		if i == 2 {
+			want = nextPayload.Digest
+		}
+		require.Equal(t, want, projection.Digest)
+		if i > 0 {
+			require.Equal(t, "PAUSED", projection.State)
+		}
+	}
+}
 
 func TestControlCaptureFailureReplacesPreviousAnchor(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
 	rt := testRuntime(t, ctx)
 	rt.testTransition(func() {})
 	rt.testTransition(func() {
-		rt.controlCapture = &agentCapture{}
+		rt.commitLast(ctx, dagql.ObjectResult[*LLM]{})
 	})
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
@@ -30,46 +88,6 @@ func TestControlCaptureFailureReplacesPreviousAnchor(t *testing.T) {
 	require.Greater(t, last.Revision, first.Revision)
 	_, err = last.RestoreState()
 	require.Error(t, err)
-}
-
-func TestControlCaptureOutsideRuntimeLock(t *testing.T) {
-	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(t, ctx)
-	capture := &agentCapture{}
-	entered, release := make(chan struct{}), make(chan struct{})
-	go capture.once.Do(func() { close(entered); <-release; capture.digest = "xxh3:new" })
-	<-entered
-	rt.mu.Lock()
-	rt.controlCapture = capture
-	rt.transitionLocked(func() {})
-	rt.mu.Unlock()
-	// Recipe derivation is stalled. A newer coherent lifecycle revision can
-	// still be assigned and queued without taking the derivation's lock.
-	changed := make(chan struct{})
-	go func() {
-		rt.mu.Lock()
-		rt.transitionLocked(func() { rt.paused = true })
-		rt.mu.Unlock()
-		close(changed)
-	}()
-	select {
-	case <-changed:
-	case <-time.After(time.Second):
-		t.Fatal("capture blocked the runtime mutex")
-	}
-	close(release)
-	rt.flushControl()
-	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	var idx agentcontrol.Index
-	for _, record := range rec.control {
-		_, err := idx.ApplyRecord(record)
-		require.NoError(t, err)
-	}
-	latest := idx.Agents()[0]
-	require.Equal(t, "PAUSED", latest.State)
-	require.Equal(t, int64(2), latest.Revision)
-	require.Equal(t, "xxh3:new", latest.Digest)
 }
 
 func TestRestoreNotifySuppressesHistoryButKeepsFutureEdges(t *testing.T) {
@@ -133,7 +151,7 @@ func TestCloseControlWaitsForProducersAndPreservesCause(t *testing.T) {
 	require.False(t, rt.controlClosed, "failed stop cannot fix an archive cut or close its publisher")
 	select {
 	case <-rt.control.done:
-		t.Fatal("capture publisher closed before producer quiescence")
+		t.Fatal("control publisher closed before producer quiescence")
 	default:
 	}
 	rt.testTransition(func() { rt.done = true }) // simulate loop's completed unwind

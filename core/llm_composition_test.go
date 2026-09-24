@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -170,29 +169,6 @@ func TestLLMCompositionOwnerBindingsAndReplay(t *testing.T) {
 				require.NoError(t, err)
 			}
 		})
-	}
-
-	// Recipe recording retains final binding owners and each prompt's owner.
-	// Explicit empty owners must also be recorded, not inferred during replay.
-	scoped := next.WithSystemPrompt("manual").WithSystemPromptOwner("owned", "group-A")
-	sels, err := scoped.recipeSelectors(context.Background())
-	require.NoError(t, err)
-	var toolVersions []int
-	var toolOwners, promptOwners []string
-	for _, sel := range sels {
-		switch sel.Field {
-		case "withTools":
-			toolVersions = append(toolVersions, compositionSelectorVersion(t, sel))
-			toolOwners = append(toolOwners, compositionSelectorOwner(t, sel))
-		case "withSystemPrompt":
-			promptOwners = append(promptOwners, compositionSelectorOwner(t, sel))
-		}
-	}
-	require.Equal(t, []int{0, 7, 3}, toolVersions)
-	require.Equal(t, []string{"", "group-A", "group-B"}, toolOwners)
-	require.Equal(t, []string{"", "group-A"}, promptOwners)
-	for _, sel := range sels {
-		require.NotEqual(t, "__withCompositionOwner", sel.Field)
 	}
 }
 

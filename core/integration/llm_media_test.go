@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -89,15 +88,9 @@ func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 			require.Contains(t, transcript, tc.mime)
 			require.NotContains(t, transcript, tc.data)
 
-			// Portable reconstruction must contain the resolved bytes rather than
-			// depend on the original File or its producing container.
+			// Reconstruct the committed call chain, retaining file dependencies.
 			id, err := sink.captureLLMRecipe(ctx, t, c, llm)
 			require.NoError(t, err)
-			recipe := new(call.ID)
-			require.NoError(t, recipe.Decode(string(id)))
-			for cur := recipe; cur != nil; cur = cur.Receiver() {
-				require.NotEqual(t, "withContentFile", cur.Field(), "portable media must not retain the file-producing recipe")
-			}
 			reloaded := dagger.Ref[*dagger.LLM](c, id)
 			require.Equal(t, messages, mediaHistory(t, c, reloaded))
 		})
