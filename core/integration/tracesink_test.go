@@ -192,7 +192,7 @@ func (sink *agentTraceSink) restorableCapture(ctx context.Context, count int, st
 		}
 		select {
 		case <-ctx.Done():
-			return restorableTraceCapture{}, fmt.Errorf("waiting for restorable trace: %w: %v", ctx.Err(), err)
+			return restorableTraceCapture{}, fmt.Errorf("waiting for restorable trace: %w: %w", ctx.Err(), err)
 		case <-changed:
 		}
 	}
