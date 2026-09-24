@@ -1,13 +1,13 @@
 """A module for HelloWithServicesPy functions"""
 
 import dagger
-from dagger import dag, function, object_type, up
+from dagger import dag, function, object_type, start, up
 
 
 @object_type
 class Infra:
     @function
-    @up
+    @start
     def database(self) -> dagger.Service:
         """Returns a postgres database service"""
         return (
@@ -22,7 +22,7 @@ class Infra:
 @object_type
 class HelloWithServicesPy:
     @function
-    @up
+    @start
     def web(self) -> dagger.Service:
         """Returns a web server service"""
         return (

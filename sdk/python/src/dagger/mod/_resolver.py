@@ -114,7 +114,7 @@ class Function(Generic[P, R]):
 
     @property
     def service(self) -> bool:
-        """Indicates whether the function is configured as a service for dagger up."""
+        """Indicates whether the function is a service for dagger start."""
         # Check both the metadata and the attribute to support either decorator order
         return self.meta.service or getattr(self.wrapped, UP_DEF_KEY, False)
 

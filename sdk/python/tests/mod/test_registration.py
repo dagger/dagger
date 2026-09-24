@@ -119,6 +119,47 @@ def test_check_decorator_order():
     assert function_first_fn.check is True
 
 
+def test_start_decorator_order():
+    """Test that @start works whether applied before or after @function."""
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        @mod.start
+        @mod.function
+        def start_first(self):
+            """Start applied before function."""
+
+        @mod.function
+        @mod.start
+        def function_first(self):
+            """Start applied after function."""
+
+        @mod.function
+        def regular(self):
+            """Regular function."""
+
+    functions = mod.get_object("Foo").functions
+    assert functions["start_first"].service is True
+    assert functions["function_first"].service is True
+    assert functions["regular"].service is False
+
+
+def test_up_is_deprecated_spelling_of_start():
+    mod = Module()
+
+    with pytest.deprecated_call(match="Use 'start' instead"):
+
+        @mod.object_type
+        class Foo:
+            @mod.function
+            @mod.up
+            def web(self):
+                """Service marked with the deprecated spelling."""
+
+    assert mod.get_object("Foo").functions["web"].service is True
+
+
 def test_function_argument_deprecated_metadata():
     mod = Module()
 
