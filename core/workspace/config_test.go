@@ -187,8 +187,8 @@ start.skip = ["db"]
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{
 		"dagger.toml:3:1: field modules.legacy.up is deprecated; use modules.legacy.start instead",
-		"dagger.toml:7:1: field modules.cleared.up is deprecated; use modules.cleared.start instead",
-		"dagger.toml:12:1: field modules.both.up is deprecated; use modules.both.start instead",
+		"dagger.toml:7:1: field modules.cleared.up is ignored because modules.cleared.start.skip is set",
+		"dagger.toml:12:1: field modules.both.up is ignored because modules.both.start.skip is set",
 	}, warnings)
 
 	_, err = WriteConfigValue(data, "modules.legacy.up.skip", "redis")

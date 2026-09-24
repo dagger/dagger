@@ -9,7 +9,7 @@ import (
 	toml "github.com/pelletier/go-toml"
 )
 
-// ConfigWarnings reports unsupported workspace fields without interpreting them.
+// ConfigWarnings reports unsupported and deprecated workspace fields.
 // Settings maps belong to modules and SDKs, so their contents are unrestricted.
 func ConfigWarnings(data []byte, filename string) ([]string, error) {
 	tree, err := toml.LoadBytes(data)
@@ -45,8 +45,13 @@ func ConfigWarnings(data []byte, filename string) ([]string, error) {
 			if !known {
 				pos := tree.GetPositionPath([]string{key})
 				if legacyUpConfigPath(parts) {
-					warnings = append(warnings, fmt.Sprintf("%s:%d:%d: field %s is deprecated; use %s instead",
-						filename, pos.Line, pos.Col, JoinConfigPath(parts...), JoinConfigPath(parts[0], parts[1], "start")))
+					field := fmt.Sprintf("%s:%d:%d: field %s", filename, pos.Line, pos.Col, JoinConfigPath(parts...))
+					start := JoinConfigPath(parts[0], parts[1], "start")
+					message := field + " is deprecated; use " + start + " instead"
+					if startKey, ok := configDecoderKey(tree, "start"); ok && tree.HasPath([]string{startKey, "skip"}) {
+						message = field + " is ignored because " + start + ".skip is set"
+					}
+					warnings = append(warnings, message)
 					continue
 				}
 				message := fmt.Sprintf("%s:%d:%d: unsupported field %s is ignored", filename, pos.Line, pos.Col, JoinConfigPath(parts...))

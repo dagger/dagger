@@ -244,7 +244,6 @@ type legacyUpConfig struct {
 	} `toml:"modules"`
 }
 
-// applyLegacyUpSkip reads up.skip for the modules that do not set start.skip.
 func applyLegacyUpSkip(data []byte, cfg *Config) error {
 	var legacy legacyUpConfig
 	if err := toml.Unmarshal(data, &legacy); err != nil {
