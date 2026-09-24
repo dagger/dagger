@@ -194,6 +194,38 @@ func TestWorkspaceRealRepositoryPerformanceControlledOrigin(t *testing.T) {
 	realRepositoryPerformance(t, true)
 }
 
+// Use upload-pack over smart HTTP: the test image includes Git but not
+// the separately packaged git-daemon executable. This server advertises
+// only the fixture's frozen refs and reads the same packed repository.
+func realBenchOriginServer(t *testing.T, checkout string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		args := []string{"upload-pack", "--stateless-rpc"}
+		if r.Method == http.MethodGet && r.URL.Path == "/repo/info/refs" && r.URL.Query().Get("service") == "git-upload-pack" {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+			_, _ = io.WriteString(w, "001e# service=git-upload-pack\n0000")
+			args = append(args, "--advertise-refs")
+		} else if r.Method == http.MethodPost && r.URL.Path == "/repo/git-upload-pack" {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		} else {
+			http.NotFound(w, r)
+			return
+		}
+		args = append(args, checkout)
+		cmd := exec.CommandContext(r.Context(), "git", args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+		if protocol := r.Header.Get("Git-Protocol"); protocol != "" {
+			cmd.Env = append(cmd.Env, "GIT_PROTOCOL="+protocol)
+		}
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = r.Body, w, io.Discard
+		if err := cmd.Run(); err != nil {
+			t.Logf("controlled origin upload-pack: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
 func realRepositoryPerformance(t *testing.T, controlledOrigin bool) {
 	// A full-history network fixture is too expensive for ordinary CI runs.
 	// Require the benchmark's name explicitly, not a broad selector such as .*.
@@ -298,33 +330,7 @@ func realRepositoryPerformance(t *testing.T, controlledOrigin bool) {
 	realBenchLog(t, map[string]any{"kind": "connect", "ms": float64(time.Since(started)) / float64(time.Millisecond), "engine_version": version})
 	if controlledOrigin {
 		started = time.Now()
-		// Use upload-pack over smart HTTP: the test image includes Git but not
-		// the separately packaged git-daemon executable. This server advertises
-		// only the fixture's frozen refs and reads the same packed repository.
-		originServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			args := []string{"upload-pack", "--stateless-rpc"}
-			if r.Method == http.MethodGet && r.URL.Path == "/repo/info/refs" && r.URL.Query().Get("service") == "git-upload-pack" {
-				w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
-				_, _ = io.WriteString(w, "001e# service=git-upload-pack\n0000")
-				args = append(args, "--advertise-refs")
-			} else if r.Method == http.MethodPost && r.URL.Path == "/repo/git-upload-pack" {
-				w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
-			} else {
-				http.NotFound(w, r)
-				return
-			}
-			args = append(args, checkout)
-			cmd := exec.CommandContext(r.Context(), "git", args...)
-			cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
-			if protocol := r.Header.Get("Git-Protocol"); protocol != "" {
-				cmd.Env = append(cmd.Env, "GIT_PROTOCOL="+protocol)
-			}
-			cmd.Stdin, cmd.Stdout, cmd.Stderr = r.Body, w, io.Discard
-			if err := cmd.Run(); err != nil {
-				t.Logf("controlled origin upload-pack: %v", err)
-			}
-		}))
-		t.Cleanup(originServer.Close)
+		originServer := realBenchOriginServer(t, checkout)
 		port := originServer.Listener.Addr().(*net.TCPAddr).Port
 		tunnel, err := c.Host().Service([]dagger.PortForward{{Frontend: 80, Backend: port}}).Start(ctx)
 		require.NoError(t, err)
