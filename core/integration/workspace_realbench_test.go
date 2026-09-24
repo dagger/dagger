@@ -202,18 +202,21 @@ func TestWorkspaceRealRepositoryPerformance(t *testing.T) {
 		require.NoError(t, err, "git %v: %s", args, out)
 		return strings.TrimSpace(string(out))
 	}
-	git("init", "-b", "benchmark")
+	git("init", "-b", "main")
 	for _, setting := range [][2]string{{"user.name", "Real Benchmark"}, {"user.email", "realbench@example.com"}, {"commit.gpgsign", "false"}, {"core.hooksPath", "/dev/null"}, {"gc.auto", "0"}, {"pack.threads", "1"}} {
 		git("config", setting[0], setting[1])
 	}
-	// Full ancestry of exactly the pinned commit, no shallow/partial clone, tags,
-	// mutable branch tips or remotes. Capture must copy this local history.
-	git("fetch", "--no-tags", "https://github.com/dagger/dagger.git", realBenchFixtureSHA)
+	// Full ancestry of exactly the pinned commit, no shallow/partial clone or
+	// tags. Preserve a realistic origin and tracking branch: removing origin can
+	// change captured GitRef provenance and hide the real-workspace fallback.
+	git("remote", "add", "origin", "https://github.com/dagger/dagger.git")
+	git("fetch", "--no-tags", "origin", realBenchFixtureSHA+":refs/remotes/origin/main")
 	git("reset", "--hard", realBenchFixtureSHA)
+	git("branch", "--set-upstream-to=origin/main", "main")
 	git("repack", "-adf", "--window=10", "--depth=50")
 	git("prune-packed")
 	require.Equal(t, "false", git("rev-parse", "--is-shallow-repository"))
-	require.Empty(t, git("remote"))
+	require.Equal(t, "https://github.com/dagger/dagger.git", git("remote", "get-url", "origin"))
 	require.Equal(t, realBenchFixtureSHA, git("rev-parse", "HEAD"))
 	packs, err := filepath.Glob(filepath.Join(checkout, ".git/objects/pack/*.pack"))
 	require.NoError(t, err)
@@ -248,7 +251,7 @@ func TestWorkspaceRealRepositoryPerformance(t *testing.T) {
 	}))
 	du := exec.CommandContext(ctx, "du", "-sk", filepath.Join(checkout, ".git"), checkout)
 	allocated, duErr := du.CombinedOutput()
-	realBenchLog(t, map[string]any{"kind": "fixture", "setup_ms": float64(time.Since(started)) / float64(time.Millisecond), "git_version": git("--version"), "commits": git("rev-list", "--count", "HEAD"), "tracked_files": len(strings.Split(git("ls-files"), "\n")), "objects": git("count-objects", "-v"), "pack_sha256": packHashes, "source_file_bytes": sourceBytes, "git_file_bytes": gitBytes, "host_du_allocated_KiB": string(allocated), "du_error": fmt.Sprint(duErr), "engine_physical_allocation": "not measured; compressed object bytes are not allocation"})
+	realBenchLog(t, map[string]any{"kind": "fixture", "origin": git("remote", "get-url", "origin"), "git_config": git("config", "--local", "--list"), "setup_ms": float64(time.Since(started)) / float64(time.Millisecond), "git_version": git("--version"), "commits": git("rev-list", "--count", "HEAD"), "tracked_files": len(strings.Split(git("ls-files"), "\n")), "objects": git("count-objects", "-v"), "pack_sha256": packHashes, "source_file_bytes": sourceBytes, "git_file_bytes": gitBytes, "host_du_allocated_KiB": string(allocated), "du_error": fmt.Sprint(duErr), "engine_physical_allocation": "not measured; compressed object bytes are not allocation"})
 	readHost := func(path string) string {
 		b, err := os.ReadFile(filepath.Join(checkout, path))
 		require.NoError(t, err)
