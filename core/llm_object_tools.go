@@ -1207,7 +1207,7 @@ func toolCallReportOpts() traceReportOpts {
 		// OUTPUT section carries the tool's own lines unabridged.
 		NestedLogLines: llmToolLogsMaxLines,
 		// The reader is an LLM, which has tools rather than a shell: suggest
-		// the ReadTrace builtin for the failed checks instead of `dagger
+		// FindSpans then ReadTrace for failed checks instead of `dagger
 		// check "<name>"` commands it cannot run.
 		SuggestReadTrace: true,
 		// A tool result is about the RESULT, not about the machinery: keep

@@ -45,7 +45,7 @@ type spanLookup struct {
 	// checkSpans/testSpans remember the spans whose attributes mark them as
 	// named checks or tests (telemetry.CheckNameAttr, semconv test.case.name
 	// / test.suite.name). Detected with a raw byte scan of the encoded
-	// attributes — no decode — so a name lookup (e.g. ReadTrace(check:))
+	// attributes — no decode — so check/test span selection
 	// answers from the index instead of scanning the stream. A false
 	// positive (marker bytes inside a value) merely loads one extra span.
 	checkSpans map[string]struct{}

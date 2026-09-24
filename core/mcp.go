@@ -2765,11 +2765,11 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
-		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, check, or test, in one of three views." + "\n" +
+		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of three views." + "\n" +
 			"- report (default): the trace report -- the span tree plus the CHECKS and TESTS sections, exactly as they appear at the end of a run. Tool results are abridged; this is how you see the full detail behind one." + "\n" +
 			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
 			"- timings: the span's raw-parent subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included; cause links are not traversed. Durations are each span's own wall interval, may overlap, and are not total execution or CPU self time. Imported spans with unrecorded completion have unknown duration." + "\n" +
-			"Pass the span ID from a report's footer or a FindSpans result, or the name of a check or test you saw run; when a name matches several spans, the most recent one is used." + "\n" +
+			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here." + "\n" +
 			"Use ReadLogs when you want the raw log lines beneath a span.",
 		ReadOnly: true, // Read-only operation
 		Schema: map[string]any{
@@ -2778,14 +2778,6 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 				"span": map[string]any{
 					"type":        "string",
 					"description": "Span ID (hex) to read, scoped to that span's subtree.",
-				},
-				"check": map[string]any{
-					"type":        "string",
-					"description": "Check name to read, e.g. \"shellcheck:check\".",
-				},
-				"test": map[string]any{
-					"type":        "string",
-					"description": "Test case or suite name to read.",
 				},
 				"view": map[string]any{
 					"type":        "string",
@@ -2804,7 +2796,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 					"default":     200,
 				},
 			},
-			"required":             []string{},
+			"required":             []string{"span"},
 			"additionalProperties": false,
 		},
 		Call: m.readTraceTool(srv),
@@ -3211,7 +3203,7 @@ func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern
 	return strings.Join(logs, "\n"), nil
 }
 
-// readTraceTool reads the trace at a span, check or test, in the requested
+// readTraceTool reads the trace at a span in the requested
 // view. The report view renders the pretty trace report in the same shape a
 // tool call's own result is rendered as (the target's own output, then the
 // report), so what the reader gets back is in the vocabulary it already
@@ -3219,18 +3211,11 @@ func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern
 // views are the TUI console's span views, answered from the engine.
 func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span        string `default:""`
-		Check       string `default:""`
-		Test        string `default:""`
+		Span        string
 		View        string `default:"report"`
 		MinDuration string `default:""`
 		Limit       int    `default:"200"`
 	}) (any, error) {
-		target := traceTarget{
-			Span:  normalizeSpanArg(args.Span),
-			Check: args.Check,
-			Test:  args.Test,
-		}
 		var minDuration time.Duration
 		if args.MinDuration != "" {
 			var err error
@@ -3244,7 +3229,7 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		default:
 			return nil, fmt.Errorf("unknown view %q: want %s, %s or %s", args.View, traceViewReport, traceViewInspect, traceViewTimings)
 		}
-		spanID, err := resolveTraceTarget(ctx, target)
+		spanID, err := resolveTraceTarget(ctx, args.Span)
 		if err != nil {
 			return nil, fmt.Errorf("resolve trace target: %w", err)
 		}
@@ -3254,7 +3239,7 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		case traceViewTimings:
 			return spanTimings(ctx, spanID, minDuration, args.Limit)
 		}
-		result, err := m.inspectSpanResult(ctx, spanID, readTraceReportOpts(target))
+		result, err := m.inspectSpanResult(ctx, spanID, readTraceReportOpts())
 		if err != nil {
 			return nil, err
 		}
@@ -3374,39 +3359,15 @@ func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
 	})
 }
 
-// readTraceReportOpts picks the render options that suit the KIND of target
-// ReadTrace was given.
-//
-// A span target keeps the tool-call options: the caller named that subtree, so
-// it wants that subtree unwrapped.
-//
-// A test or check target does not. ExpandWrappers' unwrap ("descend through
-// wrapper spans to the first real work, then stop") is tuned for a tool-call
-// scope, where the scope root is a roll-up boundary that would otherwise
-// swallow the tool's output. A test or check span is not that: it is the head
-// of a roll-up the report already knows how to summarise, and force-expanding
-// it enumerates every dagql field call beneath -- measured on
-// ReadTrace(test: "TestToolLogsExcludeService") as hundreds of rows of
-// LLMMessage.role / LLMContentBlock.text micro-spans, which are the test's own
-// API traffic, not conversation. Left to the normal IsExpanded rules, those
-// collapse and the TESTS / CHECKS roll-ups (with their failing-case logs) are
-// what the reader gets -- the CLI's end-of-run report for that target. The
-// target's own logs still reach the reader: spanResult prints them as OUTPUT --
-// but only the records on the target span ITSELF (OwnOutputOnly). The depth-1
-// rule that OUTPUT normally uses exists because a module function's print lands
-// one hop below the tool-call span; a named target has no such indirection, and
-// its direct children ARE the nested work -- for a suite, its cases, whose logs
-// belong to the TESTS roll-up rather than hoisted into (and duplicated out of)
-// OUTPUT.
-func readTraceReportOpts(target traceTarget) traceReportOpts {
+// readTraceReportOpts keeps the requested subtree visible, with only the
+// target span's own logs in OUTPUT. Descendant logs belong in the report's
+// roll-ups rather than being duplicated in OUTPUT.
+func readTraceReportOpts() traceReportOpts {
 	opts := toolCallReportOpts()
 	opts.OwnOutputOnly = true
 	// ReadTrace is the "show me the shape of what ran" tool: it keeps the span
 	// tree the tool-call result drops.
 	opts.HideSpanTree = false
-	if target.Span == "" {
-		opts.ExpandWrappers = false
-	}
 	return opts
 }
 

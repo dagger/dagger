@@ -496,13 +496,13 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 
 // TestToolReadTrace exercises the ReadTrace builtin end to end: it is
 // registered alongside ReadLogs, it is dispatchable by the model, and it
-// resolves its target against the session's real trace -- an unknown check
-// name comes back as an actionable error rather than an empty result.
+// resolves its target against the session's real trace -- an unknown span
+// comes back as an actionable error rather than an empty result.
 //
-// The happy path (a span/check name that exists) can't be canned: the span IDs
-// of a recording-driven run aren't known when the conversation is recorded, and no
-// check runs in this fixture. The rendering half is covered by the unit tests
-// in core (resolution) and dagql/idtui (report shape).
+// The happy path (a span that exists) can't be canned: the span IDs
+// of a recording-driven run aren't known when the conversation is recorded.
+// The rendering half is covered by the unit tests in core (resolution) and
+// dagql/idtui (report shape).
 func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -525,7 +525,7 @@ func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "Looking at the trace."},
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "ReadTrace",
-				Arguments: dagger.JSON(`{"check":"nope:check"}`)},
+				Arguments: dagger.JSON(`{"span":"ffffffffffffffff"}`)},
 		}).
 		WithToolResult("call_2", "", true).
 		WithResponse([]dagger.LLMContentBlockInput{
@@ -538,8 +538,9 @@ func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	// The builtin was dispatched and resolved against the real trace, which
-	// has no checks -- and said so in terms the caller can act on.
-	require.Contains(t, out, `no check named "nope:check"`)
+	// does not contain this span -- and points the caller at discovery.
+	require.Contains(t, out, `no span "ffffffffffffffff"`)
+	require.Contains(t, out, "FindSpans")
 }
 
 // TestToolFindSpans exercises the FindSpans builtin end to end: it is

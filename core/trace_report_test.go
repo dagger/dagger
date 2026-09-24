@@ -230,15 +230,11 @@ func TestToolCallReportOptsHideTreeButReadTraceKeepsIt(t *testing.T) {
 	if !toolCallReportOpts().HideSpanTree {
 		t.Error("a tool call's own report must not render the span tree")
 	}
-	for _, target := range []traceTarget{
-		{Span: "cafef00d"},
-		{Check: "ci:bootstrap"},
-		{Test: "TestSomething"},
-	} {
-		if readTraceReportOpts(target).HideSpanTree {
-			t.Errorf("ReadTrace(%+v) must keep the span tree", target)
-		}
+	if readTraceReportOpts().HideSpanTree {
+		t.Error("ReadTrace must keep the span tree")
 	}
+	require.True(t, readTraceReportOpts().OwnOutputOnly)
+	require.True(t, readTraceReportOpts().ExpandWrappers)
 }
 
 func TestTraceReportHidesInternalSpans(t *testing.T) {
@@ -428,14 +424,14 @@ func TestInspectionArgumentErrorsThroughDispatch(t *testing.T) {
 	m := newMCP()
 	for _, args := range []string{
 		`{}`,
-		`{"span":"0000000000000001","check":"unit:check"}`,
-		`{"span":"0000000000000001","test":"TestUnit","view":"inspect"}`,
+		`{"check":"unit:check"}`,
+		`{"test":"TestUnit","view":"inspect"}`,
 		`{"test":"TestUnit","check":"unit:check","view":"timings"}`,
 	} {
 		got := m.CallContent(t.Context(), []LLMTool{{Name: "ReadTrace", Call: m.readTraceTool(&dagql.Server{})}},
 			&LLMToolCall{Name: "ReadTrace", Arguments: JSON(args)})
 		require.True(t, got.Errored, got.Text)
-		require.Contains(t, got.Text, "exactly one target")
+		require.Contains(t, got.Text, "required argument span not provided")
 	}
 	for _, tool := range []LLMTool{
 		{Name: "ReadTrace", Call: m.readTraceTool(&dagql.Server{})},

@@ -100,10 +100,10 @@ type traceReportOpts struct {
 	//
 	// A tool call needs those children: a module function's print lands on
 	// its dagql field-call span, one hop below the tool-call span, so the
-	// depth-1 rule is what makes a tool's own report survive. An explicitly
-	// named target has no such indirection, and the children ARE the nested
-	// work -- for a test suite they're its cases, whose logs belong to the
-	// TESTS roll-up, not hoisted into (and duplicated out of) OUTPUT.
+	// depth-1 rule is what makes a tool's own report survive. For an explicitly
+	// selected span, the children ARE the nested work -- for a test suite
+	// they're its cases, whose logs belong to the TESTS roll-up, not hoisted
+	// into (and duplicated out of) OUTPUT.
 	OwnOutputOnly bool
 
 	// HideLogSpans names spans (hex IDs) whose own logs the report must NOT
@@ -112,11 +112,10 @@ type traceReportOpts struct {
 	// other; see MCP.spanResult.
 	HideLogSpans map[string]bool
 
-	// SuggestReadTrace re-points the report's rerun section at the ReadTrace
-	// builtin instead of the `dagger check "<name>"` CLI commands. Set it on
-	// every render whose reader is an LLM: an agent has tools, not a shell, so
-	// a copy-paste command is noise to it -- while `ReadTrace(check: "…")` is
-	// something it can actually call to see the full detail behind an abridged
+	// SuggestReadTrace re-points the report's rerun section at trace inspection
+	// tools instead of the `dagger check "<name>"` CLI commands. Set it on
+	// every render whose reader is an LLM: use FindSpans to find a failed
+	// check's span ID, then ReadTrace for the full detail behind an abridged
 	// result. Interactive CLI rendering never sets this.
 	SuggestReadTrace bool
 
@@ -134,16 +133,18 @@ type traceReportOpts struct {
 }
 
 // readTraceRerunSuggestion is the LLM-facing replacement for the report's
-// "RUN LOCALLY" section: the same failed check names, expressed as ReadTrace
-// tool calls.
+// "RUN LOCALLY" section: find the failed checks' spans before reading them.
 //
-// Note this lives in core, not in dagql/idtui: ReadTrace is a core builtin
-// tool (see MCP.loadBuiltins), so core legitimately owns the vocabulary, while
-// the frontend keeps owning the layout.
+// Note this lives in core, not in dagql/idtui: the inspection tools are core
+// builtins (see MCP.loadBuiltins), so core owns the vocabulary, while the
+// frontend keeps owning the layout.
 func readTraceRerunSuggestion(checkNames []string) (string, []string) {
-	body := make([]string, 0, len(checkNames))
+	body := make([]string, 0, len(checkNames)+1)
 	for _, name := range checkNames {
-		body = append(body, fmt.Sprintf("ReadTrace(check: %q)", name))
+		body = append(body, fmt.Sprintf("FindSpans(query: %q)", name))
+	}
+	if len(checkNames) > 0 {
+		body = append(body, "Then use ReadTrace(span: <span ID>) to read a matching span.")
 	}
 	return "SEE FULL TRACE", body
 }
