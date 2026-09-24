@@ -759,11 +759,22 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 		WithPrompt("after CLI restore").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "RESTORED-PROMPT-TURN-SUCCEEDED"}}))
 	wsID, err := source.Directory().WithNewFile("authority.txt", "traced source").AsWorkspace().ID(sourceCtx)
 	require.NoError(t, err)
+	// A dismissed failure remains in the graph with its original diagnostic.
+	// Restoring it as STOPPED must not pass that FAILED-only spawn argument.
+	dismissed := spawnAgent(sourceCtx, t, source, spawnOpts{model: emptyReplayModel, name: "dismissed", wsID: wsID})
+	_, err = dismissed.sendNoWait(sourceCtx, t, "fail before dismissal")
+	require.NoError(t, err)
+	dismissed.mustRun(sourceCtx, t, "wait")
+	require.Equal(t, "FAILED", dismissed.state(sourceCtx, t))
+	require.Equal(t, "STOPPED", dismissed.mustVerb(sourceCtx, t, "stop"))
+	sink.awaitAgentState(t, "dismissed", "STOPPED")
 	h := spawnAgent(sourceCtx, t, source, spawnOpts{model: model, name: "cli-restored", wsID: wsID})
 	_, reply, err := h.sendAndWait(sourceCtx, t, "before CLI restore")
 	require.NoError(t, err)
 	require.Equal(t, "source conversation retained", reply)
-	node := sink.awaitRestorable(t, 1)["cli-restored"]
+	nodes := sink.awaitRestorable(t, 2)
+	require.NotEmpty(t, nodes["dismissed"].Control.Failure)
+	node := nodes["cli-restored"]
 	require.NotNil(t, node.Control)
 	traceID := node.Control.Trace
 	require.NoError(t, source.Close())
