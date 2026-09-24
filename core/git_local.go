@@ -23,7 +23,15 @@ import (
 )
 
 type LocalGitRepository struct {
-	Directory dagql.ObjectResult[*Directory]
+	Directory    dagql.ObjectResult[*Directory]
+	CheckoutBase *GitCheckoutBase
+}
+
+// GitCheckoutBase retains the exact canonical parent recipe of a checked commit.
+// It is a DAG dependency, never a mounted path or a dirty worktree baseline.
+type GitCheckoutBase struct {
+	Parent    dagql.ObjectResult[*GitRef]
+	CommitSHA string
 }
 
 var _ GitRepositoryBackend = (*LocalGitRepository)(nil)
@@ -336,6 +344,12 @@ func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote
 }
 
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
+	if discardGitDir && ref.incrementalCheckoutEligible() {
+		dir, supported, err := ref.incrementalTree(ctx, srv)
+		if err != nil || supported {
+			return dir, err
+		}
+	}
 	ctx, span := Tracer(ctx).Start(ctx, "materialize local git checkout", telemetry.Internal(), trace.WithAttributes(
 		attribute.Int("dagger.git.checkout.depth", depth),
 		attribute.Bool("dagger.git.checkout.discard_git_dir", discardGitDir),
@@ -419,6 +433,13 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 // the temporary alternates file). Retained checkouts still use doGitCheckout
 // so that they are self-contained after the source mount is released.
 func doLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCLI, remotes []GitRemote, cloneURL string, ref *gitutil.Ref) error {
+	if err := initLocalGitTreeCheckout(ctx, source, checkout); err != nil {
+		return err
+	}
+	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "")
+}
+
+func initLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCLI) error {
 	format, err := source.Run(ctx, "rev-parse", "--show-object-format")
 	if err != nil {
 		return fmt.Errorf("read local git object format: %w", err)
@@ -443,7 +464,7 @@ func doLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCL
 	if err := os.WriteFile(filepath.Join(gitDir, "objects", "info", "alternates"), []byte(quotedPath), 0600); err != nil {
 		return fmt.Errorf("write local git checkout alternates: %w", err)
 	}
-	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "")
+	return nil
 }
 
 const persistedDirectoryLazyKindGitCleaned = "gitCleaned"
