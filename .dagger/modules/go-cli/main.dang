@@ -50,6 +50,8 @@ type GoCli {
       .withEnvVariable("GOMODCACHE", "/go/pkg/mod")
       .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
       .withEnvVariable("GOCACHE", "/root/.cache/go-build")
+      # Keep home artifacts in the workspace changeset, not the disposable container.
+      .withEnvVariable("HOME", "/workspace")
       .withWorkdir("/workspace")
   }
 }
