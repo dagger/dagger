@@ -674,24 +674,21 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 	logWorkspaceCommitPerformanceTrace(t, sink, iterations)
 }
 
-// Report completed, deduplicated engine spans separately from client wall time.
-// Durations are inclusive and overlap: do not add these rows together. No byte
-// traffic, filesystem-write or object-copy counts are inferred from spans.
-func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iterations int) {
-	t.Helper()
-	type sample struct {
-		id, parent, name string
-		start, end       uint64
-		discard          bool
-		nativeSupported  bool
-		fallbackReason   string
-		newObjects       int64
-		newObjectBytes   int64
-		scopedStagePaths int64
-		incremental      bool
-		changedPaths     int64
-	}
-	byID := map[string]sample{}
+type workspaceCommitTraceSample struct {
+	id, parent, name string
+	start, end       uint64
+	discard          bool
+	nativeSupported  bool
+	fallbackReason   string
+	newObjects       int64
+	newObjectBytes   int64
+	scopedStagePaths int64
+	incremental      bool
+	changedPaths     int64
+}
+
+func collectWorkspaceCommitTraceSamples(sink *agentTraceSink) map[string]workspaceCommitTraceSample {
+	byID := map[string]workspaceCommitTraceSample{}
 	traces, _ := sink.capture()
 	for _, request := range traces {
 		for _, resource := range request.ResourceSpans {
@@ -701,7 +698,7 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 						continue
 					}
 					id := string(span.TraceId) + string(span.SpanId)
-					s := sample{id: id, parent: string(span.TraceId) + string(span.ParentSpanId), name: span.Name, start: span.StartTimeUnixNano, end: span.EndTimeUnixNano}
+					s := workspaceCommitTraceSample{id: id, parent: string(span.TraceId) + string(span.ParentSpanId), name: span.Name, start: span.StartTimeUnixNano, end: span.EndTimeUnixNano}
 					for _, attr := range span.Attributes {
 						switch attr.Key {
 						case "dagger.git.checkout.discard_git_dir":
@@ -727,11 +724,20 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 			}
 		}
 	}
-	var ordered []sample
+	return byID
+}
+
+// Report completed, deduplicated engine spans separately from client wall time.
+// Durations are inclusive and overlap: do not add these rows together. No byte
+// traffic, filesystem-write or object-copy counts are inferred from spans.
+func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iterations int) {
+	t.Helper()
+	byID := collectWorkspaceCommitTraceSamples(sink)
+	var ordered []workspaceCommitTraceSample
 	for _, s := range byID {
 		ordered = append(ordered, s)
 	}
-	slices.SortFunc(ordered, func(a, b sample) int {
+	slices.SortFunc(ordered, func(a, b workspaceCommitTraceSample) int {
 		if a.start < b.start {
 			return -1
 		}

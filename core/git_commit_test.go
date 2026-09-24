@@ -123,9 +123,10 @@ func TestGitNativeCommitMatchesCheckout(t *testing.T) {
 				_, oracleErr = runWorkspaceCommitGit(ctx, oracle, env, append([]string{"add", "-A", "--"}, stage...)...)
 			}
 			parentRef := &gitutil.Ref{SHA: parent, Name: "refs/heads/main"}
-			if scenario == "attributes" {
+			switch scenario {
+			case "attributes":
 				parentRef.Name = "" // commit-ID parents keep a detached HEAD
-			} else if scenario == "named commit" {
+			case "named commit":
 				parentRef.Name = parent // schema ref(SHA) preserves SHA as Name
 			}
 			originalRef := *parentRef
