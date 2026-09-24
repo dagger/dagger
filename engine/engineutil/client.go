@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
 	imagesapi "github.com/containerd/containerd/api/services/images/v1"
@@ -75,10 +76,14 @@ type Opts struct {
 	Runc                *runc.Runc
 	DefaultCgroupParent string
 	ProcessMode         oci.ProcessMode
-	DNSConfig           *oci.DNSConfig
-	ApparmorProfile     string
-	SELinux             bool
-	Entitlements        entitlements.Set
+	// CgroupSampleInterval overrides how often container resource metrics
+	// (CPU, memory, IO, network) are sampled from each container's cgroup.
+	// Zero uses the built-in default.
+	CgroupSampleInterval time.Duration
+	DNSConfig            *oci.DNSConfig
+	ApparmorProfile      string
+	SELinux              bool
+	Entitlements         entitlements.Set
 
 	HostMntNS  *os.File
 	CleanMntNS *os.File

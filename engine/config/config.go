@@ -33,6 +33,16 @@ type Config struct {
 	// Registries configures custom registry mirrors, root CAs, and
 	// insecure/HTTP access.
 	Registries map[string]RegistryConfig `json:"registries,omitempty"`
+
+	// Telemetry configures the engine's telemetry collection.
+	Telemetry TelemetryConfig `json:"telemetry,omitempty"`
+}
+
+type TelemetryConfig struct {
+	// CgroupSampleInterval is how often container resource metrics (CPU,
+	// memory, IO, network) are sampled from each running container's cgroup,
+	// e.g. "5s" or "500ms". Unset uses the built-in default (5s).
+	CgroupSampleInterval Duration `json:"cgroupSampleInterval,omitempty"`
 }
 
 type LogLevel string
