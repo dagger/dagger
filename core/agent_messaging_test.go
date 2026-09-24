@@ -167,10 +167,6 @@ func TestAgentSendContent(t *testing.T) {
 			llm := (&LLM{endpointMtx: &sync.Mutex{}, mcp: &MCP{}}).WithContent(restored, origin)
 			require.Len(t, llm.Messages, 1)
 			require.Equal(t, want, llm.Messages[0].Content)
-			// Snapshot/fork replay continues to use the existing media recipe shape.
-			recipe, err := llm.recipeSelectors(context.Background())
-			require.NoError(t, err)
-			require.Equal(t, sel, recipe[len(recipe)-1])
 			require.Len(t, rt.messages[mediaOnly.Ref].content, 1)
 			require.Equal(t, want[1], rt.messages[mediaOnly.Ref].content[0])
 			for ref, text := range map[string]string{legacy.Ref: "legacy", empty.Ref: ""} {

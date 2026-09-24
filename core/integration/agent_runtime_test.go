@@ -1738,9 +1738,8 @@ func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dag
 // awaitRestorable is awaitAgents plus the property a restore actually needs:
 // every agent's resume anchor REBUILDS from the payloads the client holds.
 // The anchor record and its payload ride different pipelines — the record is
-// a log, the payload the span attribute of the portable-recipe call that
-// derived the digest — so the record routinely lands first, and a capture
-// taken in between serves a trace whose anchor names a conversation nothing
+// a log, while call frames arrive through spans and the payload log lane. A
+// capture taken in between serves a trace whose anchor names a conversation nothing
 // can rebuild (the "never reached this client" restore failure, seen as a CI
 // flake on the worker dismissed right after its turn).
 func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]*dagui.AgentNode {

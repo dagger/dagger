@@ -1,9 +1,8 @@
 package core
 
 // This file extends the roster-addressing coverage in agent_runtime_test.go
-// to seeds that carry a SKILLS DIRECTORY — LLM.withSkills(directory:), which
-// LLM.recipeSelectors re-emits into the spawned agent's pinned chain as an
-// ID-literal argument.
+// to seeds that carry a SKILLS DIRECTORY — LLM.withSkills(directory:), recorded
+// in the spawned agent's pinned chain as an ID-literal argument.
 //
 // An ID-literal argument is the one place a chain reaches sideways instead of
 // down the receiver spine, and the payload published for a call flattens it:

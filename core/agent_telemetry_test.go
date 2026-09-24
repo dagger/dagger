@@ -105,11 +105,9 @@ func testRuntime(t *testing.T, ctx context.Context) *AgentRuntime {
 	t.Helper()
 	p := newAgentControlPublisher(ctx)
 	t.Cleanup(func() { require.NoError(t, p.close(context.Background())) })
-	capture := &agentCapture{digest: "xxh3:committed"}
-	capture.once.Do(func() {})
 	return &AgentRuntime{
 		key: "test", name: "test", stateChanged: make(chan struct{}), spanCtx: ctx,
-		control: p, controlCapture: capture,
+		control: p, controlDigest: "xxh3:committed",
 		controlNamespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "registry"},
 	}
 }

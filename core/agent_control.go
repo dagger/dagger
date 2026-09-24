@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
@@ -15,92 +14,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// agentCapture owns the immutable committed value and its own executable
-// client scope until derivation finishes (or coalescing drops the capture).
-// State-only revisions share this capture; a new conversation never does.
-type agentCapture struct {
-	ctx     context.Context
-	emitCtx context.Context
-	value   dagql.ObjectResult[*LLM]
-	once    sync.Once
-	digest  string
-	err     error
-	lease   *engine.ClientLifecycleLease
-	refs    atomic.Int64
-}
-
-func (capture *agentCapture) retain() { capture.refs.Add(1) }
-func (capture *agentCapture) release() {
-	if capture != nil && capture.refs.Add(-1) == 0 {
-		capture.lease.Release()
-	}
-}
-
-func (capture *agentCapture) resolve() (string, error) {
-	capture.once.Do(func() {
-		defer func() { capture.ctx = nil; capture.value = dagql.ObjectResult[*LLM]{}; capture.lease.Release() }()
-		if capture.err != nil {
-			return
-		}
-		if capture.value.Self() == nil {
-			capture.err = errors.New("no committed conversation")
-			return
-		}
-		srv, err := CurrentDagqlServer(capture.ctx)
-		if err != nil {
-			capture.err = err
-			return
-		}
-		if err := capture.value.Self().validateAgentBindings(capture.ctx, srv); err != nil {
-			capture.err = err
-			return
-		}
-		// Retain internal flattening until all raw binding paths have proven
-		// snapshot-at-capture semantics. This never invokes a public portableID.
-		recipe, err := capture.value.Self().PortableRecipe(capture.ctx)
-		if err != nil {
-			capture.err = err
-			return
-		}
-		id, err := recipe.RecipeID(capture.ctx)
-		if err != nil {
-			capture.err = err
-			return
-		}
-		if err := validateAgentRecipe(srv, id); err != nil {
-			capture.err = err
-			return
-		}
-		var persisted func(string) bool
-		if q, err := CurrentQuery(capture.ctx); err == nil {
-			if store, err := q.CallPayloadSeenKeyStore(capture.emitCtx); err == nil {
-				if durable, ok := store.(interface{ CallPayloadPersisted(string) bool }); ok {
-					persisted = durable.CallPayloadPersisted
-				}
-			}
-		}
-		if err := emitAgentCapturePayloads(capture.emitCtx, id, persisted); err != nil {
-			capture.err = err
-			return
-		}
-		capture.digest = id.Digest().String()
-	})
-	return capture.digest, capture.err
-}
-
-type agentControlJob struct {
-	projection agentcontrol.Agent
-	capture    *agentCapture
-}
-
 // agentControlPublisher bounds pending work to the latest agent revision and
 // the latest revision of each edge. Coalescing does not lose finality: the
 // independently obtained producer expectation witnesses the required revision.
-// No recipe evaluation or logger processor runs under the runtime mutex.
+// No logger processor runs under the runtime mutex.
 type agentControlPublisher struct {
 	ctx     context.Context
 	mu      sync.Mutex
-	pending *agentControlJob
+	pending *agentcontrol.Agent
 	edges   map[string]agentcontrol.Subscription
 	wake    chan struct{}
 	stop    chan chan struct{}
@@ -124,15 +45,10 @@ func agentTelemetryContext(ctx context.Context) context.Context {
 	return out
 }
 
-func (p *agentControlPublisher) enqueue(job agentControlJob) {
-	job.capture.retain()
+func (p *agentControlPublisher) enqueue(projection agentcontrol.Agent) {
 	p.mu.Lock()
-	old := p.pending
-	p.pending = &job
+	p.pending = &projection
 	p.mu.Unlock()
-	if old != nil {
-		old.capture.release()
-	}
 	select {
 	case p.wake <- struct{}{}:
 	default:
@@ -152,21 +68,14 @@ func (p *agentControlPublisher) subscription(edge agentcontrol.Subscription) {
 func (p *agentControlPublisher) drain() {
 	for {
 		p.mu.Lock()
-		job, edges := p.pending, p.edges
+		projection, edges := p.pending, p.edges
 		p.pending, p.edges = nil, map[string]agentcontrol.Subscription{}
 		p.mu.Unlock()
-		if job == nil && len(edges) == 0 {
+		if projection == nil && len(edges) == 0 {
 			return
 		}
-		if job != nil {
-			a := job.projection
-			if digest, err := job.capture.resolve(); err != nil {
-				a.CaptureError = err.Error()
-			} else {
-				a.Digest = digest
-			}
-			telemetry.Logger(p.ctx, AgentInstrumentationScope).Emit(p.ctx, a.Record())
-			job.capture.release()
+		if projection != nil {
+			telemetry.Logger(p.ctx, AgentInstrumentationScope).Emit(p.ctx, projection.Record())
 		}
 		for _, edge := range edges {
 			telemetry.Logger(p.ctx, AgentInstrumentationScope).Emit(p.ctx, edge.Record())
@@ -213,7 +122,7 @@ func (p *agentControlPublisher) close(ctx context.Context) error {
 
 // publishControlLocked captures a coherent projection only after the mutation
 // completed. Revision assignment, snapshot association and teardown facts are
-// atomic; derivation and emission are deferred outside the critical section.
+// atomic; emission is deferred outside the critical section.
 func (rt *AgentRuntime) publishControlLocked() {
 	if rt.control == nil {
 		return
@@ -227,34 +136,33 @@ func (rt *AgentRuntime) publishControlLocked() {
 	if state == AgentStateStopped {
 		stopReason = string(rt.stopReason)
 	}
-	if rt.controlCapture == nil {
+	if rt.controlDigest == "" && rt.controlCaptureError == "" {
 		return
 	}
 	projection := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: rt.controlNamespace, Handle: rt.key}, Name: rt.name, Removed: rt.removed.Load(), Parent: rt.parentHandle, CallDigest: rt.controlCallDigest,
-		State: string(state), StopReason: stopReason, PreTeardownState: string(rt.preTeardownState), Failure: failure, Activity: rt.controlActivity}
-	if projection == rt.controlLast && rt.controlCapture == rt.controlLastCapture {
+		Digest: rt.controlDigest, CaptureError: rt.controlCaptureError, State: string(state), StopReason: stopReason, PreTeardownState: string(rt.preTeardownState), Failure: failure, Activity: rt.controlActivity}
+	if projection == rt.controlLast {
 		return
 	}
-	rt.controlLast, rt.controlLastCapture = projection, rt.controlCapture
+	rt.controlLast = projection
 	rt.controlRevision++
 	projection.Revision = rt.controlRevision
-	rt.control.enqueue(agentControlJob{projection: projection, capture: rt.controlCapture})
+	rt.control.enqueue(projection)
 }
 
-func (rt *AgentRuntime) captureConversationLocked(ctx context.Context) {
-	emitCtx := rt.spanCtx
-	if rt.control != nil {
-		emitCtx = rt.control.ctx
+// associateConversationLocked records only the committed LLM call's leaf digest.
+// Ordinary call telemetry owns frame delivery; consumers rebuild the graph and
+// archive finalization verifies its closure. Never select or serialize a recipe
+// here, nor infer the committed value from descendant spans.
+func (rt *AgentRuntime) associateConversationLocked(ctx context.Context) {
+	rt.controlDigest, rt.controlCaptureError = "", ""
+	if rt.last.Self() == nil {
+		rt.controlCaptureError = "no committed conversation"
+	} else if digest, err := rt.last.RecipeDigest(ctx); err != nil {
+		rt.controlCaptureError = err.Error()
+	} else {
+		rt.controlDigest = digest.String()
 	}
-	// Detach the scope itself, not just its cancellation. Without this the
-	// queued context still carries a request lease that expires before recipe
-	// selection can acquire shared work after the resolver returns.
-	captureCtx, lease, err := engine.DetachClientScope(ctx, engine.ClientLeaseSharedWork, "agent-capture:"+rt.key)
-	capture := &agentCapture{ctx: captureCtx, emitCtx: emitCtx, value: rt.last, lease: lease, err: err}
-	capture.refs.Store(1) // runtime's current committed conversation
-	old := rt.controlCapture
-	rt.controlCapture = capture
-	old.release()
 	rt.controlActivity = time.Now().UTC()
 }
 
@@ -343,7 +251,7 @@ func (ars *AgentRuntimes) DiscardRestore(ctx context.Context, agent dagql.Object
 }
 
 // CloseControl is the producer-side finality barrier. It closes admission,
-// captures teardown projections, drains capture/publication, and returns final
+// captures teardown projections, drains publication, and returns final
 // revisions grouped by producing client. The server applies its normal
 // telemetry visibility routes to these independent expectations before sealing.
 // Success is not a persistence acknowledgment: providers must still drain and
@@ -380,7 +288,7 @@ func (ars *AgentRuntimes) closeControl(ctx context.Context, cause error) (map[st
 	}
 	if errs != nil {
 		// A producer still winding down may advance its committed tip. Keep
-		// capture workers and leases alive; no fixed cut exists yet.
+		// publishers alive; no fixed cut exists yet.
 		return nil, errs
 	}
 	out := map[string]agentcontrol.Expectation{}

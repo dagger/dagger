@@ -606,7 +606,6 @@ func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*
 	ars.mu.Lock()
 	if _, found := ars.entries[key]; found || ars.closing {
 		ars.mu.Unlock()
-		rt.controlCapture.release()
 		lease.Release()
 		return nil, fmt.Errorf("agent %q acquired a runtime entry or registry closed while creation was staging", name)
 	}
@@ -1174,7 +1173,6 @@ type AgentRuntime struct {
 	stateChanged chan struct{}
 
 	// Compact telemetry attribution; never retains a resolver/query context.
-	// Executable capture contexts have independent, short-lived scope leases.
 	spanCtx context.Context
 
 	control               *agentControlPublisher
@@ -1183,8 +1181,8 @@ type AgentRuntime struct {
 	controlCallDigest     string
 	controlRevision       int64
 	controlActivity       time.Time
-	controlCapture        *agentCapture
-	controlLastCapture    *agentCapture
+	controlDigest         string
+	controlCaptureError   string
 	controlLast           agentcontrol.Agent
 	controlClosed         bool
 	closing               bool
@@ -1238,9 +1236,8 @@ func (rt *AgentRuntime) publishStateLocked() {
 }
 
 // commitLast commits next as the entry's last committed conversation and
-// publishes its portable recipe digest — the resume anchor of §4.3 in
-// hack/designs/resume-from-trace.md. Every advance of rt.last goes through
-// here, which is what makes the published digest a fact about the runtime
+// associates its call-frame leaf digest. Every advance of rt.last goes through
+// here, which makes the published digest a fact about the runtime
 // rather than an inference from whichever call spans happened to be emitted.
 //
 // Must be called with rt.mu held, from inside a transitionLocked mutation:
@@ -1252,7 +1249,7 @@ func (rt *AgentRuntime) commitLast(ctx context.Context, next dagql.ObjectResult[
 	// New committed work makes the next IDLE event news again — see
 	// idleEventDue.
 	rt.idleEventDue = true
-	rt.captureConversationLocked(ctx)
+	rt.associateConversationLocked(ctx)
 }
 
 // State projects the entry's lifecycle state from its facts.
@@ -1679,7 +1676,7 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 // restored dormant agent. No model loop is started by creation.
 func (rt *AgentRuntime) create(ctx context.Context, state AgentState, loopErr string) {
 	rt.spanCtx = agentTelemetryContext(ctx)
-	rt.captureConversationLocked(ctx)
+	rt.associateConversationLocked(ctx)
 	switch state {
 	case AgentStatePaused:
 		rt.paused = true
