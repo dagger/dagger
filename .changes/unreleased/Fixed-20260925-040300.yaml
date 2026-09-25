@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  The CLI and the Go SDK now connect to an explicitly selected engine
+  (`--engine`, `DAGGER_ENGINE`, or `_EXPERIMENTAL_DAGGER_RUNNER_HOST`) even
+  when they run inside a container command that can access Dagger. Previously
+  the session injected into the command took precedence, so the client
+  silently used the outer engine.
+time: 2026-09-25T04:03:00Z
+custom:
+  Author: sipsma
+  PR: 14342
