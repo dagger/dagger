@@ -451,11 +451,17 @@ func TestASCIIReporterScopedChecksUnderToolBoundary(t *testing.T) {
 		return buf.String()
 	}
 
-	// Unzoomed at the DB root, the boundary contains the check: no CHECKS
-	// section -- the whole-trace behavior is unchanged.
+	// Unzoomed at the DB root, the boundary contains the check: no trace-level
+	// CHECKS section -- the whole-trace behavior is unchanged. The check only
+	// rolls up beneath the tool call that ran it, indented under its row.
 	before := render(rootID, false)
-	if strings.Contains(before, "CHECKS") {
-		t.Fatalf("expected the boundary to contain the check at the DB root:\n%s", before)
+	for _, line := range strings.Split(before, "\n") {
+		if strings.HasPrefix(line, "CHECKS") {
+			t.Fatalf("expected the boundary to contain the check at the DB root:\n%s", before)
+		}
+	}
+	if !strings.Contains(before, "  CHECKS") || !strings.Contains(before, "shellcheck:check") {
+		t.Fatalf("expected the tool call to roll up the check it ran:\n%s", before)
 	}
 
 	// Zoomed to the tool call, the check is what ran inside it.

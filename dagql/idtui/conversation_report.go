@@ -100,9 +100,16 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 		return
 	}
 
-	if testLines := fe.renderMessageTests(ctx, node.Span, len(indent)); len(testLines) > 0 {
+	for _, rollup := range [][]string{
+		fe.renderMessageTests(ctx, node.Span, len(indent)),
+		indentLines("  ", fe.renderMessageChecks(ctx, r, node.Span)),
+		indentLines("  ", fe.renderMessageGenerators(ctx, r, node.Span)),
+	} {
+		if len(rollup) == 0 {
+			continue
+		}
 		fmt.Fprintln(out)
-		for _, line := range testLines {
+		for _, line := range rollup {
 			fmt.Fprintln(out, indent+line)
 		}
 	}
@@ -112,12 +119,56 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 	}
 }
 
+// renderMessageChecks renders the checks an LLM tool call ran, the final
+// report's form of the live row's inline CHECKS rollup (see inlineCheckNodes):
+// a CHECKS header and each check one level under it, unbounded. Surfacing is
+// relative to the tool span, so nested worker tools render their own.
+func (fe *frontendPretty) renderMessageChecks(ctx tuist.Context, r *renderer, span *dagui.Span) []string {
+	if span == nil || span.LLMTool == "" {
+		return nil
+	}
+	nodes := fe.db.SurfacedChecksForSpan(span)
+	if len(nodes) == 0 {
+		return nil
+	}
+	return fe.checksRollupLines(ctx, r, nodes, 0)
+}
+
+// renderMessageGenerators is renderMessageChecks for the generators an LLM
+// tool call ran.
+func (fe *frontendPretty) renderMessageGenerators(ctx tuist.Context, r *renderer, span *dagui.Span) []string {
+	if span == nil || span.LLMTool == "" {
+		return nil
+	}
+	nodes := fe.db.SurfacedGeneratorsForSpan(span)
+	if len(nodes) == 0 {
+		return nil
+	}
+	return fe.generatorsRollupLines(ctx, r, nodes, 0)
+}
+
+// indentLines prefixes every non-empty line with indent. The report's tool
+// rollups indent under their tool call the way its TESTS summary does
+// (SummaryIndent), so they don't read as trace-level sections.
+func indentLines(indent string, lines []string) []string {
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = indent + line
+		}
+	}
+	return lines
+}
+
 // renderMessageTests renders the tests owned directly by an LLM tool boundary.
 // The root-relative view includes tests beneath this tool but stops at nested
 // tool boundaries, so nested worker tools render and claim their own tests when
-// their message node is visited.
+// their message node is visited. A tool that ran checks leaves its tests to
+// the checks rollup (renderMessageChecks), which nests each check's tests.
 func (fe *frontendPretty) renderMessageTests(ctx tuist.Context, span *dagui.Span, outerIndent int) []string {
 	if span == nil || span.LLMTool == "" {
+		return nil
+	}
+	if len(fe.db.SurfacedChecksForSpan(span)) > 0 {
 		return nil
 	}
 	view := fe.db.TestViewForSpan(span)

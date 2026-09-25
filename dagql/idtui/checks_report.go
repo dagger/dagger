@@ -245,7 +245,7 @@ func (fe *frontendPretty) SurfacedFailedCheckSpans() []dagui.SpanID {
 				ids = append(ids, id)
 			}
 		}
-		eachFailedLeafCheck(fe.db.SurfacedChecks(), func(n *dagui.CheckNode) {
+		addCheck := func(n *dagui.CheckNode) {
 			if fe.checkDefersToTests(n.Span) {
 				// The TESTS block renders these, and its failing-test-case log fetch
 				// already pulls their detail -- no need to fetch the check's subtree.
@@ -262,10 +262,10 @@ func (fe *frontendPretty) SurfacedFailedCheckSpans() []dagui.SpanID {
 			for _, l := range n.Span.Links {
 				add(l.SpanContext.SpanID)
 			}
-		})
+		}
 		// Failed generators render their cause the same way checks do
 		// (renderGeneratorNode -> renderCauseDetail), so prefetch theirs too.
-		eachFailedLeafGenerator(fe.db.SurfacedGenerators(), func(n *dagui.GeneratorNode) {
+		addGenerator := func(n *dagui.GeneratorNode) {
 			add(n.Span.ID)
 			for _, o := range n.Span.ErrorOrigins.Order {
 				add(o.ID)
@@ -273,53 +273,109 @@ func (fe *frontendPretty) SurfacedFailedCheckSpans() []dagui.SpanID {
 			for _, l := range n.Span.Links {
 				add(l.SpanContext.SpanID)
 			}
-		})
+		}
+		eachFailedLeafCheck(fe.db.SurfacedChecks(), addCheck)
+		eachFailedLeafGenerator(fe.db.SurfacedGenerators(), addGenerator)
+		// Checks and generators an LLM tool call ran sit behind its boundary,
+		// out of the trace-level views above; the conversation report rolls them
+		// up under each tool call (renderMessageChecks), so prefetch those too.
+		var visit func(nodes []*dagui.MessageNode)
+		visit = func(nodes []*dagui.MessageNode) {
+			for _, node := range nodes {
+				if node.Span != nil && node.Span.LLMTool != "" {
+					eachFailedLeafCheck(fe.db.SurfacedChecksForSpan(node.Span), addCheck)
+					eachFailedLeafGenerator(fe.db.SurfacedGeneratorsForSpan(node.Span), addGenerator)
+				}
+				visit(node.Children)
+			}
+		}
+		visit(fe.db.SurfacedConversation())
 	})
 	<-done
 	return ids
 }
 
-// shouldRenderInlineChecks reports whether a check row should show its
-// sub-checks as an inline CHECKS rollup. Only in the live tree (the report path
-// renders checks via renderChecksSection) and only while collapsed -- expanding
-// the row reveals the sub-checks as their own tree rows instead, the same
-// progressive disclosure inline tests use.
-func (fe *frontendPretty) shouldRenderInlineChecks(row *dagui.TraceRow) bool {
-	if fe.finalRender || row.Expanded {
-		return false
+// inlineCheckNodes returns the checks a row rolls up inline, if any:
+//
+//   - A collapsed check row's sub-checks, in the live tree only (the report path
+//     renders checks via renderChecksSection). Expanding the row reveals the
+//     sub-checks as their own tree rows instead, the same progressive disclosure
+//     inline tests use.
+//   - The checks an LLM tool call ran. A tool call is a boundary, so these never
+//     reach the trace-level CHECKS section or tree; without the rollup the only
+//     trace of them would be the tool's raw output. Surfacing is relative to
+//     the tool span, so a nested worker's tool calls keep their own checks.
+//     Like the tool's inline tests, this also renders in the final render.
+func (fe *frontendPretty) inlineCheckNodes(row *dagui.TraceRow) []*dagui.CheckNode {
+	if row == nil || row.Span == nil {
+		return nil
 	}
-	node := fe.checkNodeForSpan(row.Span)
-	return node != nil && len(node.Children) > 0
+	if row.Span.LLMTool != "" {
+		if row.Expanded && !fe.finalRender {
+			return nil
+		}
+		return fe.db.SurfacedChecksForSpan(row.Span)
+	}
+	if fe.finalRender || row.Expanded {
+		return nil
+	}
+	if node := fe.checkNodeForSpan(row.Span); node != nil {
+		return node.Children
+	}
+	return nil
 }
 
-// renderInlineChecks renders a collapsed check row's sub-checks as an inline
-// rollup -- a CHECKS header and the sub-checks beneath it, the same shape a
-// check's tests get -- so a parent check like `ci:bootstrap` surfaces the checks
-// nested under it instead of just its own orchestrating command's failure. The
-// rollup condenses to the viewport height (renderInlineChecks reads
-// ScreenHeight, so it reflows on resize) and carries the row's tree pipe.
+// rollsUpSubChecks reports whether a check row shows its sub-checks as an
+// inline CHECKS rollup, which then stands in for the row's own logs and error:
+// the failed sub-checks explain the failure better than the orchestrating
+// command does. A tool call's checks rollup replaces nothing -- the tool's
+// output and error are what the model saw.
+func (fe *frontendPretty) rollsUpSubChecks(row *dagui.TraceRow) bool {
+	return row.Span.LLMTool == "" && len(fe.inlineCheckNodes(row)) > 0
+}
+
+// renderInlineChecks renders a row's inline CHECKS rollup (see
+// inlineCheckNodes) -- a CHECKS header and the checks beneath it, the same
+// shape a check's tests get -- so a parent check like `ci:bootstrap` surfaces
+// the checks nested under it instead of just its own orchestrating command's
+// failure, and a tool call surfaces the checks it ran. The rollup condenses to
+// the viewport height (renderInlineChecks reads ScreenHeight, so it reflows on
+// resize) and carries the row's tree pipe.
 func (s *SpanTreeView) renderInlineChecks(ctx tuist.Context, r *renderer, row *dagui.TraceRow) []string {
 	fe := s.fe
-	if !fe.shouldRenderInlineChecks(row) {
+	nodes := fe.inlineCheckNodes(row)
+	if len(nodes) == 0 {
 		return nil
 	}
-	node := fe.checkNodeForSpan(row.Span)
-	if node == nil || len(node.Children) == 0 {
-		return nil
-	}
+	body := fe.checksRollupLines(ctx, r, nodes, s.inlineRollupLimit(ctx))
+	return s.frameInlineRollup(r, row, body)
+}
 
-	limit := 0
-	if sh := ctx.ScreenHeight(); sh > 0 {
-		limit = max(sh-inlineChecksChromeReserve, minInlineChecksRollupHeight)
+// inlineRollupLimit is the height an inline CHECKS/GENERATORS rollup condenses
+// to: the viewport minus the row's own chrome in the live tree, and unbounded
+// (0) in the final render or when the screen size is unknown.
+func (s *SpanTreeView) inlineRollupLimit(ctx tuist.Context) int {
+	if s.fe.finalRender {
+		return 0
 	}
-	body := fe.checksRollupLines(ctx, r, node.Children, limit)
+	if sh := ctx.ScreenHeight(); sh > 0 {
+		return max(sh-inlineChecksChromeReserve, minInlineChecksRollupHeight)
+	}
+	return 0
+}
+
+// frameInlineRollup hangs an inline rollup body beneath its row. In the live
+// tree every line carries the row's tree pipe (see inlineReportPrefix), after a
+// pipe-only gap line; the final render has no pipes, so a blank line sets the
+// rollup apart instead -- matching renderInlineTests.
+func (s *SpanTreeView) frameInlineRollup(r *renderer, row *dagui.TraceRow, body []string) []string {
 	if len(body) == 0 {
 		return nil
 	}
-
-	// Prefix every rollup line with the row's tree pipe, like renderInlineTests.
+	if s.fe.finalRender {
+		return append([]string{""}, body...)
+	}
 	prefix := s.inlineReportPrefix(r, row)
-
 	lines := make([]string, 0, len(body)+1)
 	lines = append(lines, strings.TrimRight(prefix, " ")) // pipe-only gap above the rollup
 	for _, line := range body {
@@ -328,12 +384,9 @@ func (s *SpanTreeView) renderInlineChecks(ctx tuist.Context, r *renderer, row *d
 	return lines
 }
 
-// checksRollupLines builds the inline rollup body for a check's sub-checks: a
-// CHECKS header followed by the sub-checks. It condenses to fit height: full
-// detail (each sub-check with its failure cause) when it fits, else names only,
-// else as many names as fit with a "… N more …" marker, and never below the
-// header alone -- whose tally is the at-a-glance outcome. height <= 0 means
-// unbounded.
+// checksRollupLines builds the inline rollup body for a list of checks: a
+// CHECKS header followed by the checks. See condenseRollup for how it fits
+// height.
 func (fe *frontendPretty) checksRollupLines(ctx tuist.Context, r *renderer, children []*dagui.CheckNode, height int) []string {
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	header := checksHeaderLine(out, fe.agentStyle(), children)
@@ -343,32 +396,38 @@ func (fe *frontendPretty) checksRollupLines(ctx tuist.Context, r *renderer, chil
 	for _, child := range children {
 		fe.renderCheckNode(ctx, bodyOut, r, child, 1)
 	}
-	full := append([]string{header}, strings.Split(strings.TrimSuffix(bodyBuf.String(), "\n"), "\n")...)
+	statuses := make([]string, 0, len(children))
+	for _, child := range children {
+		statuses = append(statuses, fe.checkStatusLine(out, r, child, "  "))
+	}
+	return condenseRollup(out, header, bodyBuf.String(), statuses, height)
+}
+
+// condenseRollup fits an inline rollup -- a header, the full body, and one
+// status line per entry -- to height: full detail (each entry with its failure
+// cause) when it fits, else status lines only, else as many as fit with a
+// "… N more …" marker, and never below the header alone -- whose tally is the
+// at-a-glance outcome. height <= 0 means unbounded.
+func condenseRollup(out TermOutput, header, body string, statuses []string, height int) []string {
+	full := append([]string{header}, strings.Split(strings.TrimSuffix(body, "\n"), "\n")...)
 	if height <= 0 || len(full) <= height {
 		return full
 	}
 
-	// Drop the per-sub-check failure detail and keep one status line each.
-	names := make([]string, 0, len(children)+1)
-	names = append(names, header)
-	for _, child := range children {
-		names = append(names, fe.checkStatusLine(out, r, child, "  "))
-	}
-	if len(names) <= height {
-		return names
+	// Drop the per-entry failure detail and keep one status line each.
+	if len(statuses)+1 <= height {
+		return append([]string{header}, statuses...)
 	}
 
-	// Even the names overflow: show as many as fit and mark the remainder. The
-	// header alone (its tally) is the floor.
+	// Even the status lines overflow: show as many as fit and mark the
+	// remainder. The header alone (its tally) is the floor.
 	if height <= 1 {
 		return []string{header}
 	}
 	shown := max(height-2, 0) // header + "… N more …"
 	lines := make([]string, 0, height)
 	lines = append(lines, header)
-	for _, child := range children[:shown] {
-		lines = append(lines, fe.checkStatusLine(out, r, child, "  "))
-	}
-	lines = append(lines, summaryMoreLine(out, 2, len(children)-shown))
+	lines = append(lines, statuses[:shown]...)
+	lines = append(lines, summaryMoreLine(out, 2, len(statuses)-shown))
 	return lines
 }

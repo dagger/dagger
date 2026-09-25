@@ -147,6 +147,49 @@ func generatorsHeaderLine(out TermOutput, agent bool, nodes []*dagui.GeneratorNo
 	return line
 }
 
+// inlineGeneratorNodes returns the generators an LLM tool call ran, for its
+// inline GENERATORS rollup -- the generator analog of inlineCheckNodes' tool
+// case. The tool call's boundary keeps them out of the trace-level GENERATORS
+// section, and a nested worker's tool calls keep their own.
+func (fe *frontendPretty) inlineGeneratorNodes(row *dagui.TraceRow) []*dagui.GeneratorNode {
+	if row == nil || row.Span == nil || row.Span.LLMTool == "" {
+		return nil
+	}
+	if row.Expanded && !fe.finalRender {
+		return nil
+	}
+	return fe.db.SurfacedGeneratorsForSpan(row.Span)
+}
+
+// renderInlineGenerators renders a tool call row's inline GENERATORS rollup,
+// shaped and condensed like renderInlineChecks.
+func (s *SpanTreeView) renderInlineGenerators(ctx tuist.Context, r *renderer, row *dagui.TraceRow) []string {
+	fe := s.fe
+	nodes := fe.inlineGeneratorNodes(row)
+	if len(nodes) == 0 {
+		return nil
+	}
+	body := fe.generatorsRollupLines(ctx, r, nodes, s.inlineRollupLimit(ctx))
+	return s.frameInlineRollup(r, row, body)
+}
+
+// generatorsRollupLines builds the inline rollup body for a list of
+// generators: a GENERATORS header followed by the generators, condensed to
+// height like checksRollupLines.
+func (fe *frontendPretty) generatorsRollupLines(ctx tuist.Context, r *renderer, nodes []*dagui.GeneratorNode, height int) []string {
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	header := generatorsHeaderLine(out, fe.agentStyle(), nodes)
+
+	bodyBuf := new(strings.Builder)
+	bodyOut := NewOutput(bodyBuf, termenv.WithProfile(fe.profile))
+	statuses := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		fe.renderGeneratorNode(ctx, bodyOut, r, node, 1)
+		statuses = append(statuses, fe.generatorStatusLine(out, r, node, "  "))
+	}
+	return condenseRollup(out, header, bodyBuf.String(), statuses, height)
+}
+
 // eachFailedLeafGenerator visits every surfaced generator that failed and has
 // no failed child -- i.e. the generators renderGeneratorsSection renders an
 // error cause for. Used to pre-fetch their logs before the single final render.

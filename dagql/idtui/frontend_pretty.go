@@ -664,8 +664,8 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	}
 }
 
-// renderRowExtras renders what follows a row's title: inline test and check
-// reports, its own inline logs, and the rest (errors, debug).
+// renderRowExtras renders what follows a row's title: inline test, check and
+// generator reports, its own inline logs, and the rest (errors, debug).
 func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagui.TraceRow, visualFocused bool) {
 	if inlineTests := s.renderInlineTests(ctx, r, row); len(inlineTests) > 0 {
 		s.selfLineCount += len(inlineTests)
@@ -675,6 +675,11 @@ func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagu
 	if inlineChecks := s.renderInlineChecks(ctx, r, row); len(inlineChecks) > 0 {
 		s.selfLineCount += len(inlineChecks)
 		ctx.Lines(inlineChecks...)
+	}
+
+	if inlineGenerators := s.renderInlineGenerators(ctx, r, row); len(inlineGenerators) > 0 {
+		s.selfLineCount += len(inlineGenerators)
+		ctx.Lines(inlineGenerators...)
 	}
 
 	// Render this row's own inline logs via its memoized LogsView child, so the
@@ -7137,7 +7142,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	// belongs in the additional shell/rollup block below.
 	if span.Message == "" && span.LLMTool == "" &&
 		(span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded &&
-		!fe.shouldRenderInlineTests(row) && !fe.shouldRenderInlineChecks(row) {
+		!fe.shouldRenderInlineTests(row) && !fe.rollsUpSubChecks(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
@@ -7157,7 +7162,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	if len(span.ProgressSpans.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
-	if fe.shouldRenderInlineChecks(row) {
+	if fe.rollsUpSubChecks(row) {
 		// A check deferring to its inline CHECKS rollup: the failure is explained
 		// by the failed sub-checks rendered in the rollup above, so don't also dump
 		// this check's own orchestrating command error here.

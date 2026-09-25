@@ -1000,6 +1000,103 @@ func TestShellToolInlineTestsAlignWithToolDot(t *testing.T) {
 	}
 }
 
+// TestShellToolInlineChecksAndGenerators verifies a tool call surfaces the
+// checks and generators it ran as inline rollups -- they sit behind the tool's
+// boundary, so nothing else in the transcript would show them -- hung off the
+// same dot-aligned pipe as its tests, and that a check's tests nest under the
+// check instead of repeating in a separate TESTS rollup.
+func TestShellToolInlineChecksAndGenerators(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	const (
+		rootByte byte = iota + 1
+		toolByte
+		lintByte
+		lintTestByte
+		unitByte
+		docsByte
+	)
+	id := prettyTestSpanID
+	start := time.Unix(100, 0)
+	at := func(n byte) (time.Time, time.Time) {
+		return start.Add(time.Duration(n) * time.Second), start.Add(time.Duration(n+1) * time.Second)
+	}
+	span := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		s, e := at(n)
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent, Name: name,
+			StartTime: s, EndTime: e, Final: true,
+		}
+	}
+	tool := span(toolByte, id(rootByte), "CheckAll")
+	tool.LLMRole, tool.LLMTool, tool.Boundary = "assistant", "CheckAll", true
+	lint := span(lintByte, id(toolByte), "check lint")
+	lint.CheckName = "lint"
+	lintTest := span(lintTestByte, id(lintByte), "TestLint")
+	lintTest.TestCaseName, lintTest.TestStatus = "TestLint", dagui.TestStatusSuccess
+	unit := span(unitByte, id(toolByte), "check unit")
+	unit.CheckName = "unit"
+	unit.Status = sdktrace.Status{Code: codes.Error}
+	docs := span(docsByte, id(toolByte), "generate docs")
+	docs.GeneratorName = "docs"
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: id(rootByte), TraceID: prettyTestTraceID(), Name: "shell", StartTime: start},
+		tool, lint, lintTest, unit, docs,
+	})
+	db.SetPrimarySpan(id(rootByte))
+
+	fe := NewWithDB(io.Discard, db)
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	lines := fe.tui.RenderLines()
+	joined := strings.Join(lines, "\n")
+	col := func(line, sub string) int {
+		i := strings.Index(line, sub)
+		if i < 0 {
+			return -1
+		}
+		return ansi.StringWidth(line[:i])
+	}
+	toolLine, ok := findPrettyTestLine(lines, "CheckAll")
+	if !ok {
+		t.Fatalf("shell render did not include the tool row:\n%s", joined)
+	}
+	dot, name := col(toolLine, "•"), col(toolLine, "CheckAll")
+	for _, heading := range []string{"CHECKS", "GENERATORS"} {
+		line, ok := findPrettyTestLine(lines, heading)
+		if !ok {
+			t.Fatalf("tool row did not surface an inline %s rollup:\n%s", heading, joined)
+		}
+		if bar := col(line, VertBoldBar); bar != dot {
+			t.Fatalf("%s pipe at column %d, want the tool dot's column %d:\n%s", heading, bar, dot, joined)
+		}
+		if got := col(line, heading); got != name {
+			t.Fatalf("%s heading at column %d, want the tool name's column %d:\n%s", heading, got, name, joined)
+		}
+	}
+	for _, want := range []string{"✘ 1 failed", "✔ 1 passed", "lint", "unit", "docs"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("inline rollups missing %q:\n%s", want, joined)
+		}
+	}
+	if n := strings.Count(joined, "TESTS"); n != 1 {
+		t.Fatalf("got %d TESTS rollups, want just the one nested under its check:\n%s", n, joined)
+	}
+
+	// The final conversation report rolls them up under the tool call too.
+	fe.claims = newRenderClaims()
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report := strings.Join(fe.conversationReport(tuist.Context{Width: 120}, r, false), "\n")
+	for _, want := range []string{"CHECKS", "GENERATORS", "lint", "unit", "docs"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("conversation report missing %q:\n%s", want, report)
+		}
+	}
+}
+
 // TestChecksReportNestsSubCheckHeader verifies the final report introduces a
 // check's sub-checks with their own CHECKS header -- mirroring how a check nests
 // a TESTS header for its tests -- indented one level under the parent, and that

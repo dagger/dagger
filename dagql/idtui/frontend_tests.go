@@ -1747,6 +1747,12 @@ func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
 	if row.Expanded && !fe.finalRender {
 		return false
 	}
+	if row.Span.LLMTool != "" && len(fe.db.SurfacedChecksForSpan(row.Span)) > 0 {
+		// A tool call that ran checks rolls those up instead (see
+		// inlineCheckNodes), each carrying its own tests; a TESTS rollup too
+		// would list them all twice.
+		return false
+	}
 	return fe.db.TestViewForSpan(row.Span).HasTests()
 }
 
