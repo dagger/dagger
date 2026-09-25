@@ -17,6 +17,7 @@ import (
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
@@ -1131,6 +1132,9 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 type interactivePromptModeOpts struct {
 	restore              traceRestore
 	generateSessionTitle bool
+	// exitedResumable, when set, is called with the session's trace ID once
+	// the prompt exits, if the session left agents behind to resume.
+	exitedResumable func(traceID string)
 }
 
 func newInteractivePromptHandler(dag *dagger.Client, opts interactivePromptModeOpts) *shellCallHandler {
@@ -1197,7 +1201,14 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	}
 
 	// Start interactive mode
-	return handler.runInteractive(ctx)
+	err := handler.runInteractive(ctx)
+	if opts.exitedResumable != nil {
+		traceID := trace.SpanContextFromContext(ctx).TraceID()
+		if s, _ := handler.llmMaybe(); s != nil && s.Resumable() && traceID.IsValid() {
+			opts.exitedResumable(traceID.String())
+		}
+	}
+	return err
 }
 
 func printID(w io.Writer, response any, typeDef *modTypeDef) error {
