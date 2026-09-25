@@ -26,6 +26,6 @@ func openEngineTrace(ctx context.Context, traceID string) (tracesource.Source, f
 		}
 		return nil, nil, err
 	}
-	source, err := tracesource.OpenArchive(ctx, archive.NewClient(client.EngineConn(session)), traceID)
+	source, _, err := tracesource.OpenArchive(ctx, archive.NewClient(client.EngineConn(session)), traceID)
 	return source, session.Close, err
 }
