@@ -169,12 +169,9 @@ func workspaceRemoteHistorySHAs(ctx context.Context, t *testctx.T, commits []dag
 	return shas
 }
 
-// Inspect commands, not the generic "fetching" wrapper: that wrapper also
-// surrounds the initial depth-one capture, which is explicitly allowed. Only
-// count remote fetches, not a local object transfer into a comparison repo.
-func workspaceRemoteHistoryFetches(sink *agentTraceSink, ancestor string) (shallow, full []string) {
+func workspaceRemoteHistoryTrace(sink *agentTraceSink) (names, parents map[string]string) {
 	traces, _ := sink.capture()
-	names, parents := map[string]string{}, map[string]string{}
+	names, parents = map[string]string{}, map[string]string{}
 	for _, request := range traces {
 		for _, resource := range request.ResourceSpans {
 			for _, scope := range resource.ScopeSpans {
@@ -188,6 +185,14 @@ func workspaceRemoteHistoryFetches(sink *agentTraceSink, ancestor string) (shall
 			}
 		}
 	}
+	return
+}
+
+// Inspect commands, not the generic "fetching" wrapper: that wrapper also
+// surrounds the initial depth-one capture, which is explicitly allowed. Only
+// count remote fetches, not a local object transfer into a comparison repo.
+func workspaceRemoteHistoryFetches(sink *agentTraceSink, ancestor string) (shallow, full []string) {
+	names, parents := workspaceRemoteHistoryTrace(sink)
 	for id, name := range names {
 		if !strings.HasPrefix(name, "git fetch ") {
 			continue
@@ -247,6 +252,24 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryOrdinary(ctx context.Context
 		behind, err := before.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
 		require.NoError(t, err)
 		require.Empty(t, behind)
+		if n == 2 {
+			// Requested checkout depth is public behavior, independent of the
+			// owned snapshot's remote-anchor boundary. Truncate the exported
+			// graph at HEAD without rewriting its raw parent metadata.
+			out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+				WithDirectory("/checkout", head.Tree(dagger.GitRefTreeOpts{Depth: 1})).WithWorkdir("/checkout").
+				WithEnvVariable("HEAD_SHA", headSHA).WithEnvVariable("PARENT_SHA", parentSHA).
+				WithExec([]string{"sh", "-ec", `
+ test "$(git rev-parse --is-shallow-repository)" = true
+ test "$(cat .git/shallow)" = "$HEAD_SHA"
+ test ! -s .git/objects/info/alternates
+ git cat-file -p HEAD | grep -qx "parent $PARENT_SHA"
+ git fsck --full --no-dangling >&2
+ git rev-list HEAD
+`}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{headSHA}, strings.Fields(out))
+		}
 		before = head
 	}
 	require.NoError(t, c.Close())
@@ -259,7 +282,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 	if runWithPrivateTraceSession(ctx, t) {
 		return
 	}
-	for _, demand := range []string{"deep log", "old path", "older comparison", "divergent comparison", "retained checkout"} {
+	for _, demand := range []string{"deep log", "old path", "older comparison", "divergent comparison", "retained checkout", "full bundle"} {
 		t.Run(demand, func(ctx context.Context, t *testctx.T) {
 			sink := newAgentTraceSink(t)
 			c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
@@ -308,6 +331,27 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 				behind, err := other.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 100})
 				require.NoError(t, err)
 				require.ElementsMatch(t, strings.Fields(fixture.git(ctx, t, "rev-list", name, "^main")), workspaceRemoteHistorySHAs(ctx, t, behind))
+			case "full bundle":
+				bundle, err := head.AsRepository().Bundle([]string{"HEAD"}).AsFile().Sync(ctx)
+				require.NoError(t, err)
+				_, err = fixture.server.WithExec([]string{"rm", "-rf", "/srv/repo.git"}).Sync(ctx)
+				require.NoError(t, err)
+				// A full bundle must have no prerequisites or engine-local
+				// alternates: a completely independent clone can verify and use it.
+				out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+					WithMountedFile("/export.bundle", bundle).
+					WithExec([]string{"git", "clone", "/export.bundle", "/checkout"}).
+					WithWorkdir("/checkout").
+					WithExec([]string{"sh", "-ec", `
+ git bundle verify /export.bundle >&2
+ test "$(git rev-parse --is-shallow-repository)" = false
+ test ! -s .git/objects/info/alternates
+ git fsck --full --no-dangling >&2
+ git show "$(git rev-list --max-parents=0 HEAD):ancient.txt" | grep -qx root
+ git rev-list HEAD
+`}).Stdout(ctx)
+				require.NoError(t, err)
+				require.ElementsMatch(t, append(localSHAs, remoteSHAs...), strings.Fields(out))
 			case "retained checkout":
 				// A new container sees only this directory, not the engine's
 				// mirror/object pool. fsck and old-tree access must work offline.
@@ -349,13 +393,46 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 					require.Equal(t, oldSHA, sha)
 				}
 			}
+			if demand == "deep log" {
+				_, err := fixture.server.WithExec([]string{"rm", "-rf", "/srv/repo.git"}).Sync(ctx)
+				require.NoError(t, err)
+				// Different API selectors avoid reusing the original log response.
+				// This proves offline reuse after hydration, not engine GC/restart:
+				// the private mirror and owned hydrated snapshot are still warm.
+				again, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 101})
+				require.NoError(t, err)
+				require.ElementsMatch(t, append(localSHAs, remoteSHAs...), workspaceRemoteHistorySHAs(ctx, t, again))
+				out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+					WithDirectory("/checkout", head.Tree(dagger.GitRefTreeOpts{Depth: -1})).WithWorkdir("/checkout").
+					WithExec([]string{"sh", "-ec", `
+ test "$(git rev-parse --is-shallow-repository)" = false
+ test ! -s .git/objects/info/alternates
+ git fsck --full --no-dangling >&2
+ git show "$(git rev-list --max-parents=0 HEAD):ancient.txt" | grep -qx root
+ git rev-list HEAD
+`}).Stdout(ctx)
+				require.NoError(t, err)
+				require.ElementsMatch(t, append(localSHAs, remoteSHAs...), strings.Fields(out))
+			}
 			require.NoError(t, c.Close())
+			if demand == "deep log" {
+				names, _ := workspaceRemoteHistoryTrace(sink)
+				hydrations := 0
+				for _, name := range names {
+					if name == "git hydrate owned history" {
+						hydrations++
+					}
+				}
+				require.Equal(t, 1, hydrations, "repeat consumers must reuse the owned hydrated closure, not rebuild it from the warm mirror")
+			}
 			shallow, full := workspaceRemoteHistoryFetches(sink, "")
 			require.NotEmpty(t, shallow, "fixture must begin as a real shallow remote capture")
 			require.NotEmpty(t, full, "history-demanding operation must actually hydrate the shallow history")
 			operation := "GitRef.log"
 			if demand == "retained checkout" {
 				operation = "GitRef.tree"
+			} else if demand == "full bundle" {
+				operation = "GitRepository.bundle"
 			}
 			_, demandFetches := workspaceRemoteHistoryFetches(sink, operation)
 			require.NotEmpty(t, demandFetches, "hydration must happen inside the requesting operation")
