@@ -101,13 +101,6 @@ type Params struct {
 
 	RunnerHost string // host of dagger engine runner serving buildkit apis
 
-	// DirectEngine connects to RunnerHost even when a Dagger exec injected a
-	// nested session (DAGGER_SESSION_PORT) into this process. Set it when the
-	// caller selected an engine explicitly: execs reach their engine by
-	// default, so the injected session is ambient and must not override an
-	// explicit choice.
-	DirectEngine bool
-
 	CloudURLCallback func(context.Context, string, string, bool)
 
 	EngineTrace   sdktrace.SpanExporter
@@ -291,7 +284,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
-	if isNestedSession && !c.DirectEngine {
+	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
 		if err != nil {
 			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)

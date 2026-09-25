@@ -6,8 +6,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
-	"strings"
 
 	"github.com/Khan/genqlient/graphql"
 	"go.opentelemetry.io/otel/propagation"
@@ -62,30 +60,26 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		LoadWorkspaceModules: loadWorkspaceModules,
 	}
 
-	// Try DAGGER_SESSION_PORT next, unless an engine was selected explicitly:
-	// Dagger execs inject a session by default, and that ambient session must
-	// not override an explicit choice.
-	if !explicitEngine(cfg) {
-		conn, ok, err := FromSessionEnv()
-		if err != nil {
-			return nil, err
+	// Try DAGGER_SESSION_PORT next
+	conn, ok, err := FromSessionEnv()
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		if cfg.Workdir != "" {
+			return nil, fmt.Errorf("cannot configure workdir for existing session (please use --workdir or host.directory with absolute paths instead)")
 		}
-		if ok {
-			if cfg.Workdir != "" {
-				return nil, fmt.Errorf("cannot configure workdir for existing session (please use --workdir or host.directory with absolute paths instead)")
-			}
-			if cfg.Workspace != "" {
-				return nil, fmt.Errorf("cannot configure workspace for existing session")
-			}
-			if cfg.LoadWorkspaceModules {
-				return nil, fmt.Errorf("cannot configure workspace module loading for existing session")
-			}
-			return conn, nil
+		if cfg.Workspace != "" {
+			return nil, fmt.Errorf("cannot configure workspace for existing session")
 		}
+		if cfg.LoadWorkspaceModules {
+			return nil, fmt.Errorf("cannot configure workspace module loading for existing session")
+		}
+		return conn, nil
 	}
 
 	// Try _EXPERIMENTAL_DAGGER_CLI_BIN next
-	conn, ok, err := FromLocalCLI(ctx, cfg)
+	conn, ok, err = FromLocalCLI(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -99,33 +93,6 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		return nil, err
 	}
 	return conn, nil
-}
-
-// engineSelectionEnv lists the environment variables through which the CLI
-// selects an engine.
-var engineSelectionEnv = []string{
-	"DAGGER_ENGINE",
-	"DAGGER_CLOUD_ENGINE",
-	"_EXPERIMENTAL_DAGGER_RUNNER_HOST",
-}
-
-// explicitEngine reports whether cfg or the environment selects an engine for
-// the CLI to connect to.
-func explicitEngine(cfg *Config) bool {
-	if cfg.RunnerHost != "" {
-		return true
-	}
-	for _, key := range engineSelectionEnv {
-		if os.Getenv(key) != "" {
-			return true
-		}
-		for _, kv := range cfg.ExtraEnv {
-			if k, v, _ := strings.Cut(kv, "="); k == key && v != "" {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {
