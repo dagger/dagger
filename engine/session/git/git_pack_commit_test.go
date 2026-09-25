@@ -60,9 +60,12 @@ func TestPackCommitExactClosure(t *testing.T) {
 
 func TestPackCommitUnavailable(t *testing.T) {
 	skipIfNoGit(t)
-	for _, mode := range []string{"moved", "missing", "shallow", "partial", "cancelled"} {
+	for _, mode := range []string{"moved", "missing", "shallow", "partial", "missing-parent", "corrupt-parent", "cancelled"} {
 		t.Run(mode, func(t *testing.T) {
 			repo, home := initRepo(t, "main")
+			if mode == "missing-parent" || mode == "corrupt-parent" {
+				commitFile(t, repo, home, "parent", "parent", "parent")
+			}
 			commitFile(t, repo, home, "file", "data", "tip")
 			sha := gitCmd(t, home, repo, "rev-parse", "HEAD")
 			state := checkoutDigest(t, repo)
@@ -75,6 +78,12 @@ func TestPackCommitUnavailable(t *testing.T) {
 				require.NoError(t, os.RemoveAll(repo))
 			case "shallow":
 				require.NoError(t, os.WriteFile(filepath.Join(repo, ".git", "shallow"), []byte(sha+"\n"), 0600))
+			case "missing-parent":
+				parent := gitCmd(t, home, repo, "rev-parse", "HEAD^")
+				require.NoError(t, os.Remove(filepath.Join(repo, ".git", "objects", parent[:2], parent[2:])))
+			case "corrupt-parent":
+				parent := gitCmd(t, home, repo, "rev-parse", "HEAD^")
+				require.NoError(t, os.WriteFile(filepath.Join(repo, ".git", "objects", parent[:2], parent[2:]), []byte("corrupt"), 0600))
 			case "partial":
 				blob := gitCmd(t, home, repo, "rev-parse", "HEAD:file")
 				require.NoError(t, os.Remove(filepath.Join(repo, ".git", "objects", blob[:2], blob[2:])))
@@ -94,6 +103,8 @@ func TestPackCommitUnavailable(t *testing.T) {
 			require.NotNil(t, srv.metadata(t).Error)
 			if mode == "moved" {
 				require.Equal(t, CHECKOUT_STATE_MISMATCH, srv.metadata(t).Error.Type)
+			} else if mode == "corrupt-parent" {
+				require.Equal(t, PACK_FAILED, srv.metadata(t).Error.Type)
 			} else {
 				require.Equal(t, HISTORY_UNAVAILABLE, srv.metadata(t).Error.Type)
 			}
