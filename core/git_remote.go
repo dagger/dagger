@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/hashutil"
@@ -113,6 +114,36 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	return remoteFromCacheResult(cacheRes.Value())
 }
 
+// PrimePublicRemote reuses the anonymous visibility probe's advertisement in
+// the existing session-owned metadata cache. It never changes a repository
+// object shared by several sessions, and never seeds a credentialed or
+// service-bound lookup. Existing metadata (including an in-flight load) wins.
+func (repo *RemoteGitRepository) PrimePublicRemote(ctx context.Context, remote *gitutil.Remote) error {
+	if remote == nil || repo.URL == nil || repo.URL.User != nil ||
+		(repo.URL.Scheme != "http" && repo.URL.Scheme != "https") ||
+		repo.AuthUsername != "" || repo.AuthToken.Self() != nil ||
+		repo.AuthHeader.Self() != nil || repo.SSHAuthSocket.Self() != nil || len(repo.Services) != 0 {
+		return nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil
+	}
+	cacheKey, err := repo.remoteCacheKey(ctx)
+	if err != nil {
+		return err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(context.Context) (any, error) {
+		payload, err := json.Marshal(remote)
+		return string(payload), err
+	})
+	return err
+}
+
 func remoteFromCacheResult(cacheRes any) (*gitutil.Remote, error) {
 	payload, ok := cacheRes.(string)
 	if !ok {
@@ -190,7 +221,9 @@ func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	return scope
 }
 
-func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remote, error) {
+func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (_ *gitutil.Remote, rerr error) {
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "git.lsRemote", wcprof.OpOpts{})
+	defer func() { op.EndErr(rerr) }()
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
