@@ -501,7 +501,7 @@ func (d *imageDriver) sweepLeftoverEngines(ctx context.Context, current string) 
 		slog.SpanLogger(ctx, InstrumentationLibrary).Warn("failed to list containers", "error", err)
 		return
 	}
-	d.garbageCollectEngines(ctx, cleanup, []string{current}, leftoverEngines)
+	d.garbageCollectEngines(ctx, true, []string{current}, leftoverEngines)
 }
 
 func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, preserveNames, engines []string) {
