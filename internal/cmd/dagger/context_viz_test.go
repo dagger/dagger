@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,156 @@ import (
 )
 
 func vizWindow(n int) *int { return &n }
+
+// Match core.LLM.ToolsDoc's serialization without requiring an engine.
+func vizToolDoc(t *testing.T, name, description, schema string) string {
+	t.Helper()
+	indented, err := json.MarshalIndent(json.RawMessage(schema), "", "  ")
+	require.NoError(t, err)
+	return fmt.Sprintf("## %s\n\n%s\n\n%s\n\n", name, description, indented)
+}
+
+func TestParseVizTools(t *testing.T) {
+	schema := `{"type":"object","properties":{"path":{"type":"string","description":"A path with } and ## text"}},"required":["path"],"additionalProperties":false}`
+	description := "Read a file.\n\n## Examples\n\n" +
+		"{\n  \"path\": \"/tmp/file\"\n}\n\nThis is example JSON, not a schema.\n\n" +
+		"```markdown\n" + vizToolDoc(t, "fake", "An example tool", schema) + "```\n\n" +
+		"~~~~markdown\n" + vizToolDoc(t, "also_fake", "", "{}") + "~~~\n~~~~\n\n" +
+		"## Notes\n\nPreserve trailing whitespace.  \n"
+	for _, tc := range []struct {
+		name string
+		doc  string
+		want []vizTool
+	}{
+		{name: "empty", want: []vizTool{}},
+		{
+			name: "multiple and bare",
+			doc:  vizToolDoc(t, "read", "Read a file", schema) + vizToolDoc(t, "bare", "", "{}"),
+			want: []vizTool{
+				{Name: "read", Description: "Read a file", Schema: json.RawMessage(schema)},
+				{Name: "bare", Schema: json.RawMessage(`{}`)},
+			},
+		},
+		{
+			name: "headings and examples in description",
+			doc:  vizToolDoc(t, "read", description, schema) + vizToolDoc(t, "bare", "", "{}"),
+			want: []vizTool{
+				{Name: "read", Description: description, Schema: json.RawMessage(schema)},
+				{Name: "bare", Schema: json.RawMessage(`{}`)},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tools, err := parseVizTools(tc.doc)
+			require.NoError(t, err)
+			require.NotNil(t, tools)
+			require.Len(t, tools, len(tc.want))
+			for i, want := range tc.want {
+				assert.Equal(t, want.Name, tools[i].Name)
+				assert.Equal(t, want.Description, tools[i].Description)
+				assert.JSONEq(t, string(want.Schema), string(tools[i].Schema))
+				assert.Zero(t, tools[i].Calls)
+			}
+		})
+	}
+}
+
+func TestParseVizToolsInvalid(t *testing.T) {
+	valid := vizToolDoc(t, "valid", "", "{}")
+	for _, doc := range []string{
+		" ",
+		"not tool documentation",
+		"## \n\n\n\n{}\n\n",
+		"## missing-schema\n\nDescription only\n\n",
+		"## array\n\n\n\n[]\n\n",
+		"## null\n\n\n\nnull\n\n",
+		"## invalid\n\n\n\n{broken}\n\n",
+		"## compact\n\n\n\n{\"type\":\"object\"}\n\n",
+		"## indented\n\n\n\n{\n    \"type\": \"object\"\n}\n\n",
+		strings.TrimSuffix(valid, "\n"),
+		valid + "unexpected suffix",
+		valid + "## broken\n\nNo schema\n\n",
+		valid + valid,
+	} {
+		t.Run(doc, func(t *testing.T) {
+			tools, err := parseVizTools(doc)
+			require.Error(t, err)
+			assert.Empty(t, tools, "never publish a partial inventory")
+
+			snap := buildContextVizSnapshot(&vizConversation{Tools: doc})
+			assert.NotEmpty(t, snap.ToolsError)
+			assert.Equal(t, []vizTool{}, snap.Tools)
+			require.Len(t, snap.Items, 1)
+			assert.Equal(t, "Tool schemas", snap.Items[0].Label)
+			assert.Equal(t, doc, snap.Items[0].Text)
+			assert.Equal(t, vizEstimateTokens(len(doc)), snap.Items[0].Tokens)
+			data, err := json.Marshal(snap)
+			require.NoError(t, err)
+			assert.Contains(t, string(data), `"tools":[]`)
+			assert.Contains(t, string(data), `"toolsError":`)
+		})
+	}
+}
+
+func TestBuildContextVizSnapshotToolInventory(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		snap := buildContextVizSnapshot(&vizConversation{})
+		assert.Equal(t, []vizTool{}, snap.Tools)
+		assert.Empty(t, snap.ToolsError)
+		assert.Empty(t, snap.Items)
+		data, err := json.Marshal(snap)
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"tools":[]`)
+		assert.Contains(t, string(data), `"items":[]`)
+		assert.Contains(t, string(data), `"calls":[]`)
+		assert.NotContains(t, string(data), `"toolsError"`)
+	})
+
+	schema := `{"type":"object","properties":{"size":{"type":"integer","maximum":9007199254740993},"nested":{"anyOf":[{"type":"string"},{"type":"null"}]}},"required":["size"]}`
+	doc := vizToolDoc(t, "read", "## Notes\n\nRead a file", schema) +
+		vizToolDoc(t, "other", "", "{}") + vizToolDoc(t, "unused", "", "{}")
+	conv := &vizConversation{
+		Tools: doc,
+		Messages: []vizMessage{
+			{Role: "ASSISTANT", Content: []vizBlock{
+				{Kind: "TOOL_CALL", ToolName: "read", CallID: "1", Arguments: "{}"},
+				{Kind: "TOOL_CALL", ToolName: "read", CallID: "2", Arguments: "{}"},
+				{Kind: "TOOL_CALL", ToolName: "other", CallID: "3", Arguments: "{}"},
+				{Kind: "TOOL_CALL", ToolName: "removed", CallID: "4", Arguments: "{}"},
+				{Kind: "TEXT", Text: "read read", ToolName: "read"},
+			}},
+			{Role: "USER", Content: []vizBlock{
+				{Kind: "TOOL_RESULT", ToolName: "read", CallID: "1", Text: "failed", Errored: true},
+				{Kind: "TOOL_RESULT", ToolName: "read", CallID: "2", Text: "ok"},
+			}},
+		},
+	}
+	snap := buildContextVizSnapshot(conv)
+	require.Empty(t, snap.ToolsError)
+	require.Len(t, snap.Tools, 3)
+	assert.Equal(t, 2, snap.Tools[0].Calls)
+	assert.Equal(t, 1, snap.Tools[1].Calls)
+	assert.Zero(t, snap.Tools[2].Calls)
+	assert.Equal(t, "Tool schemas (3 tools)", snap.Items[0].Label)
+	assert.Equal(t, doc, snap.Items[0].Text)
+	assert.True(t, snap.Items[0].Fixed)
+	assert.Equal(t, vizEstimateTokens(len(doc)), vizFindCategory(t, snap, vizCatTools).Tokens)
+	require.Len(t, snap.Items, 8, "inventory must not add transcript entries or tokens")
+	var total int64
+	for _, item := range snap.Items {
+		total += item.Tokens
+	}
+	assert.Equal(t, total, snap.ClassifiedTokens)
+
+	data, err := json.Marshal(snap)
+	require.NoError(t, err)
+	var restored contextVizSnapshot
+	require.NoError(t, json.Unmarshal(data, &restored))
+	assert.JSONEq(t, schema, string(restored.Tools[0].Schema))
+	assert.Contains(t, string(restored.Tools[0].Schema), "9007199254740993", "schema numbers must not pass through float64")
+	assert.Equal(t, doc, restored.Items[0].Text)
+	assert.Equal(t, 2, restored.Tools[0].Calls)
+}
 
 // vizFindCategory returns the total for a category ID.
 func vizFindCategory(t *testing.T, snap *contextVizSnapshot, id string) vizCategory {
