@@ -1481,6 +1481,38 @@ func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	return tool, nil
 }
 
+// toolSpanAttrs are the attributes that identify a tool on its call span: the
+// bare tool name, the server providing it, and whether the span hides itself
+// in favor of its children.
+//
+// The tool-call display span sets them when it starts (see
+// displayPhases.StartToolCall), not just when the tool runs: live telemetry
+// exports a span only at start and end, so attributes set in between stay
+// invisible until the tool finishes.
+func toolSpanAttrs(tool *LLMTool) []attribute.KeyValue {
+	toolName := tool.Name
+	if tool.Server != "" {
+		// External MCP tools may come prefixed `<server>_`; collision-namespaced
+		// object tools are prefixed `<gqlFieldName(server)>_` (their Server is
+		// the bound type name). Trim either so the span shows the bare tool name
+		// alongside the server attribute.
+		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
+		toolName = strings.TrimPrefix(toolName, gqlFieldName(tool.Server)+"_")
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.LLMToolAttr, toolName),
+	}
+	if tool.HideSelf {
+		// Hide spans which are better represented by the child spans that they
+		// spawn, i.e. CallMethod, ChainMethods, or direct object-method tools.
+		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
+	}
+	if tool.Server != "" {
+		attrs = append(attrs, attribute.String(telemetry.LLMToolServerAttr, tool.Server))
+	}
+	return attrs
+}
+
 func toolArgHeaderValue(name string, value any) (string, bool) {
 	if value == nil {
 		return "", false
@@ -1555,29 +1587,11 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 	for _, arg := range []string{"offset", "limit", "args"} {
 		appendToolArg(arg)
 	}
-	toolName := tool.Name
-	if tool.Server != "" {
-		// External MCP tools may come prefixed `<server>_`; collision-namespaced
-		// object tools are prefixed `<gqlFieldName(server)>_` (their Server is
-		// the bound type name). Trim either so the span shows the bare tool name
-		// alongside the server attribute.
-		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
-		toolName = strings.TrimPrefix(toolName, gqlFieldName(tool.Server)+"_")
-	}
 	span := trace.SpanFromContext(ctx)
-	attrs := []attribute.KeyValue{
-		attribute.String(telemetry.LLMToolAttr, toolName),
+	attrs := append(toolSpanAttrs(tool),
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 		attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
-	}
-	if tool.HideSelf {
-		// Hide spans which are better represented by the child spans that they
-		// spawn, i.e. CallMethod, ChainMethods, or direct object-method tools.
-		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
-	}
-	if tool.Server != "" {
-		attrs = append(attrs, attribute.String(telemetry.LLMToolServerAttr, tool.Server))
-	}
+	)
 	span.SetAttributes(attrs...)
 
 	var telemetryErr error
@@ -3032,7 +3046,7 @@ func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
 		// and through MCP.Call, for the tool attributes, workspace binding and
 		// result bounding that path applies.
 		call := &LLMToolCall{CallID: toolName, Name: toolName, Arguments: JSON(encodedArgs)}
-		displays := newDisplayPhases(ctx, "")
+		displays := newDisplayPhases(ctx, "", allTools.Order)
 		displays.EmitToolCall(0, call.CallID, toolName, string(encodedArgs))
 		res := m.CallContent(toolCallCtx(ctx, displays.toolCalls, call.CallID), allTools.Order, call)
 		endToolCallDisplay(displays.toolCalls, call.CallID, res.Errored, res.ContentText())

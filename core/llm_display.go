@@ -113,6 +113,10 @@ type displayPhases struct {
 	parentCtx  context.Context
 	callDigest string
 
+	// tools are the tools offered to the model this turn, so a tool call's
+	// span can identify its tool (bare name, server) from the moment it starts.
+	tools []LLMTool
+
 	// toolAnchorCtx is the most recent non-tool assistant content phase. Tool
 	// calls are parented beneath it so they read as details of the reply that
 	// introduced them instead of as unrelated top-level messages. Parallel tool
@@ -137,10 +141,11 @@ type toolCallDisplay struct {
 	Span trace.Span
 }
 
-func newDisplayPhases(parentCtx context.Context, callDigest string) *displayPhases {
+func newDisplayPhases(parentCtx context.Context, callDigest string, tools []LLMTool) *displayPhases {
 	return &displayPhases{
 		parentCtx:  parentCtx,
 		callDigest: callDigest,
+		tools:      tools,
 		phases:     map[int64]*displayPhase{},
 		toolCalls:  map[string]toolCallDisplay{},
 	}
@@ -224,15 +229,24 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 	if dp.toolAnchorCtx != nil {
 		parentCtx = dp.toolAnchorCtx
 	}
+	// Identify the tool up front: live telemetry only exports a span at start
+	// and end, so a name and server set once the tool runs (MCP.CallContent)
+	// would show the raw model-facing name until the call finished.
+	toolAttrs := []attribute.KeyValue{attribute.String(telemetry.LLMToolAttr, toolName)}
+	for i := range dp.tools {
+		if dp.tools[i].Name == toolName {
+			toolAttrs = toolSpanAttrs(&dp.tools[i])
+			break
+		}
+	}
 	phaseCtx, span := Tracer(parentCtx).Start(parentCtx, toolName,
-		trace.WithAttributes(dp.displayAttrs([]attribute.KeyValue{
+		trace.WithAttributes(dp.displayAttrs(append([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-			attribute.String(telemetry.LLMToolAttr, toolName),
 			attribute.Bool(telemetry.UIBoundaryAttr, true),
 			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-		})...),
+		}, toolAttrs...))...),
 	)
 	p := &displayPhase{
 		ctx:    phaseCtx,
