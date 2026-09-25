@@ -21,9 +21,9 @@ type promptBackground struct {
 
 // Keep integer RGB channels intact across both renderers. termenv.RGBColor's
 // floating-point conversion can truncate a channel by one when emitting SGR.
-type promptRGBColor color.RGBA
+type terminalRGBColor color.RGBA
 
-func (c promptRGBColor) Sequence(background bool) string {
+func (c terminalRGBColor) Sequence(background bool) string {
 	prefix := 38
 	if background {
 		prefix = 48
@@ -49,12 +49,30 @@ func blendPromptBackground(bg color.Color, profile termenv.Profile) promptBackgr
 		return uint8((channel*(100-alpha) + top*alpha) / 100)
 	}
 	fill := color.RGBA{R: blend(r), G: blend(g), B: blend(b), A: 255}
-	result := promptBackground{cell: fill, term: promptRGBColor(fill)}
+	result := promptBackground{cell: fill, term: terminalRGBColor(fill)}
 	if profile == termenv.ANSI256 {
 		result.term = profile.FromColor(fill)
 		result.cell = ansi.IndexedColor(result.term.(termenv.ANSI256Color))
 	}
 	return result
+}
+
+// blendTableRule matches Codex's separator color: 20% of the actual terminal
+// foreground over 80% of its background. Nil asks the renderer to use SGR faint.
+func blendTableRule(fg, bg color.Color, profile termenv.Profile) termenv.Color {
+	if fg == nil || bg == nil || (profile != termenv.TrueColor && profile != termenv.ANSI256) {
+		return nil
+	}
+	fr, fgChannel, fb, _ := fg.RGBA()
+	br, bgChannel, bb, _ := bg.RGBA()
+	blend := func(foreground, background uint32) uint8 {
+		return uint8(((foreground>>8)*20 + (background>>8)*80) / 100)
+	}
+	rule := color.RGBA{R: blend(fr, br), G: blend(fgChannel, bgChannel), B: blend(fb, bb), A: 255}
+	if profile == termenv.ANSI256 {
+		return profile.FromColor(rule)
+	}
+	return terminalRGBColor(rule)
 }
 
 // promptColorTerminal queries only after the terminal's input reader is running.
@@ -71,6 +89,7 @@ func (t *promptColorTerminal) Start(onInput func([]byte), onResize func()) error
 		return err
 	}
 	t.Terminal.WriteString(ansi.RequestBackgroundColor)
+	t.Terminal.WriteString(ansi.RequestForegroundColor)
 	if t.queryCapabilities {
 		// A byte-forwarding container terminal often loses TERM/COLORTERM but
 		// still reaches the real emulator. Ask instead of assuming 256 colors
@@ -122,6 +141,11 @@ func (fe *frontendPretty) handlePromptBackground(_ tuist.Context, event uv.Event
 			return true
 		}
 		fe.promptBaseColor = reply.Color
+	case uv.ForegroundColorEvent:
+		if reply.Color == nil || fe.profile == termenv.Ascii || fe.promptColorProfile == termenv.Ascii {
+			return true
+		}
+		fe.terminalForeground = reply.Color
 	case uv.CapabilityEvent:
 		profile := promptCapabilityProfile(reply.Content)
 		if profile == termenv.Ascii {
@@ -135,9 +159,11 @@ func (fe *frontendPretty) handlePromptBackground(_ tuist.Context, event uv.Event
 		return false
 	}
 	background := blendPromptBackground(fe.promptBaseColor, fe.promptColorProfile)
-	if background == fe.promptBackground {
+	ruleColor := blendTableRule(fe.terminalForeground, fe.promptBaseColor, fe.promptColorProfile)
+	if background == fe.promptBackground && ruleColor == fe.logs.tableRuleColor {
 		return true
 	}
+	fe.logs.setTableRuleColor(ruleColor)
 	fe.promptBackground = background
 	if fe.promptFrame != nil {
 		fe.promptFrame.SetBackground(background.cell)
@@ -148,6 +174,9 @@ func (fe *frontendPretty) handlePromptBackground(_ tuist.Context, event uv.Event
 	}
 	for _, logs := range fe.logsViews {
 		logs.Update()
+	}
+	if fe.logPager != nil {
+		fe.logPager.Update()
 	}
 	fe.Update()
 	return true

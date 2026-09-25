@@ -29,9 +29,10 @@ func NewOutput(w io.Writer, opts ...termenv.OutputOption) *termenv.Output {
 // be used.
 //
 // Most rendering stays in the 16-color terminal palette to respect the user's
-// theme. Interactive prompt backgrounds are the exception: after querying the
-// actual terminal background, they use a subtle blend at the supported color
-// depth (see prompt_colors.go). This does not change the default profile.
+// theme. Interactive prompt backgrounds and Markdown table rules are the
+// exceptions: after querying the terminal colors, they use subtle blends at
+// the supported color depth (see prompt_colors.go). This does not change the
+// default profile.
 //
 // This is process-level and CLI-oriented, so it stays purely env-based: it has
 // no FrontendOpts to consult. Engine-side report rendering doesn't need an opt

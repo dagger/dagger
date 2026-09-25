@@ -133,10 +133,11 @@ type frontendPretty struct {
 	historyIndex   int      // -1 = not browsing history
 	historySaved   string   // saved input when browsing history
 
-	// Only the measured prompt fill uses extended colors; all other UI colors
-	// continue to use profile's terminal palette.
+	// Measured prompt fills and Markdown rules use extended colors; other UI
+	// colors continue to use profile's terminal palette.
 	promptColorProfile termenv.Profile
 	promptBaseColor    color.Color // OSC 11 may arrive before the capability reply
+	terminalForeground color.Color // OSC 10, used for low-contrast Markdown rules
 	promptBackground   promptBackground
 
 	// Attachments stay out of text history and are owned by the current draft.
@@ -8880,15 +8881,16 @@ func (fe *frontendPretty) writeLogTrimHeader(out TermOutput, trimPrefix string, 
 // ---------- pretty logs (unchanged) -----------------------------------------
 
 type prettyLogs struct {
-	DB            *dagui.DB
-	Logs          map[dagui.SpanID]*Vterm
-	ToolArgs      map[dagui.SpanID]*Vterm
-	PrefixWriters map[dagui.SpanID]*multiprefixw.Writer
-	LogWidth      int
-	SawEOF        map[dagui.SpanID]bool
-	Profile       termenv.Profile
-	Output        TermOutput
-	Images        *kittyImages
+	DB             *dagui.DB
+	Logs           map[dagui.SpanID]*Vterm
+	ToolArgs       map[dagui.SpanID]*Vterm
+	PrefixWriters  map[dagui.SpanID]*multiprefixw.Writer
+	LogWidth       int
+	SawEOF         map[dagui.SpanID]bool
+	Profile        termenv.Profile
+	Output         TermOutput
+	Images         *kittyImages
+	tableRuleColor termenv.Color
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
@@ -9058,6 +9060,7 @@ func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 	term, found := l.Logs[spanID]
 	if !found {
 		term = NewVterm(l.Profile)
+		term.setMarkdownTableRuleColor(l.tableRuleColor)
 		term.images = l.Images
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
@@ -9071,12 +9074,26 @@ func (l *prettyLogs) spanToolArgs(spanID dagui.SpanID) *Vterm {
 	term, found := l.ToolArgs[spanID]
 	if !found {
 		term = NewVterm(l.Profile)
+		term.setMarkdownTableRuleColor(l.tableRuleColor)
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
 		}
 		l.ToolArgs[spanID] = term
 	}
 	return term
+}
+
+func (l *prettyLogs) setTableRuleColor(color termenv.Color) {
+	if color == l.tableRuleColor {
+		return
+	}
+	l.tableRuleColor = color
+	for _, vt := range l.Logs {
+		vt.setMarkdownTableRuleColor(color)
+	}
+	for _, vt := range l.ToolArgs {
+		vt.setMarkdownTableRuleColor(color)
+	}
 }
 
 func (l *prettyLogs) SetWidth(width int) {
@@ -9122,7 +9139,7 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 		} else if message == "" {
 			field.Inline(true)
 		} else {
-			field.Description(strings.TrimSpace((&Markdown{Content: message, Width: fe.window.Width}).View()))
+			field.Description(strings.TrimSpace((&Markdown{Content: message, Width: fe.window.Width, TableRuleColor: fe.logs.tableRuleColor}).View()))
 		}
 		return huh.NewForm(huh.NewGroup(field))
 	})
@@ -9134,8 +9151,9 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 			huh.NewInput().
 				Title(title).
 				Description(strings.TrimSpace((&Markdown{
-					Content: message,
-					Width:   fe.window.Width,
+					Content:        message,
+					TableRuleColor: fe.logs.tableRuleColor,
+					Width:          fe.window.Width,
 				}).View())).
 				Value(dest),
 		),

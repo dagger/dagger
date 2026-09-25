@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestMarkdownTableCompact(t *testing.T) {
 	want := " Item     N\n━━━━━━  ━━━━\n A        1\n──────  ────\n B       20"
 	for _, width := range []int{20, 80, 160} {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {
-			got, err := renderMarkdown(compactMarkdownTable, width, MarkdownStyle)
+			got, err := renderMarkdown(compactMarkdownTable, width, MarkdownStyle, nil)
 			require.NoError(t, err)
 			require.Equal(t, want, plainMarkdown(got))
 			require.Contains(t, got, "\x1b[36;1m", "headers should be bold cyan")
@@ -39,7 +40,7 @@ func TestMarkdownTableCompact(t *testing.T) {
 
 func TestMarkdownTableAccentDoesNotBleed(t *testing.T) {
 	for _, width := range []int{11, 80} {
-		got, err := renderMarkdown("| TITLE | N |\n| --- | --- |\n| value | 1 |\n| other | 2 |\n", width, MarkdownStyle)
+		got, err := renderMarkdown("| TITLE | N |\n| --- | --- |\n| value | 1 |\n| other | 2 |\n", width, MarkdownStyle, nil)
 		require.NoError(t, err)
 		buf := cellbuf.NewBuffer(width, strings.Count(got, "\n")+1)
 		cellbuf.SetContent(buf, got)
@@ -64,7 +65,7 @@ func TestMarkdownTableAccentDoesNotBleed(t *testing.T) {
 func TestMarkdownTableWrapping(t *testing.T) {
 	content := "| Name | N |\n| --- | ---: |\n| a long description with words | 12 |\n| abcdefghijklmnopqrstuvwxyz | 3 |\n"
 	for _, width := range []int{12, 20, 40} {
-		got, err := renderMarkdown(content, width, MarkdownStyle)
+		got, err := renderMarkdown(content, width, MarkdownStyle, nil)
 		require.NoError(t, err)
 		for _, line := range strings.Split(ansi.Strip(got), "\n") {
 			require.LessOrEqual(t, ansi.StringWidth(line), width, "%q", line)
@@ -76,7 +77,7 @@ func TestMarkdownTableWrapping(t *testing.T) {
 
 func TestMarkdownTableInlineContent(t *testing.T) {
 	content := "| Feature | Value |\n| --- | --- |\n| **bold** and *italic* | `x\\y` |\n| a\\|b &amp; &amp;amp; | [docs][ref] |\n| 界🙂 | :smile: |\n\n[ref]: https://example.com\n"
-	got, err := renderMarkdown(content, 100, MarkdownStyle)
+	got, err := renderMarkdown(content, 100, MarkdownStyle, nil)
 	require.NoError(t, err)
 	plain := ansi.Strip(got)
 	for _, value := range []string{"bold", "italic", `x\y`, "a|b & &amp;", "docs", "https://example.com", "界🙂", "😄"} {
@@ -92,7 +93,7 @@ func TestMarkdownTableInlineContent(t *testing.T) {
 }
 
 func TestMarkdownTableNarrowRecords(t *testing.T) {
-	got, err := renderMarkdown(compactMarkdownTable, 7, MarkdownStyle)
+	got, err := renderMarkdown(compactMarkdownTable, 7, MarkdownStyle, nil)
 	require.NoError(t, err)
 	plain := ansi.Strip(got)
 	require.Contains(t, plain, "Item: A")
@@ -104,7 +105,7 @@ func TestMarkdownTableNarrowRecords(t *testing.T) {
 
 func TestMarkdownTableWideGraphemes(t *testing.T) {
 	for _, width := range []int{7, 8, 9, 12, 20} {
-		got, err := renderMarkdown("| Name | N |\n| --- | --- |\n| 界🙂界 | 1 |\n", width, MarkdownStyle)
+		got, err := renderMarkdown("| Name | N |\n| --- | --- |\n| 界🙂界 | 1 |\n", width, MarkdownStyle, nil)
 		require.NoError(t, err)
 		require.Contains(t, got, "🙂")
 		for _, line := range strings.Split(got, "\n") {
@@ -121,7 +122,7 @@ func TestMarkdownTableNested(t *testing.T) {
 		"header only": "| Item | N |\n| --- | --- |\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := renderMarkdown(content, 20, MarkdownStyle)
+			got, err := renderMarkdown(content, 20, MarkdownStyle, nil)
 			require.NoError(t, err)
 			require.Contains(t, got, "━")
 			for _, line := range strings.Split(ansi.Strip(got), "\n") {
@@ -143,7 +144,7 @@ func TestMarkdownNonTablesUnchanged(t *testing.T) {
 			require.NoError(t, err)
 			want, err := old.Render(content)
 			require.NoError(t, err)
-			got, err := renderMarkdown(content, 50, st)
+			got, err := renderMarkdown(content, 50, st, nil)
 			require.NoError(t, err)
 			require.Equal(t, want, got)
 		})
@@ -151,7 +152,7 @@ func TestMarkdownNonTablesUnchanged(t *testing.T) {
 }
 
 func TestMarkdownTableWrappedStyles(t *testing.T) {
-	got, err := renderMarkdown("| Name | N |\n| --- | --- |\n| **abcdefgh** | 1 |\n", 11, MarkdownStyle)
+	got, err := renderMarkdown("| Name | N |\n| --- | --- |\n| **abcdefgh** | 1 |\n", 11, MarkdownStyle, nil)
 	require.NoError(t, err)
 	lines := strings.Split(plainMarkdown(got), "\n")
 	buf := cellbuf.NewBuffer(11, strings.Count(got, "\n")+1)
@@ -178,12 +179,74 @@ func TestMarkdownTableWrappedStyles(t *testing.T) {
 func TestMarkdownTableStreamingAndAlignment(t *testing.T) {
 	content := "| Left | Center | Right |\n| :--- | :---: | ---: |\n| 界 | x | 1 |\n| | yy | 20 |\n"
 	for i := 0; i <= len(content); i++ {
-		_, err := renderMarkdown(content[:i], 40, MarkdownStyle)
+		_, err := renderMarkdown(content[:i], 40, MarkdownStyle, nil)
 		require.NoError(t, err, "stream prefix %d", i)
 	}
-	got, err := renderMarkdown(content, 40, MarkdownStyle)
+	got, err := renderMarkdown(content, 40, MarkdownStyle, nil)
 	require.NoError(t, err)
 	require.Equal(t, " Left    Center    Right\n━━━━━━  ━━━━━━━━  ━━━━━━━\n 界        x           1\n──────  ────────  ───────\n           yy         20", plainMarkdown(got))
+}
+
+func TestMarkdownTableRuleBlend(t *testing.T) {
+	for _, profile := range []termenv.Profile{termenv.TrueColor, termenv.ANSI256} {
+		ruleColor := blendTableRule(color.White, color.Black, profile)
+		for _, width := range []int{7, 40} {
+			got, err := renderMarkdown(compactMarkdownTable, width, MarkdownStyle, ruleColor)
+			require.NoError(t, err)
+			baseline, err := renderMarkdown(compactMarkdownTable, width, MarkdownStyle, nil)
+			require.NoError(t, err)
+			require.Equal(t, plainMarkdown(baseline), plainMarkdown(got), "only the rule color changes")
+			require.NotContains(t, got, "\x1b[2m", "do not apply faint on top of the blend")
+			buf := cellbuf.NewBuffer(width, strings.Count(got, "\n")+1)
+			cellbuf.SetContent(buf, got)
+			rules := 0
+			for y := 0; y < buf.Height(); y++ {
+				for x := 0; x < buf.Width(); x++ {
+					cell := buf.Cell(x, y)
+					if cell == nil {
+						continue
+					}
+					switch cell.String() {
+					case "━", "─":
+						rules++
+						if profile == termenv.TrueColor {
+							require.Equal(t, color.RGBA{51, 51, 51, 255}, color.RGBAModel.Convert(cell.Style.Fg))
+						} else {
+							require.Equal(t, ansi.IndexedColor(ruleColor.(termenv.ANSI256Color)), cell.Style.Fg)
+						}
+					case "A", "B", "1", "2", "0":
+						require.Nil(t, cell.Style.Fg, "the rule color must not bleed into body cells")
+					}
+				}
+			}
+			require.Positive(t, rules)
+			require.Contains(t, got, "\x1b[36;1m", "header accent is unchanged")
+		}
+	}
+}
+
+func TestMarkdownTableRuleColorInvalidatesViews(t *testing.T) {
+	ruleColor := blendTableRule(color.White, color.Black, termenv.TrueColor)
+	for _, media := range []bool{false, true} {
+		term := NewVterm(termenv.ANSI)
+		term.SetWidth(60)
+		_, err := term.WriteMarkdown([]byte(compactMarkdownTable))
+		require.NoError(t, err)
+		if media {
+			term.WriteMedia(dagui.MediaRecord{Kind: "image"}, "[image]")
+		}
+		term.SetHeight(20)
+		require.Contains(t, term.View(), "\x1b[2m")
+		term.setMarkdownTableRuleColor(ruleColor)
+		require.Contains(t, term.View(), "38;2;51;51;51")
+		term.setMarkdownTableRuleColor(nil)
+		require.Contains(t, term.View(), "\x1b[2m")
+		term.setMarkdownTableRuleColor(ruleColor)
+		term.Profile = termenv.Ascii
+		require.NotContains(t, term.View(), "\x1b")
+	}
+	m := &Markdown{Content: compactMarkdownTable, Width: 60, TableRuleColor: ruleColor}
+	require.Contains(t, m.View(), "\x1b[38;2;51;51;51m")
 }
 
 func TestMarkdownTableViews(t *testing.T) {

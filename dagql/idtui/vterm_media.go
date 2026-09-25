@@ -155,7 +155,7 @@ func (term *Vterm) layoutMedia() {
 		}
 		var lines []string
 		if segment.markdown {
-			rendered, err := renderMarkdown(segment.text.String(), width, MarkdownStyle)
+			rendered, err := renderMarkdown(segment.text.String(), width, MarkdownStyle, term.markdownTableRuleColor)
 			if err == nil {
 				lines = strings.Split(trimMarkdownPadding(rendered), "\n")
 			}

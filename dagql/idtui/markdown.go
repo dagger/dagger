@@ -23,7 +23,7 @@ import (
 // renderMarkdown keeps Glamour's parser and ANSI renderer, replacing only the
 // table layout. Glamour's table style cannot express separate header/body rules
 // or an open grid with gutters instead of vertical borders.
-func renderMarkdown(content string, width int, style glamouransi.StyleConfig) (string, error) {
+func renderMarkdown(content string, width int, style glamouransi.StyleConfig, ruleColor termenv.Color) (string, error) {
 	if width <= 0 {
 		width = 80
 	}
@@ -31,7 +31,7 @@ func renderMarkdown(content string, width int, style glamouransi.StyleConfig) (s
 		WordWrap: width, Styles: style, ColorProfile: termenv.ANSI,
 		ChromaFormatter: "terminal16", PreserveNewLines: true,
 	}
-	r := &markdownTableRenderer{base: glamouransi.NewRenderer(opts), options: opts, width: width}
+	r := &markdownTableRenderer{base: glamouransi.NewRenderer(opts), options: opts, width: width, ruleColor: ruleColor}
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM, extension.DefinitionList, emoji.New()),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
@@ -59,10 +59,11 @@ func trimMarkdownPadding(rendered string) string {
 }
 
 type markdownTableRenderer struct {
-	base    *glamouransi.ANSIRenderer
-	options glamouransi.Options
-	width   int
-	text    mdrenderer.NodeRendererFunc
+	base      *glamouransi.ANSIRenderer
+	options   glamouransi.Options
+	width     int
+	text      mdrenderer.NodeRendererFunc
+	ruleColor termenv.Color
 }
 
 // Register intercepts Glamour's callbacks without taking over its block buffers.
@@ -131,7 +132,7 @@ func (r *markdownTableRenderer) renderTable(w util.BufWriter, source []byte, nod
 		}
 		rows = append(rows, cells)
 	}
-	value := "\n" + layoutMarkdownTable(rows, table.Alignments, max(1, r.width)) + "\n"
+	value := "\n" + layoutMarkdownTable(rows, table.Alignments, max(1, r.width), r.ruleColor) + "\n"
 	// Feed the finished table into Glamour's current block so nested containers
 	// and document backgrounds still apply. Protect already-rendered literals
 	// from Text's entity decoding and Markdown backslash unescaping.
@@ -176,7 +177,7 @@ func (r *markdownTableRenderer) renderCell(source []byte, cell ast.Node, header 
 
 // Codex's open table style: one space of cell padding, two-space gutters,
 // a heavy header rule and dim, light rules between body rows. No outer border.
-func layoutMarkdownTable(rows [][]string, alignments []extast.Alignment, width int) string {
+func layoutMarkdownTable(rows [][]string, alignments []extast.Alignment, width int, ruleColor termenv.Color) string {
 	if len(rows) == 0 || len(alignments) == 0 {
 		return ""
 	}
@@ -203,7 +204,7 @@ func layoutMarkdownTable(rows [][]string, alignments []extast.Alignment, width i
 	}
 	budget := width - 2*len(widths) - 2*(len(widths)-1)
 	if budget < minimum {
-		return markdownTableRecords(rows, width)
+		return markdownTableRecords(rows, width, ruleColor)
 	}
 	// Keep short columns compact; shrink the widest columns first, wrapping
 	// their contents rather than truncating values.
@@ -226,7 +227,7 @@ func layoutMarkdownTable(rows [][]string, alignments []extast.Alignment, width i
 		for col, size := range widths {
 			parts[col] = strings.Repeat(char, size+2)
 		}
-		return termenv.String(strings.Join(parts, "  ")).Faint().String()
+		return styleMarkdownTableRule(strings.Join(parts, "  "), ruleColor)
 	}
 	for idx, row := range rows {
 		wrapped := make([][]string, len(widths))
@@ -263,9 +264,19 @@ func layoutMarkdownTable(rows [][]string, alignments []extast.Alignment, width i
 	return strings.Join(lines, "\n")
 }
 
+// styleMarkdownTableRule uses the negotiated blend without also applying SGR
+// faint: the blend itself supplies the dimming. Faint remains the fallback.
+func styleMarkdownTableRule(text string, color termenv.Color) string {
+	style := termenv.String(text)
+	if color != nil {
+		return style.Foreground(color).String()
+	}
+	return style.Faint().String()
+}
+
 // At widths too small for even one character per column, keep every value
 // readable by stacking labeled records instead of drawing a broken grid.
-func markdownTableRecords(rows [][]string, width int) string {
+func markdownTableRecords(rows [][]string, width int, ruleColor termenv.Color) string {
 	var lines []string
 	if len(rows) == 1 {
 		for _, header := range rows[0] {
@@ -274,7 +285,7 @@ func markdownTableRecords(rows [][]string, width int) string {
 	}
 	for idx, row := range rows[1:] {
 		if idx > 0 {
-			lines = append(lines, termenv.String(strings.Repeat("─", width)).Faint().String())
+			lines = append(lines, styleMarkdownTableRule(strings.Repeat("─", width), ruleColor))
 		}
 		for col, value := range row {
 			lines = append(lines, cellbuf.Wrap(rows[0][col]+": "+value, width, ""))

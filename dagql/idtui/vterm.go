@@ -35,7 +35,8 @@ type Vterm struct {
 	mediaFollow bool
 
 	// Separate buffer for Markdown content
-	markdownBuf *bytes.Buffer
+	markdownBuf            *bytes.Buffer
+	markdownTableRuleColor termenv.Color
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
 	rawBuf      *bytes.Buffer
@@ -185,6 +186,16 @@ func (term *Vterm) SetWidth(width int) {
 		term.vt.ResizeX(width - prefixWidth)
 	}
 	term.needsRedraw = true
+}
+
+func (term *Vterm) setMarkdownTableRuleColor(color termenv.Color) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if color == term.markdownTableRuleColor {
+		return
+	}
+	term.markdownTableRuleColor = color
+	term.invalidateMedia() // also invalidates the text-only view cache
 }
 
 func (term *Vterm) SetPrefix(prefix string) {
@@ -422,7 +433,7 @@ func (term *Vterm) redraw() {
 
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
-		rendered, err := renderMarkdown(term.markdownBuf.String(), term.mediaWidth(), MarkdownStyle)
+		rendered, err := renderMarkdown(term.markdownBuf.String(), term.mediaWidth(), MarkdownStyle, term.markdownTableRuleColor)
 		if err != nil {
 			fmt.Fprintf(term.viewBuf, "Error rendering Markdown: %s\n", err)
 		} else {
@@ -454,10 +465,11 @@ func (term *Vterm) redraw() {
 }
 
 type Markdown struct {
-	Content    string
-	Background termenv.Color
-	Prefix     string
-	Width      int
+	Content        string
+	Background     termenv.Color
+	TableRuleColor termenv.Color
+	Prefix         string
+	Width          int
 
 	viewBuf     strings.Builder
 	needsRedraw bool
@@ -491,7 +503,7 @@ func (m *Markdown) View() string {
 		// margin on the left.
 		width = max(1, m.Width-lipgloss.Width(m.Prefix)-2)
 	}
-	rendered, err := renderMarkdown(m.Content, width, st)
+	rendered, err := renderMarkdown(m.Content, width, st, m.TableRuleColor)
 	if err != nil {
 		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
 	} else if m.Prefix != "" {

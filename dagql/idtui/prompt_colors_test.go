@@ -31,7 +31,7 @@ func TestBlendPromptBackground(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := blendPromptBackground(tc.bg, termenv.TrueColor)
 			require.Equal(t, tc.want, got.cell)
-			require.Equal(t, promptRGBColor(tc.want), got.term)
+			require.Equal(t, terminalRGBColor(tc.want), got.term)
 		})
 	}
 	indexed := blendPromptBackground(color.Black, termenv.ANSI256)
@@ -43,6 +43,66 @@ func TestBlendPromptBackground(t *testing.T) {
 		require.Equal(t, promptBackground{}, blendPromptBackground(color.Black, profile))
 	}
 	require.Equal(t, promptBackground{}, blendPromptBackground(nil, termenv.TrueColor))
+}
+
+func TestBlendTableRule(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fg, bg color.Color
+		want   string
+	}{
+		{"dark", color.White, color.Black, "38;2;51;51;51"},
+		{"light", color.Black, color.White, "38;2;204;204;204"},
+		{"tinted", color.RGBA{200, 180, 160, 255}, color.RGBA{20, 30, 40, 255}, "38;2;56;60;64"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := blendTableRule(tc.fg, tc.bg, termenv.TrueColor)
+			require.Equal(t, tc.want, got.Sequence(false))
+		})
+	}
+	require.IsType(t, termenv.ANSI256Color(0), blendTableRule(color.White, color.Black, termenv.ANSI256))
+	for _, profile := range []termenv.Profile{termenv.Ascii, termenv.ANSI} {
+		require.Nil(t, blendTableRule(color.White, color.Black, profile))
+	}
+	require.Nil(t, blendTableRule(nil, color.Black, termenv.TrueColor))
+	require.Nil(t, blendTableRule(color.White, nil, termenv.TrueColor))
+}
+
+func TestTableRuleColorRepliesRefreshLogs(t *testing.T) {
+	orders := [][]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}}
+	for _, order := range orders {
+		fe := newWithTerminalProfile(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(60, 20), termenv.ANSI)
+		fe.promptColorProfile = termenv.ANSI
+		logs := fe.logs.spanLogs(prettyTestSpanID(1))
+		_, err := logs.WriteMarkdown([]byte(compactMarkdownTable))
+		require.NoError(t, err)
+		require.Contains(t, logs.View(), "\x1b[2m") // populate the old cached render
+		events := []uv.Event{
+			uv.ForegroundColorEvent{Color: color.White},
+			uv.BackgroundColorEvent{Color: color.Black},
+			uv.CapabilityEvent{Content: "RGB"},
+		}
+		for i, event := range order {
+			fe.tui.Inject(events[event])
+			fe.tui.Step()
+			if i < 2 {
+				require.Contains(t, logs.View(), "\x1b[2m", "wait for all three reports")
+			}
+		}
+		require.Contains(t, logs.View(), "\x1b[38;2;51;51;51m")
+		// A foreground-only change must repaint, even though the prompt fill
+		// stays identical. New log buffers also inherit the negotiated color.
+		fe.tui.Inject(uv.ForegroundColorEvent{Color: color.RGBA{128, 128, 128, 255}})
+		fe.tui.Step()
+		require.Contains(t, logs.View(), "\x1b[38;2;25;25;25m")
+		fresh := fe.logs.spanLogs(prettyTestSpanID(2))
+		_, err = fresh.WriteMarkdown([]byte(compactMarkdownTable))
+		require.NoError(t, err)
+		require.Contains(t, fresh.View(), "\x1b[38;2;25;25;25m")
+		// Terminal colors are scoped to this frontend, never global.
+		other := newWithTerminalProfile(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(60, 20), termenv.ANSI)
+		require.Nil(t, other.logs.tableRuleColor)
+	}
 }
 
 func TestPromptColorQueryEligibility(t *testing.T) {
@@ -89,6 +149,7 @@ type promptProbeTerminal struct {
 	started           bool
 	startErr          error
 	queries           int
+	foregroundQueries int
 	capabilityQueries []string
 	onInput           func([]byte)
 	reply             bool
@@ -104,6 +165,17 @@ func (t *promptProbeTerminal) Start(onInput func([]byte), _ func()) error {
 }
 
 func (t *promptProbeTerminal) WriteString(s string) {
+	if s == ansi.RequestForegroundColor {
+		if !t.started {
+			panic("queried foreground before starting input")
+		}
+		t.foregroundQueries++
+		if t.reply {
+			t.onInput([]byte("\x1b]10;rgb:ffff/"))
+			t.onInput([]byte("ffff/ffff\x1b\\"))
+		}
+		return
+	}
 	for capability, reply := range map[string]string{
 		"RGB": "\x1bP1+r524742\x1b\\",
 		"Tc":  "\x1bP0+r5463\x1b\\", // unsupported: must not produce a capability event
@@ -144,13 +216,16 @@ func TestPromptColorQueryLifecycle(t *testing.T) {
 	// No reply is required to start, and a resume reissues the queries.
 	require.NoError(t, probe.Start(func([]byte) {}, func() {}))
 	require.Equal(t, 1, terminal.queries)
+	require.Equal(t, 1, terminal.foregroundQueries)
 	require.Equal(t, []string{"RGB", "Tc", "Co"}, terminal.capabilityQueries)
 	probe.Stop()
 	require.NoError(t, probe.Start(func([]byte) {}, func() {}))
 	require.Equal(t, 2, terminal.queries)
+	require.Equal(t, 2, terminal.foregroundQueries)
 	terminal.startErr = errors.New("no terminal")
 	require.ErrorIs(t, probe.Start(func([]byte) {}, func() {}), terminal.startErr)
 	require.Equal(t, 2, terminal.queries)
+	require.Equal(t, 2, terminal.foregroundQueries)
 	require.Equal(t, []string{"RGB", "Tc", "Co", "RGB", "Tc", "Co"}, terminal.capabilityQueries)
 }
 
@@ -160,7 +235,7 @@ func TestPromptColorQueryUsesTuistReader(t *testing.T) {
 	events := make(chan uv.Event, 8)
 	tui.AddInputListener(func(_ tuist.Context, event uv.Event) bool {
 		switch event.(type) {
-		case uv.KeyPressEvent, uv.BackgroundColorEvent, uv.CapabilityEvent:
+		case uv.KeyPressEvent, uv.BackgroundColorEvent, uv.ForegroundColorEvent, uv.CapabilityEvent:
 			events <- event
 		}
 		return true
@@ -168,7 +243,7 @@ func TestPromptColorQueryUsesTuistReader(t *testing.T) {
 	require.NoError(t, tui.Start())
 	defer tui.Stop()
 	var got []uv.Event
-	for len(got) < 5 {
+	for len(got) < 6 {
 		select {
 		case event := <-events:
 			got = append(got, event)
@@ -182,8 +257,12 @@ func TestPromptColorQueryUsesTuistReader(t *testing.T) {
 	r, g, b, _ := reply.Color.RGBA()
 	require.Zero(t, r|g|b)
 	require.Equal(t, "b", got[2].(uv.KeyPressEvent).String())
-	require.Equal(t, uv.CapabilityEvent{Content: "RGB"}, got[3])
-	require.Equal(t, uv.CapabilityEvent{Content: "Co=256"}, got[4])
+	foreground, ok := got[3].(uv.ForegroundColorEvent)
+	require.True(t, ok, "%T", got[3])
+	r, g, b, _ = foreground.Color.RGBA()
+	require.Equal(t, uint32(65535), r&g&b)
+	require.Equal(t, uv.CapabilityEvent{Content: "RGB"}, got[4])
+	require.Equal(t, uv.CapabilityEvent{Content: "Co=256"}, got[5])
 }
 
 func TestPromptCapabilityProfile(t *testing.T) {
