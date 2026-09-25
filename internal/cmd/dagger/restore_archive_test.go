@@ -389,7 +389,7 @@ func (s *lazyRestoreArchive) Logs(_ context.Context, _ string, opts archive.Stre
 }
 
 func TestArchiveRestoreDefersDisplayLogs(t *testing.T) {
-	base, _, _, _ := canonicalArchive()
+	base, chief, _, _ := canonicalArchive()
 	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
 	source := &lazyRestoreArchive{restoreTestArchive: base, requests: make(chan archive.StreamOptions, 8)}
 	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
@@ -397,7 +397,7 @@ func TestArchiveRestoreDefersDisplayLogs(t *testing.T) {
 	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
 	require.NoError(t, err)
 	defer cleanup()
-	require.Equal(t, "chief", target.focused, "verified bootstrap still restores before history")
+	require.Equal(t, chief.Handle, target.focused, "verified bootstrap still restores before history")
 	var metadata archive.StreamOptions
 	select {
 	case metadata = <-source.requests:

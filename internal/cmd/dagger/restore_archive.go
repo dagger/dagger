@@ -221,10 +221,6 @@ func startHistoricalImport(ctx context.Context, run func(context.Context) error,
 	return func() { cancel(); <-done }
 }
 
-func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, traceID string, result archive.BootstrapResult, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut) error {
-	return importArchiveRemainderMode(ctx, source, traceID, result, importer, cut, false)
-}
-
 func importArchiveRemainderMode(ctx context.Context, source archiveRestoreSource, traceID string, result archive.BootstrapResult, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, lazyLogs bool) error {
 	var wg sync.WaitGroup
 	var mu sync.Mutex

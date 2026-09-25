@@ -98,7 +98,7 @@ func traceRun(cmd *cobra.Command, args []string) error {
 			},
 			func(ctx context.Context) (tracesource.Source, func() error, error) {
 				if traceSourceSession != "" {
-					return nil, nil, errors.New("Cloud trace display cannot honor --source-session; omit the selector to view the whole Cloud trace")
+					return nil, nil, errors.New("cloud trace display cannot honor --source-session; omit the selector to view the whole Cloud trace")
 				}
 				var err error
 				cloudAuth, err = auth.GetCloudAuth(ctx)
