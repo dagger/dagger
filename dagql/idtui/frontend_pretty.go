@@ -278,7 +278,7 @@ type frontendPretty struct {
 	cloudURL string
 
 	// traceID is the trace being rendered, set by 'dagger trace' so surfaced
-	// failure logs can point at 'dagger cloud logs <trace> <span>' for the full,
+	// failure logs can point at 'dagger cloud traces view <trace> --log' for the full,
 	// untruncated output. Empty for live runs (no follow-up command applies).
 	traceID string
 
@@ -375,6 +375,10 @@ type frontendPretty struct {
 	logPager       *LogPagerView
 	logPagerFocus  *tuist.FocusHandle
 	logSearchInput *tuist.TextInput
+
+	// logStream holds logs a caller streams in whole (OpenLogStream), for a
+	// span whose rolled-up output the per-span log buffers can't show.
+	logStream *logStream
 
 	// commandView replaces the generic trace screen when a command wants to
 	// own the semantic layout while embedding reusable trace components.
@@ -1242,7 +1246,7 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 }
 
 // SetTraceID records the trace being rendered so surfaced failure logs can point
-// at 'dagger cloud logs <trace> <span>' for the full output. Called by 'dagger
+// at 'dagger cloud traces view <trace> --log' for the full output. Called by 'dagger
 // trace'; no-op for live runs.
 func (fe *frontendPretty) SetTraceID(traceID string) {
 	fe.dispatch(func() {
@@ -3050,7 +3054,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		),
 		key.NewBinding(key.WithKeys("L"),
 			key.WithHelp("L", "logs"),
-			KeyEnabled(fe.spanHasLogs(focused)),
+			KeyEnabled(fe.spanHasLogs(focused) || fe.logStream != nil),
 		),
 		key.NewBinding(key.WithKeys("/"),
 			key.WithHelp("/", "search")),
@@ -3436,7 +3440,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 
 	if zoomed && pol.showOwnDescendantLogs {
 		// Surface the scoped span's own rolled-up failure logs, the same
-		// error-anchored window and 'dagger cloud logs' hint the summary uses.
+		// error-anchored window and '--log' hint the summary uses.
 		logOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 		if logLines := fe.renderZoomedFinalLogs(logOut, ""); len(logLines) > 0 {
 			ctx.Line("")
@@ -3545,7 +3549,7 @@ func stripTraceparent(s string) string {
 }
 
 // renderZoomedFinalLogs renders the zoomed span's rolled-up logs for the final
-// report -- the same error-anchored window and 'dagger cloud logs' hint the test
+// report -- the same error-anchored window and '--log' hint the test
 // summary uses -- so 'dagger trace --test X' surfaces X's failure output
 // (its descendants having been fetched and re-keyed onto it).
 func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) []string {
@@ -3718,7 +3722,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	body := make([]string, 0, len(targets))
 	for _, sel := range targets {
-		body = append(body, fmt.Sprintf("dagger trace %s %s", fe.traceID, sel))
+		body = append(body, fmt.Sprintf("dagger cloud traces view %s %s", fe.traceID, sel))
 	}
 	return reportSectionLines(out, fe.agentStyle(), "MORE DETAILS", body)
 }

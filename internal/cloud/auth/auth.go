@@ -513,6 +513,11 @@ type daggerToken struct {
 	token   string
 }
 
+// OrgName is the name of the org the token belongs to.
+func (t daggerToken) OrgName() string {
+	return t.orgName
+}
+
 func ParseDaggerToken(s string) (daggerToken, bool) {
 	s, ok := strings.CutPrefix(s, "dag_")
 	if !ok {

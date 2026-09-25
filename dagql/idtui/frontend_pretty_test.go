@@ -2700,3 +2700,25 @@ func TestWritePrimaryOutputSeparate(t *testing.T) {
 	require.NoError(t, writePrimaryOutput(&buf, db, spanID, true, true))
 	require.Equal(t, "\nout\n", buf.String())
 }
+
+func TestOpenLogStreamPagesAndReopens(t *testing.T) {
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.reportOnly = true // run dispatched work synchronously
+	fe.tui.SetFocus(fe)
+	fe.window = windowSize{Width: 80, Height: 20}
+
+	w := fe.OpenLogStream(prettyTestSpanID(1), "lint")
+	_, err := io.WriteString(w, "hello from lint\n")
+	require.NoError(t, err)
+	require.NotNil(t, fe.logPager)
+	require.Contains(t, fe.logPager.Logs.View(), "hello from lint")
+
+	fe.handleNavKeyUV(uv.KeyPressEvent(uv.Key{Code: uv.KeyEscape}))
+	require.Nil(t, fe.logPager, "esc goes to the trace view")
+
+	// No span is focused, as in a zoomed view: L goes back to the stream.
+	fe.handleNavKeyUV(uv.KeyPressEvent(uv.Key{Text: "L", Code: 'L'}))
+	require.NotNil(t, fe.logPager, "L reopens the stream")
+	require.Equal(t, "lint", fe.logPager.Title)
+	require.Contains(t, fe.logPager.Logs.View(), "hello from lint")
+}

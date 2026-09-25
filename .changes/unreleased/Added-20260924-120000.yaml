@@ -1,0 +1,16 @@
+kind: Added
+body: |
+  New `dagger cloud traces` commands:
+  - `status` shows if this installation sends traces to Dagger Cloud.
+  - `list` lists the local and CI traces of an org. Flags filter the traces by
+    repository, branch, commit, pull request, status, sender, command, time and
+    duration.
+  - `view` shows a trace. `--last` selects your most recent trace, `-w` opens
+    it in the web UI, and `--log` shows the full logs in a pager.
+
+  `dagger trace` and `dagger cloud logs` are now hidden aliases for
+  `dagger cloud traces view` and `dagger cloud traces view --log`.
+time: 2026-09-24T12:00:00Z
+custom:
+  Author: shykes
+  PR: 14343

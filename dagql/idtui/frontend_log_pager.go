@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -272,7 +273,13 @@ func (fe *frontendPretty) renderLogPager(ctx tuist.Context) {
 }
 
 func (fe *frontendPretty) spanHasLogs(span *dagui.Span) bool {
-	if span == nil || fe.logs == nil {
+	if span == nil {
+		return false
+	}
+	if fe.logStreamFor(span.ID) != nil {
+		return true
+	}
+	if fe.logs == nil {
 		return false
 	}
 	logs := fe.logs.Logs[span.ID]
@@ -292,6 +299,15 @@ func (fe *frontendPretty) currentLogSpan() *dagui.Span {
 func (fe *frontendPretty) openFocusedLogs() {
 	span := fe.currentLogSpan()
 	if !fe.spanHasLogs(span) {
+		// No focused span with logs (e.g. a zoomed view): go back to the
+		// streamed logs, if there are some.
+		if stream := fe.logStream; stream != nil {
+			fe.showLogPager(stream.id, stream.title, "", stream.vt)
+		}
+		return
+	}
+	if stream := fe.logStreamFor(span.ID); stream != nil {
+		fe.showLogPager(span.ID, stream.title, "", stream.vt)
 		return
 	}
 	title := span.Name
@@ -314,10 +330,13 @@ func (fe *frontendPretty) openLogPager(span *dagui.Span, title, titleIcon string
 	if title == "" {
 		title = span.Name
 	}
-	logs := fe.logs.Logs[span.ID]
+	fe.showLogPager(span.ID, title, titleIcon, fe.logs.Logs[span.ID])
+}
+
+func (fe *frontendPretty) showLogPager(id dagui.SpanID, title, titleIcon string, logs *Vterm) {
 	fe.logPager = &LogPagerView{
 		Profile:   fe.profile,
-		SpanID:    span.ID,
+		SpanID:    id,
 		Title:     title,
 		TitleIcon: titleIcon,
 		Logs:      logs,
@@ -422,4 +441,55 @@ func (fe *frontendPretty) updateLogPagerForLogs(spanID dagui.SpanID) {
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
 	}
+}
+
+// logStream is a log buffer filled by OpenLogStream's writer, for one span.
+type logStream struct {
+	id    dagui.SpanID
+	title string
+	vt    *Vterm
+}
+
+func (fe *frontendPretty) logStreamFor(id dagui.SpanID) *logStream {
+	if fe.logStream == nil || fe.logStream.id != id {
+		return nil
+	}
+	return fe.logStream
+}
+
+// OpenLogStream opens the log pager on a new buffer for id and returns a
+// writer that appends to it. 'dagger cloud traces view --log' uses it to page
+// a span's rolled-up logs, which the per-span buffers keep apart.
+func (fe *frontendPretty) OpenLogStream(id dagui.SpanID, title string) io.Writer {
+	stream := &logStream{id: id, title: title, vt: NewVterm(fe.profile)}
+	fe.dispatch(func() {
+		if fe.logPager != nil {
+			fe.closeLogPager()
+		}
+		// Size the buffer before the first write: text written at width 0 is
+		// lost. The pager keeps it sized after that.
+		if fe.window.Width > 0 {
+			stream.vt.SetPrefix("")
+			stream.vt.SetWidth(fe.window.Width)
+			stream.vt.SetHeight(max(fe.window.Height-3, 1))
+		}
+		fe.logStream = stream
+		fe.showLogPager(id, title, "", stream.vt)
+	})
+	return logStreamWriter{fe: fe, stream: stream}
+}
+
+type logStreamWriter struct {
+	fe     *frontendPretty
+	stream *logStream
+}
+
+func (w logStreamWriter) Write(p []byte) (int, error) {
+	// Dispatch runs later on the UI goroutine; the caller may reuse p.
+	buf := append([]byte(nil), p...)
+	w.fe.dispatch(func() {
+		_, _ = w.stream.vt.Write(buf)
+		w.fe.updateLogPagerForLogs(w.stream.id)
+	})
+	return len(p), nil
 }

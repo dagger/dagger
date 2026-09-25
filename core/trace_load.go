@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 
@@ -28,10 +27,11 @@ import (
 
 func (m *MCP) loadTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct{ Trace string }) (any, error) {
-		id, err := normalizeTraceArg(args.Trace)
+		ref, err := cloud.ParseTraceRef(args.Trace)
 		if err != nil {
 			return nil, err
 		}
+		id := ref.TraceID
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return nil, err
@@ -56,30 +56,6 @@ func (m *MCP) loadTraceTool(srv *dagql.Server) LLMToolFunc {
 		defer store.Close()
 		return loadCloudTrace(ctx, store, id, client.FetchTrace)
 	})
-}
-
-// URLs are identifiers only: requests always go to the configured Cloud API,
-// never to a model-supplied host. Do not accept arbitrary URLs or shell syntax.
-func normalizeTraceArg(arg string) (string, error) {
-	arg = strings.TrimSpace(arg)
-	if fields := strings.Fields(arg); len(fields) == 3 && fields[0] == "dagger" && fields[1] == "trace" {
-		arg = fields[2]
-	}
-	if u, err := url.Parse(arg); err == nil && u.Scheme == "https" && u.Host == "dagger.cloud" && u.User == nil {
-		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-		// Cloud links are /<org>/traces/<id> (and may include a span suffix).
-		for i := range parts {
-			if parts[i] == "traces" && i+1 < len(parts) {
-				arg = parts[i+1]
-				break
-			}
-		}
-	}
-	id, err := trace.TraceIDFromHex(strings.ToLower(arg))
-	if err != nil {
-		return "", fmt.Errorf("invalid trace: pass a 32-character hex trace ID, 'dagger trace <id>', or a https://dagger.cloud/<org>/traces/<id> URL")
-	}
-	return id.String(), nil
 }
 
 type cloudTraceFetch func(context.Context, string, cloud.TraceImportSink) error

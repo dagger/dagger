@@ -672,6 +672,8 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger script",
 		"dagger shell",
 		"dagger trace",
+		"dagger cloud traces view",
+		"dagger cloud logs",
 		"dagger up",
 		"dagger workspace exec",
 		"dagger workspace migrate",

@@ -2742,13 +2742,13 @@ func (m *MCP) toolErrorResponse(ctx context.Context, err error) string {
 func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
 		Name: "LoadTrace",
-		Description: "Load a historical trace from Dagger Cloud into this session for inspection. Use this when asked to investigate a trace ID, Cloud trace URL, or `dagger trace <id>`; do not run the interactive CLI.\n" +
+		Description: "Load a historical trace from Dagger Cloud into this session for inspection. Use this when asked to investigate a trace ID, Cloud trace URL, or `dagger cloud traces view <id>`; do not run the interactive CLI.\n" +
 			"Uses the connecting client's Cloud authentication. No recipes are executed or agents restored. Returns root span IDs for ReadTrace and ReadLogs; FindSpans, FindCalls and InspectCall also see loaded traces. Repeated loads reuse the snapshot; failed loads import nothing.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"trace": map[string]any{"type": "string", "description": "Trace ID (32 hex characters), a pasted dagger trace <id> command, or a Dagger Cloud trace URL."},
+				"trace": map[string]any{"type": "string", "description": "Trace ID (32 hex characters), a pasted dagger cloud traces view <id> command, or a Dagger Cloud trace URL."},
 			},
 			"required":             []string{"trace"},
 			"additionalProperties": false,
