@@ -112,8 +112,8 @@ func TestAgentRosterStylesFocusAndMarksReachability(t *testing.T) {
 // TestAgentRosterFocusTabSpansEntry: the focused entry is a tab filled across
 // its padding, jump number, name and state symbol -- with the prompt card's
 // shade when one is known, else reverse video -- rather than highlighting the
-// name alone and leaving the number and symbol stranded beside it. The space
-// between tabs stays unfilled, so neighbors don't merge into the fill.
+// name alone and leaving the number and symbol stranded beside it. Its
+// neighbors' padding stays unfilled.
 func TestAgentRosterFocusTabSpansEntry(t *testing.T) {
 	entries := []AgentRosterEntry{
 		{ID: "a", Name: "chief", State: "IDLE"},
@@ -195,7 +195,7 @@ func TestAgentRosterUnknownStateIsQuiet(t *testing.T) {
 		{Name: "chief", State: "RUNNING"},
 		{Name: "fresh"},
 	}))
-	if want := "1 chief ▶   2 fresh"; line != want {
+	if want := "1 chief ▶  2 fresh"; line != want {
 		t.Fatalf("stateless agent rendered with a lifecycle indicator: got %q, want %q", line, want)
 	}
 }
