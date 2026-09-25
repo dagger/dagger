@@ -82,6 +82,9 @@ type Server struct {
 	// sessionCloudFlushTimeout overrides sessionTelemetryFlushTimeout when
 	// set, for tests.
 	sessionCloudFlushTimeout time.Duration
+	// cloudReach remembers whether this engine reaches the Cloud URLs clients
+	// hand it, so each session need not probe.
+	cloudReach cloudReachability
 
 	//
 	// state directory/db paths

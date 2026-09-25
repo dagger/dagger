@@ -15,6 +15,9 @@ package main
 // "<credential> <path>", and the writer and service of each resource in a
 // metrics request to /events/<request path>.json.writers.
 //
+// A HEAD request, the engine's check that it reaches the Cloud URL, gets a
+// bare 401 as from Dagger Cloud, on any path and unrecorded.
+//
 // Paths starting with /hang/ simulate a Cloud outage: the server reads the
 // request and then sits on it longer than any client or engine timeout.
 
@@ -42,6 +45,10 @@ import (
 
 func main() {
 	err := http.ListenAndServe(":8080", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //nolint: gosec
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/hang/") {
 			_, _ = io.Copy(io.Discard, r.Body)
 			select {

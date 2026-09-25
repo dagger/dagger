@@ -4,19 +4,23 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -69,6 +73,11 @@ func newCloudReceiver(t *testing.T, hold bool) *cloudReceiver {
 }
 
 func (r *cloudReceiver) serve(w http.ResponseWriter, req *http.Request) {
+	// The engine's reachability probe, which Cloud answers even while an
+	// export hangs.
+	if req.Method == http.MethodHead {
+		return
+	}
 	select {
 	case r.entered <- struct{}{}:
 	default:
@@ -402,6 +411,10 @@ func TestTelemetryStreamsConfirmCloudPublishing(t *testing.T) {
 		}},
 		{name: "exporter setup failed", md: &engine.ClientMetadata{
 			CloudAuth: basicCloudAuth("dag_test_token"), CloudURL: "http://[::1]:namedport",
+			CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+		}},
+		{name: "Cloud URL unreachable", md: &engine.ClientMetadata{
+			CloudAuth: basicCloudAuth("dag_test_token"), CloudURL: refusedURL(t),
 			CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 		}},
 	} {
@@ -1079,4 +1092,126 @@ func TestStopCloudTokenRefreshWaitsDespiteSpentBudget(t *testing.T) {
 		t.Fatal("stopped waiting before the file operation finished")
 	}
 	require.Less(t, time.Since(start), cloudRefreshFileOpWait)
+}
+
+// refusedURL is a Cloud URL whose port nothing listens on.
+func refusedURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := l.Addr().String()
+	require.NoError(t, l.Close())
+	return "http://" + addr
+}
+
+// A session whose main client asked the engine to publish, with a Cloud URL
+// the engine cannot reach, does not publish: nothing it or its containers
+// emit goes to Cloud through it, and it does not ask a scale-out engine to
+// publish either, so the client keeps forwarding the session's telemetry.
+func TestUnreachableCloudURLLeavesTheClientForwarding(t *testing.T) {
+	t.Parallel()
+	sess, root := newCloudTestSession(t, &Server{}, &engine.ClientMetadata{
+		CloudAuth:               basicCloudAuth("dag_test_token"),
+		CloudURL:                refusedURL(t),
+		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+	})
+	t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
+
+	require.False(t, sess.publishesToCloud())
+	require.Nil(t, sess.cloudSpans)
+	require.Nil(t, sess.cloudLogs)
+	require.Nil(t, sess.cloudMetrics)
+	require.Equal(t, []sdkmetric.Exporter{root.metricExporter}, sess.postedMetricExporters(root.metricExporter))
+
+	var params engineclient.Params
+	sess.scaleOutTelemetryParams(root, &params)
+	require.False(t, params.EngineCloudTelemetry)
+	require.Empty(t, params.CloudURL)
+	require.Nil(t, params.EngineTraceWithoutCloud)
+}
+
+// A Cloud URL's reachability is probed within cloudReachTimeout and then
+// trusted for cloudReachOK when reached, cloudReachFailed when not.
+func TestCloudReachabilityCache(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(0, 0)
+	probes := map[string]int{}
+	unreachable := errors.New("unreachable")
+	c := cloudReachability{
+		now: func() time.Time { return now },
+		probe: func(ctx context.Context, cloudURL string) error {
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok)
+			require.LessOrEqual(t, time.Until(deadline), cloudReachTimeout)
+			probes[cloudURL]++
+			if cloudURL == "http://down" {
+				return unreachable
+			}
+			return nil
+		},
+	}
+	ctx := context.Background()
+
+	require.NoError(t, c.check(ctx, "http://up"))
+	require.ErrorIs(t, c.check(ctx, "http://down"), unreachable)
+	now = now.Add(cloudReachFailed - time.Second)
+	require.NoError(t, c.check(ctx, "http://up"))
+	require.ErrorIs(t, c.check(ctx, "http://down"), unreachable)
+	require.Equal(t, map[string]int{"http://up": 1, "http://down": 1}, probes)
+
+	now = now.Add(time.Second)
+	require.ErrorIs(t, c.check(ctx, "http://down"), unreachable)
+	require.NoError(t, c.check(ctx, "http://up"))
+	require.Equal(t, map[string]int{"http://up": 1, "http://down": 2}, probes)
+
+	now = time.Unix(0, 0).Add(cloudReachOK)
+	require.NoError(t, c.check(ctx, "http://up"))
+	require.Equal(t, 2, probes["http://up"])
+}
+
+// Concurrent checks of a URL without a current result share one probe, and
+// all get its result: on a cold cache, and again once the result expired.
+func TestCloudReachabilityCoalescesConcurrentChecks(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		var (
+			clockMu sync.Mutex
+			clock   = time.Unix(0, 0)
+		)
+		var probes atomic.Int32
+		var release chan struct{}
+		unreachable := errors.New("unreachable")
+		c := cloudReachability{
+			now: func() time.Time {
+				clockMu.Lock()
+				defer clockMu.Unlock()
+				return clock
+			},
+			probe: func(ctx context.Context, cloudURL string) error {
+				probes.Add(1)
+				<-release
+				return unreachable
+			},
+		}
+
+		for round := int32(1); round <= 2; round++ {
+			release = make(chan struct{})
+			errs := make(chan error, 8)
+			for range 8 {
+				go func() { errs <- c.check(context.Background(), "http://down") }()
+			}
+			// Every caller is now blocked, in the probe or waiting on it.
+			synctest.Wait()
+			probed := probes.Load()
+			close(release)
+			for range 8 {
+				require.ErrorIs(t, <-errs, unreachable)
+			}
+			require.Equal(t, round, probed)
+
+			clockMu.Lock()
+			clock = clock.Add(cloudReachFailed)
+			clockMu.Unlock()
+		}
+	})
 }
