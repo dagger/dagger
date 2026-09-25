@@ -120,19 +120,12 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			Doc(`Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.`,
 				`This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.`,
 				`Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.`,
+				`A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.`,
 				`Idempotent per subscriber; re-subscribing replaces the state set.`).
 			Args(
 				dagql.Arg("subscriber").Doc(`The agent to deliver event messages to. You must hold its handle: subscriptions are capability-based like everything else.`),
 				dagql.Arg("on").Doc(`The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.`),
 			),
-
-		dagql.NodeFunc("restoreNotify", s.restoreNotify).
-			Experimental("Agent APIs are likely to change.").
-			DoNotCache("Installs a restored lifecycle subscription.").
-			Doc(`Restore a lifecycle subscription without announcing the current state or starting work.`,
-				`Both agents must have been restored with a supplied spawn handle and never activated. An empty state set removes the subscription.`).
-			Args(dagql.Arg("subscriber").Doc(`The restored subscriber capability.`),
-				dagql.Arg("on").Doc(`The recorded lifecycle state filter.`)),
 
 		dagql.NodeFunc("discardRestore", s.discardRestore).
 			Experimental("Agent APIs are likely to change.").
@@ -425,28 +418,6 @@ func (s agentSchema) notify(ctx context.Context, parent dagql.ObjectResult[*core
 		return res, err
 	}
 	if err := agents.Notify(ctx, parent, subscriber, args.On); err != nil {
-		return res, err
-	}
-	return agentSelfID(ctx, parent)
-}
-
-func (s agentSchema) restoreNotify(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
-	Subscriber core.AgentID
-	On         []core.AgentState
-}) (res dagql.Result[core.AgentID], _ error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return res, err
-	}
-	subscriber, err := args.Subscriber.Load(ctx, srv)
-	if err != nil {
-		return res, err
-	}
-	agents, err := agentRuntimes(ctx)
-	if err != nil {
-		return res, err
-	}
-	if err := agents.RestoreNotify(ctx, parent, subscriber, args.On); err != nil {
 		return res, err
 	}
 	return agentSelfID(ctx, parent)

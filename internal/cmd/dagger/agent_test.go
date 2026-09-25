@@ -103,7 +103,7 @@ func (DaggerCMDSuite) TestTraceRestoreRuntimeQueries(ctx context.Context, t *tes
 	require.NoError(t, target.Subscribe(ctx, worker, chief, []string{"FAILED", "IDLE"}))
 	chiefState, err := dagger.Ref[*dagger.Agent](dag, dagger.ID(chief)).State(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.AgentStateIdle, chiefState, "restoreNotify must not wake a subscriber")
+	require.Equal(t, dagger.AgentStateIdle, chiefState, "notify on an inert restored agent must not wake a subscriber")
 	workerError, err := dagger.Ref[*dagger.Agent](dag, dagger.ID(worker)).Error(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "original failure", workerError)

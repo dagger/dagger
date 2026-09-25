@@ -90,7 +90,7 @@ func TestControlCaptureFailureReplacesPreviousAnchor(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestRestoreNotifySuppressesHistoryButKeepsFutureEdges(t *testing.T) {
+func TestNotifySkipsLevelCheckForInertRestore(t *testing.T) {
 	registry := NewAgentRuntimes()
 	ctx := testAgentContext(t, t.Context(), "worker", "worker")
 	worker, _ := AgentFromContext(ctx)
@@ -100,7 +100,11 @@ func TestRestoreNotifySuppressesHistoryButKeepsFutureEdges(t *testing.T) {
 	subscriber := newAgentRuntime(registry, "chief", chief)
 	watched.restored, subscriber.restored = true, true
 	registry.entries["worker"], registry.entries["chief"] = watched, subscriber
-	require.NoError(t, registry.RestoreNotify(ctx, worker, chief, []AgentState{AgentStateIdle}))
+	require.NoError(t, registry.Notify(ctx, worker, chief, []AgentState{AgentStateIdle}))
+	watched.mu.Lock()
+	require.Empty(t, watched.eventQueue, "restoration does not announce a historical completion")
+	require.False(t, watched.eventDispatchRunning)
+	watched.mu.Unlock()
 	require.Empty(t, subscriber.mailbox, "restoration does not enqueue a historical completion")
 	require.False(t, subscriber.started, "restoration never launches a model loop")
 	watched.mu.Lock()
@@ -115,7 +119,7 @@ func TestRestoreNotifySuppressesHistoryButKeepsFutureEdges(t *testing.T) {
 	require.Equal(t, "chief", watched.eventQueue[0].subscriberKey)
 	watched.eventQueue = nil
 	watched.mu.Unlock()
-	require.NoError(t, registry.RestoreNotify(ctx, worker, chief, []AgentState{AgentStateFailed}))
+	require.NoError(t, registry.Notify(ctx, worker, chief, []AgentState{AgentStateFailed}))
 	watched.mu.Lock()
 	watched.transitionLocked(func() { watched.stepping = true })
 	watched.transitionLocked(func() { watched.idleEventDue = true; watched.stepping = false })
@@ -124,14 +128,29 @@ func TestRestoreNotifySuppressesHistoryButKeepsFutureEdges(t *testing.T) {
 	require.Len(t, watched.eventQueue, 1)
 	watched.eventQueue = nil
 	watched.mu.Unlock()
-	require.NoError(t, registry.RestoreNotify(ctx, worker, chief, nil))
+	require.NoError(t, registry.Notify(ctx, worker, chief, nil))
 	watched.mu.Lock()
 	require.Empty(t, watched.subs["chief"].states)
 	watched.mu.Unlock()
-	subscriber.activated = true
-	require.Error(t, registry.RestoreNotify(ctx, worker, chief, nil))
-	subscriber.activated, subscriber.restored = false, false
-	require.Error(t, registry.RestoreNotify(ctx, worker, chief, nil), "fresh dormant entries are not restored provenance")
+
+	// Once activated, or when never restored, the watched agent's current
+	// state was reached in this session and the level check applies again.
+	for _, tc := range []struct {
+		name                string
+		restored, activated bool
+	}{
+		{"activated restore", true, true},
+		{"fresh entry", false, false},
+	} {
+		watched.mu.Lock()
+		watched.restored, watched.activated = tc.restored, tc.activated
+		watched.mu.Unlock()
+		require.NoError(t, registry.Notify(ctx, worker, chief, []AgentState{AgentStateFailed}), tc.name)
+		watched.mu.Lock()
+		require.Len(t, watched.eventQueue, 1, tc.name)
+		watched.eventQueue = nil
+		watched.mu.Unlock()
+	}
 }
 
 func TestCloseControlWaitsForProducersAndPreservesCause(t *testing.T) {
