@@ -1000,12 +1000,12 @@ func TestShellToolInlineTestsAlignWithToolDot(t *testing.T) {
 	}
 }
 
-// TestShellToolInlineRollups verifies a tool call surfaces the checks and
-// generators it ran as inline rollups -- they sit behind the tool's boundary,
-// so nothing else in the transcript would show them -- hung off the same
-// dot-aligned pipe as its tests. A check's tests nest under the check, and the
-// TESTS rollup keeps just the cases no check claimed, so every test shows
-// exactly once.
+// TestShellToolInlineRollups verifies a tool call surfaces the checks,
+// generators and services it ran as inline rollups -- they sit behind the
+// tool's boundary, so nothing else in the transcript would show them -- hung
+// off the same dot-aligned pipe as its tests. A check's tests nest under the
+// check, and the TESTS rollup keeps just the cases no check claimed, so every
+// test shows exactly once.
 func TestShellToolInlineRollups(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()
@@ -1017,6 +1017,7 @@ func TestShellToolInlineRollups(t *testing.T) {
 		unitByte
 		docsByte
 		directTestByte
+		serviceByte
 	)
 	id := prettyTestSpanID
 	start := time.Unix(100, 0)
@@ -1045,9 +1046,13 @@ func TestShellToolInlineRollups(t *testing.T) {
 	// TESTS rollup of its own rather than vanishing behind the checks.
 	directTest := span(directTestByte, id(toolByte), "TestDirect")
 	directTest.TestCaseName, directTest.TestStatus = "TestDirect", dagui.TestStatusFailure
+	// A service the tool started, still running.
+	service := span(serviceByte, id(toolByte), "exec postgres")
+	service.Service, service.ServiceName = true, "db.dagger.local"
+	service.EndTime, service.Final = time.Time{}, false
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{ID: id(rootByte), TraceID: prettyTestTraceID(), Name: "shell", StartTime: start},
-		tool, lint, lintTest, unit, docs, directTest,
+		tool, lint, lintTest, unit, docs, directTest, service,
 	})
 	db.SetPrimarySpan(id(rootByte))
 
@@ -1071,7 +1076,7 @@ func TestShellToolInlineRollups(t *testing.T) {
 		t.Fatalf("shell render did not include the tool row:\n%s", joined)
 	}
 	dot, name := col(toolLine, "•"), col(toolLine, "CheckAll")
-	for _, heading := range []string{"CHECKS", "GENERATORS"} {
+	for _, heading := range []string{"CHECKS", "GENERATORS", "SERVICES"} {
 		line, ok := findPrettyTestLine(lines, heading)
 		if !ok {
 			t.Fatalf("tool row did not surface an inline %s rollup:\n%s", heading, joined)
@@ -1083,7 +1088,7 @@ func TestShellToolInlineRollups(t *testing.T) {
 			t.Fatalf("%s heading at column %d, want the tool name's column %d:\n%s", heading, got, name, joined)
 		}
 	}
-	for _, want := range []string{"✘ 1 failed", "✔ 1 passed", "lint", "unit", "docs"} {
+	for _, want := range []string{"✘ 1 failed", "✔ 1 passed", "lint", "unit", "docs", "db.dagger.local", "RUNNING"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("inline rollups missing %q:\n%s", want, joined)
 		}
@@ -1105,7 +1110,7 @@ func TestShellToolInlineRollups(t *testing.T) {
 	fe.claims = newRenderClaims()
 	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
 	report := strings.Join(fe.conversationReport(tuist.Context{Width: 120}, r, false), "\n")
-	for _, want := range []string{"CHECKS", "GENERATORS", "lint", "unit", "docs"} {
+	for _, want := range []string{"CHECKS", "GENERATORS", "SERVICES", "lint", "unit", "docs", "db.dagger.local"} {
 		if !strings.Contains(report, want) {
 			t.Fatalf("conversation report missing %q:\n%s", want, report)
 		}

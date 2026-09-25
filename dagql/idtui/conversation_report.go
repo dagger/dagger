@@ -111,6 +111,7 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 		fe.renderMessageTests(ctx, node.Span, len(indent), checkClaims),
 		checks,
 		indentLines("  ", fe.renderMessageGenerators(ctx, r, node.Span)),
+		indentLines("  ", fe.renderMessageServices(ctx, r, node.Span)),
 	} {
 		if len(rollup) == 0 {
 			continue

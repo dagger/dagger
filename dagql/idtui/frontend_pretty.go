@@ -664,8 +664,9 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	}
 }
 
-// renderRowExtras renders what follows a row's title: inline test, check and
-// generator reports, its own inline logs, and the rest (errors, debug).
+// renderRowExtras renders what follows a row's title: inline test, check,
+// generator and service reports, its own inline logs, and the rest (errors,
+// debug).
 func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagui.TraceRow, visualFocused bool) {
 	// A tool call's CHECKS rollup nests each check's tests, so render it first,
 	// under forked claims, and leave its TESTS rollup just the cases the checks
@@ -697,6 +698,11 @@ func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagu
 	if inlineGenerators := s.renderInlineGenerators(ctx, r, row); len(inlineGenerators) > 0 {
 		s.selfLineCount += len(inlineGenerators)
 		ctx.Lines(inlineGenerators...)
+	}
+
+	if inlineServices := s.renderInlineServices(ctx, r, row); len(inlineServices) > 0 {
+		s.selfLineCount += len(inlineServices)
+		ctx.Lines(inlineServices...)
 	}
 
 	// Render this row's own inline logs via its memoized LogsView child, so the
