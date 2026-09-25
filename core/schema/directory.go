@@ -386,6 +386,10 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("changes").Doc(`Changes to merge into the actual changeset`),
 				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
 			),
+		dagql.NodeFunc("__mergeForWorkspaceCommit", s.changesetMergeForWorkspaceCommit).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`(Internal-only) Reconcile approved workspace edits with incoming commit changes.`),
 		dagql.NodeFunc("__mergeWithChangeset", s.changesetMergeWithChangeset).
 			IsPersistable().
 			View(AllVersion).

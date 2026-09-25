@@ -36,6 +36,11 @@ type Query struct {
 
 	cacheVolumeStoreMu sync.Mutex
 	cacheVolumeStore   *cacheVolumeStore
+
+	// Optional capture-approved donors belong to this client's Query, never
+	// the engine or persisted recipes. They contain capabilities, not objects.
+	hostHistoryMu sync.Mutex
+	hostHistory   map[hostHistoryKey]hostHistoryDonor
 }
 
 var (

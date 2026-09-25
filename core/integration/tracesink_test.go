@@ -1,22 +1,60 @@
 package core
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"os/exec"
+	"regexp"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
+
+// runWithPrivateTraceSession re-execs just this test when engine-dev supplies a
+// shared nested session. Inherited SDK session variables can bypass the explicit
+// from-source runner; they also prevent changing workdir or installing a trace
+// sink. The child uses the explicitly configured runner and CLI, with its own
+// session, without mutating the parallel test process's environment. Callers
+// must return when it returns true. Removing the session variables also prevents
+// recursive re-exec.
+func runWithPrivateTraceSession(ctx context.Context, t *testctx.T) bool {
+	t.Helper()
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); !nested {
+		return false
+	}
+	require.NotEmpty(t, os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"))
+	require.NotEmpty(t, os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN"))
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	parts := strings.Split(t.Name(), "/")
+	for i, part := range parts {
+		parts[i] = "^" + regexp.QuoteMeta(part) + "$"
+	}
+	cmd := exec.CommandContext(ctx, binary, "-test.run="+strings.Join(parts, "/"), "-test.v", "-test.count=1")
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, "DAGGER_SESSION_PORT=") && !strings.HasPrefix(env, "DAGGER_SESSION_TOKEN=") {
+			cmd.Env = append(cmd.Env, env)
+		}
+	}
+	out, err := cmd.CombinedOutput()
+	t.Logf("private-session test:\n%s", out)
+	require.NoError(t, err)
+	return true
+}
 
 // agentTraceSink is the consumer half of a trace-driven client, stood up
 // in-process: an OTLP endpoint the session's CLI forwards engine telemetry

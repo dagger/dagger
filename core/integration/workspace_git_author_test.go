@@ -107,6 +107,9 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorFromModule(ctx context.Con
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitResolvedIdentityReplay(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
 	c := connect(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c).
 		WithEnvVariable("GIT_CONFIG_NOSYSTEM", "1").

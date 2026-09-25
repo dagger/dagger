@@ -2,10 +2,17 @@ package core
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
@@ -77,8 +84,844 @@ func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace
 	return got, nil
 }
 
+// Reconciliation is a filesystem operation as well as a Git operation. Git's
+// tree hash cannot detect dropped ownership, rich modes, xattrs or empty dirs.
+// Inspect the tree as a consumer sees it, including the root directory. Times
+// and inode numbers are fresh checkout artifacts, not stable between even two
+// legacy runs; all xattrs except OverlayFS's origin bookkeeping are compared.
+func workspaceCommitManifest(ctx context.Context, t *testctx.T, inspector *dagger.Container, dir *dagger.Directory) map[string]workspaceCommitManifestEntry {
+	t.Helper()
+	out, err := inspector.WithMountedDirectory("/inspect", dir).
+		WithExec([]string{"python3", "-c", `
+import json, os, stat
+root = '/inspect'
+entries = {}
+def visit(rel):
+    path = os.path.join(root, rel)
+    s = os.lstat(path)
+    item = dict(mode=s.st_mode, uid=s.st_uid, gid=s.st_gid,
+        xattrs={name: os.getxattr(path, name, follow_symlinks=False).hex()
+                for name in sorted(os.listxattr(path, follow_symlinks=False))
+                if name != 'trusted.overlay.origin'})
+    if stat.S_ISLNK(s.st_mode):
+        item['target'] = os.readlink(path)
+    elif stat.S_ISREG(s.st_mode):
+        with open(path, 'rb') as f:
+            item['contents'] = f.read().hex()
+    entries[rel] = item
+    if stat.S_ISDIR(s.st_mode):
+        for name in sorted(os.listdir(path)):
+            visit(name if rel == '.' else rel + '/' + name)
+visit('.')
+print(json.dumps(entries, sort_keys=True))
+`}).Stdout(ctx)
+	require.NoError(t, err)
+	var manifest map[string]workspaceCommitManifestEntry
+	require.NoError(t, json.Unmarshal([]byte(out), &manifest))
+	require.Contains(t, manifest, ".", "must inspect directory root metadata")
+	return manifest
+}
+
+type workspaceCommitManifestEntry struct {
+	Mode     uint32            `json:"mode"`
+	UID      uint32            `json:"uid"`
+	GID      uint32            `json:"gid"`
+	Xattrs   map[string]string `json:"xattrs"`
+	Target   string            `json:"target"`
+	Contents string            `json:"contents"`
+}
+
+// This is a complete local SHA-1 repository, not a git daemon or remote clone.
+// Source workspaces use its direct Git tree; only the oracle obscures that
+// provenance. Keep this small correctness fixture separate from the perf test.
+func workspaceReconciliationFixture(c *dagger.Client) (*dagger.Container, *dagger.Container) {
+	inspector := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git", "python3"})
+	fixture := inspector.WithWorkdir("/repo").
+		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
+		WithEnvVariable("GIT_COMMITTER_DATE", workspaceCommitDate).
+		WithExec([]string{"sh", "-ec", `
+git init --object-format=sha1 -b main
+git config user.name Oracle
+git config user.email oracle@example.com
+git config commit.gpgsign false
+git config core.hooksPath /dev/null
+mkdir -p nested
+printf 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n' > file.txt
+printf 'base\n' > pending.txt
+printf 'delete\n' > delete.txt
+printf 'nested\n' > nested/a.txt
+printf 'file\n' > file-to-dir
+printf 'file\n' > file-to-link
+printf '#!/bin/sh\n' > run
+printf '$Id$\n' > identity.id
+printf 'ignored*\n' > .gitignore
+ln -s file.txt link
+git add .
+git commit -m base
+git gc --prune=now
+`})
+	return fixture, inspector
+}
+
+type workspaceReconciliationCase struct {
+	base        *dagger.Workspace
+	name        string
+	attributes  bool
+	pending     func(*dagger.Directory) *dagger.Directory
+	incoming    func(*dagger.Directory) *dagger.Directory
+	include     []string
+	conflict    bool
+	wantFile    string
+	checkInput  func(map[string]workspaceCommitManifestEntry)
+	checkResult func(*dagger.Workspace)
+}
+
+func checkWorkspaceReconciliation(ctx context.Context, t *testctx.T, c *dagger.Client, fixture, inspector *dagger.Container, tc workspaceReconciliationCase) {
+	t.Helper()
+	t.Logf("reconciliation oracle: %s", tc.name)
+	if tc.attributes {
+		fixture = fixture.WithExec([]string{"sh", "-ec", `
+printf '*.txt text eol=lf\n*.id ident\n' > .gitattributes
+printf '*.txt text eol=crlf\n' > nested/.gitattributes
+git add .
+git commit -m attributes
+`})
+	}
+	base := tc.base
+	if base == nil {
+		base = fixture.Directory("/repo").AsGit().Head().AsWorkspace()
+	}
+	before := base.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	pending := before.WithNewFile("pending.txt", "keep pending\n")
+	if tc.pending != nil {
+		pending = tc.pending(pending)
+	}
+	// Both commits must receive this exact frozen workspace, not separately
+	// captured or reconstructed receivers whose inputs might differ.
+	id, err := base.WithChanges(pending.Changes(before)).ID(ctx)
+	require.NoError(t, err, tc.name)
+	working := dagger.Ref[*dagger.Workspace](c, id)
+	original := workspaceCommitManifest(ctx, t, inspector, working.Directory("/"))
+	if tc.checkInput != nil {
+		tc.checkInput(original)
+	}
+	changes := working.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: tc.include})
+	if tc.incoming != nil {
+		changes = tc.incoming(before).Changes(before)
+	}
+	_, err = changes.ModifiedPaths(ctx) // Match review-before-commit workflow.
+	require.NoError(t, err, tc.name)
+	wrappedBefore := changes.Before().WithNewFile(".oracle-provenance", "").WithoutFile(".oracle-provenance")
+	oracle := changes.After().Changes(wrappedBefore)
+	commit := func(delta *dagger.Changeset) (*dagger.Workspace, error) {
+		id, err := working.WithCommit(delta, "reconcile "+tc.name, workspaceCommitDate, dagger.WorkspaceWithCommitOpts{
+			AuthorName: "Oracle", AuthorEmail: "oracle@example.com",
+		}).ID(ctx)
+		return dagger.Ref[*dagger.Workspace](c, id), err
+	}
+	fast, fastErr := commit(changes)
+	legacy, legacyErr := commit(oracle)
+	if tc.conflict {
+		require.ErrorContains(t, fastErr, "conflict", tc.name)
+		require.ErrorContains(t, legacyErr, "conflict", tc.name)
+		require.Equal(t, original, workspaceCommitManifest(ctx, t, inspector, working.Directory("/")), "conflict mutated the receiver")
+		return
+	}
+	require.NoError(t, fastErr, tc.name)
+	require.NoError(t, legacyErr, tc.name)
+	baseSHA, err := working.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	fastSHA, err := fast.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	legacySHA, err := legacy.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, legacySHA, fastSHA, "%s: exact commit objects", tc.name)
+	require.NotEqual(t, baseSHA, fastSHA)
+	for _, result := range []*dagger.Workspace{fast, legacy} {
+		if tc.checkResult != nil {
+			tc.checkResult(result)
+		}
+		parents, err := result.Git().Head().TargetCommit().ParentShas(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{baseSHA}, parents, tc.name)
+		contents, err := result.File("pending.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep pending\n", contents, tc.name)
+		if tc.wantFile != "" {
+			contents, err := result.File("file.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantFile, contents, tc.name)
+		}
+	}
+	fastPending, legacyPending := fast.Git().Uncommitted(), legacy.Git().Uncommitted()
+	for _, pair := range []struct {
+		name         string
+		fast, legacy func(context.Context) ([]string, error)
+	}{
+		{"added", fastPending.AddedPaths, legacyPending.AddedPaths},
+		{"modified", fastPending.ModifiedPaths, legacyPending.ModifiedPaths},
+		{"removed", fastPending.RemovedPaths, legacyPending.RemovedPaths},
+	} {
+		got, err := pair.fast(ctx)
+		require.NoError(t, err)
+		want, err := pair.legacy(ctx)
+		require.NoError(t, err)
+		slices.Sort(got)
+		slices.Sort(want)
+		require.Equal(t, want, got, "%s: pending %s paths", tc.name, pair.name)
+		if pair.name == "modified" {
+			require.Contains(t, got, "pending.txt", tc.name)
+		}
+	}
+	require.Equal(t, workspaceCommitManifest(ctx, t, inspector, legacy.Directory("/")), workspaceCommitManifest(ctx, t, inspector, fast.Directory("/")), "%s: consumer filesystem", tc.name)
+	require.Equal(t, workspaceCommitManifest(ctx, t, inspector, legacy.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})), workspaceCommitManifest(ctx, t, inspector, fast.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})), "%s: committed checkout", tc.name)
+	require.Equal(t, original, workspaceCommitManifest(ctx, t, inspector, working.Directory("/")), "%s: receiver must remain immutable", tc.name)
+}
+
+func (WorkspaceSuite) TestWorkspaceWithCommitReconciliationOracle(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
+	fixture, inspector := workspaceReconciliationFixture(c)
+	const text = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
+	for _, tc := range []workspaceReconciliationCase{
+		{name: "ordinary", pending: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("file.txt", "selected\n")
+		}, include: []string{"file.txt"}, wantFile: "selected\n"},
+		{name: "identical selected overlap with raw metadata", pending: func(d *dagger.Directory) *dagger.Directory {
+			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"python3", "-c", `
+import os
+with open('/work/file.txt', 'w') as f: f.write('selected raw metadata\n')
+os.chown('/work/file.txt', 123, 456)
+os.chmod('/work/file.txt', 0o600)
+os.setxattr('/work/file.txt', 'user.oracle', b'selected\x00metadata')
+`}).Directory("/work")
+		}, include: []string{"file.txt"}, wantFile: "selected raw metadata\n", checkInput: func(manifest map[string]workspaceCommitManifestEntry) {
+			file := manifest["file.txt"]
+			require.Equal(t, uint32(0o600), file.Mode&0o7777)
+			require.Equal(t, uint32(123), file.UID)
+			require.Equal(t, uint32(456), file.GID)
+			require.Equal(t, hex.EncodeToString([]byte("selected\x00metadata")), file.Xattrs["user.oracle"])
+		}},
+		{name: "compatible overlapping same file", pending: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("file.txt", strings.Replace(text, "one", "OURS", 1))
+		}, incoming: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("file.txt", strings.Replace(text, "ten", "THEIRS", 1))
+		}, wantFile: strings.Replace(strings.Replace(text, "one", "OURS", 1), "ten", "THEIRS", 1)},
+		{name: "conflicting same file", pending: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("file.txt", "ours\n")
+		}, incoming: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("file.txt", "theirs\n")
+		}, conflict: true},
+		{name: "add delete type changes and symlinks", pending: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("added.txt", "added\n").WithoutFile("delete.txt").
+				WithoutDirectory("nested").WithNewFile("nested", "directory became file\n").
+				WithoutFile("file-to-dir").WithNewFile("file-to-dir/sub/child", "file became nested directory\n").
+				WithoutFile("file-to-link").WithSymlink("pending.txt", "file-to-link").
+				WithoutFile("link").WithNewFile("link", "symlink became file\n").
+				WithNewFile("pending-add", "not selected\n").WithoutFile("run")
+		}, include: []string{"added.txt", "delete.txt", "nested", "nested/**", "file-to-dir", "file-to-dir/**", "file-to-link", "link"}},
+		{name: "executable", pending: func(d *dagger.Directory) *dagger.Directory {
+			return inspector.WithMountedDirectory("/work", d).
+				WithExec([]string{"sh", "-ec", "chmod 755 /work/run; printf '#!/bin/sh\\necho new\\n' > /work/new-run; chmod 755 /work/new-run"}).Directory("/work")
+		}, include: []string{"run", "new-run"}, checkInput: func(manifest map[string]workspaceCommitManifestEntry) {
+			require.Equal(t, uint32(0o755), manifest["run"].Mode&0o7777)
+			require.Equal(t, uint32(0o755), manifest["new-run"].Mode&0o7777)
+		}},
+		{name: "static root and nested attributes", attributes: true, pending: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("file.txt", "selected\r\n").WithNewFile("nested/a.txt", "nested\r\nnew\r\n").WithNewFile("identity.id", "$Id$\nnew\n")
+		}, include: []string{"file.txt", "nested/a.txt", "identity.id"}},
+		{name: "changed root attributes", attributes: true, pending: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile(".gitattributes", "*.txt -text\n*.id -ident\n").WithNewFile("file.txt", "selected\r\n").WithNewFile("identity.id", "$Id$\nnew\n")
+		}, include: []string{".gitattributes", "file.txt", "identity.id"}},
+		{name: "changed nested attributes", attributes: true, pending: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("nested/.gitattributes", "*.txt -text\n").WithNewFile("nested/a.txt", "nested\r\nnew\r\n")
+		}, include: []string{"nested/**"}},
+		{name: "unselected ignored file", pending: func(d *dagger.Directory) *dagger.Directory {
+			return d.WithNewFile("file.txt", "selected\n").WithNewFile("ignored-pending", "ignored but visible\n")
+		}, include: []string{"file.txt"}},
+		{name: "rich metadata and empty directories", pending: func(d *dagger.Directory) *dagger.Directory {
+			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"python3", "-c", `
+import os
+os.mkdir('/work/rich')
+os.mkdir('/work/rich/empty')
+with open('/work/rich/data', 'w') as f: f.write('unselected rich data\n')
+for p in ['/work', '/work/rich', '/work/rich/empty', '/work/rich/data']:
+    os.chown(p, 123, 456)
+    os.chmod(p, 0o2750 if os.path.isdir(p) else 0o4751)
+    os.setxattr(p, 'user.oracle', b'preserve\x00metadata')
+with open('/work/file.txt', 'w') as f: f.write('selected\n')
+`}).Directory("/work")
+		}, include: []string{"file.txt"}, checkInput: func(manifest map[string]workspaceCommitManifestEntry) {
+			for _, path := range []string{"rich", "rich/empty", "rich/data"} {
+				require.Contains(t, manifest, path)
+				require.Equal(t, uint32(123), manifest[path].UID, path)
+				require.Equal(t, uint32(456), manifest[path].GID, path)
+				require.Equal(t, hex.EncodeToString([]byte("preserve\x00metadata")), manifest[path].Xattrs["user.oracle"], path)
+			}
+			require.Equal(t, uint32(0o2750), manifest["rich"].Mode&0o7777)
+			require.Equal(t, uint32(0o4751), manifest["rich/data"].Mode&0o7777)
+		}},
+	} {
+		// testctx subtests auto-parallelize. Inline cases keep fixture use and
+		// client lifetime sequential, and make the last log name the failure.
+		checkWorkspaceReconciliation(ctx, t, c, fixture, inspector, tc)
+	}
+}
+
+func (WorkspaceSuite) TestWorkspaceRemoteFirstNativeCommit(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := workspaceReconciliationFixture(c)
+	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("file.txt", "base\n").WithNewFile("pending.txt", "base\n"))
+	const pushURL = "ssh://git@push.example.test/repo"
+	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).WithRemote("origin", url, dagger.GitRepositoryWithRemoteOpts{PushURL: pushURL}).Head().AsWorkspace()
+	checkWorkspaceReconciliation(ctx, t, c, fixture, inspector, workspaceReconciliationCase{
+		base: base, name: "remote first commit", include: []string{"file.txt"}, wantFile: "selected\n",
+		pending: func(d *dagger.Directory) *dagger.Directory { return d.WithNewFile("file.txt", "selected\n") },
+		checkResult: func(result *dagger.Workspace) {
+			gotURL, err := result.Git().Head().AsRepository().URL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, url, gotURL)
+			routing, err := inspector.WithMountedDirectory("/committed", result.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: false})).WithWorkdir("/committed").WithExec([]string{"git", "remote", "get-url", "--push", "origin"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, pushURL, strings.TrimSpace(routing))
+		},
+	})
+	require.NoError(t, c.Close())
+	traces, _ := sink.capture()
+	parents, names, native := map[string]string{}, map[string]string{}, map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+					for _, attr := range span.Attributes {
+						if span.Name == "git native commit transaction" && attr.Key == "dagger.git.native.supported" {
+							native[id] = attr.Value.GetBoolValue()
+						}
+					}
+				}
+			}
+		}
+	}
+	var promotions, writes, incremental int
+	for id, name := range names {
+		if names[parents[id]] == name {
+			continue
+		}
+		if name == "git promote remote commit base" {
+			promotions++
+		}
+		if name == "materialize incremental git checkout" {
+			incremental++
+		}
+		if name != "git commit-tree" {
+			continue
+		}
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if native[parent] {
+				writes++
+				break
+			}
+		}
+	}
+	require.Equal(t, 1, promotions, "merge and commit reuse one exact-recipe owned promotion")
+	require.Positive(t, writes, "remote first commit must really execute native commit-tree, not merely pass eligibility")
+	require.Positive(t, incremental, "remote canonical parent must be reused")
+}
+
+func (WorkspaceSuite) TestWorkspaceWithCommitNativeReconciliationTrace(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := workspaceReconciliationFixture(c)
+	checkWorkspaceReconciliation(ctx, t, c, fixture, inspector, workspaceReconciliationCase{
+		name: "ordinary native trace", include: []string{"file.txt"}, wantFile: "selected\n",
+		pending: func(d *dagger.Directory) *dagger.Directory { return d.WithNewFile("file.txt", "selected\n") },
+	})
+	require.NoError(t, c.Close()) // Drain telemetry, after all inline cases.
+	traces, _ := sink.capture()
+	parents, names, supported := map[string]string{}, map[string]string{}, map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+					for _, attr := range span.Attributes {
+						if span.Name == "git native workspace merge" && attr.Key == "dagger.git.native_merge.supported" {
+							supported[id] = attr.Value.GetBoolValue()
+						}
+					}
+				}
+			}
+		}
+	}
+	var nativeMerges, mergeTrees, legacyMerges int
+	for id, name := range names {
+		if supported[id] {
+			nativeMerges++
+		}
+		if name == "Changeset.__mergeWithChangeset" {
+			legacyMerges++
+		}
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if !supported[parent] {
+				continue
+			}
+			require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "native reconciliation fetched objects: %s", name)
+			require.NotEqual(t, "materialize local git checkout", name, "native reconciliation checked out the baseline")
+			require.NotEqual(t, "git checkout", name)
+			require.NotEqual(t, "Changeset.__mergeWithChangeset", name, "native reconciliation staged a legacy baseline")
+			if name == "git merge-tree" {
+				mergeTrees++
+			}
+			break
+		}
+	}
+	require.Positive(t, nativeMerges, "ordinary same-base local workspace must use native reconciliation")
+	require.Positive(t, mergeTrees, "must actually execute merge-tree, not only report eligibility")
+	require.Positive(t, legacyMerges, "identity-wrapped oracle must exercise the legacy merger")
+}
+
+// A commit retains both repositories in the engine. Reading their histories
+// must borrow those objects, not fetch them into another repository per log.
+func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to inspect history call structure")
+	}
+	checkout, hostGit := workspaceExportCheckout(ctx, t)
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout))...)
+	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	baseSHA, err := base.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	commit := func(message string) *dagger.Workspace {
+		t.Helper()
+		state, err := commitWorkspace(ctx, c, base.WithNewFile("base.txt", message).
+			WithNewFile("pending.txt", "keep pending"), message, []string{"base.txt"})
+		require.NoError(t, err)
+		require.Equal(t, []string{"pending.txt"}, state.Git.Uncommitted.AddedPaths)
+		return dagger.Ref[*dagger.Workspace](c, state.ID)
+	}
+	next, side := commit("next"), commit("side")
+	for _, tc := range []struct {
+		name string
+		head *dagger.GitRef
+		opts dagger.GitRefLogOpts
+		want []string
+	}{
+		{name: "ahead", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Base: base.Git().Head(), Limit: 101}, want: []string{"next"}},
+		{name: "behind", head: base.Git().Head(), opts: dagger.GitRefLogOpts{Base: next.Git().Head(), Limit: 101}},
+		{name: "divergent", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Base: side.Git().Head()}, want: []string{"next"}},
+		{name: "reverse divergent", head: side.Git().Head(), opts: dagger.GitRefLogOpts{Base: next.Git().Head()}, want: []string{"side"}},
+		{name: "path filter", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Base: base.Git().Head(), Paths: []string{"base.txt"}}, want: []string{"next"}},
+		{name: "pending is not history", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Paths: []string{"pending.txt"}}},
+	} {
+		commits, err := tc.head.Log(ctx, tc.opts)
+		require.NoError(t, err, tc.name)
+		var messages []string
+		for _, commit := range commits {
+			message, err := commit.Message(ctx)
+			require.NoError(t, err, tc.name)
+			messages = append(messages, strings.TrimSpace(message))
+		}
+		require.Equal(t, tc.want, messages, tc.name)
+	}
+	ancestor, err := next.Git().Head().CommonAncestor(side.Git().Head()).CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, ancestor)
+	require.Equal(t, baseSHA, hostGit("rev-parse", "HEAD"), "history reads and commits must leave the host alone")
+	require.Empty(t, hostGit("status", "--porcelain"))
+	require.NoError(t, c.Close()) // Drain telemetry before asserting absence.
+
+	// Inspect only history-query descendants: creating the fixture and the
+	// commits may still materialize checkouts, independently of reading logs.
+	traces, _ := sink.capture()
+	parents, names := map[string]string{}, map[string]string{}
+	discardedCheckouts := map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano < span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+					if span.Name == "materialize local git checkout" {
+						for _, attr := range span.Attributes {
+							if attr.Key == "dagger.git.checkout.discard_git_dir" && attr.Value.GetBoolValue() {
+								discardedCheckouts[id] = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	// Source-only trees created while committing also borrow local objects.
+	// Retained full checkouts still fetch to own their history independently.
+	require.NotEmpty(t, discardedCheckouts, "must exercise real local tree checkouts")
+	for id, name := range names {
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if discardedCheckouts[parent] {
+				require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "local source tree fetched objects: %s", name)
+				break
+			}
+		}
+	}
+	var walks int
+	for id, name := range names {
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if names[parent] != "GitRef.log" && names[parent] != "GitRef.commonAncestor" {
+				continue
+			}
+			require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "history query fetched objects: %s", name)
+			if strings.HasPrefix(name, "git rev-list") || strings.HasPrefix(name, "git merge-base") {
+				walks++
+			}
+			break
+		}
+	}
+	require.GreaterOrEqual(t, walks, 7, "must observe the six real log walks and merge-base, not an empty trace")
+}
+
+// TestWorkspaceScopedCommitPerformance is a deterministic, non-LLM latency
+// harness. Run it alone with -v on a fresh engine for a cold capture followed by
+// three sequential commits. Timings are observations, not performance gates.
+// Fixture creation, connection and capture are reported separately; engine/CLI
+// build time is outside this test. The fixture has no remote and uses packed
+// objects, so fetch spans describe local copying rather than network traffic.
+func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, t *testctx.T) {
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	const files, fileBytes, iterations = 12000, 8192, 3
+	started := time.Now()
+	checkout := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = checkout
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+workspaceCommitDate, "GIT_COMMITTER_DATE="+workspaceCommitDate)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-b", "main")
+	git("config", "user.name", "Performance Fixture")
+	git("config", "user.email", "performance@example.com")
+	git("config", "commit.gpgsign", "false")
+	git("config", "core.hooksPath", "/dev/null")
+	git("config", "gc.auto", "0")
+	// Fixed-seed unique text avoids an unrealistically tiny pack from repeated
+	// identical blobs. These are logical fixture bytes, not measured I/O bytes.
+	rng := rand.New(rand.NewSource(1))
+	buf := make([]byte, fileBytes/2)
+	for i := range files {
+		path := filepath.Join(checkout, fmt.Sprintf("tree/%03d/%05d.txt", i/100, i))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		_, err := rng.Read(buf)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(path, []byte(hex.EncodeToString(buf)), 0o644))
+	}
+	for _, name := range []string{"selected.txt", "pending.txt"} {
+		require.NoError(t, os.WriteFile(filepath.Join(checkout, name), []byte("base\n"), 0o644))
+	}
+	git("add", ".")
+	git("commit", "-m", "fixture")
+	git("gc", "--prune=now")
+	hostSHA := git("rev-parse", "HEAD")
+	t.Logf("PERF fixture files=%d payload_bytes=%d setup=%s git_objects=%q", files+2, files*fileBytes+10, time.Since(started), git("count-objects", "-v"))
+
+	started = time.Now()
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout), dagger.WithLogOutput(io.Discard))...)
+	t.Logf("PERF connect=%s", time.Since(started))
+	started = time.Now()
+	ws := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, hostSHA, baseSHA)
+	t.Logf("PERF capture=%s", time.Since(started))
+	ws = ws.WithNewFile("pending.txt", "keep pending\n").WithNewFile("selected.txt", "edit 1\n")
+
+	for i := 1; i <= iterations; i++ {
+		cycle := time.Now()
+		started = time.Now()
+		paths, err := ws.Git().Uncommitted().ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"selected.txt", "pending.txt"}, paths)
+		selectedID, err := ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{"selected.txt"}}).ID(ctx)
+		require.NoError(t, err)
+		before := ws.Git().Head()
+		beforeSHA, err := before.CommitSHA(ctx)
+		require.NoError(t, err)
+		preStatus := time.Since(started)
+
+		started = time.Now()
+		id, err := ws.WithCommit(dagger.Ref[*dagger.Changeset](c, selectedID), fmt.Sprintf("perf: edit %d", i), workspaceCommitDate,
+			dagger.WorkspaceWithCommitOpts{AuthorName: "Performance Fixture", AuthorEmail: "performance@example.com"}).ID(ctx)
+		require.NoError(t, err)
+		commitTime := time.Since(started)
+		next := dagger.Ref[*dagger.Workspace](c, id)
+
+		started = time.Now()
+		pending := next.Git().Uncommitted()
+		paths, err = pending.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"pending.txt"}, paths)
+		paths, err = pending.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, paths)
+		paths, err = pending.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, paths)
+		postStatus := time.Since(started)
+
+		started = time.Now()
+		head := next.Git().Head()
+		ahead, err := head.Log(ctx, dagger.GitRefLogOpts{Base: before, Limit: 101})
+		require.NoError(t, err)
+		require.Len(t, ahead, 1)
+		message, err := ahead[0].Message(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("perf: edit %d", i), strings.TrimSpace(message))
+		parents, err := ahead[0].ParentShas(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{beforeSHA}, parents)
+		behind, err := before.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
+		require.NoError(t, err)
+		require.Empty(t, behind)
+		recent, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+		require.NoError(t, err)
+		require.Len(t, recent, 2)
+		history := time.Since(started)
+
+		started = time.Now()
+		// Consume the committed tree as well as the overlaid workspace: an ID
+		// alone could hide deferred filesystem materialization.
+		tree := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		delta := tree.Changes(before.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}))
+		paths, err = delta.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"selected.txt"}, paths)
+		paths, err = delta.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, paths)
+		paths, err = delta.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, paths)
+		contents, err := tree.File("selected.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("edit %d\n", i), contents)
+		contents, err = tree.File("pending.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "base\n", contents)
+		contents, err = next.File("pending.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep pending\n", contents)
+		consume := time.Since(started)
+
+		started = time.Now()
+		ws = next.WithNewFile("selected.txt", fmt.Sprintf("edit %d\n", i+1))
+		contents, err = ws.File("selected.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("edit %d\n", i+1), contents)
+		t.Logf("PERF iteration=%d pre_status=%s withCommit=%s post_status=%s history=%s consume=%s next_edit=%s cycle=%s", i, preStatus, commitTime, postStatus, history, consume, time.Since(started), time.Since(cycle))
+	}
+	require.Equal(t, hostSHA, git("rev-parse", "HEAD"), "engine commits must leave the host alone")
+	require.Empty(t, git("status", "--porcelain"))
+	require.NoError(t, c.Close()) // Drain live spans before counting or timing them.
+	logWorkspaceCommitPerformanceTrace(t, sink, iterations)
+}
+
+type workspaceCommitTraceSample struct {
+	id, parent, name string
+	start, end       uint64
+	discard          bool
+	nativeSupported  bool
+	fallbackReason   string
+	newObjects       int64
+	newObjectBytes   int64
+	scopedStagePaths int64
+	incremental      bool
+	changedPaths     int64
+}
+
+func collectWorkspaceCommitTraceSamples(sink *agentTraceSink) map[string]workspaceCommitTraceSample {
+	byID := map[string]workspaceCommitTraceSample{}
+	traces, _ := sink.capture()
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					s := workspaceCommitTraceSample{id: id, parent: string(span.TraceId) + string(span.ParentSpanId), name: span.Name, start: span.StartTimeUnixNano, end: span.EndTimeUnixNano}
+					for _, attr := range span.Attributes {
+						switch attr.Key {
+						case "dagger.git.checkout.discard_git_dir":
+							s.discard = attr.Value.GetBoolValue()
+						case "dagger.git.native.supported", "dagger.git.native_merge.supported":
+							s.nativeSupported = attr.Value.GetBoolValue()
+						case "dagger.git.native.fallback_reason", "dagger.git.native_merge.fallback_reason":
+							s.fallbackReason = attr.Value.GetStringValue()
+						case "dagger.git.native.new_objects":
+							s.newObjects = attr.Value.GetIntValue()
+						case "dagger.git.native.new_object_bytes":
+							s.newObjectBytes = attr.Value.GetIntValue()
+						case "dagger.git.native_merge.scoped_stage_paths":
+							s.scopedStagePaths = attr.Value.GetIntValue()
+						case "dagger.git.checkout.incremental.supported":
+							s.incremental = attr.Value.GetBoolValue()
+						case "dagger.git.checkout.incremental.changed_paths":
+							s.changedPaths = attr.Value.GetIntValue()
+						}
+					}
+					byID[id] = s
+				}
+			}
+		}
+	}
+	return byID
+}
+
+// Report completed, deduplicated engine spans separately from client wall time.
+// Durations are inclusive and overlap: do not add these rows together. No byte
+// traffic, filesystem-write or object-copy counts are inferred from spans.
+func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iterations int) {
+	t.Helper()
+	byID := collectWorkspaceCommitTraceSamples(sink)
+	var ordered []workspaceCommitTraceSample
+	for _, s := range byID {
+		ordered = append(ordered, s)
+	}
+	slices.SortFunc(ordered, func(a, b workspaceCommitTraceSample) int {
+		if a.start < b.start {
+			return -1
+		}
+		if a.start > b.start {
+			return 1
+		}
+		return strings.Compare(a.id, b.id)
+	})
+	var commits, merges, fetches, walks, gitCommits, nativeCommits, nativeMerges, scratchCommits, incrementalCheckouts int
+	for _, s := range ordered {
+		fetch := strings.HasPrefix(s.name, "git fetch") || strings.HasPrefix(s.name, "fetching ")
+		if fetch {
+			for parent, ok := byID[s.parent]; ok; parent, ok = byID[parent.parent] {
+				require.NotEqual(t, "GitRef.log", parent.name, "history query fetched objects: %s", s.name)
+				require.NotEqual(t, "Workspace.withCommit", parent.name, "commit fetched objects: %s", s.name)
+				require.False(t, parent.name == "materialize local git checkout" && parent.discard, "source-only checkout fetched objects: %s", s.name)
+			}
+		}
+		// API selection and execution may have distinct spans with the same
+		// name. Keep only the outer one, in addition to deduplicating live
+		// updates by span ID, so a log query is not counted twice.
+		duplicate := false
+		for parent, ok := byID[s.parent]; ok; parent, ok = byID[parent.parent] {
+			if parent.name == s.name {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		if fetch {
+			fetches++
+		}
+		interesting := fetch
+		switch s.name {
+		case "Workspace.withCommit":
+			commits++
+			interesting = true
+		case "Changeset.__mergeWithChangeset":
+			merges++
+			interesting = true
+		case "git commit":
+			gitCommits++
+			interesting = true
+		case "git commit-tree":
+			// Reconciliation creates temporary branch objects too. Count only
+			// the actual history transaction as a new workspace commit.
+			for parent, ok := byID[s.parent]; ok; parent, ok = byID[parent.parent] {
+				if parent.name == "git native commit transaction" {
+					nativeCommits++
+					break
+				}
+				if parent.name == "git native workspace merge" {
+					scratchCommits++
+					break
+				}
+			}
+			interesting = true
+		case "git native workspace merge":
+			nativeMerges++
+			t.Logf("PERF native_merge id=%x supported=%t fallback=%q scoped_stage_paths=%d", []byte(s.id)[16:], s.nativeSupported, s.fallbackReason, s.scopedStagePaths)
+			require.True(t, s.nativeSupported, "ordinary workspace reconciliation fell back: %s", s.fallbackReason)
+			require.EqualValues(t, 3, s.scopedStagePaths, "stage the two pending paths and one selected path, not the baseline")
+			interesting = true
+		case "git native commit transaction":
+			t.Logf("PERF native id=%x supported=%t fallback=%q new_objects=%d new_object_file_bytes=%d", []byte(s.id)[16:], s.nativeSupported, s.fallbackReason, s.newObjects, s.newObjectBytes)
+			require.True(t, s.nativeSupported, "ordinary captured-workspace commit fell back: %s", s.fallbackReason)
+			interesting = true
+		case "git read-tree", "git write-tree", "git merge-tree":
+			interesting = true
+		case "GitRef.log":
+			walks++
+			interesting = true
+		case "materialize incremental git checkout":
+			require.True(t, s.incremental, "ordinary commit source checkout must use its parent materialization")
+			require.EqualValues(t, 1, s.changedPaths, "only the committed file needs a checkout update")
+			incrementalCheckouts++
+			t.Logf("PERF incremental_checkout id=%x changed_paths=%d", []byte(s.id)[16:], s.changedPaths)
+			interesting = true
+		case "materialize local git checkout":
+			for parent, ok := byID[s.parent]; ok; parent, ok = byID[parent.parent] {
+				require.NotEqual(t, "Workspace.withCommit", parent.name, "ordinary commit rematerialized a full source tree")
+			}
+			interesting = true
+		case "GitRef.asWorkspace":
+			interesting = true
+		}
+		if interesting {
+			t.Logf("PERF span=%q id=%x duration=%s discard_git_dir=%t", s.name, []byte(s.id)[16:], time.Duration(s.end-s.start), s.discard)
+		}
+	}
+	t.Logf("PERF spans workspace_commits=%d merges=%d fetches=%d history_calls=%d git_commits=%d native_commits=%d native_merges=%d scratch_commits=%d incremental_checkouts=%d (inclusive, deduplicated; counts are not bytes)", commits, merges, fetches, walks, gitCommits, nativeCommits, nativeMerges, scratchCommits, incrementalCheckouts)
+	require.Equal(t, iterations, commits, "must observe actual commit calls, not an empty trace")
+	require.Equal(t, iterations, nativeCommits, "captured-workspace commits must execute native transactions")
+	require.Equal(t, iterations, nativeMerges, "captured-workspace commits must execute native reconciliation")
+	require.GreaterOrEqual(t, incrementalCheckouts, iterations, "each committed tree must materialize incrementally")
+	require.Zero(t, gitCommits, "must not fall back to retained-checkout commits")
+	require.Zero(t, merges, "ordinary workspace commits must not reconstruct general merge repositories")
+	require.GreaterOrEqual(t, walks, iterations*3)
+}
+
 func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	if runWithPrivateTraceSession(ctx, t) {
+		return
+	}
+	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
 	daemon, url := gitService(ctx, t, c, c.Directory().
 		WithNewFile("src/a.txt", "old-a").WithNewFile("src/b.txt", "old-b").
 		WithNewFile("keep.txt", "untouched"))
