@@ -51,22 +51,23 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
-With --trace, restore agents, committed conversations, Workspaces, tools, lifecycle
-state, and notification subscriptions. No destination agent modules are composed.
-A retained engine archive provides a verified bootstrap before background history
-loading. If no local archive is retained, the CLI transparently fetches the trace
-from Dagger Cloud and validates its observed canonical records and recipe closure.
-Cloud restore waits for the whole trace and cannot prove that later records or
-entirely absent agents were not lost; it does not invent an archive finality seal.
+With -r &lt;trace-id&gt;, restore agents, committed conversations, Workspaces, tools,
+lifecycle state, and notification subscriptions from a past session's trace. No
+destination agent modules are composed. A retained engine archive provides a
+verified bootstrap before background history loading. If no local archive is
+retained, the CLI transparently fetches the trace from Dagger Cloud and validates
+its observed canonical records and recipe closure. Cloud restore waits for the
+whole trace and cannot prove that later records or entirely absent agents were not
+lost; it does not invent an archive finality seal.
 
 Restore forks new inert runtimes; it does not hand off a live session or start a
 model turn. Pending messages not committed to a conversation are not recovered.
-Legacy local JSON session files and -r/--resume are no longer supported.
+Legacy local JSON session files are no longer supported.
 
 Restore is best-effort: an agent the trace does not carry enough to restore is
 skipped, along with its subscriptions, and a warning names it and why.
 
-Use --list-archives to discover retained engine archives without restoring. Use
+Run -r with no trace ID to list retained engine archives without restoring. Use
 --source-session when a trace belongs to multiple source sessions. Add --generation
 to pin an exact engine archive cut; explicit generations never fall back to Cloud.
 
@@ -74,7 +75,8 @@ Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent --trace &lt;id&gt;       # Restore a verified trace archive
+  dagger agent -r                 # List retained engine archives
+  dagger agent -r &lt;trace-id&gt;      # Restore agents from a past session's trace
 
 
 ```
@@ -84,12 +86,11 @@ dagger agent [options] [name...]
 ### Options
 
 ```
-      --agent string            With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
-      --generation string       With --trace and --source-session, select the exact archive generation
+      --agent string            With -r, focus this restored agent (runtime handle or name) instead of the top-level one
+      --generation string       With -r and --source-session, select the exact archive generation
   -l, --list                    List available agents
-      --list-archives           List retained engine archives without restoring; --trace filters the list
-      --source-session string   With --trace, select the source session in an engine archive or Cloud trace
-      --trace string            Restore agents from a retained engine archive, falling back to their Dagger Cloud trace
+  -r, --resume trace[=list]     Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, list retained engine archives
+      --source-session string   With -r, select the source session in an engine archive or Cloud trace
 ```
 
 ### Options inherited from parent commands
