@@ -83,6 +83,38 @@ func TestPromptFrameRendersShadedInput(t *testing.T) {
 	require.Equal(t, 3, frame.ChromeHeight())
 }
 
+// TestPromptFrameSoftBorder: with a border color, the card's padding rows
+// double as its edges -- one-eighth blocks along the top of the first and the
+// bottom of the last, in the soft border color over the card's own fill -- so
+// the card is outlined without growing.
+func TestPromptFrameSoftBorder(t *testing.T) {
+	const width = 40
+	shade := blendPromptBackground(color.Black, termenv.TrueColor)
+	input := tuist.NewTextInput("")
+	input.SetValue("hello there")
+	frame := NewPromptFrame(input, termenv.ANSI)
+	frame.SetEnabled(true)
+	frame.SetBackground(shade.cell)
+	frame.SetBorder(shade.border)
+	result := renderPromptFrame(frame, width)
+
+	require.Len(t, result.Lines, 4)
+	requirePromptBackground(t, result.Lines, width)
+	require.Equal(t, 3, frame.ChromeHeight())
+	for _, edge := range []struct {
+		row   int
+		glyph string
+	}{{1, promptTopEdge}, {3, promptBottomEdge}} {
+		require.Equal(t, strings.Repeat(edge.glyph, width), ansi.Strip(result.Lines[edge.row]))
+		buf := cellbuf.NewBuffer(width, 1)
+		cellbuf.SetContent(buf, result.Lines[edge.row])
+		for x := range width {
+			require.Equal(t, shade.border, buf.Cell(x, 0).Style.Fg, "edge row %d col %d", edge.row, x)
+		}
+	}
+	require.Equal(t, "  hello there", strings.TrimRight(ansi.Strip(result.Lines[2]), " "))
+}
+
 // TestPromptFrameFocusCue verifies the focused input swaps its first line's
 // two-space indent for the "❯ " focus cue -- same width, so wrapping and the
 // cursor column don't move -- and reverts to the indent when focus leaves. The

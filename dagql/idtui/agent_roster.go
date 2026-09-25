@@ -30,10 +30,11 @@ type AgentRosterEntry struct {
 	ReadOnly bool
 }
 
-// AgentRoster renders a compact list of the session's live agents — a bold
-// jump number, display name and lifecycle symbol each, on one line:
+// AgentRoster renders a compact list of the session's live agents as tabs — a
+// faint jump number, display name and lifecycle symbol each, padded by a cell
+// either side — on one line, the focused tab filled like the prompt card:
 //
-//	1 agent ▶  2 scout ○  3 docs ▶  4 tests needs you
+//	 1 agent ▶   2 scout ○   3 docs ▶   4 tests needs you
 //
 // The roster is embedded at the left of the prompt's status line. It is always
 // visible once an agent has been published: besides being a switcher, it is the
@@ -119,9 +120,10 @@ func (r *AgentRoster) Line(width int) string {
 		// Jump numbers only where a jump key exists (ctrl+1…9 from the
 		// prompt, 1…9 in nav mode); beyond that the entry is still listed,
 		// just not directly addressable by key -- [/] still walks onto it.
+		// The number is a quiet key hint, the same faint color focused or not.
 		var number string
 		if i < 9 {
-			number = out.String(strconv.Itoa(i+1)).Bold().String() + " "
+			number = out.String(strconv.Itoa(i+1)).Foreground(termenv.ANSIBrightBlack).String() + " "
 		}
 
 		name := entry.Name
@@ -143,28 +145,31 @@ func (r *AgentRoster) Line(width int) string {
 		default:
 			nameStyle = nameStyle.Foreground(termenv.ANSIWhite)
 		}
-		part := number + nameStyle.String()
+		// Each entry is a tab with a cell of padding either side, which the
+		// focused tab's fill covers too.
+		part := " " + number + nameStyle.String()
 		if label != "" {
 			part += " " + out.String(label).Foreground(labelColor).String()
 		}
+		part += " "
 		if entry.Focused {
 			part = r.focusTab(part)
 		}
 		parts = append(parts, part)
 	}
 
-	line := strings.Join(parts, "  ")
+	line := strings.Join(parts, " ")
 	if width > 0 {
 		line = ansi.Truncate(line, width, "…")
 	}
 	return line
 }
 
-// focusTab marks the focused entry as a tab spanning its jump number, name
-// and state symbol: filled with the prompt card's shade when one is known,
-// else reverse video. The fill is applied per cell so the segments' own
-// styling (bold number, colored symbol) survives inside it. A leading reset
-// drops the status line's dim foreground, so the tab reads at full contrast.
+// focusTab marks the focused entry's tab, padding included: filled with the
+// prompt card's shade when one is known, else reverse video. The fill is
+// applied per cell so the segments' own styling (faint number, colored symbol)
+// survives inside it. A leading reset drops the status line's dim foreground,
+// so the tab reads at full contrast.
 func (r *AgentRoster) focusTab(part string) string {
 	if r.profile == termenv.Ascii {
 		return part

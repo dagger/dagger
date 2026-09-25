@@ -19,19 +19,21 @@ import (
 
 func TestBlendPromptBackground(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		bg   color.Color
-		want color.RGBA
+		name   string
+		bg     color.Color
+		want   color.RGBA
+		border color.RGBA
 	}{
-		{"black", color.Black, color.RGBA{30, 30, 30, 255}},
-		{"white", color.White, color.RGBA{244, 244, 244, 255}},
-		{"dark tint", color.RGBA{20, 30, 40, 255}, color.RGBA{48, 57, 65, 255}},
-		{"light tint", color.RGBA{240, 230, 220, 255}, color.RGBA{230, 220, 211, 255}},
+		{"black", color.Black, color.RGBA{30, 30, 30, 255}, color.RGBA{71, 71, 71, 255}},
+		{"white", color.White, color.RGBA{244, 244, 244, 255}, color.RGBA{214, 214, 214, 255}},
+		{"dark tint", color.RGBA{20, 30, 40, 255}, color.RGBA{48, 57, 65, 255}, color.RGBA{85, 93, 100, 255}},
+		{"light tint", color.RGBA{240, 230, 220, 255}, color.RGBA{230, 220, 211, 255}, color.RGBA{201, 193, 184, 255}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := blendPromptBackground(tc.bg, termenv.TrueColor)
 			require.Equal(t, tc.want, got.cell)
 			require.Equal(t, terminalRGBColor(tc.want), got.term)
+			require.Equal(t, tc.border, got.border)
 		})
 	}
 	indexed := blendPromptBackground(color.Black, termenv.ANSI256)

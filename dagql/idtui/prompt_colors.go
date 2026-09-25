@@ -17,6 +17,9 @@ import (
 type promptBackground struct {
 	cell color.Color
 	term termenv.Color
+	// border is the soft rule edging the prompt card: the same blend as the
+	// fill, pushed further from the terminal background.
+	border color.Color
 }
 
 // Keep integer RGB channels intact across both renderers. termenv.RGBColor's
@@ -32,27 +35,32 @@ func (c terminalRGBColor) Sequence(background bool) string {
 }
 
 // blendPromptBackground follows Codex's composer fill: 12% white over a dark
-// terminal background, or 4% black over a light one. The remaining colors stay
-// in the user's ANSI palette; only this measured, theme-relative fill uses RGB
-// (or the nearest 256-color shade).
+// terminal background, or 4% black over a light one. The card's border blends
+// the same way at 28% / 16%, so it reads as a soft edge rather than a rule.
+// The remaining colors stay in the user's ANSI palette; only these measured,
+// theme-relative shades use RGB (or the nearest 256-color shade).
 func blendPromptBackground(bg color.Color, profile termenv.Profile) promptBackground {
 	if bg == nil || (profile != termenv.TrueColor && profile != termenv.ANSI256) {
 		return promptBackground{}
 	}
 	r, g, b, _ := bg.RGBA()
 	r, g, b = r>>8, g>>8, b>>8
-	top, alpha := uint32(255), uint32(12)
+	top, fillAlpha, borderAlpha := uint32(255), uint32(12), uint32(28)
 	if 299*r+587*g+114*b > 128000 {
-		top, alpha = 0, 4
+		top, fillAlpha, borderAlpha = 0, 4, 16
 	}
-	blend := func(channel uint32) uint8 {
-		return uint8((channel*(100-alpha) + top*alpha) / 100)
+	blend := func(alpha uint32) color.RGBA {
+		channel := func(c uint32) uint8 {
+			return uint8((c*(100-alpha) + top*alpha) / 100)
+		}
+		return color.RGBA{R: channel(r), G: channel(g), B: channel(b), A: 255}
 	}
-	fill := color.RGBA{R: blend(r), G: blend(g), B: blend(b), A: 255}
-	result := promptBackground{cell: fill, term: terminalRGBColor(fill)}
+	fill, border := blend(fillAlpha), blend(borderAlpha)
+	result := promptBackground{cell: fill, term: terminalRGBColor(fill), border: border}
 	if profile == termenv.ANSI256 {
 		result.term = profile.FromColor(fill)
 		result.cell = ansi.IndexedColor(result.term.(termenv.ANSI256Color))
+		result.border = ansi.IndexedColor(profile.FromColor(border).(termenv.ANSI256Color))
 	}
 	return result
 }
@@ -167,6 +175,7 @@ func (fe *frontendPretty) handlePromptBackground(_ tuist.Context, event uv.Event
 	fe.promptBackground = background
 	if fe.promptFrame != nil {
 		fe.promptFrame.SetBackground(background.cell)
+		fe.promptFrame.SetBorder(background.border)
 	}
 	if fe.statusLine != nil {
 		fe.statusLine.Update() // the focused agent tab shares the prompt's shade

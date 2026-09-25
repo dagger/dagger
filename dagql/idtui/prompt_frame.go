@@ -14,6 +14,13 @@ import (
 	"github.com/vito/tuist"
 )
 
+// Glyphs for the prompt card's soft top and bottom edges: one-eighth blocks
+// sit flush against the cell edge and tile without gaps, unlike ‾ and _.
+const (
+	promptTopEdge    = "▔"
+	promptBottomEdge = "▁"
+)
+
 // PromptFrame wraps the prompt TextInput in the same full-width shaded card as
 // a submitted user message, separated from prior output by a blank line, with
 // blank padding rows and a two-space indent. While the input has keyboard
@@ -30,6 +37,7 @@ type PromptFrame struct {
 	// matching plain shell mode.
 	enabled     bool
 	background  color.Color
+	border      color.Color
 	attachments []string
 	// isFocused reports whether a component owns the keyboard (see
 	// SetFocusSource).
@@ -70,6 +78,14 @@ func NewPromptFrame(input *tuist.TextInput, profile termenv.Profile) *PromptFram
 // background untouched when color detection is unavailable.
 func (p *PromptFrame) SetBackground(background color.Color) {
 	p.background = background
+	p.Update()
+}
+
+// SetBorder sets the soft rule drawn along the card's top and bottom edges
+// (see promptBackground.border). It only shows on a filled card; nil leaves
+// the padding rows blank.
+func (p *PromptFrame) SetBorder(border color.Color) {
+	p.border = border
 	p.Update()
 }
 
@@ -159,8 +175,20 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 			style.Bg = p.background
 		})
 	}
+	// The padding rows double as the card's edges: a one-eighth block along
+	// the top of the first and the bottom of the last draws a soft border
+	// hugging the fill, without adding rows.
+	edge := func(glyph string) string {
+		if p.profile == termenv.Ascii || p.background == nil || p.border == nil {
+			return shade("")
+		}
+		return restyleCells(strings.Repeat(glyph, width), func(style *cellbuf.Style) {
+			style.Fg = p.border
+			style.Bg = p.background
+		})
+	}
 	ctx.Line("") // separate the draft from the transcript without extending its fill
-	ctx.Line(shade(""))
+	ctx.Line(edge(promptTopEdge))
 	gutter := strings.Repeat(" ", indent)
 	focused := p.isFocused != nil && p.isFocused(p.input)
 	for i, line := range lines {
@@ -172,7 +200,7 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 		}
 		ctx.Line(shade(prefix + line))
 	}
-	ctx.Line(shade(""))
+	ctx.Line(edge(promptBottomEdge))
 
 	if result.Cursor != nil {
 		ctx.SetCursor(result.Cursor.Row+2, min(result.Cursor.Col+indent, max(0, width-1)))

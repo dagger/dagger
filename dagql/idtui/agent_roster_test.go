@@ -100,15 +100,16 @@ func TestAgentRosterStylesFocusAndMarksReachability(t *testing.T) {
 	if !strings.Contains(plain, "3 ghost·") {
 		t.Fatalf("expected the unaddressable agent to be marked, got:\n%q", line)
 	}
-	if !strings.Contains(line, "\x1b[1m1") {
-		t.Fatalf("expected jump numbers to be bold, got:\n%q", line)
+	if !strings.Contains(line, "\x1b[90m1") || strings.Contains(line, "\x1b[1m1") {
+		t.Fatalf("expected jump numbers to be faint, not bold, got:\n%q", line)
 	}
 }
 
-// TestAgentRosterFocusTabSpansEntry: the focused entry is a tab filled from its
-// jump number through its state symbol -- with the prompt card's shade when
-// one is known, else reverse video -- rather than highlighting the name alone
-// and leaving the number and symbol stranded beside it.
+// TestAgentRosterFocusTabSpansEntry: the focused entry is a tab filled across
+// its padding, jump number, name and state symbol -- with the prompt card's
+// shade when one is known, else reverse video -- rather than highlighting the
+// name alone and leaving the number and symbol stranded beside it. The space
+// between tabs stays unfilled, so neighbors don't merge into the fill.
 func TestAgentRosterFocusTabSpansEntry(t *testing.T) {
 	entries := []AgentRosterEntry{
 		{ID: "a", Name: "chief", State: "IDLE"},
@@ -139,7 +140,7 @@ func TestAgentRosterFocusTabSpansEntry(t *testing.T) {
 			}
 			line := roster.Line(100)
 			plain := ansi.Strip(line)
-			tab := "2 scout " + CaretRightFilled
+			tab := " 2 scout " + CaretRightFilled + " "
 			start := strings.Index(plain, tab)
 			if start < 0 {
 				t.Fatalf("roster missing the focused entry %q: %q", tab, plain)
@@ -190,7 +191,7 @@ func TestAgentRosterUnknownStateIsQuiet(t *testing.T) {
 		{Name: "chief", State: "RUNNING"},
 		{Name: "fresh"},
 	}))
-	if want := "1 chief ▶  2 fresh"; line != want {
+	if want := "1 chief ▶   2 fresh"; line != want {
 		t.Fatalf("stateless agent rendered with a lifecycle indicator: got %q, want %q", line, want)
 	}
 }
