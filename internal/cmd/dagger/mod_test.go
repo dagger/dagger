@@ -10,7 +10,7 @@ import (
 
 func TestSearchModuleRegistry(t *testing.T) {
 	reg := []registryModule{
-		{Name: "wolfi", Description: "Wolfi Linux base images", Repo: "dagger.io/wolfi"},
+		{Name: "wolfi", Description: "Wolfi Linux base images", Repo: "dagger.io/linux/wolfi"},
 		{Name: "apko", Description: "Build OCI images with apko", Repo: "dagger.io/apko"},
 		{Name: "golang", Description: "Go toolchain helpers", Repo: "dagger.io/golang"},
 	}

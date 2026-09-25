@@ -460,7 +460,7 @@ func (GeneratorsSuite) TestModuleClientSourceReferences(ctx context.Context, t *
 	}
 
 	t.Run("remote address ignores matching local directory", func(ctx context.Context, t *testctx.T) {
-		const target = "github.com/dagger/dagger/modules/wolfi@main"
+		const target = "github.com/dagger/wolfi@main"
 		ctr := base.WithDirectory("/work/"+target, base.Directory("/work/target")).
 			WithDirectory("/work/app/sub/"+target, base.Directory("/work/target"))
 		added := ctr.With(daggerNonNestedExec("module", "client", "add", target, "--sdk=go", "-y"))

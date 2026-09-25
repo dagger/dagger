@@ -7,7 +7,7 @@ include = ["../../../go.mod", "../../../go.sum", "../../../util/parallel"]
 
 [[dependencies]]
   name = "alpine"
-  source = "../../../modules/alpine"
+  source = "github.com/dagger/alpine@main"
 
 [[dependencies]]
   name = "go"

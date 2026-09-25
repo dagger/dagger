@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -85,7 +84,6 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	dir := t.TempDir()
-	require.NoError(t, os.CopyFS(dir, os.DirFS(filepath.Join(wd, "../../../modules"))))
 	cmd := exec.Command("git", "init")
 	cmd.Dir = dir
 	require.NoError(t, cmd.Run())
@@ -94,7 +92,7 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 	t.Cleanup(func() {
 		os.Chdir(wd)
 	})
-	t.Setenv("DAGGER_MODULE", "./wolfi")
+	t.Setenv("DAGGER_MODULE", "github.com/dagger/wolfi@main")
 
 	client, err := dagger.Connect(ctx)
 	require.NoError(t, err)

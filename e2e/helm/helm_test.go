@@ -18,8 +18,6 @@
 //go:test:include ../../go.mod
 //go:test:include ../../go.sum
 //go:test:include ../../internal
-//go:test:include ../../modules/alpine
-//go:test:include ../../modules/wolfi
 //go:test:include ../../sdk/go
 //go:test:include ../../.dagger/modules/cli-dev
 //go:test:include ../../.dagger/modules/go
