@@ -176,6 +176,10 @@ func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, par
 	if err != nil {
 		return nil, "", err
 	}
+	return parseIncrementalGitCheckoutPlan(changes)
+}
+
+func parseIncrementalGitCheckoutPlan(changes []byte) (*incrementalGitCheckoutPlan, string, error) {
 	entries := splitOnNul(changes)
 	if len(entries)%2 != 0 {
 		return nil, "", fmt.Errorf("invalid git tree diff")

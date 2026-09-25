@@ -326,7 +326,7 @@ func nativeCommitGitDirWithShallow(ctx context.Context, root string, allowShallo
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", err
 		}
-		if len(data) != 0 && !(allowShallow && entry.path == "shallow") {
+		if len(data) != 0 && (!allowShallow || entry.path != "shallow") {
 			return "", nativeCommitUnsupportedReason(entry.reason)
 		}
 	}

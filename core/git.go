@@ -480,49 +480,7 @@ func (repo *GitRepository) AttachDependencyResults(
 	var owned []dagql.AnyResult
 	switch backend := repo.Backend.(type) {
 	case *LocalGitRepository:
-		if backend.Directory.Self() != nil {
-			attached, err := attach(backend.Directory)
-			if err != nil {
-				return nil, fmt.Errorf("attach git repository directory: %w", err)
-			}
-			typed, ok := attached.(dagql.ObjectResult[*Directory])
-			if !ok {
-				return nil, fmt.Errorf("attach git repository directory: unexpected result %T", attached)
-			}
-			backend.Directory = typed
-			owned = append(owned, typed)
-		}
-		if backend.HistorySource.Self() != nil {
-			if err := backend.validateHistorySource(ctx); err != nil {
-				return nil, err
-			}
-			source, err := attachLazyInput(attach, backend.HistorySource, "git history source")
-			if err != nil {
-				return nil, err
-			}
-			backend.HistorySource = source
-			owned = append(owned, source)
-		}
-		if backend.CheckoutBase != nil {
-			if err := backend.CheckoutBase.validateTree(ctx); err != nil {
-				return nil, err
-			}
-			parent, err := attachLazyInput(attach, backend.CheckoutBase.Parent, "git checkout parent")
-			if err != nil {
-				return nil, err
-			}
-			base := &GitCheckoutBase{Parent: parent, CommitSHA: backend.CheckoutBase.CommitSHA}
-			owned = append(owned, parent)
-			if backend.CheckoutBase.Tree.Self() != nil {
-				tree, err := attachLazyInput(attach, backend.CheckoutBase.Tree, "git checkout parent tree")
-				if err != nil {
-					return nil, err
-				}
-				base.Tree = tree
-				owned = append(owned, tree)
-			}
-			backend.CheckoutBase = base
-		}
+		return backend.attachDependencyResults(ctx, attach)
 	case *RemoteGitRepository:
 		if backend.Mirror.Self() != nil {
 			attached, err := attach(backend.Mirror)
@@ -589,6 +547,57 @@ func (repo *GitRepository) AttachDependencyResults(
 		}
 	}
 
+	return owned, nil
+}
+
+func (repo *LocalGitRepository) attachDependencyResults(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	var owned []dagql.AnyResult
+	if repo.Directory.Self() != nil {
+		attached, err := attach(repo.Directory)
+		if err != nil {
+			return nil, fmt.Errorf("attach git repository directory: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach git repository directory: unexpected result %T", attached)
+		}
+		repo.Directory = typed
+		owned = append(owned, typed)
+	}
+	if repo.HistorySource.Self() != nil {
+		if err := repo.validateHistorySource(ctx); err != nil {
+			return nil, err
+		}
+		source, err := attachLazyInput(attach, repo.HistorySource, "git history source")
+		if err != nil {
+			return nil, err
+		}
+		repo.HistorySource = source
+		owned = append(owned, source)
+	}
+	if repo.CheckoutBase != nil {
+		if err := repo.CheckoutBase.validateTree(ctx); err != nil {
+			return nil, err
+		}
+		parent, err := attachLazyInput(attach, repo.CheckoutBase.Parent, "git checkout parent")
+		if err != nil {
+			return nil, err
+		}
+		base := &GitCheckoutBase{Parent: parent, CommitSHA: repo.CheckoutBase.CommitSHA}
+		owned = append(owned, parent)
+		if repo.CheckoutBase.Tree.Self() != nil {
+			tree, err := attachLazyInput(attach, repo.CheckoutBase.Tree, "git checkout parent tree")
+			if err != nil {
+				return nil, err
+			}
+			base.Tree = tree
+			owned = append(owned, tree)
+		}
+		repo.CheckoutBase = base
+	}
 	return owned, nil
 }
 
