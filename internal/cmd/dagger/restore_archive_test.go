@@ -360,46 +360,31 @@ func TestAppliedArchivePlanUsesWitnessNamespace(t *testing.T) {
 	require.Equal(t, edge.EdgeKey, edges[0].EdgeKey)
 }
 
-// TestArchiveRestoreCaptureFailureNeedsPartial: an archive seals an agent whose
+// TestArchiveRestoreSkipsCaptureFailure: an archive seals an agent whose
 // final revision recorded a capture failure (it has no recipe closure to
-// verify). Strict restore refuses it before creating anything; --partial
-// restores the rest without it or its subscriptions.
-func TestArchiveRestoreCaptureFailureNeedsPartial(t *testing.T) {
-	for _, partial := range []bool{false, true} {
-		name := "strict"
-		if partial {
-			name = "partial"
-		}
-		t.Run(name, func(t *testing.T) {
-			source, chief, worker, edge := canonicalArchive()
-			worker.Revision++
-			worker.Digest, worker.CaptureError = "", "Host.directory is session-local"
-			want := agentcontrol.Expectation{
-				Agents:        map[agentcontrol.Key]int64{chief.Key: chief.Revision, worker.Key: worker.Revision},
-				Subscriptions: map[agentcontrol.EdgeKey]int64{edge.EdgeKey: edge.Revision},
-			}
-			source.header.Completion = archive.Witness(want)
-			source.logs = controlLogs(chief.Record(), worker.Record(), edge.Record())
-
-			fe, target := newRestoreTestFrontend(), newFakeRestoreTarget()
-			req := restoreRequest()
-			req.partial = partial
-			cleanup, err := restoreArchive(t.Context(), source, fe, target, req)
-			if !partial {
-				require.ErrorContains(t, err, `agent "worker" (worker) cannot be restored`)
-				require.ErrorContains(t, err, "capture failed: Host.directory is session-local")
-				require.ErrorContains(t, err, "--partial")
-				require.Nil(t, cleanup)
-				require.Empty(t, target.calls, "a refused restore must not create anything")
-				require.EqualValues(t, 1, source.released.Load())
-				return
-			}
-			require.NoError(t, err)
-			defer cleanup()
-			require.Equal(t, []string{"rehydrate:chief", "adopt:chief", "focus:chief"}, target.calls,
-				"--partial skips the failed capture and drops its subscription")
-		})
+// verify). Restore warns about it and restores the rest without it or its
+// subscriptions.
+func TestArchiveRestoreSkipsCaptureFailure(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	source, chief, worker, edge := canonicalArchive()
+	worker.Revision++
+	worker.Digest, worker.CaptureError = "", "Host.directory is session-local"
+	want := agentcontrol.Expectation{
+		Agents:        map[agentcontrol.Key]int64{chief.Key: chief.Revision, worker.Key: worker.Revision},
+		Subscriptions: map[agentcontrol.EdgeKey]int64{edge.EdgeKey: edge.Revision},
 	}
+	source.header.Completion = archive.Witness(want)
+	source.logs = controlLogs(chief.Record(), worker.Record(), edge.Record())
+
+	fe, target := newRestoreTestFrontend(), newFakeRestoreTarget()
+	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
+	require.NoError(t, err)
+	defer cleanup()
+	require.Equal(t, []string{"rehydrate:chief", "adopt:chief", "focus:chief"}, target.calls,
+		"restore skips the failed capture and drops its subscription")
+	require.Contains(t, warnings.String(), "worker (worker)")
+	require.Contains(t, warnings.String(), "capture failed: Host.directory is session-local")
+	require.Contains(t, warnings.String(), "dropped subscription")
 }
 
 func TestHistoricalFailureWarnsWithoutBreakingPrompt(t *testing.T) {

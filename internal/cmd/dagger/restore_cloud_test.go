@@ -165,22 +165,17 @@ func TestCloudRestoreSourceDecisions(t *testing.T) {
 }
 
 func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
-	for _, kind := range []string{"missing trace", "fetch failure", "capture error", "corrupt payload", "corrupt identity", "missing payload", "missing parent", "missing subscriber", "equivocation", "ambiguous source", "wrong source"} {
+	for _, kind := range []string{"missing trace", "fetch failure", "corrupt payload", "corrupt identity", "missing payload", "missing parent", "missing subscriber", "equivocation", "ambiguous source", "wrong source"} {
 		t.Run(kind, func(t *testing.T) {
 			chief, worker, edge, records := cloudControlFixture(t)
 			req := restoreRequest()
 			switch kind {
-			case "capture error":
-				worker.Digest, worker.CaptureError = "", "Host.directory is session-local"
 			case "corrupt payload":
 				records[0].SetBody(log.BytesValue([]byte{0xff}))
 			case "corrupt identity":
-				frame := new(callpbv1.Call)
-				require.NoError(t, proto.Unmarshal(records[0].Body().AsBytes(), frame))
-				frame.Field += "tampered"
-				data, err := proto.Marshal(frame)
-				require.NoError(t, err)
-				records[0].SetBody(log.BytesValue(data))
+				// The root frame is shared by both agents' snapshots, so neither
+				// can be restored from it.
+				tamperCloudFrame(t, records, chief.Digest)
 			case "missing payload":
 				records = nil
 			case "missing parent":
@@ -217,6 +212,68 @@ func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
 			require.Empty(t, target.calls, "failure must precede runtime creation")
 		})
 	}
+}
+
+// tamperCloudFrame corrupts the payload of the frame with the given digest
+// without changing the digest it claims.
+func tamperCloudFrame(t *testing.T, records []log.Record, digest string) {
+	t.Helper()
+	for i := range records {
+		frame := new(callpbv1.Call)
+		require.NoError(t, proto.Unmarshal(records[i].Body().AsBytes(), frame))
+		if frame.Digest != digest {
+			continue
+		}
+		frame.Field += "tampered"
+		data, err := proto.Marshal(frame)
+		require.NoError(t, err)
+		records[i].SetBody(log.BytesValue(data))
+		return
+	}
+	t.Fatalf("no frame %s", digest)
+}
+
+// TestCloudRestoreSkipsCorruptSnapshot: integrity is checked per snapshot, so
+// a tampered frame only the worker's snapshot uses skips the worker with a
+// warning; nothing is restored from corrupt data.
+func TestCloudRestoreSkipsCorruptSnapshot(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	chief, worker, edge, records := cloudControlFixture(t)
+	tamperCloudFrame(t, records, worker.Digest)
+	records = append(records, chief.Record(), worker.Record(), edge.Record())
+	req := restoreRequest()
+	req.source = &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
+	req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
+		return sink.ImportLogs(ctx, controlLogs(records...))
+	})
+	target := newFakeRestoreTarget()
+	cleanup, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, target, req)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, []string{"rehydrate:chief", "adopt:chief", "focus:chief"}, target.calls)
+	require.Contains(t, warnings.String(), "worker (worker)")
+	require.Contains(t, warnings.String(), "integrity mismatch")
+}
+
+// TestCloudRestoreSkipsCaptureFailure: a worker whose latest record is a
+// capture failure is skipped with a warning; the chief still restores.
+func TestCloudRestoreSkipsCaptureFailure(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	chief, worker, edge, records := cloudControlFixture(t)
+	worker.Digest, worker.CaptureError = "", "Host.directory is session-local"
+	records = append(records, chief.Record(), worker.Record(), edge.Record())
+	req := restoreRequest()
+	req.source = &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
+	req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
+		return sink.ImportLogs(ctx, controlLogs(records...))
+	})
+	target := newFakeRestoreTarget()
+	cleanup, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, target, req)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, []string{"rehydrate:chief", "adopt:chief", "focus:chief"}, target.calls)
+	require.Contains(t, warnings.String(), "worker (worker)")
+	require.Contains(t, warnings.String(), "Host.directory is session-local")
 }
 
 func TestCloudRestoreSourceSelectionAndRemoval(t *testing.T) {

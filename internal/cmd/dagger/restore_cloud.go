@@ -171,11 +171,10 @@ func cloudRestorePlan(fe archiveFrontend, req traceRestore, calls map[string]*ca
 			Source: a.Key, ID: a.Handle, Name: a.Name, ParentAgentID: a.Parent,
 			SnapshotDigest: a.Digest, LastActivity: a.Activity,
 		}
-		// As for archives: strict restore refuses an unmappable agent, while
-		// --partial skips exactly this entry.
+		// As for archives: restore skips an unmappable agent and warns why.
 		state, err := a.RestoreState()
 		if err != nil {
-			entry.Err = fmt.Errorf("agent %q (%s) cannot be restored: %w", a.Name, a.Handle, err)
+			entry.Err = err
 		}
 		entry.State = state
 		// A stopped failure retains its diagnostic, but spawn only accepts an
