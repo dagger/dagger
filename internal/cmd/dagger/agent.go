@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/juju/ansiterm/tabwriter"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/trace"
 
@@ -63,7 +65,11 @@ var agentCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return withEngine(
+		// Set once the prompt exits with agents behind it; read after the TUI
+		// has torn down. Atomic because a second Ctrl+D exits the frontend
+		// without waiting for the run to return.
+		var resumeTrace atomic.Pointer[string]
+		err = withEngine(
 			cmd.Context(), params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				source := archive.NewClient(client.EngineConn(engineClient)).WithStallTimeout(30 * time.Second)
@@ -99,10 +105,25 @@ var agentCmd = &cobra.Command{
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
 					restore:              restore,
 					generateSessionTitle: true,
+					exitedResumable: func(traceID string) {
+						resumeTrace.Store(&traceID)
+					},
 				})
 			},
 		)
+		if resumed := resumeTrace.Load(); resumed != nil {
+			printResumeHint(cmd.ErrOrStderr(), *resumed)
+		}
+		return err
 	},
+}
+
+// printResumeHint tells the user how to come back to the session they just
+// left, spelling out --resume since -r alone is easy to forget.
+func printResumeHint(w io.Writer, traceID string) {
+	out := termenv.NewOutput(w)
+	fmt.Fprintln(w, out.String("To resume this session, run:").Bold())
+	fmt.Fprintf(w, "  dagger agent --resume %s\n", traceID)
 }
 
 // agentResumeFlag is the -r/--resume value: the trace to restore, or the

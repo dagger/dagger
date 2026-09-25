@@ -1024,6 +1024,13 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 		last = body
 		return status == http.StatusOK
 	}, time.Minute, 100*time.Millisecond, "interactive restored session never attached: %s", last)
+	// The restored history is on screen before anything is sent: it hangs off
+	// the imported trace, which must not wait on the live one to surface.
+	require.Eventually(t, func() bool {
+		_, body := request(http.MethodGet, "/screen", "")
+		last = body
+		return strings.Contains(body, "source conversation retained")
+	}, time.Minute, 100*time.Millisecond, "restored history not shown before the first send: %s", last)
 	status, body := request(http.MethodPost, "/type", "after CLI restore")
 	require.Equal(t, http.StatusOK, status, "%s", body)
 	status, body = request(http.MethodPost, "/key", "enter")
@@ -1036,6 +1043,23 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	if cloudOnly {
 		require.GreaterOrEqual(t, cloudRequests.Load(), int32(3), "CLI must fetch the Cloud trace on a local miss")
 	}
+
+	// Ctrl+D on the empty prompt leaves the session: quietly, and pointing at
+	// how to come back to it.
+	status, body = request(http.MethodPost, "/key", "ctrl+d")
+	require.Equal(t, http.StatusOK, status, "%s", body)
+	select {
+	case err := <-done:
+		require.NoError(t, err, "Ctrl+D must exit cleanly")
+		done <- err // for the deferred wait
+	case <-time.After(time.Minute):
+		t.Fatal("CLI did not exit after Ctrl+D")
+	}
+	output, err := os.ReadFile(logFile.Name())
+	require.NoError(t, err)
+	require.NotContains(t, string(output), "canceling...", "leaving the session is not an interrupt")
+	require.Regexp(t, `To resume this session, run:\s+dagger agent --resume [0-9a-f]{32}\n`, string(output))
+
 	entries, err := os.ReadDir(legacyDir)
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "trace-only CLI must not write JSON sessions")

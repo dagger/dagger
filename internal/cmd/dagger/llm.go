@@ -268,6 +268,24 @@ func (s *LLMSession) agentByHandle(agentHandle string) *sessionAgent {
 	return nil
 }
 
+// Resumable reports whether the session holds an agent runtime -- spawned by
+// a prompt, attached, or restored -- so its trace carries something for
+// `dagger agent --resume` to restore. A session nobody spoke to has none.
+func (s *LLMSession) Resumable() bool {
+	s.mu.Lock()
+	agents := slices.Clone(s.agents)
+	s.mu.Unlock()
+	for _, a := range agents {
+		a.agentL.Lock()
+		bound := a.agentHandle != ""
+		a.agentL.Unlock()
+		if bound {
+			return true
+		}
+	}
+	return false
+}
+
 // Focus points the prompt at the agent with the given runtime handle, attaching
 // to it first when the session is not already driving it. encodedID is a
 // handle the client rebuilt from the trace (design §9: telemetry is the
