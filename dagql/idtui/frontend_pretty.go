@@ -2654,6 +2654,12 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
+			// A zoom outside the priority window can precede the span itself.
+			// Finish its deferred log request now, using the arrived roll-up
+			// metadata instead of requiring a second expand/zoom gesture.
+			if fe.SpanExpanded[id] {
+				fe.requestLogs(id)
+			}
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
 				fe.updateLogPagerForLogs(id)

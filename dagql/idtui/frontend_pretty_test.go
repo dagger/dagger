@@ -28,13 +28,42 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/tuist"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestLazyZoomRequestsLogsWhenSpanArrives(t *testing.T) {
+	for _, rollup := range []bool{false, true} {
+		t.Run(fmt.Sprintf("rollup=%v", rollup), func(t *testing.T) {
+			fe := NewWithDB(io.Discard, dagui.NewDB())
+			fe.reportOnly = true
+			id := prettyTestSpanID(42)
+			var requests []bool
+			fe.SetLogProvider(func(got dagui.SpanID, descendants bool) {
+				require.Equal(t, id, got)
+				requests = append(requests, descendants)
+			})
+			fe.ZoomToSpan(id)
+			require.Empty(t, requests, "wait for metadata rather than guessing roll-up")
+			span := tracetest.SpanStub{
+				Name:        "late zoom target",
+				SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: id.SpanID}),
+				StartTime:   time.Unix(100, 0), EndTime: time.Unix(101, 0),
+				Attributes: []attribute.KeyValue{attribute.Bool(telemetry.UIRollUpLogsAttr, rollup)},
+			}.Snapshot()
+			require.NoError(t, fe.SpanExporter().ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
+			require.Equal(t, []bool{rollup}, requests, "the first zoom must finish fetching its logs")
+			require.NoError(t, fe.SpanExporter().ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
+			require.Len(t, requests, 1, "repeated span snapshots must not duplicate logs")
+		})
+	}
+}
 
 func frontendTestLogRecord(spanID trace.SpanID, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
 	record := new(sdklog.Record)
