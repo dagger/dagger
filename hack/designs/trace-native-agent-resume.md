@@ -433,9 +433,18 @@ scoped.
 
 ### 4.2 Publication and coherence
 
-Publish at creation, committed conversation advances, relevant lifecycle/error
-changes, and teardown. Creation includes fresh agents that have never started a
-loop. Subscription changes have their own control records (§6).
+Publish at creation (when `LLM.spawn` creates the runtime entry), at every committed
+conversation advance, on lifecycle/error changes, and at teardown. Creation includes
+fresh agents that have never started a loop. A conversation advances on every
+*step* (one model response plus its tool calls and recorded results) and whenever a
+queued message is consumed, not only when a turn ends. An agent interrupted mid-turn
+therefore loses at most its in-flight step. Every fact change goes through the
+runtime's single transition point, which publishes a new revision only when the
+projection changes. Subscription changes have their own control records (§6).
+
+Records are OpenTelemetry log records with an empty body. Every projected fact is a
+typed log attribute (`engine/agentcontrol/otlp.go`). Only engine runtimes may emit
+them.
 
 At a completed runtime mutation, associate `rt.last.RecipeDigest(ctx)` with the
 lifecycle facts and assign a revision under the runtime lock. This derives the
