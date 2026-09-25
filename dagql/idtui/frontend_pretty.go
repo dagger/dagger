@@ -7084,7 +7084,12 @@ func (fe *frontendPretty) quitAction(interruptErr error) {
 		fe.quitting = true
 		fe.doQuit()
 	} else {
-		slog.Warn("canceling... (press again to exit immediately)")
+		// Ctrl+D on an empty prompt is an ordinary exit, not an interrupt:
+		// tearing the session down is the expected outcome, so don't warn
+		// about it. A second press still exits immediately.
+		if !errors.Is(interruptErr, ErrShellExited) {
+			slog.Warn("canceling... (press again to exit immediately)")
+		}
 		fe.interrupted = true
 		fe.interrupt(interruptErr)
 	}

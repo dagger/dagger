@@ -1,8 +1,10 @@
 package idtui
 
 import (
+	"bytes"
 	"context"
 	"io"
+	stdslog "log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 )
@@ -272,6 +275,30 @@ func TestCtrlCPreemptsTheFocusedAgent(t *testing.T) {
 	require.Equal(t, 1, canceled)
 	require.Empty(t, fe.queuedMsgLabel.Message())
 	require.Empty(t, handler.DequeueMessage(), "Ctrl-C must drain the handler's queue")
+}
+
+// TestCtrlDExitsQuietly: Ctrl-D on an empty prompt is how a session is left,
+// so it tears the run down without the "canceling..." warning an interrupt
+// earns -- leaving is the expected outcome, not an aborted one.
+func TestCtrlDExitsQuietly(t *testing.T) {
+	var logged bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(stdslog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	handler := &focusShellHandler{}
+	fe := focusTestFrontend(t, dagui.NewDB(), handler)
+	fe.runCtx, fe.interrupt = context.WithCancelCause(context.Background())
+
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: 'd', Mod: uv.ModCtrl}))
+	require.ErrorIs(t, context.Cause(fe.runCtx), ErrShellExited, "Ctrl-D must end the run")
+	require.NotContains(t, logged.String(), "canceling", "leaving the session is not an interrupt")
+
+	// An actual interrupt still says what it is doing.
+	fe = focusTestFrontend(t, dagui.NewDB(), handler)
+	fe.runCtx, fe.interrupt = context.WithCancelCause(context.Background())
+	fe.quitAction(ErrInterrupted)
+	require.Contains(t, logged.String(), "canceling")
 }
 
 // rosterDB builds a trace with two agents, each with a loop span carrying its
