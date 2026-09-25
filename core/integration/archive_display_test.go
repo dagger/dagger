@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -216,6 +217,76 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	require.NotContains(t, string(output), unrelatedText)
 	require.Less(t, len(output), 64<<10, "a small zoomed report must not render multi-megabyte unrelated output")
 	require.EqualValues(t, 0, cloudRequests.Load())
+
+	// Browse the same archive interactively, well after initial loading has
+	// finished. This catches cleanup that releases the source when the run
+	// callback returns instead of retaining it until the console itself exits.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	address := listener.Addr().String()
+	require.NoError(t, listener.Close())
+	consoleCtx, stopConsole := context.WithCancel(ctx)
+	defer stopConsole()
+	console := exec.CommandContext(consoleCtx, bin, "--progress=tty", "trace", traceID, "--source-session", manifest.SourceSession, "--generation", manifest.Generation)
+	console.Dir = destination
+	console.Env = append(cmd.Env, "DAGGER_TUI_CONSOLE="+address)
+	consoleOutput, err := os.CreateTemp(t.TempDir(), "archive-console-output")
+	require.NoError(t, err)
+	defer consoleOutput.Close()
+	console.Stdout, console.Stderr = consoleOutput, consoleOutput
+	require.NoError(t, console.Start())
+	consoleDone := make(chan error, 1)
+	go func() { consoleDone <- console.Wait() }()
+	defer func() { stopConsole(); <-consoleDone }()
+	defer func() {
+		if t.Failed() {
+			data, _ := os.ReadFile(consoleOutput.Name())
+			t.Logf("Archive console output:\n%s", data)
+		}
+	}()
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	request := func(method, path, body string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, method, "http://"+address+path, strings.NewReader(body))
+		require.NoError(t, err)
+		res, err := httpClient.Do(req)
+		if err != nil {
+			return 0, err.Error()
+		}
+		defer res.Body.Close()
+		data, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		return res.StatusCode, string(data)
+	}
+	var lastScreen string
+	defer func() {
+		if t.Failed() {
+			t.Logf("Last archive console response:\n%s", lastScreen)
+		}
+	}()
+	require.Eventually(t, func() bool {
+		status, body := request(http.MethodGet, "/spans", "")
+		lastScreen = body
+		return status == http.StatusOK && strings.TrimSpace(body) != ""
+	}, time.Minute, 100*time.Millisecond, "archive console never loaded its initial spans")
+	status, lastScreen := request(http.MethodPost, "/wait?quiet=3s&timeout=10s", "")
+	require.Equal(t, http.StatusOK, status, "%s", lastScreen)
+
+	// The first zoom can backfill a span absent from the priority set. Zoom
+	// again once it is known so its hasLogs annotation requests the output.
+	// Both happen after initial loading, and require a still-live reader.
+	status, lastScreen = request(http.MethodPost, "/zoom", selectedSpan)
+	require.Equal(t, http.StatusOK, status, "%s", lastScreen)
+	status, lastScreen = request(http.MethodPost, "/zoom", selectedSpan)
+	require.Equal(t, http.StatusOK, status, "%s", lastScreen)
+	require.Eventually(t, func() bool {
+		status, body := request(http.MethodGet, "/screen", "")
+		lastScreen = body
+		return status == http.StatusOK && strings.Contains(body, selectedText)
+	}, 20*time.Second, 100*time.Millisecond, "late archive zoom did not load selected logs")
+	require.NotContains(t, lastScreen, unrelatedText)
+	require.NotContains(t, lastScreen, "context canceled")
+	require.EqualValues(t, 0, cloudRequests.Load(), "lazy browsing must stay on its selected engine archive")
 }
 
 // Count actual requests at the wire, rather than merely asserting what reached
