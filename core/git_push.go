@@ -138,7 +138,8 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 		return nil, fmt.Errorf("prepare push history: %w", err)
 	}
 	// Preparing owner credentials can ask for a passphrase. Push only reaches
-	// this request after authorization; ordinary reads never initialize an agent.
+	// this request after authorization. Besides push, only snapshots of the
+	// owner's own checkout prepare an agent; ordinary reads never do.
 	sshAuthPath, err := prepareGitPushSSHAuth(ctx, query, owner, destination)
 	if err != nil {
 		return nil, err

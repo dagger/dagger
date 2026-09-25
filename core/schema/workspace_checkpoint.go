@@ -209,10 +209,11 @@ func (s *workspaceSchema) checkpointClientLocal(
 		return inst, fmt.Errorf("workspace snapshot bundle is %d bytes, capture reported %d", len(bundle), metadata.BundleBytes)
 	}
 	// Capturing the owning client's checkout also authorizes reconstructing its
-	// SSH origin. Reuse push's lazy host key discovery when no agent is running,
-	// but keep the prepared socket local to this capture: ordinary Git reads
-	// must not start agents or unlock the owner's keys. Composition scopes it to
-	// SSH identities before including it in the snapshot's portable recipe.
+	// SSH origin. Reuse push's lazy host key discovery when no agent is running;
+	// ordinary Git reads must not start agents or unlock the owner's keys.
+	// Composition binds the prepared agent as a session socket scoped to its SSH
+	// identities, and the snapshot's recipe references it for the rest of the
+	// session, just as it would an agent from the owner's SSH_AUTH_SOCK.
 	if remote, err := gitutil.ParseURL(metadata.RemoteUrl); err == nil && remote.Scheme == gitutil.SSHProtocol && caller.SSHAuthSocketPath == "" {
 		socketPath, err := bk.PrepareGitSSHAuth(clientCtx, metadata.RemoteUrl)
 		if err != nil {
