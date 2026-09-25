@@ -215,21 +215,13 @@ func (w *warmTunnels) start(dial func() net.Conn) {
 
 var errContainerConnectorClosed = errors.New("container connector closed")
 
-func (w *warmTunnels) take(ctx context.Context) (net.Conn, bool, error) {
+func (w *warmTunnels) tryTake(ctx context.Context) (net.Conn, bool, error) {
 	select {
 	case <-w.done:
 		return nil, true, errContainerConnectorClosed
 	case result := <-w.pending:
 		select {
 		case conn := <-result:
-			select {
-			case <-w.done:
-				if conn != nil {
-					_ = conn.Close()
-				}
-				return nil, true, errContainerConnectorClosed
-			default:
-			}
 			return conn, true, nil
 		case <-ctx.Done():
 			go closeWarmTunnel(result)
@@ -289,7 +281,7 @@ func (d *containerDriver) ImageLoader(ctx context.Context) imageload.Backend {
 }
 
 func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
-	conn, warm, err := d.warm.take(ctx)
+	conn, warm, err := d.warm.tryTake(ctx)
 	if err != nil {
 		return nil, err
 	}
