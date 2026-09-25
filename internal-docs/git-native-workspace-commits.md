@@ -4,7 +4,37 @@
 
 This is the starting document for a fresh session asked to **"continue https://github.com/dagger/dagger/pull/14314"**. It supersedes the implementation status and next steps in the [earlier investigation handoff](https://gist.github.com/vito/aead3f59d5aec76d824797c4c00f7f3a). The code is authoritative when it differs from this document.
 
-## Resume: lazy hydration validated (2026-09-25)
+## Resume: approved host-history reuse (2026-09-25)
+
+**Implemented and locally validated through `daaae3060dead329ba5a1cdb5c500bcd105e4863`.** The earlier lazy-history checkpoint and measurements remain below. The user-requested push published through `64e2136`; the host-history commits described here have not been pushed.
+
+- `30296e6` implements optional host donation only for **complete-history demand after a clean, owning-client, remote-backed capture**. The client's `Query` retains owner/path/captured-state plus exact remote repository recipe and anchor. This registry is session-local, not persisted or engine-global; remote provenance remains the reconstruction recipe.
+- A separate internal `PackCommit` RPC sends only the requested non-thin object closure. Scratch Git metadata excludes host refs, config, replacement refs and promisor fetching. The engine imports into an isolated object database, validates completeness and exact inventory, then publishes an owned immutable snapshot without live alternates.
+- Capture and ordinary depth-one commits never request donor packs. Missing, moved, shallow, incomplete or expired donors fall back to the existing authorized remote; malformed packs, corrupt objects and cancellation remain errors. Dirty/unpushed bundle captures and pure remote inputs keep their existing behavior. There are no public SDL changes.
+- `e1a1ff3` and `cb73359` add independent host integration tests and the explicit service-bound origin fixture. `bbeae50` covers missing versus corrupt ancestral commits and skipped bundle registration. `daaae30` resolves final lint findings without suppressions.
+
+**Validation:** full serial `go test -race ./engine/session/git ./engine/engineutil ./core ./core/schema -count=1 -p=1` passed, root golangci-lint v2.11.4 reports zero issues, and the combined from-source host/lazy/native/reconciliation/history/reftable matrix passed (27 tool-summary entries; call span `d2c45afc4def3741`). The offline-host baseline failed at deep history after a successful ordinary commit, attempting the removed origin (`f6a17bc11906e3cf`); the implementation passes. Tests cover exact donor owner/recipe/anchor scope, unrelated-object exclusion, offline deep history, independent retained-checkout fsck after donor removal, and remote fallback for missing/replaced/moved/shallow donors. Unit tests additionally cover incomplete blobs/ancestral commits, corrupt objects, old-client transport, cancellation and malformed imports. This is not a real engine restart/GC/eviction test or proof of green remote CI.
+
+**Final ordinary-workflow benchmark:** the unchanged controlled-origin workload passed twice serially on `daaae306`, with fresh endpoints `tcp://i8t5hmrshc0gs:1234` then `tcp://87s3j61572f02:1234`; no other builds/tests overlapped. First-commit/full-loop medians were **1.634 / 9.273s**, later medians **1.636 / 7.705s**. Compare to the lazy-only measurements below: **1.444 / 9.790s** first and **1.530 / 6.847s** later. These samples do **not** establish unchanged latency: preserve the slower capture and repeated later-cycle outliers rather than labeling them unrelated noise.
+
+All samples, **commit / full loop seconds**:
+
+| Step | Host-reuse run 1 | Host-reuse run 2 |
+| --- | ---: | ---: |
+| README edit, remote base | 1.563 / 8.937 | 1.704 / 9.608 |
+| Nested existing-file edit | 1.542 / 6.782 | 1.832 / 7.377 |
+| Nested addition | 1.636 / 7.107 | 1.627 / 7.494 |
+| Nested rename | 1.411 / 8.195 | 1.542 / 9.316 |
+| README edit again | 5.306 / 10.721 | 4.353 / 10.353 |
+| Nested deletion | 1.637 / 6.979 | 1.668 / 7.916 |
+
+Capture was **7.590 / 3.783s**, capture plus first loop **16.527 / 13.391s**. Cycle 4's next-edit phase took **2.226 / 3.294s**. Cycle 5's native merge took **2.976 / 1.733s**; run 1 also had an **839ms** native transaction, while run 2's preceding incremental checkout took **1.454s**. The underlying slowdown remains unestablished. Both runs retain six native history writes/reconciliations, eleven incremental checkouts, one shallow promotion, no legacy commit/general merge, and only the same three actual depth-one fetch processes. Content hashes match the lazy-only runs. This workload does not demand old history, so it is not a benchmark of host-versus-remote complete-history transfer.
+
+Raw own-log spans in trace `e9d38bac0c0c96f68949905266104683`: run 1 **`e3fb0a87eb966387`**, run 2 **`f1c480823a014a7f`**, each lines 1–86. Use the logged endpoint/timestamps to identify runs; outer test span associations can be confusing because of the private re-exec's duplicate running entry. Engine-test calls were `76678f73aecc0eb1` and `cac3926e69347c28`.
+
+**Remaining:** investigate the final timing outliers with detailed telemetry and a fresh, resource-quiescent session before claiming latency parity; measure full-history donor transfer on representative repositories; real engine restart/eviction/GC and physical storage accounting; review/rerun remote CI. Do not broaden to dirty/bundle captures or Direction C without separate work. No worker-only implementation remains; all host changes are harvested. Refresh the stale PR description only when requested.
+
+## Earlier checkpoint: lazy hydration validated (2026-09-25)
 
 Continuation from [the pause handoff](https://github.com/dagger/dagger/pull/14314#issuecomment-5825385014) checked out actual head `49d15eb`. Production behavior is unchanged from `b895022`; `4123245c3763c6fae0b2ce30228528b33e47814b` fixes four final lint findings by extracting dependency attachment/diff parsing helpers and simplifying two conditions. No lint suppressions or public SDL changes.
 
