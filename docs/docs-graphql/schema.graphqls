@@ -260,6 +260,11 @@ type Agent implements Node {
   immediately at subscribe time, so a fast agent settling before the
   subscription lands is not missed.
 
+  A restored agent that nothing has sent to, started, or resumed yet is the
+  exception: its state was reached in the session it was restored from, so
+  subscribing to it announces nothing until it next transitions. This is how a
+  restore reinstalls recorded subscriptions without waking their subscribers.
+
   Idempotent per subscriber; re-subscribing replaces the state set.
   """
   notify(
@@ -274,28 +279,6 @@ type Agent implements Node {
     """
     on: [AgentState!] = [IDLE,FAILED]
   ): ID! @expectedType(name: "Agent") @experimental(reason: "Agent APIs are likely to change.")
-
-  """
-  Restore a lifecycle subscription without announcing the current state or starting work.
-
-  Both agents must have been restored with a supplied spawn handle and never
-  activated. An empty state set removes the subscription.
-  """
-  restoreNotify(
-    """The restored subscriber capability."""
-    subscriber: ID! @expectedType(name: "Agent")
-
-    """The recorded lifecycle state filter."""
-    on: [AgentState!]!
-  ): ID! @expectedType(name: "Agent") @experimental(reason: "Agent APIs are likely to change.")
-
-  """
-  Discard a restored runtime during failed graph installation.
-
-  Refuses fresh or already activated agents. Removes its notification edges and
-  preserves a telemetry removal tombstone for archive verification.
-  """
-  discardRestore: ID! @expectedType(name: "Agent") @experimental(reason: "Agent APIs are likely to change.")
 
   """
   Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.

@@ -798,6 +798,7 @@ impl Agent {
     /// Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
     /// This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
     /// Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+    /// A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
     /// Idempotent per subscriber; re-subscribing replaces the state set.
     ///
     /// # Arguments
@@ -827,6 +828,7 @@ impl Agent {
     /// Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
     /// This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
     /// Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+    /// A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
     /// Idempotent per subscriber; re-subscribing replaces the state set.
     ///
     /// # Arguments
@@ -849,53 +851,6 @@ impl Agent {
         if let Some(on) = opts.on {
             query = query.arg("on", on);
         }
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
-        Ok(Agent {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Agent"),
-            graphql_client: self.graphql_client.clone(),
-        })
-    }
-    /// Restore a lifecycle subscription without announcing the current state or starting work.
-    /// Both agents must have been restored with a supplied spawn handle and never activated. An empty state set removes the subscription.
-    ///
-    /// # Arguments
-    ///
-    /// * `subscriber` - The restored subscriber capability.
-    /// * `on` - The recorded lifecycle state filter.
-    pub async fn restore_notify(
-        &self,
-        subscriber: impl IntoID<Id>,
-        on: Vec<AgentState>,
-    ) -> Result<Agent, DaggerError> {
-        let mut query = self.selection.select("restoreNotify");
-        query = query.arg_lazy(
-            "subscriber",
-            Box::new(move || {
-                let subscriber = subscriber.clone();
-                Box::pin(async move { subscriber.into_id().await.unwrap().quote() })
-            }),
-        );
-        query = query.arg("on", on);
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
-        Ok(Agent {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Agent"),
-            graphql_client: self.graphql_client.clone(),
-        })
-    }
-    /// Discard a restored runtime during failed graph installation.
-    /// Refuses fresh or already activated agents. Removes its notification edges and preserves a telemetry removal tombstone for archive verification.
-    pub async fn discard_restore(&self) -> Result<Agent, DaggerError> {
-        let query = self.selection.select("discardRestore");
         let id: Id = query.execute(self.graphql_client.clone()).await?;
         Ok(Agent {
             proc: self.proc.clone(),

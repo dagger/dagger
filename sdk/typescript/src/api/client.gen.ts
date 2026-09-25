@@ -4427,14 +4427,12 @@ export class Address extends BaseClient {
  */
 export class Agent extends BaseClient {
   private readonly _id?: ID = undefined
-  private readonly _discardRestore?: ID = undefined
   private readonly _error?: string = undefined
   private readonly _handle?: string = undefined
   private readonly _name?: string = undefined
   private readonly _notify?: ID = undefined
   private readonly _pause?: ID = undefined
   private readonly _reseed?: ID = undefined
-  private readonly _restoreNotify?: ID = undefined
   private readonly _resume?: ID = undefined
   private readonly _send?: ID = undefined
   private readonly _state?: AgentState = undefined
@@ -4447,14 +4445,12 @@ export class Agent extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
-    _discardRestore?: ID,
     _error?: string,
     _handle?: string,
     _name?: string,
     _notify?: ID,
     _pause?: ID,
     _reseed?: ID,
-    _restoreNotify?: ID,
     _resume?: ID,
     _send?: ID,
     _state?: AgentState,
@@ -4464,14 +4460,12 @@ export class Agent extends BaseClient {
     super(ctx)
 
     this._id = _id
-    this._discardRestore = _discardRestore
     this._error = _error
     this._handle = _handle
     this._name = _name
     this._notify = _notify
     this._pause = _pause
     this._reseed = _reseed
-    this._restoreNotify = _restoreNotify
     this._resume = _resume
     this._send = _send
     this._state = _state
@@ -4492,20 +4486,6 @@ export class Agent extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Discard a restored runtime during failed graph installation.
-   *
-   * Refuses fresh or already activated agents. Removes its notification edges and preserves a telemetry removal tombstone for archive verification.
-   * @experimental
-   */
-  discardRestore = async (): Promise<Agent> => {
-    const ctx = this._ctx.select("discardRestore")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return new Agent(ctx.copy().selectNode(response, "Agent"))
   }
 
   /**
@@ -4581,6 +4561,8 @@ export class Agent extends BaseClient {
    *
    * Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
    *
+   * A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
+   *
    * Idempotent per subscriber; re-subscribing replaces the state set.
    * @param subscriber The agent to deliver event messages to. You must hold its handle: subscriptions are capability-based like everything else.
    * @param opts.on The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
@@ -4627,25 +4609,6 @@ export class Agent extends BaseClient {
    */
   reseed = async (conversation: LLM): Promise<Agent> => {
     const ctx = this._ctx.select("reseed", { conversation })
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return new Agent(ctx.copy().selectNode(response, "Agent"))
-  }
-
-  /**
-   * Restore a lifecycle subscription without announcing the current state or starting work.
-   *
-   * Both agents must have been restored with a supplied spawn handle and never activated. An empty state set removes the subscription.
-   * @param subscriber The restored subscriber capability.
-   * @param on The recorded lifecycle state filter.
-   * @experimental
-   */
-  restoreNotify = async (
-    subscriber: Agent,
-    on: AgentState[],
-  ): Promise<Agent> => {
-    const ctx = this._ctx.select("restoreNotify", { subscriber, on })
 
     const response: Awaited<ID> = await ctx.execute()
 

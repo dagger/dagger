@@ -166,6 +166,8 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
      *
+     * A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
+     *
      * Idempotent per subscriber; re-subscribing replaces the state set.
      */
     public function notify(Agent $subscriber, ?array $on = null): Agent
@@ -176,32 +178,6 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
         $leafQueryBuilder->setArgument('on', $on);
         }
         $id = $this->queryLeaf($leafQueryBuilder, 'notify');
-        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
-    }
-
-    /**
-     * Restore a lifecycle subscription without announcing the current state or starting work.
-     *
-     * Both agents must have been restored with a supplied spawn handle and never activated. An empty state set removes the subscription.
-     */
-    public function restoreNotify(Agent $subscriber, array $on): Agent
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('restoreNotify');
-        $leafQueryBuilder->setArgument('subscriber', $subscriber);
-        $leafQueryBuilder->setArgument('on', $on);
-        $id = $this->queryLeaf($leafQueryBuilder, 'restoreNotify');
-        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
-    }
-
-    /**
-     * Discard a restored runtime during failed graph installation.
-     *
-     * Refuses fresh or already activated agents. Removes its notification edges and preserves a telemetry removal tombstone for archive verification.
-     */
-    public function discardRestore(): Agent
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('discardRestore');
-        $id = $this->queryLeaf($leafQueryBuilder, 'discardRestore');
         return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
     }
 

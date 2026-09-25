@@ -862,26 +862,6 @@ class Agent(Type):
     conversation itself remains observable at any time as an immutable LLM
     value."""
 
-    async def discard_restore(self) -> Self:
-        """Discard a restored runtime during failed graph installation.
-
-        Refuses fresh or already activated agents. Removes its notification
-        edges and preserves a telemetry removal tombstone for archive
-        verification.
-
-        .. caution::
-            Experimental: Agent APIs are likely to change.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        return await self._ctx.execute_sync(self, "discardRestore", _args)
-
     async def error(self) -> str:
         """Why the loop failed, for a FAILED agent; empty otherwise.
 
@@ -1035,6 +1015,12 @@ class Agent(Type):
         state fires immediately at subscribe time, so a fast agent settling
         before the subscription lands is not missed.
 
+        A restored agent that nothing has sent to, started, or resumed yet is
+        the exception: its state was reached in the session it was restored
+        from, so subscribing to it announces nothing until it next
+        transitions. This is how a restore reinstalls recorded subscriptions
+        without waking their subscribers.
+
         Idempotent per subscriber; re-subscribing replaces the state set.
 
         .. caution::
@@ -1145,40 +1131,6 @@ class Agent(Type):
             Arg("conversation", conversation),
         ]
         return await self._ctx.execute_sync(self, "reseed", _args)
-
-    async def restore_notify(
-        self,
-        subscriber: Self,
-        on: list[AgentState],
-    ) -> Self:
-        """Restore a lifecycle subscription without announcing the current state
-        or starting work.
-
-        Both agents must have been restored with a supplied spawn handle and
-        never activated. An empty state set removes the subscription.
-
-        .. caution::
-            Experimental: Agent APIs are likely to change.
-
-        Parameters
-        ----------
-        subscriber:
-            The restored subscriber capability.
-        on:
-            The recorded lifecycle state filter.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("subscriber", subscriber),
-            Arg("on", on),
-        ]
-        return await self._ctx.execute_sync(self, "restoreNotify", _args)
 
     async def resume(self) -> Self:
         """Resume draining the mailbox: a suspended turn continues from the last

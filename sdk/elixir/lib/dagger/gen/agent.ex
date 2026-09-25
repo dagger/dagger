@@ -18,33 +18,6 @@ defmodule Dagger.Agent do
   @type t() :: %__MODULE__{}
 
   @doc """
-  Discard a restored runtime during failed graph installation.
-
-  Refuses fresh or already activated agents. Removes its notification edges and preserves a telemetry removal tombstone for archive verification.
-
-  > #### Experimental {: .warning}
-  >
-  > "Agent APIs are likely to change."
-  """
-  @spec discard_restore(t()) :: {:ok, Dagger.Agent.t()} | {:error, term()}
-  def discard_restore(%__MODULE__{} = agent) do
-    query_builder =
-      agent.query_builder |> QB.select("discardRestore")
-
-    with {:ok, id} <- Client.execute(agent.client, query_builder) do
-      {:ok,
-       %Dagger.Agent{
-         query_builder:
-           QB.query()
-           |> QB.select("node")
-           |> QB.put_arg("id", id)
-           |> QB.inline_fragment("Agent"),
-         client: agent.client
-       }}
-    end
-  end
-
-  @doc """
   Why the loop failed, for a FAILED agent; empty otherwise.
 
   The snapshot holds the completed prefix — send or resume retries from it.
@@ -133,6 +106,8 @@ defmodule Dagger.Agent do
 
   Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
 
+  A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
+
   Idempotent per subscriber; re-subscribing replaces the state set.
 
   > #### Experimental {: .warning}
@@ -211,37 +186,6 @@ defmodule Dagger.Agent do
       agent.query_builder
       |> QB.select("reseed")
       |> QB.put_arg("conversation", Dagger.ID.id!(conversation))
-
-    with {:ok, id} <- Client.execute(agent.client, query_builder) do
-      {:ok,
-       %Dagger.Agent{
-         query_builder:
-           QB.query()
-           |> QB.select("node")
-           |> QB.put_arg("id", id)
-           |> QB.inline_fragment("Agent"),
-         client: agent.client
-       }}
-    end
-  end
-
-  @doc """
-  Restore a lifecycle subscription without announcing the current state or starting work.
-
-  Both agents must have been restored with a supplied spawn handle and never activated. An empty state set removes the subscription.
-
-  > #### Experimental {: .warning}
-  >
-  > "Agent APIs are likely to change."
-  """
-  @spec restore_notify(t(), Dagger.Agent.t(), [Dagger.AgentState.t()]) ::
-          {:ok, Dagger.Agent.t()} | {:error, term()}
-  def restore_notify(%__MODULE__{} = agent, subscriber, on) do
-    query_builder =
-      agent.query_builder
-      |> QB.select("restoreNotify")
-      |> QB.put_arg("subscriber", Dagger.ID.id!(subscriber))
-      |> QB.put_arg("on", on)
 
     with {:ok, id} <- Client.execute(agent.client, query_builder) do
       {:ok,
