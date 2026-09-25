@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -325,6 +326,58 @@ func TestRemoteMetadataCacheKeyIsolation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, gitInitCalls, "unrelated call key should not be aliased to remote metadata payload")
 	require.Equal(t, gitPayload, res.Value())
+}
+
+func TestPrimePublicRemoteScope(t *testing.T) {
+	secret, err := dagql.NewResultForCall(&Secret{Handle: "private-token"}, &dagql.ResultCall{})
+	require.NoError(t, err)
+	socket, err := dagql.NewResultForCall(&Socket{Handle: "private-socket"}, &dagql.ResultCall{})
+	require.NoError(t, err)
+	for name, change := range map[string]func(*RemoteGitRepository){
+		"anonymous": func(*RemoteGitRepository) {},
+		"username":  func(r *RemoteGitRepository) { r.AuthUsername = "user" },
+		"token":     func(r *RemoteGitRepository) { r.AuthToken = dagql.ObjectResult[*Secret]{Result: secret} },
+		"header":    func(r *RemoteGitRepository) { r.AuthHeader = dagql.ObjectResult[*Secret]{Result: secret} },
+		"socket":    func(r *RemoteGitRepository) { r.SSHAuthSocket = dagql.ObjectResult[*Socket]{Result: socket} },
+		"userinfo":  func(r *RemoteGitRepository) { r.URL.User = url.UserPassword("user", "password") },
+		"service":   func(r *RemoteGitRepository) { r.Services = ServiceBindings{{Hostname: "git"}} },
+		"ssh":       func(r *RemoteGitRepository) { r.URL.Scheme = "ssh" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			cache, err := dagql.NewCache(ctx, "", nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+			ctx = engine.ContextWithClientMetadata(dagql.ContextWithCache(ctx, cache), &engine.ClientMetadata{ClientID: "cli", SessionID: "first"})
+			repo := &RemoteGitRepository{URL: &gitutil.GitURL{Scheme: "https", Host: "example.com", Path: "/repo"}}
+			change(repo)
+			metadata := &gitutil.Remote{Refs: []*gitutil.Ref{{Name: "HEAD", SHA: strings.Repeat("a", 40)}}}
+			require.NoError(t, repo.PrimePublicRemote(ctx, metadata))
+			key, err := repo.remoteCacheKey(ctx)
+			require.NoError(t, err)
+			initialized := false
+			res, err := cache.GetOrInitArbitrary(ctx, "first", key, func(context.Context) (any, error) { initialized = true; return "existing", nil })
+			require.NoError(t, err)
+			require.Equal(t, name != "anonymous", initialized, "only anonymous HTTP metadata may be primed")
+			if name == "anonymous" {
+				got, err := remoteFromCacheResult(res.Value())
+				require.NoError(t, err)
+				require.Equal(t, metadata, got)
+				metadata.Refs[0].SHA = strings.Repeat("b", 40)
+				require.NoError(t, repo.PrimePublicRemote(ctx, metadata))
+				got, err = repo.Remote(ctx)
+				require.NoError(t, err)
+				require.Equal(t, strings.Repeat("a", 40), got.Refs[0].SHA, "first session view wins; input mutation cannot affect it")
+				ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "cli", SessionID: "second"})
+				require.NoError(t, repo.PrimePublicRemote(ctx, metadata))
+				got, err = repo.Remote(ctx)
+				require.NoError(t, err)
+				require.Equal(t, strings.Repeat("b", 40), got.Refs[0].SHA, "new session sees new refs")
+			} else {
+				require.Equal(t, "existing", res.Value())
+			}
+		})
+	}
 }
 
 func TestNamedFetchRefSpecs(t *testing.T) {
