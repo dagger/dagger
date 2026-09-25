@@ -218,14 +218,6 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
-
-	// cmdParentCtx is the context active just above the per-command span
-	// created in Handle. Builtins whose telemetry should surface as siblings of
-	// the command itself -- rather than nested under the command's own span --
-	// emit history against this instead of the command ctx (e.g. .resume, whose
-	// restored conversation belongs at the top level, not buried under the
-	// ".resume" span).
-	cmdParentCtx context.Context
 }
 
 // SubmitToTarget hands a submitted message to the FOCUSED conversation's
@@ -724,8 +716,8 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 	if h.mode == modePrompt {
 		if cmd, ok := h.slashCommand(line); ok {
 			// A prompt-mode "/command" invokes the matching builtin without
-			// leaving prompt mode, so session commands (e.g. /resume, /clear,
-			// /compact) are available natively in the agent prompt.
+			// leaving prompt mode, so session commands (e.g. /clear, /compact)
+			// are available natively in the agent prompt.
 			shellLine = cmd
 			contentType = modeShell.ContentType()
 		} else {
@@ -756,11 +748,6 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
 		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
-
-	// Remember the context above the per-command span so builtins that emit
-	// conversation telemetry (.resume) can surface it at this level rather than
-	// nested under their own command span.
-	h.cmdParentCtx = ctx
 
 	// Create a new span for this command
 	var span trace.Span
@@ -816,7 +803,7 @@ func (h *shellCallHandler) PromptMode() bool {
 // slashCommand maps a prompt-mode "/command" line to its equivalent ".command"
 // builtin invocation, returning the rewritten line and true when the leading
 // token names a real builtin. This lets agent-prompt users run session
-// commands (e.g. "/resume", "/compact") without switching to shell mode. Lines
+// commands (e.g. "/clear", "/compact") without switching to shell mode. Lines
 // that don't name a builtin -- including a bare "/" or ordinary prose that just
 // happens to start with a slash -- are left alone for the LLM.
 func (h *shellCallHandler) slashCommand(line string) (string, bool) {
@@ -885,7 +872,7 @@ func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.Compl
 		word := before[wordStart:]
 		// Slash-command completion: a leading "/" at the very start of the line
 		// offers the session builtins, shown without their "." prefix (e.g.
-		// "/resume"), mirroring how they run in prompt mode.
+		// "/compact"), mirroring how they run in prompt mode.
 		if wordStart == 0 && strings.HasPrefix(word, "/") {
 			prefix := word[1:]
 			var items []tuist.Completion
