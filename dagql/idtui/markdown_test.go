@@ -249,6 +249,49 @@ func TestMarkdownTableRuleColorInvalidatesViews(t *testing.T) {
 	require.Contains(t, m.View(), "\x1b[38;2;51;51;51m")
 }
 
+// Glamour pads every rendered line out to the wrap width, inside its SGR
+// sequences. That padding must not survive into vterm views as trailing
+// whitespace, whether or not the vterm has been given a width.
+func TestMarkdownTrimsWrapPadding(t *testing.T) {
+	for _, profile := range []termenv.Profile{termenv.Ascii, termenv.ANSI} {
+		for _, width := range []int{0, 80} {
+			for _, media := range []bool{false, true} {
+				term := NewVterm(profile)
+				if width > 0 {
+					term.SetWidth(width)
+				}
+				term.SetPrefix("┃ ")
+				if media {
+					term.WriteMedia(dagui.MediaRecord{Kind: "image"}, "[image]")
+				}
+				_, err := term.WriteMarkdown([]byte("sometimes you gotta be **bold**\nsecond line\n"))
+				require.NoError(t, err)
+				term.SetHeight(term.UsedHeight())
+				view := term.View()
+				require.Contains(t, ansi.Strip(view), "sometimes you gotta be bold")
+				for _, line := range strings.Split(strings.TrimSuffix(view, "\n"), "\n") {
+					plain := ansi.Strip(line)
+					require.Equal(t, strings.TrimRight(plain, " "), plain,
+						"profile=%v width=%d media=%v: trailing padding in %q", profile, width, media, line)
+				}
+			}
+		}
+	}
+}
+
+func TestTrimTrailingSpaceANSI(t *testing.T) {
+	for in, want := range map[string]string{
+		"plain   ":                             "plain",
+		"  indented  ":                         "  indented",
+		"\x1b[1mbold\x1b[0m\x1b[38m   \x1b[0m": "\x1b[1mbold\x1b[0m\x1b[38m\x1b[0m",
+		"\x1b]8;;http://x\x1b\\link\x1b]8;;\x1b\\  ": "\x1b]8;;http://x\x1b\\link\x1b]8;;\x1b\\",
+		"  \x1b[0m": "\x1b[0m",
+		"ünï  cödé": "ünï  cödé",
+	} {
+		require.Equal(t, want, trimTrailingSpaceANSI(in), "%q", in)
+	}
+}
+
 func TestMarkdownTableViews(t *testing.T) {
 	m := &Markdown{Content: compactMarkdownTable, Width: 80, Prefix: "  "}
 	require.Contains(t, m.View(), "━━━━━━  ━━━━")

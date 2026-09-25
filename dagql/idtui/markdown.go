@@ -46,6 +46,10 @@ func renderMarkdown(content string, width int, style glamouransi.StyleConfig, ru
 
 // trimMarkdownPadding removes Glamour's surrounding blank lines, but preserves
 // the first content line's indentation (notably the padding of a table cell).
+// It also drops the padding Glamour adds to fill every line out to the wrap
+// width: that padding sits inside SGR sequences, where plain whitespace
+// trimming cannot reach it, and would otherwise leak into views as trailing
+// spaces (plain ones, once an Ascii profile strips the sequences).
 func trimMarkdownPadding(rendered string) string {
 	lines := strings.Split(rendered, "\n")
 	blank := func(line string) bool { return strings.TrimSpace(ansi.Strip(line)) == "" }
@@ -55,7 +59,45 @@ func trimMarkdownPadding(rendered string) string {
 	for len(lines) > 0 && blank(lines[len(lines)-1]) {
 		lines = lines[:len(lines)-1]
 	}
+	for i, line := range lines {
+		lines[i] = trimTrailingSpaceANSI(line)
+	}
 	return strings.Join(lines, "\n")
+}
+
+// trimTrailingSpaceANSI removes trailing whitespace from a line while keeping
+// every escape sequence that follows the last visible character, so styling
+// is still reset as before.
+func trimTrailingSpaceANSI(line string) string {
+	type token struct {
+		seq     string
+		escape  bool
+		visible bool
+	}
+	var tokens []token
+	last := -1
+	var state byte
+	for rest := line; len(rest) > 0; {
+		seq, width, n, next := ansi.DecodeSequence(rest, state, nil)
+		if n <= 0 {
+			// Defensive: never loop forever on undecodable input.
+			return line
+		}
+		tok := token{seq: seq, escape: width == 0 && strings.HasPrefix(seq, "\x1b")}
+		tok.visible = !tok.escape && strings.TrimSpace(seq) != ""
+		if tok.visible {
+			last = len(tokens)
+		}
+		tokens = append(tokens, tok)
+		rest, state = rest[n:], next
+	}
+	var b strings.Builder
+	for i, tok := range tokens {
+		if i <= last || tok.escape {
+			b.WriteString(tok.seq)
+		}
+	}
+	return b.String()
 }
 
 type markdownTableRenderer struct {
