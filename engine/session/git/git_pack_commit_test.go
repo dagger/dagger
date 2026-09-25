@@ -101,11 +101,12 @@ func TestPackCommitUnavailable(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.NotNil(t, srv.metadata(t).Error)
-			if mode == "moved" {
+			switch mode {
+			case "moved":
 				require.Equal(t, CHECKOUT_STATE_MISMATCH, srv.metadata(t).Error.Type)
-			} else if mode == "corrupt-parent" {
+			case "corrupt-parent":
 				require.Equal(t, PACK_FAILED, srv.metadata(t).Error.Type)
-			} else {
+			default:
 				require.Equal(t, HISTORY_UNAVAILABLE, srv.metadata(t).Error.Type)
 			}
 			require.Zero(t, srv.chunkCount())
