@@ -31,17 +31,17 @@ type PromptFrame struct {
 	enabled     bool
 	background  color.Color
 	attachments []string
-	// focusCue shows the focus cue in the indent (see SetFocusCue).
-	focusCue bool
+	// isFocused reports whether a component owns the keyboard (see
+	// SetFocusSource).
+	isFocused func(tuist.Component) bool
 }
 
-// SetFocusCue toggles the focus cue in the first line's indent. Tuist doesn't
-// re-render a TextInput when its focus changes, so the owner reports it.
-func (p *PromptFrame) SetFocusCue(show bool) {
-	if p.focusCue == show {
-		return
-	}
-	p.focusCue = show
+// SetFocusSource sets how the frame asks whether its input is focused,
+// normally the owning TUI's IsFocused. The input re-renders when its focus
+// changes, and that marks this frame dirty too, so the cue follows focus
+// without anything else reporting it. Without a source the cue never shows.
+func (p *PromptFrame) SetFocusSource(isFocused func(tuist.Component) bool) {
+	p.isFocused = isFocused
 	p.Update()
 }
 
@@ -170,9 +170,10 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	ctx.Line("") // separate the draft from the transcript without extending its fill
 	ctx.Line(shade(""))
 	gutter := strings.Repeat(" ", indent)
+	focused := p.isFocused != nil && p.isFocused(p.input)
 	for i, line := range lines {
 		prefix := gutter
-		if i == 0 && p.focusCue && indent > 0 {
+		if i == 0 && focused && indent > 0 {
 			// Same width as the indent it replaces, so wrapping and the cursor
 			// column are unaffected.
 			prefix = out.String(LLMPrompt).Bold().String() + gutter[1:]

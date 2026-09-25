@@ -85,20 +85,28 @@ func TestPromptFrameRendersShadedInput(t *testing.T) {
 
 // TestPromptFrameFocusCue verifies the focused input swaps its first line's
 // two-space indent for the "❯ " focus cue -- same width, so wrapping and the
-// cursor column don't move -- and reverts to the indent when unfocused.
+// cursor column don't move -- and reverts to the indent when focus leaves. The
+// frame asks the TUI during Render, so this also relies on a focus change
+// re-rendering the (otherwise cached) frame.
 func TestPromptFrameFocusCue(t *testing.T) {
-	const width = 40
-	render := func(cue bool, width int) tuist.RenderResult {
+	newFrame := func(width int) (*PromptFrame, *promptFrameCapture, *tuist.TUI) {
 		input := tuist.NewTextInput("")
 		input.SetValue("hello there\nsecond line")
 		frame := NewPromptFrame(input, termenv.ANSI)
 		frame.SetEnabled(true)
 		frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
-		frame.SetFocusCue(cue)
-		return renderPromptFrame(frame, width)
+		capture := &promptFrameCapture{frame: frame}
+		tui := tuist.New(tuist.NewHeadlessTerminal(width, 20))
+		frame.SetFocusSource(tui.IsFocused)
+		tui.AddChild(capture)
+		tui.SetFocus(input)
+		tui.RenderOnce()
+		return frame, capture, tui
 	}
 
-	result := render(true, width)
+	const width = 40
+	frame, capture, tui := newFrame(width)
+	result := capture.result
 	require.Len(t, result.Lines, 5)
 	requirePromptBackground(t, result.Lines, width)
 	require.Equal(t, LLMPrompt+" hello there", strings.TrimRight(ansi.Strip(result.Lines[2]), " "))
@@ -106,13 +114,19 @@ func TestPromptFrameFocusCue(t *testing.T) {
 		"continuation lines keep the plain indent")
 	require.Equal(t, &tuist.CursorPos{Row: 3, Col: 13}, result.Cursor)
 
-	result = render(false, width)
-	require.Equal(t, "  hello there", strings.TrimRight(ansi.Strip(result.Lines[2]), " "))
-	require.Equal(t, &tuist.CursorPos{Row: 3, Col: 13}, result.Cursor)
+	tui.SetFocus(nil)
+	tui.RenderOnce()
+	require.Equal(t, "  hello there", strings.TrimRight(ansi.Strip(capture.result.Lines[2]), " "),
+		"the cue must leave with focus")
+
+	tui.SetFocus(frame.input)
+	tui.RenderOnce()
+	require.Equal(t, LLMPrompt+" hello there", strings.TrimRight(ansi.Strip(capture.result.Lines[2]), " "),
+		"the cue must return with focus")
 
 	// Too narrow for the full indent: the cue takes the one cell there is.
-	result = render(true, 2)
-	require.True(t, strings.HasPrefix(ansi.Strip(result.Lines[2]), LLMPrompt), ansi.Strip(result.Lines[2]))
+	_, capture, _ = newFrame(2)
+	require.True(t, strings.HasPrefix(ansi.Strip(capture.result.Lines[2]), LLMPrompt), ansi.Strip(capture.result.Lines[2]))
 }
 
 // TestPromptFocusCueFollowsInputFocus drives the frontend: the draft shows the

@@ -1250,6 +1250,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.promptFrame = NewPromptFrame(fe.textInput, fe.profile)
 	fe.promptFrame.SetBackground(fe.promptBackground.cell)
 	fe.promptFrame.SetKeyHandler(fe.handlePromptFrameKey)
+	fe.promptFrame.SetFocusSource(fe.tui.IsFocused)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.promptFrame)
@@ -2534,9 +2535,8 @@ func (fe *frontendPretty) focusNavigationTarget() {
 	fe.syncHardwareCursor()
 }
 
-// syncHardwareCursor keeps terminal cursor visibility, and the prompt's focus
-// cue, as a rendering side effect of Tuist focus. It is never consulted to
-// decide who receives input.
+// syncHardwareCursor keeps terminal cursor visibility as a rendering side
+// effect of Tuist focus. It is never consulted to decide who receives input.
 func (fe *frontendPretty) syncHardwareCursor() {
 	if fe.tui == nil {
 		return
@@ -2545,9 +2545,6 @@ func (fe *frontendPretty) syncHardwareCursor() {
 	show := focused != nil && (focused == fe.textInput || focused == fe.searchInput ||
 		focused == fe.logSearchInput || (fe.activeForm != nil && focused == fe.activeForm.wrap))
 	fe.tui.SetShowHardwareCursor(show)
-	if fe.promptFrame != nil {
-		fe.promptFrame.SetFocusCue(focused != nil && focused == fe.textInput)
-	}
 }
 
 // OnMount is called by tuist when the component is mounted into the TUI tree.

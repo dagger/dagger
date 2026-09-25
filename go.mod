@@ -160,7 +160,7 @@ require (
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5
-	github.com/vito/tuist v0.0.11
+	github.com/vito/tuist v0.0.12
 	github.com/vito/tuist/teav1 v0.0.0-20260819192838-ad563377029f
 	github.com/yuin/goldmark v1.7.13
 	github.com/yuin/goldmark-emoji v1.0.6
