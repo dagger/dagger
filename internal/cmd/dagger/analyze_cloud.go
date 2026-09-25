@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -16,55 +15,21 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-var (
-	logsOutput      string
-	logsTimeout     time.Duration
-	logsSpan        string
-	logsCheck       string
-	logsTest        string
-	logsDescendants bool
-)
-
-var cloudLogsCmd = newCloudLogsCmd()
+// cloudLogsCmd is a hidden alias for 'dagger cloud traces view --log'.
+var cloudLogsCmd = func() *cobra.Command {
+	cmd := newTraceViewCmd("logs [trace]", true)
+	cmd.Hidden = true
+	return cmd
+}()
 
 func init() {
 	cloudCmd.AddCommand(cloudLogsCmd)
 }
 
-func newCloudLogsCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "logs <trace-id> [--span <id> | --check <name> | --test <name>]",
-		Short: "Print the full logs for a Dagger Cloud trace, or a check/test/span within it",
-		Long: `Stream the full logs for a trace. Use this as a follow-up to
-'dagger trace' to inspect a failure in detail, addressing it by name rather than
-an opaque span ID. Redirect to a file to grep large logs in a controlled way:
-
-    dagger cloud logs <trace-id> --check build:lint -o span.log
-    grep -i error span.log
-
-With no --span/--check/--test, the whole trace's logs are streamed. --check and
---test roll up their subtree; --span is just that span (add --descendants to
-roll up its subtree too).`,
-		Args: cobra.ExactArgs(1),
-		RunE: cloudCLI.CloudLogs,
-	}
-	cmd.Flags().StringVar(&logsSpan, "span", "", "Read just this span's logs, by span ID")
-	cmd.Flags().StringVar(&logsCheck, "check", "", "Read a check's logs, by name (rolls up its subtree)")
-	cmd.Flags().StringVar(&logsTest, "test", "", "Read a test's logs, by name (rolls up its subtree)")
-	cmd.Flags().BoolVar(&logsDescendants, "descendants", false, "With --span, roll up the span's subtree logs too")
-	cmd.Flags().StringVarP(&logsOutput, "output", "o", "", "Write logs to a file instead of stdout")
-	cmd.Flags().DurationVar(&logsTimeout, "timeout", 2*time.Minute, "Max time to spend streaming logs")
-	return cmd
-}
-
-func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
+// writeTraceLogs writes the selected span's full logs, as raw text, to stdout
+// or to --output. It is 'view --log' when there is no pager.
+func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) error {
 	ctx := cmd.Context()
-	traceID := args[0]
-
-	sel := spanSelector{span: logsSpan, check: logsCheck, test: logsTest}
-	if err := sel.validate(); err != nil {
-		return err
-	}
 
 	// Cloud's OTLP stream endpoints are addressed by trace ID and token
 	// alone, so no org is resolved here.
@@ -75,8 +40,8 @@ func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
 
 	w := cmd.OutOrStdout()
 	var outFile *os.File
-	if logsOutput != "" {
-		f, err := os.Create(logsOutput)
+	if o.output != "" {
+		f, err := os.Create(o.output)
 		if err != nil {
 			return err
 		}
@@ -85,20 +50,56 @@ func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
 		w = f
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, logsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, o.timeout)
 	defer cancel()
 
 	spanID, descendants, err := sel.resolveSpan(ctx, client, traceID)
 	if err != nil {
 		return err
 	}
-	if logsDescendants {
+	if o.descendants {
 		descendants = true
 	}
 
-	var n int
 	endedWithNewline := true
 	var writeErr error
+	n, streamErr := streamTraceLogText(ctx, client, traceID, spanID, descendants, func(body string) error {
+		if _, err := io.WriteString(w, body); err != nil {
+			// Nothing more can be written (disk full, closed pipe);
+			// stop the stream rather than silently dropping the rest.
+			writeErr = err
+			cancel()
+			return err
+		}
+		endedWithNewline = strings.HasSuffix(body, "\n")
+		return nil
+	})
+	if writeErr != nil {
+		return fmt.Errorf("write logs: %w", writeErr)
+	}
+	// A deadline is an expected way to stop a long stream, not an error.
+	if streamErr != nil && !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return streamErr
+	}
+	if !endedWithNewline {
+		// End on a newline without having invented line breaks mid-stream.
+		io.WriteString(w, "\n")
+	}
+	if outFile != nil {
+		// Surface close errors (e.g. a deferred flush failing on a full disk)
+		// instead of reporting success over a truncated file.
+		if err := outFile.Close(); err != nil {
+			return fmt.Errorf("close %s: %w", o.output, err)
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "wrote %d log messages to %s\n", n, o.output)
+	}
+	return nil
+}
+
+// streamTraceLogText streams a span's logs from Cloud and hands each text
+// record's body to write, in order. It returns the number of bodies written.
+func streamTraceLogText(ctx context.Context, client *cloudapi.OTLPClient, traceID, spanID string, descendants bool, write func(body string) error) (int, error) {
+	var n int
 	// Every record class comes down; dagui's ingest sorts the text output
 	// from the semantic records riding the log channel (call payloads,
 	// progress, agent state, span names) exactly as the frontend does, so
@@ -116,41 +117,14 @@ func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
 				return nil
 			}
 			n++
-			if _, err := io.WriteString(w, body); err != nil {
-				// Nothing more can be written (disk full, closed pipe);
-				// stop the stream rather than silently dropping the rest.
-				writeErr = err
-				cancel()
-				return err
-			}
-			endedWithNewline = strings.HasSuffix(body, "\n")
-			return nil
+			return write(body)
 		}, db),
 	})
-	streamErr := client.FetchLogs(ctx, traceID, cloudapi.LogSelection{
+	err := client.FetchLogs(ctx, traceID, cloudapi.LogSelection{
 		SpanID:      spanID,
 		Descendants: descendants,
 	}, importer.ImportLogs)
-	if writeErr != nil {
-		return fmt.Errorf("write logs: %w", writeErr)
-	}
-	// A deadline is an expected way to stop a long stream, not an error.
-	if streamErr != nil && !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return streamErr
-	}
-	if !endedWithNewline {
-		// End on a newline without having invented line breaks mid-stream.
-		io.WriteString(w, "\n")
-	}
-	if outFile != nil {
-		// Surface close errors (e.g. a deferred flush failing on a full disk)
-		// instead of reporting success over a truncated file.
-		if err := outFile.Close(); err != nil {
-			return fmt.Errorf("close %s: %w", logsOutput, err)
-		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "wrote %d log messages to %s\n", n, logsOutput)
-	}
-	return nil
+	return n, err
 }
 
 // logTextWriter is a log exporter that hands each text record's body to

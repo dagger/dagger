@@ -7,13 +7,14 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // spanSelector addresses a single span within a trace by exactly one of a raw
 // span ID, a check name, or a test name. The zero value addresses nothing,
 // which callers read as "the whole trace" (its root span). It backs the
-// --span/--check/--test flags shared by 'dagger trace' and 'dagger cloud logs',
-// so a human can name a check or test instead of copying an opaque span hex.
+// --span/--check/--test flags of 'dagger cloud traces view', so a human can
+// name a check or test instead of copying an opaque span hex.
 type spanSelector struct {
 	span  string
 	check string
@@ -23,6 +24,28 @@ type spanSelector struct {
 // isSet reports whether any selector was given (vs. the zero "whole trace").
 func (s spanSelector) isSet() bool {
 	return s.span != "" || s.check != "" || s.test != ""
+}
+
+// title names the selection for the log pager.
+func (s spanSelector) title(traceID string) string {
+	switch {
+	case s.check != "":
+		return s.check
+	case s.test != "":
+		return s.test
+	case s.span != "":
+		return "span " + s.span
+	default:
+		return "trace " + traceID
+	}
+}
+
+func parseSpanID(hex string) (dagui.SpanID, error) {
+	sid, err := trace.SpanIDFromHex(hex)
+	if err != nil {
+		return dagui.SpanID{}, fmt.Errorf("invalid span %q: %w", hex, err)
+	}
+	return dagui.SpanID{SpanID: sid}, nil
 }
 
 func (s spanSelector) validate() error {
@@ -39,7 +62,7 @@ func (s spanSelector) validate() error {
 }
 
 // resolveSpan turns the selector into a concrete span ID plus whether to roll up
-// descendant logs, for 'dagger cloud logs'. A raw --span needs no lookup and
+// descendant logs, for 'dagger cloud traces view --log'. A raw --span needs no lookup and
 // stands alone (just that span); --check/--test and the empty "whole trace"
 // selector resolve against the trace's priority spans -- checks and tests are
 // priority spans, so they're present without fetching the whole trace -- and

@@ -376,6 +376,10 @@ type frontendPretty struct {
 	logPagerFocus  *tuist.FocusHandle
 	logSearchInput *tuist.TextInput
 
+	// logStream holds logs a caller streams in whole (OpenLogStream), for a
+	// span whose rolled-up output the per-span log buffers can't show.
+	logStream *logStream
+
 	// commandView replaces the generic trace screen when a command wants to
 	// own the semantic layout while embedding reusable trace components.
 	commandView       CommandView
@@ -3050,7 +3054,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		),
 		key.NewBinding(key.WithKeys("L"),
 			key.WithHelp("L", "logs"),
-			KeyEnabled(fe.spanHasLogs(focused)),
+			KeyEnabled(fe.spanHasLogs(focused) || fe.logStream != nil),
 		),
 		key.NewBinding(key.WithKeys("/"),
 			key.WithHelp("/", "search")),
@@ -3718,7 +3722,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	body := make([]string, 0, len(targets))
 	for _, sel := range targets {
-		body = append(body, fmt.Sprintf("dagger trace %s %s", fe.traceID, sel))
+		body = append(body, fmt.Sprintf("dagger cloud traces view %s %s", fe.traceID, sel))
 	}
 	return reportSectionLines(out, fe.agentStyle(), "MORE DETAILS", body)
 }

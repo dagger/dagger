@@ -191,6 +191,14 @@ type TraceFrontend interface {
 	// logs the zoomed report will render.
 	ZoomToSpan(dagui.SpanID)
 	RequestZoomLogs(id dagui.SpanID, descendants bool)
+	// Live reports whether the frontend renders interactively, i.e. whether
+	// OpenLogStream can show a pager.
+	Live() bool
+	// OpenLogStream opens the log pager on a new buffer for a span and
+	// returns a writer that appends to it. It is for output the caller
+	// streams in whole, such as a span's rolled-up logs. The pager closes to
+	// the trace view, and the inspect-logs key on the span reopens it.
+	OpenLogStream(id dagui.SpanID, title string) io.Writer
 }
 
 // The pretty frontend must keep satisfying the trace capabilities --

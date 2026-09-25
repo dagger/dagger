@@ -416,9 +416,9 @@ Manage Dagger Cloud
 * [dagger cloud integration](#dagger-cloud-integration)	 - Manage Dagger Cloud integration providers
 * [dagger cloud login](#dagger-cloud-login)	 - Log in to Dagger Cloud
 * [dagger cloud logout](#dagger-cloud-logout)	 - Log out from Dagger Cloud
-* [dagger cloud logs](#dagger-cloud-logs)	 - Print the full logs for a Dagger Cloud trace, or a check/test/span within it
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
 * [dagger cloud signup](#dagger-cloud-signup)	 - Create or select a Dagger Cloud account and organization
+* [dagger cloud traces](#dagger-cloud-traces)	 - View Dagger Cloud traces
 * [dagger cloud usage](#dagger-cloud-usage)	 - Show Dagger Cloud usage
 
 ## dagger cloud billing
@@ -783,48 +783,6 @@ dagger cloud logout
 
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
 
-## dagger cloud logs
-
-Print the full logs for a Dagger Cloud trace, or a check/test/span within it
-
-### Synopsis
-
-Stream the full logs for a trace. Use this as a follow-up to
-'dagger trace' to inspect a failure in detail, addressing it by name rather than
-an opaque span ID. Redirect to a file to grep large logs in a controlled way:
-
-    dagger cloud logs &lt;trace-id&gt; --check build:lint -o span.log
-    grep -i error span.log
-
-With no --span/--check/--test, the whole trace's logs are streamed. --check and
---test roll up their subtree; --span is just that span (add --descendants to
-roll up its subtree too).
-
-```
-dagger cloud logs <trace-id> [--span <id> | --check <name> | --test <name>]
-```
-
-### Options
-
-```
-      --check string       Read a check's logs, by name (rolls up its subtree)
-      --descendants        With --span, roll up the span's subtree logs too
-  -o, --output string      Write logs to a file instead of stdout
-      --span string        Read just this span's logs, by span ID
-      --test string        Read a test's logs, by name (rolls up its subtree)
-      --timeout duration   Max time to spend streaming logs (default 2m0s)
-```
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
-
 ## dagger cloud org
 
 Manage Dagger Cloud organizations
@@ -940,6 +898,179 @@ dagger cloud signup [options] [org]
 ### SEE ALSO
 
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+
+## dagger cloud traces
+
+View Dagger Cloud traces
+
+```
+dagger cloud traces
+```
+
+### Options inherited from parent commands
+
+```
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
+```
+
+### SEE ALSO
+
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+* [dagger cloud traces list](#dagger-cloud-traces-list)	 - List Dagger Cloud traces
+* [dagger cloud traces status](#dagger-cloud-traces-status)	 - Show if this installation sends traces to Dagger Cloud
+* [dagger cloud traces view](#dagger-cloud-traces-view)	 - View a Dagger Cloud trace
+
+## dagger cloud traces list
+
+List Dagger Cloud traces
+
+### Synopsis
+
+List the traces of a Dagger Cloud org, local and CI, newest first.
+
+Use the flags to filter the traces. All filters must match.
+
+```
+dagger cloud traces list
+```
+
+### Examples
+
+```
+dagger cloud traces list --status failed --branch main --since 7d
+dagger cloud traces list --mine --local --limit 5
+dagger cloud traces list --pr 123 --json id,status,duration
+```
+
+### Options
+
+```
+      --author string           Only traces whose commit author or committer matches this text
+      --branch string           Only traces of this branch
+      --ci                      Only traces of CI runs
+      --command string          Only traces whose command matches this glob, e.g. 'dagger check*'
+      --commit string           Only traces of this commit (full or short SHA)
+      --json strings            Print JSON with these fields: id,url,command,status,message,startedAt,endedAt,duration,local,sender,repo,branch,commit,tag,pr,title,author,provider
+  -L, --limit int               Maximum number of traces to list (1-1000) (default 20)
+      --local                   Only traces of local runs
+      --max-duration duration   Only traces that ran for at most this time
+      --min-duration duration   Only traces that ran for at least this time, e.g. 5m
+      --mine                    Only traces that you sent
+      --pr string               Only traces of this pull request number
+      --provider string         Only traces of this CI provider, e.g. github
+      --repo strings            Only traces of this repository, e.g. github.com/org/repo (repeatable)
+      --since string            Only traces that started after this time: a duration (30m, 2d, 1w) or a date (2006-01-02, RFC 3339)
+      --sort string             Sort order: start (newest first) or duration (longest first) (default "start")
+      --status string           Only traces with this status: passed, failed or running
+      --tag string              Only traces of this git tag
+      --token string            Only traces that this token sent (token ID or name)
+      --until string            Only traces that started before this time: a duration or a date, as for --since
+      --user string             Only traces that this user sent (user ID or email)
+```
+
+### Options inherited from parent commands
+
+```
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
+```
+
+### SEE ALSO
+
+* [dagger cloud traces](#dagger-cloud-traces)	 - View Dagger Cloud traces
+
+## dagger cloud traces status
+
+Show if this installation sends traces to Dagger Cloud
+
+### Synopsis
+
+Show if the dagger CLI on this machine sends traces to Dagger Cloud, with
+the current environment.
+
+This command shows the state of this installation, not the state of Dagger
+Cloud. It examines the local credential only. It does not ask Dagger Cloud if
+the credential is valid.
+
+The exit code is 0 when the CLI sends traces, and 1 when it does not.
+
+```
+dagger cloud traces status
+```
+
+### Options inherited from parent commands
+
+```
+  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
+```
+
+### SEE ALSO
+
+* [dagger cloud traces](#dagger-cloud-traces)	 - View Dagger Cloud traces
+
+## dagger cloud traces view
+
+View a Dagger Cloud trace
+
+### Synopsis
+
+View a Dagger Cloud trace: the overall result, the commands that caused a
+failure, check results and failed tests, each with the end of its logs, and the
+full call tree with arguments and timing. The command fetches spans and logs
+when it needs them, so it does not load the full trace first.
+
+The trace is a trace ID or a https://dagger.cloud/&lt;org&gt;/traces/&lt;id&gt; URL. Use
+--last for your most recent trace.
+
+Use --span, --check or --test to show one span, check or test.
+
+Use --log to show the full logs instead of the tree. In a terminal, the logs
+open in a pager: press esc to go to the tree, and L to go back to the logs. In
+other cases, or with --output, the command writes the raw logs.
+
+Use --web (-w) to open the trace in the Dagger Cloud web UI.
+
+```
+dagger cloud traces view [trace]
+```
+
+### Examples
+
+```
+dagger cloud traces view 2f123ba77bf7bd2d4db2f70ed20613e8
+dagger cloud traces view --last --check build:lint
+dagger cloud traces view --last --log --test TestFoo
+dagger cloud traces view https://dagger.cloud/acme/traces/2f123ba77bf7bd2d4db2f70ed20613e8 -w
+dagger cloud traces view --last --log --check build:lint -o lint.log
+```
+
+### Options
+
+```
+      --check string       Show only this check, by name
+      --descendants        With --log and --span, include the logs of the span's descendants
+      --last               View your most recent trace
+      --log                Show the full logs instead of the tree
+  -o, --output string      With --log, write the logs to this file
+      --span string        Show only this span, by span ID
+      --test string        Show only this test, by name
+      --timeout duration   With --log, the maximum time to write logs, when the command does not open a pager (default 2m0s)
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug             Enable engine and trace diagnostics
+  -E, --no-exit           Leave the TUI running after completion
+      --progress string   Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger cloud traces](#dagger-cloud-traces)	 - View Dagger Cloud traces
 
 ## dagger cloud usage
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	cloud "github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/util/cleanups"
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -27,59 +29,192 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
-var (
-	traceSpan  string
-	traceCheck string
-	traceTest  string
-)
-
-var traceCmd = &cobra.Command{
-	Use:    "trace [trace ID]",
-	Hidden: true,
-	Args:   cobra.ExactArgs(1),
-	Annotations: map[string]string{
-		"experimental":       "true",
-		showFinalProgressKey: "true",
-	},
-	Aliases: []string{"t", "analyze", "diagnose"},
-	Short:   "Diagnose or view a Dagger Cloud trace.",
-	Long: `Stream and render a Dagger Cloud trace: the overall pass/fail verdict, the
-command(s) that caused a failure, check results, and failed tests, each with the
-tail of its logs, plus the full call tree, arguments, and timing. Spans and logs
-are fetched incrementally, so the whole trace doesn't have to load up front.
-
-Use --span/--check/--test to scope and zoom the view to a single span, check, or
-test by name.`,
-	Example: `dagger trace 2f123ba77bf7bd2d4db2f70ed20613e8`,
-	RunE:    traceRun,
+// traceViewOptions are the flags of 'dagger cloud traces view' and of its
+// hidden aliases, 'dagger trace' and 'dagger cloud logs'.
+type traceViewOptions struct {
+	span        string
+	check       string
+	test        string
+	last        bool
+	log         bool
+	descendants bool
+	output      string
+	timeout     time.Duration
 }
 
-func init() {
-	traceCmd.Flags().StringVar(&traceSpan, "span", "", "Scope and zoom the view to a span ID (fetches its subtree and logs)")
-	traceCmd.Flags().StringVar(&traceCheck, "check", "", "Scope and zoom the view to a check by name")
-	traceCmd.Flags().StringVar(&traceTest, "test", "", "Scope and zoom the view to a test by name")
+func (o *traceViewOptions) selector() spanSelector {
+	return spanSelector{span: o.span, check: o.check, test: o.test}
+}
+
+var cloudTracesViewCmd = newTraceViewCmd("view [trace]", false)
+
+// traceCmd is a hidden alias for 'dagger cloud traces view'.
+var traceCmd = func() *cobra.Command {
+	cmd := newTraceViewCmd("trace [trace]", false)
+	cmd.Hidden = true
+	cmd.Aliases = []string{"t", "analyze", "diagnose"}
+	return cmd
+}()
+
+// newTraceViewCmd makes a 'view' command. With log set, the command always
+// shows logs, for the 'dagger cloud logs' alias of 'view --log'.
+func newTraceViewCmd(use string, log bool) *cobra.Command {
+	o := &traceViewOptions{log: log}
+	cmd := &cobra.Command{
+		Use:  use,
+		Args: cobra.MaximumNArgs(1),
+		Annotations: map[string]string{
+			showFinalProgressKey: "true",
+		},
+		Short: "View a Dagger Cloud trace",
+		Long: `View a Dagger Cloud trace: the overall result, the commands that caused a
+failure, check results and failed tests, each with the end of its logs, and the
+full call tree with arguments and timing. The command fetches spans and logs
+when it needs them, so it does not load the full trace first.
+
+The trace is a trace ID or a https://dagger.cloud/<org>/traces/<id> URL. Use
+--last for your most recent trace.
+
+Use --span, --check or --test to show one span, check or test.
+
+Use --log to show the full logs instead of the tree. In a terminal, the logs
+open in a pager: press esc to go to the tree, and L to go back to the logs. In
+other cases, or with --output, the command writes the raw logs.
+
+Use --web (-w) to open the trace in the Dagger Cloud web UI.`,
+		Example: `dagger cloud traces view 2f123ba77bf7bd2d4db2f70ed20613e8
+dagger cloud traces view --last --check build:lint
+dagger cloud traces view --last --log --test TestFoo
+dagger cloud traces view https://dagger.cloud/acme/traces/2f123ba77bf7bd2d4db2f70ed20613e8 -w
+dagger cloud traces view --last --log --check build:lint -o lint.log`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runTraceView(cmd, args, o)
+		},
+	}
+	flags := cmd.Flags()
+	flags.StringVar(&o.span, "span", "", "Show only this span, by span ID")
+	flags.StringVar(&o.check, "check", "", "Show only this check, by name")
+	flags.StringVar(&o.test, "test", "", "Show only this test, by name")
+	flags.BoolVar(&o.last, "last", false, "View your most recent trace")
+	if !log {
+		flags.BoolVar(&o.log, "log", false, "Show the full logs instead of the tree")
+	}
+	flags.BoolVar(&o.descendants, "descendants", false, "With --log and --span, include the logs of the span's descendants")
+	flags.StringVarP(&o.output, "output", "o", "", "With --log, write the logs to this file")
+	flags.DurationVar(&o.timeout, "timeout", 2*time.Minute, "With --log, the maximum time to write logs, when the command does not open a pager")
+	return cmd
+}
+
+func runTraceView(cmd *cobra.Command, args []string, o *traceViewOptions) error {
+	ctx := cmd.Context()
+	sel := o.selector()
+	if err := sel.validate(); err != nil {
+		return err
+	}
+	if !o.log && (o.descendants || o.output != "") {
+		return fmt.Errorf("--descendants and --output need --log")
+	}
+	if o.descendants && o.span == "" {
+		return fmt.Errorf("--descendants needs --span; --check and --test always include the descendants' logs")
+	}
+
+	traceID, orgName, urlSpan, err := resolveTraceViewArg(ctx, args, o)
+	if err != nil {
+		return err
+	}
+	if urlSpan != "" && !sel.isSet() {
+		sel.span = urlSpan
+	}
+
+	if web {
+		return openTraceWeb(cmd, traceID, orgName, sel)
+	}
+	if o.log {
+		tf, _ := Frontend.(idtui.TraceFrontend)
+		if o.output == "" && tf != nil && tf.Live() {
+			// The pager is interactive: keep the TUI open until the user
+			// quits.
+			opts.NoExit = true
+			return traceRun(cmd, traceID, sel, o)
+		}
+		return cloudCLI.writeTraceLogs(cmd, traceID, sel, o)
+	}
+	return traceRun(cmd, traceID, sel, o)
+}
+
+// resolveTraceViewArg returns the trace to view: the argument, or with --last
+// the user's most recent trace. It also returns the org and span that a trace
+// URL gives, or the org that --last used.
+func resolveTraceViewArg(ctx context.Context, args []string, o *traceViewOptions) (traceID, orgName, spanID string, err error) {
+	if !o.last {
+		if len(args) != 1 {
+			return "", "", "", fmt.Errorf("give a trace ID or URL, or use --last")
+		}
+		return parseTraceRef(args[0])
+	}
+	if len(args) > 0 {
+		return "", "", "", fmt.Errorf("give a trace or --last, not both")
+	}
+	client, cloudAuth, err := cloudCLI.cloudClient(ctx)
+	if err != nil {
+		return "", "", "", err
+	}
+	org, err := cloudCLI.resolveCloudOrg(ctx, client, cloudAuth)
+	if err != nil {
+		return "", "", "", err
+	}
+	traceID, err = client.LastUserTraceID(ctx, org.Name)
+	if err != nil {
+		return "", "", "", fmt.Errorf("find your last trace: %w", err)
+	}
+	if traceID == "" {
+		return "", "", "", fmt.Errorf("you have no traces in org %q", org.Name)
+	}
+	return traceID, org.Name, "", nil
+}
+
+// openTraceWeb opens the trace, or the selected span in it, in the web UI.
+func openTraceWeb(cmd *cobra.Command, traceID, orgName string, sel spanSelector) error {
+	ctx := cmd.Context()
+	if cloudOrgFlag != "" {
+		orgName = cloudOrgFlag
+	}
+	if orgName == "" {
+		var err error
+		if orgName, err = cloudOrgNameLocal(); err != nil {
+			return err
+		}
+	}
+	var spanID string
+	if sel.isSet() {
+		client, err := cloudCLI.cloudOTLPClient(ctx)
+		if err != nil {
+			return err
+		}
+		if spanID, _, err = sel.resolveSpan(ctx, client, traceID); err != nil {
+			return err
+		}
+	}
+	u := cloudSpanURL(orgName, traceID, spanID)
+	if err := browser.OpenURL(u); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Cannot open a web browser. Open this URL:\n")
+	}
+	_, err := fmt.Fprintln(cmd.OutOrStdout(), u)
+	return err
 }
 
 // traceRun streams a trace out of Cloud's binary OTLP endpoints
 // (internal/cloud/otlp.go) into the frontend's own exporters -- the transport
 // `dagger agent --trace` restores a session through -- and zooms the view to
-// any --span/--check/--test selection.
+// any --span/--check/--test selection. With --log in a live frontend, it also
+// opens the selected span's full logs in the pager.
 //
 // Those endpoints are addressed by trace ID and token alone, which is what
-// lets this command run without an org: the GraphQL-SSE subscriptions it used
-// to speak were org-scoped, so `dagger trace` needed --org (or a login with a
-// default org) before it could show anything. They take the same selection
-// the subscriptions did, so loading stays incremental: the priority spans
-// first, a span's children when it's expanded, a span's logs when they're
+// lets this command run without an org. They take the same selection the
+// Cloud web UI's subscriptions do, so loading stays incremental: the priority
+// spans first, a span's children when it's expanded, a span's logs when they're
 // shown.
-func traceRun(cmd *cobra.Command, args []string) error {
-	traceID := args[0]
-
-	sel := spanSelector{span: traceSpan, check: traceCheck, test: traceTest}
-	if err := sel.validate(); err != nil {
-		return err
-	}
-
+func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) error {
 	// The trace capabilities (lazy loading, zooming, surfaced-failure
 	// prefetch) are one optional interface; tf is nil for the plain/dots/logs
 	// frontends, which get the whole trace as an OTLP span/log stream instead.
@@ -174,6 +309,31 @@ func traceRun(cmd *cobra.Command, args []string) error {
 			// no later request in report mode.
 			tf.RequestZoomLogs(id, descendants)
 			tf.ZoomToSpan(id)
+		}
+
+		// --log: page the selected span's full logs. The stream runs on the
+		// outer ctx, so it follows a running trace until the user quits.
+		if tf != nil && o.log && tf.Live() {
+			spanID, descendants, err := sel.resolveSpan(ctx, client, traceID)
+			if err != nil {
+				return noop, err
+			}
+			if o.descendants {
+				descendants = true
+			}
+			id, err := parseSpanID(spanID)
+			if err != nil {
+				return noop, err
+			}
+			w := tf.OpenLogStream(id, sel.title(traceID))
+			go func() {
+				if _, err := streamTraceLogText(ctx, client, traceID, spanID, descendants, func(body string) error {
+					_, err := io.WriteString(w, body)
+					return err
+				}); err != nil && ctx.Err() == nil {
+					slog.Warn("failed to stream trace logs", "err", err)
+				}
+			}()
 		}
 
 		// Fetch the subtrees of surfaced failed checks so their cause and

@@ -49,6 +49,10 @@ type TraceCIMetadata struct {
 }
 
 type TraceCIChange struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Branch  string `json:"branch"`
 	HeadSHA string `json:"headSHA"`
 }
 
