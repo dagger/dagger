@@ -507,9 +507,10 @@ the final `STOPPED` record cannot reconstruct it.
 
 Runtime creation and graph installation are distinct phases. Restore in parent-first
 order where the API requires it, but do not activate anything until the whole
-required graph is installed. On a failure partway through rehydration, keep the
-prompt disabled and clean up newly created runtimes; do not leave a partially
-usable session advertised as restored.
+required graph is installed. A strict failure partway through rehydration fails the
+command before the prompt is enabled; the session's teardown releases the inert,
+unadopted runtimes it created. There is no separate rollback API. `--partial`
+(§10.1) instead skips an agent the engine refuses and continues.
 
 ## 6. Notification subscriptions are restore state
 
@@ -536,18 +537,19 @@ never expose or resurrect agents outside the caller's authorized scope.
 ### 6.2 Restore without generating historical completion events
 
 After all endpoint runtimes exist, install subscriptions before enabling any
-restored work. Do not restore them by blindly calling the public `notify` API:
-it performs an immediate level check and can enqueue an old completion, wake the
-chief, and spend tokens merely because restore occurred.
+restored work. Blindly applying `notify`'s immediate level check would enqueue an
+old completion, wake the chief, and spend tokens merely because restore occurred.
 
-The proposed restore-only installation path sets filters and initializes edge
-bookkeeping against the destination runtime's mapped state and restored committed
-conversation, without publishing a synthetic historical event. Future real
-transitions then use normal notification semantics, including the existing rule
-that an `IDLE` event requires newly committed work. The exact bookkeeping must be
-validated against that rule; mapped lifecycle state alone is not a delivery
-watermark. Public `notify` keeps its immediate level check for genuinely new
-subscriptions.
+Restore therefore reinstalls edges through the public `notify`, which skips its
+level check while the watched agent is a restored entry that nothing has sent to,
+started, or resumed. That state was reached in the recorded session, and an
+unactivated entry cannot transition, so there is no settle-before-subscribe race
+to close. The edge's bookkeeping starts at the restored state without publishing a
+synthetic historical event. Future real transitions then use normal notification
+semantics, including the existing rule that an `IDLE` event requires newly
+committed work; mapped lifecycle state alone is not a delivery watermark. Once the
+watched agent is activated, and for every agent that was never restored, `notify`
+keeps its immediate level check.
 
 This is **future-notification continuity**, not exactly-once delivery across the
 shutdown boundary. Notifications already incorporated into a committed conversation
@@ -701,7 +703,8 @@ The CLI sequence is:
    application acknowledgment. Exporter enqueue completion is not sufficient.
 4. Resolve every required anchor from the applied bootstrap before creating any
    runtime. Then rehydrate all agents without starting execution and install
-   notification relationships using the non-emitting restore path.
+   notification relationships through `notify`, which does not announce the state
+   of a restored agent that has not been activated (§6.2).
 5. Attach conversations and select focus (explicit `--agent` first; otherwise
    top-level lineage and recorded activity). Use traced state for reset behavior.
 6. Enable the prompt and start asynchronous historical spans/logs/metrics import.
@@ -709,8 +712,8 @@ The CLI sequence is:
 Raw validation establishes bootstrap consistency, not side-effect-free recipe
 evaluation. Anchor resolution may load schemas/modules or exercise still-eager
 binding paths; their broader portability hardening remains deferred (§7).
-The all-anchors barrier prevents a partial runtime graph from becoming usable,
-not every possible evaluation side effect.
+In strict mode, the all-anchors barrier prevents a partial runtime graph from
+becoming usable, not every possible evaluation side effect.
 
 Historical downloads use the bootstrap's fixed generation/cuts and exclusion rules,
 with reconnect cursors and bounded retries. They must not redefine the live primary
@@ -738,12 +741,14 @@ the projection, but cannot claim fast startup or strict final-roster completenes
 without the corresponding evidence. Never manufacture a successful close marker
 from end-of-download alone.
 
-Legacy or unsealed traces may remain viewable. If partial restore is supported,
-require explicit opt-in and identify omitted agents, subscriptions, and guarantees.
-Do not make `--partial` a silent dependency-substitution mechanism: a kept agent may
-reference an omitted worker. Strict restore is the normal path; safe dependency
-handling for partial restore is an implementation decision that must be settled
-before advertising that mode.
+Legacy or unsealed traces may remain viewable. Strict restore is the normal path:
+it fails on the first agent the trace does not carry enough to restore. `--partial`
+is the explicit opt-in to best-effort restore. It skips agents whose record cannot
+be mapped to a restore state, whose anchor does not rebuild, or whose rehydration
+the engine refuses, and drops subscriptions with a skipped endpoint. Each omission
+is reported. It fails if nothing can be restored. It is not a dependency-substitution
+mechanism: a kept agent may still reference an omitted worker, and a tool call
+addressing that worker fails when dispatched.
 
 ### 10.2 Hard cutover away from JSON session persistence
 
@@ -896,8 +901,6 @@ choices in the replacement PR:
   preserving final-revision verification and explicit failure.
 - The producer-side final roster/revision witness and close barrier, including
   removed agents/edges, without introducing another mutable-state authority.
-- Restore-only subscription bookkeeping that suppresses historical completions
-  while preserving notification on newly committed work.
 - Cloud bootstrap/finality availability and what legacy partial restore can safely
   support. The local fast path must not be advertised as a Cloud speedup.
 - Whether `-r` is removed or becomes an explicitly trace-based shortcut.
