@@ -358,13 +358,14 @@ snapshot-at-capture behavior; the gaps above remain follow-up work.
 `dagger agent --trace <id>` restores a new set of runtimes from a source trace:
 
 - The trace's committed conversations and Workspaces are authoritative.
-- All required agents, including dormant and explicitly stopped agents, exist
-  before any restored agent can execute a tool against another.
+- Every restorable agent, including dormant and explicitly stopped agents, exists
+  before any restored agent can execute a tool against another. Restore is
+  best-effort: an agent the trace cannot restore is skipped with a warning (§10.1).
 - Notification relationships and their configured state filters are restored.
 - The prompt becomes usable without waiting for unrelated historical telemetry.
 - Original imported telemetry supplies scrollback. We do not re-emit history as
   new conversation spans.
-- Incomplete restore-critical data produces an explicit error, not an older
+- Incomplete restore-critical data is reported, never replaced by an older
   snapshot presented as current, an empty seed, or a client-checkout fallback.
 - Restoring does not automatically spend model tokens or continue interrupted
   execution. An explicit user action starts work.
@@ -501,16 +502,17 @@ successive restores.
 | Session-cleanup `STOPPED` | Map the explicitly recorded pre-teardown state |
 | `RUNNING` or `WAITING_INPUT` at a supported cut | `IDLE`, retaining the committed conversation; no automatic continuation |
 
-Missing/unknown state or ambiguous stop semantics must not be guessed in strict
-restore. Graceful cleanup must record pre-teardown state explicitly; taking only
-the final `STOPPED` record cannot reconstruct it.
+Missing/unknown state or ambiguous stop semantics must not be guessed; such an
+agent is skipped rather than restored in a guessed state. Graceful cleanup must record
+pre-teardown state explicitly; taking only the final `STOPPED` record cannot
+reconstruct it.
 
 Runtime creation and graph installation are distinct phases. Restore in parent-first
 order where the API requires it, but do not activate anything until the whole
-required graph is installed. A strict failure partway through rehydration fails the
-command before the prompt is enabled; the session's teardown releases the inert,
-unadopted runtimes it created. There is no separate rollback API. `--partial`
-(§10.1) instead skips an agent the engine refuses and continues.
+restored graph is installed. An agent the engine refuses to rehydrate is skipped
+like one whose record or anchor is unusable (§10.1). A failure that is not
+per-agent fails the command before the prompt is enabled; the session's teardown
+releases the inert, unadopted runtimes it created. There is no rollback API.
 
 ## 6. Notification subscriptions are restore state
 
@@ -712,8 +714,8 @@ The CLI sequence is:
 Raw validation establishes bootstrap consistency, not side-effect-free recipe
 evaluation. Anchor resolution may load schemas/modules or exercise still-eager
 binding paths; their broader portability hardening remains deferred (§7).
-In strict mode, the all-anchors barrier prevents a partial runtime graph from
-becoming usable, not every possible evaluation side effect.
+In the local archive path, the all-anchors barrier prevents an unverified runtime
+graph from becoming usable, not every possible evaluation side effect.
 
 Historical downloads use the bootstrap's fixed generation/cuts and exclusion rules,
 with reconnect cursors and bounded retries. They must not redefine the live primary
@@ -741,14 +743,16 @@ the projection, but cannot claim fast startup or strict final-roster completenes
 without the corresponding evidence. Never manufacture a successful close marker
 from end-of-download alone.
 
-Legacy or unsealed traces may remain viewable. Strict restore is the normal path:
-it fails on the first agent the trace does not carry enough to restore. `--partial`
-is the explicit opt-in to best-effort restore. It skips agents whose record cannot
-be mapped to a restore state, whose anchor does not rebuild, or whose rehydration
-the engine refuses, and drops subscriptions with a skipped endpoint. Each omission
-is reported. It fails if nothing can be restored. It is not a dependency-substitution
-mechanism: a kept agent may still reference an omitted worker, and a tool call
-addressing that worker fails when dispatched.
+Legacy or unsealed traces may remain viewable. Restore of a verified source is
+best-effort per agent. It skips agents whose record cannot be mapped to a restore
+state (including a recorded capture failure), whose snapshot does not rebuild or
+fails its integrity check, or whose rehydration the engine refuses. It drops
+subscriptions with a skipped endpoint and logs a warning naming each omission and
+its reason. It fails if nothing can be restored. Archive-level problems (an
+incomplete or corrupt local archive, a malformed roster) still fail the whole
+restore. Best-effort is not a dependency-substitution mechanism: a kept agent may
+still reference an omitted worker, and a tool call addressing that worker fails
+when dispatched.
 
 ### 10.2 Hard cutover away from JSON session persistence
 
@@ -900,7 +904,7 @@ choices in the replacement PR:
 - Protected-processor backpressure/coalescing policy and shutdown deadlines, while
   preserving final-revision verification and explicit failure.
 - The producer-side final roster/revision witness and close barrier, including
-  removed agents/edges, without introducing another mutable-state authority.
+  removed subscription edges, without introducing another mutable-state authority.
 - Cloud bootstrap/finality availability and what legacy partial restore can safely
   support. The local fast path must not be advertised as a Cloud speedup.
 - Whether `-r` is removed or becomes an explicitly trace-based shortcut.
