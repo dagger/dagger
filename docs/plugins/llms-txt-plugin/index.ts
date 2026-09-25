@@ -101,14 +101,15 @@ const llmsTxtPlugin = async function pluginLlmsTxt(
         Record<string, unknown>
       >;
 
-      // Docusaurus keys `docs` by path, so `Object.entries` yields an
-      // alphabetical-by-path order. That buries "Getting Started" (which is the
-      // first thing a coding agent reads) below entries like Observability and
-      // Scaling. Instead, follow the sidebar order so the reading order matches
-      // what humans and agents see in the navigation.
+      // Docusaurus keys `docs` by doc id, so `Object.entries` yields an
+      // alphabetical-by-id order. That buries "Getting Started" (the first
+      // thing a coding agent reads) below entries like `config/*` and
+      // `reference/*`. Instead, follow the sidebar order so the reading order
+      // matches what humans and agents see in the navigation.
       type SidebarItem = {
         type?: string;
         href?: string;
+        docId?: string;
         items?: SidebarItem[];
       };
       const docsSidebars = (versionProps.docsSidebars ?? {}) as Record<
@@ -116,15 +117,34 @@ const llmsTxtPlugin = async function pluginLlmsTxt(
         SidebarItem[]
       >;
 
+      // Resolve a sidebar item to a doc-record key (doc id) when it points at a
+      // doc. Leaf links expose `docId` directly; category index links only
+      // expose a permalink via `href` (e.g. "/config"), so derive the doc id
+      // from it (e.g. "config/index" or "config").
+      const resolveDocId = (item: SidebarItem): string | undefined => {
+        if (typeof item.docId === "string" && item.docId in currentVersionDocsRoutes) {
+          return item.docId;
+        }
+        if (typeof item.href === "string") {
+          const slug = item.href.replace(/^\/+/, "").replace(/\/+$/, "");
+          for (const candidate of [`${slug}/index`, slug || "index"]) {
+            if (candidate in currentVersionDocsRoutes) {
+              return candidate;
+            }
+          }
+        }
+        return undefined;
+      };
+
       const orderedPaths: string[] = [];
       const seen = new Set<string>();
       const collectSidebarLinks = (items: SidebarItem[] | undefined) => {
         if (!items) return;
         for (const item of items) {
-          // Both plain links and categories may point at a doc via `href`.
-          if (typeof item.href === "string" && item.href in currentVersionDocsRoutes && !seen.has(item.href)) {
-            seen.add(item.href);
-            orderedPaths.push(item.href);
+          const docId = resolveDocId(item);
+          if (docId && !seen.has(docId)) {
+            seen.add(docId);
+            orderedPaths.push(docId);
           }
           if (item.items) {
             collectSidebarLinks(item.items);
@@ -136,7 +156,7 @@ const llmsTxtPlugin = async function pluginLlmsTxt(
       }
 
       // Order the records by sidebar order, then append any docs that are not
-      // referenced by a sidebar (sorted by path) so nothing is dropped.
+      // referenced by a sidebar (sorted by id) so nothing is dropped.
       const orderedEntries: [string, Record<string, unknown>][] = [
         ...orderedPaths.map(
           (p) => [p, currentVersionDocsRoutes[p]] as [string, Record<string, unknown>]
