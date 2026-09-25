@@ -234,7 +234,7 @@ func TestRestoreFailsOnAnUnrestorableAgent(t *testing.T) {
 		src.plan[1].Err = errors.New(`agent "scout" (agent-scout) published a STOPPED record with no reason`)
 		err := executeRestorePlan(context.Background(), src, dst, restoreRequest())
 		require.ErrorContains(t, err, "agent-scout")
-		require.NotContains(t, err.Error(), "pass --partial")
+		require.ErrorContains(t, err, "--partial")
 		require.Empty(t, dst.calls, "a refused restore must not create anything")
 	})
 
@@ -248,11 +248,71 @@ func TestRestoreFailsOnAnUnrestorableAgent(t *testing.T) {
 	})
 }
 
-func TestRestoreRefusesPartialGraph(t *testing.T) {
+// TestRestorePartialSkipsExactlyTheUnrestorableOnes: --partial is the opt-in
+// to best-effort, and it skips precisely the entries that were refused —
+// which is what a plan that refused wholesale could not express.
+func TestRestorePartialSkipsExactlyTheUnrestorableOnes(t *testing.T) {
 	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	delete(src.anchors, "xxh3:scout")
+	src.plan[2].Err = errors.New("published no snapshot digest")
+
 	req := restoreRequest()
 	req.partial = true
-	require.ErrorContains(t, executeRestorePlan(t.Context(), src, dst, req), "--partial is not supported")
+	require.NoError(t, executeRestorePlan(context.Background(), src, dst, req))
+
+	require.Equal(t, []string{"rehydrate:agent-chief", "adopt:agent-chief", "focus:agent-chief"},
+		dst.calls, "--partial must skip the refused entries and restore the rest")
+}
+
+// TestRestorePartialDropsEdgesToSkippedAgents: a recorded subscription is
+// reinstalled only when both of its endpoints were restored.
+func TestRestorePartialDropsEdgesToSkippedAgents(t *testing.T) {
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	ns := agentcontrol.Namespace{Session: "source", Trace: restoreRequest().traceID, Incarnation: "generation"}
+	for i := range src.plan {
+		src.plan[i].Source = agentcontrol.Key{Namespace: ns, Handle: src.plan[i].ID}
+	}
+	delete(src.anchors, "xxh3:scout")
+	edges := []agentcontrol.Subscription{
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-scout", Subscriber: "agent-chief"}, Revision: 1, States: []string{"IDLE"}},
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-tests", Subscriber: "agent-chief"}, Revision: 1, States: []string{"IDLE"}},
+	}
+	req := restoreRequest()
+	req.partial = true
+	require.NoError(t, executeRestoreGraph(t.Context(), src, dst, req, edges))
+	require.Equal(t, []string{
+		"rehydrate:agent-chief", "rehydrate:agent-tests",
+		"subscribe:handle:agent-tests:handle:agent-chief:[IDLE]",
+		"adopt:agent-chief", "adopt:agent-tests", "focus:agent-chief",
+	}, dst.calls)
+}
+
+// TestRestorePartialSkipsARefusedRehydration: best-effort extends to an
+// agent the engine refuses, not just one whose anchor did not resolve.
+func TestRestorePartialSkipsARefusedRehydration(t *testing.T) {
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	dst.failOn = "agent-chief"
+	req := restoreRequest()
+	req.partial = true
+	require.NoError(t, executeRestorePlan(t.Context(), src, dst, req))
+	require.NotContains(t, dst.calls, "adopt:agent-chief")
+	require.Contains(t, dst.calls, "adopt:agent-scout")
+	require.Contains(t, dst.calls, "adopt:agent-tests")
+	// With the chief gone, neither worker is top-level; focus falls back to
+	// the most recently active of what was restored.
+	require.Equal(t, "agent-tests", dst.focused)
+}
+
+// TestRestoreFailsWhenNothingCanBeRestored: --partial degrades a restore, it
+// does not turn one into an empty session that looks like it worked.
+func TestRestoreFailsWhenNothingCanBeRestored(t *testing.T) {
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	src.anchors = nil
+
+	req := restoreRequest()
+	req.partial = true
+	err := executeRestorePlan(context.Background(), src, dst, req)
+	require.ErrorContains(t, err, "no agent in trace")
 	require.Empty(t, dst.calls)
 }
 

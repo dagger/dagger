@@ -42,8 +42,8 @@ var agentCmd = &cobra.Command{
 		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
 			return err
 		}
-		if agentPartial {
-			return fmt.Errorf("--partial is not supported: a complete verified agent graph is required")
+		if agentPartial && agentTrace == "" {
+			return fmt.Errorf("--partial requires --trace")
 		}
 		if err := validateArchiveFlags(agentTrace, agentSourceSession, agentGeneration, agentFocus, agentListArchives, agentListMode, args); err != nil {
 			return err
@@ -119,8 +119,8 @@ func init() {
 		"With --trace and --source-session, select the exact archive generation")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
-	agentCmd.Flags().BoolVar(&agentPartial, "partial", false, "Unsupported: restore requires a complete verified agent graph")
-	_ = agentCmd.Flags().MarkHidden("partial")
+	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
+		"With --trace, restore the agents the trace carries enough to restore instead of failing on the first one it does not")
 }
 
 func validateArchiveFlags(traceID, source, generation, focus string, listArchives, listAgents bool, args []string) error {

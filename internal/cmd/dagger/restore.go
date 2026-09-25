@@ -83,9 +83,6 @@ func executeRestorePlan(ctx context.Context, src agentRestoreSource, dst restore
 }
 
 func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restoreTarget, req traceRestore, subscriptions []agentcontrol.Subscription) error {
-	if req.partial {
-		return errors.New("--partial is not supported: restoring an incomplete agent graph can leave tools addressing missing agents")
-	}
 	plan := src.AgentRestorePlan()
 	if len(plan) == 0 {
 		return fmt.Errorf("trace %s carries no agents to restore", req.traceID)
@@ -95,16 +92,26 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 		return err
 	}
 
-	// Resolve every anchor, validate every edge and choose focus before creating
-	// any runtime. A late failure must not expose a half-restored graph.
-	restoring := make([]restoredAgent, 0, len(plan))
-	byHandle := map[string]int{}
+	// Resolve every anchor, validate every edge and check focus before creating
+	// any runtime. A strict restore refuses an unrestorable agent up front: a
+	// missing worker is exactly the hole a later tool dispatch falls into, and
+	// that error would arrive minutes later with none of this context.
+	// --partial is the opt-in to best-effort, skipping exactly those entries.
+	roster := make(map[string]dagui.AgentRestore, len(plan))
+	var (
+		restoring []restoredAgent
+		skipped   []string
+	)
 	for _, entry := range plan {
+		roster[entry.ID] = entry
 		snapshotID, err := resolveAnchor(src, entry)
 		if err != nil {
-			return err
+			if !req.partial {
+				return fmt.Errorf("%w\n\npass --partial to restore the rest of the trace without it", err)
+			}
+			skipped = append(skipped, fmt.Sprintf("%s (%s): %v", entry.Name, entry.ID, err))
+			continue
 		}
-		byHandle[entry.ID] = len(restoring)
 		restoring = append(restoring, restoredAgent{entry: entry, snapshotID: snapshotID})
 	}
 	for _, edge := range subscriptions {
@@ -112,50 +119,86 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 			return fmt.Errorf("invalid restored subscription: %w", err)
 		}
 		for _, handle := range []string{edge.Watched, edge.Subscriber} {
-			i, ok := byHandle[handle]
+			entry, ok := roster[handle]
 			if !ok {
 				return fmt.Errorf("subscription endpoint %q is outside restore roster", handle)
 			}
-			if restoring[i].entry.Source.Namespace != edge.Namespace {
+			if entry.Source.Namespace != edge.Namespace {
 				return fmt.Errorf("subscription endpoint %q belongs to another source namespace", handle)
 			}
 		}
 	}
-	focus, notice, err := selectFocus(restoring, req.agent)
-	if err != nil {
+	if len(restoring) == 0 {
+		return fmt.Errorf("no agent in trace %s could be restored:\n  %s",
+			req.traceID, strings.Join(skipped, "\n  "))
+	}
+	if _, _, err := selectFocus(restoring, req.agent); err != nil {
 		return err
 	}
-
-	// All runtimes are inert: nothing runs until the prompt does, and nothing
-	// can address them until they are adopted. A failure from here on fails the
-	// command, and the session's teardown releases whatever was created.
-	// Install the complete graph before attaching the prompt. The watched
-	// agents have not been activated, so notify does not announce their
-	// restored states.
-	for i, restored := range restoring {
-		agentID, err := dst.Rehydrate(ctx, restored.entry, restored.snapshotID)
-		if err != nil {
-			return fmt.Errorf("re-hydrate agent %q (%s): %w", restored.entry.Name, restored.entry.ID, err)
-		}
-		restoring[i].agentID = agentID
+	for _, skip := range skipped {
+		restoreNotice(ctx, "skipped unrestorable agent "+skip)
 	}
+
+	// Runtimes are created inert: nothing runs until the prompt does, and
+	// nothing can address them until they are adopted. A strict failure from
+	// here on fails the command, and the session's teardown releases whatever
+	// was created. Under --partial, an agent the engine refuses is skipped like
+	// one whose anchor did not resolve.
+	restored := make([]restoredAgent, 0, len(restoring))
+	agentIDs := make(map[string]string, len(restoring))
+	for _, r := range restoring {
+		agentID, err := dst.Rehydrate(ctx, r.entry, r.snapshotID)
+		if err != nil {
+			err = fmt.Errorf("re-hydrate agent %q (%s): %w", r.entry.Name, r.entry.ID, err)
+			if !req.partial {
+				return err
+			}
+			restoreNotice(ctx, "skipped "+err.Error())
+			continue
+		}
+		r.agentID = agentID
+		restored = append(restored, r)
+		agentIDs[r.entry.ID] = agentID
+	}
+	if len(restored) == 0 {
+		return fmt.Errorf("no agent in trace %s could be re-hydrated", req.traceID)
+	}
+
+	// Install the recorded graph before attaching the prompt. The watched
+	// agents have not been activated, so notify does not announce their
+	// restored states; only transitions after the restore notify.
 	for _, edge := range subscriptions {
 		if len(edge.States) == 0 {
 			continue // removal tombstone, not a historical edge to resurrect
 		}
-		if err := dst.Subscribe(ctx, restoring[byHandle[edge.Watched]].agentID, restoring[byHandle[edge.Subscriber]].agentID, edge.States); err != nil {
-			return fmt.Errorf("restore subscription %s -> %s: %w", edge.Watched, edge.Subscriber, err)
+		watched, watchedOK := agentIDs[edge.Watched]
+		subscriber, subscriberOK := agentIDs[edge.Subscriber]
+		if !watchedOK || !subscriberOK {
+			// Only reachable under --partial: an endpoint was skipped.
+			restoreNotice(ctx, fmt.Sprintf("dropped subscription %s -> %s: an endpoint was not restored", edge.Watched, edge.Subscriber))
+			continue
+		}
+		if err := dst.Subscribe(ctx, watched, subscriber, edge.States); err != nil {
+			err = fmt.Errorf("restore subscription %s -> %s: %w", edge.Watched, edge.Subscriber, err)
+			if !req.partial {
+				return err
+			}
+			restoreNotice(ctx, "dropped "+err.Error())
 		}
 	}
-	for _, restored := range restoring {
-		if err := dst.Adopt(ctx, restored.entry, restored.agentID); err != nil {
-			return fmt.Errorf("attach to restored agent %q (%s): %w", restored.entry.Name, restored.entry.ID, err)
+	for _, r := range restored {
+		if err := dst.Adopt(ctx, r.entry, r.agentID); err != nil {
+			return fmt.Errorf("attach to restored agent %q (%s): %w", r.entry.Name, r.entry.ID, err)
 		}
+	}
+	focus, notice, err := selectFocus(restored, req.agent)
+	if err != nil {
+		return err
 	}
 	if notice != "" {
 		restoreNotice(ctx, notice)
 	}
-	return dst.Focus(ctx, focus.entry, restoring[byHandle[focus.entry.ID]].agentID)
+	return dst.Focus(ctx, focus.entry, focus.agentID)
 }
 
 // parentFirst rejects ambiguous handles, missing parents and lineage cycles.
