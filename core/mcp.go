@@ -1155,6 +1155,13 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 		slog.Warn("failed to normalize changeset to patch form", "error", err)
 		normalized = changes
 	}
+	// A successful command need not change any files. Do not retain its
+	// Changeset (or even its Before recipe) as an overlay: that would make
+	// restoring the conversation evaluate the command again. This bounded
+	// check distinguishes directory-only edits from an actual no-op.
+	if changed, err := normalized.Self().PathCountExceeds(ctx, 0); err == nil && !changed {
+		return nil
+	}
 	changesID, err := normalized.ID()
 	if err != nil {
 		return fmt.Errorf("get changeset ID: %w", err)
@@ -1231,9 +1238,6 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 	}); err != nil {
 		return changes, fmt.Errorf("read changeset patch: %w", err)
 	}
-	if patchText == "" {
-		return changes, nil
-	}
 	before := changes.Self().Before
 	if before.Self() == nil {
 		return changes, fmt.Errorf("changeset has no before directory")
@@ -1242,16 +1246,20 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 	if err != nil {
 		return changes, err
 	}
-	var patched dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, before, &patched, dagql.Selector{
-		View:  srv.View,
-		Field: "withPatch",
-		Args: []dagql.NamedInput{
-			{Name: "patch", Value: dagql.NewString(patchText)},
-			{Name: "onConflict", Value: PatchConflictLeaveMarkers},
-		},
-	}); err != nil {
-		return changes, fmt.Errorf("apply patch to before: %w", err)
+	// Empty patches still need normalization: they may describe directory-only
+	// changes, or a no-op whose raw After retains an expensive tool execution.
+	patched := before
+	if patchText != "" {
+		if err := srv.Select(ctx, before, &patched, dagql.Selector{
+			View:  srv.View,
+			Field: "withPatch",
+			Args: []dagql.NamedInput{
+				{Name: "patch", Value: dagql.NewString(patchText)},
+				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
+			},
+		}); err != nil {
+			return changes, fmt.Errorf("apply patch to before: %w", err)
+		}
 	}
 	patched, err = reconcileDirsAfterPatch(ctx, srv, changes, patched)
 	if err != nil {
@@ -1315,11 +1323,16 @@ func reconcileDirsAfterPatch(ctx context.Context, srv *dagql.Server, changes dag
 	// the patch itself, and reapply tolerantly: withNewDirectory is mkdir -p,
 	// withoutDirectory ignores an already-missing path.
 	for _, dir := range paths.Added {
+		info, err := changes.Self().After.Self().Stat(ctx, changes.Self().After, srv, strings.TrimSuffix(dir, "/"), true)
+		if err != nil {
+			return patched, fmt.Errorf("stat directory %q: %w", dir, err)
+		}
 		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
 			View:  srv.View,
 			Field: "withNewDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
+				{Name: "permissions", Value: dagql.NewInt(info.Permissions)},
 			},
 		}); err != nil {
 			return patched, fmt.Errorf("restore directory %q: %w", dir, err)
