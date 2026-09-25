@@ -116,6 +116,7 @@ type frontendPretty struct {
 	shell          ShellHandler
 	shellCtx       context.Context
 	shellInterrupt context.CancelCauseFunc
+	ranShell       bool // a shell ran, even once stopShell clears shell (see shellTranscript)
 	promptFg       termenv.Color
 	promptErr      error
 	promptErrLabel *ErrorLabel
@@ -750,11 +751,23 @@ func (s *SpanTreeView) inlineReportPrefix(r *renderer, row *dagui.TraceRow) stri
 	return prefixBuf.String()
 }
 
-// shellToolRow reports whether a row is a tool call drawn by the live shell
+// shellToolRow reports whether a row is a tool call drawn by the shell
 // transcript, whose title renders as "  • name" (focus cue column, faint dot,
 // then the name) rather than the tree's toggler + status icon.
 func (fe *frontendPretty) shellToolRow(row *dagui.TraceRow) bool {
-	return !fe.finalRender && fe.shell != nil && row.Span.LLMTool != ""
+	return fe.shellTranscript() && row.Span.LLMTool != ""
+}
+
+// shellTranscript reports whether conversation rows take the shell
+// transcript's layout: a two-cell cue column, padded prompt cards, and tool
+// calls indented under their reply. It holds while a shell is live and for
+// the final render after one ran, so the transcript printed on exit matches
+// the one the session showed.
+func (fe *frontendPretty) shellTranscript() bool {
+	if fe.finalRender {
+		return fe.ranShell
+	}
+	return fe.shell != nil
 }
 
 func (s *SpanTreeView) rows() *dagui.Rows {
@@ -1216,6 +1229,7 @@ func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 
 func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) {
 	fe.shell = handler
+	fe.ranShell = true
 	fe.shellCtx = ctx
 	fe.promptFg = termenv.ANSIGreen
 
@@ -3500,7 +3514,19 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// trace that ran an LLM, without the reveal bubbling or the shell's manual
 	// zoom. When both checks and a conversation surface (rare), the conversation
 	// follows the checks with a blank line between.
-	if convLines := fe.conversationReport(ctx, r, zoomed); len(convLines) > 0 {
+	//
+	// A shell session instead reprints the transcript it showed live, with the
+	// same layout (see shellTranscript), so exiting doesn't reflow the
+	// conversation into the report's style.
+	if fe.ranShell && !zoomed {
+		if lines := fe.renderProgressLines(r, ctx, 0); len(lines) > 0 {
+			if renderedRows {
+				ctx.Line("")
+			}
+			ctx.Lines(lines...)
+			renderedRows = true
+		}
+	} else if convLines := fe.conversationReport(ctx, r, zoomed); len(convLines) > 0 {
 		if renderedRows {
 			ctx.Line("")
 		}
@@ -5540,11 +5566,11 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 // padUserPrompt wraps a user prompt's rendered lines in a shaded blank line
 // above and below, extending its theme-relative background by one row each way so
 // the prompt reads as a padded card set apart from the transcript. Only applies
-// in the live shell view; other rows, the final report, and plain mode are
-// unchanged. Event-origin messages render as bare one-liners, not cards, so
-// they get no shaded padding either.
+// to the shell transcript (see shellTranscript); other rows, reports, and plain
+// mode are unchanged. Event-origin messages render as bare one-liners, not
+// cards, so they get no shaded padding either.
 func (fe *frontendPretty) padUserPrompt(row *dagui.TraceRow, lines []string) []string {
-	if fe.finalRender || fe.shell == nil || row.Span.LLMRole != telemetry.LLMRoleUser ||
+	if !fe.shellTranscript() || row.Span.LLMRole != telemetry.LLMRoleUser ||
 		row.Span.LLMEventOriginMessage() {
 		return lines
 	}
@@ -5568,7 +5594,7 @@ func (fe *frontendPretty) padUserPrompt(row *dagui.TraceRow, lines []string) []s
 // using the tree prefix instead of calling fancyIndent.
 func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
 	trimmedPrefix := strings.TrimRight(gapPrefix, " ")
-	if fe.shell != nil {
+	if fe.shellTranscript() {
 		// Messages a rewind abandoned read as one block of collapsed lines:
 		// the first gets the separating line a turn would, the rest sit
 		// flush beneath it.
@@ -7188,12 +7214,12 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	// already form the step title, regardless of expansion; neither kind
 	// belongs in the additional shell/rollup block below.
 	if span.Message == "" && span.LLMTool == "" &&
-		(span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded &&
+		(span.RollUpLogs || fe.shellTranscript()) && row.Depth == 0 && !row.Expanded &&
 		!fe.shouldRenderInlineTests(row) && !fe.rollsUpSubChecks(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-			if fe.shell != nil {
+			if fe.shellTranscript() {
 				unindent := *row
 				unindent.Depth = -1
 				fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
@@ -8104,7 +8130,7 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 
 	r.fancyIndent(out, row, false, true)
 
-	if !fe.finalRender && fe.shell != nil {
+	if fe.shellTranscript() {
 		switch {
 		case row.Span.LLMRole == telemetry.LLMRoleUser && !row.Span.LLMEventOriginMessage():
 			// The user's prompt sits on a shaded block; its leading gutter -- or
@@ -8154,7 +8180,7 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 			// line stays flush to match this.
 			fmt.Fprintln(out)
 			r.fancyIndent(out, row, false, true)
-			if !fe.finalRender && fe.shell != nil {
+			if fe.shellTranscript() {
 				if focused {
 					fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
 				} else {
@@ -8201,7 +8227,7 @@ const (
 // carries ("❯ " when focused, two spaces otherwise), after the tree indent.
 func (fe *frontendPretty) renderRowCue(out TermOutput, r *renderer, row *dagui.TraceRow, focused bool) {
 	r.fancyIndent(out, row, false, true)
-	if fe.finalRender || fe.shell == nil {
+	if !fe.shellTranscript() {
 		return
 	}
 	if focused {
@@ -8722,6 +8748,15 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 	if width <= 0 {
 		width = fe.window.Width
 	}
+	// Line 0 renders inline after the row's shell cue column (renderStep), so
+	// it has that much less room than the continuation lines, which carry the
+	// same-width gutter inside the view. Padding it to the full width would
+	// overflow the terminal by the cue: invisible while the live frame clips
+	// it, but the exit render's unclipped lines would wrap.
+	firstWidth := width
+	if width > 0 && fe.shellTranscript() {
+		firstWidth = max(width-ansi.StringWidth(logPrefix), 1)
+	}
 
 	if user && !failed {
 		// Origin-carrying messages (hack/designs/agent-messaging.md §4.1) do
@@ -8732,7 +8767,7 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 		case span.LLMEventOriginMessage() && !isKittyImageLine(view):
 			return fe.styleLLMEventView(out, view), true
 		case span.LLMAgentOriginMessage():
-			return fe.styleLLMAgentMessageView(out, span, logPrefix, view, width), true
+			return fe.styleLLMAgentMessageView(out, span, logPrefix, view, width, firstWidth), true
 		}
 	}
 
@@ -8764,8 +8799,11 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 			b.WriteString(out.String(body).Foreground(termenv.ANSIRed).String())
 		case user:
 			padded := plain
-			if width > 0 {
-				padded = padANSI(clipPlain(plain, width), width)
+			if lineWidth := width; lineWidth > 0 {
+				if i == 0 {
+					lineWidth = firstWidth
+				}
+				padded = padANSI(clipPlain(plain, lineWidth), lineWidth)
 			}
 			b.WriteString(out.String(padded).Background(fe.promptBackground.term).String())
 		default:
@@ -8817,7 +8855,8 @@ func (fe *frontendPretty) styleLLMEventView(out TermOutput, view string) string 
 // The header takes the inline position on the title line, so the body's
 // first line -- which rendered inline for plain user prompts -- moves down a
 // row and gains the message gutter the continuation lines already carry.
-func (fe *frontendPretty) styleLLMAgentMessageView(out TermOutput, span *dagui.Span, logPrefix, view string, width int) string {
+// headerWidth is the room left on that title line (see styleLLMMessageView).
+func (fe *frontendPretty) styleLLMAgentMessageView(out TermOutput, span *dagui.Span, logPrefix, view string, width, headerWidth int) string {
 	shade := fe.promptBackground.term
 	name := span.LLMOriginAgentName
 	if name == "" {
@@ -8833,16 +8872,16 @@ func (fe *frontendPretty) styleLLMAgentMessageView(out TermOutput, span *dagui.S
 	if detail != "" {
 		plainHeader += " " + detail
 	}
-	if width > 0 && lipgloss.Width(plainHeader) > width {
+	if headerWidth > 0 && lipgloss.Width(plainHeader) > headerWidth {
 		// Too narrow for the styled split: fall back to one clipped segment.
-		b.WriteString(out.String(padANSI(clipPlain(plainHeader, width), width)).Faint().Background(shade).String())
+		b.WriteString(out.String(padANSI(clipPlain(plainHeader, headerWidth), headerWidth)).Faint().Background(shade).String())
 	} else {
 		rest := ""
 		if detail != "" {
 			rest = " " + detail
 		}
-		if width > 0 {
-			rest = padANSI(rest, width-lipgloss.Width(name))
+		if headerWidth > 0 {
+			rest = padANSI(rest, headerWidth-lipgloss.Width(name))
 		}
 		b.WriteString(out.String(name).Bold().Foreground(termenv.ANSICyan).Background(shade).String())
 		b.WriteString(out.String(rest).Faint().Background(shade).String())
