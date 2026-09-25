@@ -987,29 +987,7 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 		return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
 	}
 
-	activeChanges := changes
-	if gitignore {
-		if deltaRoot, ok := ws.OverlayDeltaRoot(); ok {
-			sparseBase, err := s.sparseHostBaseWithGitignore(ctx, ws, ws.OverlayTouchedPaths(), true)
-			if err != nil {
-				return inst, err
-			}
-			sparseBaseID, err := sparseBase.ID()
-			if err != nil {
-				return inst, err
-			}
-			var gitignoreChanges dagql.ObjectResult[*core.Changeset]
-			if err := srv.Select(ctx, deltaRoot, &gitignoreChanges, dagql.Selector{
-				Field: "changes",
-				Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](sparseBaseID)}},
-			}); err != nil {
-				return inst, fmt.Errorf("workspace directory %q (overlay gitignore diff): %w", resolvedPath, err)
-			}
-			activeChanges = gitignoreChanges
-		}
-	}
-
-	changesID, err := activeChanges.ID()
+	changesID, err := changes.ID()
 	if err != nil {
 		return inst, err
 	}
@@ -1019,6 +997,26 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 		Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
 	}); err != nil {
 		return inst, fmt.Errorf("workspace directory %q (overlay): %w", resolvedPath, err)
+	}
+
+	if gitignore {
+		if explicitWrites, ok := ws.OverlayExplicitWrites(); ok {
+			explicitWritesID, err := explicitWrites.ID()
+			if err != nil {
+				return inst, err
+			}
+			var layered dagql.ObjectResult[*core.Directory]
+			if err := srv.Select(ctx, merged, &layered, dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString("/")},
+					{Name: "source", Value: dagql.NewID[*core.Directory](explicitWritesID)},
+				},
+			}); err != nil {
+				return inst, fmt.Errorf("workspace directory %q (overlay explicit writes): %w", resolvedPath, err)
+			}
+			merged = layered
+		}
 	}
 
 	// Descend and re-apply the filter: the changeset applies at the workspace
@@ -2299,7 +2297,7 @@ func (s *workspaceSchema) overlayWorkspaceWithMutation(
 	ws.SetRootfs(dagql.ObjectResult[*core.Directory]{})
 	// Value/git/rootless workspaces diff full in-engine trees (no TouchedPaths);
 	// the sparse delta-native path is host-only (see overlayEdit).
-	ws.SetSource(core.NewWorkspaceSourceOverlay(parent.Self().Source(), nil, nil, changesResult))
+	ws.SetSource(core.NewWorkspaceSourceOverlay(parent.Self().Source(), nil, nil, changesResult, dagql.ObjectResult[*core.Directory]{}))
 	if mutate != nil {
 		mutate(ws)
 	}
@@ -2391,6 +2389,17 @@ func (s *workspaceSchema) overlayEdit(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
+	explicitBase, ok := ws.OverlayExplicitWrites()
+	if !ok {
+		if err := srv.Select(ctx, srv.Root(), &explicitBase, dagql.Selector{Field: "directory"}); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+	}
+	explicitRoot, err := edit(explicitBase)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
 	sparseBaseID, err := sparseBase.ID()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -2405,7 +2414,7 @@ func (s *workspaceSchema) overlayEdit(
 
 	newWS := ws.Clone()
 	newWS.SetRootfs(dagql.ObjectResult[*core.Directory]{})
-	newWS.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), touchedAll, seededAll, changesResult))
+	newWS.SetSource(core.NewWorkspaceSourceOverlay(ws.Source(), touchedAll, seededAll, changesResult, explicitRoot))
 	if mutate != nil {
 		mutate(newWS)
 	}
@@ -2507,20 +2516,11 @@ func unionPaths(a, b []string) []string {
 // sparseHostBase resolves the host workspace's base directory including only the
 // given touched paths (and their subtrees), so diffing/exporting the overlay
 // syncs just those files from the host rather than the whole tree. With no
-// touched paths — or when none exist on the host — it is an empty directory.
+// touched paths, or when none exist on the host, it is an empty directory.
 func (s *workspaceSchema) sparseHostBase(
 	ctx context.Context,
 	ws *core.Workspace,
 	touched []string,
-) (dagql.ObjectResult[*core.Directory], error) {
-	return s.sparseHostBaseWithGitignore(ctx, ws, touched, false)
-}
-
-func (s *workspaceSchema) sparseHostBaseWithGitignore(
-	ctx context.Context,
-	ws *core.Workspace,
-	touched []string,
-	gitignore bool,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2544,20 +2544,13 @@ func (s *workspaceSchema) sparseHostBaseWithGitignore(
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
-	args := []dagql.NamedInput{
-		{Name: "path", Value: dagql.NewString(absPath)},
-		{Name: "include", Value: includes},
-	}
-	if gitignore {
-		args = append(args,
-			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
-			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
-		)
-	}
 	var out dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, srv.Root(), &out,
 		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "directory", Args: args},
+		dagql.Selector{Field: "directory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(absPath)},
+			{Name: "include", Value: includes},
+		}},
 	); err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("sparse host base: %w", err)
 	}
