@@ -223,7 +223,8 @@ type AgentRestorer interface {
 	// WaitForEventLoop acknowledges application of all previously enqueued telemetry,
 	// not just its delivery to the exporters. Call from outside the UI event loop.
 	WaitForEventLoop(context.Context) error
-	// AgentControl returns the canonical projections, including removal witnesses.
+	// AgentControl returns the canonical agent projections and subscription
+	// edges, including subscription removal records (empty state filters).
 	AgentControl() ([]agentcontrol.Agent, []agentcontrol.Subscription, error)
 	// AgentRestorePlan projects the imported trace's agents into what the
 	// restore needs to re-hydrate them, live-session agents excluded
