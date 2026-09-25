@@ -1962,17 +1962,32 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 
 	// The loop really is module-internal: its span hangs under the module
 	// function's call span, the same place a staff worker's does under its
-	// chief's tool call.
-	var underModuleCall bool
-	sink.read(func(db *dagui.DB) {
-		for parent := range node.Span().Parents {
-			if pc := parent.Call(); pc != nil && pc.Field == "hire" {
-				underModuleCall = true
-				break
+	// chief's tool call. Control records can arrive before diagnostic spans
+	// and their ancestry. Re-read the roster on each attempt: DB mutations
+	// rebuild its nodes, so the node returned by awaitAgent may stay span-less.
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			var current *dagui.AgentNode
+			for _, candidate := range db.Agents() {
+				if candidate.ID == node.ID {
+					current = candidate
+					break
+				}
 			}
-		}
-	})
-	require.True(t, underModuleCall, "the loop span must descend from the module call")
+			if !assert.NotNil(ct, current, "agent must remain in the roster") ||
+				!assert.NotNil(ct, current.Span(), "agent loop span has not arrived") {
+				return
+			}
+			var underModuleCall bool
+			for parent := range current.Span().Parents {
+				if pc := parent.Call(); pc != nil && pc.Field == "hire" {
+					underModuleCall = true
+					break
+				}
+			}
+			assert.True(ct, underModuleCall, "the loop span must descend from the module call")
+		})
+	}, 60*time.Second, 100*time.Millisecond)
 
 	// The walk closes over every kind of frame the chain mixes: the calls
 	// the module issued from its own session (the system prompt it composes
