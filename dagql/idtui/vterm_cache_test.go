@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
@@ -55,7 +56,7 @@ func TestVtermLazySpillAndCache(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestVtermCacheReplaysANSIAndResizeHistory(t *testing.T) {
+func TestVtermCacheReplaysLogicalANSI(t *testing.T) {
 	term := NewVterm(termenv.ANSI)
 	t.Cleanup(term.Close)
 	eager := midterm.NewAutoResizingTerminal()
@@ -65,7 +66,7 @@ func TestVtermCacheReplaysANSIAndResizeHistory(t *testing.T) {
 		_, err = io.WriteString(eager, s)
 		require.NoError(t, err)
 	}
-	resize := func(width int) { term.SetWidth(width); eager.ResizeX(width) }
+	resize := func(width int) { term.SetWidth(width) }
 	resize(12)
 	write("long text wrapping at the original width\r\n")
 	write("\x1b[31")
@@ -230,6 +231,52 @@ func TestPrettyLogsCollapsedSpansStayLazy(t *testing.T) {
 		require.Nil(t, logs.vt, "collapsed spans must not materialize while drawing the tree")
 	}
 	require.Zero(t, fe.logs.Cache.entries.Len())
+}
+
+func TestVtermStreamAndLayoutStayLazy(t *testing.T) {
+	term := NewVterm(termenv.ANSI)
+	t.Cleanup(term.Close)
+	const text = "\x1b[31mfirst logical line\x1b[0m\nsecond"
+	_, err := io.WriteString(term, text)
+	require.NoError(t, err)
+	for width := 1; width < 100; width++ {
+		term.SetWidth(width)
+		term.SetPrefix("> ")
+	}
+	require.Nil(t, term.vt)
+	stored, err := term.terminalBuf.contents()
+	require.NoError(t, err)
+	require.Equal(t, text, stored, "the spool contains only stream bytes, without write/resize framing")
+	term.SetWidth(8)
+	term.SetHeight(2)
+	logical := term.vt
+	firstWrap := &term.textRows[0].wraps[0]
+	for range 10 {
+		_, err := io.WriteString(term, "!")
+		require.NoError(t, err)
+	}
+	require.Same(t, logical, term.vt, "live writes incrementally update one logical terminal")
+	require.True(t, term.layoutDirty, "writes do not eagerly lay out the stream")
+	term.View()
+	require.Same(t, firstWrap, &term.textRows[0].wraps[0], "unchanged logical rows reuse wrap metadata")
+	require.Equal(t, "!!!!", ansi.Strip(term.LastLine()))
+	var clipped bytes.Buffer
+	term.Render(&clipped, 1, 1)
+	require.Contains(t, clipped.String(), "\x1b[31m", "clipped continuation rows carry their own style")
+}
+
+func TestVtermMediaProgressBeforeWrapping(t *testing.T) {
+	term := NewVterm(termenv.Ascii)
+	t.Cleanup(term.Close)
+	term.SetWidth(4)
+	_, err := io.WriteString(term, "abcdefghij\r\x1b[2Kdone")
+	require.NoError(t, err)
+	term.WriteMedia(dagui.MediaRecord{Kind: "audio"}, "img")
+	_, err = io.WriteString(term, "klmnopqrst\x1b[10Dnext\x1b[K")
+	require.NoError(t, err)
+	require.Equal(t, "done\nimg\nnext\n", mediaTestView(term))
+	term.SetWidth(20)
+	require.Equal(t, "done\nimg\nnext\n", mediaTestView(term))
 }
 
 func BenchmarkVtermHiddenLogs(b *testing.B) {

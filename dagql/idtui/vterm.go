@@ -37,12 +37,15 @@ type Vterm struct {
 
 	// Separate buffer for Markdown content
 	markdownBuf *logBuffer
-	// The journal is authoritative; midterm is a disposable display cache.
-	terminalBuf   *logBuffer
-	terminalWidth int
-	cache         *terminalCache
-	follow        bool
-	storageErr    error
+	// The byte stream is authoritative; midterm is a disposable logical cache.
+	terminalBuf *logBuffer
+	cache       *terminalCache
+	follow      bool
+	storageErr  error
+	textRows    []vtermTextRow
+	textHeight  int
+	layoutDirty bool
+	cacheCells  int
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
 	rawBuf      *logBuffer
@@ -83,7 +86,14 @@ func (term *Vterm) SearchMatchRows() []int {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 	term.materializeLocked()
-	return append([]int(nil), term.vt.SearchMatchRows()...)
+	var rows []int
+	for _, match := range term.vt.SearchMatches {
+		row := term.matchRow(match)
+		if len(rows) == 0 || rows[len(rows)-1] != row {
+			rows = append(rows, row)
+		}
+	}
+	return rows
 }
 
 func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
@@ -154,7 +164,7 @@ func (term *Vterm) usedHeightLocked() int {
 	if term.segments != nil {
 		return len(term.mediaRows)
 	}
-	return term.vt.UsedHeight()
+	return term.textHeight
 }
 
 func (term *Vterm) SetHeight(height int) {
@@ -178,19 +188,13 @@ func (term *Vterm) SetWidth(width int) {
 	if width == term.Width {
 		return
 	}
+	term.rememberFollowLocked()
 	term.Width = width
 	if term.segments != nil {
 		term.invalidateMedia()
 		return
 	}
-	prefixWidth := lipgloss.Width(term.Prefix)
-	if width > prefixWidth {
-		_ = term.journal('r', nil, width-prefixWidth)
-		if term.vt != nil {
-			term.vt.ResizeX(width - prefixWidth)
-		}
-	}
-	term.cache.touch(term)
+	term.layoutDirty = true
 	term.needsRedraw = true
 }
 
@@ -200,19 +204,13 @@ func (term *Vterm) SetPrefix(prefix string) {
 	if prefix == term.Prefix {
 		return
 	}
+	term.rememberFollowLocked()
 	term.Prefix = prefix
 	if term.segments != nil {
 		term.invalidateMedia()
 		return
 	}
-	prefixWidth := lipgloss.Width(prefix)
-	if term.Width > prefixWidth {
-		_ = term.journal('r', nil, term.Width-prefixWidth)
-		if term.vt != nil {
-			term.vt.ResizeX(term.Width - prefixWidth)
-		}
-	}
-	term.cache.touch(term)
+	term.layoutDirty = true
 	term.needsRedraw = true
 }
 
@@ -288,8 +286,9 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 // setCurrentMatchByRow finds the first search match on the given row and
 // marks it as "current" in midterm. Must be called with term.mu held.
 func (term *Vterm) setCurrentMatchByRow(row int) {
+	term.vt.SearchSetCurrent(-1)
 	for i, m := range term.vt.SearchMatches {
-		if m.Row == row {
+		if term.matchRow(m) == row {
 			term.vt.SearchSetCurrent(i)
 			return
 		}
@@ -375,7 +374,8 @@ func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
 	if currentIdx < 0 || currentIdx >= count {
 		row, _ = term.vt.SearchSetCurrent(-1)
 	} else {
-		row, _ = term.vt.SearchSetCurrent(currentIdx)
+		term.vt.SearchSetCurrent(currentIdx)
+		row = term.matchRow(term.vt.SearchMatches[currentIdx])
 	}
 	term.SearchQuery = query
 	term.SearchCurrentRow = row
@@ -576,30 +576,23 @@ func (term *Vterm) renderLocked(w io.Writer, offset, height int) {
 		term.renderMedia(w, offset, height)
 		return
 	}
-	used := term.vt.UsedHeight()
-	if used == 0 {
-		return
-	}
-
-	vt := NewOutput(w, termenv.WithProfile(term.Profile))
-	w = vt
-
-	var lines int
-	for row := range term.vt.Content {
-		if row < offset {
+	end := max(0, offset) + max(0, height)
+	for row, layout := range term.textRows {
+		if layout.offset+len(layout.wraps) <= offset {
 			continue
 		}
-		if row+1 > (offset + height) {
+		if layout.offset >= end {
 			break
 		}
-
-		fmt.Fprint(w, vt.String(term.Prefix))
-		term.vt.RenderLineFgBg(w, row, nil, nil)
-		fmt.Fprintln(w)
-		lines++
-
-		if row > used {
-			break
+		var line strings.Builder
+		term.vt.RenderLineFgBg(&line, row, nil, nil)
+		for i, wrap := range layout.wraps {
+			if layout.offset+i < offset || layout.offset+i >= end {
+				continue
+			}
+			// Cut carries the logical line's ANSI style into every visible
+			// slice, even when earlier wrapped rows are outside the viewport.
+			fmt.Fprintln(w, term.Prefix+ansi.Cut(line.String(), wrap.start, wrap.end)+reset)
 		}
 	}
 }
@@ -621,10 +614,15 @@ func (term *Vterm) LastLine() string {
 	for row := used - 1; row >= 0; row-- {
 		buf := new(strings.Builder)
 		_ = term.vt.RenderLine(buf, row)
-		if strings.TrimSpace(buf.String()) == "" {
+		if strings.TrimSpace(ansi.Strip(buf.String())) == "" {
 			continue
 		}
 		lastLine = strings.TrimRightFunc(buf.String(), unicode.IsSpace)
+		if term.segments == nil {
+			wraps := term.textRows[row].wraps
+			wrap := wraps[len(wraps)-1]
+			lastLine = ansi.Cut(lastLine, wrap.start, wrap.end)
+		}
 		break
 	}
 	return lastLine + reset

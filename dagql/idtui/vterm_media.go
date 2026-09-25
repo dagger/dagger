@@ -18,7 +18,6 @@ import (
 // placement rows must never be interpreted by either Glamour or midterm.
 type vtermSegment struct {
 	text     *logBuffer
-	journal  *logBuffer
 	markdown bool
 	media    *dagui.MediaRecord
 	fallback string
@@ -52,10 +51,12 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 			term.markdownBuf = new(logBuffer)
 		}
 		if term.terminalBuf.Len() > 0 {
-			term.segments = append(term.segments, vtermSegment{journal: term.terminalBuf})
+			term.segments = append(term.segments, vtermSegment{text: term.terminalBuf})
 			term.terminalBuf = new(logBuffer)
 		}
 		term.vt = nil
+		term.textRows = nil
+		term.textHeight = 0
 	}
 	fallback = strings.TrimSpace(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
@@ -106,10 +107,8 @@ func (term *Vterm) mediaAtBottom() bool {
 		return true
 	}
 	if term.segments == nil {
-		if term.vt == nil {
-			return term.follow
-		}
-		return term.Offset+term.Height >= term.vt.UsedHeight()
+		term.rememberFollowLocked()
+		return term.follow
 	}
 	if term.mediaRows == nil {
 		return term.mediaFollow
@@ -153,25 +152,7 @@ func (term *Vterm) layoutMedia() {
 			}
 			continue
 		}
-		var text string
-		var err error
-		if segment.journal != nil {
-			terminal := midterm.NewAutoResizingTerminal()
-			err = replayTerminal(segment.journal, terminal)
-			var snapshot strings.Builder
-			for row := 0; row < terminal.UsedHeight(); row++ {
-				if row > 0 {
-					snapshot.WriteString("\r\n")
-				}
-				terminal.RenderLineFgBg(&snapshot, row, nil, nil)
-			}
-			text = snapshot.String()
-			if text == "" && err == nil {
-				continue
-			}
-		} else {
-			text, err = segment.text.contents()
-		}
+		text, err := segment.text.contents()
 		if err != nil {
 			term.storageErr = err
 			text = "[log storage error: " + err.Error() + "]"
@@ -193,12 +174,13 @@ func (term *Vterm) layoutMedia() {
 			}
 		} else {
 			terminal := midterm.NewAutoResizingTerminal()
-			terminal.ResizeX(width)
 			_, _ = terminal.Write([]byte(text))
 			for row := 0; row < terminal.UsedHeight(); row++ {
 				var line strings.Builder
 				terminal.RenderLineFgBg(&line, row, nil, nil)
-				lines = append(lines, line.String())
+				for _, wrap := range wrapLine(textLine(terminal, row), width) {
+					lines = append(lines, ansi.Cut(line.String(), wrap.start, wrap.end)+reset)
+				}
 			}
 		}
 		for _, line := range lines {
@@ -225,6 +207,13 @@ func (term *Vterm) layoutMedia() {
 		}
 		if !row.image {
 			_, _ = term.vt.Write([]byte(row.text))
+		}
+	}
+	term.cacheCells = 0
+	for i, row := range term.vt.Content {
+		term.cacheCells += len(row)
+		if i < len(term.mediaRows) {
+			term.cacheCells += len(term.mediaRows[i].text)/4 + 8
 		}
 	}
 	if term.SearchQuery != "" {
