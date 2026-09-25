@@ -100,7 +100,7 @@ func TestRemovedResumeCommandExplainsTraceReplacement(t *testing.T) {
 			require.True(t, cmd.Hidden)
 			err := cmd.Run(t.Context(), cmd, []string{"old-file-uuid"}, nil)
 			require.ErrorContains(t, err, "local JSON session resume is no longer supported")
-			require.ErrorContains(t, err, "dagger agent --trace")
+			require.ErrorContains(t, err, "dagger agent -r")
 			require.Nil(t, h.llmSession, "removed command must not start an LLM")
 			return
 		}

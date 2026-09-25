@@ -176,7 +176,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 func archiveRestoreError(traceID string, err error) error {
 	var requestErr *archive.RequestError
 	if errors.As(err, &requestErr) && requestErr.Failure == archive.FailureAmbiguous {
-		return fmt.Errorf("restore engine archive %s: %w; list choices with dagger agent --list-archives --trace %s, then select --source-session <session> --generation <generation>", traceID, err, traceID)
+		return fmt.Errorf("restore engine archive %s: %w; list its sessions and generations with a bare dagger agent -r, then select --source-session <session> --generation <generation>", traceID, err)
 	}
 	if archive.IsCleanMiss(err) {
 		return fmt.Errorf("trace %s has no retained engine archive: %w", traceID, err)

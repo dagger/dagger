@@ -2,12 +2,14 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/archive"
@@ -17,10 +19,9 @@ import (
 )
 
 var agentListMode bool
-var agentResume string
+var agentResume agentResumeFlag
 var agentTrace string
 var agentFocus string
-var agentListArchives bool
 var agentSourceSession string
 var agentGeneration string
 
@@ -35,19 +36,25 @@ var agentCmd = &cobra.Command{
 		showFinalProgressKey: "true",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resume := cmd.Flags().Changed("resume")
-		// Refuse the combinations that have no meaning before any engine work
-		// happens (hack/designs/resume-from-trace.md §5.4).
-		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
+		traceID, listArchives, args, err := resolveResumeFlags(
+			agentResume, cmd.Flags().Changed("resume"),
+			agentTrace, cmd.Flags().Changed("trace"),
+			args)
+		if err != nil {
 			return err
 		}
-		if err := validateArchiveFlags(agentTrace, agentSourceSession, agentGeneration, agentFocus, agentListArchives, agentListMode, args); err != nil {
+		// Refuse the combinations that have no meaning before any engine work
+		// happens (hack/designs/resume-from-trace.md §5.4).
+		if err := validateAgentTraceFlags(traceID, args); err != nil {
+			return err
+		}
+		if err := validateArchiveFlags(traceID, agentSourceSession, agentGeneration, agentFocus, listArchives, agentListMode, args); err != nil {
 			return err
 		}
 		// The prompt is about to use the LLM, so renew an expired subscription
 		// login up front. The on-demand refresher hook exports the renewed
 		// token on the engine's first credential lookup.
-		if !agentListArchives && !agentListMode {
+		if !listArchives && !agentListMode {
 			if err := llmconfig.RefreshOAuthTokensIfNeeded(cmd.Context()); err != nil {
 				slog.Warn("failed to refresh LLM OAuth tokens", "error", err)
 			}
@@ -60,8 +67,8 @@ var agentCmd = &cobra.Command{
 			cmd.Context(), params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				source := archive.NewClient(client.EngineConn(engineClient)).WithStallTimeout(30 * time.Second)
-				if agentListArchives {
-					return listAgentArchives(ctx, source, agentTrace, cmd.OutOrStdout())
+				if listArchives {
+					return listAgentArchives(ctx, source, cmd.OutOrStdout())
 				}
 				source = source.WithSourceSession(agentSourceSession)
 				dag := engineClient.Dagger()
@@ -76,7 +83,7 @@ var agentCmd = &cobra.Command{
 				// anchors, not a destination base LLM, own the provider and workspace.
 				var llmID string
 				var err error
-				if agentTrace == "" {
+				if traceID == "" {
 					llmID, err = composeAgents(ctx, dag, args, cmd)
 				}
 				if err != nil {
@@ -84,7 +91,7 @@ var agentCmd = &cobra.Command{
 				}
 				restore := traceRestore{
 					source:        source,
-					traceID:       agentTrace,
+					traceID:       traceID,
 					generation:    agentGeneration,
 					sourceSession: agentSourceSession,
 					agent:         agentFocus,
@@ -98,39 +105,86 @@ var agentCmd = &cobra.Command{
 	},
 }
 
+// agentResumeFlag is the -r/--resume value: the trace to restore, or the
+// reserved word "list" that a bare -r resolves to (via NoOptDefVal). A custom
+// pflag.Value keeps the help readable — `--resume trace[=list]` — since pflag
+// renders a custom type's NoOptDefVal unquoted after its Type() name. Trace IDs
+// are hex, so the keyword cannot shadow one.
+type agentResumeFlag string
+
+const agentResumeList agentResumeFlag = "list"
+
+func (f *agentResumeFlag) String() string { return string(*f) }
+
+func (f *agentResumeFlag) Set(value string) error {
+	*f = agentResumeFlag(value)
+	return nil
+}
+
+func (f *agentResumeFlag) Type() string { return "trace" }
+
+// resolveResumeFlags folds -r/--resume and its deprecated --trace alias into
+// the trace to restore, or a request to list archives, returning the
+// remaining positional arguments.
+func resolveResumeFlags(resume agentResumeFlag, resumeSet bool, traceAlias string, traceAliasSet bool, args []string) (traceID string, listArchives bool, rest []string, err error) {
+	switch {
+	case resumeSet && traceAliasSet:
+		return "", false, nil, errors.New("--trace is a deprecated alias of -r/--resume; pass only -r")
+	case traceAliasSet:
+		if traceAlias == "" {
+			return "", false, nil, errors.New("--trace requires a trace ID")
+		}
+		return traceAlias, false, args, nil
+	case !resumeSet:
+		return "", false, args, nil
+	case resume == "":
+		return "", false, nil, errors.New("-r/--resume requires a trace ID, or no value to list archives")
+	case resume != agentResumeList:
+		return string(resume), false, args, nil
+	}
+	// A bare -r takes no value, so `-r <id>` parses the ID as a positional
+	// argument. Agent names are never trace IDs, so accept that spelling too.
+	if len(args) == 1 {
+		if _, err := trace.TraceIDFromHex(args[0]); err == nil {
+			return args[0], false, nil, nil
+		}
+	}
+	return "", true, args, nil
+}
+
 func init() {
 	registerCommandArtifactFlags(agentCmd)
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
-	agentCmd.Flags().StringVarP(&agentResume, "resume", "r", "", "Unsupported: use --trace with a verified trace ID")
-	agentCmd.Flags().Lookup("resume").NoOptDefVal = "removed"
-	_ = agentCmd.Flags().MarkHidden("resume")
-	agentCmd.Flags().StringVar(&agentTrace, "trace", "",
-		"Restore agents from a retained engine archive, falling back to their Dagger Cloud trace")
-	agentCmd.Flags().BoolVar(&agentListArchives, "list-archives", false,
-		"List retained engine archives without restoring; --trace filters the list")
+	agentCmd.Flags().VarP(&agentResume, "resume", "r",
+		"Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, list retained engine archives")
+	// A bare -r resolves to the list keyword; -r <trace-id> and -r=<trace-id>
+	// both restore (resolveResumeFlags recognizes the space-separated form).
+	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentResumeList)
+	agentCmd.Flags().StringVar(&agentTrace, "trace", "", "Restore agents from a past session's trace")
+	_ = agentCmd.Flags().MarkDeprecated("trace", "use -r/--resume <trace-id> instead")
 	agentCmd.Flags().StringVar(&agentSourceSession, "source-session", "",
-		"With --trace, select the source session in an engine archive or Cloud trace")
+		"With -r, select the source session in an engine archive or Cloud trace")
 	agentCmd.Flags().StringVar(&agentGeneration, "generation", "",
-		"With --trace and --source-session, select the exact archive generation")
+		"With -r and --source-session, select the exact archive generation")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
-		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
+		"With -r, focus this restored agent (runtime handle or name) instead of the top-level one")
 }
 
 func validateArchiveFlags(traceID, source, generation, focus string, listArchives, listAgents bool, args []string) error {
 	if listArchives {
 		if listAgents || len(args) != 0 || source != "" || generation != "" || focus != "" {
-			return fmt.Errorf("--list-archives accepts only --trace as an archive filter; do not combine it with agent names, --list, --agent, --source-session, or --generation")
+			return fmt.Errorf("-r without a trace ID lists archives; do not combine it with agent names, --list, --agent, --source-session, or --generation")
 		}
 		return nil
 	}
 	if traceID != "" && listAgents {
-		return fmt.Errorf("--trace cannot be combined with --list")
+		return fmt.Errorf("-r/--resume cannot be combined with --list")
 	}
 	if traceID == "" && (source != "" || generation != "" || focus != "") {
-		return fmt.Errorf("--source-session, --generation, and --agent require --trace")
+		return fmt.Errorf("--source-session, --generation, and --agent require -r/--resume <trace-id>")
 	}
 	if generation != "" && source == "" {
-		return fmt.Errorf("--generation requires --source-session; discover engine cuts with --list-archives")
+		return fmt.Errorf("--generation requires --source-session; discover engine cuts with a bare -r")
 	}
 	return nil
 }
@@ -141,7 +195,7 @@ type agentArchiveLister interface {
 
 // Listing only reads archive metadata: no leases, bootstrap, module composition,
 // provider lookup, or runtime restoration are needed.
-func listAgentArchives(ctx context.Context, source agentArchiveLister, traceID string, out io.Writer) error {
+func listAgentArchives(ctx context.Context, source agentArchiveLister, out io.Writer) error {
 	manifests, err := source.ListAll(ctx, archive.ListOptions{})
 	if err != nil {
 		return err
@@ -151,9 +205,6 @@ func listAgentArchives(ctx context.Context, source agentArchiveLister, traceID s
 		return err
 	}
 	for _, m := range manifests {
-		if traceID != "" && m.TraceID != traceID {
-			continue
-		}
 		// Quoting prevents user-provided titles from injecting terminal controls
 		// or breaking a metadata row into multiple lines.
 		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%q\n", m.TraceID, m.SourceSession, m.Generation, m.State, m.StartedAt.UTC().Format(time.RFC3339), m.Title); err != nil {

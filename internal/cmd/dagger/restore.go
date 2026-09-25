@@ -60,10 +60,10 @@ type restoreTarget interface {
 func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceRestore) (_ func(), rerr error) {
 	fe, ok := Frontend.(archiveFrontend)
 	if !ok {
-		return nil, fmt.Errorf("--trace needs a frontend that keeps the trace: %T cannot restore from one", Frontend)
+		return nil, fmt.Errorf("-r/--resume needs a frontend that keeps the trace: %T cannot restore from one", Frontend)
 	}
 	if req.source == nil {
-		return nil, errors.New("--trace requires an authenticated archive source")
+		return nil, errors.New("-r/--resume requires an authenticated archive source")
 	}
 	ctx, span := Tracer().Start(ctx, "restoring trace "+req.traceID, telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -406,10 +406,7 @@ func (r *sessionRestore) Focus(ctx context.Context, entry dagui.AgentRestore, ag
 
 // validateAgentTraceFlags rejects the combinations §5.4 rules out, before any
 // engine work happens.
-func validateAgentTraceFlags(traceID string, resume bool, args []string) error {
-	if resume {
-		return errors.New("-r/--resume local JSON sessions are no longer supported; use dagger agent --trace <trace-id> with a verified archive (existing session files are left untouched)")
-	}
+func validateAgentTraceFlags(traceID string, args []string) error {
 	if traceID == "" {
 		return nil
 	}
@@ -417,7 +414,7 @@ func validateAgentTraceFlags(traceID string, resume bool, args []string) error {
 		// Composition comes from the trace: the restored agents are the ones
 		// the source session actually had, not the ones currentWorkspace
 		// offers today.
-		return fmt.Errorf("--trace cannot be combined with agent names (%s): "+
+		return fmt.Errorf("-r/--resume cannot be combined with agent names (%s): "+
 			"a restored session's agents come from the trace, not from the workspace",
 			strings.Join(args, ", "))
 	}

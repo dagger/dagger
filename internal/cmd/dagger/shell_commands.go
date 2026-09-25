@@ -198,7 +198,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			Args:        MaximumArgs(1),
 			State:       NoState,
 			Run: func(context.Context, *ShellCommand, []string, *ShellState) error {
-				return fmt.Errorf("local JSON session resume is no longer supported; use dagger agent --trace <trace-id> with a verified archive")
+				return fmt.Errorf("local JSON session resume is no longer supported; use dagger agent -r <trace-id> with a verified archive")
 			},
 		},
 		{
