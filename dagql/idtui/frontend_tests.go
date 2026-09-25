@@ -1856,8 +1856,12 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		tv.Update()
 	}
 
+	// The live tree hangs the rollup off the row's pipe, as does the transcript
+	// a shell session reprints on exit; the plain final report sets it apart
+	// with a blank line instead.
+	framed := !s.fe.finalRender || s.fe.shellTranscript()
 	var prefix string
-	if !s.fe.finalRender {
+	if framed {
 		prefix = s.inlineReportPrefix(r, row)
 	}
 
@@ -1866,7 +1870,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		ctxWidth = finalRenderTestsWidth + lipgloss.Width(prefix)
 	}
 	width := max(ctxWidth-lipgloss.Width(prefix), 1)
-	if s.fe.finalRender {
+	if s.fe.finalRender && !framed {
 		width = max(width, finalRenderTestsWidth)
 	}
 	result := s.RenderChildResult(ctx.Resize(width, limit), tv)
@@ -1874,10 +1878,10 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		s.fe.claims.claimTestReport(row.Span, tv.currentView())
 	}
 	lines := make([]string, 0, len(result.Lines)+1)
-	if s.fe.finalRender {
-		lines = append(lines, "")
-	} else if prefix != "" {
+	if framed {
 		lines = append(lines, strings.TrimRight(prefix, " "))
+	} else {
+		lines = append(lines, "")
 	}
 	for _, line := range result.Lines {
 		lines = append(lines, prefix+line)

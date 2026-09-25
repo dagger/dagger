@@ -46,12 +46,21 @@ func TestShellExitReprintsLiveTranscript(t *testing.T) {
 	tool := span(toolID, replyID, "Find", "assistant", 6)
 	tool.Message = ""
 	tool.LLMTool = "Find"
+	tool.Boundary = true
+	// The tool ran a check and a test outside it: their inline CHECKS and
+	// TESTS rollups hang off the tool's pipe, live and on exit alike.
+	check := span(prettyTestSpanID(8), toolID, "check lint", "", 6)
+	check.Message, check.CheckName = "", "lint"
+	test := span(prettyTestSpanID(9), toolID, "TestDirect", "", 6)
+	test.Message, test.TestCaseName, test.TestStatus = "", "TestDirect", dagui.TestStatusSuccess
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger agent", StartTime: start, EndTime: start.Add(20 * time.Second), Final: true},
 		span(promptID, rootID, "LLM prompt", "user", 1),
 		thinking,
 		span(replyID, rootID, "LLM response", "assistant", 5),
 		tool,
+		check,
+		test,
 		span(prompt2ID, rootID, "LLM prompt", "user", 8),
 		span(reply2ID, rootID, "LLM response", "assistant", 10),
 	})
@@ -97,6 +106,13 @@ func TestShellExitReprintsLiveTranscript(t *testing.T) {
 	final := buf.String()
 
 	liveText := strings.Join(live, "\n")
+	// The TESTS rollup's "T inspect" keymap hint is the one intended difference:
+	// it only means something while the session can still take the key.
+	const testsHint = " \x1b[90;1mT\x1b[0m\x1b[90m inspect\x1b[0m"
+	if !strings.Contains(liveText, testsHint) {
+		t.Fatalf("live transcript lacks the TESTS keymap hint %q:\n%s", testsHint, visibleEscapes(liveText))
+	}
+	liveText = strings.ReplaceAll(liveText, testsHint, "")
 	if !strings.Contains(final, liveText) {
 		t.Fatalf("exit render does not reprint the live transcript\nLIVE:\n%s\n\nFINAL:\n%s",
 			visibleEscapes(liveText), visibleEscapes(final))
@@ -116,6 +132,11 @@ func TestShellExitReprintsLiveTranscript(t *testing.T) {
 	for _, want := range []string{"  hey there", "  I don't eat", "    • Find", "  tomato", "item 0", "item 29"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("live transcript missing %q:\n%s", want, plain)
+		}
+	}
+	for _, heading := range []string{"CHECKS", "TESTS"} {
+		if !strings.Contains(plain, "    "+VertBoldBar+" "+heading) {
+			t.Fatalf("live transcript missing the tool's piped %s rollup:\n%s", heading, plain)
 		}
 	}
 	var pads int

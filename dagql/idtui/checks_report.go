@@ -391,14 +391,15 @@ func (s *SpanTreeView) inlineRollupLimit(ctx tuist.Context) int {
 }
 
 // frameInlineRollup hangs an inline rollup body beneath its row. In the live
-// tree every line carries the row's tree pipe (see inlineReportPrefix), after a
-// pipe-only gap line; the final render has no pipes, so a blank line sets the
-// rollup apart instead -- matching renderInlineTests.
+// tree -- and the transcript a shell session reprints on exit -- every line
+// carries the row's tree pipe (see inlineReportPrefix), after a pipe-only gap
+// line; the plain final report has no pipes, so a blank line sets the rollup
+// apart instead -- matching renderInlineTests.
 func (s *SpanTreeView) frameInlineRollup(r *renderer, row *dagui.TraceRow, body []string) []string {
 	if len(body) == 0 {
 		return nil
 	}
-	if s.fe.finalRender {
+	if s.fe.finalRender && !s.fe.shellTranscript() {
 		return append([]string{""}, body...)
 	}
 	prefix := s.inlineReportPrefix(r, row)
