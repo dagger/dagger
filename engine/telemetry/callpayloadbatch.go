@@ -191,6 +191,10 @@ func (processor *CallPayloadBatchProcessor) Shutdown(ctx context.Context) error 
 	processor.shutdown <- request
 	select {
 	case err := <-request.done:
+		// The worker returns right after reporting, but its deferred cleanup
+		// (and close(done)) still runs after the send. Wait for it, so
+		// Shutdown keeps its promise that the worker has stopped.
+		<-processor.done
 		return err
 	case <-ctx.Done():
 		// Out of time: end the export in flight and wait for the worker, so
