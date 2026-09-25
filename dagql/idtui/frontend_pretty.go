@@ -1702,8 +1702,8 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 		WithKeyMap(frontendFormKeyMap()).
 		WithWidth(fe.window.Width).
 		WithShowHelp(false)
-	// Cap the form at half the screen so a tall field (e.g. the .resume session
-	// picker's long Select) stays scrollable instead of dominating the terminal.
+	// Cap the form at half the screen so a tall field (e.g. a long Select)
+	// stays scrollable instead of dominating the terminal.
 	// A form that already fits keeps its natural height: forcing the cap would
 	// pad compact confirmations with blank rows.
 	if h := fe.window.Height; h > 0 {

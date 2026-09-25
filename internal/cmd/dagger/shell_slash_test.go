@@ -26,12 +26,10 @@ func TestPromptSlashCommandMapping(t *testing.T) {
 		ok   bool
 	}{
 		// bare builtins map to their "." equivalents
-		{"/resume", ".resume", true},
 		{"/clear", ".clear", true},
 		{"/compact", ".compact", true},
 		{"/help", ".help", true},
 		// arguments are carried through verbatim
-		{"/resume abc123", ".resume abc123", true},
 		{"/model claude-sonnet-4-5", ".model claude-sonnet-4-5", true},
 		{"/effort high", ".effort high", true},
 		{"/help\tcreate", ".help\tcreate", true},
@@ -39,10 +37,10 @@ func TestPromptSlashCommandMapping(t *testing.T) {
 		{"/cd ./sub", ".cd ./sub", true},
 		// non-commands are left for the LLM
 		{"/", "", false},
-		{"/ resume", "", false},
+		{"/ compact", "", false},
 		{"/notacommand", "", false},
 		{"just a normal prompt", "", false},
-		{"what does /resume do?", "", false},
+		{"what does /compact do?", "", false},
 	}
 
 	for _, tc := range cases {
@@ -71,11 +69,9 @@ func TestPromptSlashCommandCompletion(t *testing.T) {
 	all := labels("/", 1)
 	require.NotEmpty(t, all)
 	require.Contains(t, all, "/help")
-	require.NotContains(t, all, "/resume")
 
 	// A prefix narrows the suggestions and keeps them sorted.
 	re := labels("/re", 3)
-	require.NotContains(t, re, "/resume")
 	require.Contains(t, re, "/refresh")
 	require.True(t, sortedStrings(re), "completions should be sorted: %v", re)
 	for _, l := range re {
@@ -91,21 +87,6 @@ func TestPromptSlashCommandCompletion(t *testing.T) {
 
 	// Ordinary prompt words yield no completions (only "/" and "$" do).
 	require.Empty(t, labels("hello", 5))
-}
-
-func TestRemovedResumeCommandExplainsTraceReplacement(t *testing.T) {
-	h := newSlashTestHandler(t)
-	for _, cmd := range h.llmBuiltins() {
-		if cmd.Use == ".resume [session]" {
-			require.True(t, cmd.Hidden)
-			err := cmd.Run(t.Context(), cmd, []string{"old-file-uuid"}, nil)
-			require.ErrorContains(t, err, "local JSON session resume is no longer supported")
-			require.ErrorContains(t, err, "dagger agent -r")
-			require.Nil(t, h.llmSession, "removed command must not start an LLM")
-			return
-		}
-	}
-	t.Fatal("removed resume invocation must return an explicit error, not become a model prompt")
 }
 
 func sortedStrings(s []string) bool {

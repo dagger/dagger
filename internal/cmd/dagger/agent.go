@@ -49,7 +49,6 @@ lost; it does not invent an archive finality seal.
 
 Restore forks new inert runtimes; it does not hand off a live session or start a
 model turn. Pending messages not committed to a conversation are not recovered.
-Legacy local JSON session files are no longer supported.
 
 Restore is best-effort: an agent the trace does not carry enough to restore is
 skipped, along with its subscriptions, and a warning names it and why.

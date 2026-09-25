@@ -147,7 +147,7 @@ race run outside the engine harness failed because it lacked a `dagger` executab
 - [x] Trace-authoritative CLI initialization without destination model/provider
   lookup (`7dec76e`). Actual `TestCLIArchiveResumeIgnoresDestination` passes:
   missing destination module, no destination provider configuration, continued
-  prompt turn, no implicit export, and untouched legacy JSON sentinel (`79a467b`).
+  prompt turn, and no implicit export (`79a467b`).
 - [x] Repository-history embedding from `0cc698c` has been rolled back. Existing
   session-local snapshots remain usable while the source session is connected.
   Leaf publication does not preflight their `Host.__gitDir` dependencies or
@@ -796,11 +796,10 @@ export: Ctrl+S/export remains useful. Audit actual command wiring rather than
 removing every operation named "save". Internal portable construction may
 transitionally remain as described in §7.3.
 
-There is no requirement to read old JSON files or silently convert them during
-restore. Do not delete users' existing files. Unsupported legacy invocation should
-fail with a clear explanation. `-r`/`--resume` is reassigned to trace selection:
-`-r <trace-id>` restores, and a bare `-r` lists retained engine archives. It is not
-compatible with the old session-file UUIDs.
+This is a hard cutover from one unshipped path to another: old JSON files are
+neither read, converted, nor specially diagnosed. `-r`/`--resume` is reassigned
+to trace selection: `-r <trace-id>` restores, and a bare `-r` lists retained
+engine archives.
 
 Only advertise a session as successfully resumable after archive finalization has
 succeeded. A resume command/picker may reference trace IDs and verified archives,
@@ -912,8 +911,8 @@ slices remain follow-ups rather than describing the whole proposal as implemente
   archive reopening, retention, active-reader protection, and authenticated access.
 - Verify absence/eviction-only Cloud fallback and explicit behavior for legacy,
   unsealed, unauthorized, and partial traces.
-- Trace-only sessions neither read nor write JSON session files and never call
-  removed public APIs. Regenerated schema/SDKs and CLI help agree.
+- Trace-only sessions never call removed public APIs. Regenerated schema/SDKs and
+  CLI help agree.
 
 Measure bootstrap transfer, frontend application, recipe reconstruction, runtime
 rehydration, prompt-ready time, and historical completion separately. Compare with
