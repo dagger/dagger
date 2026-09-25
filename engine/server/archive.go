@@ -345,6 +345,8 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	}
 	w.Header().Set("X-Dagger-Archive-Generation", m.Generation)
 	switch resource {
+	case "inspect":
+		return writeArchiveJSON(w, http.StatusOK, m)
 	case "lease":
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.WriteHeader(http.StatusOK)
@@ -410,6 +412,10 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	if cursor > high {
 		return httpErr(errors.New("cursor exceeds archive cut"), http.StatusBadRequest)
 	}
+	spanSelection, logSelection, err := archive.ParseSelection(signal, r.URL.Query())
+	if err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
 	db, err := srv.clientDBs.Open(r.Context(), m.MainClientID)
 	if err != nil {
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
@@ -426,6 +432,20 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			return httpErr(err, http.StatusBadRequest)
 		}
 		excludedLogs[id] = true
+	}
+	var spanView *clientdb.ArchiveSpans
+	var logScope map[string]bool
+	if spanSelection != nil || (logSelection != nil && logSelection.Descendants) {
+		spanView, err = db.ArchiveSpanView(r.Context(), m.TraceID, clientdb.HighWater{Spans: m.HighWater.Spans, Logs: m.HighWater.Logs, Metrics: m.HighWater.Metrics}, spanSelection)
+		if err != nil {
+			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: err})
+		}
+	}
+	if logSelection != nil && logSelection.SpanID != "" {
+		logScope = map[string]bool{logSelection.SpanID: true}
+		if logSelection.Descendants {
+			logScope = spanView.Scope(logSelection.SpanID, true)
+		}
 	}
 	w.Header().Set("Content-Type", enginetel.LiveContentType)
 	w.Header().Set("Cache-Control", "no-store")
@@ -454,20 +474,27 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			next, rowCount = rows[len(rows)-1].ID, len(rows)
 			var spans []sdktrace.ReadOnlySpan
 			for _, row := range rows {
-				if row.TraceID == m.TraceID && !excludedSpans[row.SpanID] {
+				if row.TraceID == m.TraceID && !excludedSpans[row.SpanID] && (spanView == nil || spanView.Includes(row)) {
 					spans = append(spans, row.ReadOnly())
 				}
 			}
-			message = &coltracepb.ExportTraceServiceRequest{ResourceSpans: telemetry.SpansToPB(spans)}
+			resourceSpans := telemetry.SpansToPB(spans)
+			if spanSelection != nil && spanSelection.DagUIView {
+				for _, rs := range resourceSpans {
+					for _, ss := range rs.ScopeSpans {
+						for _, span := range ss.Spans {
+							span.Attributes = append(span.Attributes, spanView.Attributes(hex.EncodeToString(span.SpanId))...)
+						}
+					}
+				}
+			}
+			message = &coltracepb.ExportTraceServiceRequest{ResourceSpans: resourceSpans}
 		case "logs":
-			rows, err := db.SelectLogsRange(r.Context(), clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
+			rows, scanned, err := db.SelectArchiveLogsRange(r.Context(), clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)}, m.TraceID, logScope, logSelection, excludedLogs)
 			if err != nil {
 				return err
 			}
-			if len(rows) == 0 {
-				return errors.New("archive log stream truncated before cut")
-			}
-			next, rowCount = rows[len(rows)-1].ID, len(rows)
+			next, rowCount = scanned, int(scanned-cursor)
 			filtered, err := archiveHistoryLogs(rows, m.TraceID, excludedLogs)
 			if err != nil {
 				return err

@@ -176,6 +176,35 @@ func (c *Client) AcquireGeneration(ctx context.Context, traceID, generation stri
 	return func() { cancel(); _ = resp.Body.Close() }, nil
 }
 
+// Inspect discovers a complete archive's identity and fixed cuts without
+// downloading the bootstrap or historical telemetry. Acquire the returned
+// generation before using it for a sequence of lazy reads.
+func (c *Client) Inspect(ctx context.Context, traceID, generation string) (Manifest, error) {
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "inspect"), nil, nil, "application/json", generation, 0)
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer resp.Body.Close()
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return Manifest{}, err
+	}
+	if err := expectContentType(resp, "application/json"); err != nil {
+		return Manifest{}, corrupt(err)
+	}
+	got, err := responseGeneration(resp, generation)
+	if err != nil {
+		return Manifest{}, corrupt(err)
+	}
+	var m Manifest
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&m); err != nil {
+		return Manifest{}, corrupt(err)
+	}
+	if m.TraceID != traceID || m.Generation != got || (c.sourceSession != "" && m.SourceSession != c.sourceSession) || m.State != StateClosed || m.HighWater.Spans < 0 || m.HighWater.Logs < 0 || m.HighWater.Metrics < 0 {
+		return Manifest{}, corrupt(errors.New("archive manifest identity, state or cut mismatch"))
+	}
+	return m, nil
+}
+
 // List returns one page of archives.
 func (c *Client) List(ctx context.Context, opts ListOptions) (Page, error) {
 	query := make(url.Values)
@@ -361,6 +390,9 @@ type StreamOptions struct {
 	HighWater        int64
 	ExcludeSpanIDs   []string
 	ExcludeLogRowIDs []int64
+	// Selections are independent reads; resume a cursor only with the same selection.
+	Spans *SpanSelection
+	Logs  *LogSelection
 }
 
 // Traces reads a finite framed trace stream. It returns the last safe resume
@@ -415,7 +447,10 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 	if cursor < 0 || opts.HighWater < 0 || cursor > opts.HighWater {
 		return cursor, fmt.Errorf("invalid archive stream cursors: cursor=%d high-water=%d", cursor, opts.HighWater)
 	}
-	query := make(url.Values)
+	query, err := opts.SelectionQuery(signal)
+	if err != nil {
+		return cursor, err
+	}
 	if signal == "traces" {
 		for _, spanID := range opts.ExcludeSpanIDs {
 			query.Add("exclude_span", spanID)
