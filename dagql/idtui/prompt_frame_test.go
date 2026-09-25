@@ -1,7 +1,9 @@
 package idtui
 
 import (
+	"context"
 	"image/color"
+	"io"
 	"strings"
 	"testing"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
+
+	"github.com/dagger/dagger/dagql/dagui"
 )
 
 // Capture the frame's translated cursor as well as its rendered lines.
@@ -77,6 +81,68 @@ func TestPromptFrameRendersShadedInput(t *testing.T) {
 	require.Equal(t, "  second line", strings.TrimRight(ansi.Strip(result.Lines[3]), " "))
 	require.Equal(t, &tuist.CursorPos{Row: 3, Col: 13}, result.Cursor)
 	require.Equal(t, 3, frame.ChromeHeight())
+}
+
+// TestPromptFrameFocusCue verifies the focused input swaps its first line's
+// two-space indent for the "❯ " focus cue -- same width, so wrapping and the
+// cursor column don't move -- and reverts to the indent when unfocused.
+func TestPromptFrameFocusCue(t *testing.T) {
+	const width = 40
+	render := func(cue bool, width int) tuist.RenderResult {
+		input := tuist.NewTextInput("")
+		input.SetValue("hello there\nsecond line")
+		frame := NewPromptFrame(input, termenv.ANSI)
+		frame.SetEnabled(true)
+		frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
+		frame.SetFocusCue(cue)
+		return renderPromptFrame(frame, width)
+	}
+
+	result := render(true, width)
+	require.Len(t, result.Lines, 5)
+	requirePromptBackground(t, result.Lines, width)
+	require.Equal(t, LLMPrompt+" hello there", strings.TrimRight(ansi.Strip(result.Lines[2]), " "))
+	require.Equal(t, "  second line", strings.TrimRight(ansi.Strip(result.Lines[3]), " "),
+		"continuation lines keep the plain indent")
+	require.Equal(t, &tuist.CursorPos{Row: 3, Col: 13}, result.Cursor)
+
+	result = render(false, width)
+	require.Equal(t, "  hello there", strings.TrimRight(ansi.Strip(result.Lines[2]), " "))
+	require.Equal(t, &tuist.CursorPos{Row: 3, Col: 13}, result.Cursor)
+
+	// Too narrow for the full indent: the cue takes the one cell there is.
+	result = render(true, 2)
+	require.True(t, strings.HasPrefix(ansi.Strip(result.Lines[2]), LLMPrompt), ansi.Strip(result.Lines[2]))
+}
+
+// TestPromptFocusCueFollowsInputFocus drives the frontend: the draft shows the
+// focus cue while the input owns the keyboard, drops it when focus moves to
+// transcript navigation, and gets it back on returning to the input.
+func TestPromptFocusCueFollowsInputFocus(t *testing.T) {
+	fe := newWithTerminalProfile(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(60, 20), termenv.ANSI)
+	fe.setupTUI()
+	fe.startShell(context.Background(), &imagePromptHandler{mode: true})
+	fe.textInput.SetValue("draft")
+	draftLine := func() string {
+		t.Helper()
+		fe.tui.Step()
+		for _, line := range fe.tui.Frame() {
+			if plain := ansi.Strip(line); strings.Contains(plain, "draft") {
+				return strings.TrimRight(plain, " ")
+			}
+		}
+		t.Fatalf("draft not rendered:\n%s", strings.Join(fe.tui.Frame(), "\n"))
+		return ""
+	}
+
+	// stubShellHandler's own prompt ("⋈ ") follows the frame's gutter.
+	require.Equal(t, LLMPrompt+" ⋈ draft", draftLine(), "input focused on shell start")
+
+	fe.focusNavigationTarget()
+	require.Equal(t, "  ⋈ draft", draftLine(), "navigating the transcript")
+
+	fe.enterInsertMode()
+	require.Equal(t, LLMPrompt+" ⋈ draft", draftLine(), "back in the input")
 }
 
 func TestPromptFrameWrapAndResize(t *testing.T) {

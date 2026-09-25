@@ -16,7 +16,9 @@ import (
 
 // PromptFrame wraps the prompt TextInput in the same full-width shaded card as
 // a submitted user message, separated from prior output by a blank line, with
-// blank padding rows and a two-space indent.
+// blank padding rows and a two-space indent. While the input has keyboard
+// focus, the first line's indent carries the focus cue ("❯ ") instead -- the
+// same cue a focused transcript row shows -- so it's obvious where typing goes.
 // Cursor positioning and key handling stay owned by the TextInput; the frame
 // reserves the horizontal padding before rendering and translates its cursor.
 type PromptFrame struct {
@@ -29,6 +31,18 @@ type PromptFrame struct {
 	enabled     bool
 	background  color.Color
 	attachments []string
+	// focusCue shows the focus cue in the indent (see SetFocusCue).
+	focusCue bool
+}
+
+// SetFocusCue toggles the focus cue in the first line's indent. Tuist doesn't
+// re-render a TextInput when its focus changes, so the owner reports it.
+func (p *PromptFrame) SetFocusCue(show bool) {
+	if p.focusCue == show {
+		return
+	}
+	p.focusCue = show
+	p.Update()
 }
 
 // SetAttachments shows payload-free labels, not clipboard bytes, in the draft.
@@ -155,8 +169,15 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	}
 	ctx.Line("") // separate the draft from the transcript without extending its fill
 	ctx.Line(shade(""))
-	for _, line := range lines {
-		ctx.Line(shade(strings.Repeat(" ", indent) + line))
+	gutter := strings.Repeat(" ", indent)
+	for i, line := range lines {
+		prefix := gutter
+		if i == 0 && p.focusCue && indent > 0 {
+			// Same width as the indent it replaces, so wrapping and the cursor
+			// column are unaffected.
+			prefix = out.String(LLMPrompt).Bold().String() + gutter[1:]
+		}
+		ctx.Line(shade(prefix + line))
 	}
 	ctx.Line(shade(""))
 

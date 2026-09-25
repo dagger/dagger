@@ -363,7 +363,9 @@ func TestPromptBackgroundReplyUpdatesDraftAndHistory(t *testing.T) {
 		want := blendPromptBackground(color.Black, promptCapabilityProfile(capability))
 		require.Equal(t, want, fe.promptBackground)
 		frame := strings.Join(fe.tui.Frame(), "\n")
-		sequence := "\x1b[" + want.term.Sequence(true) + "m"
+		// Match the background's SGR parameters rather than a whole escape:
+		// the draft's focus cue merges bold into the same sequence.
+		sequence := want.term.Sequence(true) + "m"
 		require.True(t, containsStyledLine(frame, "submitted", sequence), visibleEscapes(frame))
 		require.True(t, containsStyledLine(frame, "draft", sequence), visibleEscapes(frame))
 	}
@@ -375,7 +377,7 @@ func TestPromptBackgroundReplyUpdatesDraftAndHistory(t *testing.T) {
 		require.Equal(t, want, fe.promptBackground)
 		require.Equal(t, want.cell, fe.promptFrame.background)
 		frame := strings.Join(fe.tui.Frame(), "\n")
-		sequence := "\x1b[" + want.term.Sequence(true) + "m"
+		sequence := want.term.Sequence(true) + "m"
 		require.True(t, containsStyledLine(frame, "submitted", sequence), visibleEscapes(frame))
 		require.True(t, containsStyledLine(frame, "draft", sequence), visibleEscapes(frame))
 		require.Equal(t, "draft", fe.textInput.Value())
