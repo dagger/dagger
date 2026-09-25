@@ -103,6 +103,10 @@ func TestAgentRosterStylesFocusAndMarksReachability(t *testing.T) {
 	if !strings.Contains(line, "\x1b[90m1") || strings.Contains(line, "\x1b[1m1") {
 		t.Fatalf("expected jump numbers to be faint, not bold, got:\n%q", line)
 	}
+	// Unfocused names read dimmer than the focused one, not brighter.
+	if !strings.Contains(line, "\x1b[2mchief") {
+		t.Fatalf("expected an unfocused name to be faint, got:\n%q", line)
+	}
 }
 
 // TestAgentRosterFocusTabSpansEntry: the focused entry is a tab filled across

@@ -143,7 +143,9 @@ func (r *AgentRoster) Line(width int) string {
 		case entry.ReadOnly:
 			nameStyle = nameStyle.Foreground(termenv.ANSIBrightBlack)
 		default:
-			nameStyle = nameStyle.Foreground(termenv.ANSIWhite)
+			// The terminal's own foreground, dimmed: the focused tab shows the
+			// same color at full strength (ANSI white can outshine it).
+			nameStyle = nameStyle.Faint()
 		}
 		// Each entry is a tab with a cell of padding either side, which the
 		// focused tab's fill covers too.
