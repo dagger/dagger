@@ -14,11 +14,12 @@ import (
 	"github.com/vito/tuist"
 )
 
-// Glyphs for the prompt card's soft top and bottom edges: one-eighth blocks
-// sit flush against the cell edge and tile without gaps, unlike ‾ and _.
+// Glyphs for the prompt card's soft top and bottom edges: the VT100 scan
+// lines 1 and 9, thin rules drawn flush against the top and bottom of the
+// cell that tile without gaps (unlike ‾ and _).
 const (
-	promptTopEdge    = "▔"
-	promptBottomEdge = "▁"
+	promptTopEdge    = "⎺"
+	promptBottomEdge = "⎽"
 )
 
 // PromptFrame wraps the prompt TextInput in the same full-width shaded card as
@@ -175,9 +176,9 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 			style.Bg = p.background
 		})
 	}
-	// The padding rows double as the card's edges: a one-eighth block along
-	// the top of the first and the bottom of the last draws a soft border
-	// hugging the fill, without adding rows.
+	// The padding rows double as the card's edges: a thin rule along the top
+	// of the first and the bottom of the last draws a soft border hugging the
+	// fill, without adding rows.
 	edge := func(glyph string) string {
 		if p.profile == termenv.Ascii || p.background == nil || p.border == nil {
 			return shade("")

@@ -84,7 +84,7 @@ func TestPromptFrameRendersShadedInput(t *testing.T) {
 }
 
 // TestPromptFrameSoftBorder: with a border color, the card's padding rows
-// double as its edges -- one-eighth blocks along the top of the first and the
+// double as its edges -- thin scan-line rules along the top of the first and the
 // bottom of the last, in the soft border color over the card's own fill -- so
 // the card is outlined without growing.
 func TestPromptFrameSoftBorder(t *testing.T) {
