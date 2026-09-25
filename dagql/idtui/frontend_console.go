@@ -61,17 +61,14 @@ func (fe *frontendPretty) runWithConsole(ctx context.Context, run func(context.C
 	fe.setupTUI() // focus + keymap, no event loop
 
 	var (
-		runWg  sync.WaitGroup
-		runErr error
+		runWg      sync.WaitGroup
+		runErr     error
+		runCleanup cleanups.CleanupF
 	)
 	runWg.Add(1)
 	go func() {
 		defer runWg.Done()
-		cleanup, err := run(fe.runCtx)
-		if cleanup != nil {
-			err = errors.Join(err, cleanup())
-		}
-		runErr = err
+		runCleanup, runErr = run(fe.runCtx)
 	}()
 
 	// Pump the dispatch queue in the background so dispatched work makes
@@ -106,6 +103,12 @@ func (fe *frontendPretty) runWithConsole(ctx context.Context, run func(context.C
 	// dispatched closure that still needs to execute.
 	fe.interrupt(context.Canceled)
 	runWg.Wait()
+	// The console stays interactive after the initial report, just like -E.
+	// Keep archive leases/connections alive for later expand/zoom requests and
+	// run their cleanup before stopping the pump (cleanup may dispatch work).
+	if runCleanup != nil {
+		runErr = errors.Join(runErr, runCleanup())
+	}
 	close(pumpStop)
 	pumpWg.Wait()
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {

@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -21,6 +22,43 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestConsoleKeepsLazySourceUntilExit(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.console = "127.0.0.1:0"
+	started := make(chan struct{})
+	cleaned := make(chan error, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- fe.runWithConsole(ctx, func(runCtx context.Context) (cleanups.CleanupF, error) {
+			close(started)
+			return func() error {
+				cleaned <- runCtx.Err()
+				return nil
+			}, nil
+		})
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("console did not start")
+	}
+	select {
+	case err := <-cleaned:
+		t.Fatalf("source closed before console exit: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("console did not stop")
+	}
+	require.ErrorIs(t, <-cleaned, context.Canceled)
+}
 
 func TestConsoleAgents(t *testing.T) {
 	db := dagui.NewDB()
