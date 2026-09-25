@@ -184,9 +184,9 @@ type DB struct {
 	// The surfacing memos below key on BOTH db.mutations and the root the walk
 	// was relative to (see surfaceRoot): a zoom change doesn't bump mutations,
 	// so without the root in the key a render zoomed to one span would be
-	// served the tree built for another. Checks and generators keep a memo per
-	// root (surfacedTreeMemo), since tool-call rows ask about their own
-	// subtrees in the same frame; the rest are single-entry.
+	// served the tree built for another. Checks, generators and services keep
+	// a memo per root (surfacedTreeMemo), since tool-call rows ask about their
+	// own subtrees in the same frame; the rest are single-entry.
 	surfacedChecks surfacedTreeMemo[CheckNode]
 
 	surfacedConversation     []*MessageNode
@@ -205,10 +205,7 @@ type DB struct {
 
 	surfacedGenerators surfacedTreeMemo[GeneratorNode]
 
-	surfacedServices     []*ServiceNode
-	surfacedServicesAt   uint64
-	surfacedServicesRoot SpanID
-	surfacedServicesInit bool
+	surfacedServices surfacedTreeMemo[ServiceNode]
 
 	serviceDisplays     []*Span
 	serviceDisplaysAt   uint64

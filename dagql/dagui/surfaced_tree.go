@@ -4,13 +4,13 @@ import (
 	"sort"
 )
 
-// surfacedTreeMemo caches buildSurfacedTree results per root for the current
-// DB mutation. Surfacing is asked about many roots in one render frame -- the
-// zoomed span for the report sections, plus every LLM tool call row for its
-// inline rollups -- so a single-entry memo keyed by root would thrash. The
-// named candidate spans are collected once per mutation, so each additional
-// root costs a walk of just those spans' ancestor chains rather than a scan
-// of the whole trace.
+// surfacedTreeMemo caches a surfaced tree (checks, generators, services) per
+// root for the current DB mutation. Surfacing is asked about many roots in one
+// render frame -- the zoomed span for the report sections, plus every LLM tool
+// call row for its inline rollups -- so a single-entry memo keyed by root would
+// thrash. The candidate spans are collected once per mutation, so each
+// additional root costs a walk of just those spans' ancestor chains rather
+// than a scan of the whole trace.
 type surfacedTreeMemo[N any] struct {
 	init       bool
 	at         uint64
@@ -18,11 +18,11 @@ type surfacedTreeMemo[N any] struct {
 	byRoot     map[SpanID][]*N
 }
 
-func (m *surfacedTreeMemo[N]) get(db *DB, root *Span, nameOf func(*Span) string, build func(candidates []*Span, root *Span) []*N) []*N {
+func (m *surfacedTreeMemo[N]) get(db *DB, root *Span, isCandidate func(*Span) bool, build func(candidates []*Span, root *Span) []*N) []*N {
 	if !m.init || m.at != db.mutations {
 		m.candidates = m.candidates[:0]
 		for span := range db.Spans.Iter() {
-			if nameOf(span) != "" {
+			if isCandidate(span) {
 				m.candidates = append(m.candidates, span)
 			}
 		}

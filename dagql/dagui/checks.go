@@ -50,10 +50,12 @@ func (db *DB) SurfacedChecks() []*CheckNode {
 // tree for every check and tool-call row. Callers must treat the returned
 // nodes as read-only.
 func (db *DB) SurfacedChecksForSpan(root *Span) []*CheckNode {
-	return db.surfacedChecks.get(db, db.surfaceRoot(root), checkNameOf, buildSurfacedChecks)
+	return db.surfacedChecks.get(db, db.surfaceRoot(root), isCheckSpan, buildSurfacedChecks)
 }
 
 func checkNameOf(s *Span) string { return s.CheckName }
+
+func isCheckSpan(s *Span) bool { return s.CheckName != "" }
 
 func buildSurfacedChecks(candidates []*Span, root *Span) []*CheckNode {
 	return buildSurfacedTree(candidates, root,

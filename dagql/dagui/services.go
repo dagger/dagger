@@ -55,29 +55,23 @@ func (db *DB) SurfacedServices() []*ServiceNode {
 //
 // Like the conversation there is no dedup: each service span is its own node,
 // nested under the nearest surfaced ancestor service. Roots and children are
-// ordered by start time. The result is cached per DB mutation and per root;
+// ordered by start time. The result is cached per DB mutation and per root (see
+// surfacedTreeMemo), since tool-call rows each ask about their own subtree;
 // callers must treat the returned nodes as read-only.
 func (db *DB) SurfacedServicesForSpan(root *Span) []*ServiceNode {
-	r := db.surfaceRoot(root)
-	key := surfaceRootID(r)
-	if db.surfacedServicesInit && db.surfacedServicesAt == db.mutations && db.surfacedServicesRoot == key {
-		return db.surfacedServices
-	}
-	db.surfacedServices = db.buildSurfacedServices(r)
-	db.surfacedServicesAt = db.mutations
-	db.surfacedServicesRoot = key
-	db.surfacedServicesInit = true
-	return db.surfacedServices
+	return db.surfacedServices.get(db, db.surfaceRoot(root), isServiceInstanceSpan, buildSurfacedServices)
 }
 
-func (db *DB) buildSurfacedServices(root *Span) []*ServiceNode {
+func isServiceInstanceSpan(s *Span) bool { return s.Service && !s.Internal }
+
+func buildSurfacedServices(candidates []*Span, root *Span) []*ServiceNode {
 	type info struct {
 		span     *Span
 		parentID SpanID
 	}
 	byID := map[SpanID]*info{}
-	for span := range db.Spans.Iter() {
-		if !span.Service || span.Internal {
+	for _, span := range candidates {
+		if !isServiceInstanceSpan(span) {
 			continue
 		}
 

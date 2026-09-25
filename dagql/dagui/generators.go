@@ -32,10 +32,12 @@ func (db *DB) SurfacedGenerators() []*GeneratorNode {
 // The result is cached per DB mutation and per root, like SurfacedChecks;
 // callers must treat the returned nodes as read-only.
 func (db *DB) SurfacedGeneratorsForSpan(root *Span) []*GeneratorNode {
-	return db.surfacedGenerators.get(db, db.surfaceRoot(root), generatorNameOf, buildSurfacedGenerators)
+	return db.surfacedGenerators.get(db, db.surfaceRoot(root), isGeneratorSpan, buildSurfacedGenerators)
 }
 
 func generatorNameOf(s *Span) string { return s.GeneratorName }
+
+func isGeneratorSpan(s *Span) bool { return s.GeneratorName != "" }
 
 func buildSurfacedGenerators(candidates []*Span, root *Span) []*GeneratorNode {
 	return buildSurfacedTree(candidates, root,
