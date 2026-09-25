@@ -576,7 +576,12 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 				for _, rs := range resourceSpans {
 					for _, ss := range rs.ScopeSpans {
 						for _, span := range ss.Spans {
-							span.Attributes = append(span.Attributes, spanView.Attributes(hex.EncodeToString(span.SpanId))...)
+							for _, annotation := range spanView.Attributes(hex.EncodeToString(span.SpanId)) {
+								// Imported spans may already carry another source's
+								// view hints. This archive's fixed cut is authoritative.
+								span.Attributes = slices.DeleteFunc(span.Attributes, func(attr *commonpb.KeyValue) bool { return attr.GetKey() == annotation.Key })
+								span.Attributes = append(span.Attributes, annotation)
+							}
 						}
 					}
 				}

@@ -16,13 +16,13 @@ import (
 
 func TestArchiveSelectionProtocol(t *testing.T) {
 	id := strings.Repeat("1", 16)
-	for _, raw := range []string{"root=bad", "view=bad", "listen=not-a-span", "span_id=bad", "descendants=true", "records=logs", "records=unknown", "after=yesterday"} {
+	for _, raw := range []string{"root=bad", "view=bad", "listen=not-a-span", "span_id=bad", "descendants=true", "records=logs", "records=unknown", "after=yesterday", "full=bad", "full=true&root=false", "full=true&listen=" + id} {
 		q, err := url.ParseQuery(raw)
 		if err != nil {
 			t.Fatal(err)
 		}
 		signal := "logs"
-		if q.Has("root") || q.Has("listen") || q.Has("view") {
+		if q.Has("root") || q.Has("listen") || q.Has("view") || q.Has("full") {
 			signal = "traces"
 		}
 		if _, _, err := ParseSelection(signal, q); err == nil {
@@ -31,6 +31,7 @@ func TestArchiveSelectionProtocol(t *testing.T) {
 	}
 	after := time.Unix(1, 2).UTC()
 	for _, opts := range []StreamOptions{
+		{Spans: &SpanSelection{Full: true, DagUIView: true}},
 		{Spans: &SpanSelection{NoRoot: true, Listen: []string{id}, DagUIView: true}},
 		{Logs: &LogSelection{SpanID: id, Descendants: true, After: &after, Records: LogRecordsMetadata}},
 	} {
