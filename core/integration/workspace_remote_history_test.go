@@ -429,9 +429,10 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 			require.NotEmpty(t, shallow, "fixture must begin as a real shallow remote capture")
 			require.NotEmpty(t, full, "history-demanding operation must actually hydrate the shallow history")
 			operation := "GitRef.log"
-			if demand == "retained checkout" {
+			switch demand {
+			case "retained checkout":
 				operation = "GitRef.tree"
-			} else if demand == "full bundle" {
+			case "full bundle":
 				operation = "GitRepository.bundle"
 			}
 			_, demandFetches := workspaceRemoteHistoryFetches(sink, operation)
