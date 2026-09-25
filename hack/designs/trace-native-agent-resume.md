@@ -167,8 +167,8 @@ race run outside the engine harness failed because it lacked a `dagger` executab
 - [ ] Same **runtime session with agents created under multiple trace roots** is
   still unsupported for strict restoration. Composite archive identity does not
   solve this separate registry/graph/history problem; do not infer completeness.
-- [x] Minimal CLI generation selection/listing: `--list-archives` reads retained
-  metadata, optionally filtered by `--trace`; `--source-session` selects a source
+- [x] Minimal CLI generation selection/listing: a bare `-r` reads retained
+  metadata; `--source-session` selects a source
   namespace, with optional `--generation` pinning an exact engine cut. Invalid
   combinations fail before engine work;
   ambiguous reads guide the user to discovery. Unit race coverage includes
@@ -355,7 +355,8 @@ snapshot-at-capture behavior; the gaps above remain follow-up work.
 
 ### 3.1 User-visible contract
 
-`dagger agent --trace <id>` restores a new set of runtimes from a source trace:
+`dagger agent -r <trace-id>` restores a new set of runtimes from a source trace
+(`--trace <trace-id>` remains as a deprecated alias that warns on use):
 
 - The trace's committed conversations and Workspaces are authoritative.
 - Every restorable agent, including dormant and explicitly stopped agents, exists
@@ -570,7 +571,7 @@ being synthesized solely by restoration.
 ### 7.1 Capture state, do not rebase it onto the client
 
 The Workspace embedded in each agent's committed trace snapshot is authoritative.
-`--trace` must not load destination agent modules, compose destination agents,
+Restore must not load destination agent modules, compose destination agents,
 rebind restored agents to `CurrentWorkspace`, or merge local edits into them.
 Initializing the client Workspace is allowed for client-side operations; it does
 not make it an input to the restored agent graph.
@@ -592,7 +593,7 @@ what the agent restores or clears to.
 Current Ctrl+U/`ResetWorkspace` is an explicit inbound reload of the client checkout,
 not automatic restore leakage. Whether to retain that command for restored sessions
 is a separate UX decision (§14); if retained, it must be an explicit user-directed
-state change, not part of `--trace` reconstruction.
+state change, not part of trace reconstruction.
 
 ### 7.2 Deferred portability hardening
 
@@ -772,8 +773,9 @@ transitionally remain as described in §7.3.
 
 There is no requirement to read old JSON files or silently convert them during
 restore. Do not delete users' existing files. Unsupported legacy invocation should
-fail with a clear explanation. Whether `-r` is removed or deliberately reassigned
-to trace selection is an explicit CLI decision, not compatibility with file UUIDs.
+fail with a clear explanation. `-r`/`--resume` is reassigned to trace selection:
+`-r <trace-id>` restores, and a bare `-r` lists retained engine archives. It is not
+compatible with the old session-file UUIDs.
 
 Only advertise a session as successfully resumable after archive finalization has
 succeeded. A resume command/picker may reference trace IDs and verified archives,
@@ -907,7 +909,6 @@ choices in the replacement PR:
   removed subscription edges, without introducing another mutable-state authority.
 - Cloud bootstrap/finality availability and what legacy partial restore can safely
   support. The local fast path must not be advertised as a Cloud speedup.
-- Whether `-r` is removed or becomes an explicitly trace-based shortcut.
 - Whether explicit inbound client-workspace reload remains available in restored
   sessions, and how `.clear` defines a traced reset target independently of export
   bookkeeping. Neither may silently import client state during restore.
