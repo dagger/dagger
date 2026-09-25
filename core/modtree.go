@@ -105,25 +105,21 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	if err != nil {
 		return nil, err
 	}
-	srv, err := dagql.NewServer(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("create module dagql server: %w", err)
-	}
-	srv.Around(AroundFunc)
-	InstallCoreSchemaLoaders(srv)
 	// Install default "dependencies" (ie the core)
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%q: load core schema: %w", main.Name(), err)
 	}
-	// Install dependencies
-	for _, defaultDep := range defaultDeps.Mods() {
-		if err := defaultDep.Install(ctx, srv); err != nil {
-			return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
-		}
+	defaults := defaultDeps.Mods()
+	mods := make([]modInstall, 0, len(defaults)+1)
+	for _, defaultDep := range defaults {
+		mods = append(mods, modInstall{mod: defaultDep})
 	}
-	// Install the main module
-	if err := NewUserMod(mod).Install(ctx, srv); err != nil {
+	mods = append(mods, modInstall{mod: NewUserMod(mod)})
+	// Preserve the unversioned artifact view. The module's runtime still uses
+	// its own dependencies and version; discovery must see newer core targets.
+	srv, err := buildSchemaWithView(ctx, q, mods, "")
+	if err != nil {
 		return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
 	}
 	return srv, nil
