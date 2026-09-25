@@ -29,7 +29,7 @@ func ReceiveGitCommitPack(ctx context.Context, client git.GitClient, req *git.Pa
 			if cleanupErr := spool.remove(); cleanupErr != nil {
 				// A failed spool cleanup is not an optional donor miss, even if
 				// the transport disappeared while it was being received.
-				rerr = fmt.Errorf("host history cleanup after %v: %w", rerr, cleanupErr)
+				rerr = fmt.Errorf("host history cleanup after %s: %w", rerr.Error(), cleanupErr)
 			}
 		}
 	}()
@@ -98,7 +98,7 @@ func hostHistoryStreamError(ctx context.Context, err error) error {
 	}
 	switch status.Code(err) {
 	case codes.Unimplemented, codes.Unavailable:
-		return fmt.Errorf("%w: %v", ErrGitHistoryUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrGitHistoryUnavailable, err)
 	default:
 		return err
 	}
