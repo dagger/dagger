@@ -35,6 +35,32 @@ const (
 	StateIncomplete  State = "incomplete"
 )
 
+// Unsealed reports whether an archive's session ended without a verified
+// seal: the engine stopped before finalizing it, or finalization failed.
+func (s State) Unsealed() bool {
+	return s == StateInterrupted || s == StateIncomplete
+}
+
+// UnsealedHighWaterHeader carries the cut an unsealed archive is streamed at,
+// as "spans,logs,metrics". A sealed archive's cut comes from its bootstrap.
+const UnsealedHighWaterHeader = "X-Dagger-Archive-High-Water"
+
+func (h HighWater) String() string {
+	return fmt.Sprintf("%d,%d,%d", h.Spans, h.Logs, h.Metrics)
+}
+
+// ParseHighWater parses HighWater.String output.
+func ParseHighWater(s string) (HighWater, error) {
+	var h HighWater
+	if n, err := fmt.Sscanf(s, "%d,%d,%d", &h.Spans, &h.Logs, &h.Metrics); err != nil || n != 3 {
+		return HighWater{}, fmt.Errorf("invalid archive high-water %q", s)
+	}
+	if h.Spans < 0 || h.Logs < 0 || h.Metrics < 0 {
+		return HighWater{}, fmt.Errorf("invalid archive high-water %q", s)
+	}
+	return h, nil
+}
+
 type HighWater struct {
 	Spans   int64 `json:"spans"`
 	Logs    int64 `json:"logs"`
@@ -498,6 +524,28 @@ func (m *Manager) AcquireSource(traceID, generation, sourceSession string) (*Lea
 	if ent.manifest.State != StateClosed {
 		return nil, &Failure{Kind: FailureState, State: ent.manifest.State}
 	}
+	return m.leaseLocked(ent)
+}
+
+// AcquireUnsealed leases an archive that was never sealed: its engine stopped
+// before graceful finalization (interrupted), or finalization failed
+// (incomplete). Such an archive has no bootstrap, completion witness or fixed
+// cut. Its session is gone, so nothing writes to it anymore, and readers may
+// stream what it recorded for a best-effort restore.
+func (m *Manager) AcquireUnsealed(traceID, generation, sourceSession string) (*Lease, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ent, err := m.findLocked(traceID, generation, sourceSession)
+	if err != nil {
+		return nil, err
+	}
+	if !ent.manifest.State.Unsealed() {
+		return nil, &Failure{Kind: FailureState, State: ent.manifest.State}
+	}
+	return m.leaseLocked(ent)
+}
+
+func (m *Manager) leaseLocked(ent *entry) (*Lease, error) {
 	if ent.leases == 0 && !ent.manifest.ExpiresAt.After(m.now()) {
 		return nil, &Failure{Kind: FailureEvicted}
 	}
