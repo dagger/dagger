@@ -28,6 +28,7 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -483,7 +484,12 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 				for _, rs := range resourceSpans {
 					for _, ss := range rs.ScopeSpans {
 						for _, span := range ss.Spans {
-							span.Attributes = append(span.Attributes, spanView.Attributes(hex.EncodeToString(span.SpanId))...)
+							for _, annotation := range spanView.Attributes(hex.EncodeToString(span.SpanId)) {
+								// Imported spans may already carry another source's
+								// view hints. This archive's fixed cut is authoritative.
+								span.Attributes = slices.DeleteFunc(span.Attributes, func(attr *commonpb.KeyValue) bool { return attr.GetKey() == annotation.Key })
+								span.Attributes = append(span.Attributes, annotation)
+							}
 						}
 					}
 				}

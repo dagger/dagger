@@ -21,6 +21,7 @@ func TestArchiveLazySelectionHTTP(t *testing.T) {
 	srv, sess, db, _ := archiveFixture(t)
 	for i := 1; i <= 8; i++ {
 		row := clientdb.Span{TraceID: archiveTestTrace, SpanID: fmt.Sprintf("%016x", i), Name: fmt.Sprint(i), Resource: []byte("{}"), InstrumentationScope: []byte("{}"), Attributes: []byte("[]"), Links: []byte("[]"), Events: []byte("[]")}
+		row.Attributes = []byte(`[{"key":"dagger.io/ui.has_logs","value":{"boolValue":false}},{"key":"dagger.io/ui.child_count","value":{"intValue":"900"}},{"key":"dagger.io/ui.partial","value":{"boolValue":false}}]`)
 		if i > 1 {
 			row.ParentSpanID = sql.NullString{String: fmt.Sprintf("%016x", i-1), Valid: true}
 		}
@@ -63,7 +64,16 @@ func TestArchiveLazySelectionHTTP(t *testing.T) {
 						if sel != nil && sel.DagUIView {
 							attrs := map[string]bool{}
 							for _, a := range s.Attributes {
+								require.False(t, attrs[a.Key], "duplicate annotation %s", a.Key)
 								attrs[a.Key] = true
+								switch a.Key {
+								case telemetryattrs.UIHasLogsAttr:
+									require.True(t, a.Value.GetBoolValue())
+								case telemetryattrs.UIChildCountAttr:
+									require.LessOrEqual(t, a.Value.GetIntValue(), int64(1))
+								case telemetryattrs.UIPartialAttr:
+									require.Equal(t, !sel.Full && len(sel.Listen) == 0, a.Value.GetBoolValue())
+								}
 							}
 							require.True(t, attrs[telemetryattrs.UIChildCountAttr])
 							require.True(t, attrs[telemetryattrs.UIHasLogsAttr])

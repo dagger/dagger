@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -160,4 +161,61 @@ func TestArchiveSpanPrioritySubtreeAndCut(t *testing.T) {
 	require.Len(t, v.Scope("3", true), 6)
 	require.Len(t, v.Scope("3", false), 1)
 	require.True(t, v.selected["8"])
+	_, err = db.ArchiveSpanView(t.Context(), selectionTrace, HighWater{Logs: -1}, nil)
+	require.ErrorContains(t, err, "invalid archive cut")
+	batch, next, err := db.SelectArchiveLogsRange(t.Context(), SelectLogsRangeParams{AfterID: 1, ThroughID: 1, Limit: math.MaxInt64}, selectionTrace, nil, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, batch)
+	require.EqualValues(t, 1, next)
+}
+
+func TestArchivePriorityChecksAndPassthrough(t *testing.T) {
+	db, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer db.Close()
+	var rows []Span
+	for i := 1; i <= 7; i++ {
+		row := Span{TraceID: selectionTrace, SpanID: fmt.Sprint(i), Attributes: []byte("[]"), Links: []byte("[]")}
+		if i > 1 {
+			row.ParentSpanID = sql.NullString{String: fmt.Sprint(i - 1), Valid: true}
+		}
+		if i == 2 || i == 3 {
+			key := telemetry.UIInternalAttr
+			if i == 3 {
+				key = telemetry.UIPassthroughAttr
+			}
+			row.Attributes, err = MarshalProtoJSONs([]*commonpb.KeyValue{{Key: key, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_BoolValue{BoolValue: true}}}})
+			require.NoError(t, err)
+		}
+		if i == 5 {
+			row.Attributes, err = MarshalProtoJSONs([]*commonpb.KeyValue{selectionAttr(telemetry.CheckNameAttr, "check")})
+			require.NoError(t, err)
+		}
+		rows = append(rows, row)
+	}
+	_, err = db.AppendSpans(rows)
+	require.NoError(t, err)
+	cut, err := db.Checkpoint(t.Context())
+	require.NoError(t, err)
+	v, err := db.ArchiveSpanView(t.Context(), selectionTrace, cut, &archive.SpanSelection{})
+	require.NoError(t, err)
+	require.True(t, v.selected["4"], "initial view crosses hidden and passthrough spans")
+	require.True(t, v.selected["5"], "checks are priority even without an error")
+	require.False(t, v.selected["7"])
+}
+
+func TestArchiveMetadataTextAndVisibility(t *testing.T) {
+	for _, key := range []string{telemetry.LogsGlobalAttr, telemetry.LogsVerboseAttr} {
+		row := selectionLog(t, "span", selectionText("hidden"), &commonpb.KeyValue{Key: key, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_BoolValue{BoolValue: true}}})
+		m := archiveLogMetadata(row)
+		require.NoError(t, m.err)
+		require.False(t, m.text)
+		require.False(t, m.metadata)
+	}
+	for _, key := range []string{telemetryattrs.ProgressItemAttr, telemetryattrs.AgentStateAttr, telemetryattrs.AgentSnapshotDigestAttr, telemetryattrs.LogRoleAttr} {
+		m := archiveLogMetadata(selectionLog(t, "span", selectionText("semantic"), selectionAttr(key, "value")))
+		require.NoError(t, m.err)
+		require.False(t, m.text)
+		require.True(t, m.metadata)
+	}
 }

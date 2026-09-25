@@ -99,6 +99,9 @@ type archiveSpanNode struct {
 }
 
 func (s *DB) ArchiveSpanView(ctx context.Context, traceID string, cut HighWater, sel *archive.SpanSelection) (*ArchiveSpans, error) {
+	if cut.Spans < 0 || cut.Logs < 0 {
+		return nil, errors.New("invalid archive cut")
+	}
 	v := &ArchiveSpans{nodes: map[string]archiveSpanNode{}, children: map[string][]string{}}
 	for cursor := int64(0); cursor < cut.Spans; {
 		rows, err := s.SelectSpansRange(ctx, SelectSpansRangeParams{AfterID: cursor, ThroughID: cut.Spans, Limit: 128})
@@ -136,7 +139,13 @@ func (s *DB) ArchiveSpanView(ctx context.Context, traceID string, cut HighWater,
 		s.logIdx.mu.RUnlock()
 		return nil, errors.New("archive log stream truncated before cut")
 	}
-	for _, m := range s.logIdx.archive[:cut.Logs] {
+	for i, m := range s.logIdx.archive[:cut.Logs] {
+		if i%128 == 0 {
+			if err := ctx.Err(); err != nil {
+				s.logIdx.mu.RUnlock()
+				return nil, err
+			}
+		}
 		if m.trace != traceID || !m.text || !m.nonempty {
 			continue
 		}
@@ -253,7 +262,7 @@ func (s *DB) SelectArchiveLogsRange(ctx context.Context, p SelectLogsRangeParams
 	if p.AfterID < 0 || p.ThroughID < p.AfterID || p.Limit <= 0 {
 		return nil, p.AfterID, fmt.Errorf("invalid archive log range")
 	}
-	next := min(p.ThroughID, p.AfterID+p.Limit)
+	next := p.AfterID + min(p.ThroughID-p.AfterID, p.Limit)
 	var ids []int64
 	var bytes int64
 	s.logIdx.mu.RLock()
@@ -373,6 +382,9 @@ func (s *logStream[Row]) readArchiveID(ctx context.Context, id int64) (Row, bool
 			row, err := s.codec.decode(payload)
 			if err != nil {
 				return zero, false, err
+			}
+			if s.codec.getID(row) != id {
+				return zero, false, errors.New("archive row identity changed during read")
 			}
 			return row, true, nil
 		case rowID > id:
