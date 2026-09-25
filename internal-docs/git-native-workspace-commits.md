@@ -4,7 +4,47 @@
 
 This is the starting document for a fresh session asked to **"continue https://github.com/dagger/dagger/pull/14314"**. It supersedes the implementation status and next steps in the [earlier investigation handoff](https://gist.github.com/vito/aead3f59d5aec76d824797c4c00f7f3a). The code is authoritative when it differs from this document.
 
-## Resume: lazy hydration checkpoint (2026-09-25)
+## Resume: lazy hydration validated (2026-09-25)
+
+Continuation from [the pause handoff](https://github.com/dagger/dagger/pull/14314#issuecomment-5825385014) checked out actual head `49d15eb`. Production behavior is unchanged from `b895022`; `4123245c3763c6fae0b2ce30228528b33e47814b` fixes four final lint findings by extracting dependency attachment/diff parsing helpers and simplifying two conditions. No lint suppressions or public SDL changes.
+
+**Completed on `4123245`:**
+
+- Full `go test -race ./core ./core/schema -count=1` passed.
+- Root golangci-lint **v2.11.4** (`run --timeout=10m ./...`) reports **0 issues**.
+- Combined from-source lazy-history and native/reconciliation/history/reftable regressions passed (tool summary: 21 passing entries, including suite entries). Includes the follow-up independent full-bundle clone/fsck, retained depth-one checkout, hydration reuse after origin deletion, remote-parent no-fetch, 56-commit sequential/concurrent history, retained checkout lifetime, incremental checkout oracles, scoped history and identity replay. Combined test call span: `4a739c1f36636bb8`.
+- The separately selected `TestWorkspaceCommittedHistoryDoesNotFetch` still **skips** under its inherited-session guard; it is not counted as passing coverage.
+- GitHub checks remain red at merge SHA `363dd6c82b9b0f623ab84581daf445ffeaf0ff53`. Loading the lint trace yielded only a small outer trace, without the reported origin span or lint diagnostic output; local success does not establish why those remote checks failed.
+
+**Lazy-hydration controlled-origin measurements:** unchanged `TestWorkspaceRealRepositoryPerformanceControlledOrigin` at `4123245`, same pinned `06eca99` fixture and six-edit workload, two serial invocations using the two distinct equivalent selectors below. Explicit from-source CLI and engine both identify `4123245c`; distinct endpoints were `tcp://osif87dmigtis:1234` and `tcp://4qa5bhjgh07ii:1234`. No builds/tests overlapped the timed workloads. Every source/workspace content hash matched between these runs. The harness and fixture were not modified.
+
+Medians in seconds (main and pre-lazy are the recorded earlier controlled-origin runs, not new reruns):
+
+| Population | True-main commit | Pre-lazy commit | Lazy commit | True-main full loop | Pre-lazy full loop | Lazy full loop |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| First remote-backed commit (2) | 25.956 | 9.771 | **1.444** | 41.526 | 17.141 | **9.790** |
+| Subsequent varied commits (10) | 19.018 | 1.590 | **1.530** | 35.820 | 7.000 | **6.847** |
+
+All samples retained, **commit / full loop seconds**:
+
+| Step | Lazy run 1 | Lazy run 2 |
+| --- | ---: | ---: |
+| README edit, remote base | 1.508 / 9.607 | 1.379 / 9.973 |
+| Nested existing-file edit | 1.545 / 6.728 | 1.510 / 6.978 |
+| Nested addition | 1.827 / 7.091 | 1.502 / 6.800 |
+| Nested rename | 1.516 / 6.886 | 1.629 / 6.965 |
+| README edit again | 1.544 / 6.800 | 1.482 / 6.807 |
+| Nested deletion | 1.465 / 6.689 | 1.904 / 7.169 |
+
+Capture was **3.402 / 3.523s**, capture plus first loop **13.009 / 13.496s**. Consumer image setup is separate; actual full-file consumption is included in each loop and took **5.896 / 6.451s** on the first cycle and approximately **3.16–3.47s** thereafter. History checks were **34–47ms**. Cold shallow promotion was **222 / 215ms**, including **214 / 209ms** isolated packing, instead of complete-history hydration.
+
+Each run recorded six native history writes, six native reconciliations, eleven incremental checkouts, one shallow promotion/pack, no legacy commit/general merge, and no full-history/unshallow fetch. Three actual Git fetch process spans remained: initial remote depth-one capture plus two shallow local source materializations. The broad `fetches=4` counter additionally includes one enclosing `fetching` wrapper. This workload deliberately uses recent/direct-parent history; genuinely older history still pays demand-driven hydration. These are small observational samples with shared host/build caches, not universal speedup or physical-storage claims.
+
+Full-precision logs are in trace `e9d38bac0c0c96f68949905266104683`, own-log spans **`e308f4a4b8e036be`** and **`1cf8b945a4a2a347`**, lines 1–86. Engine-test calls: `2551b49726c6c61d` and `61885e682c2ff472`. The private re-exec leaves a duplicate running test entry in outer telemetry; each actual child completed successfully and logged six validated commits with unchanged host checkout.
+
+**Next:** approved host-history reuse is now being implemented separately; no host-history implementation has been integrated at this checkpoint. `PackCheckout` currently includes all branches/tags and must not be reused unchanged for exact-commit-only imports. Preserve capture identity, owning-client authorization, self-contained ownership and remote reconstruction/fallback; do not eagerly move full-history cost into ordinary capture. Direction C remains deferred. Full CI, real engine restart/GC/eviction and physical allocation remain unvalidated. Nothing from this continuation has been pushed yet; refresh the PR description only when requested.
+
+## Earlier pause: lazy hydration checkpoint (2026-09-25)
 
 **Paused at the user's request due to host memory pressure.** Production implementation is committed at `b8950222b150056e77260837c129be979269ef65` (worker original `ac989cc`). Finish validating lazy hydration **before** starting host-checkout history synchronization. Direction C remains deferred. The sections below describe the earlier complete-history implementation and measurements unless explicitly stated otherwise.
 
