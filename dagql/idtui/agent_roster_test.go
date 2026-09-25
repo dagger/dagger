@@ -1,11 +1,14 @@
 package idtui
 
 import (
+	"image/color"
 	"io"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/cellbuf"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
@@ -97,8 +100,71 @@ func TestAgentRosterStylesFocusAndMarksReachability(t *testing.T) {
 	if !strings.Contains(plain, "3 ghost·") {
 		t.Fatalf("expected the unaddressable agent to be marked, got:\n%q", line)
 	}
-	if !strings.Contains(line, "\x1b[1m1") {
-		t.Fatalf("expected jump numbers to be bold, got:\n%q", line)
+	if !strings.Contains(line, "\x1b[90m1") || strings.Contains(line, "\x1b[1m1") {
+		t.Fatalf("expected jump numbers to be faint, not bold, got:\n%q", line)
+	}
+	// Unfocused names read dimmer than the focused one, not brighter.
+	if !strings.Contains(line, "\x1b[2mchief") {
+		t.Fatalf("expected an unfocused name to be faint, got:\n%q", line)
+	}
+}
+
+// TestAgentRosterFocusTabSpansEntry: the focused entry is a tab filled across
+// its padding, jump number, name and state symbol -- with the prompt card's
+// shade when one is known, else reverse video -- rather than highlighting the
+// name alone and leaving the number and symbol stranded beside it. Its
+// neighbors' padding stays unfilled.
+func TestAgentRosterFocusTabSpansEntry(t *testing.T) {
+	entries := []AgentRosterEntry{
+		{ID: "a", Name: "chief", State: "IDLE"},
+		{ID: "b", Name: "scout", State: "RUNNING", Focused: true},
+		{ID: "c", Name: "docs", State: "IDLE"},
+	}
+	shade := blendPromptBackground(color.Black, termenv.TrueColor).cell
+
+	for _, tc := range []struct {
+		name       string
+		background func() color.Color
+		filled     func(cellbuf.Style) bool
+	}{
+		{
+			name:       "prompt shade",
+			background: func() color.Color { return shade },
+			filled:     func(s cellbuf.Style) bool { return s.Bg == shade },
+		},
+		{
+			name:   "no shade known",
+			filled: func(s cellbuf.Style) bool { return s.Attrs&cellbuf.ReverseAttr != 0 },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			roster := NewAgentRoster(termenv.TrueColor, func() []AgentRosterEntry { return entries })
+			if tc.background != nil {
+				roster.SetBackgroundSource(tc.background)
+			}
+			line := roster.Line(100)
+			plain := ansi.Strip(line)
+			tab := " 2 scout " + CaretRightFilled + " "
+			start := strings.Index(plain, tab)
+			if start < 0 {
+				t.Fatalf("roster missing the focused entry %q: %q", tab, plain)
+			}
+			first := ansi.StringWidth(plain[:start])
+			last := first + ansi.StringWidth(tab) - 1
+
+			buf := cellbuf.NewBuffer(ansi.StringWidth(line), 1)
+			cellbuf.SetContent(buf, line)
+			for x := range buf.Width() {
+				cell := buf.Cell(x, 0)
+				if cell == nil {
+					continue
+				}
+				if want := x >= first && x <= last; tc.filled(cell.Style) != want {
+					t.Fatalf("cell %d (%q) filled=%v, want %v (tab spans %d..%d): %q",
+						x, cell.String(), !want, want, first, last, line)
+				}
+			}
+		})
 	}
 }
 

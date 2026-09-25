@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"image/color"
 	"io"
 	"reflect"
 	"regexp"
@@ -942,6 +943,188 @@ func TestLiveInlineCheckTestsIndentedUnderTrace(t *testing.T) {
 	if !strings.Contains(testsLine[idx:], "TESTS T inspect") {
 		t.Fatalf("inline TESTS line = %q, want test viewer hint", testsLine)
 	}
+}
+
+// TestShellToolInlineTestsAlignWithToolDot verifies a shell transcript's tool
+// call hangs its inline TESTS rollup off a pipe in the same column as the faint
+// dot in front of the tool name (where its log gutter sits too), with the
+// TESTS heading under the name -- not two columns to the left of both.
+func TestShellToolInlineTestsAlignWithToolDot(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID, toolID, testID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start},
+		{
+			ID: toolID, TraceID: prettyTestTraceID(), ParentID: rootID,
+			Name: "RunTests", LLMRole: "assistant", LLMTool: "RunTests",
+			StartTime: start.Add(time.Second), EndTime: start.Add(3 * time.Second), Final: true,
+		},
+		{
+			ID: testID, TraceID: prettyTestTraceID(), ParentID: toolID,
+			Name: "TestThing", TestCaseName: "TestThing", TestStatus: dagui.TestStatusFailure,
+			StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	lines := fe.tui.RenderLines()
+	joined := strings.Join(lines, "\n")
+	toolLine, ok := findPrettyTestLine(lines, "RunTests")
+	if !ok {
+		t.Fatalf("shell render did not include the tool row:\n%s", joined)
+	}
+	testsLine, ok := findPrettyTestLine(lines, "TESTS")
+	if !ok {
+		t.Fatalf("shell render did not include the tool's inline TESTS:\n%s", joined)
+	}
+	col := func(line, sub string) int {
+		i := strings.Index(line, sub)
+		if i < 0 {
+			return -1
+		}
+		return ansi.StringWidth(line[:i])
+	}
+	if dot, bar := col(toolLine, "•"), col(testsLine, VertBoldBar); dot < 0 || bar != dot {
+		t.Fatalf("inline TESTS pipe at column %d, want the tool dot's column %d:\n%s", bar, dot, joined)
+	}
+	if name, heading := col(toolLine, "RunTests"), col(testsLine, "TESTS"); heading != name {
+		t.Fatalf("TESTS heading at column %d, want the tool name's column %d:\n%s", heading, name, joined)
+	}
+}
+
+// TestShellToolInlineRollups verifies a tool call surfaces the checks,
+// generators and services it ran as inline rollups -- they sit behind the
+// tool's boundary, so nothing else in the transcript would show them -- hung
+// off the same dot-aligned pipe as its tests. A check's tests nest under the
+// check, and the TESTS rollup keeps just the cases no check claimed, so every
+// test shows exactly once.
+func TestShellToolInlineRollups(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	const (
+		rootByte byte = iota + 1
+		toolByte
+		lintByte
+		lintTestByte
+		unitByte
+		docsByte
+		directTestByte
+		serviceByte
+		e2eByte
+	)
+	id := prettyTestSpanID
+	start := time.Unix(100, 0)
+	at := func(n byte) (time.Time, time.Time) {
+		return start.Add(time.Duration(n) * time.Second), start.Add(time.Duration(n+1) * time.Second)
+	}
+	span := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		s, e := at(n)
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent, Name: name,
+			StartTime: s, EndTime: e, Final: true,
+		}
+	}
+	tool := span(toolByte, id(rootByte), "CheckAll")
+	tool.LLMRole, tool.LLMTool, tool.Boundary = "assistant", "CheckAll", true
+	lint := span(lintByte, id(toolByte), "check lint")
+	lint.CheckName = "lint"
+	lint.Status = sdktrace.Status{Code: codes.Error}
+	lintTest := span(lintTestByte, id(lintByte), "TestLint")
+	lintTest.TestCaseName, lintTest.TestStatus = "TestLint", dagui.TestStatusFailure
+	unit := span(unitByte, id(toolByte), "check unit")
+	unit.CheckName = "unit"
+	docs := span(docsByte, id(toolByte), "generate docs")
+	docs.GeneratorName = "docs"
+	// A test the tool ran outside any check: no check claims it, so it keeps a
+	// TESTS rollup of its own rather than vanishing behind the checks.
+	directTest := span(directTestByte, id(toolByte), "TestDirect")
+	directTest.TestCaseName, directTest.TestStatus = "TestDirect", dagui.TestStatusFailure
+	// A service the tool started, still running.
+	service := span(serviceByte, id(toolByte), "exec postgres")
+	service.Service, service.ServiceName = true, "db.dagger.local"
+	service.EndTime, service.Final = time.Time{}, false
+	// A check still in flight: it must read as running, like its own tree row,
+	// not as a passed OK with a ticking duration.
+	e2e := span(e2eByte, id(toolByte), "check e2e")
+	e2e.CheckName = "e2e"
+	e2e.EndTime, e2e.Final = time.Time{}, false
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: id(rootByte), TraceID: prettyTestTraceID(), Name: "shell", StartTime: start},
+		tool, lint, lintTest, unit, docs, directTest, service, e2e,
+	})
+	db.SetPrimarySpan(id(rootByte))
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 60))
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	lines := fe.tui.Frame()
+	joined := strings.Join(lines, "\n")
+	col := func(line, sub string) int {
+		i := strings.Index(line, sub)
+		if i < 0 {
+			return -1
+		}
+		return ansi.StringWidth(line[:i])
+	}
+	toolLine, ok := findPrettyTestLine(lines, "CheckAll")
+	if !ok {
+		t.Fatalf("shell render did not include the tool row:\n%s", joined)
+	}
+	dot, name := col(toolLine, "•"), col(toolLine, "CheckAll")
+	for _, heading := range []string{"CHECKS", "GENERATORS", "SERVICES"} {
+		line, ok := findPrettyTestLine(lines, heading)
+		if !ok {
+			t.Fatalf("tool row did not surface an inline %s rollup:\n%s", heading, joined)
+		}
+		if bar := col(line, VertBoldBar); bar != dot {
+			t.Fatalf("%s pipe at column %d, want the tool dot's column %d:\n%s", heading, bar, dot, joined)
+		}
+		if got := col(line, heading); got != name {
+			t.Fatalf("%s heading at column %d, want the tool name's column %d:\n%s", heading, got, name, joined)
+		}
+	}
+	for _, want := range []string{"✘ 1 failed", "✔ 1 passed", "◐ 1 running", "lint", "unit", "docs", "db.dagger.local", "RUNNING"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("inline rollups missing %q:\n%s", want, joined)
+		}
+	}
+	if line, ok := findPrettyTestLine(lines, "e2e"); !ok || !strings.Contains(line, "RUNNING") || strings.Contains(line, "OK") {
+		t.Fatalf("running check line = %q, want RUNNING:\n%s", line, joined)
+	}
+	assertOnce := func(what, out string) {
+		t.Helper()
+		for _, test := range []string{"TestLint", "TestDirect"} {
+			if n := strings.Count(out, test); n != 1 {
+				t.Fatalf("%s shows %s %d times, want once:\n%s", what, test, n, out)
+			}
+		}
+		if n := strings.Count(out, "TESTS"); n != 2 {
+			t.Fatalf("%s has %d TESTS rollups, want the check's and the tool's own:\n%s", what, n, out)
+		}
+	}
+	assertOnce("live row", joined)
+
+	// The final conversation report rolls them up under the tool call too.
+	fe.claims = newRenderClaims()
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report := strings.Join(fe.conversationReport(tuist.Context{Width: 120}, r, false), "\n")
+	for _, want := range []string{"CHECKS", "GENERATORS", "SERVICES", "lint", "unit", "docs", "db.dagger.local"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("conversation report missing %q:\n%s", want, report)
+		}
+	}
+	assertOnce("conversation report", report)
 }
 
 // TestChecksReportNestsSubCheckHeader verifies the final report introduces a
@@ -2090,6 +2273,7 @@ func TestConversationTranscriptStyling(t *testing.T) {
 	// Force a colour profile so we can assert the per-role SGR styling; the
 	// screen tool strips ANSI, so a unit test is the only way to see it.
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2123,9 +2307,8 @@ func TestConversationTranscriptStyling(t *testing.T) {
 			t.Fatalf("conversation transcript still shows role label %q:\n%s", word, plain)
 		}
 	}
-	// The user's prompt sits on a shaded background (ANSIBrightBlack bg = SGR
-	// 100).
-	if !containsStyledLine(frame, "hello there", "\x1b[100m") {
+	// The user's prompt uses the theme-relative RGB fill.
+	if !containsStyledLine(frame, "hello there", "\x1b[48;2;30;30;30m") {
 		t.Fatalf("user prompt is not rendered on a shaded background:\n%s", visibleEscapes(frame))
 	}
 	// Thinking is dim italic bright-black (SGR 90;3).
@@ -2180,6 +2363,7 @@ func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2203,11 +2387,11 @@ func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
 	if !strings.Contains(plain, "scout #3") {
 		t.Fatalf("agent message missing sender-attribution header:\n%s", plain)
 	}
-	if !containsStyledLine(frame, "scout #3", "\x1b[1;36;100m") {
+	if !containsStyledLine(frame, "scout #3", "\x1b[1;36;48;2;30;30;30m") {
 		t.Fatalf("attribution header name is not bold cyan on the shaded block:\n%s", visibleEscapes(frame))
 	}
-	// ...and its body keeps the shaded incoming-prompt background (SGR 100).
-	if !containsStyledLine(frame, "what branch should I target?", "\x1b[100m") {
+	// ...and its body keeps the shaded incoming-prompt background.
+	if !containsStyledLine(frame, "what branch should I target?", "\x1b[48;2;30;30;30m") {
 		t.Fatalf("agent message body lost the shaded background:\n%s", visibleEscapes(frame))
 	}
 
@@ -2222,7 +2406,7 @@ func TestConversationTranscriptStylesMessageOrigins(t *testing.T) {
 		t.Fatalf("event payload leaked into the transcript:\n%s", plain)
 	}
 	// ...with no shaded card: neither the line itself nor prompt padding.
-	if containsStyledLine(frame, `is now idle`, "\x1b[100m") {
+	if containsStyledLine(frame, `is now idle`, "\x1b[48;2;30;30;30m") {
 		t.Fatalf("event one-liner is drawn as a shaded prompt block:\n%s", visibleEscapes(frame))
 	}
 }
@@ -2244,6 +2428,7 @@ func TestConversationTranscriptCollapsesRewoundMessages(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, f.db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2267,7 +2452,7 @@ func TestConversationTranscriptCollapsesRewoundMessages(t *testing.T) {
 		t.Errorf("abandoned reply not elided behind a line count:\n%s", plain)
 	}
 	// The abandoned prompt is no longer a shaded card...
-	if containsStyledLine(frame, "run the tests", "\x1b[100m") {
+	if containsStyledLine(frame, "run the tests", "\x1b[48;2;30;30;30m") {
 		t.Errorf("abandoned prompt still drawn as a shaded prompt block:\n%s", visibleEscapes(frame))
 	}
 	// ...and none of the abandoned turn's remaining content leaks.
@@ -2288,7 +2473,7 @@ func TestConversationTranscriptCollapsesRewoundMessages(t *testing.T) {
 
 	// Kept and resumed prompts keep their shaded card; replies stay plain.
 	for _, want := range []string{"hello there", "run the linter instead"} {
-		if !containsStyledLine(frame, want, "\x1b[100m") {
+		if !containsStyledLine(frame, want, "\x1b[48;2;30;30;30m") {
 			t.Errorf("live prompt %q lost its shaded background:\n%s", want, visibleEscapes(frame))
 		}
 	}
@@ -2315,6 +2500,7 @@ func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, f.db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2323,7 +2509,7 @@ func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
 	// Before the rewind the turn is live: a shaded prompt card.
 	fe.recalculateViewLocked()
 	frame := strings.Join(fe.tui.Frame(), "\n")
-	if !containsStyledLine(frame, "run the tests", "\x1b[100m") {
+	if !containsStyledLine(frame, "run the tests", "\x1b[48;2;30;30;30m") {
 		t.Fatalf("prompt not rendered as a live card before the rewind:\n%s", visibleEscapes(frame))
 	}
 	if strings.Contains(stripANSICodes(frame), SupersededMarker) {
@@ -2341,13 +2527,13 @@ func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
 			t.Errorf("already-rendered message %q did not collapse after the rewind:\n%s", want, plain)
 		}
 	}
-	if containsStyledLine(frame, "run the tests", "\x1b[100m") {
+	if containsStyledLine(frame, "run the tests", "\x1b[48;2;30;30;30m") {
 		t.Errorf("abandoned prompt kept its cached prompt card:\n%s", visibleEscapes(frame))
 	}
 	if !strings.Contains(plain, RewindMarker+" rewound: 3 messages above abandoned") {
 		t.Errorf("rewind marker missing:\n%s", plain)
 	}
-	if !containsStyledLine(frame, "run the linter instead", "\x1b[100m") {
+	if !containsStyledLine(frame, "run the linter instead", "\x1b[48;2;30;30;30m") {
 		t.Errorf("resumed prompt lost its shaded card:\n%s", visibleEscapes(frame))
 	}
 }
@@ -2451,6 +2637,7 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 		term := tuist.NewHeadlessTerminal(120, 60)
 		fe := newWithTerminal(io.Discard, db, term)
 		fe.profile = termenv.ANSI
+		fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 		fe.logs.Profile = termenv.ANSI
 		fe.shell = stubShellHandler{}
 		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2485,24 +2672,24 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 
 	t.Run("unfocused", func(t *testing.T) {
 		// Focus the assistant reply so the prompt renders with its plain gutter.
-		// The line must open with the shaded-background SGR (ANSIBrightBlack bg =
-		// SGR 100): the gutter is shaded rather than two plain spaces before it.
+		// The line must open with the background SGR: the gutter is shaded
+		// rather than two plain spaces before it.
 		line := promptLine(t, asstID)
-		if !strings.HasPrefix(line, "\x1b[100m") {
+		if !strings.HasPrefix(line, "\x1b[48;2;30;30;30m") {
 			t.Fatalf("user prompt gutter is not shaded; line = %q", visibleEscapes(line))
 		}
 	})
 
 	t.Run("focused", func(t *testing.T) {
 		// The "❯ " cue replaces the gutter, so it must carry the same shaded
-		// background (SGR 100) -- otherwise it punches an unshaded hole in the
+		// background -- otherwise it punches an unshaded hole in the
 		// block. Check the styling that precedes the cue, independent of SGR order.
 		line := promptLine(t, userID)
 		before, _, found := strings.Cut(line, LLMPrompt)
 		if !found {
 			t.Fatalf("focused user prompt missing its %q cue; line = %q", LLMPrompt, visibleEscapes(line))
 		}
-		if !strings.Contains(before, "100") {
+		if !strings.Contains(before, "48;2;30;30;30") {
 			t.Fatalf("focused user prompt cue is not shaded; line = %q", visibleEscapes(line))
 		}
 	})
@@ -2539,6 +2726,7 @@ func TestFocusedAssistantMessageSinglePrompt(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2573,7 +2761,7 @@ func TestFocusedAssistantMessageSinglePrompt(t *testing.T) {
 }
 
 // TestUserPromptPaddedAndSeparatedFromTools verifies the live shell view sets
-// the user's prompt apart: a shaded (ANSIBrightBlack) blank line above and
+// the user's prompt apart: a theme-relative shaded blank line above and
 // below extends its block into a padded card, and a tool call that opens the
 // turn -- which carries no leading blank of its own -- gets a plain separating
 // blank so it doesn't sit flush beneath the card.
@@ -2601,6 +2789,7 @@ func TestUserPromptPaddedAndSeparatedFromTools(t *testing.T) {
 	term := tuist.NewHeadlessTerminal(120, 60)
 	fe := newWithTerminal(io.Discard, db, term)
 	fe.profile = termenv.ANSI
+	fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -2617,7 +2806,7 @@ func TestUserPromptPaddedAndSeparatedFromTools(t *testing.T) {
 
 	lines := fe.tui.Frame()
 	isShaded := func(l string) bool {
-		return strings.TrimSpace(stripANSICodes(l)) == "" && strings.Contains(l, "\x1b[100m")
+		return strings.TrimSpace(stripANSICodes(l)) == "" && strings.Contains(l, "\x1b[48;2;30;30;30m")
 	}
 	contentIdx, toolIdx := -1, -1
 	for i, l := range lines {

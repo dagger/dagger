@@ -1,0 +1,195 @@
+package idtui
+
+import (
+	"fmt"
+	"image/color"
+	"strconv"
+	"strings"
+
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+	"github.com/vito/tuist"
+)
+
+// promptBackground keeps the same negotiated color in both rendering systems.
+// Its zero value leaves the terminal background untouched.
+type promptBackground struct {
+	cell color.Color
+	term termenv.Color
+	// border is the soft rule edging the prompt card: the same blend as the
+	// fill, pushed further from the terminal background.
+	border color.Color
+}
+
+// Keep integer RGB channels intact across both renderers. termenv.RGBColor's
+// floating-point conversion can truncate a channel by one when emitting SGR.
+type terminalRGBColor color.RGBA
+
+func (c terminalRGBColor) Sequence(background bool) string {
+	prefix := 38
+	if background {
+		prefix = 48
+	}
+	return fmt.Sprintf("%d;2;%d;%d;%d", prefix, c.R, c.G, c.B)
+}
+
+// blendPromptBackground follows Codex's composer fill: 12% white over a dark
+// terminal background, or 4% black over a light one. The card's border blends
+// the same way at 28% / 16%, so it reads as a soft edge rather than a rule.
+// The remaining colors stay in the user's ANSI palette; only these measured,
+// theme-relative shades use RGB (or the nearest 256-color shade).
+func blendPromptBackground(bg color.Color, profile termenv.Profile) promptBackground {
+	if bg == nil || (profile != termenv.TrueColor && profile != termenv.ANSI256) {
+		return promptBackground{}
+	}
+	r, g, b, _ := bg.RGBA()
+	r, g, b = r>>8, g>>8, b>>8
+	top, fillAlpha, borderAlpha := uint32(255), uint32(12), uint32(28)
+	if 299*r+587*g+114*b > 128000 {
+		top, fillAlpha, borderAlpha = 0, 4, 16
+	}
+	blend := func(alpha uint32) color.RGBA {
+		channel := func(c uint32) uint8 {
+			return uint8((c*(100-alpha) + top*alpha) / 100)
+		}
+		return color.RGBA{R: channel(r), G: channel(g), B: channel(b), A: 255}
+	}
+	fill, border := blend(fillAlpha), blend(borderAlpha)
+	result := promptBackground{cell: fill, term: terminalRGBColor(fill), border: border}
+	if profile == termenv.ANSI256 {
+		result.term = profile.FromColor(fill)
+		result.cell = ansi.IndexedColor(result.term.(termenv.ANSI256Color))
+		result.border = ansi.IndexedColor(profile.FromColor(border).(termenv.ANSI256Color))
+	}
+	return result
+}
+
+// blendTableRule matches Codex's separator color: 20% of the actual terminal
+// foreground over 80% of its background. Nil asks the renderer to use SGR faint.
+func blendTableRule(fg, bg color.Color, profile termenv.Profile) termenv.Color {
+	if fg == nil || bg == nil || (profile != termenv.TrueColor && profile != termenv.ANSI256) {
+		return nil
+	}
+	fr, fgChannel, fb, _ := fg.RGBA()
+	br, bgChannel, bb, _ := bg.RGBA()
+	blend := func(foreground, background uint32) uint8 {
+		return uint8(((foreground>>8)*20 + (background>>8)*80) / 100)
+	}
+	rule := color.RGBA{R: blend(fr, br), G: blend(fgChannel, bgChannel), B: blend(fb, bb), A: 255}
+	if profile == termenv.ANSI256 {
+		return profile.FromColor(rule)
+	}
+	return terminalRGBColor(rule)
+}
+
+// promptColorTerminal queries only after the terminal's input reader is running.
+// Tuist's existing reader decodes the response; there is no second stdin reader,
+// blocking probe, or timeout to delay startup. Unsupported terminals simply
+// never answer, leaving the background unset. Start also re-queries on resume.
+type promptColorTerminal struct {
+	tuist.Terminal
+	queryCapabilities bool
+}
+
+func (t *promptColorTerminal) Start(onInput func([]byte), onResize func()) error {
+	if err := t.Terminal.Start(onInput, onResize); err != nil {
+		return err
+	}
+	t.Terminal.WriteString(ansi.RequestBackgroundColor)
+	t.Terminal.WriteString(ansi.RequestForegroundColor)
+	if t.queryCapabilities {
+		// A byte-forwarding container terminal often loses TERM/COLORTERM but
+		// still reaches the real emulator. Ask instead of assuming 256 colors
+		// or true color just because it answers OSC 11.
+		// Separate requests let terminals that stop at an unknown capability
+		// still answer the other names.
+		for _, capability := range []string{"RGB", "Tc", "Co"} {
+			t.Terminal.WriteString(ansi.RequestTermcap(capability))
+		}
+	}
+	return nil
+}
+
+// promptCapabilityProfile reads successful XTGETTCAP replies decoded by
+// Ultraviolet. RGB/Tc are true-color capabilities; Co is the color count.
+// Negative and malformed replies must not turn an ANSI-only terminal into a
+// true-color one. Profile values run from TrueColor (best) through Ascii.
+func promptCapabilityProfile(content string) termenv.Profile {
+	profile := termenv.Ascii
+	for _, capability := range strings.Split(content, ";") {
+		name, value, hasValue := strings.Cut(capability, "=")
+		n, err := strconv.Atoi(value)
+		switch name {
+		case "RGB", "Tc":
+			if !hasValue || (err == nil && n > 0) {
+				profile = termenv.TrueColor
+			}
+		case "Co", "colors":
+			if err == nil {
+				switch {
+				case n >= 1<<24:
+					profile = termenv.TrueColor
+				case n >= 256:
+					profile = min(profile, termenv.ANSI256)
+				}
+			}
+		}
+	}
+	return profile
+}
+
+// handlePromptBackground runs on Tuist's event loop, before input dispatch, so
+// OSC and capability replies cannot become editor text. Cache the base color
+// separately: the replies can arrive in either order.
+func (fe *frontendPretty) handlePromptBackground(_ tuist.Context, event uv.Event) bool {
+	switch reply := event.(type) {
+	case uv.BackgroundColorEvent:
+		if reply.Color == nil || fe.profile == termenv.Ascii || fe.promptColorProfile == termenv.Ascii {
+			return true
+		}
+		fe.promptBaseColor = reply.Color
+	case uv.ForegroundColorEvent:
+		if reply.Color == nil || fe.profile == termenv.Ascii || fe.promptColorProfile == termenv.Ascii {
+			return true
+		}
+		fe.terminalForeground = reply.Color
+	case uv.CapabilityEvent:
+		profile := promptCapabilityProfile(reply.Content)
+		if profile == termenv.Ascii {
+			return false // leave unrelated capabilities to other listeners
+		}
+		if fe.profile == termenv.Ascii || fe.promptColorProfile == termenv.Ascii {
+			return true
+		}
+		fe.promptColorProfile = min(fe.promptColorProfile, profile)
+	default:
+		return false
+	}
+	background := blendPromptBackground(fe.promptBaseColor, fe.promptColorProfile)
+	ruleColor := blendTableRule(fe.terminalForeground, fe.promptBaseColor, fe.promptColorProfile)
+	if background == fe.promptBackground && ruleColor == fe.logs.tableRuleColor {
+		return true
+	}
+	fe.logs.setTableRuleColor(ruleColor)
+	fe.promptBackground = background
+	if fe.promptFrame != nil {
+		fe.promptFrame.SetBackground(background.cell)
+		fe.promptFrame.SetBorder(background.border)
+	}
+	if fe.statusLine != nil {
+		fe.statusLine.Update() // the focused agent tab shares the prompt's shade
+	}
+	// Transcript rows and their logs cache role styling independently.
+	for _, tree := range fe.spanTrees {
+		tree.Update()
+	}
+	for _, logs := range fe.logsViews {
+		logs.Update()
+	}
+	if fe.logPager != nil {
+		fe.logPager.Update()
+	}
+	fe.Update()
+	return true
+}

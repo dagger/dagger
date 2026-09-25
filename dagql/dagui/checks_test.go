@@ -177,7 +177,7 @@ func TestSurfacedChecksMemoizedPerFrame(t *testing.T) {
 	if len(fresh) != 2 {
 		t.Fatalf("cache must be invalidated by new span data, got %d checks", len(fresh))
 	}
-	if !fresh[0].Failed || fresh[0].Name != "unit" {
+	if !fresh[0].Failed() || fresh[0].Name != "unit" {
 		t.Fatalf("failed check must sort first, got %+v", fresh[0])
 	}
 }
@@ -269,6 +269,18 @@ func TestSurfacedChecksForSpan(t *testing.T) {
 		if !again[name] {
 			t.Fatalf("re-rooting changed surfacing: %v vs %v", again, unscoped)
 		}
+	}
+
+	// A frame asks about the zoom root AND every tool-call row: interleaved
+	// reads for different roots must each hit their own memo entry rather than
+	// evicting one another.
+	toolNodes := db.SurfacedChecksForSpan(toolSpan)
+	rootNodes := db.SurfacedChecks()
+	if again := db.SurfacedChecksForSpan(toolSpan); &again[0] != &toolNodes[0] {
+		t.Fatal("reading the root's checks evicted the tool call's memo entry")
+	}
+	if again := db.SurfacedChecks(); &again[0] != &rootNodes[0] {
+		t.Fatal("reading the tool call's checks evicted the root's memo entry")
 	}
 }
 

@@ -83,6 +83,11 @@ type TestView struct {
 
 	sidebar *testSidebarView
 
+	// excluding marks an inline rollup whose View is pinned to a view filtered
+	// by a sibling rollup's claims (see renderInlineTests), so it can be reset
+	// to the live view once nothing is excluded.
+	excluding bool
+
 	// MaxHeight caps the rendered height. A zero value means fullscreen mode:
 	// use the terminal height, leaving room for the keymap sibling.
 	MaxHeight int
@@ -1750,15 +1755,30 @@ func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
 	return fe.db.TestViewForSpan(row.Span).HasTests()
 }
 
-func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *dagui.TraceRow) []string {
+// inlineTestsView is the test view a row's TESTS rollup renders: every case
+// beneath it, minus those exclude itself claimed (see renderClaims.fork) --
+// a tool call's CHECKS rollup, which nests its checks' tests under them. The
+// rest (tests the tool ran outside any check) still get their own rollup, so
+// deduping never hides a case.
+func (fe *frontendPretty) inlineTestsView(span *dagui.Span, exclude *renderClaims) *dagui.TestView {
+	view := fe.db.TestViewForSpan(span)
+	if !exclude.ownsAnyTestCases() || !view.HasTests() {
+		return view
+	}
+	return view.FilterCases(func(node *dagui.TestNode) bool {
+		return node.Span == nil || !exclude.ownsTestCase(node.Span.ID)
+	})
+}
+
+func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *dagui.TraceRow, exclude *renderClaims) []string {
 	if !s.fe.shouldRenderInlineTests(row) {
 		return nil
 	}
+	view := s.fe.inlineTestsView(row.Span, exclude)
+	if !view.HasTests() {
+		return nil
+	}
 	if s.fe.reportOnly && s.fe.finalRender {
-		view := s.fe.db.TestViewForSpan(row.Span)
-		if !view.HasTests() {
-			return nil
-		}
 		tv := &TestView{
 			Profile:         s.fe.profile,
 			AgentStyle:      s.fe.agentStyle(),
@@ -1780,7 +1800,28 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		return append([]string{""}, lines...)
 	}
 	tv := s.fe.inlineTestView(row.Span.ID)
+	// Pin the component to the filtered view while checks claim some of the
+	// cases; the row re-renders (and re-pins) on every span export, like the
+	// component itself (updateTestViews).
+	if exclude.ownsAnyTestCases() {
+		tv.View = func() *dagui.TestView { return view }
+		tv.excluding = true
+		tv.Update()
+	} else if tv.excluding {
+		spanID := row.Span.ID
+		tv.View = func() *dagui.TestView {
+			return s.fe.db.TestViewForSpan(s.fe.db.Spans.Map[spanID])
+		}
+		tv.excluding = false
+		tv.Update()
+	}
+	// Indent the summary so its TESTS heading lines up with the row's name. A
+	// shell tool call's pipe already sits under its dot (inlineReportPrefix), a
+	// cell short of the name, so it needs no extra indent.
 	summaryIndent := 2
+	if s.fe.shellToolRow(row) {
+		summaryIndent = 0
+	}
 	if tv.SummaryIndent != summaryIndent {
 		tv.SummaryIndent = summaryIndent
 		tv.Update()
@@ -1815,19 +1856,13 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		tv.Update()
 	}
 
+	// The live tree hangs the rollup off the row's pipe, as does the transcript
+	// a shell session reprints on exit; the plain final report sets it apart
+	// with a blank line instead.
+	framed := !s.fe.finalRender || s.fe.shellTranscript()
 	var prefix string
-	if !s.fe.finalRender {
-		prefixBuf := new(strings.Builder)
-		prefixOut := NewOutput(prefixBuf, termenv.WithProfile(s.fe.profile))
-		r.indentFunc = s.indentFunc(prefixOut)
-		r.fancyIndent(prefixOut, row, false, false)
-		pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
-		if s.focused {
-			pipe = hl(pipe)
-		}
-		fmt.Fprint(prefixOut, pipe.String())
-		fmt.Fprint(prefixOut, " ")
-		prefix = prefixBuf.String()
+	if framed {
+		prefix = s.inlineReportPrefix(r, row)
 	}
 
 	ctxWidth := ctx.Width
@@ -1835,7 +1870,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		ctxWidth = finalRenderTestsWidth + lipgloss.Width(prefix)
 	}
 	width := max(ctxWidth-lipgloss.Width(prefix), 1)
-	if s.fe.finalRender {
+	if s.fe.finalRender && !framed {
 		width = max(width, finalRenderTestsWidth)
 	}
 	result := s.RenderChildResult(ctx.Resize(width, limit), tv)
@@ -1843,10 +1878,10 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		s.fe.claims.claimTestReport(row.Span, tv.currentView())
 	}
 	lines := make([]string, 0, len(result.Lines)+1)
-	if s.fe.finalRender {
-		lines = append(lines, "")
-	} else if prefix != "" {
+	if framed {
 		lines = append(lines, strings.TrimRight(prefix, " "))
+	} else {
+		lines = append(lines, "")
 	}
 	for _, line := range result.Lines {
 		lines = append(lines, prefix+line)

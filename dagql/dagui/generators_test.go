@@ -116,7 +116,7 @@ func TestSurfacedGeneratorsMemoizedAndOrdered(t *testing.T) {
 	if len(fresh) != 2 {
 		t.Fatalf("cache must be invalidated by new span data, got %d generators", len(fresh))
 	}
-	if !fresh[0].Failed || fresh[0].Name != "sdk" {
+	if !fresh[0].Failed() || fresh[0].Name != "sdk" {
 		t.Fatalf("failed generator must sort first, got %+v", fresh[0])
 	}
 }

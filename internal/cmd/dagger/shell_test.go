@@ -222,6 +222,32 @@ func TestAgentSyncKeysAcknowledgeImmediately(t *testing.T) {
 	}
 }
 
+// TestModeSwitchKeysOnlySwitchModes: a leading ">" or "!" switches into prompt
+// or shell mode, but typed in the mode it would select it is plain text -- so
+// a prompt can open with a "> quote" and a command with "!" -- and past the
+// start of the input it never switches.
+func TestModeSwitchKeysOnlySwitchModes(t *testing.T) {
+	ctx := context.Background()
+	handler := newShellCallHandler(nil, &idtui.FrontendMock{})
+	gt := uv.KeyPressEvent{Text: ">", Code: '>'}
+	bang := uv.KeyPressEvent{Text: "!", Code: '!'}
+
+	handler.mode = modePrompt
+	require.Nil(t, handler.ReactToInput(ctx, gt, "", true), "> in prompt mode is text")
+	require.Equal(t, modePrompt, handler.mode)
+	require.NotNil(t, handler.ReactToInput(ctx, bang, "", true), "! switches prompt mode to shell")
+	require.Equal(t, modeShell, handler.mode)
+
+	require.Nil(t, handler.ReactToInput(ctx, bang, "", true), "! in shell mode is text")
+	require.Equal(t, modeShell, handler.mode)
+	// Don't run the work: it would initialize an LLM session.
+	require.NotNil(t, handler.ReactToInput(ctx, gt, "", true), "> switches shell mode to prompt")
+	require.Equal(t, modePrompt, handler.mode)
+
+	require.Nil(t, handler.ReactToInput(ctx, bang, "echo hi", true), "! mid-input is text")
+	require.Equal(t, modePrompt, handler.mode)
+}
+
 func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	if _, err := os.Stat("/dagger.env"); os.IsNotExist(err) {
 		t.Skip(".env not configured")

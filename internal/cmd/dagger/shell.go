@@ -1053,15 +1053,18 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent, inputValue string, editing bool) func() {
 	key := uv.Key(ev)
 	switch {
+	// A leading ">" / "!" switches mode, but only into a different one: in
+	// the mode it would select, the key is just text, so a prompt can open
+	// with a quote ("> ...") and a command with "!".
 	case key.MatchString(">"):
-		if inputValue == "" {
+		if inputValue == "" && h.mode != modePrompt {
 			h.mode = modePrompt
 			return func() {
 				h.llm(ctx) // initialize LLM
 			}
 		}
 	case key.MatchString("!"):
-		if inputValue == "" {
+		if inputValue == "" && h.mode != modeShell {
 			h.mode = modeShell
 			return noop // handled, no async work
 		}
