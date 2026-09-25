@@ -24,6 +24,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -185,7 +186,10 @@ func (c *Client) Run(
 	// needs no nested-client link.
 	var execRunSpan trace.Span
 	if dagql.OTelProfActive(ctx) {
-		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent)
+		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent,
+			attribute.String(enginetel.ExecutionIDAttr, state.id),
+			attribute.Bool(enginetel.ExecutionInternalAttr, execMD != nil && execMD.Internal),
+		)
 	}
 	err := c.run(ctx, state,
 		namedSetupFunc{"setupNetwork", c.setupNetwork},
