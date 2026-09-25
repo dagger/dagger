@@ -197,29 +197,3 @@ func TestCloseControlWaitsForProducersAndPreservesCause(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "PAUSED", state, "capture pre-teardown facts before cancellation rewrites them")
 }
-
-func TestDiscardRestoreKeepsRemovalWitness(t *testing.T) {
-	rec, ctx := stateRecorderCtx(t)
-	ctx = testAgentContext(t, ctx, "restored", "restored")
-	agent, _ := AgentFromContext(ctx)
-	registry := NewAgentRuntimes()
-	rt := testRuntime(t, ctx)
-	rt.key, rt.restored, rt.ars = "restored", true, registry
-	registry.entries[rt.key] = rt
-	rt.testTransition(func() {})
-	require.NoError(t, registry.DiscardRestore(ctx, agent))
-	_, found, err := registry.Get(ctx, agent)
-	require.NoError(t, err)
-	require.False(t, found)
-	expected, err := registry.CloseControl(context.Background())
-	require.NoError(t, err)
-	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	var idx agentcontrol.Index
-	for _, record := range rec.control {
-		_, err := idx.ApplyRecord(record)
-		require.NoError(t, err)
-	}
-	require.NoError(t, idx.Verify(expected[""]))
-	require.True(t, idx.Agents()[0].Removed)
-}

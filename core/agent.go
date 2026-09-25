@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/engine/agentcontrol"
@@ -508,9 +507,6 @@ func (ars *AgentRuntimes) Get(ctx context.Context, agent dagql.ObjectResult[*Age
 	ars.mu.Lock()
 	defer ars.mu.Unlock()
 	rt, found := ars.entries[key]
-	if found && rt.removed.Load() {
-		return nil, false, nil
-	}
 	return rt, found, nil
 }
 
@@ -1198,7 +1194,6 @@ type AgentRuntime struct {
 	parentHandle          string
 	preTeardownState      AgentState
 	subscriptionRevisions map[string]int64
-	removed               atomic.Bool
 	// restored says the handle was supplied rather than minted; activated
 	// says send, start or resume has touched the entry since. A restored
 	// entry that is not yet activated still holds its recorded state, which

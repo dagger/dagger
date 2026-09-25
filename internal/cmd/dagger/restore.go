@@ -7,7 +7,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -54,8 +53,6 @@ type restoreTarget interface {
 	// Subscribe reinstalls a recorded filter through notify. The watched agent
 	// is restored and not yet activated, so this announces nothing.
 	Subscribe(ctx context.Context, watchedID, subscriberID string, states []string) error
-	// Discard rolls back an inert runtime created by this restore attempt.
-	Discard(ctx context.Context, agentID string) error
 }
 
 // restoreFromTrace imports only verified bootstrap state before activating the
@@ -85,7 +82,7 @@ func executeRestorePlan(ctx context.Context, src agentRestoreSource, dst restore
 	return executeRestoreGraph(ctx, src, dst, req, nil)
 }
 
-func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restoreTarget, req traceRestore, subscriptions []agentcontrol.Subscription) (rerr error) {
+func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restoreTarget, req traceRestore, subscriptions []agentcontrol.Subscription) error {
 	if req.partial {
 		return errors.New("--partial is not supported: restoring an incomplete agent graph can leave tools addressing missing agents")
 	}
@@ -128,25 +125,13 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if rerr == nil {
-			return
-		}
-		// Cleanup must survive cancellation of the original operation.
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		for i := len(restoring) - 1; i >= 0; i-- {
-			if id := restoring[i].agentID; id != "" {
-				if err := dst.Discard(cleanupCtx, id); err != nil {
-					rerr = errors.Join(rerr, fmt.Errorf("discard restored agent %s: %w", restoring[i].entry.ID, err))
-				}
-			}
-		}
-	}()
 
-	// All runtimes are inert. Install the complete graph before attaching the
-	// prompt. The watched agents have not been activated, so notify does not
-	// announce their restored states.
+	// All runtimes are inert: nothing runs until the prompt does, and nothing
+	// can address them until they are adopted. A failure from here on fails the
+	// command, and the session's teardown releases whatever was created.
+	// Install the complete graph before attaching the prompt. The watched
+	// agents have not been activated, so notify does not announce their
+	// restored states.
 	for i, restored := range restoring {
 		agentID, err := dst.Rehydrate(ctx, restored.entry, restored.snapshotID)
 		if err != nil {
@@ -368,15 +353,6 @@ func (r *sessionRestore) Subscribe(ctx context.Context, watchedID, subscriberID 
   node(id: $watched) { ... on Agent { notify(subscriber: $subscriber, on: $states) } }
 }`,
 		Variables: map[string]any{"watched": watchedID, "subscriber": subscriberID, "states": states},
-	}, &dagger.Response{})
-}
-
-func (r *sessionRestore) Discard(ctx context.Context, agentID string) error {
-	return r.dag.Do(ctx, &dagger.Request{
-		Query: `query DiscardRestore($agent: ID!) {
-  node(id: $agent) { ... on Agent { discardRestore } }
-}`,
-		Variables: map[string]any{"agent": agentID},
 	}, &dagger.Response{})
 }
 

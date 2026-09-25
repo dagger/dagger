@@ -71,14 +71,6 @@ func (f *fakeRestoreTarget) Subscribe(_ context.Context, watched, subscriber str
 	return nil
 }
 
-func (f *fakeRestoreTarget) Discard(ctx context.Context, id string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	f.calls = append(f.calls, "discard:"+id)
-	return nil
-}
-
 func (f *fakeRestoreTarget) Adopt(_ context.Context, entry dagui.AgentRestore, agentID string) error {
 	f.calls = append(f.calls, "adopt:"+entry.ID)
 	f.adopted[entry.ID] = agentID
@@ -287,7 +279,7 @@ func TestRestoreStopsOnARefusedRehydration(t *testing.T) {
 	require.ErrorContains(t, err, "already has a runtime entry")
 	require.NotContains(t, dst.calls, "adopt:agent-chief",
 		"a failed re-hydration must not leave conversations attached to a half-restored session")
-	require.Equal(t, []string{"rehydrate:agent-chief", "rehydrate:agent-scout", "discard:handle:agent-chief"}, dst.calls)
+	require.Equal(t, []string{"rehydrate:agent-chief", "rehydrate:agent-scout"}, dst.calls)
 }
 
 func TestRestoreInstallsGraphBeforeAttachment(t *testing.T) {
