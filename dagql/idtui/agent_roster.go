@@ -34,7 +34,7 @@ type AgentRosterEntry struct {
 // faint jump number, display name and lifecycle symbol each, padded by a cell
 // either side — on one line, the focused tab filled like the prompt card:
 //
-//	 1 agent ▶  2 scout ○  3 docs ▶  4 tests needs you
+//	1 agent ▶  2 scout ○  3 docs ▶  4 tests needs you
 //
 // The roster is embedded at the left of the prompt's status line. It is always
 // visible once an agent has been published: besides being a switcher, it is the
