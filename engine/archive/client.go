@@ -28,6 +28,12 @@ const (
 	maxErrorResponseSize    = 64 << 10
 )
 
+// AgentBootstrapResource names the agent-restore bootstrap within an archive.
+// It is agent-specific: final agent/subscription control records plus the
+// recipe closure of their snapshots. The lease, metadata and OTLP signal
+// streams alongside it are generic telemetry resources.
+const AgentBootstrapResource = "agent-bootstrap"
+
 // HTTPDoer is the transport required by the archive client. engine/client's
 // DirectConn implements this interface and carries the connected session's
 // authentication and routing metadata.
@@ -276,7 +282,7 @@ func (e *consumerError) Unwrap() error { return e.err }
 // generation returned by the engine is still required and checked against the
 // bootstrap header.
 func (c *Client) Bootstrap(ctx context.Context, traceID, expectedGeneration string, consume func(BootstrapHeader, BootstrapBatch) error) (BootstrapResult, error) {
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "bootstrap"), nil, nil, BootstrapContentType, expectedGeneration, 0)
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, AgentBootstrapResource), nil, nil, BootstrapContentType, expectedGeneration, 0)
 	if err != nil {
 		return BootstrapResult{}, err
 	}
