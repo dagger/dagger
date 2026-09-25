@@ -4,11 +4,45 @@
 
 This is the starting document for a fresh session asked to **"continue https://github.com/dagger/dagger/pull/14314"**. It supersedes the implementation status and next steps in the [earlier investigation handoff](https://gist.github.com/vito/aead3f59d5aec76d824797c4c00f7f3a). The code is authoritative when it differs from this document.
 
+## Resume: lazy hydration checkpoint (2026-09-25)
+
+**Paused at the user's request due to host memory pressure.** Production implementation is committed at `b8950222b150056e77260837c129be979269ef65` (worker original `ac989cc`). Finish validating lazy hydration **before** starting host-checkout history synchronization. Direction C remains deferred. The sections below describe the earlier complete-history implementation and measurements unless explicitly stated otherwise.
+
+- Ordinary remote commits now promote only the pinned commit/tree/blob closure at depth one, including when the shared mirror already has full history. Owned `HistorySource` retains the exact authorized remote anchor across descendants and persistence.
+- Raw storage operations stay separate from history demand. Native staging/reconciliation, source-only checkout, short logs, and proven direct-parent ranges can use shallow storage. Deeper history, historical refs, full retained checkouts and bundle/export consumers hydrate through `__hydrateRepository` into owned immutable snapshots.
+- Hydration merges complete authorized source objects with local storage, preserves local metadata, and removes the shallow boundary only after complete packing succeeds. Exact source recipe and structural Directory recipe partition the cache; runtime content-equivalent IDs alone are insufficient. No host sync or global object store was added.
+- Main implementation: `core/git_local_history.go`, `core/git_commit_remote.go`, `core/git_history_native.go`, native commit/reconciliation/incremental checkout call sites, schema resolvers, persistence codecs and visitors. Independent regressions: `core/integration/workspace_remote_history_test.go`.
+
+**Validation actually completed:** targeted core/schema Git/native/bundle/history/persistence tests; shallow object-inventory and donor-removal fsck tests; two codec cache restarts; exact-recipe/content-alias isolation; from-source remote-first-commit oracle; initial lazy-history matrix plus existing parent-history no-fetch test (worker reports eight passing cases). Baseline Ordinary failed specifically on eager `git fetch --unshallow`, establishing the regression. Test-only lint passed before the final additions.
+
+**Not yet validated:** follow-up tests in `d754196` (full bundle independent clone/fsck, retained depth-one boundary, hydrated history reuse after origin deletion with exactly one hydration execution) compile but have not run against production. Full `go test -race ./core ./core/schema -count=1`, broad existing native integration rerun, and final root lint were interrupted/not started when the user paused. Do not report these as passed for this checkpoint. No lazy-hydration benchmark has run; the 9.771s/1.590s figures below predate it. Real engine restart/GC/eviction remains untested; codec restart tests use a test snapshot manager.
+
+**Resume sequence:** run the expanded integration matrix `^TestWorkspace$/^TestWorkspaceRemoteLazyHistory(Ordinary|Demand|Unavailable)$`, then race tests, existing native/reconciliation/history/reftable regressions and CI-matching golangci-lint v2.11.4. Fix failures before claiming completion. Then run the unchanged controlled-origin real-repository benchmark twice, serially, using distinct equivalent selectors and checking distinct engine endpoints. Compare first commit and full loop with the recorded true-main and pre-lazy baselines; retain outliers. Refresh the stale PR description only when requested. No public SDL change: the new fields are internal.
+
+All implementation/test commits have been harvested; no worker-only fix remains. At pause, `remote-native` was deliberately PAUSED and other workers IDLE. Resume commands sent in an interrupted parallel call were not confirmed delivered. Many engine-dev services remained listed in this long session; close the session before further resource-intensive validation.
+
+## Earlier compaction notes (superseded above)
+
+**Latest user decision:** pursue options **1 and 2 below**, within Direction A. Engines are single-tenant, but the user explicitly deferred Direction C; do not relax authorization scope or introduce engine-wide object storage on the basis of tenancy. No implementation of these next options has started.
+
+1. **Avoid requiring complete history for an ordinary commit.** Explore owned shallow commits with demand-driven history hydration. Parent commit/tree objects suffice to construct a child, but unbounded/path-filtered history, older comparisons, retained `.git` exports, and persistence must retain correct semantics. Do not simply remove the complete-history gate and let queries silently return truncated results. Local repository mounting currently assumes already-owned storage; any lazy hydration needs explicit remote provenance, ownership and error handling.
+2. **Use history already present in the approved host checkout.** For interactive workspaces, avoid downloading history the owning client already has. Import the requested commit's authorized object closure using captured checkout identity and approved host access; retain self-contained ownership after the client disappears and preserve remote reconstructibility. Host import must not copy unrelated refs/objects or depend on an expired client mount. Missing local history and pure remote API inputs need a correct fallback. Relevant entry points include `engine/session/git/git_capture.go`, `core/schema/workspace_checkpoint.go`, `host.__gitDir`, and `core/git_commit_remote.go`.
+
+**Checkpoint:** `5220bea90e3095d64e7ab0de120585a7927e44f3` was pushed to `vito/dagger:fix-agent-git-history-no-fetch`; it includes all benchmark harnesses, remote-native code and results below. The chief was in a clean detached checkout before these notes. Do not discard local notes/commits by checking out again after compaction. Verify current status/log and GitHub head first. The PR description predates the real-repository/remote-native results and is stale; the code and this guide are authoritative. No publishing is needed merely to compact.
+
+**Current result:** controlled-origin medians are first commit **9.771s**, first full loop **17.141s**, later commit **1.590s**, later full loop **7.000s**. Cold complete-history hydration costs **6.3–7.0s**, isolated packing **1.7–1.8s**. Capture stayed **2.9–3.7s**. All six commits now use native construction/reconciliation, and first-parent history comparisons do not refetch. Do not promise cold-first parity with warmed local commits. Physical engine allocation and full engine restart/GC stress remain unmeasured.
+
+**Validation:** full `go test -race ./core ./core/schema -count=1`, seven from-source integration regressions and root golangci-lint v2.11.4 passed. Internal `__nativeCommitBase` is excluded from public SDL. Key implementation commits: `dee33de` (remote promotion/owned canonical tree), `756122e` (exact-parent history reuse); `3345369` is benchmark-only lint extraction.
+
+**Benchmark rules:** use the controlled-origin real-repository harness and the matched main/pre-fix/final data below, not the older partially optimized synthetic baseline. Pin both source and advertised refs: moving live GitHub refs silently caused bundle import and a local base in one rejected run. Preserve all timings, including capture/first loop and outliers. Private SDK sessions must remove inherited routing variables and use explicitly built CLI/engine. Separate equivalent test selectors bypass engine-test session memoization; check distinct runner IDs. Run timed workloads serially, without competing builds/tests. The benchmark is opt-in; broad integration selectors skip it.
+
+**Workers:** `remote-native` implemented and committed the remote path and is harvested; `realbench` holds pre-fix PR benchmark state; `mainbench` holds true-main plus test-only harness (never pull its baseline commit into the PR); `ci` handled lint. All completed their assigned turns, with no known pending implementation. They can be resumed if useful. The earlier TUI/engine smoke services were stopped; smoke-only commits were neither pushed nor exported. Full raw log span IDs, fixture hashes and test selectors are below.
+
 ## Start here
 
 1. Read this document and the current PR description/checks.
 2. Query the PR's actual head repository, branch and SHA. At this checkpoint the repository is **`vito/dagger`**, branch **`fix-agent-git-history-no-fetch`**, targeting `dagger/dagger`.
-3. Work in that checkout, preserving unrelated host edits. With the workspace checkout tool, use the branch name, then verify HEAD against GitHub. That tool's `branch` argument does not accept a commit SHA. A previous session encountered stale branch resolution, so do not skip verification.
+3. Work in that checkout, preserving unrelated host edits and local continuation notes. With the workspace checkout tool, use `ref` for the branch name, then verify HEAD against GitHub. Do not replace an already-correct workspace unnecessarily. A previous session encountered stale branch resolution, so do not skip verification.
 4. Reproduce with an explicitly selected **from-source engine and CLI**. Inherited `DAGGER_SESSION_PORT` can send SDK tests to another engine; see [Validation and reproduction](#validation-and-reproduction).
 5. Follow [Continuation priorities](#continuation-priorities). Do not restart the rejected experiments or replace Directory with a new backend by default.
 
@@ -28,7 +62,7 @@ The user's preference is explicit:
 | --- | --- |
 | **A: Git-native commit transactions** | Active approach. Substantial incremental gains are worthwhile without requiring every workflow to meet a one-second threshold. |
 | **B: Git trees as a general Directory backend** | Deferred. Do not introduce a new general Directory representation merely to continue this work. |
-| **C: Engine-owned Git object storage** | Interesting future exploration, but a separate design. This PR does not introduce a global mutable bare repository or object service. |
+| **C: Engine-owned Git object storage** | Explicitly deferred by the user, including after discussing single-tenant engines. Focus next on lazy history acquisition and approved host-history reuse, not engine-wide object storage or relaxed authorization boundaries. |
 
 The implemented slices are plausibly independently mergeable after review and sufficient validation. That is not a claim of production readiness, exhaustive compatibility, or crash durability.
 
