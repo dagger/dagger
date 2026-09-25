@@ -206,7 +206,7 @@ func workspaceRemoteHistoryFetches(sink *agentTraceSink, ancestor string) (shall
 			full = append(full, name)
 		}
 	}
-	return
+	return shallow, full
 }
 
 func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryOrdinary(ctx context.Context, t *testctx.T) {
@@ -302,7 +302,8 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 				other := fixture.repo.Ref(name)
 				commits, err = head.Log(ctx, dagger.GitRefLogOpts{Base: other, Limit: 100})
 				require.NoError(t, err)
-				expected := append(localSHAs, strings.Fields(fixture.git(ctx, t, "rev-list", "main", "^"+name))...)
+				expected := append([]string(nil), localSHAs...)
+				expected = append(expected, strings.Fields(fixture.git(ctx, t, "rev-list", "main", "^"+name))...)
 				require.ElementsMatch(t, expected, workspaceRemoteHistorySHAs(ctx, t, commits))
 				behind, err := other.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 100})
 				require.NoError(t, err)
