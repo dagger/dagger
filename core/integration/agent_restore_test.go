@@ -845,7 +845,7 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	require.NotEmpty(t, bin)
 	commandCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	cmd := exec.CommandContext(commandCtx, bin, "agent", "--trace", traceID)
+	cmd := exec.CommandContext(commandCtx, bin, "agent", "-r", traceID)
 	cmd.Dir = destination
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
@@ -867,7 +867,7 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 		var listErr error
 		var generation, state string
 		require.Eventually(t, func() bool {
-			listCmd := exec.CommandContext(ctx, bin, "agent", "--list-archives", "--trace", traceID)
+			listCmd := exec.CommandContext(ctx, bin, "agent", "-r")
 			listCmd.Dir, listCmd.Env = destination, slices.Clone(cmd.Env)
 			listing, listErr = listCmd.Output()
 			if listErr != nil {

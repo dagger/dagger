@@ -194,7 +194,6 @@ func TestArchiveSelectionFlags(t *testing.T) {
 		{name: "restore", trace: "trace"},
 		{name: "selected", trace: "trace", source: "source", generation: "cut"},
 		{name: "list all", listArchives: true},
-		{name: "list trace", listArchives: true, trace: "trace"},
 		{name: "missing trace", source: "source", generation: "cut", invalid: true},
 		{name: "source selection", trace: "trace", source: "source"},
 		{name: "missing source", trace: "trace", generation: "cut", invalid: true},
@@ -236,12 +235,12 @@ func TestArchiveDiscoveryIsReadOnlyAndPaginated(t *testing.T) {
 	source, err := archive.NewClientWithURL(server.Client(), server.URL)
 	require.NoError(t, err)
 	var out bytes.Buffer
-	require.NoError(t, listAgentArchives(t.Context(), source, "wanted", &out))
+	require.NoError(t, listAgentArchives(t.Context(), source, &out))
 	require.Equal(t, []string{"", "next"}, requests)
 	require.Contains(t, out.String(), "cut-one")
 	require.Contains(t, out.String(), "cut-two")
 	require.Contains(t, out.String(), "incomplete")
-	require.NotContains(t, out.String(), "hidden")
+	require.Contains(t, out.String(), "other", "a bare -r lists every retained archive")
 	require.NotContains(t, out.String(), "\x1b")
 	require.Contains(t, out.String(), `title\n\x1b[31m`)
 }
@@ -261,7 +260,7 @@ func TestArchiveAmbiguityGuidesSelection(t *testing.T) {
 	cause := &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureAmbiguous}
 	err := archiveRestoreError("trace", cause)
 	require.ErrorIs(t, err, cause)
-	require.Contains(t, err.Error(), "--list-archives --trace trace")
+	require.Contains(t, err.Error(), "dagger agent -r")
 	require.Contains(t, err.Error(), "--source-session <session> --generation <generation>")
 }
 

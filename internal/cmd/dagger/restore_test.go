@@ -389,20 +389,71 @@ func TestRestoreRejectsInvalidGraphBeforeCreation(t *testing.T) {
 	}
 }
 
-// TestAgentTraceFlagConflicts is §5.4's surface. Both refusals are about two
-// things claiming to say what the session is: a saved session and a trace are
-// two stores for one conversation, and a restored session's composition comes
-// from the trace rather than from the workspace.
+// TestAgentTraceFlagConflicts is §5.4's surface: a restored session's
+// composition comes from the trace rather than from the workspace.
 func TestAgentTraceFlagConflicts(t *testing.T) {
 	const traceID = "2f123ba77bf7bd2d4db2f70ed20613e8"
 
-	require.NoError(t, validateAgentTraceFlags(traceID, false, nil))
-	require.ErrorContains(t, validateAgentTraceFlags("", true, []string{"editor"}), "local JSON sessions are no longer supported")
+	require.NoError(t, validateAgentTraceFlags(traceID, nil))
+	require.NoError(t, validateAgentTraceFlags("", []string{"editor"}))
 
-	err := validateAgentTraceFlags(traceID, true, nil)
-	require.ErrorContains(t, err, "-r/--resume")
-
-	err = validateAgentTraceFlags(traceID, false, []string{"editor", "dagger-go"})
+	err := validateAgentTraceFlags(traceID, []string{"editor", "dagger-go"})
 	require.ErrorContains(t, err, "editor, dagger-go")
 	require.ErrorContains(t, err, "come from the trace")
+}
+
+// TestResumeFlagResolution covers -r/--resume and its deprecated --trace
+// alias: a bare -r lists archives, and a trace ID restores whichever way it
+// is spelled.
+func TestResumeFlagResolution(t *testing.T) {
+	const traceID = "2f123ba77bf7bd2d4db2f70ed20613e8"
+	for _, tc := range []struct {
+		name      string
+		resume    agentResumeFlag
+		resumeSet bool
+		alias     string
+		aliasSet  bool
+		args      []string
+		wantTrace string
+		wantList  bool
+		wantArgs  []string
+		wantErr   string
+	}{
+		{name: "compose", args: []string{"editor"}, wantArgs: []string{"editor"}},
+		{name: "bare -r lists", resume: agentResumeList, resumeSet: true, wantList: true},
+		{name: "-r=<id>", resume: traceID, resumeSet: true, wantTrace: traceID},
+		{name: "-r <id>", resume: agentResumeList, resumeSet: true, args: []string{traceID}, wantTrace: traceID},
+		{name: "bare -r with agent names still lists", resume: agentResumeList, resumeSet: true, args: []string{"editor"}, wantList: true, wantArgs: []string{"editor"}},
+		{name: "--trace alias", alias: traceID, aliasSet: true, wantTrace: traceID},
+		{name: "both", resume: traceID, resumeSet: true, alias: traceID, aliasSet: true, wantErr: "deprecated alias"},
+		{name: "empty -r=", resume: "", resumeSet: true, wantErr: "requires a trace ID"},
+		{name: "empty --trace", alias: "", aliasSet: true, wantErr: "requires a trace ID"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			traceID, list, args, err := resolveResumeFlags(tc.resume, tc.resumeSet, tc.alias, tc.aliasSet, tc.args)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantTrace, traceID)
+			require.Equal(t, tc.wantList, list)
+			require.Equal(t, tc.wantArgs, args)
+		})
+	}
+}
+
+// TestTraceFlagIsDeprecated: --trace still works but warns on use and is
+// hidden from help; -r/--resume is the documented flag.
+func TestTraceFlagIsDeprecated(t *testing.T) {
+	flag := agentCmd.Flags().Lookup("trace")
+	require.NotNil(t, flag)
+	require.NotEmpty(t, flag.Deprecated)
+	require.Contains(t, flag.Deprecated, "-r/--resume")
+	resume := agentCmd.Flags().Lookup("resume")
+	require.NotNil(t, resume)
+	require.Equal(t, "r", resume.Shorthand)
+	require.False(t, resume.Hidden)
+	require.Equal(t, string(agentResumeList), resume.NoOptDefVal)
+	require.Nil(t, agentCmd.Flags().Lookup("list-archives"), "a bare -r replaces --list-archives")
 }
