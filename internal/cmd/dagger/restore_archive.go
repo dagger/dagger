@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/tracesource"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -164,12 +165,35 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 		return nil, err
 	}
 
-	return startHistoricalImport(ctx, func(ctx context.Context) error {
-		defer release()
-		return importArchiveRemainder(ctx, source, req.traceID, result, importer, cut)
+	// Keep the verified bootstrap and span sealing path unchanged. Interactive
+	// frontends load display logs on demand; semantic metadata still arrives in
+	// the background so names, progress and call rendering do not require an
+	// expanded log pane. The lease now spans the entire prompt lifetime.
+	historyCtx, cancel := context.WithCancel(ctx)
+	var logFg fetchGroup
+	_, lazy := fe.(idtui.TraceFrontend)
+	if tf, ok := fe.(idtui.TraceFrontend); ok {
+		display := tracesource.NewArchive(source, archive.Manifest{
+			TraceID: req.traceID, Generation: cut.Generation, SealAt: &cut.SealAt,
+			HighWater: archive.HighWater{Spans: cut.HighWater.Spans, Logs: cut.HighWater.Logs, Metrics: cut.HighWater.Metrics},
+		})
+		loader := newTraceLoaderForFrontend(historyCtx, display, req.traceID, fe)
+		tf.SetLogProvider(func(id dagui.SpanID, descendants bool) {
+			loader.fetchLogs(&logFg, id, descendants)
+		})
+		tf.SetFetchWaiter(func() { _ = logFg.Wait() })
+	}
+	stop := startHistoricalImport(historyCtx, func(ctx context.Context) error {
+		return importArchiveRemainderMode(ctx, source, req.traceID, result, importer, cut, lazy)
 	}, func(err error) {
 		restoreNotice(ctx, fmt.Sprintf("historical telemetry import incomplete: %v; restored agents remain usable", err))
-	}), nil
+	})
+	return func() {
+		cancel()
+		stop()
+		_ = logFg.Wait()
+		release()
+	}, nil
 }
 
 func archiveRestoreError(traceID string, err error) error {
@@ -198,6 +222,10 @@ func startHistoricalImport(ctx context.Context, run func(context.Context) error,
 }
 
 func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, traceID string, result archive.BootstrapResult, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut) error {
+	return importArchiveRemainderMode(ctx, source, traceID, result, importer, cut, false)
+}
+
+func importArchiveRemainderMode(ctx context.Context, source archiveRestoreSource, traceID string, result archive.BootstrapResult, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, lazyLogs bool) error {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var resultErr error
@@ -208,9 +236,18 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 			case enginetel.ArchiveSpans:
 				opts.HighWater = cut.HighWater.Spans
 				opts.ExcludeSpanIDs = result.Terminal.Exclusions.SpanIDs
+				if lazyLogs {
+					// Revisit bootstrap spans too: the display view adds has-logs
+					// hints absent from the canonical restore bootstrap.
+					opts.ExcludeSpanIDs = nil
+					opts.Spans = &archive.SpanSelection{Full: true, DagUIView: true}
+				}
 			case enginetel.ArchiveLogs:
 				opts.HighWater = cut.HighWater.Logs
 				opts.ExcludeLogRowIDs = result.Terminal.Exclusions.LogRowIDs
+				if lazyLogs {
+					opts.Logs = &archive.LogSelection{Records: archive.LogRecordsMetadata}
+				}
 			case enginetel.ArchiveMetrics:
 				opts.HighWater = cut.HighWater.Metrics
 			}

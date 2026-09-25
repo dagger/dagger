@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/tracesource"
 	telemetry "github.com/dagger/otel-go"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	"google.golang.org/protobuf/proto"
@@ -64,18 +64,8 @@ func (capture *cloudRestoreCapture) ImportLogs(ctx context.Context, req *collogs
 }
 
 func canFallbackToCloud(ctx context.Context, err error) bool {
-	if ctx.Err() != nil {
-		return false
-	}
-	if archive.IsCleanMiss(err) {
-		return true
-	}
 	var acquireErr *archiveAcquireError
-	if !errors.As(err, &acquireErr) || !errors.Is(err, archive.ErrTransient) {
-		return false
-	}
-	var requestErr *archive.RequestError
-	return !errors.As(err, &requestErr) || (requestErr.StatusCode != http.StatusUnauthorized && requestErr.StatusCode != http.StatusForbidden)
+	return errors.As(err, &acquireErr) && tracesource.CanFallback(ctx, err)
 }
 
 // Prefer the persisted local cut. Missing or unavailable archive service may

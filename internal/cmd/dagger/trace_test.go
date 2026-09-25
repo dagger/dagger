@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/internal/cloud/otlpstream"
+	"github.com/dagger/dagger/internal/tracesource"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,48 @@ import (
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestTraceSourceFlags(t *testing.T) {
+	require.NoError(t, validateTraceSourceFlags("", ""))
+	require.NoError(t, validateTraceSourceFlags("session", ""))
+	require.NoError(t, validateTraceSourceFlags("session", "generation"))
+	require.ErrorContains(t, validateTraceSourceFlags("", "generation"), "requires --source-session")
+}
+
+type sealedTraceSource struct {
+	tracesource.Source
+	seal time.Time
+}
+
+func (s sealedTraceSource) SealTime() time.Time { return s.seal }
+
+func TestTraceLoaderUsesArchiveSeal(t *testing.T) {
+	loader, db, _ := testTraceLoader(t)
+	seal := time.Unix(123, 0)
+	loader.client = sealedTraceSource{seal: seal}
+	span := &tracepb.Span{SpanId: []byte{1, 2, 3, 4, 5, 6, 7, 8}, StartTimeUnixNano: uint64(time.Unix(100, 0).UnixNano())}
+	require.NoError(t, loader.ingest(t.Context(), spanExport(span)))
+	require.NoError(t, loader.seal(t.Context()))
+	for _, got := range db.Spans.Map {
+		require.Equal(t, seal, got.EndTime)
+	}
+}
+
+func TestTraceLoaderIgnoresRequestsAfterClose(t *testing.T) {
+	loader, _, _ := testTraceLoader(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	loader.ctx = ctx
+	var fg fetchGroup
+	id := dagui.SpanID{}
+	id.SpanID[0] = 1
+	loader.fetchLogs(&fg, id, false)
+	loader.listen(id)
+	require.NoError(t, fg.Wait())
+	require.NoError(t, loader.wait())
+	require.Empty(t, loader.logReq)
+	require.Empty(t, loader.pending)
+}
 
 func TestTraceUsesGlobalFrontendOpts(t *testing.T) {
 	prevFrontend := Frontend

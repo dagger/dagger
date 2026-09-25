@@ -16,11 +16,13 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/cloud"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -358,6 +360,91 @@ func TestAppliedArchivePlanUsesWitnessNamespace(t *testing.T) {
 	require.Equal(t, worker.Failure, plan.plan[1].Error)
 	require.Len(t, edges, 1)
 	require.Equal(t, edge.EdgeKey, edges[0].EdgeKey)
+}
+
+type lazyRestoreFrontend struct {
+	*restoreTestFrontend
+	idtui.TraceFrontend
+	provider func(dagui.SpanID, bool)
+	wait     func()
+}
+
+func (fe *lazyRestoreFrontend) SetLogProvider(f func(dagui.SpanID, bool)) { fe.provider = f }
+func (fe *lazyRestoreFrontend) SetFetchWaiter(f func())                   { fe.wait = f }
+
+type lazyRestoreArchive struct {
+	*restoreTestArchive
+	requests chan archive.StreamOptions
+}
+
+func (s *lazyRestoreArchive) Traces(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+	return opts.HighWater, nil
+}
+func (s *lazyRestoreArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
+	return opts.HighWater, nil
+}
+func (s *lazyRestoreArchive) Logs(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+	s.requests <- opts
+	return opts.HighWater, nil
+}
+
+func TestArchiveRestoreDefersDisplayLogs(t *testing.T) {
+	base, _, _, _ := canonicalArchive()
+	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
+	source := &lazyRestoreArchive{restoreTestArchive: base, requests: make(chan archive.StreamOptions, 8)}
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	target := newFakeRestoreTarget()
+	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
+	require.NoError(t, err)
+	defer cleanup()
+	require.Equal(t, "chief", target.focused, "verified bootstrap still restores before history")
+	var metadata archive.StreamOptions
+	select {
+	case metadata = <-source.requests:
+	case <-time.After(time.Second):
+		t.Fatal("metadata was not loaded")
+	}
+	require.Equal(t, archive.LogRecordsMetadata, metadata.Logs.Records)
+	require.Empty(t, metadata.Logs.SpanID)
+	require.Equal(t, "fixed-cut", metadata.Generation)
+	require.EqualValues(t, 20, metadata.HighWater)
+	require.EqualValues(t, 0, base.released.Load(), "background completion cannot release a lazy source")
+	select {
+	case <-source.requests:
+		t.Fatal("eager display log request")
+	default:
+	}
+
+	id := dagui.SpanID{SpanID: trace.SpanID{1}}
+	fe.provider(id, false)
+	fe.wait()
+	own := <-source.requests
+	require.Equal(t, id.String(), own.Logs.SpanID)
+	require.Equal(t, archive.LogRecordsAll, own.Logs.Records)
+	require.Equal(t, "fixed-cut", own.Generation)
+	require.EqualValues(t, 20, own.HighWater)
+	fe.provider(id, false)
+	fe.wait()
+	select {
+	case <-source.requests:
+		t.Fatal("duplicate lazy fetch")
+	default:
+	}
+}
+
+func TestArchiveBootstrapFailureDoesNotFallback(t *testing.T) {
+	for _, failure := range []error{archive.ErrCleanMiss, archive.ErrTransient} {
+		source, _, _, _ := canonicalArchive()
+		source.bootstrapErr = failure
+		req := restoreRequest()
+		req.source = source
+		req.cloudSource = cloudRestoreFunc(func(context.Context, string, cloud.TraceImportSink) error {
+			t.Fatal("cannot change source after acquiring local bootstrap")
+			return nil
+		})
+		_, err := restoreTraceSources(t.Context(), newRestoreTestFrontend(), newFakeRestoreTarget(), req)
+		require.ErrorIs(t, err, failure)
+	}
 }
 
 func TestHistoricalFailureWarnsWithoutBreakingPrompt(t *testing.T) {
