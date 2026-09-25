@@ -155,17 +155,9 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 		if p.background == nil {
 			return line
 		}
-		buf := cellbuf.NewBuffer(width, 1)
-		cellbuf.SetContent(buf, line)
-		for x := range width {
-			if cell := buf.Cell(x, 0); cell != nil && cell.Width > 0 {
-				cell = cell.Clone()
-				cell.Style.Bg = p.background
-				buf.SetCell(x, 0, cell)
-			}
-		}
-		_, line = cellbuf.RenderLine(buf, 0)
-		return line
+		return restyleCells(line, func(style *cellbuf.Style) {
+			style.Bg = p.background
+		})
 	}
 	ctx.Line("") // separate the draft from the transcript without extending its fill
 	ctx.Line(shade(""))
@@ -185,4 +177,25 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	if result.Cursor != nil {
 		ctx.SetCursor(result.Cursor.Row+2, min(result.Cursor.Col+indent, max(0, width-1)))
 	}
+}
+
+// restyleCells applies restyle to every cell of a single-line ANSI string,
+// keeping each cell's own foreground and attributes. Styling cells rather than
+// wrapping the string means embedded style resets can't punch holes in a fill.
+func restyleCells(line string, restyle func(*cellbuf.Style)) string {
+	width := ansi.StringWidth(line)
+	if width == 0 {
+		return line
+	}
+	buf := cellbuf.NewBuffer(width, 1)
+	cellbuf.SetContent(buf, line)
+	for x := range width {
+		if cell := buf.Cell(x, 0); cell != nil && cell.Width > 0 {
+			cell = cell.Clone()
+			restyle(&cell.Style)
+			buf.SetCell(x, 0, cell)
+		}
+	}
+	_, line = cellbuf.RenderLine(buf, 0)
+	return line
 }

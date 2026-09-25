@@ -1254,6 +1254,15 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
 	fe.agentRoster = NewAgentRoster(fe.profile, fe.agentRosterEntries)
+	// The focused agent's tab takes the prompt card's shade, so it reads as
+	// part of the prompt addressing that agent -- only while the card itself
+	// is shaded (prompt mode), not beneath a bare shell input.
+	fe.agentRoster.SetBackgroundSource(func() color.Color {
+		if fe.promptFrame == nil || !fe.promptFrame.enabled {
+			return nil
+		}
+		return fe.promptBackground.cell
+	})
 	fe.statusLine = &StatusLine{
 		profile:   fe.profile,
 		data:      fe.statusLineData, // seed from the last SetStatusLine (e.g. a resumed session)
@@ -6984,11 +6993,15 @@ func (fe *frontendPretty) syncPrompt() {
 		// Handlers that don't distinguish modes (plain shell) leave it bare.
 		if fe.promptFrame != nil {
 			previousHeight := fe.promptFrame.ChromeHeight()
+			wasEnabled := fe.promptFrame.enabled
 			promptMode := false
 			if pm, ok := fe.shell.(interface{ PromptMode() bool }); ok {
 				promptMode = pm.PromptMode()
 			}
 			fe.promptFrame.SetEnabled(promptMode)
+			if promptMode != wasEnabled && fe.statusLine != nil {
+				fe.statusLine.Update() // the focused agent tab is shaded only in prompt mode
+			}
 			if fe.activeForm != nil {
 				fe.activeForm.trailer.Update() // depends on the frame's mode
 			}

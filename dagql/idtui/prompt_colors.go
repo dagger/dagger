@@ -168,6 +168,9 @@ func (fe *frontendPretty) handlePromptBackground(_ tuist.Context, event uv.Event
 	if fe.promptFrame != nil {
 		fe.promptFrame.SetBackground(background.cell)
 	}
+	if fe.statusLine != nil {
+		fe.statusLine.Update() // the focused agent tab shares the prompt's shade
+	}
 	// Transcript rows and their logs cache role styling independently.
 	for _, tree := range fe.spanTrees {
 		tree.Update()

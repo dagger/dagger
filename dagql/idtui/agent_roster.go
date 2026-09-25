@@ -1,10 +1,12 @@
 package idtui
 
 import (
+	"image/color"
 	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
@@ -47,12 +49,24 @@ type AgentRoster struct {
 	// without the frontend having to push updates into it (same pattern as
 	// StatusLine.liveStats).
 	entries func() []AgentRosterEntry
+	// background, when set, returns the fill for the focused entry's tab: the
+	// prompt card's shade, so the tab reads as part of the prompt it
+	// addresses. Nil (or a nil color) falls back to reverse video.
+	background func() color.Color
 }
 
 // NewAgentRoster creates a roster strip sourcing its entries from the given
 // callback.
 func NewAgentRoster(profile termenv.Profile, entries func() []AgentRosterEntry) *AgentRoster {
 	return &AgentRoster{profile: profile, entries: entries}
+}
+
+// SetBackgroundSource sets where the focused tab's fill comes from (see
+// AgentRoster.background). It is read at render time; whoever changes the
+// color re-renders the roster's host.
+func (r *AgentRoster) SetBackgroundSource(background func() color.Color) {
+	r.background = background
+	r.Update()
 }
 
 // Entries returns the roster's current entries, or nil when there is no
@@ -100,7 +114,7 @@ func (r *AgentRoster) Line(width int) string {
 	entries := r.Entries()
 	parts := make([]string, 0, len(entries))
 	for i, entry := range entries {
-		label, color := agentStateDisplay(entry.State)
+		label, labelColor := agentStateDisplay(entry.State)
 
 		// Jump numbers only where a jump key exists (ctrl+1…9 from the
 		// prompt, 1…9 in nav mode); beyond that the entry is still listed,
@@ -123,7 +137,7 @@ func (r *AgentRoster) Line(width int) string {
 		nameStyle := out.String(name)
 		switch {
 		case entry.Focused:
-			nameStyle = nameStyle.Reverse().Bold()
+			nameStyle = nameStyle.Bold()
 		case entry.ReadOnly:
 			nameStyle = nameStyle.Foreground(termenv.ANSIBrightBlack)
 		default:
@@ -131,7 +145,10 @@ func (r *AgentRoster) Line(width int) string {
 		}
 		part := number + nameStyle.String()
 		if label != "" {
-			part += " " + out.String(label).Foreground(color).String()
+			part += " " + out.String(label).Foreground(labelColor).String()
+		}
+		if entry.Focused {
+			part = r.focusTab(part)
 		}
 		parts = append(parts, part)
 	}
@@ -143,11 +160,33 @@ func (r *AgentRoster) Line(width int) string {
 	return line
 }
 
+// focusTab marks the focused entry as a tab spanning its jump number, name
+// and state symbol: filled with the prompt card's shade when one is known,
+// else reverse video. The fill is applied per cell so the segments' own
+// styling (bold number, colored symbol) survives inside it. A leading reset
+// drops the status line's dim foreground, so the tab reads at full contrast.
+func (r *AgentRoster) focusTab(part string) string {
+	if r.profile == termenv.Ascii {
+		return part
+	}
+	var bg color.Color
+	if r.background != nil {
+		bg = r.background()
+	}
+	return ansi.ResetStyle + restyleCells(part, func(style *cellbuf.Style) {
+		if bg != nil {
+			style.Bg = bg
+		} else {
+			style.Reverse(true)
+		}
+	})
+}
+
 // agentStateDisplay maps a lifecycle state to its compact symbol and color.
 // WAITING_INPUT keeps its attention label; only it and FAILED are
 // attention-grabbing. Everything else stays quiet so the roster does not
 // compete with the trace for attention.
-func agentStateDisplay(state string) (label string, color termenv.Color) {
+func agentStateDisplay(state string) (label string, labelColor termenv.Color) {
 	switch state {
 	case "WAITING_INPUT":
 		return "needs you", termenv.ANSIYellow
