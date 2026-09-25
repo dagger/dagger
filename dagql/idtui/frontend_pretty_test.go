@@ -1018,6 +1018,7 @@ func TestShellToolInlineRollups(t *testing.T) {
 		docsByte
 		directTestByte
 		serviceByte
+		e2eByte
 	)
 	id := prettyTestSpanID
 	start := time.Unix(100, 0)
@@ -1050,9 +1051,14 @@ func TestShellToolInlineRollups(t *testing.T) {
 	service := span(serviceByte, id(toolByte), "exec postgres")
 	service.Service, service.ServiceName = true, "db.dagger.local"
 	service.EndTime, service.Final = time.Time{}, false
+	// A check still in flight: it must read as running, like its own tree row,
+	// not as a passed OK with a ticking duration.
+	e2e := span(e2eByte, id(toolByte), "check e2e")
+	e2e.CheckName = "e2e"
+	e2e.EndTime, e2e.Final = time.Time{}, false
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{ID: id(rootByte), TraceID: prettyTestTraceID(), Name: "shell", StartTime: start},
-		tool, lint, lintTest, unit, docs, directTest, service,
+		tool, lint, lintTest, unit, docs, directTest, service, e2e,
 	})
 	db.SetPrimarySpan(id(rootByte))
 
@@ -1088,10 +1094,13 @@ func TestShellToolInlineRollups(t *testing.T) {
 			t.Fatalf("%s heading at column %d, want the tool name's column %d:\n%s", heading, got, name, joined)
 		}
 	}
-	for _, want := range []string{"✘ 1 failed", "✔ 1 passed", "lint", "unit", "docs", "db.dagger.local", "RUNNING"} {
+	for _, want := range []string{"✘ 1 failed", "✔ 1 passed", "◐ 1 running", "lint", "unit", "docs", "db.dagger.local", "RUNNING"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("inline rollups missing %q:\n%s", want, joined)
 		}
+	}
+	if line, ok := findPrettyTestLine(lines, "e2e"); !ok || !strings.Contains(line, "RUNNING") || strings.Contains(line, "OK") {
+		t.Fatalf("running check line = %q, want RUNNING:\n%s", line, joined)
 	}
 	assertOnce := func(what, out string) {
 		t.Helper()

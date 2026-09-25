@@ -1,13 +1,17 @@
 package dagui
 
 // GeneratorNode is a surfaced trace-level generator run (deduped by generator
-// name), with any nested child generators beneath it.
+// name), with any nested child generators beneath it. Its status is its
+// representative span's.
 type GeneratorNode struct {
 	Name     string
 	Span     *Span // representative span (a failed one when the generator failed)
-	Failed   bool
 	Children []*GeneratorNode
 }
+
+// Failed reports whether the generator failed: its representative span is a
+// failed one whenever any of its spans failed.
+func (n *GeneratorNode) Failed() bool { return n.Span.IsFailedOrCausedFailure() }
 
 // SurfacedGenerators returns the whole trace's `dagger generate` generator
 // runs as a tree. It is SurfacedGeneratorsForSpan relative to the trace root.
@@ -42,11 +46,11 @@ func isGeneratorSpan(s *Span) bool { return s.GeneratorName != "" }
 func buildSurfacedGenerators(candidates []*Span, root *Span) []*GeneratorNode {
 	return buildSurfacedTree(candidates, root,
 		generatorNameOf,
-		func(name string, span *Span, failed bool) *GeneratorNode {
-			return &GeneratorNode{Name: name, Span: span, Failed: failed}
+		func(name string, span *Span) *GeneratorNode {
+			return &GeneratorNode{Name: name, Span: span}
 		},
 		func(n *GeneratorNode) *[]*GeneratorNode { return &n.Children },
-		func(n *GeneratorNode) (bool, string) { return n.Failed, n.Name },
+		func(n *GeneratorNode) (bool, string) { return n.Failed(), n.Name },
 	)
 }
 
@@ -55,7 +59,7 @@ func buildSurfacedGenerators(candidates []*Span, root *Span) []*GeneratorNode {
 // it.
 func (n *GeneratorNode) HasFailedChild() bool {
 	for _, c := range n.Children {
-		if c.Failed || c.HasFailedChild() {
+		if c.Failed() || c.HasFailedChild() {
 			return true
 		}
 	}

@@ -3787,7 +3787,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		var walkChecks func(ns []*dagui.CheckNode)
 		walkChecks = func(ns []*dagui.CheckNode) {
 			for _, n := range ns {
-				if n.Failed {
+				if n.Failed() {
 					add(n.Span)
 				}
 				walkChecks(n.Children)
@@ -3855,13 +3855,13 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	case zoomed != nil && zoomed.CheckName != "":
 		// Zoomed to a check: re-run its outermost surfaced check (the re-runnable
 		// unit), if that check failed.
-		if root := outermostSurfacedCheck(roots, zoomed.CheckName); root != nil && root.Failed {
+		if root := outermostSurfacedCheck(roots, zoomed.CheckName); root != nil && root.Failed() {
 			add(root.Name)
 		}
 	case zoomed == nil:
 		// Whole trace: re-run every failed outermost check.
 		for _, n := range roots {
-			if n.Failed {
+			if n.Failed() {
 				add(n.Name)
 			}
 		}
@@ -3966,15 +3966,11 @@ func checksHeaderLine(out TermOutput, agent bool, nodes []*dagui.CheckNode) stri
 // intentionally runs aren't among the nodes. NB: with incremental --full
 // loading the passed tally only covers checks already fetched.
 func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
-	var counts dagui.TestCounts
-	for _, n := range nodes {
-		if n.Failed {
-			counts.Failing++
-		} else {
-			counts.Passing++
-		}
+	spans := make([]*dagui.Span, len(nodes))
+	for i, n := range nodes {
+		spans[i] = n.Span
 	}
-	return renderTestCountParts(out, counts)
+	return renderTestCountParts(out, surfacedSpanCounts(spans))
 }
 
 // renderLogsLines returns the zoomed span's log output as lines.

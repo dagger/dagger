@@ -45,20 +45,22 @@ func (m *surfacedTreeMemo[N]) get(db *DB, root *Span, isCandidate func(*Span) bo
 // them by name preferring a failed representative, hang each under its
 // nearest named ancestor, and sort failed-first then by name at every level.
 //
+// A node carries no status of its own: it is whatever its representative span
+// says, so it can never disagree with that span's own row in the tree.
+//
 // nodeOf constructs a node; kids and key expose its children slice and its
 // (failed, name) sort key so the tree can be built without reflection.
 func buildSurfacedTree[N any](
 	candidates []*Span,
 	root *Span,
 	nameOf func(*Span) string,
-	nodeOf func(name string, span *Span, failed bool) *N,
+	nodeOf func(name string, span *Span) *N,
 	kids func(*N) *[]*N,
 	key func(*N) (failed bool, name string),
 ) []*N {
 	type info struct {
 		span       *Span
 		parentName string
-		failed     bool
 	}
 	byName := map[string]*info{}
 	for _, span := range candidates {
@@ -76,25 +78,21 @@ func buildSurfacedTree[N any](
 		}) {
 			continue
 		}
-		failed := span.IsFailedOrCausedFailure()
 		cur, ok := byName[name]
 		switch {
 		case !ok:
-			byName[name] = &info{span: span, parentName: parentName, failed: failed}
-		case failed && !cur.failed:
-			// prefer a failed representative so the rendered detail points at the
-			// failure
+			byName[name] = &info{span: span, parentName: parentName}
+		case span.IsFailedOrCausedFailure() && !cur.span.IsFailedOrCausedFailure():
+			// prefer a failed representative so the node reads as failed and its
+			// rendered detail points at the failure
 			cur.span = span
-			cur.failed = true
 			cur.parentName = parentName
-		default:
-			cur.failed = cur.failed || failed
 		}
 	}
 
 	nodes := make(map[string]*N, len(byName))
 	for name, in := range byName {
-		nodes[name] = nodeOf(name, in.span, in.failed)
+		nodes[name] = nodeOf(name, in.span)
 	}
 	var roots []*N
 	for name, in := range byName {

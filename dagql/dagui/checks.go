@@ -1,13 +1,16 @@
 package dagui
 
 // CheckNode is a surfaced trace-level check (deduped by check name), with any
-// nested child checks beneath it.
+// nested child checks beneath it. Its status is its representative span's.
 type CheckNode struct {
 	Name     string
 	Span     *Span // representative span (a failed one when the check failed)
-	Failed   bool
 	Children []*CheckNode
 }
+
+// Failed reports whether the check failed: its representative span is a
+// failed one whenever any of its spans failed.
+func (n *CheckNode) Failed() bool { return n.Span.IsFailedOrCausedFailure() }
 
 // SurfacedChecks returns the whole trace's checks as a tree, independent of
 // the `reveal` mechanism. It is SurfacedChecksForSpan relative to the trace
@@ -60,11 +63,11 @@ func isCheckSpan(s *Span) bool { return s.CheckName != "" }
 func buildSurfacedChecks(candidates []*Span, root *Span) []*CheckNode {
 	return buildSurfacedTree(candidates, root,
 		checkNameOf,
-		func(name string, span *Span, failed bool) *CheckNode {
-			return &CheckNode{Name: name, Span: span, Failed: failed}
+		func(name string, span *Span) *CheckNode {
+			return &CheckNode{Name: name, Span: span}
 		},
 		func(n *CheckNode) *[]*CheckNode { return &n.Children },
-		func(n *CheckNode) (bool, string) { return n.Failed, n.Name },
+		func(n *CheckNode) (bool, string) { return n.Failed(), n.Name },
 	)
 }
 
@@ -72,7 +75,7 @@ func buildSurfacedChecks(candidates []*Span, root *Span) []*CheckNode {
 // parent check can defer its own error detail to the children that explain it.
 func (n *CheckNode) HasFailedChild() bool {
 	for _, c := range n.Children {
-		if c.Failed || c.HasFailedChild() {
+		if c.Failed() || c.HasFailedChild() {
 			return true
 		}
 	}

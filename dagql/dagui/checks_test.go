@@ -177,7 +177,7 @@ func TestSurfacedChecksMemoizedPerFrame(t *testing.T) {
 	if len(fresh) != 2 {
 		t.Fatalf("cache must be invalidated by new span data, got %d checks", len(fresh))
 	}
-	if !fresh[0].Failed || fresh[0].Name != "unit" {
+	if !fresh[0].Failed() || fresh[0].Name != "unit" {
 		t.Fatalf("failed check must sort first, got %+v", fresh[0])
 	}
 }

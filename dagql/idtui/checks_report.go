@@ -73,7 +73,7 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 	// check that produced it and the global section is left for tests no check
 	// covers.
 	switch {
-	case node.Failed && !node.HasFailedChild():
+	case node.Failed() && !node.HasFailedChild():
 		if fe.checkDefersToTests(node.Span) {
 			// The check's failures are test cases: render them per-test with
 			// rolled-up logs (richer than the check's raw command output).
@@ -91,7 +91,7 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 				fe.renderCauseDetail(ctx, out, r, origin, depth+1)
 			}
 		}
-	case !node.Failed && len(node.Children) == 0 && fe.checkHasTests(node.Span):
+	case !node.Failed() && len(node.Children) == 0 && fe.checkHasTests(node.Span):
 		for _, line := range fe.renderCheckTests(ctx, node.Span, depth) {
 			fmt.Fprintln(out, line)
 		}
@@ -109,15 +109,10 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 	}
 }
 
-// checkStatusLine renders a check's one-line status: its icon (red ✘ / green ✔),
-// name, and faint duration, at the given indent.
+// checkStatusLine renders a check's one-line status: its icon (red ✘ / yellow
+// ◐ / green ✔), name, and faint duration, at the given indent.
 func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dagui.CheckNode, indent string) string {
-	icon, color := IconSuccess, termenv.ANSIGreen
-	status := "OK"
-	if node.Failed {
-		icon, color = IconFailure, termenv.ANSIRed
-		status = "ERROR"
-	}
+	icon, color, status := surfacedSpanStatus(node.Span)
 	dur := dagui.FormatDuration(node.Span.Activity.Duration(r.now))
 	return fmt.Sprintf("%s%s %s %s %s",
 		indent,
@@ -126,6 +121,37 @@ func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dag
 		out.String(dur).Faint().String(),
 		out.String(status).Foreground(color).String(),
 	)
+}
+
+// surfacedSpanStatus is the icon, color and status label for a surfaced check
+// or generator, read straight off its span in the same order the span's own
+// tree row checks (statusIcon): still running, then failed, then passed.
+func surfacedSpanStatus(span *dagui.Span) (icon string, color termenv.Color, status string) {
+	switch {
+	case span.IsRunningOrEffectsRunning():
+		return DotHalf, termenv.ANSIYellow, "RUNNING"
+	case span.IsFailedOrCausedFailure():
+		return IconFailure, termenv.ANSIRed, "ERROR"
+	default:
+		return IconSuccess, termenv.ANSIGreen, "OK"
+	}
+}
+
+// surfacedSpanCounts tallies surfaced checks' or generators' spans for a
+// CHECKS / GENERATORS header, bucketed as surfacedSpanStatus labels them.
+func surfacedSpanCounts(spans []*dagui.Span) dagui.TestCounts {
+	var counts dagui.TestCounts
+	for _, span := range spans {
+		switch {
+		case span.IsRunningOrEffectsRunning():
+			counts.Running++
+		case span.IsFailedOrCausedFailure():
+			counts.Failing++
+		default:
+			counts.Passing++
+		}
+	}
+	return counts
 }
 
 // checkNodeForSpan returns the surfaced CheckNode for a span (matched by check
@@ -215,7 +241,7 @@ func (fe *frontendPretty) checkHasTests(span *dagui.Span) bool {
 // to pre-fetch their logs before the single final render.
 func eachFailedLeafCheck(nodes []*dagui.CheckNode, f func(*dagui.CheckNode)) {
 	for _, n := range nodes {
-		if n.Failed && !n.HasFailedChild() {
+		if n.Failed() && !n.HasFailedChild() {
 			f(n)
 		}
 		eachFailedLeafCheck(n.Children, f)
