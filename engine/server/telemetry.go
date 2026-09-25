@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -32,6 +34,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -281,13 +284,46 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		}
 		origin := logOriginClientID(rec)
 		if origin == "" {
+			if agentcontrol.IsRecord(rec) {
+				return fmt.Errorf("protected control missing origin client")
+			}
 			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "digest", digest)
 			continue
 		}
 		route, err := exp.sess.telemetryRouteOriginClientID(origin)
 		if err != nil {
+			if agentcontrol.IsRecord(rec) {
+				return fmt.Errorf("protected control route: %w", err)
+			}
 			slog.Warn("dropping unroutable log record", "origin", origin, "payload", payload, "digest", digest, "err", err)
 			continue
+		}
+		if agentcontrol.IsRecord(rec) {
+			a, edge, err := agentcontrol.Decode(rec)
+			if err != nil {
+				return fmt.Errorf("decode protected control: %w", err)
+			}
+			var ns agentcontrol.Namespace
+			var projection any
+			if a != nil {
+				ns, projection = a.Namespace, a
+			} else {
+				ns, projection = edge.Namespace, edge
+			}
+			if ns.Session != exp.sess.sessionID || ns.Trace != rec.TraceID().String() {
+				return fmt.Errorf("control namespace does not match emission session/trace")
+			}
+			if err := exp.sess.ensureArchive(ns.Trace); err != nil {
+				// Archive availability is not authority to suppress the live roster.
+				// The registration failure is retained separately for finalization.
+				slog.Warn("register agent archive", "err", err)
+			}
+			encoded, err := json.Marshal(projection)
+			if err != nil {
+				return err
+			}
+			digest = fmt.Sprintf("control:%x", sha256.Sum256(encoded))
+			payload = true // reuse post-persistence per-target settlement, in a disjoint key space
 		}
 		if !payload {
 			digest = ""
@@ -414,6 +450,9 @@ type originLogExporter struct {
 func (exp originLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
 	stamped := make([]sdklog.Record, len(records))
 	for i := range records {
+		if agentcontrol.IsRecord(records[i]) {
+			return fmt.Errorf("agent control records may only be emitted by engine runtimes")
+		}
 		stamped[i] = records[i].Clone()
 		stamped[i].AddAttributes(log.String(telemetryattrs.TelemetryOriginClientIDAttr, exp.origin))
 	}
@@ -804,6 +843,14 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	appendStart := time.Now()
 	stats, appendErr := db.AppendLogs(inserts)
+	if appendErr == nil {
+		for _, rec := range logs {
+			if agentcontrol.IsRecord(rec) || enginetel.IsCallPayloadRecord(rec) {
+				appendErr = db.CheckpointLogs(ctx)
+				break
+			}
+		}
+	}
 	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
 	return appendErr
 }

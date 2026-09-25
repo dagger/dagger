@@ -394,23 +394,22 @@ func (l *spanLookup) markedSpanIDs() (checks, tests map[string]struct{}) {
 type logLookup struct {
 	mu         sync.RWMutex
 	rowsBySpan map[string][]int64
+	archive    []archiveLogMeta
 }
 
 func newLogLookup() *logLookup {
 	return &logLookup{rowsBySpan: make(map[string][]int64)}
 }
 
-func (l *logLookup) add(row Log) {
-	if !row.SpanID.Valid {
-		return
-	}
-	l.mu.Lock()
-	l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
-	l.mu.Unlock()
-}
+func (l *logLookup) add(row Log) { l.addAll([]Log{row}) }
 
 func (l *logLookup) addAll(rows []Log) {
+	metadata := make([]archiveLogMeta, len(rows))
+	for i, row := range rows {
+		metadata[i] = archiveLogMetadata(row)
+	}
 	l.mu.Lock()
+	l.archive = append(l.archive, metadata...)
 	for _, row := range rows {
 		if !row.SpanID.Valid {
 			continue
@@ -442,13 +441,14 @@ func (l *logLookup) rowIDsForSpans(ids map[string]struct{}, perSpanTail int) []i
 
 // DB is one client's standalone append-only telemetry store.
 type DB struct {
-	imports importedTraces
-	spans   *logStream[Span]
-	logs    *logStream[Log]
-	metrics *logStream[Metric]
-	lookup  *spanLookup
-	logIdx  *logLookup
-	callIdx *callLookup
+	imports    importedTraces
+	spans      *logStream[Span]
+	logs       *logStream[Log]
+	metrics    *logStream[Metric]
+	lookup     *spanLookup
+	logIdx     *logLookup
+	callIdx    *callLookup
+	archiveIdx *archiveLookup
 
 	clientID string
 	refCount int
@@ -461,10 +461,11 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 	}
 
 	store := &DB{
-		lookup:   newSpanLookup(),
-		logIdx:   newLogLookup(),
-		callIdx:  newCallLookup(),
-		clientID: clientID,
+		lookup:     newSpanLookup(),
+		logIdx:     newLogLookup(),
+		callIdx:    newCallLookup(),
+		archiveIdx: newArchiveLookup(),
+		clientID:   clientID,
 	}
 	defer func() {
 		if rerr != nil {
@@ -498,10 +499,12 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		func(row Log) {
 			store.logIdx.add(row)
 			store.callIdx.addLog(row)
+			store.archiveIdx.add(row)
 		},
 		func(rows []Log) {
 			store.logIdx.addAll(rows)
 			store.callIdx.addLogs(rows)
+			store.archiveIdx.addAll(rows)
 		},
 	)
 	if err != nil {

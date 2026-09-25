@@ -21,10 +21,9 @@ import (
 
 // The chain from the live failure this side channel exists for: focusing an
 // agent needs llm.withSkills(directory: <dir>).agent(), where the withSkills
-// frame is synthesized (LLM.recipeSelectors) and its directory argument is an
-// ID literal whose own frame was never independently spanned. Only the agent
-// frame gets a span; without the log channel the other two can never reach a
-// client, and the chain is unrebuildable forever.
+// frame and its directory ID argument were never independently spanned. Only
+// the agent frame gets a span; without the log channel the other two can never
+// reach a client, and the chain is unrebuildable forever.
 func callPayloadTestChain() (root *callpbv1.Call, unspanned []*callpbv1.Call) {
 	dir := &callpbv1.Call{
 		Field: "directory",
@@ -301,7 +300,7 @@ func TestIngestCallPayloadIsNotLogText(t *testing.T) {
 	if span := db.Spans.Map[spanID(1)]; span != nil && span.HasLogs {
 		t.Error("payload record was treated as log text")
 	}
-	if got := len(db.PrimaryLogs); got != 0 {
+	if got := len(db.primaryLogs); got != 0 {
 		t.Errorf("payload record was buffered as a primary log: %d", got)
 	}
 }
@@ -320,12 +319,18 @@ func TestCallPayloadRecordsDoNotDisturbLogOrdering(t *testing.T) {
 	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{before, payload, malformed, after}); err != nil {
 		t.Fatal(err)
 	}
-	logs := db.PrimaryLogs[span]
+	var logs []string
+	if err := db.WalkPrimaryLogs(span, func(_ int64, data []byte) error {
+		logs = append(logs, string(data))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if len(logs) != 2 {
 		t.Fatalf("ordinary logs = %d, want 2", len(logs))
 	}
-	if logs[0].Body().AsString() != "before" || logs[1].Body().AsString() != "after" {
-		t.Fatalf("ordinary log order changed: %q, %q", logs[0].Body().AsString(), logs[1].Body().AsString())
+	if logs[0] != "before" || logs[1] != "after" {
+		t.Fatalf("ordinary log order changed: %q, %q", logs[0], logs[1])
 	}
 }
 

@@ -91,6 +91,9 @@ type spawnOpts struct {
 	model string
 	// name is the display label passed to spawn (optional).
 	name string
+	// parentHandle records lineage independently of notification subscriptions.
+	parentHandle string
+	handle       string
 	// toolIDs optionally binds objects' methods as tools (one llm.withTools
 	// per object, in order), for the recordings that contain tool calls.
 	toolIDs []dagger.ID
@@ -111,10 +114,24 @@ func trySpawnAgent(ctx context.Context, c *dagger.Client, opts spawnOpts) (strin
 	}
 	decls := []string{"$model: String!"}
 	inner := `spawn`
+	var spawnArgs []string
 	if opts.name != "" {
-		inner = `spawn(name: $name)`
+		spawnArgs = append(spawnArgs, "name: $name")
 		decls = append(decls, "$name: String!")
 		vars["name"] = opts.name
+	}
+	if opts.handle != "" {
+		spawnArgs = append(spawnArgs, "handle: $handle")
+		decls = append(decls, "$handle: String!")
+		vars["handle"] = opts.handle
+	}
+	if opts.parentHandle != "" {
+		spawnArgs = append(spawnArgs, "parentHandle: $parent")
+		decls = append(decls, "$parent: String!")
+		vars["parent"] = opts.parentHandle
+	}
+	if len(spawnArgs) > 0 {
+		inner += "(" + strings.Join(spawnArgs, ", ") + ")"
 	}
 	path := "spawn"
 	for i := len(opts.toolIDs) - 1; i >= 0; i-- {
@@ -362,20 +379,25 @@ func llmWithPrompt(ctx context.Context, t *testctx.T, c *dagger.Client, model, p
 // returns a handle on the restored instance. Error-returning, because half
 // the point of a restore is which calls it refuses.
 func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText string) (*agentHandle, error) {
+	return rehydrateAgentWithParent(ctx, c, llmID, handle, name, state, errText, "")
+}
+
+func rehydrateAgentWithParent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText, parent string) (*agentHandle, error) {
 	res := map[string]any{}
 	if err := c.Do(ctx,
 		&dagger.Request{
-			Query: `query($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
+			Query: `query($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!, $parent: String!) {
 				node(id: $llm) { ... on LLM {
-					spawn(handle: $id, name: $name, state: $state, error: $error)
+					spawn(handle: $id, name: $name, state: $state, error: $error, parentHandle: $parent)
 				} }
 			}`,
 			Variables: map[string]any{
-				"llm":   llmID,
-				"id":    handle,
-				"name":  name,
-				"state": state,
-				"error": errText,
+				"llm":    llmID,
+				"id":     handle,
+				"name":   name,
+				"state":  state,
+				"error":  errText,
+				"parent": parent,
 			},
 		},
 		&dagger.Response{Data: &res},
@@ -1037,7 +1059,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 // TestSendContent exercises file resolution, validation before enqueue and the
 // real mailbox drain against a keyless recording, including a paused queue.
 func (AgentRuntimeSuite) TestSendContent(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	file := c.Container().From(alpineImage).
 		WithNewFile("/image.b64", mediaPNG).
 		WithExec([]string{"sh", "-c", "base64 -d /image.b64 > /image.png"}).File("/image.png")
@@ -1081,7 +1103,7 @@ func (AgentRuntimeSuite) TestSendContent(ctx context.Context, t *testctx.T) {
 				require.Equal(t, "a picture", reply)
 				snapshot := agent.Snapshot()
 				require.Equal(t, mediaHistory(t, c, expected), mediaHistory(t, c, snapshot))
-				portable, err := snapshot.PortableID(ctx)
+				portable, err := sink.captureLLMRecipe(ctx, t, c, snapshot)
 				require.NoError(t, err)
 				require.Equal(t, mediaHistory(t, c, snapshot), mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, portable)))
 			})
@@ -1688,6 +1710,7 @@ func (sink *agentTraceSink) awaitAgent(t *testctx.T, state string) *dagui.AgentN
 func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dagui.AgentNode {
 	t.Helper()
 	byName := map[string]*dagui.AgentNode{}
+	var captureErr error
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
 		clear(byName)
 		sink.read(func(db *dagui.DB) {
@@ -1696,6 +1719,10 @@ func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dag
 				return
 			}
 			for _, agent := range agents {
+				if agent.Control != nil && agent.Control.CaptureError != "" {
+					captureErr = fmt.Errorf("agent %q capture failed: %s", agent.Name, agent.Control.CaptureError)
+					return
+				}
 				if !assert.NotEmpty(ct, agent.CallDigest, "agent %q has no call digest", agent.Name) ||
 					!assert.NotEmpty(ct, agent.SnapshotDigest, "agent %q has no resume anchor", agent.Name) {
 					return
@@ -1704,15 +1731,15 @@ func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dag
 			}
 		})
 	}, 60*time.Second, 100*time.Millisecond)
+	require.NoError(t, captureErr)
 	return byName
 }
 
 // awaitRestorable is awaitAgents plus the property a restore actually needs:
 // every agent's resume anchor REBUILDS from the payloads the client holds.
 // The anchor record and its payload ride different pipelines — the record is
-// a log, the payload the span attribute of the portable-recipe call that
-// derived the digest — so the record routinely lands first, and a capture
-// taken in between serves a trace whose anchor names a conversation nothing
+// a log, while call frames arrive through spans and the payload log lane. A
+// capture taken in between serves a trace whose anchor names a conversation nothing
 // can rebuild (the "never reached this client" restore failure, seen as a CI
 // flake on the worker dismissed right after its turn).
 func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]*dagui.AgentNode {
@@ -1748,33 +1775,24 @@ func (sink *agentTraceSink) awaitAgentState(t *testctx.T, name, state string) {
 }
 
 // rebuild turns a roster entry back into a handle the way a frontend would:
-// find the span carrying the advertised call digest, rebuild the ID from the
-// call payloads the client has ingested — Span.CallID walks receiver
-// digests, argument literals and module frames through the DB
-// (dagql/dagui/extract.go), so it closes only if every frame's span reached
-// this client — and encode it. Returns the handle and the rebuilt chain.
+// rebuild the advertised digest from call payloads, without requiring a
+// diagnostic span. Control records can arrive before the recipe closure, so
+// wait for every dependency before encoding the ID. Returns the handle and
+// the rebuilt chain.
 func (sink *agentTraceSink) rebuild(t *testctx.T, c *dagger.Client, node *dagui.AgentNode) (*agentHandle, *call.ID) {
 	t.Helper()
 	var callID *call.ID
-	var encoded string
-	sink.read(func(db *dagui.DB) {
-		var match *dagui.Span
-		for _, span := range db.Spans.Map {
-			if span.CallDigest == node.CallDigest {
-				match = span
-				break
-			}
-		}
-		require.NotNil(t, match, "no span carries the advertised call digest")
-		require.Equal(t, "agent", match.Call().Field,
-			"the digest must name the pinned agent(handle:, name:) lookup")
-
-		var err error
-		callID, err = match.CallID()
-		require.NoError(t, err)
-		encoded, err = callID.Encode()
-		require.NoError(t, err)
-	})
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			var err error
+			callID, err = db.CallIDForDigest(node.CallDigest)
+			assert.NoError(ct, err, "agent %q's handle does not rebuild yet", node.Name)
+		})
+	}, 60*time.Second, 100*time.Millisecond)
+	require.Equal(t, "agent", callID.Field(),
+		"the digest must name the pinned agent(handle:, name:) lookup")
+	encoded, err := callID.Encode()
+	require.NoError(t, err)
 	return &agentHandle{c: c, agentID: encoded}, callID
 }
 
@@ -1785,13 +1803,11 @@ func (sink *agentTraceSink) rebuild(t *testctx.T, c *dagger.Client, node *dagui.
 // unreachable — which is the capability a Query.agents namespace would have
 // provided, and which telemetry is supposed to provide instead.
 //
-// The path is the one branch-from-message already uses: the loop span's
-// dagger.io/agent.call.digest names a dagql call; the client finds the span
-// carrying that call digest, rebuilds the ID from the call payloads it has
-// ingested (Span.CallID walks receiver digests through the DB), encodes it,
-// and loads it. The digest names spawn's internal Select of the pure
-// agent(handle:, name:) lookup — a span the UI hides as internal, but which
-// carries its call payload like any other, which is what makes this work.
+// The client rebuilds the advertised call digest directly from ingested
+// payloads, including receiver and argument dependencies. The digest names
+// spawn's pure agent(handle:, name:) lookup, not the composition that produced
+// the conversation. Diagnostic spans may arrive later or be deduplicated;
+// they are not required to address the agent.
 //
 // The identity assertions are deliberately ones a freshly derived agent
 // value could never satisfy. Re-deriving the composition yields a value with

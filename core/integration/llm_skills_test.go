@@ -100,11 +100,10 @@ func (LLMSuite) TestSkillsPrecedence(ctx context.Context, t *testctx.T) {
 		"an installed skill must not shadow an engine-embedded skill")
 }
 
-// TestSkillsSurviveWorkspaceReset verifies that installed skill directories are
-// selector-expressible state: portableID re-emits them into the flat recipe,
-// so they survive a save/load round trip.
-func (LLMSuite) TestSkillsSurviveWorkspaceReset(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+// TestSkillsSurviveTraceCapture verifies that installed skill directories remain
+// available when a committed conversation is reconstructed from trace payloads.
+func (LLMSuite) TestSkillsSurviveTraceCapture(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
 
 	installed := c.Directory().
 		WithNewFile("deploy/SKILL.md",
@@ -114,9 +113,11 @@ func (LLMSuite) TestSkillsSurviveWorkspaceReset(ctx context.Context, t *testctx.
 	skills := skillIndex(ctx, t, withSkills)
 	require.Equal(t, "Installed deploy guidance.", skills["deploy"])
 
-	portableID, err := withSkills.PortableID(ctx)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, withSkills)
 	require.NoError(t, err)
-	reloaded := dagger.Ref[*dagger.LLM](c, portableID)
+	require.NoError(t, c.Close())
+	target := connect(ctx, t)
+	reloaded := dagger.Ref[*dagger.LLM](target, recipe)
 	skills = skillIndex(ctx, t, reloaded)
 	require.Equal(t, "Installed deploy guidance.", skills["deploy"])
 }

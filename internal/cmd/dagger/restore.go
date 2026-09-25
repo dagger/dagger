@@ -7,51 +7,28 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/dagger/dagger/engine/slog"
-	enginetel "github.com/dagger/dagger/engine/telemetry"
-	"github.com/dagger/dagger/internal/cloud"
-	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	telemetry "github.com/dagger/otel-go"
 )
 
-// `dagger agent --trace <TRACE_ID>` — restoring a past session's agents, their
-// conversations and its whole TUI into the session in front of you
-// (hack/designs/resume-from-trace.md §5.3, §5.4).
-//
-// Everything below the CLI is already built: internal/cloud fetches the trace,
-// engine/telemetry imports it into the live frontend's own exporters,
-// dagui.DB projects the restore plan, and LLM.spawn(handle:) re-creates each
-// instance's runtime entry from its committed conversation. This is the
-// wiring, and the order it happens in — which is load-bearing rather than
-// incidental (§3.1b, recommendation §6.2's seed race):
-//
-//  1. Fetch, under a span so the wait is visible, before the interactive loop
-//     starts.
-//  2. Rebuild EVERY entry's anchor. An anchor that will not rebuild fails the
-//     command here, before anything has been re-hydrated, so a refused
-//     restore leaves the engine untouched.
-//  3. Re-hydrate every entry, before anything can dispatch a tool or bind an
-//     LLM: the chief's recorded chain binds its workers by ID, and a dispatch
-//     that resolves against a registry missing one is an error (§4.2) rather
-//     than an amnesiac twin.
-//  4. Then attach, adopting each restored instance as a conversation.
-//  5. Then focus (§3.1c). No Replay: the imported spans ARE the scrollback
-//     (§5.1.4).
+// Trace restoration uses verified canonical control facts and their payload
+// closure. Bootstrap application, anchor resolution, runtime creation, graph
+// installation, and prompt attachment are distinct ordered phases. Original
+// historical telemetry arrives after focus; it is never re-emitted by an LLM.
 
-// traceRestore is what `--trace` asks for.
+// traceRestore describes a verified source archive, not a local session file.
 type traceRestore struct {
-	// traceID is the Cloud trace to restore from.
-	traceID string
-	// agent names the conversation to focus, by runtime handle or display name,
-	// overriding §3.1c's automatic choice.
-	agent string
-	// partial opts into a best-effort restore: entries the trace does not
-	// carry enough to restore are skipped instead of failing the command.
-	partial bool
+	traceID       string
+	generation    string
+	agent         string
+	partial       bool
+	source        archiveRestoreSource
+	cloudSource   cloudRestoreSource
+	sourceSession string
 }
 
 // agentRestoreSource is the frontend seam the plan is read through
@@ -74,64 +51,25 @@ type restoreTarget interface {
 	Adopt(ctx context.Context, entry dagui.AgentRestore, agentID string) error
 	// Focus points the prompt at one of the adopted conversations.
 	Focus(ctx context.Context, entry dagui.AgentRestore, agentID string) error
+	// Subscribe installs the filter without a current-state notification.
+	Subscribe(ctx context.Context, watchedID, subscriberID string, states []string) error
+	// Discard rolls back an inert runtime created by this restore attempt.
+	Discard(ctx context.Context, agentID string) error
 }
 
-// restoreFromTrace runs the whole of §5.3 against the live session.
-func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceRestore) (rerr error) {
-	// The plan and the anchor rebuilds are reads of the frontend's DB, which
-	// the frontend owns single-threaded (§5.1, "Reading the DB back"). A
-	// frontend with no span DB cannot restore at all, and says so rather than
-	// restoring nothing.
-	restorer, ok := Frontend.(idtui.AgentRestorer)
+// restoreFromTrace imports only verified bootstrap state before activating the
+// prompt. Its cleanup joins asynchronous original-history import on CLI exit.
+func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceRestore) (_ func(), rerr error) {
+	fe, ok := Frontend.(archiveFrontend)
 	if !ok {
-		return fmt.Errorf("--trace needs a frontend that keeps the trace: %T cannot restore from one", Frontend)
+		return nil, fmt.Errorf("--trace needs a frontend that keeps the trace: %T cannot restore from one", Frontend)
 	}
-
+	if req.source == nil {
+		return nil, errors.New("--trace requires an authenticated archive source")
+	}
 	ctx, span := Tracer().Start(ctx, "restoring trace "+req.traceID, telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
-
-	if err := fetchTraceIntoFrontend(ctx, req.traceID); err != nil {
-		return err
-	}
-
-	target := &sessionRestore{
-		dag:     handler.dag,
-		session: handler.llmSession,
-		base:    handler.llmSession.Target().initialLLM,
-	}
-	return executeRestorePlan(ctx, restorer, target, req)
-}
-
-// fetchTraceIntoFrontend streams the whole trace into the LIVE frontend's own
-// exporters (§5.1): one DB then holds both sessions, which is what makes the
-// restored session the old session's TUI plus a live prompt.
-//
-// Two things the reference trace client does and this must not: Seal (the
-// fetch does it internally, once every stream has stopped) and SetPrimary
-// (§5.1.1 — the live CLI's root stays the primary span, and repointing it
-// would take the restore plan's live-vs-imported discriminator with it).
-func fetchTraceIntoFrontend(ctx context.Context, traceID string) error {
-	cloudAuth, err := auth.GetCloudAuth(ctx)
-	if err != nil {
-		return fmt.Errorf("cloud auth: %w", err)
-	}
-	client, err := cloud.NewOTLPClient(ctx, cloudAuth)
-	if err != nil {
-		return fmt.Errorf("cloud client: %w", err)
-	}
-	sink := enginetel.NewTraceImporter(enginetel.TraceImportSinks{
-		Spans:   Frontend.SpanExporter(),
-		Logs:    Frontend.LogExporter(),
-		Metrics: Frontend.MetricExporter(),
-	})
-	if err := client.FetchTrace(ctx, traceID, sink); err != nil {
-		return fmt.Errorf("fetch trace %s: %w", traceID, err)
-	}
-	// The largest fetch in the product, on the path where the user is
-	// waiting: --debug says how much came down. Through slog rather than
-	// stderr, which the interactive frontend owns.
-	slog.Debug("restored trace from cloud", "trace", traceID, "stats", client.StatsSummary())
-	return nil
+	return restoreTraceSources(ctx, fe, &sessionRestore{dag: handler.dag, session: handler.llmSession}, req)
 }
 
 // restoredAgent is one entry of the plan, with the handle its anchor rebuilt
@@ -143,45 +81,70 @@ type restoredAgent struct {
 }
 
 func executeRestorePlan(ctx context.Context, src agentRestoreSource, dst restoreTarget, req traceRestore) error {
+	return executeRestoreGraph(ctx, src, dst, req, nil)
+}
+
+func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restoreTarget, req traceRestore, subscriptions []agentcontrol.Subscription) (rerr error) {
+	if req.partial {
+		return errors.New("--partial is not supported: restoring an incomplete agent graph can leave tools addressing missing agents")
+	}
 	plan := src.AgentRestorePlan()
 	if len(plan) == 0 {
-		return fmt.Errorf("trace %s carries no agents to restore: "+
-			"either nothing in it published an agent loop, or its agents are already restored in this session",
-			req.traceID)
+		return fmt.Errorf("trace %s carries no agents to restore", req.traceID)
+	}
+	plan, err := parentFirst(plan)
+	if err != nil {
+		return err
 	}
 
-	// Phase 1: resolve every anchor, refusing before anything is created.
-	//
-	// Both refusals are the same kind and are reported the same way: the
-	// projection's (a stop with no reason, no anchor at all — §5.2) and the
-	// rebuild's (a frame whose payload never reached this client — §9's first
-	// row). Neither degrades to a partial restore unless asked, because a
-	// missing worker is exactly the hole a later tool dispatch falls into,
-	// and that error would arrive minutes later with none of this context.
-	var (
-		restoring []restoredAgent
-		skipped   []string
-	)
+	// Resolve every anchor, validate every edge and choose focus before creating
+	// any runtime. A late failure must not expose a half-restored graph.
+	restoring := make([]restoredAgent, 0, len(plan))
+	byHandle := map[string]int{}
 	for _, entry := range plan {
 		snapshotID, err := resolveAnchor(src, entry)
 		if err != nil {
-			if !req.partial {
-				return fmt.Errorf("%w\n\npass --partial to restore the rest of the trace without it", err)
-			}
-			skipped = append(skipped, fmt.Sprintf("%s (%s): %v", entry.Name, entry.ID, err))
-			continue
+			return err
 		}
+		byHandle[entry.ID] = len(restoring)
 		restoring = append(restoring, restoredAgent{entry: entry, snapshotID: snapshotID})
 	}
-	if len(restoring) == 0 {
-		return fmt.Errorf("no agent in trace %s could be restored:\n  %s",
-			req.traceID, strings.Join(skipped, "\n  "))
+	for _, edge := range subscriptions {
+		if err := edge.Validate(); err != nil {
+			return fmt.Errorf("invalid restored subscription: %w", err)
+		}
+		for _, handle := range []string{edge.Watched, edge.Subscriber} {
+			i, ok := byHandle[handle]
+			if !ok {
+				return fmt.Errorf("subscription endpoint %q is outside restore roster", handle)
+			}
+			if restoring[i].entry.Source.Namespace != edge.Namespace {
+				return fmt.Errorf("subscription endpoint %q belongs to another source namespace", handle)
+			}
+		}
 	}
-	for _, skip := range skipped {
-		restoreNotice(ctx, "skipped unrestorable agent "+skip)
+	focus, notice, err := selectFocus(restoring, req.agent)
+	if err != nil {
+		return err
 	}
+	defer func() {
+		if rerr == nil {
+			return
+		}
+		// Cleanup must survive cancellation of the original operation.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		for i := len(restoring) - 1; i >= 0; i-- {
+			if id := restoring[i].agentID; id != "" {
+				if err := dst.Discard(cleanupCtx, id); err != nil {
+					rerr = errors.Join(rerr, fmt.Errorf("discard restored agent %s: %w", restoring[i].entry.ID, err))
+				}
+			}
+		}
+	}()
 
-	// Phase 2: re-hydrate everything, before anything can address any of it.
+	// All runtimes are inert. Install the complete graph before attaching the
+	// prompt, using restoreNotify rather than notify's immediate level check.
 	for i, restored := range restoring {
 		agentID, err := dst.Rehydrate(ctx, restored.entry, restored.snapshotID)
 		if err != nil {
@@ -189,24 +152,65 @@ func executeRestorePlan(ctx context.Context, src agentRestoreSource, dst restore
 		}
 		restoring[i].agentID = agentID
 	}
-
-	// Phase 3: adopt them as this session's conversations.
-	for _, restored := range restoring {
-		if err := dst.Adopt(ctx, restored.entry, restored.agentID); err != nil {
-			return fmt.Errorf("attach to restored agent %q (%s): %w",
-				restored.entry.Name, restored.entry.ID, err)
+	for _, edge := range subscriptions {
+		if len(edge.States) == 0 {
+			continue // removal tombstone, not a historical edge to resurrect
+		}
+		if err := dst.Subscribe(ctx, restoring[byHandle[edge.Watched]].agentID, restoring[byHandle[edge.Subscriber]].agentID, edge.States); err != nil {
+			return fmt.Errorf("restore subscription %s -> %s: %w", edge.Watched, edge.Subscriber, err)
 		}
 	}
-
-	// Phase 4: point the prompt at one of them.
-	focus, notice, err := selectFocus(restoring, req.agent)
-	if err != nil {
-		return err
+	for _, restored := range restoring {
+		if err := dst.Adopt(ctx, restored.entry, restored.agentID); err != nil {
+			return fmt.Errorf("attach to restored agent %q (%s): %w", restored.entry.Name, restored.entry.ID, err)
+		}
 	}
 	if notice != "" {
 		restoreNotice(ctx, notice)
 	}
-	return dst.Focus(ctx, focus.entry, focus.agentID)
+	return dst.Focus(ctx, focus.entry, restoring[byHandle[focus.entry.ID]].agentID)
+}
+
+// parentFirst rejects ambiguous handles, missing parents and lineage cycles.
+// A stable DFS retains archive order among independent agents.
+func parentFirst(plan []dagui.AgentRestore) ([]dagui.AgentRestore, error) {
+	byID := make(map[string]dagui.AgentRestore, len(plan))
+	for _, entry := range plan {
+		if _, ok := byID[entry.ID]; ok || entry.ID == "" {
+			return nil, fmt.Errorf("duplicate or empty agent handle %q in restore roster", entry.ID)
+		}
+		byID[entry.ID] = entry
+	}
+	var ordered []dagui.AgentRestore
+	visiting, visited := map[string]bool{}, map[string]bool{}
+	var visit func(string) error
+	visit = func(id string) error {
+		if visited[id] {
+			return nil
+		}
+		entry, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("parent %q is outside restore roster", id)
+		}
+		if visiting[id] {
+			return fmt.Errorf("cycle in restored lineage at agent %q", id)
+		}
+		visiting[id] = true
+		if entry.ParentAgentID != "" {
+			if err := visit(entry.ParentAgentID); err != nil {
+				return err
+			}
+		}
+		visited[id] = true
+		ordered = append(ordered, entry)
+		return nil
+	}
+	for _, entry := range plan {
+		if err := visit(entry.ID); err != nil {
+			return nil, err
+		}
+	}
+	return ordered, nil
 }
 
 // resolveAnchor turns an entry's snapshot digest into the encoded ID of the
@@ -312,10 +316,6 @@ func restoreNotice(ctx context.Context, msg string) {
 type sessionRestore struct {
 	dag     *dagger.Client
 	session *LLMSession
-	// base is the composed agent group `dagger agent` started with, kept as
-	// each restored conversation's reset target so .clear returns to the
-	// selected agents rather than a blank workspace-bound LLM.
-	base *dagger.LLM
 }
 
 var _ restoreTarget = (*sessionRestore)(nil)
@@ -326,10 +326,10 @@ var _ restoreTarget = (*sessionRestore)(nil)
 // rather than driven through the generated client because the value needed
 // is the ENCODED handle spawn returns — the ID LLMSession.Attach adopts the
 // agent by — and the client would re-select it as a fresh chain.
-const rehydrateQuery = `query Rehydrate($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
+const rehydrateQuery = `query Rehydrate($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!, $parent: String!) {
   node(id: $llm) {
     ... on LLM {
-      spawn(handle: $id, name: $name, state: $state, error: $error)
+      spawn(handle: $id, name: $name, state: $state, error: $error, parentHandle: $parent)
     }
   }
 }`
@@ -344,11 +344,12 @@ func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore
 		Query:  rehydrateQuery,
 		OpName: "Rehydrate",
 		Variables: map[string]any{
-			"llm":   snapshotID,
-			"id":    entry.ID,
-			"name":  entry.Name,
-			"state": entry.State,
-			"error": entry.Error,
+			"llm":    snapshotID,
+			"id":     entry.ID,
+			"name":   entry.Name,
+			"state":  entry.State,
+			"error":  entry.Error,
+			"parent": entry.ParentAgentID,
 		},
 	}, &dagger.Response{Data: &res}); err != nil {
 		return "", err
@@ -359,13 +360,27 @@ func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore
 	return res.Node.Spawn, nil
 }
 
+func (r *sessionRestore) Subscribe(ctx context.Context, watchedID, subscriberID string, states []string) error {
+	return r.dag.Do(ctx, &dagger.Request{
+		Query: `query RestoreSubscription($watched: ID!, $subscriber: ID!, $states: [AgentState!]!) {
+  node(id: $watched) { ... on Agent { restoreNotify(subscriber: $subscriber, on: $states) } }
+}`,
+		Variables: map[string]any{"watched": watchedID, "subscriber": subscriberID, "states": states},
+	}, &dagger.Response{})
+}
+
+func (r *sessionRestore) Discard(ctx context.Context, agentID string) error {
+	return r.dag.Do(ctx, &dagger.Request{
+		Query: `query DiscardRestore($agent: ID!) {
+  node(id: $agent) { ... on Agent { discardRestore } }
+}`,
+		Variables: map[string]any{"agent": agentID},
+	}, &dagger.Response{})
+}
+
 func (r *sessionRestore) Adopt(ctx context.Context, entry dagui.AgentRestore, agentID string) error {
-	conv, err := r.session.AttachRestored(ctx, entry.ID, entry.Name, agentID)
-	if err != nil {
-		return err
-	}
-	conv.initialLLM = r.base
-	return nil
+	_, err := r.session.AttachRestored(ctx, entry.ID, entry.Name, agentID)
+	return err
 }
 
 func (r *sessionRestore) Focus(ctx context.Context, entry dagui.AgentRestore, agentID string) error {
@@ -375,16 +390,11 @@ func (r *sessionRestore) Focus(ctx context.Context, entry dagui.AgentRestore, ag
 // validateAgentTraceFlags rejects the combinations §5.4 rules out, before any
 // engine work happens.
 func validateAgentTraceFlags(traceID string, resume bool, args []string) error {
+	if resume {
+		return errors.New("-r/--resume local JSON sessions are no longer supported; use dagger agent --trace <trace-id> with a verified archive (existing session files are left untouched)")
+	}
 	if traceID == "" {
 		return nil
-	}
-	if resume {
-		// Two stores, one conversation: a saved session and a trace both
-		// claim to say what the conversation is, and nothing decides between
-		// them. (The direction §5.4 sketches — the save file as a pointer AT
-		// a trace — makes this one flag later, not two.)
-		return errors.New("--trace cannot be combined with -r/--resume: " +
-			"a saved session and a trace are two stores for one conversation")
 	}
 	if len(args) > 0 {
 		// Composition comes from the trace: the restored agents are the ones

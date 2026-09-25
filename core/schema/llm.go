@@ -195,29 +195,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return dagql.NewID[*core.LLM](id), nil
 		}).
 			Doc("Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine."),
-		dagql.NodeFunc("portableID", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.AnyID, error) {
-			recipe, err := self.Self().PortableRecipe(ctx)
-			if err != nil {
-				return dagql.AnyID{}, err
-			}
-			id, err := recipe.RecipeID(ctx)
-			if err != nil {
-				return dagql.AnyID{}, err
-			}
-			return dagql.NewAnyID(id), nil
-		}).
-			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("An ID describes the current attached result and must not be served from cache.").
-			Doc("A portable, self-contained ID for the conversation that node() can resolve in any session. " +
-				"Unlike id, which may return an engine-local runtime handle valid only within the current session, " +
-				"this returns the recipe form suitable for persisting and later restoring the conversation. " +
-				"The recipe is flattened: bindings superseded during the session (workspace overlays recorded by " +
-				"each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — " +
-				"including any pending, un-exported edits — is preserved."),
-		dagql.NodeFunc("emitHistory", s.emitHistory).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerCallInput).
-			Doc("Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI."),
 		dagql.NodeFunc("loop", s.loop).
 			Doc("Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.").
 			Args(
@@ -245,6 +222,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("handle").Doc(`The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.`),
 				dagql.Arg("state").Doc(`The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.`,
 					`RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.`),
+				dagql.Arg("parentHandle").Doc(`Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle.`),
 				dagql.Arg("error").Doc(`The loop error to create the agent with, for state FAILED. Refused with any other state.`),
 			),
 		// agent is deliberately cached (no DoNotCache): the runtime handle
@@ -702,10 +680,11 @@ func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LL
 // seed), spawn is the only verb that creates an entry, and every other verb
 // addresses one that exists.
 func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
-	Name   dagql.Optional[dagql.String]
-	Handle dagql.Optional[dagql.String]
-	State  core.AgentState `default:"IDLE"`
-	Error  string          `default:""`
+	Name         dagql.Optional[dagql.String]
+	Handle       dagql.Optional[dagql.String]
+	State        core.AgentState `default:"IDLE"`
+	Error        string          `default:""`
+	ParentHandle dagql.Optional[dagql.String]
 }) (res dagql.Result[core.AgentID], _ error) {
 	name := args.Name.Value.String()
 	if name == "" {
@@ -753,7 +732,14 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 	if err != nil {
 		return res, err
 	}
-	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored); err != nil {
+	var parentHandles []string
+	if args.ParentHandle.Valid {
+		if !restored {
+			return res, fmt.Errorf("parentHandle is only valid when restoring with a handle")
+		}
+		parentHandles = []string{args.ParentHandle.Value.String()}
+	}
+	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored, parentHandles...); err != nil {
 		return res, err
 	}
 	pinnedID, err := pinned.ID()
@@ -776,15 +762,6 @@ func (s *llmSchema) agent(ctx context.Context, parent dagql.ObjectResult[*core.L
 		Handle: args.Handle,
 		Name:   args.Name,
 	}, nil
-}
-
-func (s *llmSchema) emitHistory(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {
-	parent.Self().EmitHistory(ctx)
-	id, err := parent.ID()
-	if err != nil {
-		return res, err
-	}
-	return dagql.NewID[*core.LLM](id), nil
 }
 
 func (s *llmSchema) hasPending(ctx context.Context, llm *core.LLM, args struct{}) (bool, error) {

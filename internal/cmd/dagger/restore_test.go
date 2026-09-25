@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,6 +64,19 @@ func (f *fakeRestoreTarget) Rehydrate(_ context.Context, entry dagui.AgentRestor
 	}
 	f.rehydrat[entry.ID] = snapshotID
 	return "handle:" + entry.ID, nil
+}
+
+func (f *fakeRestoreTarget) Subscribe(_ context.Context, watched, subscriber string, states []string) error {
+	f.calls = append(f.calls, fmt.Sprintf("subscribe:%s:%s:%v", watched, subscriber, states))
+	return nil
+}
+
+func (f *fakeRestoreTarget) Discard(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	f.calls = append(f.calls, "discard:"+id)
+	return nil
 }
 
 func (f *fakeRestoreTarget) Adopt(_ context.Context, entry dagui.AgentRestore, agentID string) error {
@@ -228,7 +242,7 @@ func TestRestoreFailsOnAnUnrestorableAgent(t *testing.T) {
 		src.plan[1].Err = errors.New(`agent "scout" (agent-scout) published a STOPPED record with no reason`)
 		err := executeRestorePlan(context.Background(), src, dst, restoreRequest())
 		require.ErrorContains(t, err, "agent-scout")
-		require.ErrorContains(t, err, "--partial")
+		require.NotContains(t, err.Error(), "pass --partial")
 		require.Empty(t, dst.calls, "a refused restore must not create anything")
 	})
 
@@ -242,32 +256,11 @@ func TestRestoreFailsOnAnUnrestorableAgent(t *testing.T) {
 	})
 }
 
-// TestRestorePartialSkipsExactlyTheUnrestorableOnes: --partial is the opt-in
-// to best-effort, and it skips precisely the entries that were refused —
-// which is what a plan that refused wholesale could not express.
-func TestRestorePartialSkipsExactlyTheUnrestorableOnes(t *testing.T) {
+func TestRestoreRefusesPartialGraph(t *testing.T) {
 	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
-	delete(src.anchors, "xxh3:scout")
-	src.plan[2].Err = errors.New("published no snapshot digest")
-
 	req := restoreRequest()
 	req.partial = true
-	require.NoError(t, executeRestorePlan(context.Background(), src, dst, req))
-
-	require.Equal(t, []string{"rehydrate:agent-chief", "adopt:agent-chief", "focus:agent-chief"},
-		dst.calls, "--partial must skip the refused entries and restore the rest")
-}
-
-// TestRestoreFailsWhenNothingCanBeRestored: --partial degrades a restore, it
-// does not turn one into an empty session that looks like it worked.
-func TestRestoreFailsWhenNothingCanBeRestored(t *testing.T) {
-	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
-	src.anchors = nil
-
-	req := restoreRequest()
-	req.partial = true
-	err := executeRestorePlan(context.Background(), src, dst, req)
-	require.ErrorContains(t, err, "no agent in trace")
+	require.ErrorContains(t, executeRestorePlan(t.Context(), src, dst, req), "--partial is not supported")
 	require.Empty(t, dst.calls)
 }
 
@@ -294,6 +287,50 @@ func TestRestoreStopsOnARefusedRehydration(t *testing.T) {
 	require.ErrorContains(t, err, "already has a runtime entry")
 	require.NotContains(t, dst.calls, "adopt:agent-chief",
 		"a failed re-hydration must not leave conversations attached to a half-restored session")
+	require.Equal(t, []string{"rehydrate:agent-chief", "rehydrate:agent-scout", "discard:handle:agent-chief"}, dst.calls)
+}
+
+func TestRestoreInstallsGraphBeforeAttachment(t *testing.T) {
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	// Archive order need not be parent-first.
+	src.plan[0], src.plan[2] = src.plan[2], src.plan[0]
+	ns := agentcontrol.Namespace{Session: "source", Trace: restoreRequest().traceID, Incarnation: "generation"}
+	for i := range src.plan {
+		src.plan[i].Source = agentcontrol.Key{Namespace: ns, Handle: src.plan[i].ID}
+	}
+	edges := []agentcontrol.Subscription{
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-scout", Subscriber: "agent-chief"}, Revision: 2, States: []string{"IDLE", "FAILED"}},
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-tests", Subscriber: "agent-scout"}, Revision: 1, States: []string{"PAUSED"}},
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-tests", Subscriber: "agent-chief"}, Revision: 3},
+	}
+	require.NoError(t, executeRestoreGraph(t.Context(), src, dst, restoreRequest(), edges))
+	require.Equal(t, []string{
+		"rehydrate:agent-chief", "rehydrate:agent-tests", "rehydrate:agent-scout",
+		"subscribe:handle:agent-scout:handle:agent-chief:[IDLE FAILED]",
+		"subscribe:handle:agent-tests:handle:agent-scout:[PAUSED]",
+		"adopt:agent-chief", "adopt:agent-tests", "adopt:agent-scout", "focus:agent-chief",
+	}, dst.calls)
+}
+
+func TestRestoreRejectsInvalidGraphBeforeCreation(t *testing.T) {
+	for _, mode := range []string{"cycle", "missing parent", "duplicate", "missing endpoint"} {
+		t.Run(mode, func(t *testing.T) {
+			src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+			var edges []agentcontrol.Subscription
+			switch mode {
+			case "cycle":
+				src.plan[0].ParentAgentID = "agent-scout"
+			case "missing parent":
+				src.plan[0].ParentAgentID = "missing"
+			case "duplicate":
+				src.plan = append(src.plan, src.plan[0])
+			case "missing endpoint":
+				edges = []agentcontrol.Subscription{{EdgeKey: agentcontrol.EdgeKey{Namespace: agentcontrol.Namespace{Session: "s", Trace: "t", Incarnation: "i"}, Watched: "agent-chief", Subscriber: "missing"}, Revision: 1}}
+			}
+			require.Error(t, executeRestoreGraph(t.Context(), src, dst, restoreRequest(), edges))
+			require.Empty(t, dst.calls)
+		})
+	}
 }
 
 // TestAgentTraceFlagConflicts is §5.4's surface. Both refusals are about two
@@ -304,8 +341,7 @@ func TestAgentTraceFlagConflicts(t *testing.T) {
 	const traceID = "2f123ba77bf7bd2d4db2f70ed20613e8"
 
 	require.NoError(t, validateAgentTraceFlags(traceID, false, nil))
-	require.NoError(t, validateAgentTraceFlags("", true, []string{"editor"}),
-		"the flags only conflict WITH --trace")
+	require.ErrorContains(t, validateAgentTraceFlags("", true, []string{"editor"}), "local JSON sessions are no longer supported")
 
 	err := validateAgentTraceFlags(traceID, true, nil)
 	require.ErrorContains(t, err, "-r/--resume")

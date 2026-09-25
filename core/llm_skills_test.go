@@ -269,16 +269,6 @@ func TestLLMSkillOwnership(t *testing.T) {
 		require.Same(t, dir.Self(), base.mcp.skillDirs[i].Directory.Self())
 		require.Same(t, replacement.Self(), clone.mcp.skillDirs[i].Directory.Self())
 	}
-
-	sels, err := clone.recipeSelectors(ctx)
-	require.NoError(t, err)
-	var replayOwners []string
-	for _, sel := range sels {
-		if sel.Field == "withSkills" {
-			replayOwners = append(replayOwners, compositionSelectorOwner(t, sel))
-		}
-	}
-	require.Equal(t, owners(base), replayOwners, "replay records explicit owners, including empty")
 }
 
 // TestEngineSkills checks the real embedded source: the dang-language skill is

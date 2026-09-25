@@ -292,7 +292,7 @@ func init() {
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline)
 	}
-	setCommandCapabilities(traceCmd, mayRenderPipeline)
+	setCommandCapabilities(traceCmd, mayCallEngine, mayRenderPipeline)
 
 	for _, cmd := range []*cobra.Command{
 		initCmd,

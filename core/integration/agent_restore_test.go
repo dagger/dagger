@@ -20,15 +20,25 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -38,6 +48,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -178,7 +189,7 @@ func restoreAgent(ctx context.Context, t *testctx.T, c *dagger.Client, db *dagui
 	snapshotID, err := callID.Encode()
 	require.NoError(t, err)
 
-	h, err := rehydrateAgent(ctx, c, snapshotID, entry.ID, entry.Name, entry.State, entry.Error)
+	h, err := rehydrateAgentWithParent(ctx, c, snapshotID, entry.ID, entry.Name, entry.State, entry.Error, entry.ParentAgentID)
 	require.NoError(t, err, "re-hydrating agent %q", entry.Name)
 	return h
 }
@@ -305,7 +316,8 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	rostered := sink.awaitRestorable(t, 3)
 	sink.awaitAgentState(t, "tests", "STOPPED")
 	require.Contains(t, rostered, "chief")
-	sourceTraceID := rostered["chief"].Span().TraceID.String()
+	require.NotNil(t, rostered["chief"].Control)
+	sourceTraceID := rostered["chief"].Control.Trace
 	traces, logs := sink.capture()
 	require.NotEmpty(t, traces)
 	require.NotEmpty(t, logs)
@@ -411,7 +423,10 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	// below is caused by the strip and not by a payload that had simply not
 	// arrived yet.
 	rostered := sink.awaitRestorable(t, 1)
-	traceID := rostered["solo"].Span().TraceID.String()
+	// Canonical controls can arrive before diagnostic loop spans.
+	require.Contains(t, rostered, "solo")
+	require.NotNil(t, rostered["solo"].Control)
+	traceID := rostered["solo"].Control.Trace
 	traces, logs := sink.capture()
 
 	// Serve the spans and the agent's own state/anchor records, but no call
@@ -431,6 +446,510 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 		"the PROJECTION is fine — the trace says what to restore; it is the rebuild that cannot")
 	_, err = db.CallIDForDigest(entry.SnapshotDigest)
 	require.ErrorContains(t, err, "never reached this client")
+}
+
+// TestRestoreDormantLifecycleGraph exercises creation-only control publication,
+// pre-teardown state mapping, and preservation of failure information across two
+// restores. None of the destination agents may run a model merely by restoring.
+func (AgentRestoreSuite) TestRestoreDormantLifecycleGraph(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+	defer cancel()
+	source, sink := connectWithTrace(ctx, t)
+	spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "dormant"})
+	paused := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "paused"})
+	require.Equal(t, "PAUSED", paused.mustVerb(ctx, t, "pause"))
+	failed := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "failed"})
+	_, err := failed.sendNoWait(ctx, t, "fail once")
+	require.NoError(t, err)
+	failed.mustRun(ctx, t, "wait")
+	require.Equal(t, "FAILED", failed.state(ctx, t))
+	failure := failed.mustRun(ctx, t, "error").Get("error").String()
+	require.Contains(t, failure, "no more messages")
+	stopped := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "dismissed"})
+	require.Equal(t, "STOPPED", stopped.mustVerb(ctx, t, "stop"))
+
+	sink.awaitRestorable(t, 4)
+	require.NoError(t, source.Close())
+	wantStates := map[string]string{"dormant": "IDLE", "paused": "PAUSED", "failed": "FAILED", "dismissed": "STOPPED"}
+	for range 2 {
+		traces, logs := sink.capture()
+		db := restoringDB(t)
+		importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+		for _, batch := range traces {
+			require.NoError(t, importer.ImportSpans(ctx, batch))
+		}
+		for _, batch := range logs {
+			require.NoError(t, importer.ImportLogs(ctx, batch))
+		}
+		plan := db.RestorePlan()
+		require.Len(t, plan, len(wantStates))
+		target, targetSink := connectWithTrace(ctx, t)
+		sink = targetSink
+		for _, entry := range plan {
+			require.Equal(t, wantStates[entry.Name], entry.State, "%s", entry.Name)
+			h := restoreAgent(ctx, t, target, db, entry)
+			require.Equal(t, wantStates[entry.Name], h.state(ctx, t))
+			if entry.Name == "failed" {
+				require.Equal(t, failure, entry.Error)
+				require.Equal(t, failure, h.mustRun(ctx, t, "error").Get("error").String())
+			}
+			// All providers are empty recordings: a spontaneous turn would fail
+			// an idle/paused agent, or change the preserved failure text.
+		}
+		sink.awaitRestorable(t, 4)
+		require.NoError(t, target.Close())
+	}
+}
+
+// TestRestoreWorkspaceAfterSourceDisappears resolves only a traced anchor after
+// the source connection is closed and its checkout has been removed. A distinct
+// destination checkout intentionally disagrees with both frozen and pending data.
+func (AgentRestoreSuite) TestRestoreWorkspaceAfterSourceDisappears(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+	defer cancel()
+	sourceDir, _ := workspaceExportCheckout(ctx, t)
+	// Only remote-backed snapshots survive the source session. Keep the Git
+	// base available independently of the checkout that is deleted below.
+	publishCheckpointRemote(ctx, t, sourceDir)
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "base.txt"), []byte("source"), 0o644))
+	source, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: sourceDir})
+	frozen := snapshotWorkspace(ctx, t, source, source.CurrentWorkspace())
+	wsID, err := frozen.WithNewFile("pending.txt", "unexported").ID(ctx)
+	require.NoError(t, err)
+	spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "frozen", wsID: wsID})
+	sink.awaitRestorable(t, 1)
+	require.NoError(t, source.Close())
+	require.NoError(t, os.RemoveAll(sourceDir))
+
+	destinationDir, _ := workspaceExportCheckout(ctx, t)
+	require.NoError(t, os.WriteFile(filepath.Join(destinationDir, "base.txt"), []byte("destination"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(destinationDir, "pending.txt"), []byte("not the pending edit"), 0o644))
+	target, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: destinationDir})
+	traces, logs := sink.capture()
+	db := restoringDB(t)
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+	for _, batch := range traces {
+		require.NoError(t, importer.ImportSpans(ctx, batch))
+	}
+	for _, batch := range logs {
+		require.NoError(t, importer.ImportLogs(ctx, batch))
+	}
+	plan := db.RestorePlan()
+	require.Len(t, plan, 1)
+	h := restoreAgent(ctx, t, target, db, plan[0])
+	out := h.mustRun(ctx, t, `snapshot { workspace { source: file(path: "base.txt") { contents } pending: file(path: "pending.txt") { contents } } }`)
+	require.Equal(t, "source", out.Get("snapshot.workspace.source.contents").String())
+	require.Equal(t, "unexported", out.Get("snapshot.workspace.pending.contents").String())
+	require.Equal(t, "IDLE", h.state(ctx, t))
+	local, err := os.ReadFile(filepath.Join(destinationDir, "base.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "destination", string(local), "restore must not implicitly export")
+}
+
+// TestRestoreNotificationGraph uses the actual published watched-to-subscriber
+// graph, including a non-parent filter replacement and a removal tombstone.
+// Pending source mailbox events are deliberately excluded from the guarantee.
+func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	source, sink := connectWithTrace(ctx, t)
+	workerModel := cannedRecordingModel(ctx, t, source, source.LLM().
+		WithPrompt("old task").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "old completion"}}).
+		WithPrompt("new task").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "new completion"}}))
+	chiefModel := cannedRecordingModel(ctx, t, source, source.LLM().
+		WithPrompt(agentIdleEventText("worker", "new completion")).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "new completion noted"}}))
+	chief := spawnAgent(ctx, t, source, spawnOpts{model: chiefModel, name: "chief"})
+	chiefID := chief.mustRun(ctx, t, "handle").Get("handle").String()
+	worker := spawnAgent(ctx, t, source, spawnOpts{model: workerModel, name: "worker", parentHandle: chiefID, handle: identity.NewID()})
+	observer := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "observer"})
+	removed := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "removed"})
+	_, reply, err := worker.sendAndWait(ctx, t, "old task")
+	require.NoError(t, err)
+	require.Equal(t, "old completion", reply)
+	for _, sub := range []struct {
+		agent  *agentHandle
+		states string
+	}{
+		{chief, "IDLE"}, {observer, "IDLE"}, {observer, "FAILED"}, {removed, "FAILED"}, {removed, ""},
+	} {
+		worker.mustRun(ctx, t, fmt.Sprintf(`notify(subscriber: %q, on: [%s])`, sub.agent.agentID, sub.states))
+	}
+	sink.awaitRestorable(t, 4)
+	require.NoError(t, source.Close())
+	traces, logs := sink.capture()
+	db := restoringDB(t)
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+	for _, batch := range traces {
+		require.NoError(t, importer.ImportSpans(ctx, batch))
+	}
+	for _, batch := range logs {
+		require.NoError(t, importer.ImportLogs(ctx, batch))
+	}
+	plan := planByName(t, db.RestorePlan())
+	require.Len(t, plan, 4)
+	require.Equal(t, plan["chief"].ID, plan["worker"].ParentAgentID)
+	_, edges, err := db.AgentControl()
+	require.NoError(t, err)
+	require.Len(t, edges, 3)
+	target, _ := connectWithTrace(ctx, t)
+	restored := map[string]*agentHandle{}
+	for _, name := range []string{"chief", "worker", "observer", "removed"} {
+		entry := plan[name]
+		restored[entry.ID] = restoreAgent(ctx, t, target, db, entry)
+	}
+	for _, edge := range edges {
+		require.Equal(t, plan["worker"].Source.Namespace, edge.Namespace)
+		require.Equal(t, plan["worker"].ID, edge.Watched)
+		switch edge.Subscriber {
+		case plan["chief"].ID:
+			require.Equal(t, []string{"IDLE"}, edge.States)
+		case plan["observer"].ID:
+			require.Equal(t, []string{"FAILED"}, edge.States)
+		case plan["removed"].ID:
+			require.Empty(t, edge.States)
+		default:
+			t.Fatalf("unexpected subscriber %s", edge.Subscriber)
+		}
+		restored[edge.Watched].mustRun(ctx, t, fmt.Sprintf(`restoreNotify(subscriber: %q, on: [%s])`, restored[edge.Subscriber].agentID, strings.Join(edge.States, ",")))
+	}
+	restoredChief := restored[plan["chief"].ID]
+	restoredObserver := restored[plan["observer"].ID]
+	restoredRemoved := restored[plan["removed"].ID]
+	for _, h := range []*agentHandle{restoredChief, restoredObserver, restoredRemoved} {
+		h.mustRun(ctx, t, "resume")
+	}
+	// An immediate public notify level check would queue the old completion.
+	// Explicitly start the subscriber loops to expose even queued stale events.
+	require.Never(t, func() bool {
+		for _, h := range []*agentHandle{restoredChief, restoredObserver, restoredRemoved} {
+			if h.state(ctx, t) != "IDLE" || len(h.mustRun(ctx, t, "snapshot { messages { role } }").Get("snapshot.messages").Array()) != 0 {
+				return true
+			}
+		}
+		return false
+	}, time.Second, 100*time.Millisecond, "restore synthesized a historical notification")
+	restoredWorker := restored[plan["worker"].ID]
+	_, reply, err = restoredWorker.sendAndWait(ctx, t, "new task")
+	require.NoError(t, err)
+	require.Equal(t, "new completion", reply)
+	require.Eventually(t, func() bool { _, reply := restoredChief.snapshot(ctx, t); return reply == "new completion noted" }, time.Minute, 100*time.Millisecond)
+	require.Equal(t, "IDLE", restoredObserver.state(ctx, t), "FAILED-only subscriber must not hear IDLE")
+	_, err = restoredWorker.sendNoWait(ctx, t, "exhaust recording")
+	require.NoError(t, err)
+	restoredWorker.mustRun(ctx, t, "wait")
+	require.Equal(t, "FAILED", restoredWorker.state(ctx, t))
+	// The matching FAILED notification wakes the observer's empty provider;
+	// its failure proves delivery without requiring unstable rendered error text.
+	require.Eventually(t, func() bool { return restoredObserver.state(ctx, t) == "FAILED" }, time.Minute, 100*time.Millisecond)
+	out := restoredObserver.mustRun(ctx, t, `snapshot { messages { origin { kind agentName } } }`)
+	require.Equal(t, "EVENT", out.Get("snapshot.messages.0.origin.kind").String())
+	require.Equal(t, "worker", out.Get("snapshot.messages.0.origin.agentName").String())
+	require.Equal(t, "IDLE", restoredRemoved.state(ctx, t))
+	require.Empty(t, restoredRemoved.mustRun(ctx, t, "snapshot { messages { role } }").Get("snapshot.messages").Array())
+}
+
+// TestArchiveSurvivesEngineRestart seals a real source session, stops the actual
+// engine process, and starts a different process over the same state volume.
+// No historical stream is downloaded before restoring and executing a new turn.
+func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
+	defer cancel()
+	host := connect(ctx, t)
+	engine := devEngineContainer(host)
+	startEngine := func(ctr *dagger.Container) (*dagger.Service, *dagger.Service, string) {
+		t.Helper()
+		service, err := devEngineContainerAsService(ctr).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true}) })
+		tunnel, err := host.Host().Tunnel(service).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = tunnel.Stop(context.WithoutCancel(ctx)) })
+		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		require.NoError(t, err)
+		return service, tunnel, endpoint
+	}
+	first, tunnel, endpoint := startEngine(engine)
+	provider := sdktrace.NewTracerProvider()
+	defer provider.Shutdown(context.WithoutCancel(ctx))
+	sourceCtx, sourceSpan := provider.Tracer("archive-acceptance").Start(ctx, "archive source", trace.WithNewRoot())
+	defer sourceSpan.End()
+	source, sourceSink := connectWithTrace(sourceCtx, t, engineconn.Config{RunnerHost: endpoint})
+	model := cannedRecordingModel(sourceCtx, t, source, source.LLM().
+		WithPrompt("before restart").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "remembered before restart"}}).
+		WithPrompt("after restart").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "continued after restart"}}))
+	original := spawnAgent(sourceCtx, t, source, spawnOpts{model: model, name: "archive-worker"})
+	_, reply, err := original.sendAndWait(sourceCtx, t, "before restart")
+	require.NoError(t, err)
+	require.Equal(t, "remembered before restart", reply)
+	node := sourceSink.awaitRestorable(t, 1)["archive-worker"]
+	require.NotNil(t, node.Control)
+	traceID := node.Control.Trace
+	require.NoError(t, source.Close(), "graceful close must finish durable finalization")
+	sourceSpan.End()
+	_, err = tunnel.Stop(ctx)
+	require.NoError(t, err)
+	_, err = first.Stop(ctx)
+	require.NoError(t, err)
+	// A different service identity makes this a process restart, not a second
+	// connection to a still-running engine. The mounted state cache is unchanged.
+	_, _, endpoint = startEngine(engine.WithEnvVariable("ARCHIVE_RESTART", identity.NewID()))
+	targetCtx, targetSpan := provider.Tracer("archive-acceptance").Start(ctx, "archive destination", trace.WithNewRoot())
+	defer targetSpan.End()
+	target, targetSink := connectWithTrace(targetCtx, t, engineconn.Config{RunnerHost: endpoint})
+	client := archive.NewClient(targetSink.conn)
+	// First authenticated request: no executable GraphQL query has primed the
+	// destination client. Archive access must establish authorization itself.
+	manifests, err := client.ListAll(targetCtx, archive.ListOptions{})
+	require.NoError(t, err)
+	var manifest *archive.Manifest
+	for _, candidate := range manifests {
+		if candidate.TraceID == traceID {
+			manifest = &candidate
+		}
+	}
+	require.NotNil(t, manifest, "archive disappeared across engine restart")
+	require.Equal(t, archive.StateClosed, manifest.State, "archive failure: %s", manifest.Failure)
+	release, err := client.Acquire(targetCtx, traceID)
+	require.NoError(t, err)
+	defer release()
+	db := restoringDB(t)
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+	result, err := client.Bootstrap(targetCtx, traceID, manifest.Generation, func(_ archive.BootstrapHeader, batch archive.BootstrapBatch) error {
+		if batch.Traces != nil {
+			return importer.ImportSpans(targetCtx, batch.Traces)
+		}
+		return importer.ImportLogs(targetCtx, batch.Logs)
+	})
+	require.NoError(t, err)
+	require.Equal(t, manifest.Generation, result.Header.Generation)
+	plan := db.RestorePlan()
+	require.Len(t, plan, 1)
+	require.Equal(t, "archive-worker", plan[0].Name)
+	require.Equal(t, "IDLE", plan[0].State)
+	restored := restoreAgent(targetCtx, t, target, db, plan[0])
+	transcript, _ := restored.snapshot(targetCtx, t)
+	require.Contains(t, transcript, "remembered before restart")
+	_, reply, err = restored.sendAndWait(targetCtx, t, "after restart")
+	require.NoError(t, err)
+	require.Equal(t, "continued after restart", reply)
+	require.NoError(t, target.Close())
+}
+
+// TestCLIArchiveResumeIgnoresDestination runs the real from-source command and
+// drives its headless TUI prompt, rather than calling restore orchestration seams.
+func (AgentRestoreSuite) TestCLIArchiveResumeIgnoresDestination(ctx context.Context, t *testctx.T) {
+	testCLITraceResume(ctx, t, false)
+}
+
+func (AgentRestoreSuite) TestCLICloudFallbackIgnoresDestination(ctx context.Context, t *testctx.T) {
+	testCLITraceResume(ctx, t, true)
+}
+
+func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	provider := sdktrace.NewTracerProvider()
+	defer provider.Shutdown(context.WithoutCancel(ctx))
+	sourceCtx, sourceSpan := provider.Tracer("archive-cli-acceptance").Start(ctx, "source", trace.WithNewRoot())
+	defer sourceSpan.End()
+	source, sink := connectWithTrace(sourceCtx, t)
+	model := cannedRecordingModel(sourceCtx, t, source, source.LLM().
+		WithPrompt("before CLI restore").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "source conversation retained"}}).
+		WithPrompt("after CLI restore").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "RESTORED-PROMPT-TURN-SUCCEEDED"}}))
+	wsID, err := source.Directory().WithNewFile("authority.txt", "traced source").AsWorkspace().ID(sourceCtx)
+	require.NoError(t, err)
+	// A dismissed failure remains in the graph with its original diagnostic.
+	// Restoring it as STOPPED must not pass that FAILED-only spawn argument.
+	dismissed := spawnAgent(sourceCtx, t, source, spawnOpts{model: emptyReplayModel, name: "dismissed", wsID: wsID})
+	_, err = dismissed.sendNoWait(sourceCtx, t, "fail before dismissal")
+	require.NoError(t, err)
+	dismissed.mustRun(sourceCtx, t, "wait")
+	require.Equal(t, "FAILED", dismissed.state(sourceCtx, t))
+	require.Equal(t, "STOPPED", dismissed.mustVerb(sourceCtx, t, "stop"))
+	sink.awaitAgentState(t, "dismissed", "STOPPED")
+	h := spawnAgent(sourceCtx, t, source, spawnOpts{model: model, name: "cli-restored", wsID: wsID})
+	_, reply, err := h.sendAndWait(sourceCtx, t, "before CLI restore")
+	require.NoError(t, err)
+	require.Equal(t, "source conversation retained", reply)
+	nodes := sink.awaitRestorable(t, 2)
+	require.NotEmpty(t, nodes["dismissed"].Control.Failure)
+	node := nodes["cli-restored"]
+	require.NotNil(t, node.Control)
+	traceID := node.Control.Trace
+	require.NoError(t, source.Close())
+	sourceSpan.End()
+
+	cloudURL := ""
+	var cloudRequests atomic.Int32
+	if cloudOnly {
+		// Keep the real canonical capture but serve it under a fresh trace ID:
+		// this engine has no archive for that ID, so the actual CLI must miss
+		// locally and fetch all three Cloud streams before restoring anything.
+		_, cloudSpan := provider.Tracer("cloud-only-fixture").Start(ctx, "cloud-only", trace.WithNewRoot())
+		traceID = cloudSpan.SpanContext().TraceID().String()
+		cloudSpan.End()
+		cloudID, err := trace.TraceIDFromHex(traceID)
+		require.NoError(t, err)
+		traces, logs := sink.capture()
+		for i, req := range traces {
+			traces[i] = proto.Clone(req).(*coltracepb.ExportTraceServiceRequest)
+			for _, resource := range traces[i].ResourceSpans {
+				for _, scope := range resource.ScopeSpans {
+					for _, span := range scope.Spans {
+						span.TraceId = slices.Clone(cloudID[:])
+					}
+				}
+			}
+		}
+		for i, req := range logs {
+			logs[i] = proto.Clone(req).(*collogspb.ExportLogsServiceRequest)
+			for _, resource := range logs[i].ResourceLogs {
+				for _, scope := range resource.ScopeLogs {
+					for _, rec := range scope.LogRecords {
+						rec.TraceId = slices.Clone(cloudID[:])
+						for _, kv := range rec.Attributes {
+							if kv.Key == agentcontrol.TraceAttr {
+								kv.Value = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: traceID}}
+							}
+						}
+					}
+				}
+			}
+		}
+		fixture := &fakeCloudTrace{traceID: traceID, traces: traces, logs: logs}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cloudRequests.Add(1)
+			fixture.ServeHTTP(w, r)
+		}))
+		defer server.Close()
+		cloudURL = server.URL
+	}
+
+	destination := t.TempDir()
+	// A destination-module load would fail before reaching the prompt.
+	require.NoError(t, os.WriteFile(filepath.Join(destination, "dagger.toml"), []byte("[modules.broken]\nsource = \"definitely-missing-module\"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(destination, "authority.txt"), []byte("destination only"), 0o644))
+	state := t.TempDir()
+	legacyDir := filepath.Join(state, "dagger", "llm-sessions")
+	require.NoError(t, os.MkdirAll(legacyDir, 0o755))
+	legacyFile := filepath.Join(legacyDir, "existing.json")
+	require.NoError(t, os.WriteFile(legacyFile, []byte("not valid JSON: must never be read or deleted"), 0o600))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	address := listener.Addr().String()
+	require.NoError(t, listener.Close())
+	bin := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
+	require.NotEmpty(t, bin)
+	commandCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	cmd := exec.CommandContext(commandCtx, bin, "agent", "--trace", traceID)
+	cmd.Dir = destination
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		switch key {
+		case "DAGGER_SESSION_PORT", "DAGGER_SESSION_TOKEN", "TRACEPARENT", "TRACESTATE", "DAGGER_TUI_CONSOLE", "DAGGER_PROGRESS", "XDG_STATE_HOME":
+			continue
+		}
+		cmd.Env = append(cmd.Env, entry)
+	}
+	if cloudOnly {
+		cmd.Env = append(cmd.Env, "DAGGER_CLOUD_URL="+cloudURL, "DAGGER_CLOUD_TOKEN=restore-test-token")
+	} else {
+		// Discovery and exact selection must also ignore the broken destination.
+		// The listing is metadata-only and must not initialize an interactive LLM.
+		// Client close flushes telemetry, but archive sealing finishes during
+		// asynchronous session removal. Wait for discovery to show a final cut;
+		// command errors and terminal failure states must not be retried away.
+		var listing []byte
+		var listErr error
+		var generation, state string
+		require.Eventually(t, func() bool {
+			listCmd := exec.CommandContext(ctx, bin, "agent", "--list-archives", "--trace", traceID)
+			listCmd.Dir, listCmd.Env = destination, slices.Clone(cmd.Env)
+			listing, listErr = listCmd.Output()
+			if listErr != nil {
+				return true
+			}
+			for _, line := range strings.Split(string(listing), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) >= 4 && fields[0] == traceID && fields[1] == node.Control.Session {
+					generation, state = fields[2], fields[3]
+					return state != string(archive.StateActive) && state != string(archive.StateFinalizing)
+				}
+			}
+			return false
+		}, time.Minute, 100*time.Millisecond, "archive discovery never reached a final state")
+		require.NoError(t, listErr)
+		require.Equal(t, string(archive.StateClosed), state, "archive listing: %s", listing)
+		require.NotEmpty(t, generation, "archive not discoverable: %s", listing)
+		cmd.Args = append(cmd.Args, "--source-session", node.Control.Session, "--generation", generation)
+	}
+	cmd.Env = append(cmd.Env, "DAGGER_TUI_CONSOLE="+address, "DAGGER_PROGRESS=tty", "XDG_STATE_HOME="+state)
+	logFile, err := os.CreateTemp(t.TempDir(), "cli-output")
+	require.NoError(t, err)
+	defer logFile.Close()
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	require.NoError(t, cmd.Start())
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	defer func() { stop(); <-done }()
+	defer func() {
+		if t.Failed() {
+			data, _ := os.ReadFile(logFile.Name())
+			t.Logf("CLI output:\n%s", data)
+		}
+	}()
+	client := &http.Client{Timeout: 5 * time.Second}
+	request := func(method, path, body string) (int, string) {
+		req, err := http.NewRequestWithContext(ctx, method, "http://"+address+path, strings.NewReader(body))
+		if err != nil {
+			return 0, err.Error()
+		}
+		res, err := client.Do(req)
+		if err != nil {
+			return 0, err.Error()
+		}
+		defer res.Body.Close()
+		data, err := io.ReadAll(res.Body)
+		if err != nil {
+			return 0, err.Error()
+		}
+		return res.StatusCode, string(data)
+	}
+	var last string
+	defer func() {
+		if t.Failed() {
+			_, screen := request(http.MethodGet, "/screen", "")
+			t.Logf("Last console response: %s\nScreen:\n%s", last, screen)
+		}
+	}()
+	require.Eventually(t, func() bool {
+		status, body := request(http.MethodGet, "/toolset", "")
+		last = body
+		return status == http.StatusOK
+	}, time.Minute, 100*time.Millisecond, "interactive restored session never attached: %s", last)
+	status, body := request(http.MethodPost, "/type", "after CLI restore")
+	require.Equal(t, http.StatusOK, status, "%s", body)
+	status, body = request(http.MethodPost, "/key", "enter")
+	require.Equal(t, http.StatusOK, status, "%s", body)
+	require.Eventually(t, func() bool {
+		_, body := request(http.MethodGet, "/screen", "")
+		last = body
+		return strings.Contains(body, "RESTORED-PROMPT-TURN-SUCCEEDED")
+	}, time.Minute, 100*time.Millisecond, "restored prompt did not complete a turn: %s", last)
+	if cloudOnly {
+		require.GreaterOrEqual(t, cloudRequests.Load(), int32(3), "CLI must fetch the Cloud trace on a local miss")
+	}
+	entries, err := os.ReadDir(legacyDir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "trace-only CLI must not write JSON sessions")
+	data, err := os.ReadFile(legacyFile)
+	require.NoError(t, err)
+	require.Equal(t, "not valid JSON: must never be read or deleted", string(data))
+	data, err = os.ReadFile(filepath.Join(destination, "authority.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "destination only", string(data), "restore must not implicitly export")
 }
 
 // withoutSpanCallPayloads strips the dagger.io/dag.call attribute from every

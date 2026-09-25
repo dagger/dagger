@@ -2,7 +2,10 @@ package telemetry
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sync"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -68,7 +71,13 @@ import (
 // TraceImportSinks are the exporters an imported trace lands in — the live
 // frontend's own (Frontend.SpanExporter, LogExporter, MetricExporter), which
 // is the whole point: one DB, both sessions. A nil sink drops its stream.
+// TraceImportBarrier acknowledges application, not exporter enqueue completion.
+type TraceImportBarrier interface {
+	WaitForEventLoop(context.Context) error
+}
+
 type TraceImportSinks struct {
+	Barrier TraceImportBarrier
 	Spans   sdktrace.SpanExporter
 	Logs    sdklog.Exporter
 	Metrics sdkmetric.Exporter
@@ -227,6 +236,15 @@ func (imp *TraceImporter) ImportMetrics(ctx context.Context, req *colmetricspb.E
 //
 // Idempotent: a second call has nothing left to seal.
 func (imp *TraceImporter) Seal(ctx context.Context) error {
+	return imp.seal(ctx, 0)
+}
+
+// SealAt ends historical spans at the verified archive close time.
+func (imp *TraceImporter) SealAt(ctx context.Context, at time.Time) error {
+	return imp.seal(ctx, uint64(at.UnixNano()))
+}
+
+func (imp *TraceImporter) seal(ctx context.Context, fixed uint64) error {
 	if imp.sinks.Spans == nil {
 		return nil
 	}
@@ -236,8 +254,10 @@ func (imp *TraceImporter) Seal(ctx context.Context) error {
 	if sealAt == 0 {
 		sealAt = imp.newest
 	}
-	order, unfinished := imp.order, imp.unfinished
-	imp.order, imp.unfinished = nil, map[string]*unfinishedSpan{}
+	if fixed != 0 {
+		sealAt = fixed
+	}
+	order, unfinished := slices.Clone(imp.order), maps.Clone(imp.unfinished)
 	imp.mu.Unlock()
 
 	if sealAt == 0 || len(unfinished) == 0 {
@@ -292,7 +312,19 @@ func (imp *TraceImporter) Seal(ctx context.Context) error {
 	if len(groups) == 0 {
 		return nil
 	}
-	return imp.sinks.Spans.ExportSpans(ctx, telemetry.SpansFromPB(groups))
+	if err := imp.sinks.Spans.ExportSpans(ctx, telemetry.SpansFromPB(groups)); err != nil {
+		// Keep the unfinished set for a retry; enqueue failure is not sealing.
+		return err
+	}
+	imp.mu.Lock()
+	for key, entry := range unfinished {
+		if imp.unfinished[key] == entry {
+			delete(imp.unfinished, key)
+		}
+	}
+	imp.order = slices.DeleteFunc(imp.order, func(key string) bool { return imp.unfinished[key] == nil })
+	imp.mu.Unlock()
+	return nil
 }
 
 // pbSpanRunning reports whether a span was still running when the capture was

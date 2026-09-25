@@ -51,7 +51,7 @@ func (fe *frontendPretty) buildSearchMatches() {
 				if logs == nil {
 					return
 				}
-				for _, r := range logs.Term().SearchMatchRows() {
+				for _, r := range logs.SearchMatchRows() {
 					fe.searchMatches = append(fe.searchMatches, searchMatch{
 						spanID:   spanID,
 						logRow:   r,

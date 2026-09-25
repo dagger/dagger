@@ -19,14 +19,18 @@ type EngineConn interface {
 }
 
 type Config struct {
-	Workdir              string
-	Workspace            string
-	LogOutput            io.Writer
-	RunnerHost           string
-	Conn                 EngineConn
-	VersionOverride      string
-	Verbosity            int
-	ExtraEnv             []string
+	Workdir         string
+	Workspace       string
+	LogOutput       io.Writer
+	RunnerHost      string
+	Conn            EngineConn
+	VersionOverride string
+	Verbosity       int
+	ExtraEnv        []string
+	// UnsetEnv removes inherited variables from a new CLI subprocess. ExtraEnv
+	// is applied afterwards and may explicitly reintroduce a removed variable.
+	// It does not affect selection of an existing session by Get.
+	UnsetEnv             []string
 	LoadWorkspaceModules bool
 	SkipWorkspaceModules bool
 }
@@ -57,6 +61,7 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		VersionOverride:      cfg.VersionOverride,
 		Verbosity:            cfg.Verbosity,
 		ExtraEnv:             cfg.ExtraEnv,
+		UnsetEnv:             cfg.UnsetEnv,
 		LoadWorkspaceModules: loadWorkspaceModules,
 	}
 

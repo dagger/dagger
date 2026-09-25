@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -65,7 +66,7 @@ func applyWorkspacePull(ctx context.Context, c *dagger.Client, receiver, source 
 }
 
 func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
 	base := snapshotWorkspace(ctx, t, c, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace())
 	source := base.WithNewFile("source.txt", "source").With(func(ws *dagger.Workspace) *dagger.Workspace {
@@ -107,7 +108,7 @@ func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testc
 	require.NoError(t, err)
 	require.Empty(t, plan)
 	// The returned composition has pinned refs, not a mutable branch lookup.
-	recipe, err := c.LLM().WithWorkspace(pulled).PortableID(ctx)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(pulled))
 	require.NoError(t, err)
 	var id call.ID
 	require.NoError(t, id.Decode(string(recipe)))
@@ -311,7 +312,8 @@ func (WorkspaceSuite) TestWorkspacePullDirtyDirectoryRename(ctx context.Context,
 
 func (WorkspaceSuite) TestWorkspacePullShortSHAs(ctx context.Context, t *testctx.T) {
 	checkout, _ := workspaceExportCheckout(ctx, t)
-	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	publishCheckpointRemote(ctx, t, checkout)
+	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: checkout})
 	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
 	source := base.WithNewFile("a", "a").With(func(ws *dagger.Workspace) *dagger.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "a", workspaceCommitDate)
@@ -356,7 +358,7 @@ func (WorkspaceSuite) TestWorkspacePullShortSHAs(ctx context.Context, t *testctx
 		contents, err := pulled.File("b").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "b", contents)
-		recipe, err := c.LLM().WithWorkspace(pulled).PortableID(ctx)
+		recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(pulled))
 		require.NoError(t, err)
 		recipes = append(recipes, recipe)
 		var id call.ID

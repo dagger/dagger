@@ -40,6 +40,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -1284,7 +1285,9 @@ func traceMessage(profile termenv.Profile, url string, msg string) string {
 
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
-func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) error {
+func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) (rerr error) {
+	defer func() { rerr = errors.Join(rerr, fe.db.ClosePrimaryLogs()) }()
+	defer fe.logs.Close()
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -2651,6 +2654,12 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
+			// A zoom outside the priority window can precede the span itself.
+			// Finish its deferred log request now, using the arrived roll-up
+			// metadata instead of requiring a second expand/zoom gesture.
+			if fe.SpanExpanded[id] {
+				fe.requestLogs(id)
+			}
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
 				fe.updateLogPagerForLogs(id)
@@ -6688,6 +6697,33 @@ func encodedIDForCallDigest(db *dagui.DB, digest string) (string, error) {
 	return id.Encode()
 }
 
+// WaitForEventLoop is an application barrier, rather than an exporter flush. The
+// marker uses the same ordered dispatch queue as spans, logs, and metrics; when
+// it runs their DB mutations are visible to subsequent restore-plan reads.
+func (fe *frontendPretty) WaitForEventLoop(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	done := make(chan struct{})
+	fe.dispatch(func() { close(done) })
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (fe *frontendPretty) AgentControl() (agents []agentcontrol.Agent, subscriptions []agentcontrol.Subscription, err error) {
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		agents, subscriptions, err = fe.db.AgentControl()
+	})
+	<-done
+	return
+}
+
 // AgentRestorePlan projects the imported trace's agents into a restore plan
 // (AgentRestorer, design §5.1's "Reading the DB back").
 //
@@ -8866,10 +8902,12 @@ type prettyLogs struct {
 	Profile       termenv.Profile
 	Output        TermOutput
 	Images        *kittyImages
+	Cache         *terminalCache
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 	return &prettyLogs{
+		Cache:         newTerminalCache(),
 		DB:            db,
 		Logs:          make(map[dagui.SpanID]*Vterm),
 		ToolArgs:      make(map[dagui.SpanID]*Vterm),
@@ -8933,13 +8971,21 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if isMedia {
 				l.spanLogs(rollUpID).WriteMedia(media, pw.Prefix+body)
 			} else {
-				fmt.Fprint(pw, body)
+				if _, err := fmt.Fprint(pw, body); err != nil {
+					return err
+				}
+			}
+			if err := l.spanLogs(rollUpID).Err(); err != nil {
+				return err
 			}
 		}
 
 		vterm := l.spanLogs(spanID)
 		if isMedia {
 			vterm.WriteMedia(media, body)
+			if err := vterm.Err(); err != nil {
+				return err
+			}
 			continue
 		}
 		if contentType == "application/json" {
@@ -8954,6 +9000,9 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			_, _ = vterm.WriteDiff([]byte(body))
 		default:
 			_, _ = fmt.Fprint(vterm, body)
+		}
+		if err := vterm.Err(); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -9035,6 +9084,7 @@ func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 	term, found := l.Logs[spanID]
 	if !found {
 		term = NewVterm(l.Profile)
+		term.cache = l.Cache
 		term.images = l.Images
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
@@ -9048,6 +9098,7 @@ func (l *prettyLogs) spanToolArgs(spanID dagui.SpanID) *Vterm {
 	term, found := l.ToolArgs[spanID]
 	if !found {
 		term = NewVterm(l.Profile)
+		term.cache = l.Cache
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
 		}
@@ -9064,6 +9115,18 @@ func (l *prettyLogs) SetWidth(width int) {
 	for _, vt := range l.ToolArgs {
 		vt.SetWidth(width)
 	}
+}
+
+// Close is separate from exporter Shutdown: final reports still need logs
+// after the telemetry SDK has shut its exporters down.
+func (l *prettyLogs) Close() {
+	for _, term := range l.Logs {
+		term.Close()
+	}
+	for _, term := range l.ToolArgs {
+		term.Close()
+	}
+	l.Cache = newTerminalCache()
 }
 
 func (l *prettyLogs) Shutdown(ctx context.Context) error {

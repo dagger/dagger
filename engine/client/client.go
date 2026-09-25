@@ -1466,9 +1466,12 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	proxyReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{
-			Scheme: "http",
-			Host:   "dagger",
-			Path:   r.URL.Path,
+			Scheme:     "http",
+			Host:       "dagger",
+			Path:       r.URL.Path,
+			RawPath:    r.URL.RawPath,
+			RawQuery:   r.URL.RawQuery,
+			ForceQuery: r.URL.ForceQuery,
 		},
 		Header: r.Header,
 		Body:   r.Body,

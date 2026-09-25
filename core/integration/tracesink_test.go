@@ -1,16 +1,24 @@
 package core
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -35,6 +43,7 @@ type agentTraceSink struct {
 	db     *dagui.DB
 	logExp sdklog.Exporter
 	base   string
+	conn   engineconn.EngineConn
 
 	traces []*coltracepb.ExportTraceServiceRequest
 	logs   []*collogspb.ExportLogsServiceRequest
@@ -109,6 +118,131 @@ func (sink *agentTraceSink) logsHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+// connectWithTrace creates a source session whose agent control records and
+// payloads are observable by tests. The resulting recipes come from committed
+// agent telemetry, never from an engine-local LLM handle or a public portable-ID
+// API. It explicitly starts the from-source CLI even when the test process is
+// nested, without changing the process-global session environment.
+func connectWithTrace(ctx context.Context, t *testctx.T, configs ...engineconn.Config) (*dagger.Client, *agentTraceSink) {
+	t.Helper()
+	require.LessOrEqual(t, len(configs), 1)
+	var cfg engineconn.Config
+	if len(configs) == 1 {
+		cfg = configs[0]
+	}
+	sink := newAgentTraceSink(t)
+	cfg.UnsetEnv = append(slices.Clone(cfg.UnsetEnv), "DAGGER_SESSION_PORT", "DAGGER_SESSION_TOKEN")
+	cfg.ExtraEnv = append(slices.Clone(cfg.ExtraEnv),
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="+sink.base+"/v1/traces",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="+sink.base+"/v1/logs",
+		"OTEL_EXPORTER_OTLP_TRACES_LIVE=1",
+	)
+	conn, found, err := engineconn.FromLocalCLI(ctx, &cfg)
+	require.NoError(t, err)
+	require.True(t, found, "set _EXPERIMENTAL_DAGGER_CLI_BIN to the from-source CLI")
+	sink.conn = conn
+	return connect(ctx, t, dagger.WithConn(conn)), sink
+}
+
+// captureLLMRecipe seeds an inert agent with the given conversation and waits for
+// its committed anchor's entire payload closure to cross the telemetry wire. The
+// temporary agent never starts a loop. Returning an encoded recipe rather than
+// its local seed ID allows the caller to close the source and use a fresh client.
+// This is capture evidence, not archive finalization evidence.
+func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) (dagger.ID, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	seed, err := llm.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	name := "recipe-capture-" + identity.NewID()
+	_, err = rehydrateAgent(ctx, c, string(seed), name, name, "IDLE", "")
+	if err != nil {
+		return "", err
+	}
+	return sink.committedRecipe(ctx, name)
+}
+
+// captureShellRecipe captures a nested shell's committed conversation after its
+// client exits. The outer session's telemetry carries the nested control records.
+func (sink *agentTraceSink) captureShellRecipe(ctx context.Context, t *testctx.T, base *dagger.Container, selection string) (string, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	name := "shell-recipe-" + identity.NewID()
+	_, err := base.With(daggerShell(selection + " | spawn --handle " + name + " --name " + name)).Sync(ctx)
+	if err != nil {
+		return "", err
+	}
+	id, err := sink.committedRecipe(ctx, name)
+	return string(id), err
+}
+
+// committedRecipe also serves containerized shell fixtures: they spawn a named
+// inert agent instead of invoking a serialization API, then the enclosing client
+// observes that agent's committed recipe in forwarded telemetry.
+func (sink *agentTraceSink) committedRecipe(ctx context.Context, handle string) (dagger.ID, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var source agentcontrol.Key
+	var lastErr error
+	for {
+		var encoded string
+		var invalid error
+		sink.read(func(db *dagui.DB) {
+			agents, _, err := db.AgentControl()
+			if err != nil {
+				invalid = err
+				return
+			}
+			var selected *agentcontrol.Agent
+			for _, agent := range agents {
+				if agent.Handle != handle {
+					continue
+				}
+				if selected != nil || (source.Handle != "" && source != agent.Key) {
+					invalid = fmt.Errorf("capture handle %q appeared in multiple source namespaces", handle)
+					return
+				}
+				source = agent.Key
+				selected = &agent
+			}
+			if selected == nil {
+				return
+			}
+			if _, err := selected.RestoreState(); err != nil {
+				invalid = err
+				return
+			}
+			if selected.Removed {
+				invalid = fmt.Errorf("capture agent %q was removed", handle)
+				return
+			}
+			id, err := db.CallIDForDigest(selected.Digest)
+			if err != nil {
+				lastErr = err
+				return
+			}
+			encoded, lastErr = id.Encode()
+		})
+		if invalid != nil {
+			return "", invalid
+		}
+		if encoded != "" {
+			return dagger.ID(encoded), nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("capture committed recipe %q: %w", handle, errors.Join(ctx.Err(), lastErr))
+		case <-ticker.C:
+		}
+	}
 }
 
 // read runs fn against the DB with ingest held off.

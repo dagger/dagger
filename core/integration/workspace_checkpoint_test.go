@@ -5,12 +5,17 @@ package core
 
 import (
 	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -37,30 +42,70 @@ func checkpointCheckoutBase(ctx context.Context, t *testctx.T, c *dagger.Client)
 		WithNewFile("/work/tracked.txt", "base\ndirty\n")
 }
 
+// publishCheckpointRemote serves a test checkout's committed Git objects over
+// HTTP. Unlike an engine-container service, the test process's address is
+// reachable by both a host-side capture CLI and a fresh engine session.
+func publishCheckpointRemote(ctx context.Context, t *testctx.T, checkout string) {
+	t.Helper()
+	remoteRoot := t.TempDir()
+	cmd := exec.CommandContext(ctx, "git", "clone", "--bare", checkout, filepath.Join(remoteRoot, "repo.git"))
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	addresses, err := net.InterfaceAddrs()
+	require.NoError(t, err)
+	var host string
+	for _, addr := range addresses {
+		if ip, ok := addr.(*net.IPNet); ok && !ip.IP.IsLoopback() && ip.IP.To4() != nil {
+			host = ip.IP.String()
+			break
+		}
+	}
+	require.NotEmpty(t, host, "test process needs a reachable address for the Git remote")
+	listener, err := net.Listen("tcp4", "0.0.0.0:0")
+	require.NoError(t, err)
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		args := []string{"upload-pack", "--stateless-rpc"}
+		advertise := r.Method == http.MethodGet && r.URL.Path == "/repo.git/info/refs"
+		if advertise {
+			args = append(args, "--advertise-refs")
+		} else if r.Method != http.MethodPost || r.URL.Path != "/repo.git/git-upload-pack" {
+			http.NotFound(w, r)
+			return
+		}
+		args = append(args, filepath.Join(remoteRoot, "repo.git"))
+		command := exec.CommandContext(r.Context(), "git", args...)
+		if !advertise {
+			command.Stdin = r.Body
+		}
+		data, err := command.Output()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		if advertise {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+			_, _ = w.Write([]byte("001e# service=git-upload-pack\n0000"))
+		} else {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		}
+		_, _ = w.Write(data)
+	}))
+	server.Listener = listener
+	server.Start()
+	t.Cleanup(server.Close)
+	url := "http://" + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)) + "/repo.git"
+	cmd = exec.CommandContext(ctx, "git", "-C", checkout, "remote", "add", "origin", url)
+	out, err = cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+}
+
 // snapshotWorkspace captures once and returns the SDK object rooted at the resulting ID.
 func snapshotWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, ws *dagger.Workspace) *dagger.Workspace {
 	t.Helper()
 	id, err := ws.Snapshot().ID(ctx)
 	require.NoError(t, err)
 	return dagger.Ref[*dagger.Workspace](c, id)
-}
-
-// workspaceRecipeFields inspects the persisted composition for client-bound
-// inputs that cannot be restored without the originating checkout.
-func workspaceRecipeFields(ctx context.Context, t *testctx.T, c *dagger.Client, workspaceID string) []string {
-	t.Helper()
-	ws := dagger.Ref[*dagger.Workspace](c, dagger.ID(workspaceID))
-	recipe, err := c.LLM().WithWorkspace(ws).PortableID(ctx)
-	require.NoError(t, err)
-	var id call.ID
-	require.NoError(t, id.Decode(string(recipe)))
-	dag, err := id.ToProto()
-	require.NoError(t, err)
-	var fields []string
-	for _, vertex := range dag.GetRecipe().CallsByDigest {
-		fields = append(fields, vertex.Field)
-	}
-	return fields
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotContentOnlyTreesPreserveHistory(ctx context.Context, t *testctx.T) {
@@ -117,6 +162,28 @@ func (WorkspaceSuite) TestWorkspaceSnapshotContentOnlyTreesPreserveHistory(ctx c
 	require.Equal(t, "first", contents, "prior dagql result remains immutable")
 }
 
+// requireWorkspaceRecipeUsesHostGit checks that recording a committed leaf has
+// not made session-local repository history portable. Publication itself does
+// not preflight replayability; the recipe must retain its originating-client
+// dependency instead of silently replacing it with a portable history source.
+func requireWorkspaceRecipeUsesHostGit(t *testctx.T, recipe dagger.ID) {
+	t.Helper()
+	id := new(call.ID)
+	require.NoError(t, id.Decode(string(recipe)))
+	pb, err := id.ToProto()
+	require.NoError(t, err)
+	for _, frame := range pb.GetRecipe().CallsByDigest {
+		if frame.Field != "__gitDir" {
+			continue
+		}
+		receiver := pb.GetRecipe().CallsByDigest[frame.ReceiverDigest]
+		if receiver != nil && receiver.Type.GetNamedType() == "Host" {
+			return
+		}
+	}
+	t.Fatal("recorded local workspace must retain its Host.__gitDir dependency")
+}
+
 func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	git := func(args ...string) {
@@ -134,16 +201,18 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	git("add", ".")
 	git("commit", "-m", "base")
 	require.NoError(t, os.WriteFile(filename, []byte("dirty"), 0o644))
-	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
 	live := c.CurrentWorkspace()
 	// Prime a live read before capture. Later snapshots must bypass this cache.
 	contents, err := live.File("tracked.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "dirty", contents)
 	frozen := snapshotWorkspace(ctx, t, c, live)
-	frozenID, err := frozen.ID(ctx)
+	_, err = frozen.ID(ctx)
 	require.NoError(t, err)
-	require.Contains(t, workspaceRecipeFields(ctx, t, c, string(frozenID)), "__gitDir")
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(frozen))
+	require.NoError(t, err)
+	requireWorkspaceRecipeUsesHostGit(t, recipe)
 	modified, err := frozen.Git().Uncommitted().ModifiedPaths(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"tracked.txt"}, modified)
@@ -190,12 +259,14 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	git("clone", "--bare", workdir, remotePath)
 	git("remote", "add", "origin", remotePath)
 	localRemote := snapshotWorkspace(ctx, t, c, live)
-	id, err := localRemote.ID(ctx)
+	_, err = localRemote.ID(ctx)
 	require.NoError(t, err)
 	contents, err = localRemote.File("tracked.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "later", contents)
-	require.Contains(t, workspaceRecipeFields(ctx, t, c, string(id)), "__gitDir")
+	recipe, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(localRemote))
+	require.NoError(t, err)
+	requireWorkspaceRecipeUsesHostGit(t, recipe)
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotWithoutGitBaseline(ctx context.Context, t *testctx.T) {
@@ -256,10 +327,10 @@ func (WorkspaceSuite) TestWorkspaceSnapshotWithoutGitBaseline(ctx context.Contex
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotPortableCapture(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c)
 
-	initialRecipe, err := base.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | snapshot) | portable-id`)).Stdout(ctx)
+	initialRecipe, err := sink.captureShellRecipe(ctx, t, base, `llm | with-workspace --workspace $(current-workspace | snapshot)`)
 	require.NoError(t, err)
 	initial := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(initialRecipe))).Workspace()
 	initialHead, err := initial.Git().Head().CommitSHA(ctx)
@@ -273,7 +344,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPortableCapture(ctx context.Context, 
 
 	// The producing nested client exits before the recipe is loaded by the
 	// outer client. No original /work checkout or host route is available.
-	recipe, err := base.With(daggerShell(`llm | with-workspace --workspace $(current-workspace | with-new-file overlay.txt "engine edit" | snapshot) | portable-id`)).Stdout(ctx)
+	recipe, err := sink.captureShellRecipe(ctx, t, base, `llm | with-workspace --workspace $(current-workspace | with-new-file overlay.txt "engine edit" | snapshot)`)
 	require.NoError(t, err)
 	id := new(call.ID)
 	require.NoError(t, id.Decode(strings.TrimSpace(recipe)))
@@ -342,7 +413,7 @@ func (*Probe) Frozen() error { return nil }
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotPinsGitOverlayRecipe(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "original"))
 	branch := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main")
 	// Prime the equivalent commit tree through a mutable ref before checkpoint
@@ -357,7 +428,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPinsGitOverlayRecipe(ctx context.Cont
 	contents, err := frozen.File("base.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "overlay", contents)
-	recipe, err := c.LLM().WithWorkspace(frozen).PortableID(ctx)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(frozen))
 	require.NoError(t, err)
 	id := new(call.ID)
 	require.NoError(t, id.Decode(string(recipe)))
@@ -370,7 +441,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPinsGitOverlayRecipe(ctx context.Cont
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotPreservesDirectories(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	tree := c.Directory().WithNewFile("last/file", "remove me")
 	daemon, url := gitService(ctx, t, c, tree)
 	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
@@ -397,7 +468,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPreservesDirectories(ctx context.Cont
 	text, err := updated.File("empty").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "replacement", text)
-	recipe, err := c.LLM().WithWorkspace(updated).PortableID(ctx)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(updated))
 	require.NoError(t, err)
 	var id call.ID
 	require.NoError(t, id.Decode(string(recipe)))
@@ -422,15 +493,6 @@ func (*Probe) Capture(ctx context.Context, source *dagger.Workspace) (string, er
 	out, err := base.With(daggerExecFail("--silent", "-m", "modules/probe", "call", "capture")).CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "workspace snapshot capture is only available to the workspace's owning client")
-}
-
-func (WorkspaceSuite) TestWorkspaceSnapshotHostDirectoryIsSessionOnly(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	ws := snapshotWorkspace(ctx, t, c, c.Host().Directory(t.TempDir()).AsWorkspace())
-	id, err := ws.ID(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, id)
-	require.Contains(t, workspaceRecipeFields(ctx, t, c, string(id)), "host")
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotReplayableValuePassesThrough(ctx context.Context, t *testctx.T) {

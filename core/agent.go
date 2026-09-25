@@ -9,6 +9,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/google/uuid"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/codes"
@@ -296,8 +301,11 @@ type agentMessageRecord struct {
 // The registry is session-scoped — created alongside Services in the session
 // state (engine/server/session.go) — so keys carry no session component.
 type AgentRuntimes struct {
-	entries map[string]*AgentRuntime
-	mu      sync.Mutex
+	entries     map[string]*AgentRuntime
+	mu          sync.Mutex
+	closeMu     sync.Mutex
+	closing     bool
+	incarnation string
 
 	// The waits-for graph (hack/designs/agent-messaging.md §4.5): one edge
 	// per blocking wait issued FROM an agent's turn, waiter runtime handle →
@@ -340,8 +348,9 @@ type agentEvent struct {
 // NewAgentRuntimes returns a new, empty AgentRuntimes registry.
 func NewAgentRuntimes() *AgentRuntimes {
 	return &AgentRuntimes{
-		entries: map[string]*AgentRuntime{},
-		waits:   map[string]map[string][]agentWaitEdge{},
+		entries:     map[string]*AgentRuntime{},
+		incarnation: uuid.NewString(),
+		waits:       map[string]map[string][]agentWaitEdge{},
 	}
 }
 
@@ -499,6 +508,9 @@ func (ars *AgentRuntimes) Get(ctx context.Context, agent dagql.ObjectResult[*Age
 	ars.mu.Lock()
 	defer ars.mu.Unlock()
 	rt, found := ars.entries[key]
+	if found && rt.removed.Load() {
+		return nil, false, nil
+	}
 	return rt, found, nil
 }
 
@@ -542,7 +554,7 @@ func (ars *AgentRuntimes) Require(ctx context.Context, agent dagql.ObjectResult[
 // publishes its identity immediately (§4.5), since nothing else will until a
 // loop starts, and a restored agent that is never prompted would otherwise
 // be invisible to the roster.
-func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr string, restored bool) (*AgentRuntime, error) {
+func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr string, restored bool, parentHandles ...string) (*AgentRuntime, error) {
 	key, err := agentKey(agent)
 	if err != nil {
 		return nil, err
@@ -559,21 +571,51 @@ func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*
 	}
 
 	ars.mu.Lock()
-	if _, found := ars.entries[key]; found {
-		ars.mu.Unlock()
+	_, found := ars.entries[key]
+	closing := ars.closing
+	ars.mu.Unlock()
+	if closing {
+		return nil, errors.New("agent registry is closing")
+	}
+	if found {
 		return nil, fmt.Errorf("agent %q already has a runtime entry in this session: a restore must happen before anything else addresses the instance", name)
 	}
-	rt := newAgentRuntime(ars, key, agent)
+	// Lease acquisition may enter the client lifecycle registry. Never hold the
+	// agent registry mutex across it: lifecycle callbacks can inspect agents.
 	_, lease, err := engine.DetachClientScope(ctx, engine.ClientLeaseAgentTombstone, key)
 	if err != nil {
-		ars.mu.Unlock()
-		return nil, fmt.Errorf("retain restored agent client scope: %w", err)
+		return nil, fmt.Errorf("retain agent client scope: %w", err)
 	}
+	rt := newAgentRuntime(ars, key, agent)
 	rt.clientScopeLease = lease
+	rt.restored = restored
+	rt.controlNamespace = agentcontrol.Namespace{Trace: trace.SpanContextFromContext(ctx).TraceID().String(), Incarnation: ars.incarnation}
+	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		rt.controlNamespace.Session, rt.controlOrigin = md.SessionID, md.ClientID
+	}
+	if caller, ok := CallerAgent(ctx); ok && caller.Self().Handle != key {
+		rt.parentHandle = caller.Self().Handle
+	}
+	if len(parentHandles) > 0 {
+		rt.parentHandle = parentHandles[0]
+	}
+	if digest, err := agent.RecipeDigest(ctx); err == nil {
+		rt.controlCallDigest = digest.String()
+	}
+	rt.create(ctx, state, loopErr)
+	ars.mu.Lock()
+	if _, found := ars.entries[key]; found || ars.closing {
+		ars.mu.Unlock()
+		lease.Release()
+		return nil, fmt.Errorf("agent %q acquired a runtime entry or registry closed while creation was staging", name)
+	}
+	rt.control = newAgentControlPublisher(ctx)
 	ars.entries[key] = rt
+	// Creation and initial publication are complete before exposing the entry.
+	rt.mu.Lock()
+	rt.publishControlLocked()
+	rt.mu.Unlock()
 	ars.mu.Unlock()
-
-	rt.create(ctx, state, loopErr, restored)
 	return rt, nil
 }
 
@@ -802,17 +844,42 @@ func (ars *AgentRuntimes) Notify(ctx context.Context, target, subscriber dagql.O
 	for _, state := range states {
 		set[state] = true
 	}
-	rt.mu.Lock()
+	first, second := rt, sub
+	if first.key > second.key {
+		first, second = second, first
+	}
+	first.mu.Lock()
+	defer first.mu.Unlock()
+	second.mu.Lock()
+	defer second.mu.Unlock()
+	if rt.closing || sub.closing {
+		return errors.New("agent is closing")
+	}
+	rt.installSubscriptionLocked(sub.key, set, true)
+	return nil
+}
+
+func (rt *AgentRuntime) installSubscriptionLocked(subscriber string, set map[AgentState]bool, immediate bool) {
 	if rt.subs == nil {
 		rt.subs = map[string]*agentSubscription{}
 	}
 	cur := rt.stateLocked()
-	rt.subs[sub.key] = &agentSubscription{states: set, last: cur}
-	if set[cur] {
-		rt.queueEventLocked(sub.key, cur)
+	rt.subs[subscriber] = &agentSubscription{states: set, last: cur}
+	if rt.subscriptionRevisions == nil {
+		rt.subscriptionRevisions = map[string]int64{}
 	}
-	rt.mu.Unlock()
-	return nil
+	rt.subscriptionRevisions[subscriber]++
+	if rt.control != nil {
+		states := make([]string, 0, len(set))
+		for state := range set {
+			states = append(states, string(state))
+		}
+		slices.Sort(states)
+		rt.control.subscription(agentcontrol.Subscription{EdgeKey: agentcontrol.EdgeKey{Namespace: rt.controlNamespace, Watched: rt.key, Subscriber: subscriber}, Revision: rt.subscriptionRevisions[subscriber], States: states})
+	}
+	if immediate && set[cur] {
+		rt.queueEventLocked(subscriber, cur)
+	}
 }
 
 // queueEventsLocked fans one projection transition out to every subscriber
@@ -1008,21 +1075,8 @@ func (ars *AgentRuntimes) MessageResponse(ctx context.Context, msg *AgentMessage
 // restores such an agent in the state it held before teardown, instead of
 // reading a clean exit as a session-wide dismissal.
 func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
-	ars.mu.Lock()
-	entries := make([]*AgentRuntime, 0, len(ars.entries))
-	for _, rt := range ars.entries {
-		entries = append(entries, rt)
-	}
-	ars.mu.Unlock()
-
-	var errs error
-	for _, rt := range entries {
-		if err := rt.Stop(ctx, true, cause, AgentStopSession); err != nil {
-			errs = errors.Join(errs, err)
-		}
-		rt.clientScopeLease.Release()
-	}
-	return errs
+	_, err := ars.closeControl(ctx, cause)
+	return err
 }
 
 // AgentRuntime is the per-(agent value, session) runtime entry: the loop
@@ -1118,23 +1172,26 @@ type AgentRuntime struct {
 	// WaitFor can block on transitions without polling.
 	stateChanged chan struct{}
 
-	// Telemetry directory plumbing (design §3.3), guarded by mu.
-	//
-	// spanCtx carries the loop span, set when the loop starts, and is what
-	// state records are attributed to. It deliberately outlives the span
-	// itself: a record emitted after the span ended still carries its span
-	// ID, which is how the tombstone-sealing transition (Stop on a FAILED
-	// agent, after the loop returned) still reaches a client's roster.
-	//
-	// emittedState is the last state published on that channel, so a
-	// transition that does not change the PROJECTION emits nothing —
-	// transitionLocked fires on every fact change, of which only a fraction
-	// are state changes. emittedSnapshot is the same guard for the snapshot
-	// channel: a relaunched loop re-publishes the conversation it resumes
-	// from, and a client gains nothing from the duplicate.
-	spanCtx         context.Context
-	emittedState    AgentState
-	emittedSnapshot string
+	// Compact telemetry attribution; never retains a resolver/query context.
+	spanCtx context.Context
+
+	control               *agentControlPublisher
+	controlNamespace      agentcontrol.Namespace
+	controlOrigin         string
+	controlCallDigest     string
+	controlRevision       int64
+	controlActivity       time.Time
+	controlDigest         string
+	controlCaptureError   string
+	controlLast           agentcontrol.Agent
+	controlClosed         bool
+	closing               bool
+	parentHandle          string
+	preTeardownState      AgentState
+	subscriptionRevisions map[string]int64
+	restored              bool
+	removed               atomic.Bool
+	activated             bool
 }
 
 // Name returns the agent's display name.
@@ -1173,42 +1230,14 @@ func (rt *AgentRuntime) transitionLocked(mut func()) {
 	}
 }
 
-// publishStateLocked emits a state record when the PROJECTED state has
-// changed since the last one, attributed to the agent's loop span. Must be
-// called with rt.mu held.
-//
-// Emitting under the lock is safe and deliberate: the OTel log pipeline is a
-// non-blocking batch processor, and serializing emission with the transition
-// that caused it is what keeps the published sequence faithful to the
-// runtime's actual history (two racing transitions can never publish out of
-// order).
+// publishStateLocked publishes the complete projection after each mutation.
 func (rt *AgentRuntime) publishStateLocked() {
-	if rt.spanCtx == nil {
-		// The loop has not started, so there is no span to attribute state
-		// to. Nothing is lost: start() publishes the initial state, and an
-		// inert entry's state is IDLE — exactly what a client projects for
-		// an agent it has never seen a record for.
-		return
-	}
-	state := rt.stateLocked()
-	if state == rt.emittedState {
-		return
-	}
-	rt.emittedState = state
-	stopReason := rt.stopReason
-	if state != AgentStateStopped {
-		// The reason belongs to the terminal record and nowhere else: a
-		// FAILED tombstone that a stop later seals publishes its reason on
-		// the sealing record, not on the failure that preceded it.
-		stopReason = ""
-	}
-	EmitAgentState(rt.spanCtx, state, "", stopReason)
+	rt.publishControlLocked()
 }
 
 // commitLast commits next as the entry's last committed conversation and
-// publishes its portable recipe digest — the resume anchor of §4.3 in
-// hack/designs/resume-from-trace.md. Every advance of rt.last goes through
-// here, which is what makes the published digest a fact about the runtime
+// associates its call-frame leaf digest. Every advance of rt.last goes through
+// here, which makes the published digest a fact about the runtime
 // rather than an inference from whichever call spans happened to be emitted.
 //
 // Must be called with rt.mu held, from inside a transitionLocked mutation:
@@ -1220,47 +1249,7 @@ func (rt *AgentRuntime) commitLast(ctx context.Context, next dagql.ObjectResult[
 	// New committed work makes the next IDLE event news again — see
 	// idleEventDue.
 	rt.idleEventDue = true
-	rt.publishSnapshotLocked(ctx)
-}
-
-// publishSnapshotLocked emits the portable recipe digest of the last committed
-// conversation, skipping a digest already published. Must be called with
-// rt.mu held.
-//
-// The PORTABLE recipe digest, deliberately: a post-evaluation result handle is
-// an engine-local reference that dies with its session, while the runtime's raw
-// recipe retains every superseded workspace and tool binding on its receiver
-// chain. Replaying one of those stale bindings can re-run operations against
-// today's live workspace (for example an old Workspace.withCommit after that
-// commit was exported) even though the conversation no longer uses it.
-// PortableRecipe flattens the conversation to its effective bindings and data,
-// which is the same durability boundary used by saved sessions.
-//
-// Derivation is best-effort — an agent whose digest cannot be derived is still
-// observable and addressable, it just cannot be resumed from, which is exactly
-// how agentSpanAttrs treats the same failure.
-func (rt *AgentRuntime) publishSnapshotLocked(ctx context.Context) {
-	if rt.spanCtx == nil {
-		// No span to attribute the record to yet. The loop publishes the
-		// seed's digest as soon as it has one, so nothing is lost.
-		return
-	}
-	if rt.last.Self() == nil {
-		return
-	}
-	recipe, err := rt.last.Self().PortableRecipe(ctx)
-	if err != nil {
-		return
-	}
-	dig, err := recipe.RecipeDigest(ctx)
-	if err != nil {
-		return
-	}
-	if dig.String() == rt.emittedSnapshot {
-		return
-	}
-	rt.emittedSnapshot = dig.String()
-	EmitAgentSnapshot(rt.spanCtx, dig.String())
+	rt.associateConversationLocked(ctx)
 }
 
 // State projects the entry's lifecycle state from its facts.
@@ -1367,6 +1356,10 @@ func (rt *AgentRuntime) enqueue(text string, origin *LLMMessageOrigin, senderKey
 func (rt *AgentRuntime) enqueueMessage(text string, content []*LLMContentBlock, origin *LLMMessageOrigin, senderKey string) (string, error) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if rt.closing {
+		return "", errors.New("agent is closing")
+	}
+	rt.activated = true
 	stopped := rt.stateLocked() == AgentStateStopped
 	if stopped && origin != nil && origin.Kind == LLMMessageOriginEvent {
 		return "", errAgentEventDropped
@@ -1678,41 +1671,12 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 	}
 }
 
-// create sets the facts the new entry's state projects from, and for a
-// restored instance publishes its identity. The entry is fresh (Create is the only
-// caller, holding the only reference), and its loop is deliberately NOT
-// started: a restored agent spends no tokens until somebody prompts it.
-//
-// The identity span is the reason this is not just a field assignment.
-// Telemetry is the directory (async-agents §3.3), so an agent with no span in
-// the CURRENT trace is invisible to every client watching it — and a restored
-// agent that is never started would publish none. It therefore opens and
-// immediately ends a span carrying the same attributes a loop span does, and
-// keeps its context: AgentRuntime.spanCtx already outlives its span
-// deliberately, which is what lets the state and snapshot records below —
-// and every later transition — reach a roster. A later start opens the real
-// loop span; both carry the same dagger.io/agent.id, and a client unions
-// them into one entry by construction.
-func (rt *AgentRuntime) create(ctx context.Context, state AgentState, loopErr string, restored bool) {
-	var spanCtx context.Context
-	if restored {
-		// A restored agent that is not started has no loop span in the new
-		// trace, so it publishes its identity now, or it is invisible to the
-		// roster (resume-from-trace §4.5). Detached from the request: the
-		// context is retained past this call, and records emitted on a
-		// canceled one would be publishing into a corpse.
-		var span trace.Span
-		spanCtx, span = Tracer(ctx).Start(context.WithoutCancel(ctx),
-			fmt.Sprintf("agent: %s", rt.name),
-			agentSpanAttrs(ctx, rt.name, rt.self)...)
-		span.End()
-	}
-
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	if spanCtx != nil {
-		rt.spanCtx = spanCtx
-	}
+// create initializes an inert entry before registry publication. The canonical
+// control projection, not a synthetic loop span, publishes every fresh or
+// restored dormant agent. No model loop is started by creation.
+func (rt *AgentRuntime) create(ctx context.Context, state AgentState, loopErr string) {
+	rt.spanCtx = agentTelemetryContext(ctx)
+	rt.associateConversationLocked(ctx)
 	switch state {
 	case AgentStatePaused:
 		rt.paused = true
@@ -1737,8 +1701,7 @@ func (rt *AgentRuntime) create(ctx context.Context, state AgentState, loopErr st
 		rt.stopRequested = true
 		rt.stopReason = AgentStopExplicit
 	}
-	rt.publishStateLocked()
-	rt.publishSnapshotLocked(ctx)
+	rt.lastEventState = rt.stateLocked()
 }
 
 // start launches an evaluation loop for a live entry, once. Subsequent calls
@@ -1746,6 +1709,11 @@ func (rt *AgentRuntime) create(ctx context.Context, state AgentState, loopErr st
 // for failed and stopped entries.
 func (rt *AgentRuntime) start(ctx context.Context) error {
 	rt.mu.Lock()
+	if rt.closing {
+		rt.mu.Unlock()
+		return errors.New("agent is closing")
+	}
+	rt.activated = true
 	if rt.started || rt.done {
 		rt.mu.Unlock()
 		return nil
@@ -1817,10 +1785,8 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 	// publishes on every change of the projection (design §3.3: telemetry is
 	// the directory) and, via commitLast, on every commit.
 	rt.mu.Lock()
-	rt.spanCtx = ctx
-	rt.emittedState = ""
-	rt.publishStateLocked()
-	rt.publishSnapshotLocked(ctx)
+	rt.spanCtx = agentTelemetryContext(ctx)
+	rt.publishControlLocked()
 	rt.mu.Unlock()
 
 	var loopErr error
@@ -2035,6 +2001,9 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 func (rt *AgentRuntime) Pause() error {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if rt.closing {
+		return errors.New("agent is closing")
+	}
 	if rt.stateLocked() == AgentStateStopped {
 		return fmt.Errorf("agent %q is stopped; a released runtime cannot be paused", rt.name)
 	}
@@ -2058,6 +2027,10 @@ func (rt *AgentRuntime) Pause() error {
 // Interrupting a STOPPED tombstone fails.
 func (rt *AgentRuntime) Interrupt() error {
 	rt.mu.Lock()
+	if rt.closing {
+		rt.mu.Unlock()
+		return errors.New("agent is closing")
+	}
 	if rt.stateLocked() == AgentStateStopped {
 		rt.mu.Unlock()
 		return fmt.Errorf("agent %q is stopped; a released runtime cannot be interrupted", rt.name)
@@ -2113,6 +2086,11 @@ func (rt *AgentRuntime) resetForRelaunchLocked() {
 // it. On a running or idle non-paused agent resume is a no-op.
 func (rt *AgentRuntime) Resume(ctx context.Context) error {
 	rt.mu.Lock()
+	if rt.closing {
+		rt.mu.Unlock()
+		return errors.New("agent is closing")
+	}
+	rt.activated = true
 	switch rt.stateLocked() {
 	case AgentStateStopped, AgentStateFailed:
 		// Relaunch from the last committed snapshot. FAILED retries its
@@ -2193,6 +2171,9 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM]) error {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if rt.closing {
+		return errors.New("agent is closing")
+	}
 	switch rt.stateLocked() {
 	case AgentStateStopped:
 		return fmt.Errorf("agent %q is stopped; a released runtime's conversation cannot be replaced", rt.name)
@@ -2268,6 +2249,14 @@ func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error, reason
 		defer release()
 	}
 	rt.mu.Lock()
+	if rt.controlClosed {
+		rt.mu.Unlock()
+		return nil
+	}
+	if reason == AgentStopSession && rt.preTeardownState == "" {
+		rt.preTeardownState = rt.stateLocked()
+		rt.closing = true
+	}
 	if rt.done {
 		if rt.stateLocked() == AgentStateFailed {
 			// A FAILED tombstone still admits a resume-retry and may hold

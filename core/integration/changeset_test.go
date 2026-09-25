@@ -2134,7 +2134,7 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 func (ChangesetSuite) TestMergedDirectoryReplay(ctx context.Context, t *testctx.T) {
 	for _, mode := range []string{"two-way", "octopus", "chained"} {
 		t.Run(mode, func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
+			c, sink := connectWithTrace(ctx, t)
 			before := c.Directory().WithNewFile("base.txt", "base\n")
 			ours := before.WithNewFile("base.txt", "ours\n").Changes(before)
 			theirs := before.WithNewFile("added.txt", "theirs\n").Changes(before)
@@ -2157,7 +2157,7 @@ func (ChangesetSuite) TestMergedDirectoryReplay(ctx context.Context, t *testctx.
 			}
 			after, err := merged.After().Sync(ctx)
 			require.NoError(t, err)
-			portable, err := c.LLM().WithWorkspace(after.AsWorkspace()).PortableID(ctx)
+			portable, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(after.AsWorkspace()))
 			require.NoError(t, err)
 
 			engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngineContainer(c))).Start(ctx)

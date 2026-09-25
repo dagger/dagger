@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -29,6 +30,51 @@ func (sess *daggerSession) callPayloadMissingTargets(digest string, targets []st
 		}
 	}
 	return missing
+}
+
+func TestArchiveRegistrationFailureDoesNotDropControl(t *testing.T) {
+	srv, _, _, _ := archiveFixture(t) //nolint:dogsled // This test creates its own session and control records.
+	other := &daggerSession{sessionID: "other-session", mainClientCallerID: "other", clientRecords: map[string]*clientRecord{}}
+	other.telemetryPubSub = NewPubSub(srv)
+	other.archiveRegisterErr = fmt.Errorf("injected archive registration failure")
+	other.clientRecords["other"] = &clientRecord{daggerSession: other, clientID: "other"}
+	a := archiveAgent()
+	a.Session = other.sessionID
+	rec := controlTestRecord(t, a.Record())
+	rec.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "other"))
+	exp := sessionLogExporter{sess: other, ps: other.telemetryPubSub}
+	require.NoError(t, exp.Export(t.Context(), []sdklog.Record{rec}))
+	db, err := srv.clientDBs.Open(t.Context(), "other")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "archive registration must not gate live persistence")
+}
+
+func TestReportedSpanDoesNotSuppressDurablePayload(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	body, digest := serverCallPayload(t, "lookup", "span-reported")
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
+	require.True(t, store.ClaimCallPayload(digest))
+	store.CallPayloadDelivered(digest)
+	require.False(t, store.ClaimCallPayload(digest), "avoid duplicate ordinary span walks")
+	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(digest, store.targets))
+	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	exporter := sessionLogExporter{sess: sess, ps: NewPubSub(srv)}
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{record}))
+	require.Empty(t, sess.callPayloadMissingTargets(digest, store.targets))
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
 }
 
 func TestSessionLogExporterRetriesPayloadAfterStoreFailure(t *testing.T) {

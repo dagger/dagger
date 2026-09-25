@@ -195,9 +195,8 @@ type sessionAgent struct {
 	refreshQueued   bool
 	refreshL        sync.Mutex
 
-	// stepWG tracks this conversation's asynchronous auto-saves. Rewind waits
-	// for the canceled turn's save before exposing the edit, otherwise that older
-	// save can finish after the reworded turn and overwrite its truncated history.
+	// stepWG tracks asynchronous presentation callbacks. Rewind drains the old
+	// turn's callbacks before publishing its edited state.
 	stepWG sync.WaitGroup
 
 	autoCompact  bool
@@ -209,6 +208,10 @@ type sessionAgent struct {
 	// replaced with lastSyncedWorkspace on reset, preserving the composition
 	// without resurrecting a stale checkpoint.
 	initialLLM *dagger.LLM
+
+	// tracedReset is captured once on attachment. Unlike the export baseline,
+	// it never advances on Ctrl+S or reads the destination checkout on .clear.
+	tracedReset *dagger.LLM
 
 	// lastSyncedWorkspace is the immutable save/reload boundary in this
 	// conversation's own history, not a mirror of the live checkout. Export
@@ -383,6 +386,17 @@ func (a *sessionAgent) updateSyncedLLM(llm *dagger.LLM, workspace *dagger.Worksp
 }
 
 func (a *sessionAgent) reset() {
+	a.updateLLM(a.resetLLM()) //nolint:errcheck
+}
+
+func (a *sessionAgent) resetLLM() *dagger.LLM {
+	if a.tracedReset != nil {
+		llm := a.tracedReset
+		if a.model != "" {
+			llm = llm.WithModel(a.model)
+		}
+		return llm
+	}
 	// Reset to the initially selected agent group (e.g. `dagger agent`), if
 	// any, so .clear returns to those agents rather than a blank LLM. Preserve
 	// the currently selected model, but bind the original composition to the
@@ -400,23 +414,19 @@ func (a *sessionAgent) reset() {
 			baseline = candidate
 		}
 	}
-	if baseline == nil {
-		// A truly unbound trace anchor has no checkpoint to recover. Keep .clear
-		// usable by binding the destination workspace; the next explicit reset
-		// replaces it with a portable checkpoint.
-		baseline = dag.CurrentWorkspace()
-	}
 	var llm *dagger.LLM
 	if a.initialLLM != nil {
-		llm = a.initialLLM.WithWorkspace(baseline)
+		llm = a.initialLLM
 		if a.model != "" {
 			llm = llm.WithModel(a.model)
 		}
 	} else {
-		llm = dag.LLM(dagger.LLMOpts{Model: a.model}).
-			WithWorkspace(baseline)
+		llm = dag.LLM(dagger.LLMOpts{Model: a.model})
 	}
-	a.updateLLM(llm) //nolint:errcheck
+	if baseline != nil {
+		llm = llm.WithWorkspace(baseline)
+	}
+	return llm
 }
 
 // currentAgent returns the runtime backing this conversation's turns,
@@ -694,9 +704,7 @@ func (a *sessionAgent) rewindRuntime(ctx context.Context, base *dagger.LLM) erro
 		}
 	}
 
-	// WithPrompt schedules its auto-save before endTurn closes done. Waiting
-	// here therefore drains every save from the abandoned branch before the
-	// replacement prompt is exposed and can produce a newer save.
+	// Drain the abandoned turn's presentation callbacks before exposing the edit.
 	a.stepWG.Wait()
 
 	if rt != nil {
@@ -1173,6 +1181,20 @@ func (a *sessionAgent) refreshUIFromRuntime() {
 	if err := a.updateStatusLine(llm); err != nil {
 		slog.Debug("could not refresh status line", "error", err)
 	}
+	// $agent is a session-local reference, not a persistence recipe. Keep it
+	// pointed at the focused conversation without serializing portable IDs.
+	if a.session.shell != nil {
+		id, err := llm.ID(a.session.plumbingCtx)
+		if err != nil {
+			slog.Debug("could not refresh $agent", "error", err)
+			return
+		}
+		a.session.mu.Lock()
+		if a.session.target == a {
+			a.session.shell.assignAgent(id)
+		}
+		a.session.mu.Unlock()
+	}
 }
 
 // busy reports whether this conversation has a turn in flight. Reload waits
@@ -1231,8 +1253,8 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 // LLM to the live workspace without exporting first.
 // It is the ctrl+u action: conceptually the opposite direction of ctrl+s, it
 // "uploads" the host's current state to the agent by throwing away the agent's
-// accumulated changes rather than writing them out. Try to capture a fresh
-// baseline from the checkout, falling back to the live workspace otherwise.
+// accumulated changes rather than writing them out. Capture a fresh immutable
+// baseline from the checkout; capture failure leaves the conversation unchanged.
 // Bind it eagerly so binding failures surface here.
 func (a *sessionAgent) ResetWorkspace(ctx context.Context) (rerr error) {
 	if a.llm == nil {

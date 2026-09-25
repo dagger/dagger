@@ -114,7 +114,7 @@ func TestSpanNameLogUpdatesLiveSpan(t *testing.T) {
 	if span.HasLogs {
 		t.Fatal("span-name metadata was marked as ordinary log output")
 	}
-	if len(db.PrimaryLogs[spanID]) != 0 {
+	if db.primaryLogs[spanID] != nil {
 		t.Fatal("span-name metadata was buffered as primary output")
 	}
 

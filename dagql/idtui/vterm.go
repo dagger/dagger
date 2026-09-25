@@ -36,10 +36,19 @@ type Vterm struct {
 	mediaFollow bool
 
 	// Separate buffer for Markdown content
-	markdownBuf *bytes.Buffer
+	markdownBuf *logBuffer
+	// The byte stream is authoritative; midterm is a disposable logical cache.
+	terminalBuf *logBuffer
+	cache       *terminalCache
+	follow      bool
+	storageErr  error
+	textRows    []vtermTextRow
+	textHeight  int
+	layoutDirty bool
+	cacheCells  int
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
-	rawBuf      *bytes.Buffer
+	rawBuf      *logBuffer
 	needsRedraw bool
 
 	// Search highlight state. When SearchQuery is non-empty, matching
@@ -55,16 +64,36 @@ type Vterm struct {
 func NewVterm(profile termenv.Profile) *Vterm {
 	return &Vterm{
 		Profile:     profile,
-		vt:          midterm.NewAutoResizingTerminal(),
 		viewBuf:     new(bytes.Buffer),
-		rawBuf:      new(bytes.Buffer),
-		markdownBuf: new(bytes.Buffer),
+		rawBuf:      new(logBuffer),
+		markdownBuf: new(logBuffer),
+		terminalBuf: new(logBuffer),
+		follow:      true,
 		mu:          new(sync.Mutex),
 	}
 }
 
 func (term *Vterm) Term() *midterm.Terminal {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.materializeLocked()
 	return term.vt
+}
+
+// SearchMatchRows returns a snapshot, safe even if another display evicts the
+// terminal. Search is over the complete log, never a truncated preview.
+func (term *Vterm) SearchMatchRows() []int {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.materializeLocked()
+	var rows []int
+	for _, match := range term.vt.SearchMatches {
+		row := term.matchRow(match)
+		if len(rows) == 0 || rows[len(rows)-1] != row {
+			rows = append(rows, row)
+		}
+	}
+	return rows
 }
 
 func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
@@ -72,13 +101,16 @@ func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
 	defer term.mu.Unlock()
 
 	if term.segments != nil {
-		return term.writeMediaText(p, true, false), nil
+		return term.writeMediaText(p, true, false)
 	}
 	n, err := term.markdownBuf.Write(p)
 	if err != nil {
 		return n, err
 	}
-	_, _ = term.rawBuf.Write(p)
+	if _, err := term.rawBuf.Write(p); err != nil {
+		term.storageErr = err
+		return 0, err
+	}
 
 	term.needsRedraw = true
 	return n, nil
@@ -91,26 +123,17 @@ func (term *Vterm) WriteDiff(p []byte) (int, error) {
 	defer term.mu.Unlock()
 
 	if term.segments != nil {
-		return term.writeMediaText(p, false, true), nil
+		return term.writeMediaText(p, false, true)
 	}
-	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
-	if term.Height == 0 {
-		atBottom = true
-	}
-
 	highlighted := highlightDiff(term.Profile, string(p))
-	if _, err := term.vt.Write([]byte(highlighted)); err != nil {
+	if err := term.writeTerminalLocked([]byte(highlighted)); err != nil {
 		return 0, err
 	}
-	if _, err := term.rawBuf.Write(p); err != nil {
-		return 0, err
+	n, err := term.rawBuf.Write(p)
+	if err != nil {
+		term.storageErr = err
 	}
-
-	if atBottom {
-		term.Offset = max(0, term.usedHeightLocked()-term.Height)
-	}
-	term.needsRedraw = true
-	return len(p), nil
+	return n, err
 }
 
 func (term *Vterm) Write(p []byte) (int, error) {
@@ -118,26 +141,16 @@ func (term *Vterm) Write(p []byte) (int, error) {
 	defer term.mu.Unlock()
 
 	if term.segments != nil {
-		return term.writeMediaText(p, false, false), nil
+		return term.writeMediaText(p, false, false)
 	}
-	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
-	if term.Height == 0 {
-		atBottom = true
+	if err := term.writeTerminalLocked(p); err != nil {
+		return 0, err
 	}
-
-	n, err := term.vt.Write(p)
+	n, err := term.rawBuf.Write(p)
 	if err != nil {
-		return n, err
+		term.storageErr = err
 	}
-	_, _ = term.rawBuf.Write(p)
-
-	if atBottom {
-		term.Offset = max(0, term.usedHeightLocked()-term.Height)
-	}
-
-	term.needsRedraw = true
-
-	return n, nil
+	return n, err
 }
 
 func (term *Vterm) UsedHeight() int {
@@ -147,11 +160,11 @@ func (term *Vterm) UsedHeight() int {
 }
 
 func (term *Vterm) usedHeightLocked() int {
+	term.materializeLocked()
 	if term.segments != nil {
-		term.layoutMedia()
 		return len(term.mediaRows)
 	}
-	return term.vt.UsedHeight()
+	return term.textHeight
 }
 
 func (term *Vterm) SetHeight(height int) {
@@ -175,16 +188,13 @@ func (term *Vterm) SetWidth(width int) {
 	if width == term.Width {
 		return
 	}
+	term.rememberFollowLocked()
 	term.Width = width
 	if term.segments != nil {
 		term.invalidateMedia()
-		term.clampOffsetLocked()
 		return
 	}
-	prefixWidth := lipgloss.Width(term.Prefix)
-	if width > prefixWidth {
-		term.vt.ResizeX(width - prefixWidth)
-	}
+	term.layoutDirty = true
 	term.needsRedraw = true
 }
 
@@ -194,16 +204,13 @@ func (term *Vterm) SetPrefix(prefix string) {
 	if prefix == term.Prefix {
 		return
 	}
+	term.rememberFollowLocked()
 	term.Prefix = prefix
 	if term.segments != nil {
 		term.invalidateMedia()
-		term.clampOffsetLocked()
 		return
 	}
-	prefixWidth := lipgloss.Width(prefix)
-	if term.Width > prefixWidth && !term.vt.AutoResizeX {
-		term.vt.ResizeX(term.Width - prefixWidth)
-	}
+	term.layoutDirty = true
 	term.needsRedraw = true
 }
 
@@ -242,9 +249,12 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
-	if term.segments != nil {
-		term.layoutMedia()
+	if query == "" && term.vt == nil {
+		term.SearchQuery = ""
+		term.SearchCurrentRow = -1
+		return
 	}
+	term.materializeLocked()
 	if query == "" {
 		if term.SearchQuery != "" {
 			term.vt.SearchClear()
@@ -276,8 +286,9 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 // setCurrentMatchByRow finds the first search match on the given row and
 // marks it as "current" in midterm. Must be called with term.mu held.
 func (term *Vterm) setCurrentMatchByRow(row int) {
+	term.vt.SearchSetCurrent(-1)
 	for i, m := range term.vt.SearchMatches {
-		if m.Row == row {
+		if term.matchRow(m) == row {
 			term.vt.SearchSetCurrent(i)
 			return
 		}
@@ -289,9 +300,7 @@ func (term *Vterm) setCurrentMatchByRow(row int) {
 func (term *Vterm) ScrollToRow(row int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
-	if term.segments != nil {
-		term.layoutMedia()
-	}
+	term.materializeLocked()
 	// Center the target row in the viewport.
 	term.Offset = max(0, row-term.Height/2)
 	term.clampOffsetLocked()
@@ -301,9 +310,7 @@ func (term *Vterm) ScrollToRow(row int) {
 func (term *Vterm) ScrollBy(delta int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
-	if term.segments != nil {
-		term.layoutMedia()
-	}
+	term.materializeLocked()
 	term.Offset += delta
 	term.clampOffsetLocked()
 	term.needsRedraw = true
@@ -312,9 +319,7 @@ func (term *Vterm) ScrollBy(delta int) {
 func (term *Vterm) ScrollPage(deltaPages int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
-	if term.segments != nil {
-		term.layoutMedia()
-	}
+	term.materializeLocked()
 	page := max(term.Height-1, 1)
 	term.Offset += deltaPages * page
 	term.clampOffsetLocked()
@@ -325,6 +330,7 @@ func (term *Vterm) ScrollToTop() {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 	term.mediaFollow = false
+	term.follow = false
 	term.Offset = 0
 	term.needsRedraw = true
 }
@@ -350,9 +356,12 @@ func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
-	if term.segments != nil {
-		term.layoutMedia()
+	if query == "" && term.vt == nil {
+		term.SearchQuery = ""
+		term.SearchCurrentRow = -1
+		return 0, -1
 	}
+	term.materializeLocked()
 	if query == "" {
 		term.vt.SearchClear()
 		term.SearchQuery = ""
@@ -365,7 +374,8 @@ func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
 	if currentIdx < 0 || currentIdx >= count {
 		row, _ = term.vt.SearchSetCurrent(-1)
 	} else {
-		row, _ = term.vt.SearchSetCurrent(currentIdx)
+		term.vt.SearchSetCurrent(currentIdx)
+		row = term.matchRow(term.vt.SearchMatches[currentIdx])
 	}
 	term.SearchQuery = query
 	term.SearchCurrentRow = row
@@ -387,6 +397,11 @@ const reset = termenv.CSI + termenv.ResetSeq + "m"
 func (term *Vterm) View() string {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	term.materializeLocked()
+	defer term.cache.touch(term)
+	if err := term.errLocked(); err != nil {
+		return fmt.Sprintf("[log storage error: %s]\n", err)
+	}
 	if term.segments != nil {
 		term.layoutMedia()
 		term.viewBuf.Reset()
@@ -433,7 +448,13 @@ func (term *Vterm) redraw() {
 			glamour.WithEmoji(),
 		)
 
-		rendered, err := renderer.Render(term.markdownBuf.String())
+		text, err := term.markdownBuf.contents()
+		if err != nil {
+			term.storageErr = err
+			fmt.Fprintf(term.viewBuf, "[log storage error: %s]\n", err)
+			return
+		}
+		rendered, err := renderer.Render(text)
 		if err != nil {
 			fmt.Fprintf(term.viewBuf, "Error rendering Markdown: %s\n", err)
 		} else {
@@ -451,7 +472,7 @@ func (term *Vterm) redraw() {
 	}
 
 	// Then render regular terminal content
-	term.Render(term.viewBuf, term.Offset, term.Height)
+	term.renderLocked(term.viewBuf, term.Offset, term.Height)
 
 	// In agent / NO_COLOR mode (Ascii profile), escape codes are pure noise to a
 	// text consumer. midterm still emits SGR resets even with colour disabled, so
@@ -539,35 +560,39 @@ func (m *Markdown) View() string {
 // Render writes the output for the given region of the terminal, with
 // ANSI formatting. Search highlights are rendered natively by midterm.
 func (term *Vterm) Render(w io.Writer, offset, height int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.materializeLocked()
+	term.renderLocked(w, offset, height)
+}
+
+func (term *Vterm) renderLocked(w io.Writer, offset, height int) {
+	if term.storageErr != nil {
+		fmt.Fprintf(w, "[log storage error: %s]\n", term.storageErr)
+		return
+	}
 	if term.segments != nil {
 		term.layoutMedia()
 		term.renderMedia(w, offset, height)
 		return
 	}
-	used := term.vt.UsedHeight()
-	if used == 0 {
-		return
-	}
-
-	vt := NewOutput(w, termenv.WithProfile(term.Profile))
-	w = vt
-
-	var lines int
-	for row := range term.vt.Content {
-		if row < offset {
+	end := max(0, offset) + max(0, height)
+	for row, layout := range term.textRows {
+		if layout.offset+len(layout.wraps) <= offset {
 			continue
 		}
-		if row+1 > (offset + height) {
+		if layout.offset >= end {
 			break
 		}
-
-		fmt.Fprint(w, vt.String(term.Prefix))
-		term.vt.RenderLineFgBg(w, row, nil, nil)
-		fmt.Fprintln(w)
-		lines++
-
-		if row > used {
-			break
+		var line strings.Builder
+		term.vt.RenderLineFgBg(&line, row, nil, nil)
+		for i, wrap := range layout.wraps {
+			if layout.offset+i < offset || layout.offset+i >= end {
+				continue
+			}
+			// Cut carries the logical line's ANSI style into every visible
+			// slice, even when earlier wrapped rows are outside the viewport.
+			fmt.Fprintln(w, term.Prefix+ansi.Cut(line.String(), wrap.start, wrap.end)+reset)
 		}
 	}
 }
@@ -575,8 +600,11 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 // LastLine returns the last line of visible text, with ANSI formatting, but
 // without any trailing whitespace.
 func (term *Vterm) LastLine() string {
-	if term.segments != nil {
-		term.layoutMedia()
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.materializeLocked()
+	if term.storageErr != nil {
+		return fmt.Sprintf("[log storage error: %s]", term.storageErr)
 	}
 	used := term.vt.UsedHeight()
 	if used == 0 {
@@ -586,10 +614,15 @@ func (term *Vterm) LastLine() string {
 	for row := used - 1; row >= 0; row-- {
 		buf := new(strings.Builder)
 		_ = term.vt.RenderLine(buf, row)
-		if strings.TrimSpace(buf.String()) == "" {
+		if strings.TrimSpace(ansi.Strip(buf.String())) == "" {
 			continue
 		}
 		lastLine = strings.TrimRightFunc(buf.String(), unicode.IsSpace)
+		if term.segments == nil {
+			wraps := term.textRows[row].wraps
+			wrap := wraps[len(wraps)-1]
+			lastLine = ansi.Cut(lastLine, wrap.start, wrap.end)
+		}
 		break
 	}
 	return lastLine + reset
@@ -597,8 +630,21 @@ func (term *Vterm) LastLine() string {
 
 // Print prints the full log output without any formatting.
 func (term *Vterm) Print(w io.Writer) error {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if err := term.errLocked(); err != nil {
+		return err
+	}
 	if term.segments != nil {
-		_, err := io.WriteString(w, ansi.Strip(term.rawBuf.String()))
+		text, err := term.rawBuf.contents()
+		if err != nil {
+			return err
+		}
+		_, err = io.WriteString(w, ansi.Strip(text))
+		return err
+	}
+	term.materializeLocked()
+	if err := term.errLocked(); err != nil {
 		return err
 	}
 	used := term.vt.UsedHeight()
@@ -622,12 +668,17 @@ func (term *Vterm) Print(w io.Writer) error {
 func (term *Vterm) PrintRaw(w io.Writer) error {
 	term.mu.Lock()
 	defer term.mu.Unlock()
-	if term.Profile == termenv.Ascii {
-		// Agent / NO_COLOR mode: drop the user stream's own escape codes so the
-		// report is clean text. Only escape sequences are removed.
-		_, err := io.WriteString(w, ansi.Strip(term.rawBuf.String()))
+	if err := term.errLocked(); err != nil {
 		return err
 	}
-	_, err := w.Write(term.rawBuf.Bytes())
-	return err
+	if term.Profile == termenv.Ascii {
+		// Agent / NO_COLOR mode: strip only ANSI escapes, not log content.
+		text, err := term.rawBuf.contents()
+		if err != nil {
+			return err
+		}
+		_, err = io.WriteString(w, ansi.Strip(text))
+		return err
+	}
+	return term.rawBuf.replay(w)
 }

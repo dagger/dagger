@@ -294,7 +294,7 @@ func TestSessionTitleGeneratedOnceAndPublishedOnPrimarySpan(t *testing.T) {
 	require.Equal(t, telemetryattrs.LogRoleSpanName, role)
 }
 
-func TestSessionTitleFallsBackAndResetsWithSaveIdentity(t *testing.T) {
+func TestSessionTitleFallsBackAndResetsForBranch(t *testing.T) {
 	calls := 0
 	session := &LLMSession{
 		primaryCtx: context.Background(),

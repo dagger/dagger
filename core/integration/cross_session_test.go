@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
@@ -1050,6 +1051,83 @@ func (ModuleSuite) TestCrossSessionContextualDirCacheHit(ctx context.Context, t 
 	require.NotEmpty(t, res3.Test.Rand)
 
 	require.NotEqual(t, res1.Test.Rand, res3.Test.Rand)
+}
+
+// TestCrossSessionSecretURIRecipeReplay distinguishes replaying a secret's
+// construction from rebinding new credentials under its old content identity.
+// The latter would incorrectly make the old container output usable again.
+func (SecretSuite) TestCrossSessionSecretURIRecipeReplay(ctx context.Context, t *testctx.T) {
+	for _, customCacheKey := range []bool{false, true} {
+		name := "content identity changes"
+		if customCacheKey {
+			name = "explicit cache equivalence"
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			source, sink := connectWithTrace(ctx, t, engineconn.Config{
+				ExtraEnv: []string{"REPLAY_SECRET=before"},
+			})
+			opts := dagger.SecretOpts{}
+			if customCacheKey {
+				opts.CacheKey = identity.NewID()
+			}
+			secret := source.Secret("env://REPLAY_SECRET", opts)
+			secretID, err := secret.ID(ctx)
+			require.NoError(t, err)
+			ctr := source.Container().From(alpineImage).
+				WithSecretVariable("VALUE", secret).
+				WithExec([]string{"sh", "-c", `printf '%s' "$VALUE" | base64`})
+			before, err := ctr.Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "YmVmb3Jl\n", before)
+			id, err := ctr.ID(ctx)
+			require.NoError(t, err)
+			var binding struct {
+				LLM struct {
+					WithTools struct{ ID string }
+				}
+			}
+			require.NoError(t, source.Do(ctx, &dagger.Request{
+				Query:     `query($id: ID!) { llm { withTools(object: $id) { id } } }`,
+				Variables: map[string]any{"id": string(id)},
+			}, &dagger.Response{Data: &binding}))
+			portable, err := sink.captureLLMRecipe(ctx, t, source,
+				dagger.Ref[*dagger.LLM](source, dagger.ID(binding.LLM.WithTools.ID)))
+			require.NoError(t, err)
+			llmRecipe := new(call.ID)
+			require.NoError(t, llmRecipe.Decode(string(portable)))
+			require.Equal(t, "withTools", llmRecipe.Field())
+			var receiver *call.ID
+			for _, arg := range llmRecipe.Args() {
+				if arg.Name() == "object" {
+					receiver = arg.Value().(*call.LiteralID).Value()
+				}
+			}
+			require.NotNil(t, receiver)
+			require.False(t, receiver.IsHandle())
+			recipe, err := receiver.Encode()
+			require.NoError(t, err)
+
+			// The source stays connected so the target cannot accidentally pass
+			// by falling back to the original client's still-live attachables.
+			target, _ := connectWithTrace(ctx, t, engineconn.Config{
+				ExtraEnv: []string{"REPLAY_SECRET=after"},
+			})
+			after, err := dagger.Ref[*dagger.Container](target, dagger.ID(recipe)).Stdout(ctx)
+			require.NoError(t, err)
+			plaintext, secretErr := dagger.Ref[*dagger.Secret](target, secretID).Plaintext(ctx)
+			if customCacheKey {
+				// Explicit cache keys deliberately equate different plaintexts.
+				// The new binding supplies B, but cached computations still use A.
+				require.Equal(t, before, after)
+				require.NoError(t, secretErr)
+				require.Equal(t, "after", plaintext)
+			} else {
+				require.Equal(t, "YWZ0ZXI=\n", after)
+				// Replaying must not authorize the old A-content handle.
+				require.ErrorContains(t, secretErr, "has not bound the session resources")
+			}
+		})
+	}
 }
 
 func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {

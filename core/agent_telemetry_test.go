@@ -22,6 +22,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -40,6 +41,7 @@ type recordedState struct {
 type stateRecorder struct {
 	mu      sync.Mutex
 	records []recordedState
+	control []sdklog.Record
 }
 
 func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
@@ -62,6 +64,9 @@ func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.records = append(r.records, got)
+	if agentcontrol.IsRecord(*rec) {
+		r.control = append(r.control, rec.Clone())
+	}
 	return nil
 }
 
@@ -70,8 +75,7 @@ func (r *stateRecorder) ForceFlush(context.Context) error { return nil }
 
 func (r *stateRecorder) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }
 
-// states lists the state records only: a snapshot record carries no state, and
-// the two channels are deliberately separate (a commit is not a transition).
+// states extracts lifecycle projections, ignoring subscription/payload records.
 func (r *stateRecorder) states() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -97,11 +101,23 @@ func stateRecorderCtx(t *testing.T) (*stateRecorder, context.Context) {
 // testRuntime builds a bare runtime entry wired to a recording context — the
 // facts and the publication plumbing only, since that is all the state
 // projection reads.
-func testRuntime(ctx context.Context) *AgentRuntime {
+func testRuntime(t *testing.T, ctx context.Context) *AgentRuntime {
+	t.Helper()
+	p := newAgentControlPublisher(ctx)
+	t.Cleanup(func() { require.NoError(t, p.close(context.Background())) })
 	return &AgentRuntime{
-		name:         "test",
-		stateChanged: make(chan struct{}),
-		spanCtx:      ctx,
+		key: "test", name: "test", stateChanged: make(chan struct{}), spanCtx: ctx,
+		control: p, controlDigest: "xxh3:committed",
+		controlNamespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "registry"},
+	}
+}
+
+func (rt *AgentRuntime) flushControl() {
+	ack := make(chan struct{})
+	select {
+	case rt.control.flush <- ack:
+		<-ack
+	case <-rt.control.done:
 	}
 }
 
@@ -122,8 +138,9 @@ func testAgentContext(t *testing.T, ctx context.Context, id, name string) contex
 
 func (rt *AgentRuntime) testTransition(mut func()) {
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	rt.transitionLocked(mut)
+	rt.mu.Unlock()
+	rt.flushControl()
 }
 
 // TestPublishStateEdgeTriggered covers the core contract: one record per
@@ -131,12 +148,13 @@ func (rt *AgentRuntime) testTransition(mut func()) {
 // the projection where it was.
 func TestPublishStateEdgeTriggered(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 
 	// Seed, as loop() does on start.
 	rt.mu.Lock()
 	rt.publishStateLocked()
 	rt.mu.Unlock()
+	rt.flushControl()
 	require.Equal(t, []string{string(AgentStateIdle)}, rec.states())
 
 	// Mail arrives: IDLE -> RUNNING.
@@ -161,16 +179,14 @@ func TestPublishStateEdgeTriggered(t *testing.T) {
 	require.Equal(t, []string{"IDLE", "RUNNING", "IDLE", "PAUSED", "IDLE"}, rec.states())
 }
 
-// TestPublishStateBeforeStartIsSilent covers the inert entry: an agent
-// created but never started has no span to attribute records to, and its
-// absence of records is exactly what a client projects as IDLE anyway.
-func TestPublishStateBeforeStartIsSilent(t *testing.T) {
+// A dormant entry publishes without waiting for a loop/identity span.
+func TestPublishStateBeforeStart(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 	rt.spanCtx = nil
 
 	rt.testTransition(func() { rt.mailbox = append(rt.mailbox, "msg-1") })
-	require.Empty(t, rec.states(), "an unstarted runtime must publish nothing")
+	require.Equal(t, []string{"RUNNING"}, rec.states(), "publication does not depend on a loop span")
 
 	// Once the loop starts, the first publication reports the state as it
 	// stands — including the mail that arrived while it was inert.
@@ -178,6 +194,7 @@ func TestPublishStateBeforeStartIsSilent(t *testing.T) {
 	rt.spanCtx = ctx
 	rt.publishStateLocked()
 	rt.mu.Unlock()
+	rt.flushControl()
 	require.Equal(t, []string{"RUNNING"}, rec.states())
 }
 
@@ -187,7 +204,7 @@ func TestPublishStateBeforeStartIsSilent(t *testing.T) {
 // forever.
 func TestPublishStateSealedTombstone(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 
 	rt.testTransition(func() {
 		rt.done = true
@@ -197,52 +214,6 @@ func TestPublishStateSealedTombstone(t *testing.T) {
 
 	rt.testTransition(func() { rt.sealed = true })
 	require.Equal(t, []string{"FAILED", "STOPPED"}, rec.states())
-}
-
-// TestEmitAgentStateRecordShape locks the wire contract a consumer keys on:
-// the state token, the parked question, and an explicitly empty body so the
-// record is never mistaken for log text.
-func TestEmitAgentStateRecordShape(t *testing.T) {
-	rec, ctx := stateRecorderCtx(t)
-
-	EmitAgentState(ctx, AgentStateWaitingInput, "ok to delete testdata/legacy?", "")
-	EmitAgentState(ctx, AgentStateRunning, "", "")
-
-	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	require.Len(t, rec.records, 2)
-
-	require.Equal(t, "WAITING_INPUT", rec.records[0].state)
-	require.Equal(t, "ok to delete testdata/legacy?", rec.records[0].waitingOn)
-	require.Empty(t, rec.records[0].body, "state records must not carry log text")
-
-	// The question is cleared explicitly rather than omitted, so a consumer
-	// folding records latest-wins drops a question that has been answered.
-	require.Equal(t, "RUNNING", rec.records[1].state)
-	require.Empty(t, rec.records[1].waitingOn)
-}
-
-// TestEmitAgentSnapshotRecordShape locks the resume anchor's wire contract:
-// the digest of the last committed conversation, on a record of its own, with
-// no state token and an explicitly empty body.
-//
-// A record of its own is forced: state records are edge-triggered on the
-// projected state, and most commits do not move the state while every commit
-// moves the snapshot — folding the digest into them would publish a resume
-// anchor stuck at whatever the conversation was when the agent last changed
-// state.
-func TestEmitAgentSnapshotRecordShape(t *testing.T) {
-	rec, ctx := stateRecorderCtx(t)
-
-	EmitAgentSnapshot(ctx, "xxh3:9e107d9d372bb682")
-
-	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	require.Len(t, rec.records, 1)
-	require.Equal(t, "xxh3:9e107d9d372bb682", rec.records[0].digest)
-	require.Empty(t, rec.records[0].state,
-		"a commit is not a transition: the snapshot record carries no state")
-	require.Empty(t, rec.records[0].body, "snapshot records must not carry log text")
 }
 
 // TestEmitAgentFailureMessage locks the durable failure surface: the loop's
@@ -364,7 +335,7 @@ func TestReseedPublishesRewindMarker(t *testing.T) {
 	base := llmChainResult(t, srv, llmFrame)
 	tip := llmChainResult(t, srv, responseFrame)
 
-	rt := testRuntime(loopCtx)
+	rt := testRuntime(t, loopCtx)
 	rt.last = tip
 
 	// A replacement that is not a rewind leaves no marker.
@@ -414,13 +385,14 @@ func TestReseedPublishesRewindMarker(t *testing.T) {
 // refusing to restore the second loses a cleanly closed session entirely.
 func TestStopReasonRidesTerminalRecord(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 
 	// A non-terminal transition carries no reason, so a consumer folding
 	// records latest-wins never attributes a stale reason to a later stop.
 	rt.testTransition(func() { rt.paused = true })
 
 	require.NoError(t, rt.Stop(context.Background(), false, nil, AgentStopExplicit))
+	rt.flushControl()
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
@@ -436,7 +408,7 @@ func TestStopReasonRidesTerminalRecord(t *testing.T) {
 // trace in which every agent looks deliberately dismissed.
 func TestKillAllStopsWithSessionReason(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
-	rt := testRuntime(ctx)
+	rt := testRuntime(t, ctx)
 	rt.key = "instance-1"
 
 	ars := NewAgentRuntimes()
