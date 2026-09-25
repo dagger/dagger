@@ -2,18 +2,13 @@ package resources
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"time"
 
-	enginetel "github.com/dagger/dagger/engine/telemetry"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
-
-var errNetworkUnavailable = errors.New("network provider has no resource samples")
 
 type BKNetworkSampler interface {
 	Sample() (*resourcestypes.NetworkSample, error)
@@ -112,13 +107,10 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 	}
 
 	bkSample, err := s.netNS.Sample()
-	ctx = enginetel.WithObservationTime(ctx, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to sample bk netNS: %w", err)
 	}
-	if bkSample == nil {
-		return errNetworkUnavailable
-	}
+	bkSample = normalizeNetworkSample(bkSample)
 
 	sample.rxBytes.add(bkSample.RxBytes - s.baselineSample.RxBytes)
 	sample.rxPackets.add(bkSample.RxPackets - s.baselineSample.RxPackets)

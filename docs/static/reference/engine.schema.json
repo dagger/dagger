@@ -160,52 +160,6 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "OTLPConfig": {
-      "properties": {
-        "endpoint": {
-          "type": "string",
-          "description": "Endpoint is an HTTP(S) base URL. For HTTP, signal suffixes are appended."
-        },
-        "protocol": {
-          "type": "string",
-          "enum": ["http/protobuf", "grpc"],
-          "default": "http/protobuf"
-        },
-        "signals": {
-          "type": "array",
-          "items": {"type": "string", "enum": ["traces", "metrics", "logs"]},
-          "minItems": 1,
-          "uniqueItems": true,
-          "default": ["traces", "metrics"],
-          "description": "Select exported signals. Logs are opt-in and can include application output and call payloads."
-        },
-        "headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": "object",
-          "description": "Headers contains optional destination-specific authentication headers."
-        },
-        "queueSize": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1048576,
-          "description": "QueueSize bounds queued trace/log records and metric points per signal, across sessions. Default: 16384."
-        },
-        "sampleIntervalMs": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 60000,
-          "description": "SampleIntervalMs sets resource observation cadence. Default: 1000."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "endpoint"
-      ],
-      "description": "OTLPConfig configures opt-in engine and session telemetry through standard OTLP exporters. Pending records live only in bounded engine memory. The receiver controls persistence. No Cloud credential is required."
-    },
     "RegistryConfig": {
       "properties": {
         "mirrors": {
@@ -248,10 +202,6 @@
     },
     "TelemetryConfig": {
       "properties": {
-        "otlp": {
-          "$ref": "#/$defs/OTLPConfig",
-          "description": "OTLP enables an engine-owned destination for existing telemetry. It does not replace Cloud/UI export or change operation-span suppression."
-        },
         "resourceMetrics": {
           "type": "boolean",
           "description": "ResourceMetrics enables cgroup v2 resource metrics for the engine process. It is disabled by default. Export requires OTEL_EXPORTER_OTLP_METRICS_ENDPOINT in the engine environment. Other OTLP settings use the standard environment variables. This does not change client or execution metric collection and export.",

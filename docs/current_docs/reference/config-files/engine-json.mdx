@@ -1,7 +1,7 @@
 ---
 title: "engine.json"
 slug: /reference/config-files/engine-json
-description: "Engine configuration, including optional engine-owned OTLP export and resource metrics."
+description: "Engine configuration, including opt-in engine resource metrics."
 ---
 
 # engine.json
@@ -13,67 +13,9 @@ file uses the default settings.
 The machine-readable schema is published at
 [engine.schema.json](/reference/engine.schema.json).
 
-## Engine-owned OTLP destination
+## Engine resource metrics
 
-Configure an independent destination for existing engine and session telemetry:
-
-```json
-{
-  "telemetry": {
-    "otlp": {
-      "endpoint": "http://otlp.example:4318",
-      "protocol": "http/protobuf",
-      "signals": ["traces", "metrics"],
-      "queueSize": 16384,
-      "sampleIntervalMs": 1000
-    }
-  }
-}
-```
-
-The endpoint is a base URL. HTTP exporters append the signal path, such as
-`/v1/traces`. The protocol can also be `grpc`; its endpoint must not have a path.
-Optional `headers` configure destination authentication. URL credentials, query
-strings, and fragments are not accepted.
-
-Signals default to traces and metrics. Select `logs` explicitly to export logs,
-including application output and call payloads. The destination includes engine
-resources, session telemetry, and telemetry received from local SDKs and remote
-streams. UI and Cloud export remain independent. Existing span suppression and
-cache behavior do not change.
-
-Trace export retains separate start and completion snapshots. Receivers must
-support Dagger live spans. Resource gauges retain fresh readings with source
-timestamps and available final readings, rather than repeat stale last values.
-Original metric names, scopes, units, and supported aggregation types remain
-unchanged. The current SDK cannot preserve data-point flags, histogram points
-without a sum, or nonzero exponential-histogram zero thresholds. Received
-metrics with those forms are rejected rather than exported with changed data.
-
-Provisioning can set resource identity in the engine environment:
-
-```sh
-OTEL_RESOURCE_ATTRIBUTES='dagger.io/engine.id=engine-123,dagger.io/provider.instance.id=vm-456'
-```
-
-These stable deployment IDs are separate from `service.instance.id`, which is a
-new UUID at engine startup. Local SDK telemetry keeps its service identity and
-receives deployment attributes plus `dagger.io/engine.instance.id`. Remote
-streams keep their producer identity. These attributes are not authentication.
-
-Queues are bounded and memory-only. `queueSize` limits pending trace/log records
-and metric points per signal; in-flight data is additional. The transport timeout
-is one minute. Export errors, overflow, or termination can lose data before the
-receiver accepts it. This feature does not provide an engine disk queue or a
-completeness manifest. Receiver configuration is outside the engine's scope.
-
-`sampleIntervalMs` defaults to 1,000 ms and accepts 100–60,000 ms. It sets resource
-sampling and collection for this destination. UI and Cloud retain their own
-collection intervals and receive the retained workload readings.
-
-## Separate engine resource destination
-
-The resource-only export path is also opt-in. Enable it explicitly:
+Engine resource metrics are disabled by default. Enable them explicitly:
 
 ```json
 {
@@ -108,16 +50,14 @@ sample with a bounded timeout; an abrupt termination can lose the last sample.
 
 ## Separation from client telemetry
 
-The resource-only path uses a separate meter provider, reader, and exporter.
-It does not use client telemetry providers or the client telemetry proxy.
-Client telemetry and Prometheus reporting keep their existing routes. The
-`telemetry.otlp` destination above can also collect engine resources, without
-this resource-only exporter.
+Engine resource metrics use a separate meter provider, reader, and exporter.
+They do not use client telemetry providers or the client telemetry proxy.
+Client and execution metrics, traces, logs, and Prometheus reporting keep their
+existing configuration and routes.
 
 Setting an OTLP endpoint does not enable engine resource metrics on its own.
 In particular, an endpoint injected into a nested engine does not enable this
-resource-only path unless that engine also has `telemetry.resourceMetrics` set
-to `true`.
+feature unless that engine also has `telemetry.resourceMetrics` set to `true`.
 A deliberately enabled nested engine still needs a compatible OTLP receiver;
 the client proxy is not the receiver for this stream.
 

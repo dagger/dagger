@@ -43,6 +43,7 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -1453,16 +1454,19 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
 	// that point; the final cleanup sample also covers short executions.
 	observationStarted := make(chan struct{})
-	if cgroupPath != "" {
-		meter := enginetel.ObservationMeter(ctx, InstrumentationLibrary)
-		interval := enginetel.ObservationInterval(ctx, cgroupSampleInterval)
-
-		commonAttrs := []attribute.KeyValue{
-			attribute.String(enginetel.ExecutionIDAttr, state.id),
-			attribute.Bool(enginetel.ExecutionInternalAttr, state.execMD != nil && state.execMD.Internal),
-			attribute.Int64(enginetel.SampleIntervalAttr, interval.Milliseconds()),
+	observe := enginetel.HasObservations(ctx)
+	hasCallDigest := state.execMD != nil && state.execMD.CallDigest != ""
+	if cgroupPath != "" && (hasCallDigest || observe) {
+		meter := telemetry.Meter(ctx, InstrumentationLibrary)
+		if !hasCallDigest {
+			// Preserve the ordinary path's exclusion of unassociated execs.
+			meter = noop.NewMeterProvider().Meter(InstrumentationLibrary)
 		}
-		if state.execMD != nil && state.execMD.CallDigest != "" {
+		meter = enginetel.ObservationMeter(ctx, meter, InstrumentationLibrary)
+		interval := min(enginetel.ObservationInterval(ctx, cgroupSampleInterval), cgroupSampleInterval)
+
+		var commonAttrs []attribute.KeyValue
+		if hasCallDigest {
 			commonAttrs = append(commonAttrs, attribute.String(telemetry.DagDigestAttr, string(state.execMD.CallDigest)))
 		}
 		spanContext := trace.SpanContextFromContext(ctx)
@@ -1477,6 +1481,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			)
 		}
 
+		// Keep private dimensions out of the SDK gauge's series identity.
+		privateAttrs := append(slices.Clone(commonAttrs),
+			attribute.String(enginetel.ExecutionIDAttr, state.id),
+			attribute.Bool(enginetel.ExecutionInternalAttr, state.execMD != nil && state.execMD.Internal),
+			attribute.Int64(enginetel.SampleIntervalAttr, interval.Milliseconds()),
+		)
+		ctx = enginetel.WithObservationAttributes(ctx, attribute.NewSet(privateAttrs...))
 		cgroupSampler, err := resources.NewSampler(cgroupPath, state.networkNamespace, meter, attribute.NewSet(commonAttrs...))
 		if err != nil {
 			return fmt.Errorf("create cgroup sampler: %w", err)
@@ -1493,7 +1504,10 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		cgroupSamplerPool.Go(func() {
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
-			started := observationStarted
+			var started <-chan struct{}
+			if observe {
+				started = observationStarted
+			}
 			var startupTimer *time.Timer
 			var startupSample <-chan time.Time
 			defer func() {

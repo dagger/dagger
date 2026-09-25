@@ -10,71 +10,82 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 const (
-	// Bound unexported readings per client and destination. A slow reader must
-	// not delay sampling or discard another destination's observations.
 	maxPendingObservations = 65536
 	SamplePhaseAttr        = "dagger.io/resource.sample.phase"
 	SampleIntervalAttr     = "dagger.io/resource.sample_interval_ms"
 	ExecutionIDAttr        = "dagger.io/execution.id"
 	ExecutionInternalAttr  = "dagger.io/execution.internal"
+	ResourceAvailableName  = "dagger.resource.sample.available"
 )
 
 type observationsKey struct{}
 type observationTimeKey struct{}
+type observationAttrsKey struct{}
 type samplePhaseKey struct{}
 
-// Observations preserves resource gauge readings before SDK last-value
-// aggregation. Each reader receives its own bounded copy of the point stream.
-// It uses the reader's ordinary resource, exporters, and lifecycle.
-// Create readers before publishing this object to sampling contexts.
+// Observations retains selected workload readings for one independent reader.
+// Ordinary SDK gauges still receive every Record call and retain their existing
+// last-value aggregation. This buffer never feeds the CLI or Cloud readers.
 type Observations struct {
 	interval time.Duration
-	readers  []*observationProducer
+	mu       sync.Mutex
+	readings []observation
+	dropped  uint64
 }
 
 func NewObservations(interval time.Duration) *Observations {
 	return &Observations{interval: interval}
 }
 
-func (o *Observations) Producer(destination string) sdkmetric.Producer {
-	p := &observationProducer{destination: destination}
-	o.readers = append(o.readers, p)
-	return p
-}
-
 func WithObservations(ctx context.Context, observations *Observations) context.Context {
+	if observations == nil {
+		return ctx
+	}
 	return context.WithValue(ctx, observationsKey{}, observations)
 }
 
+func HasObservations(ctx context.Context) bool {
+	o, _ := ctx.Value(observationsKey{}).(*Observations)
+	return o != nil
+}
+
 func ObservationInterval(ctx context.Context, fallback time.Duration) time.Duration {
-	if o, _ := ctx.Value(observationsKey{}).(*Observations); o != nil && o.interval > 0 {
+	if o, _ := ctx.Value(observationsKey{}).(*Observations); o != nil {
 		return o.interval
 	}
 	return fallback
 }
 
-// WithObservationTime sets the time of a completed source read. It does not
-// add a per-reading metric attribute or a new high-cardinality series.
+func WithObservationAttributes(ctx context.Context, attrs attribute.Set) context.Context {
+	if !HasObservations(ctx) {
+		return ctx
+	}
+	return context.WithValue(ctx, observationAttrsKey{}, attrs)
+}
+
 func WithObservationTime(ctx context.Context, at time.Time) context.Context {
+	if !HasObservations(ctx) {
+		return ctx
+	}
 	return context.WithValue(ctx, observationTimeKey{}, at)
 }
 
 func WithSamplePhase(ctx context.Context, phase string) context.Context {
+	if !HasObservations(ctx) {
+		return ctx
+	}
 	return context.WithValue(ctx, samplePhaseKey{}, phase)
 }
 
-// ObservationMeter intercepts resource Int64Gauge.Record calls only. All other
-// instruments keep SDK behavior. Without a configured buffer it is an ordinary
-// meter, so standalone sampler callers remain supported.
-func ObservationMeter(ctx context.Context, name string) metric.Meter {
-	meter := telemetry.Meter(ctx, name)
+// ObservationMeter tees only total CPU and current memory into the additional
+// destination. The original meter, record options, and metric series stay intact.
+func ObservationMeter(ctx context.Context, meter metric.Meter, scope string) metric.Meter {
 	if o, _ := ctx.Value(observationsKey{}).(*Observations); o != nil {
-		return observationMeter{Meter: meter, observations: o, scope: name}
+		return observationMeter{Meter: meter, observations: o, scope: scope}
 	}
 	return meter
 }
@@ -86,7 +97,7 @@ type observationMeter struct {
 }
 
 type observationInstrument struct {
-	scope, name, description, unit string
+	scope, name, unit string
 }
 
 type observation struct {
@@ -102,65 +113,67 @@ type observationGauge struct {
 
 func (m observationMeter) Int64Gauge(name string, opts ...metric.Int64GaugeOption) (metric.Int64Gauge, error) {
 	gauge, err := m.Meter.Int64Gauge(name, opts...)
-	if err != nil {
-		return nil, err
+	if err != nil || (name != telemetry.CPUStatUsage && name != telemetry.MemoryCurrentBytes) {
+		return gauge, err
 	}
 	cfg := metric.NewInt64GaugeConfig(opts...)
 	return observationGauge{Int64Gauge: gauge, observations: m.observations,
-		instrument: observationInstrument{m.scope, name, cfg.Description(), cfg.Unit()}}, nil
+		instrument: observationInstrument{m.scope, name, cfg.Unit()}}, nil
 }
 
 func (g observationGauge) Record(ctx context.Context, value int64, opts ...metric.RecordOption) {
+	g.Int64Gauge.Record(ctx, value, opts...)
+	g.observations.record(ctx, g.instrument, value)
+}
+
+// ObserveResourceAvailability belongs only to the additional stream. In
+// particular, it must not register a new series in the ordinary meter provider.
+func ObserveResourceAvailability(ctx context.Context, source string, available bool) {
+	if o, _ := ctx.Value(observationsKey{}).(*Observations); o != nil {
+		value := int64(0)
+		if available {
+			value = 1
+		}
+		o.record(ctx, observationInstrument{"dagger.io/engine.buildkit", ResourceAvailableName, "1"}, value, attribute.String("source", source))
+	}
+}
+
+func (o *Observations) record(ctx context.Context, instrument observationInstrument, value int64, extra ...attribute.KeyValue) {
 	at, _ := ctx.Value(observationTimeKey{}).(time.Time)
 	if at.IsZero() {
 		at = time.Now()
 	}
-	cfg := metric.NewRecordConfig(opts)
-	attrs := cfg.Attributes()
+	attrs, _ := ctx.Value(observationAttrsKey{}).(attribute.Set)
 	if phase, _ := ctx.Value(samplePhaseKey{}).(string); phase != "" {
-		attrs = attribute.NewSet(append(attrs.ToSlice(), attribute.String(SamplePhaseAttr, phase))...)
+		extra = append(extra, attribute.String(SamplePhaseAttr, phase))
 	}
-	reading := observation{g.instrument, metricdata.DataPoint[int64]{Time: at, Value: value, Attributes: attrs}}
-	for _, reader := range g.observations.readers {
-		reader.record(reading)
-	}
-	// Do not also record into the SDK gauge. That would publish a second,
-	// aggregated copy and could replay its last value after the source stops.
-}
-
-type observationProducer struct {
-	mu          sync.Mutex
-	destination string
-	readings    []observation
-	dropped     uint64
-}
-
-func (p *observationProducer) record(reading observation) {
-	p.mu.Lock()
-	if len(p.readings) < maxPendingObservations {
-		p.readings = append(p.readings, reading)
-		p.mu.Unlock()
+	attrs = attribute.NewSet(append(attrs.ToSlice(), extra...)...)
+	reading := observation{instrument, metricdata.DataPoint[int64]{Time: at, Value: value, Attributes: attrs}}
+	o.mu.Lock()
+	if len(o.readings) < maxPendingObservations {
+		o.readings = append(o.readings, reading)
+		o.mu.Unlock()
 		return
 	}
-	p.dropped++
-	dropped := p.dropped
-	p.mu.Unlock()
+	o.dropped++
+	dropped := o.dropped
+	o.mu.Unlock()
 	if dropped == 1 || dropped%1024 == 0 {
-		slog.Warn("resource observations lost: reader buffer full", "destination", p.destination, "dropped", dropped)
+		slog.Warn("operation resource observations lost: buffer full", "dropped", dropped)
 	}
 }
 
-func (p *observationProducer) Produce(ctx context.Context) ([]metricdata.ScopeMetrics, error) {
+func (o *Observations) Produce(ctx context.Context) ([]metricdata.ScopeMetrics, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	p.mu.Lock()
-	readings := p.readings
-	p.readings = nil
-	p.mu.Unlock()
+	o.mu.Lock()
+	readings := o.readings
+	o.readings = nil
+	o.mu.Unlock()
 
-	// Preserve every point, including equal values at different times. Empty
-	// buffers produce no points: no stale measurements get a new timestamp.
+	// Equal values at different times remain separate observations. Empty
+	// buffers produce no points, including after the execution has stopped.
 	grouped := make(map[observationInstrument][]metricdata.DataPoint[int64])
 	order := make([]observationInstrument, 0)
 	for _, reading := range readings {
@@ -179,7 +192,7 @@ func (p *observationProducer) Produce(ctx context.Context) ([]metricdata.ScopeMe
 			scopes = append(scopes, metricdata.ScopeMetrics{Scope: instrumentation.Scope{Name: instrument.scope}})
 		}
 		scopes[i].Metrics = append(scopes[i].Metrics, metricdata.Metrics{
-			Name: instrument.name, Description: instrument.description, Unit: instrument.unit,
+			Name: instrument.name, Unit: instrument.unit,
 			Data: metricdata.Gauge[int64]{DataPoints: grouped[instrument]},
 		})
 	}

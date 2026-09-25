@@ -1285,7 +1285,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 			return fmt.Errorf("unmarshal: %w", err)
 		}
 
-		spans := enginetel.SpansFromPB(req.GetResourceSpans())
+		spans := telemetry.SpansFromPB(req.GetResourceSpans())
 
 		slog.ExtraDebug("received spans from engine", "len", len(spans))
 

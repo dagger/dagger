@@ -2,61 +2,39 @@ package telemetry
 
 import (
 	"context"
-	"errors"
 	"log/slog"
-	"strings"
 
-	telemetry "github.com/dagger/otel-go"
+	"github.com/dagger/dagger/engine"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 )
 
-// EngineInstanceAttr identifies the receiving engine on SDK telemetry without
-// replacing the SDK process's own service.instance.id.
-const EngineInstanceAttr = "dagger.io/engine.instance.id"
+const (
+	EngineInstanceAttr = "dagger.io/engine.instance.id"
+	SessionIDAttr      = "dagger.io/session.id"
+	OperationKindAttr  = "dagger.io/operation.kind"
+)
 
-// ProvisionedIdentity reads standard OTEL_RESOURCE_ATTRIBUTES. Engine-controlled
-// deployment attributes also accompany telemetry posted by local SDKs. Preserve
-// those SDKs' service identity. Remote-engine streams do not use this enrichment.
-// Invalid environment entries must not prevent engine startup. Keep the valid
-// attributes on a partial read, or only the engine instance on other errors.
-func ProvisionedIdentity(ctx context.Context, instance string) []*commonpb.KeyValue {
+// operationResource belongs only to the additional destination. Do not enrich
+// ordinary session resources or trust identity posted by a workload. Invalid
+// environment entries must not prevent startup or discard valid identity.
+func operationResource(ctx context.Context, instance string) *resource.Resource {
 	res, err := resource.New(ctx, resource.WithFromEnv())
 	if err != nil {
-		slog.Warn("failed to read telemetry identity", "error", err)
-		if !errors.Is(err, resource.ErrPartialResource) {
-			res = resource.Empty()
+		slog.Warn("incomplete operation telemetry identity", "error", err)
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String("service.name", "dagger-engine"),
+		attribute.String("service.version", engine.Version),
+		attribute.String("service.instance.id", instance),
+		attribute.String(EngineInstanceAttr, instance),
+		attribute.String("dagger.io/operation.schema", "1"),
+	}
+	for _, attr := range res.Attributes() {
+		switch string(attr.Key) {
+		case "dagger.io/engine.id", "dagger.io/provider.instance.id", "dagger.io/organization.id":
+			attrs = append(attrs, attr)
 		}
 	}
-	attrs := make([]attribute.KeyValue, 0, res.Len()+1)
-	for _, kv := range res.Attributes() {
-		if !strings.HasPrefix(string(kv.Key), "service.") {
-			attrs = append(attrs, kv)
-		}
-	}
-	attrs = append(attrs, attribute.String(EngineInstanceAttr, instance))
-	return telemetry.KeyValues(attrs)
-}
-
-// EnrichResourcePB updates only explicitly provided keys. It leaves other OTLP
-// attributes, including value types outside the SDK attribute model, untouched.
-func EnrichResourcePB(res *resourcepb.Resource, identity []*commonpb.KeyValue) *resourcepb.Resource {
-	if res == nil {
-		res = &resourcepb.Resource{}
-	}
-	indices := make(map[string]int, len(res.Attributes))
-	for i, kv := range res.Attributes {
-		indices[kv.Key] = i
-	}
-	for _, kv := range identity {
-		if i, ok := indices[kv.Key]; ok {
-			res.Attributes[i] = kv
-		} else {
-			indices[kv.Key] = len(res.Attributes)
-			res.Attributes = append(res.Attributes, kv)
-		}
-	}
-	return res
+	return resource.NewSchemaless(attrs...)
 }

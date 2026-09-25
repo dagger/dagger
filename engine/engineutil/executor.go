@@ -186,10 +186,14 @@ func (c *Client) Run(
 	// needs no nested-client link.
 	var execRunSpan trace.Span
 	if dagql.OTelProfActive(ctx) {
-		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent,
-			attribute.String(enginetel.ExecutionIDAttr, state.id),
-			attribute.Bool(enginetel.ExecutionInternalAttr, execMD != nil && execMD.Internal),
-		)
+		var attrs []attribute.KeyValue
+		if enginetel.HasObservations(ctx) {
+			attrs = append(attrs,
+				attribute.String(enginetel.ExecutionIDAttr, state.id),
+				attribute.Bool(enginetel.ExecutionInternalAttr, execMD != nil && execMD.Internal),
+			)
+		}
+		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent, attrs...)
 	}
 	err := c.run(ctx, state,
 		namedSetupFunc{"setupNetwork", c.setupNetwork},

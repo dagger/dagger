@@ -104,10 +104,7 @@ func withEngineInstanceResource(base *sdkresource.Resource, engineInstanceID str
 	if engineInstanceID == "" {
 		return base, nil
 	}
-	return sdkresource.Merge(base, sdkresource.NewSchemaless(
-		attribute.String(cachefact.ResourceEngineInstance, engineInstanceID),
-		attribute.String(enginetel.EngineInstanceAttr, engineInstanceID),
-	))
+	return sdkresource.Merge(base, sdkresource.NewSchemaless(attribute.String(cachefact.ResourceEngineInstance, engineInstanceID)))
 }
 
 type telemetryOriginLogProcessor struct {
@@ -470,10 +467,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, data := range req.ResourceSpans {
-		data.Resource = enginetel.EnrichResourcePB(data.Resource, ps.srv.telemetryIdentity)
-	}
-	spans := enginetel.SpansFromPB(req.ResourceSpans)
+	spans := telemetry.SpansFromPB(req.ResourceSpans)
 	slog.Debug("exporting spans", "spans", len(spans), "origin", clientID)
 
 	start := time.Now()
@@ -517,16 +511,6 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	slog.Debug("exporting logs", "origin", clientID)
 
 	start := time.Now()
-	for _, data := range req.ResourceLogs {
-		data.Resource = enginetel.EnrichResourcePB(data.Resource, ps.srv.telemetryIdentity)
-		for _, scope := range data.ScopeLogs {
-			for _, rec := range scope.LogRecords {
-				if rec.Body == nil {
-					rec.Body = &otlpcommonv1.AnyValue{}
-				}
-			}
-		}
-	}
 	exporter := record.daggerSession.postedLogExporter(clientID)
 	if err := telemetry.ReexportLogsFromPB(r.Context(), exporter, &req); err != nil {
 		slog.Error("error exporting logs", "err", err, "duration", time.Since(start))
@@ -567,9 +551,6 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 	slog.Debug("exporting metrics", "origin", clientID)
 
 	start := time.Now()
-	for _, data := range req.ResourceMetrics {
-		data.Resource = enginetel.EnrichResourcePB(data.Resource, ps.srv.telemetryIdentity)
-	}
 	exporters := record.daggerSession.postedMetricExporters(clientMetricExporter{record: record, ps: ps})
 	if err := enginetel.ReexportMetricsFromPB(r.Context(), exporters, &req); err != nil {
 		slog.Error("error exporting metrics", "err", err, "duration", time.Since(start))
@@ -909,7 +890,7 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 	slog.ExtraDebug("pubsub exporting metrics", "client", ps.clientID, "count", len(metrics.ScopeMetrics))
 	start := time.Now()
 
-	pbMetrics, err := enginetel.ResourceMetricsToPB(metrics)
+	pbMetrics, err := telemetry.ResourceMetricsToPB(metrics)
 	if err != nil {
 		return fmt.Errorf("convert metrics to pb: %w", err)
 	}

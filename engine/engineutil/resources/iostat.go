@@ -2,12 +2,11 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
-	enginetel "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -67,8 +66,10 @@ func (s *ioStatSampler) sample(ctx context.Context) error {
 	}
 
 	fileBytes, err := os.ReadFile(s.ioStatFilePath)
-	ctx = enginetel.WithObservationTime(ctx, time.Now())
-	if err != nil {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil
+	case err != nil:
 		return fmt.Errorf("failed to read %s: %w", s.ioStatFilePath, err)
 	}
 
@@ -124,16 +125,15 @@ func (s *ioPressureSampler) sample(ctx context.Context) error {
 	}
 
 	fileBytes, err := os.ReadFile(s.ioPressureFilePath)
-	ctx = enginetel.WithObservationTime(ctx, time.Now())
-	if err != nil {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil
+	case err != nil:
 		return fmt.Errorf("failed to read %s: %w", s.ioPressureFilePath, err)
 	}
 
 	p := parsePressure(fileBytes)
-	if p.someTotal == nil {
-		return fmt.Errorf("missing valid pressure total in %s", s.ioPressureFilePath)
-	}
-	sample.someTotal.add(*p.someTotal)
+	sample.someTotal.add(p.someTotal)
 	sample.someTotal.record(ctx)
 
 	return nil

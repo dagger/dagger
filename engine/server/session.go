@@ -127,12 +127,11 @@ type daggerSession struct {
 
 	// Session-owned trace and log pipelines capture an origin client ID from
 	// each emission context and resolve the immutable ancestry graph at export.
-	tracerProvider  *sdktrace.TracerProvider
-	loggerProvider  *sdklog.LoggerProvider
-	spanExporter    sdktrace.SpanExporter
-	logExporter     sdklog.Exporter
-	telemetryDebug  LifecycleTelemetryCounts
-	otlpDestination *enginetel.OTLPDestination
+	tracerProvider *sdktrace.TracerProvider
+	loggerProvider *sdklog.LoggerProvider
+	spanExporter   sdktrace.SpanExporter
+	logExporter    sdklog.Exporter
+	telemetryDebug LifecycleTelemetryCounts
 
 	// Dagger Cloud exporters, set when the main client asked the engine to
 	// publish the session's telemetry. The session's providers own the span
@@ -340,11 +339,12 @@ type clientRuntime struct {
 	// Metrics are owned by the live runtime. The typed lease invariant proves
 	// that no producer remains when the runtime becomes quiescent, so its one
 	// provider and periodic reader can be flushed and shut down at reclamation.
-	metricMu           sync.Mutex
-	meterProvider      *sdkmetric.MeterProvider
-	metricExporter     sdkmetric.Exporter
-	metricObservations *enginetel.Observations
-	telemetryDebug     LifecycleTelemetryCounts
+	metricMu            sync.Mutex
+	meterProvider       *sdkmetric.MeterProvider
+	metricExporter      sdkmetric.Exporter
+	metricObservations  *enginetel.Observations
+	observationProvider *sdkmetric.MeterProvider
+	telemetryDebug      LifecycleTelemetryCounts
 
 	// Workspace and extra module loading is deferred from initializeClientRuntime
 	// to serveQuery because it requires the client's engine utility session, which
@@ -666,7 +666,11 @@ func (client *clientRuntime) flushMetrics(ctx context.Context) error {
 	if client.meterProvider == nil {
 		return nil
 	}
-	return client.meterProvider.ForceFlush(ctx)
+	var errs error
+	if client.observationProvider != nil {
+		errs = client.observationProvider.ForceFlush(ctx)
+	}
+	return errors.Join(errs, client.meterProvider.ForceFlush(ctx))
 }
 
 func (client *clientRuntime) shutdownMetrics(ctx context.Context) error {
@@ -676,6 +680,10 @@ func (client *clientRuntime) shutdownMetrics(ctx context.Context) error {
 		return nil
 	}
 	var errs error
+	if client.observationProvider != nil {
+		errs = errors.Join(errs, client.observationProvider.Shutdown(ctx))
+		client.observationProvider = nil
+	}
 	errs = errors.Join(errs, client.meterProvider.ForceFlush(ctx))
 	errs = errors.Join(errs, client.meterProvider.Shutdown(ctx))
 	client.meterProvider = nil
@@ -796,54 +804,48 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) er
 const metricReaderInterval = 5 * time.Second
 
 func (srv *Server) initializeClientMetrics(client *clientRuntime) {
-	interval := metricReaderInterval
-	if srv.otlpDestination.MetricExporter() != nil {
-		interval = srv.otlpDestination.SampleInterval()
-	}
-	observations := enginetel.NewObservations(interval)
 	exporter := clientMetricExporter{
 		record: client.clientRecord,
 		ps:     srv.telemetryPubSub,
 	}
-	metricResource, err := withEngineInstanceResource(telemetry.Resource, srv.engineInstanceID)
-	if err != nil {
-		slog.Warn("failed to create client metric resource", "error", err)
-		metricResource = telemetry.Resource
-	}
 	meterOpts := []sdkmetric.Option{
-		sdkmetric.WithResource(metricResource),
+		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
 			exporter,
-			sdkmetric.WithProducer(observations.Producer("client")),
 			sdkmetric.WithInterval(metricReaderInterval),
 		)),
 	}
-	readers := 1
+	readers, providers := 1, 1
 	if cloudMetrics := client.daggerSession.cloudMetrics; cloudMetrics != nil {
 		// Each client's reader shuts its exporter down with the client; the
 		// session owns the Cloud exporter.
 		meterOpts = append(meterOpts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
 			enginetel.SharedMetricExporter{Exporter: cloudMetrics},
-			sdkmetric.WithProducer(observations.Producer("cloud")),
 			sdkmetric.WithInterval(metricReaderInterval),
 		)))
 		readers++
 	}
-	if destination := srv.otlpDestination.MetricExporter(); destination != nil {
-		meterOpts = append(meterOpts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
-			destination,
-			sdkmetric.WithProducer(observations.Producer("otlp")),
-			sdkmetric.WithInterval(interval),
-		)))
-		readers++
-	}
 	client.metricMu.Lock()
+	if destination := srv.otlpDestination.MetricExporter(); destination != nil {
+		interval := srv.otlpDestination.SampleInterval()
+		client.metricObservations = enginetel.NewObservations(interval)
+		// A separate provider prevents ordinary SDK instruments from being
+		// exported a second time, and keeps raw points out of real-time routes.
+		client.observationProvider = sdkmetric.NewMeterProvider(
+			sdkmetric.WithResource(srv.otlpDestination.SessionResource(client.daggerSession.sessionID)),
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(destination,
+				sdkmetric.WithProducer(client.metricObservations),
+				sdkmetric.WithInterval(interval),
+			)),
+		)
+		readers++
+		providers++
+	}
 	client.metricExporter = exporter
-	client.metricObservations = observations
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 	client.metricMu.Unlock()
 	client.telemetryDebug = LifecycleTelemetryCounts{
-		MeterProviders:          1,
+		MeterProviders:          providers,
 		ConfiguredMetricReaders: readers,
 	}
 }
@@ -851,7 +853,6 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadata *engine.ClientMetadata) {
 	cloudEngine := clientMetadata != nil && clientMetadata.CloudEngine
 	srv.initializeSessionCloudTelemetry(sess, clientMetadata)
-	sess.otlpDestination = srv.otlpDestination
 	spanExporter := sessionSpanExporter{sess: sess, ps: srv.telemetryPubSub}
 	logExporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
 	sess.spanExporter = spanExporter
@@ -897,13 +898,9 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
 	spanProcessors, logProcessors := 4, 3
-	if processor := sess.otlpDestination.SpanProcessor(); processor != nil {
+	if processor := srv.otlpDestination.SpanProcessor(sess.sessionID); processor != nil {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(processor))
 		spanProcessors++
-	}
-	if processor := sess.otlpDestination.LogProcessor(); processor != nil {
-		loggerOpts = append(loggerOpts, sdklog.WithProcessor(processor))
-		logProcessors++
 	}
 	bound := sess.cloudBound
 	if sess.cloudSpans != nil {

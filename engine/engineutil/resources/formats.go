@@ -21,11 +21,11 @@ type pressure struct {
 	someAvg10  int64
 	someAvg60  int64
 	someAvg300 int64
-	someTotal  *int64
+	someTotal  int64
 	fullAvg10  int64
 	fullAvg60  int64
 	fullAvg300 int64
-	fullTotal  *int64
+	fullTotal  int64
 }
 
 func parsePressure(bs []byte) *pressure {
@@ -51,9 +51,7 @@ func parsePressure(bs []byte) *pressure {
 						p.someAvg300 = int64(v * 100)
 					}
 				case "total":
-					if total, err := strconv.ParseInt(value, 10, 64); err == nil && total >= 0 {
-						p.someTotal = &total
-					}
+					p.someTotal, _ = strconv.ParseInt(value, 10, 64)
 				}
 			}
 		case "full":
@@ -75,9 +73,7 @@ func parsePressure(bs []byte) *pressure {
 						p.fullAvg300 = int64(v * 100)
 					}
 				case "total":
-					if total, err := strconv.ParseInt(value, 10, 64); err == nil && total >= 0 {
-						p.fullTotal = &total
-					}
+					p.fullTotal, _ = strconv.ParseInt(value, 10, 64)
 				}
 			}
 		}

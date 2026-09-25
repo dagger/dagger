@@ -9,8 +9,11 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Session shutdown must not close the engine-owned destination while another
@@ -21,7 +24,6 @@ func TestSessionShutdownKeepsOTLPDestinationOpen(t *testing.T) {
 	receiver := newCloudReceiver(t, false)
 	destination, err := enginetel.NewOTLPDestination(t.Context(), enginetel.OTLPOptions{
 		Endpoint: receiver.URL,
-		Signals:  []string{"traces", "logs"},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -60,7 +62,8 @@ func TestSessionShutdownKeepsOTLPDestinationOpen(t *testing.T) {
 	second, secondCtx := newSession("second")
 
 	emit := func(sess *daggerSession, ctx context.Context, name string) {
-		ctx, span := sess.tracerProvider.Tracer("test").Start(ctx, name)
+		ctx, span := sess.tracerProvider.Tracer("dagger.io/core").Start(ctx, name,
+			trace.WithAttributes(attribute.String(telemetry.DagDigestAttr, "recipe-"+name)))
 		var rec log.Record
 		rec.SetTimestamp(time.Now())
 		rec.SetBody(log.StringValue(name))
@@ -70,9 +73,9 @@ func TestSessionShutdownKeepsOTLPDestinationOpen(t *testing.T) {
 	waitFor := func(name string) {
 		t.Helper()
 		require.Eventually(t, func() bool {
-			_, spans, logs, _ := receiver.snapshot()
-			return slices.Contains(spans, name) && slices.Contains(logs, name)
-		}, 5*time.Second, 10*time.Millisecond, "session trace and log must reach the receiver: %s", name)
+			_, spans, _, _ := receiver.snapshot()
+			return slices.Contains(spans, name)
+		}, 5*time.Second, 10*time.Millisecond, "session trace must reach the receiver: %s", name)
 	}
 
 	emit(first, firstCtx, "first-before-shutdown")
@@ -86,4 +89,9 @@ func TestSessionShutdownKeepsOTLPDestinationOpen(t *testing.T) {
 
 	emit(second, secondCtx, "second-after-first-shutdown")
 	waitFor("second-after-first-shutdown")
+	require.NoError(t, second.shutdownTelemetry(ctx))
+	require.NoError(t, destination.Shutdown(ctx))
+	receiver.mu.Lock()
+	defer receiver.mu.Unlock()
+	require.Empty(t, receiver.logBodies, "application logs must never reach the additional destination")
 }

@@ -39,9 +39,9 @@ type Config struct {
 }
 
 type TelemetryConfig struct {
-	// OTLP enables an engine-owned destination for existing telemetry. It does
-	// not replace Cloud/UI export or change operation-span suppression.
-	OTLP *OTLPConfig `json:"otlp,omitempty"`
+	// OTLP enables the internal operation/workload destination. It does not
+	// replace Cloud/UI export or the existing engine-wide resource export.
+	OTLP *OTLPConfig `json:"otlp,omitempty" jsonschema:"-"`
 
 	// ResourceMetrics enables cgroup v2 resource metrics for the engine process.
 	// It is disabled by default. Export requires OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
@@ -56,20 +56,17 @@ type TelemetryConfig struct {
 	CacheFacts bool `json:"cacheFacts,omitempty" jsonschema:"default=false"`
 }
 
-// OTLPConfig configures opt-in engine and session telemetry through standard OTLP exporters.
-// Pending records live only in bounded engine memory. The receiver controls
-// persistence. No Cloud credential is required.
+// OTLPConfig configures the internal operation destination through the normal
+// engine config. Its fixed signals are selected engine spans and workload
+// observations. Queues are memory-only; the receiver controls persistence.
 type OTLPConfig struct {
 	// Endpoint is an HTTP(S) base URL. For HTTP, signal suffixes are appended.
 	Endpoint string `json:"endpoint"`
 	// Protocol selects the standard exporter transport. Default: http/protobuf.
 	Protocol string `json:"protocol,omitempty" jsonschema:"enum=http/protobuf,enum=grpc"`
-	// Signals selects traces, metrics, and/or logs. Default: traces and metrics.
-	// Log export is opt-in and includes application output and call payloads.
-	Signals []string `json:"signals,omitempty"`
 	// Headers contains optional destination-specific authentication headers.
 	Headers map[string]string `json:"headers,omitempty"`
-	// QueueSize bounds pending trace/log records and metric points per signal,
+	// QueueSize bounds pending span records and metric points per signal,
 	// across all sessions. Default: 16384.
 	QueueSize int `json:"queueSize,omitempty" jsonschema:"minimum=1,maximum=1048576"`
 	// SampleIntervalMs sets resource observation cadence. Default: 1000.

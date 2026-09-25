@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -104,38 +103,24 @@ func (e *cacheFactExport) shutdownAtExit(ctx context.Context) {
 
 // InitTelemetry sets up the engine process's telemetry and returns its
 // resource, which names the engine instance, for newCacheFactExport.
-func InitTelemetry(ctx context.Context, engineInstanceID string, destinations ...*enginetel.OTLPDestination) (context.Context, *resource.Resource) {
+func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Context, *resource.Resource) {
 	otelResource, err := resource.New(ctx,
 		resource.WithHost(),
-		resource.WithFromEnv(),
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String("dagger-engine"),
 			semconv.ServiceVersionKey.String(engine.Version),
 			attribute.String("dagger.io/engine.name", engineName),
 			attribute.String(cachefact.ResourceEngineInstance, engineInstanceID),
-			attribute.String(enginetel.EngineInstanceAttr, engineInstanceID),
 		),
 	)
-	if errors.Is(err, resource.ErrPartialResource) {
-		slog.Warn("incomplete OTel resource", "error", err)
-	} else if err != nil {
+	if err != nil {
 		slog.Error("failed to create OTel resource", "error", err)
 		return ctx, nil
 	}
 
-	cfg := telemetry.Config{Resource: otelResource}
-	for _, destination := range destinations {
-		if processor := destination.SpanProcessor(); processor != nil {
-			cfg.SpanProcessors = append(cfg.SpanProcessors, processor)
-		}
-		if exporter := destination.LogExporter(); exporter != nil {
-			cfg.LiveLogExporters = append(cfg.LiveLogExporters, exporter)
-		}
-		if exporter := destination.MetricExporter(); exporter != nil {
-			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, exporter)
-		}
-	}
-	ctx = telemetry.Init(ctx, cfg)
+	ctx = telemetry.Init(ctx, telemetry.Config{
+		Resource: otelResource,
+	})
 
 	return ctx, otelResource
 }
@@ -191,32 +176,26 @@ func serverCacheFactExport(e *cacheFactExport) server.CacheFactExport {
 
 // initResourceMetrics creates an engine-owned provider after config loading.
 // It is never installed in the context or otel-go's shared exporter registry.
-func initResourceMetrics(ctx context.Context, cfg config.TelemetryConfig, destinations ...*enginetel.OTLPDestination) *sdkmetric.MeterProvider {
-	if telemetry.Resource == nil {
+func initResourceMetrics(ctx context.Context, cfg config.TelemetryConfig) *sdkmetric.MeterProvider {
+	if !cfg.ResourceMetrics || telemetry.Resource == nil {
 		return nil
 	}
-	opts := []sdkmetric.Option{sdkmetric.WithResource(telemetry.Resource)}
-	readers := 0
-	if cfg.ResourceMetrics {
-		if os.Getenv(engine.OTelMetricsEndpointEnv) == "" {
-			slog.Warn("engine resource metrics require OTEL_EXPORTER_OTLP_METRICS_ENDPOINT; export disabled")
-		} else if exporter, err := newResourceMetricExporter(ctx); err != nil {
-			slog.Warn("failed to configure engine resource metric export", "error", err)
-		} else {
-			opts = append(opts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)))
-			readers++
-		}
-	}
-	for _, destination := range destinations {
-		if exporter := destination.MetricExporter(); exporter != nil {
-			opts = append(opts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(destination.SampleInterval()))))
-			readers++
-		}
-	}
-	if readers == 0 {
+	if os.Getenv(engine.OTelMetricsEndpointEnv) == "" {
+		slog.Warn("engine resource metrics require OTEL_EXPORTER_OTLP_METRICS_ENDPOINT; export disabled")
 		return nil
 	}
-	provider := sdkmetric.NewMeterProvider(opts...)
+
+	exporter, err := newResourceMetricExporter(ctx)
+	if err != nil {
+		slog.Warn("failed to configure engine resource metric export", "error", err)
+		return nil
+	}
+	// The process resource names the engine instance (service.instance.id),
+	// the epoch of the cumulative cgroup counters.
+	provider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(telemetry.Resource),
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
+	)
 	// Keep the callback registered through provider shutdown so the final
 	// collection can still read the engine cgroup.
 	if _, err := cgroupmetrics.Register(ctx, provider.Meter(cgroupmetrics.InstrumentationScopeName)); err != nil {

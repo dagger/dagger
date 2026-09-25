@@ -358,6 +358,9 @@ func main() { //nolint:gocyclo
 			}
 		}
 
+		var processResource *resource.Resource
+		ctx, processResource = InitTelemetry(ctx, engineInstanceID)
+
 		bklog.G(ctx).Debug("loading buildkit config file")
 		bkcfg, err := bkconfig.LoadFile(c.GlobalString("config"))
 		if err != nil {
@@ -372,16 +375,14 @@ func main() { //nolint:gocyclo
 		if otlp := cfg.Telemetry.OTLP; otlp != nil {
 			otlpDestination, err = enginetel.NewOTLPDestination(ctx, enginetel.OTLPOptions{
 				Endpoint: otlp.Endpoint, Protocol: otlp.Protocol, Headers: otlp.Headers,
-				Signals: otlp.Signals, QueueSize: otlp.QueueSize,
+				QueueSize: otlp.QueueSize, EngineInstanceID: engineInstanceID,
 				SampleInterval: time.Duration(otlp.SampleIntervalMs) * time.Millisecond,
 			})
 			if err != nil {
 				return err
 			}
 		}
-		var processResource *resource.Resource
-		ctx, processResource = InitTelemetry(ctx, engineInstanceID, otlpDestination)
-		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry, otlpDestination)
+		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
 		factExport = newCacheFactExport(ctx, processResource, cfg.Telemetry)
 
 		bklog.G(ctx).Debug("setting up engine networking")

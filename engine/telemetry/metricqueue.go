@@ -3,17 +3,17 @@ package telemetry
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
-	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	"google.golang.org/protobuf/proto"
 )
 
 type metricCollection struct {
-	data   *metricspb.ResourceMetrics
+	data   *metricdata.ResourceMetrics
 	points int
 }
 
@@ -53,17 +53,22 @@ func (q *asyncMetricExporter) Export(_ context.Context, data *metricdata.Resourc
 	if data == nil || len(data.ScopeMetrics) == 0 {
 		return nil
 	}
-	pb, err := ResourceMetricsToPB(data)
-	if err != nil {
-		return err
-	}
-	// Histogram slices in the otel-go transform refer to the reader's buffers.
-	pb = proto.Clone(pb).(*metricspb.ResourceMetrics)
+	// Only our observation producer writes here. Copy its point slices before
+	// returning to the reader; no generic SDK metric conversion is needed.
+	copied := &metricdata.ResourceMetrics{Resource: data.Resource, ScopeMetrics: slices.Clone(data.ScopeMetrics)}
 	points := 0
-	for _, scope := range pb.ScopeMetrics {
-		for _, m := range scope.Metrics {
-			points += len(m.GetGauge().GetDataPoints()) + len(m.GetSum().GetDataPoints()) +
-				len(m.GetHistogram().GetDataPoints()) + len(m.GetExponentialHistogram().GetDataPoints()) + len(m.GetSummary().GetDataPoints())
+	for i := range copied.ScopeMetrics {
+		scope := &copied.ScopeMetrics[i]
+		scope.Metrics = slices.Clone(scope.Metrics)
+		for j := range scope.Metrics {
+			m := &scope.Metrics[j]
+			gauge, ok := m.Data.(metricdata.Gauge[int64])
+			if !ok {
+				return fmt.Errorf("unexpected operation observation type %T", m.Data)
+			}
+			gauge.DataPoints = slices.Clone(gauge.DataPoints)
+			m.Data = gauge
+			points += len(gauge.DataPoints)
 		}
 	}
 	if points == 0 {
@@ -76,7 +81,7 @@ func (q *asyncMetricExporter) Export(_ context.Context, data *metricdata.Resourc
 		return nil
 	}
 	q.pending += points
-	q.queue <- metricCollection{pb, points} // Capacity is also bounded by point count.
+	q.queue <- metricCollection{copied, points} // Capacity is also bounded by point count.
 	q.mu.Unlock()
 	return nil
 }
@@ -102,11 +107,7 @@ func (q *asyncMetricExporter) run(ctx context.Context) {
 			q.loss(collection.points, "shutdown deadline")
 			continue
 		}
-		data, err := ResourceMetricsFromPB(collection.data)
-		if err == nil {
-			err = q.next.Export(ctx, data)
-		}
-		if err != nil {
+		if err := q.next.Export(ctx, collection.data); err != nil {
 			q.loss(collection.points, "export failed")
 			slog.Warn("OTLP metric export failed", "error", err)
 		}
