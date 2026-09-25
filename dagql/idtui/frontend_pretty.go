@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/color"
 	"io"
 	"os"
 	"path/filepath"
@@ -135,6 +136,7 @@ type frontendPretty struct {
 	// Only the measured prompt fill uses extended colors; all other UI colors
 	// continue to use profile's terminal palette.
 	promptColorProfile termenv.Profile
+	promptBaseColor    color.Color // OSC 11 may arrive before the capability reply
 	promptBackground   promptBackground
 
 	// Attachments stay out of text history and are owned by the current draft.
@@ -999,11 +1001,15 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 	}
 	promptProfile := termenv.Ascii
 	if realTerminal && profile != termenv.Ascii {
-		// Detect capabilities without probing or reading stdin. The wrapper sends
-		// OSC 11 only once Tuist has started the terminal's sole input reader.
+		// The environment supplies an initial capability estimate. Nested
+		// terminals may only advertise TERM=xterm, so probe for extended color
+		// support as well as the background once Tuist's input reader starts.
 		promptProfile = termenv.NewOutput(io.Discard, termenv.WithTTY(true)).EnvColorProfile()
-		if promptProfile == termenv.TrueColor || promptProfile == termenv.ANSI256 {
-			term = &promptColorTerminal{Terminal: term}
+		if promptProfile != termenv.Ascii {
+			term = &promptColorTerminal{
+				Terminal:          term,
+				queryCapabilities: promptProfile != termenv.TrueColor,
+			}
 		}
 	}
 	tui := tuist.New(term)

@@ -3,6 +3,8 @@ package idtui
 import (
 	"fmt"
 	"image/color"
+	"strconv"
+	"strings"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -61,6 +63,7 @@ func blendPromptBackground(bg color.Color, profile termenv.Profile) promptBackgr
 // never answer, leaving the background unset. Start also re-queries on resume.
 type promptColorTerminal struct {
 	tuist.Terminal
+	queryCapabilities bool
 }
 
 func (t *promptColorTerminal) Start(onInput func([]byte), onResize func()) error {
@@ -68,20 +71,70 @@ func (t *promptColorTerminal) Start(onInput func([]byte), onResize func()) error
 		return err
 	}
 	t.Terminal.WriteString(ansi.RequestBackgroundColor)
+	if t.queryCapabilities {
+		// A byte-forwarding container terminal often loses TERM/COLORTERM but
+		// still reaches the real emulator. Ask instead of assuming 256 colors
+		// or true color just because it answers OSC 11.
+		// Separate requests let terminals that stop at an unknown capability
+		// still answer the other names.
+		for _, capability := range []string{"RGB", "Tc", "Co"} {
+			t.Terminal.WriteString(ansi.RequestTermcap(capability))
+		}
+	}
 	return nil
 }
 
+// promptCapabilityProfile reads successful XTGETTCAP replies decoded by
+// Ultraviolet. RGB/Tc are true-color capabilities; Co is the color count.
+// Negative and malformed replies must not turn an ANSI-only terminal into a
+// true-color one. Profile values run from TrueColor (best) through Ascii.
+func promptCapabilityProfile(content string) termenv.Profile {
+	profile := termenv.Ascii
+	for _, capability := range strings.Split(content, ";") {
+		name, value, hasValue := strings.Cut(capability, "=")
+		n, err := strconv.Atoi(value)
+		switch name {
+		case "RGB", "Tc":
+			if !hasValue || (err == nil && n > 0) {
+				profile = termenv.TrueColor
+			}
+		case "Co", "colors":
+			if err == nil {
+				switch {
+				case n >= 1<<24:
+					profile = termenv.TrueColor
+				case n >= 256:
+					profile = min(profile, termenv.ANSI256)
+				}
+			}
+		}
+	}
+	return profile
+}
+
 // handlePromptBackground runs on Tuist's event loop, before input dispatch, so
-// OSC replies cannot become editor text. It also accepts later color reports.
+// OSC and capability replies cannot become editor text. Cache the base color
+// separately: the replies can arrive in either order.
 func (fe *frontendPretty) handlePromptBackground(_ tuist.Context, event uv.Event) bool {
-	reply, ok := event.(uv.BackgroundColorEvent)
-	if !ok {
+	switch reply := event.(type) {
+	case uv.BackgroundColorEvent:
+		if reply.Color == nil || fe.profile == termenv.Ascii || fe.promptColorProfile == termenv.Ascii {
+			return true
+		}
+		fe.promptBaseColor = reply.Color
+	case uv.CapabilityEvent:
+		profile := promptCapabilityProfile(reply.Content)
+		if profile == termenv.Ascii {
+			return false // leave unrelated capabilities to other listeners
+		}
+		if fe.profile == termenv.Ascii || fe.promptColorProfile == termenv.Ascii {
+			return true
+		}
+		fe.promptColorProfile = min(fe.promptColorProfile, profile)
+	default:
 		return false
 	}
-	if reply.Color == nil || fe.profile == termenv.Ascii {
-		return true
-	}
-	background := blendPromptBackground(reply.Color, fe.promptColorProfile)
+	background := blendPromptBackground(fe.promptBaseColor, fe.promptColorProfile)
 	if background == fe.promptBackground {
 		return true
 	}

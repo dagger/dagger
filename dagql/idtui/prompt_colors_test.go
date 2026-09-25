@@ -58,15 +58,18 @@ func TestPromptColorQueryEligibility(t *testing.T) {
 	}{
 		{"xterm-kitty", termenv.ANSI, true},
 		{"xterm-256color", termenv.ANSI, true},
-		{"xterm", termenv.ANSI, false},
+		{"xterm", termenv.ANSI, true},
 		{"dumb", termenv.ANSI, false},
 		{"xterm-kitty", termenv.Ascii, false},
 	} {
 		t.Run(tc.term+tc.profile.Name(), func(t *testing.T) {
 			t.Setenv("TERM", tc.term)
 			fe := newWithTerminalProfile(io.Discard, dagui.NewDB(), tuist.NewStdTerminal(), tc.profile)
-			_, queries := fe.term.(*promptColorTerminal)
+			probe, queries := fe.term.(*promptColorTerminal)
 			require.Equal(t, tc.query, queries)
+			if queries {
+				require.Equal(t, tc.term != "xterm-kitty", probe.queryCapabilities)
+			}
 			require.Equal(t, promptBackground{}, fe.promptBackground)
 		})
 	}
@@ -83,11 +86,12 @@ func TestPromptColorQueryEligibility(t *testing.T) {
 
 type promptProbeTerminal struct {
 	tuist.Terminal
-	started  bool
-	startErr error
-	queries  int
-	onInput  func([]byte)
-	reply    bool
+	started           bool
+	startErr          error
+	queries           int
+	capabilityQueries []string
+	onInput           func([]byte)
+	reply             bool
 }
 
 func (t *promptProbeTerminal) Start(onInput func([]byte), _ func()) error {
@@ -100,6 +104,24 @@ func (t *promptProbeTerminal) Start(onInput func([]byte), _ func()) error {
 }
 
 func (t *promptProbeTerminal) WriteString(s string) {
+	for capability, reply := range map[string]string{
+		"RGB": "\x1bP1+r524742\x1b\\",
+		"Tc":  "\x1bP0+r5463\x1b\\", // unsupported: must not produce a capability event
+		"Co":  "\x1bP1+r436f=323536\x1b\\",
+	} {
+		if s == ansi.RequestTermcap(capability) {
+			if !t.started {
+				panic("queried capabilities before starting input")
+			}
+			t.capabilityQueries = append(t.capabilityQueries, capability)
+			if t.reply {
+				// Split inside the DCS payload to exercise the existing reader.
+				t.onInput([]byte(reply[:6]))
+				t.onInput([]byte(reply[6:]))
+			}
+			return
+		}
+	}
 	if s != ansi.RequestBackgroundColor {
 		return
 	}
@@ -118,30 +140,35 @@ func (t *promptProbeTerminal) WriteString(s string) {
 
 func TestPromptColorQueryLifecycle(t *testing.T) {
 	terminal := &promptProbeTerminal{Terminal: tuist.NewHeadlessTerminal(40, 10)}
-	probe := &promptColorTerminal{Terminal: terminal}
-	// No reply is required to start, and a resume reissues the query.
+	probe := &promptColorTerminal{Terminal: terminal, queryCapabilities: true}
+	// No reply is required to start, and a resume reissues the queries.
 	require.NoError(t, probe.Start(func([]byte) {}, func() {}))
 	require.Equal(t, 1, terminal.queries)
+	require.Equal(t, []string{"RGB", "Tc", "Co"}, terminal.capabilityQueries)
 	probe.Stop()
 	require.NoError(t, probe.Start(func([]byte) {}, func() {}))
 	require.Equal(t, 2, terminal.queries)
 	terminal.startErr = errors.New("no terminal")
 	require.ErrorIs(t, probe.Start(func([]byte) {}, func() {}), terminal.startErr)
 	require.Equal(t, 2, terminal.queries)
+	require.Equal(t, []string{"RGB", "Tc", "Co", "RGB", "Tc", "Co"}, terminal.capabilityQueries)
 }
 
 func TestPromptColorQueryUsesTuistReader(t *testing.T) {
 	terminal := &promptProbeTerminal{Terminal: tuist.NewHeadlessTerminal(40, 10), reply: true}
-	tui := tuist.New(&promptColorTerminal{Terminal: terminal})
+	tui := tuist.New(&promptColorTerminal{Terminal: terminal, queryCapabilities: true})
 	events := make(chan uv.Event, 8)
 	tui.AddInputListener(func(_ tuist.Context, event uv.Event) bool {
-		events <- event
+		switch event.(type) {
+		case uv.KeyPressEvent, uv.BackgroundColorEvent, uv.CapabilityEvent:
+			events <- event
+		}
 		return true
 	})
 	require.NoError(t, tui.Start())
 	defer tui.Stop()
 	var got []uv.Event
-	for len(got) < 3 {
+	for len(got) < 5 {
 		select {
 		case event := <-events:
 			got = append(got, event)
@@ -155,6 +182,67 @@ func TestPromptColorQueryUsesTuistReader(t *testing.T) {
 	r, g, b, _ := reply.Color.RGBA()
 	require.Zero(t, r|g|b)
 	require.Equal(t, "b", got[2].(uv.KeyPressEvent).String())
+	require.Equal(t, uv.CapabilityEvent{Content: "RGB"}, got[3])
+	require.Equal(t, uv.CapabilityEvent{Content: "Co=256"}, got[4])
+}
+
+func TestPromptCapabilityProfile(t *testing.T) {
+	for _, tc := range []struct {
+		content string
+		want    termenv.Profile
+	}{
+		{"RGB", termenv.TrueColor},
+		{"Tc", termenv.TrueColor},
+		{"RGB=8", termenv.TrueColor},
+		{"Tc=1", termenv.TrueColor},
+		{"Co=256", termenv.ANSI256},
+		{"colors=256", termenv.ANSI256},
+		{"Co=16777216", termenv.TrueColor},
+		{"RGB;Co=256", termenv.TrueColor},
+		{"Co=256;RGB", termenv.TrueColor},
+		{"Co=16", termenv.Ascii},
+		{"RGB=0", termenv.Ascii},
+		{"Tc=-1", termenv.Ascii},
+		{"Tc=garbage", termenv.Ascii},
+		{"RGB=", termenv.Ascii},
+		{"Co=9999999999999999999999999", termenv.Ascii},
+		{"TN=xterm-kitty", termenv.Ascii},
+		{"", termenv.Ascii},
+	} {
+		t.Run(tc.content, func(t *testing.T) {
+			require.Equal(t, tc.want, promptCapabilityProfile(tc.content))
+		})
+	}
+}
+
+func TestPromptCapabilityAndBackgroundReplyOrder(t *testing.T) {
+	for _, capability := range []string{"RGB", "Co=256"} {
+		for _, order := range []string{"background first", "capability first"} {
+			t.Run(capability+"/"+order, func(t *testing.T) {
+				fe := newWithTerminalProfile(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(40, 10), termenv.ANSI)
+				// Dagger's nested PTY defaults to TERM=xterm, with no COLORTERM.
+				fe.promptColorProfile = termenv.ANSI
+				events := []uv.Event{uv.BackgroundColorEvent{Color: color.Black}, uv.CapabilityEvent{Content: capability}}
+				if order == "capability first" {
+					events[0], events[1] = events[1], events[0]
+				}
+				fe.tui.Inject(events[0])
+				fe.tui.Step()
+				require.Equal(t, promptBackground{}, fe.promptBackground, "need both color and capability")
+				fe.tui.Inject(events[1])
+				fe.tui.Step()
+				profile := promptCapabilityProfile(capability)
+				require.Equal(t, profile, fe.promptColorProfile)
+				require.Equal(t, blendPromptBackground(color.Black, profile), fe.promptBackground)
+				// Separate replies can arrive in any order without downgrading
+				// true color, and unsupported reports must not enable anything.
+				fe.tui.Inject(uv.CapabilityEvent{Content: "Co=16"})
+				fe.tui.Inject(uv.CapabilityEvent{Content: "Co=256"})
+				fe.tui.Step()
+				require.Equal(t, profile, fe.promptColorProfile)
+			})
+		}
+	}
 }
 
 func TestPromptBackgroundReplyUpdatesDraftAndHistory(t *testing.T) {
@@ -167,7 +255,7 @@ func TestPromptBackgroundReplyUpdatesDraftAndHistory(t *testing.T) {
 	})
 	db.SetPrimarySpan(rootID)
 	fe := newWithTerminalProfile(io.Discard, db, tuist.NewHeadlessTerminal(60, 20), termenv.ANSI)
-	fe.promptColorProfile = termenv.TrueColor
+	fe.promptColorProfile = termenv.ANSI
 	fe.setupTUI()
 	fe.startShell(context.Background(), stubShellHandler{})
 	fe.promptFrame.SetEnabled(true)
@@ -185,6 +273,21 @@ func TestPromptBackgroundReplyUpdatesDraftAndHistory(t *testing.T) {
 	require.Contains(t, before, "draft")
 	require.NotContains(t, before, "48;2;")
 	require.NotContains(t, before, "\x1b[100m")
+
+	// Receiving the background alone is not proof of extended color support.
+	fe.tui.Inject(uv.BackgroundColorEvent{Color: color.Black})
+	fe.tui.Step()
+	require.Equal(t, promptBackground{}, fe.promptBackground)
+	for _, capability := range []string{"Co=256", "RGB"} {
+		fe.tui.Inject(uv.CapabilityEvent{Content: capability})
+		fe.tui.Step()
+		want := blendPromptBackground(color.Black, promptCapabilityProfile(capability))
+		require.Equal(t, want, fe.promptBackground)
+		frame := strings.Join(fe.tui.Frame(), "\n")
+		sequence := "\x1b[" + want.term.Sequence(true) + "m"
+		require.True(t, containsStyledLine(frame, "submitted", sequence), visibleEscapes(frame))
+		require.True(t, containsStyledLine(frame, "draft", sequence), visibleEscapes(frame))
+	}
 
 	for _, bg := range []color.Color{color.Black, color.White} {
 		fe.tui.Inject(uv.BackgroundColorEvent{Color: bg})
@@ -215,8 +318,17 @@ func TestPromptBackgroundReplyBeforeShellAndFallback(t *testing.T) {
 		require.Equal(t, previous, fe.promptBackground, "ignore malformed replies")
 	}
 	fe := newWithTerminalProfile(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(40, 10), termenv.Ascii)
-	fe.promptColorProfile = termenv.TrueColor
+	fe.promptColorProfile = termenv.ANSI
+	fe.tui.Inject(uv.CapabilityEvent{Content: "RGB"})
 	fe.tui.Inject(uv.BackgroundColorEvent{Color: color.Black})
 	fe.tui.Step()
 	require.Equal(t, promptBackground{}, fe.promptBackground, "ASCII renderers must not enable shading")
+	require.Equal(t, termenv.ANSI, fe.promptColorProfile)
+
+	headless := newWithTerminalProfile(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(40, 10), termenv.ANSI)
+	headless.tui.Inject(uv.CapabilityEvent{Content: "RGB"})
+	headless.tui.Inject(uv.BackgroundColorEvent{Color: color.Black})
+	headless.tui.Step()
+	require.Equal(t, termenv.Ascii, headless.promptColorProfile)
+	require.Equal(t, promptBackground{}, headless.promptBackground)
 }
