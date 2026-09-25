@@ -1550,6 +1550,7 @@ type activePromptForm struct {
 	model   *huh.Form
 	wrap    *teav1.Wrap
 	spacer  *blankLine
+	trailer *blankLine
 	focus   *tuist.FocusHandle
 }
 
@@ -1662,6 +1663,7 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 		model:   model,
 		wrap:    teav1.New(model),
 		spacer:  &blankLine{},
+		trailer: &blankLine{when: fe.formNeedsTrailingSpace},
 	}
 	active.wrap.OnQuit(func() {
 		fe.completePromptForm(active, true)
@@ -1682,8 +1684,11 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 		fe.tui.RemoveChild(fe.statusLine)
 	}
 	fe.tui.RemoveChild(fe.keymapBar)
-	fe.tui.AddChild(active.wrap)
+	// Blank lines above and below separate the form from the output and the
+	// draft. The trailer only renders when what follows lacks its own gap.
 	fe.tui.AddChild(active.spacer)
+	fe.tui.AddChild(active.wrap)
+	fe.tui.AddChild(active.trailer)
 	if fe.promptFrame != nil {
 		fe.tui.AddChild(fe.promptFrame)
 	}
@@ -1708,6 +1713,7 @@ func (fe *frontendPretty) completePromptForm(active *activePromptForm, invokeRes
 	active.focus.Restore()
 	fe.tui.RemoveChild(active.wrap)
 	fe.tui.RemoveChild(active.spacer)
+	fe.tui.RemoveChild(active.trailer)
 	fe.activeForm = nil
 	fe.syncHardwareCursor()
 
@@ -1777,11 +1783,25 @@ func (fe *frontendPretty) OpenBrowser(url string) error {
 	return browser.OpenURL(url)
 }
 
-// blankLine is a trivial component that renders a single empty line.
-type blankLine struct{ tuist.Compo }
+// blankLine is a trivial component that renders a single empty line, or
+// nothing when its optional condition is false.
+type blankLine struct {
+	tuist.Compo
+	when func() bool
+}
 
-func (*blankLine) Render(ctx tuist.Context) {
+func (b *blankLine) Render(ctx tuist.Context) {
+	if b.when != nil && !b.when() {
+		return
+	}
 	ctx.Line("")
+}
+
+// formNeedsTrailingSpace reports whether a blank line must follow an active
+// form. The shaded prompt frame and the (non-snug) keymap bar each open with
+// their own blank line; only a bare plain-shell prompt would hug the form.
+func (fe *frontendPretty) formNeedsTrailingSpace() bool {
+	return fe.promptFrame != nil && !fe.promptFrame.enabled
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
@@ -4037,7 +4057,11 @@ func (fe *frontendPretty) formHeight() int {
 	if view == "" {
 		return 0
 	}
-	return strings.Count(view, "\n") + 2 // +1 for the view line, +1 for the spacer
+	height := strings.Count(view, "\n") + 2 // +1 for the view line, +1 for the spacer
+	if fe.formNeedsTrailingSpace() {
+		height++
+	}
+	return height
 }
 
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
@@ -6919,6 +6943,9 @@ func (fe *frontendPretty) syncPrompt() {
 				promptMode = pm.PromptMode()
 			}
 			fe.promptFrame.SetEnabled(promptMode)
+			if fe.activeForm != nil {
+				fe.activeForm.trailer.Update() // depends on the frame's mode
+			}
 			fe.promptFrame.SetAttachments(fe.promptImages, fe.imagePasting)
 			if fe.promptFrame.ChromeHeight() != previousHeight {
 				fe.Update() // attachment rows change the transcript's height budget

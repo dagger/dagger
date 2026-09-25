@@ -179,6 +179,86 @@ func TestPushConfirmationCancellation(t *testing.T) {
 	t.Fatal("canceled confirmation did not return")
 }
 
+// mountBoolPrompt shows a bool prompt through HandlePrompt and waits until the
+// form is mounted. The returned cancel dismisses it.
+func mountBoolPrompt(t *testing.T, fe *frontendPretty, title, message string) context.CancelFunc {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		allowed := false
+		_ = fe.HandlePrompt(ctx, title, message, &allowed)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for fe.activeForm == nil && time.Now().Before(deadline) {
+		fe.tui.Step()
+		time.Sleep(time.Millisecond)
+	}
+	if fe.activeForm == nil {
+		cancel()
+		t.Fatal("confirmation was not mounted")
+	}
+	return cancel
+}
+
+func TestPushConfirmationSpacing(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	t.Setenv("NO_COLOR", "1")
+	for _, tc := range []struct {
+		name       string
+		promptMode bool
+		// Blank rows between the question and the draft: the shaded frame
+		// opens with its own separator and padding row; a bare plain-shell
+		// prompt needs the form's trailing spacer.
+		blanksBelow int
+	}{
+		{name: "framed", promptMode: true, blanksBelow: 2},
+		{name: "plain", promptMode: false, blanksBelow: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+			fe.setupTUI()
+			fe.startShell(t.Context(), &imagePromptHandler{mode: tc.promptMode})
+			defer fe.stopShell()
+			fe.textInput.SetValue("unfinished draft")
+			question := "Allow push to git@example.com:repo @ refs/heads/main?"
+			cancel := mountBoolPrompt(t, fe, "", question)
+			defer cancel()
+			for range 5 {
+				fe.tui.Step()
+				time.Sleep(10 * time.Millisecond)
+			}
+			lines := strings.Split(ansi.Strip(strings.Join(fe.tui.Step(), "\n")), "\n")
+			questionAt, draftAt := -1, -1
+			for i, line := range lines {
+				if questionAt < 0 && strings.Contains(line, question) {
+					questionAt = i
+				}
+				if strings.Contains(line, "unfinished draft") {
+					draftAt = i
+				}
+			}
+			frame := strings.Join(lines, "\n")
+			if questionAt < 1 || draftAt < questionAt {
+				t.Fatalf("question must follow a line and precede the draft:\n%s", frame)
+			}
+			if strings.TrimSpace(lines[questionAt-1]) != "" {
+				t.Fatalf("question must have a blank line above it:\n%s", frame)
+			}
+			if questionAt >= 2 && strings.TrimSpace(lines[questionAt-2]) == "" {
+				t.Fatalf("question must have exactly one blank line above it:\n%s", frame)
+			}
+			if got := draftAt - questionAt - 1; got != tc.blanksBelow {
+				t.Fatalf("rows between question and draft = %d, want %d:\n%s", got, tc.blanksBelow, frame)
+			}
+			for _, line := range lines[questionAt+1 : draftAt] {
+				if strings.TrimSpace(line) != "" {
+					t.Fatalf("unexpected content between question and draft:\n%s", frame)
+				}
+			}
+		})
+	}
+}
+
 func TestFrontendFormThemeUsesStructuralFocusMarkers(t *testing.T) {
 	theme := frontendFormTheme()
 	if _, ok := theme.Focused.FocusedButton.GetBackground().(lipgloss.NoColor); !ok {
