@@ -183,13 +183,7 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	// unrelated output really is large. Count streamed bytes without buffering.
 	var archivedBytes int
 	err = display.FetchLogs(targetCtx, traceID, cloud.LogSelection{SpanID: unrelatedSpan, Records: cloud.LogRecordsLogs}, func(_ context.Context, batch *collogspb.ExportLogsServiceRequest) error {
-		for _, resource := range batch.ResourceLogs {
-			for _, scope := range resource.ScopeLogs {
-				for _, record := range scope.LogRecords {
-					archivedBytes += len(record.GetBody().GetStringValue())
-				}
-			}
-		}
+		archivedBytes += displayLogBytes(batch)
 		return nil
 	})
 	require.NoError(t, err)
@@ -305,6 +299,18 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	require.Contains(t, lastScreen, selectedText, "widening must restore the complete logical log line")
 	require.NotContains(t, lastScreen, unrelatedText)
 	require.EqualValues(t, 0, cloudRequests.Load(), "lazy browsing must stay on its selected engine archive")
+}
+
+func displayLogBytes(batch *collogspb.ExportLogsServiceRequest) int {
+	var size int
+	for _, resource := range batch.ResourceLogs {
+		for _, scope := range resource.ScopeLogs {
+			for _, record := range scope.LogRecords {
+				size += len(record.GetBody().GetStringValue())
+			}
+		}
+	}
+	return size
 }
 
 // Count actual requests at the wire, rather than merely asserting what reached
