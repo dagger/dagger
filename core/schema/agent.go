@@ -127,12 +127,6 @@ func (s agentSchema) Install(srv *dagql.Server) {
 				dagql.Arg("on").Doc(`The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.`),
 			),
 
-		dagql.NodeFunc("discardRestore", s.discardRestore).
-			Experimental("Agent APIs are likely to change.").
-			DoNotCache("Rolls back an unactivated restored runtime.").
-			Doc(`Discard a restored runtime during failed graph installation.`,
-				`Refuses fresh or already activated agents. Removes its notification edges and preserves a telemetry removal tombstone for archive verification.`),
-
 		dagql.NodeFunc("stop", s.stop).
 			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Imperatively mutates runtime state.").
@@ -418,17 +412,6 @@ func (s agentSchema) notify(ctx context.Context, parent dagql.ObjectResult[*core
 		return res, err
 	}
 	if err := agents.Notify(ctx, parent, subscriber, args.On); err != nil {
-		return res, err
-	}
-	return agentSelfID(ctx, parent)
-}
-
-func (s agentSchema) discardRestore(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
-	agents, err := agentRuntimes(ctx)
-	if err != nil {
-		return res, err
-	}
-	if err := agents.DiscardRestore(ctx, parent); err != nil {
 		return res, err
 	}
 	return agentSelfID(ctx, parent)

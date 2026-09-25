@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	telemetry "github.com/dagger/otel-go"
@@ -139,7 +138,7 @@ func (rt *AgentRuntime) publishControlLocked() {
 	if rt.controlDigest == "" && rt.controlCaptureError == "" {
 		return
 	}
-	projection := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: rt.controlNamespace, Handle: rt.key}, Name: rt.name, Removed: rt.removed.Load(), Parent: rt.parentHandle, CallDigest: rt.controlCallDigest,
+	projection := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: rt.controlNamespace, Handle: rt.key}, Name: rt.name, Parent: rt.parentHandle, CallDigest: rt.controlCallDigest,
 		Digest: rt.controlDigest, CaptureError: rt.controlCaptureError, State: string(state), StopReason: stopReason, PreTeardownState: string(rt.preTeardownState), Failure: failure, Activity: rt.controlActivity}
 	if projection == rt.controlLast {
 		return
@@ -164,52 +163,6 @@ func (rt *AgentRuntime) associateConversationLocked(ctx context.Context) {
 		rt.controlDigest = digest.String()
 	}
 	rt.controlActivity = time.Now().UTC()
-}
-
-// DiscardRestore rolls back only an unactivated restored entry. Keep a removal
-// tombstone for the final producer witness, while making all held handles fail
-// registry lookup. It cannot delete an unrelated or already-used live agent.
-func (ars *AgentRuntimes) DiscardRestore(ctx context.Context, agent dagql.ObjectResult[*Agent]) error {
-	rt, err := ars.Require(ctx, agent)
-	if err != nil {
-		return err
-	}
-	rt.mu.Lock()
-	if !rt.restored || rt.activated || rt.closing {
-		rt.mu.Unlock()
-		return errors.New("only an unactivated restored agent can be discarded")
-	}
-	rt.closing = true
-	rt.transitionLocked(func() {
-		rt.removed.Store(true)
-		rt.done, rt.sealed, rt.stopRequested = true, true, true
-		rt.stopReason = AgentStopExplicit
-		for subscriber := range rt.subs {
-			rt.installSubscriptionLocked(subscriber, nil, false)
-		}
-	})
-	rt.controlClosed = true
-	rt.mu.Unlock()
-	ars.mu.Lock()
-	entries := make([]*AgentRuntime, 0, len(ars.entries))
-	for _, other := range ars.entries {
-		if other != rt {
-			entries = append(entries, other)
-		}
-	}
-	ars.mu.Unlock()
-	for _, other := range entries {
-		other.mu.Lock()
-		if _, ok := other.subs[rt.key]; ok && !other.controlClosed {
-			other.installSubscriptionLocked(rt.key, nil, false)
-		}
-		other.mu.Unlock()
-	}
-	if err := rt.control.close(ctx); err != nil {
-		return err
-	}
-	rt.clientScopeLease.Release()
-	return nil
 }
 
 // CloseControl is the producer-side finality barrier. It closes admission,

@@ -107,8 +107,6 @@ func (DaggerCMDSuite) TestTraceRestoreRuntimeQueries(ctx context.Context, t *tes
 	workerError, err := dagger.Ref[*dagger.Agent](dag, dagger.ID(worker)).Error(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "original failure", workerError)
-	require.NoError(t, target.Discard(ctx, worker))
-	require.NoError(t, target.Discard(ctx, chief))
 }
 
 func TestComposeAgentsRequiresSnapshot(t *testing.T) {
