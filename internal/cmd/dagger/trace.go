@@ -176,14 +176,9 @@ func resolveTraceViewArg(ctx context.Context, args []string, o *traceViewOptions
 // openTraceWeb opens the trace, or the selected span in it, in the web UI.
 func openTraceWeb(cmd *cobra.Command, traceID, orgName string, sel spanSelector) error {
 	ctx := cmd.Context()
-	if cloudOrgFlag != "" {
-		orgName = cloudOrgFlag
-	}
-	if orgName == "" {
-		var err error
-		if orgName, err = cloudOrgNameLocal(); err != nil {
-			return err
-		}
+	orgName, err := traceWebOrg(orgName)
+	if err != nil {
+		return err
 	}
 	var spanID string
 	if sel.isSet() {
@@ -199,7 +194,7 @@ func openTraceWeb(cmd *cobra.Command, traceID, orgName string, sel spanSelector)
 	if err := browser.OpenURL(u); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Cannot open a web browser. Open this URL:\n")
 	}
-	_, err := fmt.Fprintln(cmd.OutOrStdout(), u)
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), u)
 	return err
 }
 

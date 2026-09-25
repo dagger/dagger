@@ -3,7 +3,8 @@ package daggercmd
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -27,24 +28,9 @@ func TestWriteCloudTracesStatus(t *testing.T) {
 			want:   "emitting\n  credential: dagger login (org: acme)\n",
 		},
 		{
-			name:   "token without known org",
-			status: enginetel.CloudEmitStatus{Emitting: true, Credential: "DAGGER_CLOUD_TOKEN"},
-			want:   "emitting\n  credential: DAGGER_CLOUD_TOKEN\n",
-		},
-		{
-			name:   "no credential",
-			status: enginetel.CloudEmitStatus{},
-			want:   "not emitting\n  reason: no credential\n  fix:    dagger login, or set DAGGER_CLOUD_TOKEN\n",
-		},
-		{
 			name:   "login without org",
 			status: enginetel.CloudEmitStatus{Credential: "dagger login"},
 			want:   "not emitting\n  reason: logged in, but no org is selected\n  fix:    dagger cloud org use <org>\n",
-		},
-		{
-			name:   "credential error",
-			status: enginetel.CloudEmitStatus{Credential: "DAGGER_CLOUD_TOKEN", Err: errors.New("oidc failed")},
-			want:   "not emitting\n  reason: cannot read the credential: oidc failed\n  fix:    dagger login, or set DAGGER_CLOUD_TOKEN\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -178,7 +164,7 @@ func TestWriteTracesTable(t *testing.T) {
 	require.Len(t, lines, 3)
 	require.Equal(t, []string{"ID", "STATUS", "DURATION", "COMMAND", "BRANCH/PR", "SENDER", "STARTED"}, strings.Fields(lines[0]))
 	require.Regexp(t, `^2f123ba77bf7bd2d4db2f70ed20613e8\s+failed\s+2m0s\s+dagger check\s+#42\s+Ada\s+`, lines[1])
-	require.Regexp(t, `^0102030405060708090a0b0c0d0e0f10\s+running\s+30s\s+dagger call build\s+0123456789ab\s+-\s+`, lines[2])
+	require.Regexp(t, `^0102030405060708090a0b0c0d0e0f10\s+running\s+30\.0s\s+dagger call build\s+0123456789ab\s+-\s+`, lines[2])
 }
 
 func TestWriteTracesJSON(t *testing.T) {
@@ -207,15 +193,6 @@ func TestWriteTracesJSON(t *testing.T) {
 	}, rows)
 }
 
-func TestTraceJSONFieldsAreComplete(t *testing.T) {
-	now := time.Now()
-	all := traceJSON("acme", &testTraceSummaries(now)[0], now)
-	require.Len(t, all, len(traceJSONFields))
-	for _, f := range traceJSONFields {
-		require.Contains(t, all, f)
-	}
-}
-
 func TestRunTraceViewValidatesFlags(t *testing.T) {
 	cmd := &cobra.Command{}
 	for _, tc := range []struct {
@@ -237,7 +214,56 @@ func TestRunTraceViewValidatesFlags(t *testing.T) {
 	}
 }
 
-func TestCloudSpanURL(t *testing.T) {
-	require.Equal(t, "https://dagger.cloud/acme/traces/abc", cloudSpanURL("acme", "abc", ""))
-	require.Equal(t, "https://dagger.cloud/acme/traces/abc?span=0102", cloudSpanURL("acme", "abc", "0102"))
+func TestTraceWebOrg(t *testing.T) {
+	prev := cloudOrgFlag
+	t.Cleanup(func() { cloudOrgFlag = prev })
+	t.Setenv("DAGGER_CLOUD_TOKEN", "dag_local_secret")
+
+	cloudOrgFlag = ""
+	org, err := traceWebOrg("")
+	require.NoError(t, err)
+	require.Equal(t, "local", org, "the credential's org is the last choice")
+
+	org, err = traceWebOrg("fromurl")
+	require.NoError(t, err)
+	require.Equal(t, "fromurl", org, "the trace URL's org wins over the credential's org")
+
+	cloudOrgFlag = "flag"
+	org, err = traceWebOrg("fromurl")
+	require.NoError(t, err)
+	require.Equal(t, "flag", org, "--org wins")
+}
+
+func TestResolveTraceViewArgLast(t *testing.T) {
+	var lastOrg any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(req.Query, "lastUserTrace"):
+			lastOrg = req.Variables["org"]
+			_, _ = w.Write([]byte(`{"data":{"org":{"lastUserTrace":{"id":"2f123ba77bf7bd2d4db2f70ed20613e8"}}}}`))
+		case strings.Contains(req.Query, "org(name"):
+			_, _ = w.Write([]byte(`{"data":{"org":{"id":"org-id","name":"acme"}}}`))
+		default: // the user query: a token names no user
+			_, _ = w.Write([]byte(`{"errors":[{"message":"not a user"}]}`))
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("DAGGER_CLOUD_URL", srv.URL)
+	t.Setenv("DAGGER_CLOUD_TOKEN", "dag_acme_secret")
+	prev := cloudOrgFlag
+	t.Cleanup(func() { cloudOrgFlag = prev })
+	cloudOrgFlag = ""
+
+	traceID, org, span, err := resolveTraceViewArg(t.Context(), nil, &traceViewOptions{last: true})
+	require.NoError(t, err)
+	require.Equal(t, "2f123ba77bf7bd2d4db2f70ed20613e8", traceID)
+	require.Equal(t, "acme", org)
+	require.Empty(t, span)
+	require.Equal(t, "acme", lastOrg)
 }

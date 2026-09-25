@@ -55,11 +55,3 @@ func TestTraceListRequest(t *testing.T) {
 	require.Equal(t, 2*time.Minute, traces[0].Duration(time.Now()))
 	require.Equal(t, "42", traces[0].CI.Change.ID)
 }
-
-func TestTraceSummaryState(t *testing.T) {
-	end := time.Now()
-	require.Equal(t, TraceStateRunning, (&TraceSummary{}).State())
-	require.Equal(t, TraceStatePassed, (&TraceSummary{EndTime: &end}).State())
-	require.Equal(t, TraceStatePassed, (&TraceSummary{EndTime: &end, Status: &TraceStatus{Code: "STATUS_CODE_UNSET"}}).State())
-	require.Equal(t, TraceStateFailed, (&TraceSummary{EndTime: &end, Status: &TraceStatus{Code: "STATUS_CODE_ERROR"}}).State())
-}

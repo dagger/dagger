@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
@@ -293,7 +294,7 @@ func writeTracesTable(w io.Writer, traces []cloudapi.TraceSummary, now time.Time
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			t.ID,
 			t.State(),
-			formatTraceDuration(t.Duration(now)),
+			dagui.FormatDuration(t.Duration(now)),
 			truncateCell(t.Name, 50),
 			dash(traceBranchOrPR(t)),
 			dash(traceSender(t)),
@@ -301,17 +302,6 @@ func writeTracesTable(w io.Writer, traces []cloudapi.TraceSummary, now time.Time
 		)
 	}
 	return tw.Flush()
-}
-
-func formatTraceDuration(d time.Duration) string {
-	switch {
-	case d < 0:
-		return "-"
-	case d < time.Minute:
-		return d.Round(100 * time.Millisecond).String()
-	default:
-		return d.Round(time.Second).String()
-	}
 }
 
 func truncateCell(s string, n int) string {
@@ -481,11 +471,14 @@ func parseTraceRef(arg string) (traceID, orgName, spanID string, err error) {
 	return id.String(), orgName, spanID, nil
 }
 
-// cloudOrgNameLocal is the org for Cloud web links, from local state only:
-// --org, else the credential's org.
-func cloudOrgNameLocal() (string, error) {
+// traceWebOrg picks the org for a web link: --org, else the org that the
+// trace URL or --last gave, else the credential's org.
+func traceWebOrg(orgName string) (string, error) {
 	if cloudOrgFlag != "" {
 		return cloudOrgFlag, nil
+	}
+	if orgName != "" {
+		return orgName, nil
 	}
 	if name, err := auth.CurrentOrgName(); err == nil && name != "" {
 		return name, nil
