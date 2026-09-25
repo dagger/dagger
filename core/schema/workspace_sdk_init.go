@@ -28,7 +28,7 @@ func (s *workspaceSchema) loadWorkspaceSDKModule(
 	}
 
 	var workspaceSource *core.ModuleSource
-	if core.FastModuleSourceKindCheck(sdkRef, "") == core.ModuleSourceKindLocal {
+	if workspace.IsLocalRef(sdkRef, "") {
 		workspaceRoot, err := s.workspaceOverlayRootfs(ctx, ws)
 		if err != nil {
 			return nil, fmt.Errorf("load workspace SDK-module root: %w", err)
