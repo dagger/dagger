@@ -63,8 +63,8 @@ Restore forks new inert runtimes; it does not hand off a live session or start a
 model turn. Pending messages not committed to a conversation are not recovered.
 Legacy local JSON session files and -r/--resume are no longer supported.
 
-Restore fails on the first agent the trace does not carry enough to restore.
-Pass --partial to skip such agents, and any subscriptions to them, instead.
+Restore is best-effort: an agent the trace does not carry enough to restore is
+skipped, along with its subscriptions, and a warning names it and why.
 
 Use --list-archives to discover retained engine archives without restoring. Use
 --source-session when a trace belongs to multiple source sessions. Add --generation
@@ -88,7 +88,6 @@ dagger agent [options] [name...]
       --generation string       With --trace and --source-session, select the exact archive generation
   -l, --list                    List available agents
       --list-archives           List retained engine archives without restoring; --trace filters the list
-      --partial                 With --trace, restore the agents the trace carries enough to restore instead of failing on the first one it does not
       --source-session string   With --trace, select the source session in an engine archive or Cloud trace
       --trace string            Restore agents from a retained engine archive, falling back to their Dagger Cloud trace
 ```
