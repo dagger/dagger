@@ -31,3 +31,23 @@ func TestAppleRunArgsNotPrivilegedOmitsCapabilities(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, args, "--cap-add")
 }
+
+func TestAppleContainerRunningFromInspect(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name   string
+		status string
+	}{
+		{name: "pre-1.0 running", status: `"running"`},
+		{name: "pre-1.0 stopped", status: `"stopped"`},
+		{name: "current running", status: `{"state":"running"}`},
+		{name: "current stopped", status: `{"state":"stopped"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			running, err := appleContainerRunning(`[{"status":` + test.status + `}]`)
+			require.NoError(t, err)
+			require.Equal(t, test.name == "pre-1.0 running" || test.name == "current running", running)
+		})
+	}
+}

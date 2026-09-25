@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -72,9 +73,9 @@ func TestContainerConnectorDoesNotWarmOnDeadTunnel(t *testing.T) {
 	require.Equal(t, 2, backend.dials(), "each retry dials fresh; nothing warm was started")
 }
 
-// A client that stops waiting for its warm tunnel leaves it to the next
-// client instead of leaking it.
-func TestContainerConnectorKeepsTunnelAClientStoppedWaitingFor(t *testing.T) {
+// A client that stops waiting discards that tunnel; the next client can use
+// another warm tunnel without dialing on demand.
+func TestContainerConnectorDiscardsTunnelAClientStoppedWaitingFor(t *testing.T) {
 	t.Parallel()
 
 	backend := &dialingBackend{holdWarmDials: make(chan struct{})}
@@ -94,10 +95,37 @@ func TestContainerConnectorKeepsTunnelAClientStoppedWaitingFor(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 
 	close(backend.holdWarmDials)
+	require.Eventually(t, func() bool {
+		return backend.closedDials() == 1
+	}, 5*time.Second, time.Millisecond, "the abandoned tunnel should be closed")
 	conn, err = connector.Connect(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, conn)
-	require.Equal(t, 1+warmTunnelCount, backend.dials(), "the abandoned tunnel should have been reused, not replaced")
+	require.Equal(t, 1+warmTunnelCount, backend.dials(), "another warm tunnel should serve the next client")
+}
+
+// Closing the connector releases warm tunnels no client claimed, including
+// dials that are still in flight when close begins.
+func TestContainerConnectorClosesUnusedWarmTunnels(t *testing.T) {
+	t.Parallel()
+
+	backend := &dialingBackend{holdWarmDials: make(chan struct{})}
+	connector := containerConnector{backend: backend, host: "engine", warm: newWarmTunnels()}
+
+	conn, err := connector.Connect(t.Context())
+	require.NoError(t, err)
+	_, err = conn.Read(make([]byte, 1))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return backend.dials() == 1+warmTunnelCount
+	}, 5*time.Second, time.Millisecond, "the warm tunnels should be in flight")
+
+	require.NoError(t, connector.Close())
+	close(backend.holdWarmDials)
+	require.Eventually(t, func() bool {
+		return backend.closedDials() == warmTunnelCount
+	}, 5*time.Second, time.Millisecond, "every unused warm tunnel should close")
+	require.NoError(t, conn.Close())
 }
 
 // dialingBackend counts dials. It can refuse them (fail), hand out tunnels
@@ -108,9 +136,10 @@ type dialingBackend struct {
 	holdWarmDials chan struct{}
 	dead          bool
 
-	mu   sync.Mutex
-	n    int
-	fail bool
+	mu    sync.Mutex
+	n     int
+	fail  bool
+	conns []*tunnelConn
 }
 
 func (b *dialingBackend) dials() int {
@@ -125,6 +154,18 @@ func (b *dialingBackend) setFail(fail bool) {
 	b.fail = fail
 }
 
+func (b *dialingBackend) closedDials() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var closed int
+	for _, conn := range b.conns {
+		if conn.closed.Load() {
+			closed++
+		}
+	}
+	return closed
+}
+
 func (b *dialingBackend) ContainerDial(context.Context, string, []string) (net.Conn, error) {
 	b.mu.Lock()
 	b.n++
@@ -136,14 +177,19 @@ func (b *dialingBackend) ContainerDial(context.Context, string, []string) (net.C
 	if fail {
 		return nil, errors.New("no such container")
 	}
-	return &tunnelConn{dead: b.dead}, nil
+	conn := &tunnelConn{dead: b.dead}
+	b.mu.Lock()
+	b.conns = append(b.conns, conn)
+	b.mu.Unlock()
+	return conn, nil
 }
 
 // tunnelConn is a tunnel the engine answers on, byte by byte, or one it
 // never answers on.
 type tunnelConn struct {
 	net.Conn
-	dead bool
+	dead   bool
+	closed atomic.Bool
 }
 
 func (c *tunnelConn) Read(p []byte) (int, error) {
@@ -152,4 +198,9 @@ func (c *tunnelConn) Read(p []byte) (int, error) {
 	}
 	p[0] = 'x'
 	return 1, nil
+}
+
+func (c *tunnelConn) Close() error {
+	c.closed.Store(true)
+	return nil
 }
