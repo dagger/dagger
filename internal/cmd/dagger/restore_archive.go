@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/tracesource"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -135,11 +136,34 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 		return nil, err
 	}
 
-	return startHistoricalImport(ctx, func(ctx context.Context) error {
-		return importArchiveRemainder(ctx, source, req.traceID, importer, cut)
+	// Keep the verified bootstrap and span sealing path unchanged. Interactive
+	// frontends load display logs on demand; semantic metadata still arrives in
+	// the background so names, progress and call rendering do not require an
+	// expanded log pane. Lazy reads stay pinned to the bootstrap's cut.
+	historyCtx, cancel := context.WithCancel(ctx)
+	var logFg fetchGroup
+	tf, lazy := fe.(idtui.TraceFrontend)
+	if lazy {
+		display := tracesource.NewArchive(source, archive.Manifest{
+			TraceID: req.traceID, SealAt: &cut.SealAt,
+			HighWater: archive.HighWater{Spans: cut.HighWater.Spans, Logs: cut.HighWater.Logs, Metrics: cut.HighWater.Metrics},
+		})
+		loader := newTraceLoaderForFrontend(historyCtx, display, req.traceID, fe)
+		tf.SetLogProvider(func(id dagui.SpanID, descendants bool) {
+			loader.fetchLogs(&logFg, id, descendants)
+		})
+		tf.SetFetchWaiter(func() { _ = logFg.Wait() })
+	}
+	stop := startHistoricalImport(historyCtx, func(ctx context.Context) error {
+		return importArchiveRemainderMode(ctx, source, req.traceID, importer, cut, lazy)
 	}, func(err error) {
 		restoreNotice(ctx, fmt.Sprintf("historical telemetry import incomplete: %v; restored agents remain usable", err))
-	}), nil
+	})
+	return func() {
+		cancel()
+		stop()
+		_ = logFg.Wait()
+	}, nil
 }
 
 func archiveRestoreError(traceID string, err error) error {
@@ -168,6 +192,12 @@ func startHistoricalImport(ctx context.Context, run func(context.Context) error,
 // applied; the frontend ignores digests it already has, and a sealed archive's
 // history never includes control records.
 func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut) error {
+	return importArchiveRemainderMode(ctx, source, traceID, importer, cut, false)
+}
+
+// importArchiveRemainderMode is importArchiveRemainder, optionally leaving
+// display log bodies for the frontend to load on demand.
+func importArchiveRemainderMode(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, lazyLogs bool) error {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var resultErr error
@@ -177,8 +207,16 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 			switch signal {
 			case enginetel.ArchiveSpans:
 				opts.HighWater = cut.HighWater.Spans
+				if lazyLogs {
+					// The display view adds the has-logs hints lazy log
+					// loading needs.
+					opts.Spans = &archive.SpanSelection{Full: true, DagUIView: true}
+				}
 			case enginetel.ArchiveLogs:
 				opts.HighWater = cut.HighWater.Logs
+				if lazyLogs {
+					opts.Logs = &archive.LogSelection{Records: archive.LogRecordsMetadata}
+				}
 			case enginetel.ArchiveMetrics:
 				opts.HighWater = cut.HighWater.Metrics
 			}
