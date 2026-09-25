@@ -1285,7 +1285,8 @@ func traceMessage(profile termenv.Profile, url string, msg string) string {
 
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
-func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) error {
+func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) (rerr error) {
+	defer func() { rerr = errors.Join(rerr, fe.db.ClosePrimaryLogs()) }()
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}

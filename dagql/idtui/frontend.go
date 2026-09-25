@@ -19,7 +19,6 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/tuist"
-	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -1291,68 +1290,41 @@ func renderPrimaryOutputFor(w io.Writer, db *dagui.DB, primary dagui.SpanID, sep
 // output from before it failed). With separate true, a blank line is written
 // first to set the output apart from progress rendered above it.
 func writePrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, includeStderr, separate bool) error {
-	logs := db.PrimaryLogs[primary]
-	if !includeStderr {
-		var stdout []sdklog.Record
-		for _, l := range logs {
-			if primaryLogStream(l) == 1 {
-				stdout = append(stdout, l)
-			}
+	var wrote bool
+	var lastByte byte
+	err := db.WalkPrimaryLogs(primary, func(stream int64, data []byte) error {
+		if !includeStderr && stream != 1 {
+			return nil
 		}
-		logs = stdout
-	}
-	if len(logs) == 0 {
-		return nil
-	}
-
-	if separate {
-		fmt.Fprintln(w)
-	}
-
-	var lastBody string
-	for _, l := range logs {
-		data, ok := dagui.LogBodyString(l)
-		if !ok {
-			continue
+		if len(data) == 0 {
+			return nil
 		}
-		lastBody = data
-		switch primaryLogStream(l) {
-		case 1: // stdout
-			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
-				return err
-			}
-		case 2: // stderr
-			fallthrough
-		default:
-			if _, err := fmt.Fprint(w, data); err != nil {
+		if !wrote && separate {
+			if _, err := fmt.Fprintln(w); err != nil {
 				return err
 			}
 		}
+		wrote = true
+		lastByte = data[len(data)-1]
+		out := w
+		if stream == 1 {
+			out = os.Stdout
+		}
+		n, err := out.Write(data)
+		if err == nil && n != len(data) {
+			err = io.ErrShortWrite
+		}
+		return err
+	})
+	if err != nil {
+		return err
 	}
-
-	trailingLn := strings.HasSuffix(lastBody, "\n")
-	if !trailingLn && term.IsTerminal(int(os.Stdout.Fd())) {
+	if wrote && lastByte != '\n' && term.IsTerminal(int(os.Stdout.Fd())) {
 		// NB: ensure there's a trailing newline if stdout is a TTY, so we don't
 		// encourage module authors to add one of their own
-		fmt.Fprintln(os.Stdout)
+		_, err = fmt.Fprintln(os.Stdout)
 	}
-	return nil
-}
-
-// primaryLogStream returns the stdio stream a primary log record was written
-// to: 1 for stdout, 2 for stderr, 0 when unmarked.
-func primaryLogStream(l sdklog.Record) int {
-	var stream int
-	l.WalkAttributes(func(attr log.KeyValue) bool {
-		if attr.Key == telemetry.StdioStreamAttr {
-			if value, ok := dagui.LogValueInt64(attr.Value); ok {
-				stream = int(value)
-			}
-			return false
-		}
-		return true
-	})
-	return stream
+	return err
 }
 
 func skipLoggedOutTraceMsg() bool {

@@ -134,8 +134,10 @@ func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoin
 }
 
 type DB struct {
-	PrimarySpan SpanID
-	PrimaryLogs map[SpanID][]sdklog.Record
+	PrimarySpan       SpanID
+	primaryLogs       map[SpanID]*primaryLogBuffer
+	primaryLogsMu     sync.Mutex
+	primaryLogsClosed bool
 
 	Epoch, End time.Time
 
@@ -253,7 +255,7 @@ type resumeOutputKey struct {
 
 func NewDB() *DB {
 	return &DB{
-		PrimaryLogs: make(map[SpanID][]sdklog.Record),
+		primaryLogs: make(map[SpanID]*primaryLogBuffer),
 
 		Spans:     NewSpanSet(),
 		Resources: make(map[attribute.Distinct]*resource.Resource),
@@ -612,7 +614,7 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 		}
 		if spanID == db.PrimarySpan {
 			// buffer raw logs so we can write them later
-			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
+			db.appendPrimaryLog(spanID, log)
 		}
 		// flag that the span has received logs
 		db.initSpan(spanID).HasLogs = true
@@ -1296,7 +1298,7 @@ func (db *DB) resolvePendingLogs(output string, traceID TraceID) {
 	delete(db.pendingLogsByOutput, key)
 	for _, record := range pending {
 		if creator.ID == db.PrimarySpan {
-			db.PrimaryLogs[creator.ID] = append(db.PrimaryLogs[creator.ID], record)
+			db.appendPrimaryLog(creator.ID, record)
 		}
 		db.initSpan(creator.ID).HasLogs = true
 		db.resolvedLogsBySpan[creator.ID] = append(db.resolvedLogsBySpan[creator.ID], record)
@@ -1325,7 +1327,7 @@ func (db *DB) resolvePendingServiceLogs(span *Span) {
 			}
 			claimed = true
 			if span.ID == db.PrimarySpan {
-				db.PrimaryLogs[span.ID] = append(db.PrimaryLogs[span.ID], record)
+				db.appendPrimaryLog(span.ID, record)
 			}
 			db.resolvedLogsBySpan[span.ID] = append(db.resolvedLogsBySpan[span.ID], record)
 		}
