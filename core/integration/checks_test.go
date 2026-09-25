@@ -482,6 +482,28 @@ check.skip = ["failing-check", "failing-container"]
 	require.NotContains(t, out, "hello-with-checks:failing-container")
 }
 
+// TestWorkspaceCheckRemoteDottedModulePath covers a workspace loaded from a git
+// ref whose module source has a dot past its first path segment. It is a path
+// inside the workspace, not a git host, so it must load from the repository
+// rather than from the caller's host.
+func (ChecksSuite) TestWorkspaceCheckRemoteDottedModulePath(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+		WithNewFile("dagger.toml", `[modules.hello-with-checks]
+source = "ci/.dagger/hello-with-checks"
+`).
+		WithDirectory("ci/.dagger/hello-with-checks", c.Host().Directory(testDataPath(t, "checks", "hello-with-checks"))))
+
+	out, err := c.Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/empty").
+		With(workspaceSelectionDaggerExec("-W", remoteRef, "check", "-l")).
+		CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, "hello-with-checks:passing-check")
+	require.NotContains(t, out, "does not exist")
+}
+
 // TestChecksReportUnloadableModules covers `dagger check`'s handling of a
 // workspace module that cannot be loaded: the modules that do load still run,
 // and the one that does not is reported as a check that fails. check stays a

@@ -3901,9 +3901,14 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 				Source:            "modules/alpha",
 				LegacyDefaultPath: true,
 			},
+			// A dot past the first path segment is still a workspace path, not
+			// a git host.
+			"beta": {
+				Source: "ci/.dagger/beta",
+			},
 		},
 	}, resolveLocalRef)
-	require.Len(t, pending, 2)
+	require.Len(t, pending, 3)
 
 	require.Equal(t, "alpha", pending[0].Name)
 	require.Equal(t, "/resolved/modules/alpha", pending[0].Ref)
@@ -3914,15 +3919,19 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	require.Equal(t, "/resolved", pending[0].DefaultPathContextSourceRef)
 	require.True(t, pending[0].DefaultsFromDotEnv)
 
-	require.Equal(t, "zeta", pending[1].Name)
-	require.Equal(t, "github.com/acme/zeta@main", pending[1].Ref)
-	require.Empty(t, pending[1].RefPin)
-	require.True(t, pending[1].Entrypoint)
-	require.True(t, pending[1].DisableFindUp)
-	require.False(t, pending[1].LegacyDefaultPath)
-	require.Empty(t, pending[1].DefaultPathContextSourceRef)
-	require.True(t, pending[1].DefaultsFromDotEnv)
-	require.Equal(t, map[string]any{"message": "hello"}, pending[1].ConfigDefaults)
+	require.Equal(t, "beta", pending[1].Name)
+	require.Equal(t, "/resolved/ci/.dagger/beta", pending[1].Ref)
+	require.Equal(t, "ci/.dagger/beta", pending[1].WorkspaceDir)
+
+	require.Equal(t, "zeta", pending[2].Name)
+	require.Equal(t, "github.com/acme/zeta@main", pending[2].Ref)
+	require.Empty(t, pending[2].RefPin)
+	require.True(t, pending[2].Entrypoint)
+	require.True(t, pending[2].DisableFindUp)
+	require.False(t, pending[2].LegacyDefaultPath)
+	require.Empty(t, pending[2].DefaultPathContextSourceRef)
+	require.True(t, pending[2].DefaultsFromDotEnv)
+	require.Equal(t, map[string]any{"message": "hello"}, pending[2].ConfigDefaults)
 }
 
 // TestModuleResolutionFromSubdirectory verifies that module source paths from
