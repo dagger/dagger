@@ -76,20 +76,24 @@ func appliedArchivePlan(fe idtui.AgentRestorer, completion archive.Completion) (
 		if a.Removed {
 			continue
 		}
+		entry := dagui.AgentRestore{
+			Source: a.Key, ID: a.Handle, Name: a.Name, ParentAgentID: a.Parent,
+			SnapshotDigest: a.Digest, LastActivity: a.Activity,
+		}
+		// An agent whose record cannot be mapped to a restore state is carried
+		// as unrestorable rather than failing the plan: strict restore still
+		// refuses it, and --partial skips exactly this entry.
 		state, err := a.RestoreState()
 		if err != nil {
-			return plan, nil, err
+			entry.Err = fmt.Errorf("agent %q (%s) cannot be restored: %w", a.Name, a.Handle, err)
 		}
+		entry.State = state
 		// A stopped failure retains its diagnostic, but spawn only accepts an
 		// error when restoring FAILED (including a session-stopped failure).
-		failure := ""
 		if state == "FAILED" {
-			failure = a.Failure
+			entry.Error = a.Failure
 		}
-		plan.plan = append(plan.plan, dagui.AgentRestore{
-			Source: a.Key, ID: a.Handle, Name: a.Name, ParentAgentID: a.Parent,
-			SnapshotDigest: a.Digest, State: state, Error: failure, LastActivity: a.Activity,
-		})
+		plan.plan = append(plan.plan, entry)
 	}
 	// Keep removal witnesses in verification above, but never install them.
 	var active []agentcontrol.Subscription

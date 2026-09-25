@@ -49,6 +49,9 @@ Restore forks new inert runtimes; it does not hand off a live session or start a
 model turn. Pending messages not committed to a conversation are not recovered.
 Legacy local JSON session files and -r/--resume are no longer supported.
 
+Restore fails on the first agent the trace does not carry enough to restore.
+Pass --partial to skip such agents, and any subscriptions to them, instead.
+
 Use --list-archives to discover retained engine archives without restoring. Use
 --source-session when a trace belongs to multiple source sessions. Add --generation
 to pin an exact engine archive cut; explicit generations never fall back to Cloud.
@@ -73,8 +76,8 @@ Examples:
 		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
 			return err
 		}
-		if agentPartial {
-			return fmt.Errorf("--partial is not supported: a complete verified agent graph is required")
+		if agentPartial && agentTrace == "" {
+			return fmt.Errorf("--partial requires --trace")
 		}
 		if err := validateArchiveFlags(agentTrace, agentSourceSession, agentGeneration, agentFocus, agentListArchives, agentListMode, args); err != nil {
 			return err
@@ -151,8 +154,8 @@ func init() {
 		"With --trace and --source-session, select the exact archive generation")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
-	agentCmd.Flags().BoolVar(&agentPartial, "partial", false, "Unsupported: restore requires a complete verified agent graph")
-	_ = agentCmd.Flags().MarkHidden("partial")
+	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
+		"With --trace, restore the agents the trace carries enough to restore instead of failing on the first one it does not")
 }
 
 func validateArchiveFlags(traceID, source, generation, focus string, listArchives, listAgents bool, args []string) error {
