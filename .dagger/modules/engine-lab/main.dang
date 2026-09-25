@@ -253,8 +253,10 @@ type EngineLab {
       print("No engine session. Call the engine-lab start tool first.")
       return null
     }
+    # Unset the session this exec gets to the engine running it, so the CLI
+    # uses the lab engine (see engine-dev's withoutOuterSession).
     withSource(source)
-      .withExec(["dagger"] + args)
+      .withExec(["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger"] + args)
       .sync
     null
   }
@@ -274,7 +276,7 @@ type EngineLab {
     }
     withSource(source)
       .withExec(
-        ["dagger", "api", "query", "--no-load-module"],
+        ["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "api", "query", "--no-load-module"],
         stdin: graphql,
         expect: ReturnType.ANY,
       )

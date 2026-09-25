@@ -297,6 +297,17 @@ func (dev *EngineDev) InstallClient(
 	return client, nil
 }
 
+// withoutOuterSession wraps a command whose Dagger client must reach the dev
+// engine that InstallClient configures. On the v1.0 API, execs get a session
+// to the engine running them (DAGGER_SESSION_PORT/TOKEN), and Dagger clients
+// prefer that session over _EXPERIMENTAL_DAGGER_RUNNER_HOST. The engine sets
+// those variables when the process starts, so WithoutEnvVariable cannot
+// remove them; unset them at the process boundary instead. This works
+// whether or not the outer engine nests by default.
+func withoutOuterSession(args ...string) []string {
+	return append([]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN"}, args...)
+}
+
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
 func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
@@ -306,7 +317,7 @@ func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, erro
 	}
 	introspectionJSON := ctr.
 		WithFile("/usr/local/bin/codegen", dag.Codegen(dev.Ws).Binary()).
-		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
+		WithExec(withoutOuterSession("codegen", "introspect", "-o", "/schema.json")).
 		File("/schema.json")
 	return introspectionJSON, nil
 }

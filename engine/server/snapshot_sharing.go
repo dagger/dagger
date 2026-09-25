@@ -61,7 +61,7 @@ func (srv *Server) snapshotSharePreparation(ctx context.Context) (dagql.PartPrep
 		return nil, fmt.Errorf("initialize core schema base for snapshot sharing: %w", err)
 	}
 	root := core.NewRoot(srv)
-	view := call.View(engine.BaseVersion(engine.NormalizeVersion(engine.Version)))
+	view := call.View(engine.APIViewVersion(engine.Version))
 	var (
 		forkOnce sync.Once
 		forked   *dagql.Server

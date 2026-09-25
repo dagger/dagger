@@ -60,9 +60,12 @@ type DaggerDev {
           }
         }
         """)
-      .withExec(["dagger", "version"])
-      .withExec(["dagger", "check", "-l"])
-      .withExec(["dagger", "check"])
+      # Unset the session this exec gets to the engine running it, so the CLI
+      # uses the dev engine that installClient configures (see engine-dev's
+      # withoutOuterSession).
+      .withExec(["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "version"])
+      .withExec(["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "check", "-l"])
+      .withExec(["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "check"])
       .sync
     null
   }
