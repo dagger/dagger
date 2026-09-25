@@ -30,8 +30,9 @@ agent/subscription records, source namespace, complete recipe closure and graph
 before creating runtimes. Cloud downloads do not supply an independent final
 roster witness, so this path does not claim archive finality or bootstrap-first
 startup. Explicit engine generations, ambiguity, authorization failures,
-corruption, incomplete local archives, and failures after bootstrap begins do not
-silently switch sources. `--source-session` can disambiguate either source;
+corruption, and failures after bootstrap begins do not silently switch sources.
+An unsealed (interrupted or incomplete) local archive is restored best-effort
+from what it recorded, with a warning (§10.1). `--source-session` can disambiguate either source;
 `--generation` is an optional engine-only pin and requires `--source-session`.
 
 ## Committed-leaf checkpoint (2026-09-24)
@@ -379,8 +380,9 @@ telemetry from new runtime incarnations.
 ### 3.2 Guarantees deliberately not claimed
 
 - Crash-complete recovery from an engine/process failure. This design verifies
-  gracefully finalized archives. An unsealed trace is not silently promoted to a
-  complete archive.
+  gracefully finalized archives. An unsealed archive is never promoted to a
+  complete one. It is restored best-effort from its latest recorded state, with a
+  warning that the most recent steps may be missing (§10.1).
 - Exactly-once replay of pending mailbox messages or lifecycle events. Messages
   incorporated into a committed conversation are retained by its recipe; pending
   messages and messages dequeued but not yet committed remain outside the initial
@@ -744,8 +746,22 @@ moving the fetch into a goroutine alone is not proof of a usable prompt.
 Use the connected engine's archive first. Fall back to Cloud when the local
 archive is absent or evicted, or the archive endpoint is unsupported/unavailable
 before any bootstrap is imported (including transport failures). Do not switch on
-corruption, incomplete finalization, ambiguous identity, authorization failure,
-explicit generation pins, cancellation, or failures after bootstrap starts.
+corruption, ambiguous identity, authorization failure, explicit generation pins,
+cancellation, or failures after bootstrap starts.
+
+A local archive whose session ended without a seal is `interrupted` (the engine
+stopped before finalizing it) or `incomplete` (finalization failed). It has no
+bootstrap, completion witness or fixed cut, but its store still holds what was
+recorded, and nothing writes to it anymore. Restore warns, then leases it
+unsealed (`?unsealed=1`) and streams its whole trace at the store's current end,
+with control records included. It is planned exactly like a Cloud download:
+latest observed records, each agent's recipe closure verified on its own. Control
+records and call payloads are flushed to disk as they are stored, so typically
+only the step in flight and a short batching window are lost. If an agent's last
+revision was lost, it restores from an earlier step without being able to tell,
+which is why the warning says the most recent steps may be missing. If the
+unsealed archive cannot even produce a plan, Cloud is tried. Once graph
+installation has begun, no other source is tried.
 
 Cloud can offer the same fast path only if it exposes equivalent verified
 bootstrap/finality information. Otherwise a full-fetch fallback may reconstruct
@@ -758,8 +774,8 @@ best-effort per agent. It skips agents whose record cannot be mapped to a restor
 state (including a recorded capture failure), whose snapshot does not rebuild or
 fails its integrity check, or whose rehydration the engine refuses. It drops
 subscriptions with a skipped endpoint and logs a warning naming each omission and
-its reason. It fails if nothing can be restored. Archive-level problems (an
-incomplete or corrupt local archive, a malformed roster) still fail the whole
+its reason. It fails if nothing can be restored. Archive-level problems (a
+corrupt local archive, a malformed roster) still fail the whole
 restore. Best-effort is not a dependency-substitution mechanism: a kept agent may
 still reference an omitted worker, and a tool call addressing that worker fails
 when dispatched.
