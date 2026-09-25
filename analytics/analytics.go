@@ -97,11 +97,13 @@ type queuedEvent struct {
 type CloudTracker struct {
 	cfg Config
 
-	closed bool
-	mu     sync.Mutex
-	queue  []*queuedEvent
-	stopCh chan struct{}
-	doneCh chan struct{}
+	closed       bool
+	mu           sync.Mutex
+	queue        []*queuedEvent
+	stopCh       chan struct{}
+	firstEventCh chan struct{}
+	firstEvent   sync.Once
+	doneCh       chan struct{}
 }
 
 func New(cfg Config) Tracker {
@@ -110,9 +112,10 @@ func New(cfg Config) Tracker {
 	}
 
 	t := &CloudTracker{
-		cfg:    cfg,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		cfg:          cfg,
+		stopCh:       make(chan struct{}),
+		firstEventCh: make(chan struct{}),
+		doneCh:       make(chan struct{}),
 	}
 
 	go t.start()
@@ -153,10 +156,23 @@ func (t *CloudTracker) Capture(ctx context.Context, event string, properties map
 	}
 
 	t.queue = append(t.queue, &queuedEvent{ctx: ctx, event: ev})
+	t.firstEvent.Do(func() { close(t.firstEventCh) })
 }
 
 func (t *CloudTracker) start() {
 	defer close(t.doneCh)
+
+	// Start the first upload while the command runs. Short CLI invocations
+	// otherwise defer their only event until Close, adding a full HTTP round
+	// trip after the command and telemetry shutdown. Subsequent events retain
+	// the normal batching interval, and Close still drains the queue.
+	select {
+	case <-t.firstEventCh:
+		t.send()
+	case <-t.stopCh:
+		t.send()
+		return
+	}
 
 	for {
 		select {
