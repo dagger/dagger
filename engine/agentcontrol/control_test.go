@@ -140,7 +140,18 @@ func TestFinalRosterWitness(t *testing.T) {
 	b.Revision, b.Digest, b.CaptureError = 2, "", "capture failed"
 	_, err = idx.ApplyAgent(b)
 	require.NoError(t, err)
-	require.ErrorContains(t, idx.Verify(want), "capture failed", "an older digest cannot satisfy a new failed capture")
+	require.NoError(t, idx.Verify(want), "a recorded capture failure is a witnessed final fact")
+	got := idx.Agents()[1]
+	require.Empty(t, got.Digest, "an older digest cannot satisfy a new failed capture")
+	_, err = got.RestoreState()
+	require.ErrorContains(t, err, "capture failed")
+	_, ok := got.ClosureRoot()
+	require.False(t, ok, "a failed capture contributes no recipe closure")
+	b.Revision, b.State = 3, "FAILED"
+	_, err = idx.ApplyAgent(b)
+	require.NoError(t, err)
+	want.Agents[b.Key] = 3
+	require.ErrorContains(t, idx.Verify(want), "no recorded failure", "lifecycle facts stay strict beside a capture failure")
 }
 
 func TestParentCyclesAndRemovedRevisions(t *testing.T) {

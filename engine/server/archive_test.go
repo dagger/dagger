@@ -124,7 +124,9 @@ func TestArchiveFinalWitnessAndClosure(t *testing.T) {
 			err := srv.finalizeSessionArchive(t.Context(), sess, drain)
 			m, merr := srv.archives.Manifest(archiveTestTrace)
 			require.NoError(t, merr)
-			if failure != "none" {
+			// A recorded capture failure is a witnessed final revision with no
+			// closure root: it seals, and restore reports the agent instead.
+			if failure != "none" && failure != "capture" {
 				require.Error(t, err)
 				require.Equal(t, archive.StateIncomplete, m.State)
 				_, err = srv.archives.Acquire(archiveTestTrace)
@@ -138,9 +140,13 @@ func TestArchiveFinalWitnessAndClosure(t *testing.T) {
 			defer lease.Release()
 			data, err := os.ReadFile(lease.BootstrapPath())
 			require.NoError(t, err)
-			header, _, err := archive.VerifyBootstrap(bytes.NewReader(data))
+			header, terminal, err := archive.VerifyBootstrap(bytes.NewReader(data))
 			require.NoError(t, err)
 			require.Len(t, header.Completion.Agents, 1)
+			require.Equal(t, want.Agents[a.Key], header.Completion.Agents[0].Revision)
+			if failure == "capture" {
+				require.EqualValues(t, 1, terminal.LogRecords, "the superseded revision's payload is outside the closure")
+			}
 		})
 	}
 }
