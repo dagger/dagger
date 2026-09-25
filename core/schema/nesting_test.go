@@ -163,6 +163,9 @@ func TestNestingTerminalDefaultsCallView(t *testing.T) {
 	}
 }
 
+// Nesting is the default in the v1.0 API, which every v1.0.0 prerelease caller
+// gets, including releases that predate the change. Versions are declared
+// ones, mapped to views as the engine does.
 func TestNestingSchemaVersions(t *testing.T) {
 	for _, tc := range []struct {
 		version    string
@@ -170,12 +173,14 @@ func TestNestingSchemaVersions(t *testing.T) {
 		deprecated bool
 	}{
 		{version: "v0.21.0"},
-		{version: "v1.0.0-beta.14"},
+		{version: "v1.0.0-beta.12", defaultOn: true, deprecated: true},
+		{version: "v1.0.0-beta.14", defaultOn: true, deprecated: true},
 		{version: "v1.0.0-beta.15", defaultOn: true, deprecated: true},
+		{version: "v1.0.0-0", defaultOn: true, deprecated: true},
 		{version: "v1.0.0", defaultOn: true, deprecated: true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
-			_, dag := newNestingTestServer(t, call.View(tc.version))
+			_, dag := newNestingTestServer(t, call.View(engine.APIViewVersion(tc.version)))
 			data, err := getSchemaJSON(nil, nil, dag.View, dag)
 			require.NoError(t, err)
 			schema := decodeSchemaResponse(t, data).Schema

@@ -1,7 +1,8 @@
 kind: Changed
 body: |
   Container commands and services can access the current Dagger engine by
-  default starting with API version v1.0.0-beta.15. `experimentalPrivilegedNesting`
+  default in the v1.0 API, which covers every v1.0.0 prerelease, including
+  modules and clients that declare an earlier beta. `experimentalPrivilegedNesting`
   is deprecated and ignored in the new API. To disable nesting (for example,
   when connecting to an independent engine), use `disableDaggerInDagger: true`
   instead. In Go, this is `ContainerWithExecOpts{DisableDaggerInDagger: true}`.

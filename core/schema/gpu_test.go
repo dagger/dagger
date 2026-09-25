@@ -6,23 +6,27 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
 
-// withGPU appears from gpuAPIVersion on. The experimental names stay in every
-// view, deprecated only where withGPU exists.
+// withGPU appears in the v1.0 API, which every v1.0.0 prerelease caller gets.
+// The experimental names stay in every view, deprecated only where withGPU
+// exists. Versions are declared ones, mapped to views as the engine does.
 func TestGPUSchemaVersions(t *testing.T) {
 	for _, tc := range []struct {
 		version    string
 		hasWithGPU bool
 	}{
 		{version: "v0.21.0"},
-		{version: "v1.0.0-beta.14"},
+		{version: "v1.0.0-beta.12", hasWithGPU: true},
+		{version: "v1.0.0-beta.14", hasWithGPU: true},
 		{version: "v1.0.0-beta.15", hasWithGPU: true},
+		{version: "v1.0.0-0", hasWithGPU: true},
 		{version: "v1.0.0", hasWithGPU: true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
-			_, dag := newNestingTestServer(t, call.View(tc.version))
+			_, dag := newNestingTestServer(t, call.View(engine.APIViewVersion(tc.version)))
 			data, err := getSchemaJSON(nil, nil, dag.View, dag)
 			require.NoError(t, err)
 			ctr := decodeSchemaResponse(t, data).Schema.Types.Get("Container")

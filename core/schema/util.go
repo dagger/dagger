@@ -15,15 +15,22 @@ type SchemaResolvers interface {
 	Install(*dagql.Server)
 }
 
-// Nesting is opt-out starting with this API version. Older views retain the
+// Nesting is opt-out in the v1.0 API. Older views retain the
 // experimentalPrivilegedNesting opt-in argument and behavior.
-const defaultNestingVersion = "v1.0.0-beta.15"
+//
+// This shipped after v1.0.0-beta.14, but views cannot tell v1.0.0 prereleases
+// apart (see engine.APIViewVersion), so every v1.0.0 prerelease caller gets
+// it.
+const defaultNestingVersion = "v1.0.0-0"
 
-// Container.withGPU is available starting with this API version. Older views
-// keep the experimentalWithGPU and experimentalWithAllGPUs names undecorated;
-// newer views still accept them, marked deprecated, so released callers keep
+// Container.withGPU is available in the v1.0 API. Older views keep the
+// experimentalWithGPU and experimentalWithAllGPUs names undecorated; newer
+// views still accept them, marked deprecated, so released callers keep
 // working.
-const gpuAPIVersion = "v1.0.0-beta.15"
+//
+// Like defaultNestingVersion, this shipped after v1.0.0-beta.14 but reaches
+// every v1.0.0 prerelease caller.
+const gpuAPIVersion = "v1.0.0-0"
 
 // Newer views still accept experimentalPrivilegedNesting so existing callers
 // keep working, but ignore it: nesting is already the default.

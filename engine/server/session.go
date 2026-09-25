@@ -1390,7 +1390,7 @@ func (srv *Server) initializeClientRuntime(
 	if err != nil {
 		return fmt.Errorf("failed to initialize core schema base: %w", err)
 	}
-	coreView := call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
+	coreView := call.View(engine.APIViewVersion(client.clientVersion))
 	client.dag, err = coreSchemaBase.Fork(ctx, client.dagqlRoot, coreView)
 	if err != nil {
 		return fmt.Errorf("failed to fork core schema base: %w", err)
@@ -1418,7 +1418,7 @@ func (srv *Server) initializeClientRuntime(
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
 		engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
-		coreView = call.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
+		coreView = call.View(engine.APIViewVersion(engineVersion))
 		client.dag.View = coreView
 		coreMod = coreSchemaBase.CoreMod(coreView)
 
