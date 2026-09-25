@@ -12,15 +12,20 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
+	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	telemetry "github.com/dagger/otel-go"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
 
+// cloudRestoreSource supplies a whole trace with no verified seal: a Dagger
+// Cloud download, or an unsealed engine archive (unsealedArchiveFetcher).
 type cloudRestoreSource interface {
 	FetchTrace(context.Context, string, cloud.TraceImportSink) error
 }
@@ -48,13 +53,13 @@ func (capture *cloudRestoreCapture) ImportLogs(ctx context.Context, req *collogs
 				}
 				frame := new(callpbv1.Call)
 				if err := proto.Unmarshal(rec.GetBody().GetBytesValue(), frame); err != nil {
-					return fmt.Errorf("decode Cloud call payload: %w", err)
+					return fmt.Errorf("decode call payload: %w", err)
 				}
 				if frame.Digest == "" {
-					return errors.New("cloud call payload has no digest")
+					return errors.New("call payload has no digest")
 				}
 				if old := capture.calls[frame.Digest]; old != nil && !proto.Equal(old, frame) {
-					return fmt.Errorf("conflicting Cloud call payload %s", frame.Digest)
+					return fmt.Errorf("conflicting call payload %s", frame.Digest)
 				}
 				capture.calls[frame.Digest] = frame
 			}
@@ -81,29 +86,127 @@ func canFallbackToCloud(ctx context.Context, err error) bool {
 // Prefer the persisted local cut. Missing or unavailable archive service may
 // fall back before bootstrap import. Never hide ambiguity, rejected authority,
 // corruption, or a partial local bootstrap behind a different source.
+//
+// A local archive that was never sealed (the engine stopped before finalizing
+// it, or finalization failed) is restored best-effort from what it recorded,
+// with a warning. If that cannot even produce a plan, Cloud is tried.
 func restoreTraceSources(ctx context.Context, fe archiveFrontend, target restoreTarget, req traceRestore) (func(), error) {
 	cleanup, err := restoreArchive(ctx, req.source, fe, target, req)
-	if err == nil || !canFallbackToCloud(ctx, err) {
-		return cleanup, err
+	if err == nil {
+		return cleanup, nil
+	}
+	fallback := canFallbackToCloud(ctx, err)
+	var unsealedErr error
+	if state, ok := unsealedArchiveState(err); ok && ctx.Err() == nil {
+		slog.Warn("engine archive was not sealed; restoring the latest recorded state best-effort, so the most recent steps may be missing",
+			"trace", req.traceID, "state", state)
+		cleanup, restored, uerr := restoreUnsealedArchive(ctx, req.source, fe, target, req)
+		if uerr != nil {
+			uerr = fmt.Errorf("restore unsealed engine archive %s: %w", req.traceID, uerr)
+		}
+		if uerr == nil || restored || ctx.Err() != nil {
+			// Once graph installation has begun, runtimes may exist, and a
+			// second source would collide with them.
+			return cleanup, uerr
+		}
+		unsealedErr, fallback = uerr, true
+		err = uerr
+	}
+	if !fallback {
+		return nil, err
 	}
 	if req.generation != "" {
 		return nil, fmt.Errorf("selected engine archive generation %s is unavailable: %w; Cloud traces have no engine generation selector; omit --generation to use Cloud", req.generation, err)
 	}
+	// A failed unsealed local attempt is part of the story when Cloud fails too.
+	fail := func(cloudErr error) error { return errors.Join(unsealedErr, cloudErr) }
 	source := req.cloudSource
 	if source == nil {
 		credentials, err := auth.GetCloudAuth(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("restore Cloud trace %s: authenticate: %w", req.traceID, err)
+			return nil, fail(fmt.Errorf("restore Cloud trace %s: authenticate: %w", req.traceID, err))
 		}
 		source, err = cloud.NewOTLPClient(ctx, credentials)
 		if err != nil {
-			return nil, fmt.Errorf("restore Cloud trace %s: %w", req.traceID, err)
+			return nil, fail(fmt.Errorf("restore Cloud trace %s: %w", req.traceID, err))
 		}
 	}
 	// Unlike a local verified bootstrap, Cloud currently supplies a whole-trace
 	// download, not an independent final roster witness or fixed archive cut.
-	// Validate the latest observed canonical records and all required recipes;
-	// never manufacture a manifest or claim that absent later records are proven.
+	plan, edges, err := observedTracePlan(ctx, fe, req, source)
+	if err != nil {
+		return nil, fail(fmt.Errorf("restore Cloud trace %s (no agents restored): %w", req.traceID, err))
+	}
+	if err := executeRestoreGraph(ctx, plan, target, req, edges); err != nil {
+		return nil, fail(fmt.Errorf("restore Cloud trace %s: %w", req.traceID, err))
+	}
+	return func() {}, nil
+}
+
+// unsealedArchiveState reports whether a local archive failed only because it
+// was never sealed.
+func unsealedArchiveState(err error) (archive.State, bool) {
+	var requestErr *archive.RequestError
+	if !errors.As(err, &requestErr) || !errors.Is(err, archive.ErrState) || !requestErr.State.Unsealed() {
+		return "", false
+	}
+	return requestErr.State, true
+}
+
+// restoreUnsealedArchive restores from everything an unsealed local archive
+// recorded, like a Cloud download: the latest observed control records, with
+// each agent's recipe closure verified on its own. restored reports whether the
+// restore got as far as installing the agent graph.
+func restoreUnsealedArchive(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, target restoreTarget, req traceRestore) (_ func(), restored bool, _ error) {
+	unsealed, err := source.AcquireUnsealed(ctx, req.traceID, req.generation)
+	if err != nil {
+		return nil, false, err
+	}
+	defer unsealed.Release()
+	plan, edges, err := observedTracePlan(ctx, fe, req, unsealedArchiveFetcher{source: source, archive: unsealed})
+	if err != nil {
+		return nil, false, err
+	}
+	if err := executeRestoreGraph(ctx, plan, target, req, edges); err != nil {
+		return nil, true, err
+	}
+	return func() {}, true, nil
+}
+
+// unsealedArchiveFetcher streams a whole unsealed local archive through the
+// same sink a Cloud download uses.
+type unsealedArchiveFetcher struct {
+	source  archiveRestoreSource
+	archive archive.UnsealedArchive
+}
+
+func (f unsealedArchiveFetcher) FetchTrace(ctx context.Context, traceID string, sink cloud.TraceImportSink) error {
+	opts := func(high int64) archive.StreamOptions {
+		return archive.StreamOptions{Generation: f.archive.Generation, HighWater: high, Unsealed: true}
+	}
+	if _, err := f.source.Traces(ctx, traceID, opts(f.archive.Cut.Spans), func(_ int64, batch *coltracepb.ExportTraceServiceRequest) error {
+		return sink.ImportSpans(ctx, batch)
+	}); err != nil {
+		return fmt.Errorf("stream spans: %w", err)
+	}
+	if _, err := f.source.Logs(ctx, traceID, opts(f.archive.Cut.Logs), func(_ int64, batch *collogspb.ExportLogsServiceRequest) error {
+		return sink.ImportLogs(ctx, batch)
+	}); err != nil {
+		return fmt.Errorf("stream logs: %w", err)
+	}
+	if _, err := f.source.Metrics(ctx, traceID, opts(f.archive.Cut.Metrics), func(_ int64, batch *colmetricspb.ExportMetricsServiceRequest) error {
+		return sink.ImportMetrics(ctx, batch)
+	}); err != nil {
+		return fmt.Errorf("stream metrics: %w", err)
+	}
+	return sink.Seal(ctx)
+}
+
+// observedTracePlan imports a whole trace that carries no verified seal (a
+// Cloud download or an unsealed engine archive) and plans from the latest
+// observed canonical records. It never manufactures a manifest or claims that
+// absent later records are proven.
+func observedTracePlan(ctx context.Context, fe archiveFrontend, req traceRestore, source cloudRestoreSource) (appliedRestorePlan, []agentcontrol.Subscription, error) {
 	importer := &cloudRestoreCapture{
 		TraceImporter: enginetel.NewTraceImporter(enginetel.TraceImportSinks{
 			Spans: fe.SpanExporter(), Logs: fe.LogExporter(), Metrics: fe.MetricExporter(),
@@ -111,27 +214,20 @@ func restoreTraceSources(ctx context.Context, fe archiveFrontend, target restore
 		calls: map[string]*callpbv1.Call{},
 	}
 	if err := source.FetchTrace(ctx, req.traceID, importer); err != nil {
-		return nil, fmt.Errorf("fetch Cloud trace %s (no agents restored): %w", req.traceID, err)
+		return appliedRestorePlan{}, nil, fmt.Errorf("fetch: %w", err)
 	}
 	if err := fe.WaitForEventLoop(ctx); err != nil {
-		return nil, fmt.Errorf("apply Cloud trace %s: %w", req.traceID, err)
+		return appliedRestorePlan{}, nil, fmt.Errorf("apply: %w", err)
 	}
-	plan, edges, err := cloudRestorePlan(fe, req, importer.calls)
-	if err != nil {
-		return nil, fmt.Errorf("restore Cloud trace %s: %w", req.traceID, err)
-	}
-	if err := executeRestoreGraph(ctx, plan, target, req, edges); err != nil {
-		return nil, fmt.Errorf("restore Cloud trace %s: %w", req.traceID, err)
-	}
-	return func() {}, nil
+	return observedRestorePlan(fe, req, importer.calls)
 }
 
-func cloudRestorePlan(fe archiveFrontend, req traceRestore, calls map[string]*callpbv1.Call) (appliedRestorePlan, []agentcontrol.Subscription, error) {
+func observedRestorePlan(fe archiveFrontend, req traceRestore, calls map[string]*callpbv1.Call) (appliedRestorePlan, []agentcontrol.Subscription, error) {
 	plan := appliedRestorePlan{rebuild: func(digest string) (string, error) {
 		if _, err := archive.VerifyClosure([]string{digest}, func(d string) (*callpbv1.Call, error) {
 			frame := calls[d]
 			if frame == nil {
-				return nil, fmt.Errorf("missing Cloud call payload %s", d)
+				return nil, fmt.Errorf("missing call payload %s", d)
 			}
 			return frame, nil
 		}); err != nil {

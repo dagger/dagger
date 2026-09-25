@@ -276,6 +276,94 @@ func TestCloudRestoreSkipsCaptureFailure(t *testing.T) {
 	require.Contains(t, warnings.String(), "Host.directory is session-local")
 }
 
+// TestUnsealedArchiveRestoresLatestRecordedState: a local archive whose engine
+// stopped before sealing it is restored best-effort from what it recorded,
+// with a warning, and without consulting Cloud.
+func TestUnsealedArchiveRestoresLatestRecordedState(t *testing.T) {
+	for _, state := range []archive.State{archive.StateInterrupted, archive.StateIncomplete} {
+		t.Run(string(state), func(t *testing.T) {
+			warnings := captureRestoreWarnings(t)
+			chief, worker, edge, records := cloudControlFixture(t)
+			// The worker was mid-turn when the engine died: RUNNING restores as IDLE.
+			worker.State, worker.Failure = "RUNNING", ""
+			records = append(records, chief.Record(), worker.Record(), edge.Record())
+			source := &restoreTestArchive{
+				acquireErr:   &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureState, State: state},
+				unsealed:     &archive.UnsealedArchive{Generation: "unsealed-gen", Cut: archive.HighWater{Logs: 1}},
+				unsealedLogs: controlLogs(records...),
+			}
+			req := restoreRequest()
+			req.source = source
+			req.cloudSource = cloudRestoreFunc(func(context.Context, string, cloud.TraceImportSink) error {
+				t.Fatal("a readable unsealed local archive must not fall back to Cloud")
+				return nil
+			})
+			target := newFakeRestoreTarget()
+			cleanup, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, target, req)
+			require.NoError(t, err)
+			cleanup()
+			require.Contains(t, target.calls, "rehydrate:chief")
+			require.Contains(t, target.calls, "rehydrate:worker")
+			require.Contains(t, strings.Join(target.calls, "\n"), "subscribe:")
+			require.Equal(t, "chief", target.focused)
+			require.Contains(t, warnings.String(), "engine archive was not sealed")
+			require.Contains(t, warnings.String(), string(state))
+			require.EqualValues(t, 1, source.unsealedRelease.Load(), "the unsealed lease is released")
+		})
+	}
+}
+
+// TestUnsealedArchiveFallsBackToCloud: when an unsealed local archive cannot
+// even produce a plan, Cloud is tried; if Cloud fails too, both failures are
+// reported.
+func TestUnsealedArchiveFallsBackToCloud(t *testing.T) {
+	chief, worker, edge, records := cloudControlFixture(t)
+	records = append(records, chief.Record(), worker.Record(), edge.Record())
+	interrupted := &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureState, State: archive.StateInterrupted}
+
+	t.Run("cloud succeeds", func(t *testing.T) {
+		req := restoreRequest()
+		req.source = &restoreTestArchive{acquireErr: interrupted, unsealedErr: errors.New("store unreadable")}
+		req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
+			return sink.ImportLogs(ctx, controlLogs(records...))
+		})
+		target := newFakeRestoreTarget()
+		cleanup, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, target, req)
+		require.NoError(t, err)
+		cleanup()
+		require.Contains(t, target.calls, "rehydrate:worker")
+	})
+
+	t.Run("cloud fails too", func(t *testing.T) {
+		req := restoreRequest()
+		req.source = &restoreTestArchive{acquireErr: interrupted, unsealedErr: errors.New("store unreadable")}
+		req.cloudSource = cloudRestoreFunc(func(context.Context, string, cloud.TraceImportSink) error {
+			return errors.New("cloud unreachable")
+		})
+		target := newFakeRestoreTarget()
+		_, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, target, req)
+		require.ErrorContains(t, err, "store unreadable")
+		require.ErrorContains(t, err, "cloud unreachable")
+		require.Empty(t, target.calls)
+	})
+
+	t.Run("sealed-state failures do not try unsealed", func(t *testing.T) {
+		req := restoreRequest()
+		source := &restoreTestArchive{
+			acquireErr:  &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureState, State: archive.StateActive},
+			unsealedErr: errors.New("must not be called"),
+		}
+		req.source = source
+		req.cloudSource = cloudRestoreFunc(func(context.Context, string, cloud.TraceImportSink) error {
+			t.Fatal("a still-active archive is not a Cloud fallback case")
+			return nil
+		})
+		_, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, newFakeRestoreTarget(), req)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "must not be called")
+	})
+}
+
 func TestCloudRestoreSourceSelectionAndRemoval(t *testing.T) {
 	chief, worker, edge, records := cloudControlFixture(t)
 	other := chief
