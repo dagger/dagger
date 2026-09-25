@@ -1,25 +1,21 @@
 package daggercmd
 
 import (
-	"encoding/json"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
-	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
 var cloudTracesCmd = &cobra.Command{
@@ -42,79 +38,16 @@ var cloudTracesStatusCmd = &cobra.Command{
 the current environment.
 
 This command shows the state of this installation, not the state of Dagger
-Cloud. It examines the local credential only. It does not ask Dagger Cloud if
-the credential is valid.
+Cloud. It does not ask Dagger Cloud if the credential is valid, but it can
+refresh an expired login token.
 
 The exit code is 0 when the CLI sends traces, and 1 when it does not.`,
 	Args: cobra.NoArgs,
 	RunE: runCloudTracesStatus,
 }
 
-var cloudTracesListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List Dagger Cloud traces",
-	Long: `List the traces of a Dagger Cloud org, local and CI, newest first.
-
-Use the flags to filter the traces. All filters must match.`,
-	Example: `dagger cloud traces list --status failed --branch main --since 7d
-dagger cloud traces list --mine --local --limit 5
-dagger cloud traces list --pr 123 --json id,status,duration`,
-	Args: cobra.NoArgs,
-	RunE: runCloudTracesList,
-}
-
-var cloudTracesList struct {
-	repos       []string
-	branch      string
-	commit      string
-	tag         string
-	pr          string
-	status      string
-	local       bool
-	ci          bool
-	mine        bool
-	user        string
-	token       string
-	author      string
-	command     string
-	provider    string
-	since       string
-	until       string
-	minDuration time.Duration
-	maxDuration time.Duration
-	limit       int
-	sort        string
-	json        []string
-}
-
 func init() {
-	flags := cloudTracesListCmd.Flags()
-	l := &cloudTracesList
-	flags.StringSliceVar(&l.repos, "repo", nil, "Only traces of this repository, e.g. github.com/org/repo (repeatable)")
-	flags.StringVar(&l.branch, "branch", "", "Only traces of this branch")
-	flags.StringVar(&l.commit, "commit", "", "Only traces of this commit (full or short SHA)")
-	flags.StringVar(&l.tag, "tag", "", "Only traces of this git tag")
-	flags.StringVar(&l.pr, "pr", "", "Only traces of this pull request number")
-	flags.StringVar(&l.status, "status", "", "Only traces with this status: passed, failed or running")
-	flags.BoolVar(&l.local, "local", false, "Only traces of local runs")
-	flags.BoolVar(&l.ci, "ci", false, "Only traces of CI runs")
-	flags.BoolVar(&l.mine, "mine", false, "Only traces that you sent")
-	flags.StringVar(&l.user, "user", "", "Only traces that this user sent (user ID or email)")
-	flags.StringVar(&l.token, "token", "", "Only traces that this token sent (token ID or name)")
-	flags.StringVar(&l.author, "author", "", "Only traces whose commit author or committer matches this text")
-	flags.StringVar(&l.command, "command", "", "Only traces whose command matches this glob, e.g. 'dagger check*'")
-	flags.StringVar(&l.provider, "provider", "", "Only traces of this CI provider, e.g. github")
-	flags.StringVar(&l.since, "since", "", "Only traces that started after this time: a duration (30m, 2d, 1w) or a date (2006-01-02, RFC 3339)")
-	flags.StringVar(&l.until, "until", "", "Only traces that started before this time: a duration or a date, as for --since")
-	flags.DurationVar(&l.minDuration, "min-duration", 0, "Only traces that ran for at least this time, e.g. 5m")
-	flags.DurationVar(&l.maxDuration, "max-duration", 0, "Only traces that ran for at most this time")
-	flags.IntVarP(&l.limit, "limit", "L", 20, "Maximum number of traces to list (1-1000)")
-	flags.StringVar(&l.sort, "sort", "start", "Sort order: start (newest first) or duration (longest first)")
-	flags.StringSliceVar(&l.json, "json", nil, "Print JSON with these fields: "+strings.Join(traceJSONFields, ","))
-	cloudTracesListCmd.MarkFlagsMutuallyExclusive("local", "ci")
-	cloudTracesListCmd.MarkFlagsMutuallyExclusive("mine", "user", "token")
-
-	cloudTracesCmd.AddCommand(cloudTracesStatusCmd, cloudTracesListCmd, cloudTracesViewCmd)
+	cloudTracesCmd.AddCommand(cloudTracesStatusCmd, newCloudTracesListCmd(), cloudTracesViewCmd)
 	cloudCmd.AddCommand(cloudTracesCmd)
 }
 
@@ -141,6 +74,9 @@ func writeCloudTracesStatus(w io.Writer, status enginetel.CloudEmitStatus) error
 	const loginFix = "dagger login, or set DAGGER_CLOUD_TOKEN"
 	var reason, fix string
 	switch {
+	case errors.Is(status.Err, enginetel.ErrInvalidCloudURL):
+		reason = status.Err.Error()
+		fix = "unset DAGGER_CLOUD_URL, or set it to a valid URL"
 	case status.Err != nil:
 		reason = "cannot read the credential: " + status.Err.Error()
 		fix = loginFix
@@ -155,30 +91,87 @@ func writeCloudTracesStatus(w io.Writer, status enginetel.CloudEmitStatus) error
 	return err
 }
 
-func runCloudTracesList(cmd *cobra.Command, _ []string) error {
-	ctx := cmd.Context()
-	l := &cloudTracesList
+// cloudTracesListOptions are the flags of 'dagger cloud traces list'. The
+// server checks the values; the CLI only converts them.
+type cloudTracesListOptions struct {
+	repos       []string
+	branch      string
+	commit      string
+	tag         string
+	pr          string
+	status      string
+	local       bool
+	ci          bool
+	mine        bool
+	user        string
+	token       string
+	author      string
+	command     string
+	provider    string
+	since       string
+	until       string
+	minDuration time.Duration
+	maxDuration time.Duration
+	limit       int
+	sort        string
+}
 
-	filter, err := cloudTracesListFilter(time.Now())
+func newCloudTracesListCmd() *cobra.Command {
+	o := &cloudTracesListOptions{}
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List Dagger Cloud traces",
+		Long: `List the traces of a Dagger Cloud org, local and CI, newest first.
+
+Use the flags to filter the traces. All filters must match.`,
+		Example: `dagger cloud traces list --status failed --branch main --since 7d
+dagger cloud traces list --mine --local --limit 5
+dagger cloud traces list --pr 123 --json`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runCloudTracesList(cmd, o)
+		},
+	}
+	flags := cmd.Flags()
+	flags.StringSliceVar(&o.repos, "repo", nil, "Only traces of this repository, e.g. github.com/org/repo (repeatable)")
+	flags.StringVar(&o.branch, "branch", "", "Only traces of this branch")
+	flags.StringVar(&o.commit, "commit", "", "Only traces of this commit (full or short SHA)")
+	flags.StringVar(&o.tag, "tag", "", "Only traces of this git tag")
+	flags.StringVar(&o.pr, "pr", "", "Only traces of this pull request number")
+	flags.StringVar(&o.status, "status", "", "Only traces with this status: passed, failed or running")
+	flags.BoolVar(&o.local, "local", false, "Only traces of local runs")
+	flags.BoolVar(&o.ci, "ci", false, "Only traces of CI runs")
+	flags.BoolVar(&o.mine, "mine", false, "Only traces that you sent")
+	flags.StringVar(&o.user, "user", "", "Only traces that this user sent (user ID or email)")
+	flags.StringVar(&o.token, "token", "", "Only traces that this token sent (token ID or name)")
+	flags.StringVar(&o.author, "author", "", "Only traces whose commit author or committer matches this text")
+	flags.StringVar(&o.command, "command", "", "Only traces whose command matches this glob, e.g. 'dagger check*'")
+	flags.StringVar(&o.provider, "provider", "", "Only traces of this CI provider, e.g. github")
+	flags.StringVar(&o.since, "since", "", "Only traces that started after this time: a duration (30m, 2d, 1w) or a date (2006-01-02, RFC 3339)")
+	flags.StringVar(&o.until, "until", "", "Only traces that started before this time: a duration or a date, as for --since")
+	flags.DurationVar(&o.minDuration, "min-duration", 0, "Only traces that ran for at least this time, e.g. 5m")
+	flags.DurationVar(&o.maxDuration, "max-duration", 0, "Only traces that ran for at most this time")
+	flags.IntVarP(&o.limit, "limit", "L", 20, "Maximum number of traces to list (at most 1000)")
+	flags.StringVar(&o.sort, "sort", "start", "Sort order: start (newest first) or duration (longest first)")
+	flags.BoolVar(&cloudJSON, "json", false, "Print JSON output")
+	cmd.MarkFlagsMutuallyExclusive("local", "ci")
+	cmd.MarkFlagsMutuallyExclusive("mine", "user", "token")
+	return cmd
+}
+
+func runCloudTracesList(cmd *cobra.Command, o *cloudTracesListOptions) error {
+	ctx := cmd.Context()
+	now := time.Now()
+	filter, err := o.filter(now)
 	if err != nil {
 		return err
 	}
-	if l.limit < 1 || l.limit > 1000 {
-		return fmt.Errorf("--limit must be between 1 and 1000")
-	}
-	var sort string
-	switch l.sort {
-	case "start":
-		sort = cloudapi.TraceListSortStart
-	case "duration":
-		sort = cloudapi.TraceListSortDuration
-	default:
-		return fmt.Errorf("--sort must be start or duration, not %q", l.sort)
-	}
-	for _, field := range l.json {
-		if !slices.Contains(traceJSONFields, field) {
-			return fmt.Errorf("unknown --json field %q; available fields: %s", field, strings.Join(traceJSONFields, ", "))
-		}
+	sort, ok := map[string]string{
+		"start":    cloudapi.TraceListSortStart,
+		"duration": cloudapi.TraceListSortDuration,
+	}[o.sort]
+	if !ok {
+		return fmt.Errorf("--sort must be start or duration, not %q", o.sort)
 	}
 
 	client, cloudAuth, err := cloudCLI.cloudClient(ctx)
@@ -189,64 +182,59 @@ func runCloudTracesList(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	traces, err := client.TraceList(ctx, org.Name, filter, sort, l.limit)
+	traces, err := client.TraceList(ctx, org.Name, filter, sort, o.limit)
 	if err != nil {
 		return err
 	}
 
-	now := time.Now()
-	if len(l.json) > 0 {
-		return writeTracesJSON(cmd.OutOrStdout(), org.Name, traces, l.json, now)
+	rows := make([]traceRow, len(traces))
+	for i := range traces {
+		rows[i] = newTraceRow(org.Name, &traces[i], now)
 	}
-	if len(traces) == 0 {
+	if cloudJSON {
+		return writeCloudJSON(cmd, rows)
+	}
+	if len(rows) == 0 {
 		_, err := fmt.Fprintln(cmd.ErrOrStderr(), "No traces found.")
 		return err
 	}
-	return writeTracesTable(cmd.OutOrStdout(), traces, now)
+	return writeTracesTable(cmd.OutOrStdout(), rows)
 }
 
-// cloudTracesListFilter turns the list flags into a server-side filter.
-func cloudTracesListFilter(now time.Time) (cloudapi.TraceListFilter, error) {
-	l := &cloudTracesList
+// filter turns the list flags into a server-side filter.
+func (o *cloudTracesListOptions) filter(now time.Time) (cloudapi.TraceListFilter, error) {
 	f := cloudapi.TraceListFilter{
-		Repos:    l.repos,
-		Branch:   l.branch,
-		Commit:   l.commit,
-		Tag:      l.tag,
-		Change:   strings.TrimPrefix(l.pr, "#"),
-		Mine:     l.mine,
-		User:     l.user,
-		Token:    l.token,
-		Author:   l.author,
-		Name:     l.command,
-		Provider: l.provider,
+		Repos:       o.repos,
+		Branch:      o.branch,
+		Commit:      o.commit,
+		Tag:         o.tag,
+		Change:      o.pr,
+		Mine:        o.mine,
+		User:        o.user,
+		Token:       o.token,
+		Author:      o.author,
+		Name:        o.command,
+		Provider:    o.provider,
+		MinDuration: o.minDuration.Seconds(),
+		MaxDuration: o.maxDuration.Seconds(),
 	}
-	switch l.status {
+	switch o.status {
 	case "":
 	case cloudapi.TraceStatePassed, cloudapi.TraceStateFailed, cloudapi.TraceStateRunning:
-		f.Status = strings.ToUpper(l.status)
+		f.Status = strings.ToUpper(o.status)
 	default:
-		return f, fmt.Errorf("--status must be passed, failed or running, not %q", l.status)
+		return f, fmt.Errorf("--status must be passed, failed or running, not %q", o.status)
 	}
-	if l.local || l.ci {
-		local := l.local
-		f.Local = &local
-	}
-	if l.commit != "" && len(l.commit) < 4 {
-		return f, fmt.Errorf("--commit needs at least 4 characters")
+	if o.local || o.ci {
+		f.Local = &o.local
 	}
 	var err error
-	if f.Since, err = parseTimeFlag("since", l.since, now); err != nil {
+	if f.Since, err = parseTimeFlag("since", o.since, now); err != nil {
 		return f, err
 	}
-	if f.Until, err = parseTimeFlag("until", l.until, now); err != nil {
+	if f.Until, err = parseTimeFlag("until", o.until, now); err != nil {
 		return f, err
 	}
-	if l.minDuration < 0 || l.maxDuration < 0 {
-		return f, fmt.Errorf("--min-duration and --max-duration must not be negative")
-	}
-	f.MinDuration = l.minDuration.Seconds()
-	f.MaxDuration = l.maxDuration.Seconds()
 	return f, nil
 }
 
@@ -286,19 +274,89 @@ func parseAgo(value string) (time.Duration, error) {
 	return d, nil
 }
 
-func writeTracesTable(w io.Writer, traces []cloudapi.TraceSummary, now time.Time) error {
+// traceRow is one trace as 'dagger cloud traces list' prints it.
+type traceRow struct {
+	ID        string     `json:"id"`
+	URL       string     `json:"url"`
+	Command   string     `json:"command"`
+	Status    string     `json:"status"`
+	Message   string     `json:"message"`
+	StartedAt time.Time  `json:"startedAt"`
+	EndedAt   *time.Time `json:"endedAt"`
+	Duration  float64    `json:"duration"` // seconds
+	Local     bool       `json:"local"`
+	Sender    string     `json:"sender"`
+	Repo      string     `json:"repo"`
+	Branch    string     `json:"branch"`
+	Commit    string     `json:"commit"`
+	Tag       string     `json:"tag"`
+	PR        string     `json:"pr"`
+	Title     string     `json:"title"`
+	Author    string     `json:"author"`
+	Provider  string     `json:"provider"`
+}
+
+// newTraceRow flattens a trace. The CI change, when there is one, gives the
+// branch, commit and title, as it does for the server's filters.
+func newTraceRow(orgName string, t *cloudapi.TraceSummary, now time.Time) traceRow {
+	r := traceRow{
+		ID:        t.ID,
+		URL:       cloudTraceURL(orgName, t.ID),
+		Command:   t.Name,
+		Status:    t.State(),
+		StartedAt: t.Timestamp,
+		EndedAt:   t.EndTime,
+		Duration:  t.Duration(now).Seconds(),
+		Local:     t.Local,
+	}
+	if t.Status != nil {
+		r.Message = t.Status.Message
+	}
+	if t.Sender != nil {
+		r.Sender = t.Sender.Name
+	}
+	if g := t.Git; g != nil {
+		r.Repo, r.Commit, r.Title = g.Remote, g.Ref, g.Title
+		r.Branch, r.Tag = stringValue(g.Branch), stringValue(g.Tag)
+		if a := g.Author; a != nil {
+			r.Author = a.Name
+			if a.Email != "" {
+				r.Author += " <" + a.Email + ">"
+			}
+		}
+	}
+	if ci := t.CI; ci != nil {
+		r.Provider = stringValue(ci.Provider)
+		r.Repo = cmp.Or(r.Repo, stringValue(ci.Repository))
+		if c := ci.Change; c != nil {
+			r.PR = c.ID
+			r.Branch = cmp.Or(c.Branch, r.Branch)
+			r.Commit = cmp.Or(c.HeadSHA, r.Commit)
+			r.Title = cmp.Or(c.Title, r.Title)
+		}
+	}
+	return r
+}
+
+func writeTracesTable(w io.Writer, rows []traceRow) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSTATUS\tDURATION\tCOMMAND\tBRANCH/PR\tSENDER\tSTARTED")
-	for i := range traces {
-		t := &traces[i]
+	for _, r := range rows {
+		ref := shortCloudSHA(r.Commit)
+		switch {
+		case r.PR != "":
+			ref = "#" + r.PR
+		case r.Branch != "":
+			ref = r.Branch
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			t.ID,
-			t.State(),
-			dagui.FormatDuration(t.Duration(now)),
-			truncateCell(t.Name, 50),
-			dash(traceBranchOrPR(t)),
-			dash(traceSender(t)),
-			relativeTime(t.Timestamp),
+			r.ID,
+			r.Status,
+			dagui.FormatDuration(time.Duration(r.Duration*float64(time.Second))),
+			truncateCell(r.Command, 50),
+			dash(ref),
+			dash(r.Sender),
+			relativeTime(r.StartedAt),
 		)
 	}
 	return tw.Flush()
@@ -310,178 +368,4 @@ func truncateCell(s string, n int) string {
 		return string(r[:n-1]) + "…"
 	}
 	return s
-}
-
-func traceBranchOrPR(t *cloudapi.TraceSummary) string {
-	if pr := tracePR(t); pr != "" {
-		return "#" + pr
-	}
-	if b := traceBranch(t); b != "" {
-		return b
-	}
-	return shortCloudSHA(traceCommit(t))
-}
-
-func tracePR(t *cloudapi.TraceSummary) string {
-	if t.CI != nil && t.CI.Change != nil && t.CI.Change.ID != "" {
-		return t.CI.Change.ID
-	}
-	return ""
-}
-
-func traceBranch(t *cloudapi.TraceSummary) string {
-	if t.CI != nil && t.CI.Change != nil && t.CI.Change.Branch != "" {
-		return t.CI.Change.Branch
-	}
-	if t.Git != nil && t.Git.Branch != nil {
-		return *t.Git.Branch
-	}
-	return ""
-}
-
-func traceCommit(t *cloudapi.TraceSummary) string {
-	if t.CI != nil && t.CI.Change != nil && t.CI.Change.HeadSHA != "" {
-		return t.CI.Change.HeadSHA
-	}
-	if t.Git != nil {
-		return t.Git.Ref
-	}
-	return ""
-}
-
-func traceSender(t *cloudapi.TraceSummary) string {
-	if t.Sender != nil {
-		return t.Sender.Name
-	}
-	return ""
-}
-
-// traceJSONFields are the fields 'dagger cloud traces list --json' can print.
-var traceJSONFields = []string{
-	"id", "url", "command", "status", "message", "startedAt", "endedAt", "duration",
-	"local", "sender", "repo", "branch", "commit", "tag", "pr", "title", "author", "provider",
-}
-
-func writeTracesJSON(w io.Writer, orgName string, traces []cloudapi.TraceSummary, fields []string, now time.Time) error {
-	rows := make([]map[string]any, 0, len(traces))
-	for i := range traces {
-		all := traceJSON(orgName, &traces[i], now)
-		row := make(map[string]any, len(fields))
-		for _, f := range fields {
-			row[f] = all[f]
-		}
-		rows = append(rows, row)
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(rows)
-}
-
-func traceJSON(orgName string, t *cloudapi.TraceSummary, now time.Time) map[string]any {
-	var message, repo, tag, title, author, provider string
-	if t.Status != nil {
-		message = t.Status.Message
-	}
-	if t.Git != nil {
-		repo = t.Git.Remote
-		title = t.Git.Title
-		if t.Git.Tag != nil {
-			tag = *t.Git.Tag
-		}
-		if t.Git.Author != nil {
-			author = t.Git.Author.Name
-			if t.Git.Author.Email != "" {
-				author += " <" + t.Git.Author.Email + ">"
-			}
-		}
-	}
-	if t.CI != nil {
-		if t.CI.Provider != nil {
-			provider = *t.CI.Provider
-		}
-		if repo == "" && t.CI.Repository != nil {
-			repo = *t.CI.Repository
-		}
-		if t.CI.Change != nil && t.CI.Change.Title != "" {
-			title = t.CI.Change.Title
-		}
-	}
-	var endedAt any
-	if t.EndTime != nil && !t.EndTime.IsZero() {
-		endedAt = t.EndTime
-	}
-	return map[string]any{
-		"id":        t.ID,
-		"url":       cloudTraceURL(orgName, t.ID),
-		"command":   t.Name,
-		"status":    t.State(),
-		"message":   message,
-		"startedAt": t.Timestamp,
-		"endedAt":   endedAt,
-		"duration":  t.Duration(now).Seconds(),
-		"local":     t.Local,
-		"sender":    traceSender(t),
-		"repo":      repo,
-		"branch":    traceBranch(t),
-		"commit":    traceCommit(t),
-		"tag":       tag,
-		"pr":        tracePR(t),
-		"title":     title,
-		"author":    author,
-		"provider":  provider,
-	}
-}
-
-// cloudSpanURL is the web UI address of a span in a trace, or of the trace
-// when spanID is empty.
-func cloudSpanURL(orgName, traceID, spanID string) string {
-	u := cloudTraceURL(orgName, traceID)
-	if u != "" && spanID != "" {
-		u += "?span=" + url.QueryEscape(spanID)
-	}
-	return u
-}
-
-// parseTraceRef reads a trace argument: a trace ID, or a Dagger Cloud trace
-// URL (https://dagger.cloud/<org>/traces/<id>). It returns the trace ID, the
-// org name when the URL gives one, and the span ID when the URL gives one.
-func parseTraceRef(arg string) (traceID, orgName, spanID string, err error) {
-	arg = strings.TrimSpace(arg)
-	if u, perr := url.Parse(arg); perr == nil && u.Scheme != "" && u.Host != "" {
-		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-		for i := range parts {
-			if parts[i] == "traces" && i+1 < len(parts) {
-				traceID = parts[i+1]
-				if i > 0 {
-					orgName = parts[i-1]
-				}
-				break
-			}
-		}
-		if traceID == "" {
-			return "", "", "", fmt.Errorf("invalid trace URL %q: use https://dagger.cloud/<org>/traces/<id>", arg)
-		}
-		spanID = u.Query().Get("span")
-		arg = traceID
-	}
-	id, perr := trace.TraceIDFromHex(strings.ToLower(arg))
-	if perr != nil {
-		return "", "", "", fmt.Errorf("invalid trace %q: use a 32-character hex trace ID or a https://dagger.cloud/<org>/traces/<id> URL", arg)
-	}
-	return id.String(), orgName, spanID, nil
-}
-
-// traceWebOrg picks the org for a web link: --org, else the org that the
-// trace URL or --last gave, else the credential's org.
-func traceWebOrg(orgName string) (string, error) {
-	if cloudOrgFlag != "" {
-		return cloudOrgFlag, nil
-	}
-	if orgName != "" {
-		return orgName, nil
-	}
-	if name, err := auth.CurrentOrgName(); err == nil && name != "" {
-		return name, nil
-	}
-	return "", fmt.Errorf("no org specified; use --org or run 'dagger login <org>'")
 }

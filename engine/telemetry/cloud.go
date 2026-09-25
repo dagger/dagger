@@ -2,7 +2,8 @@ package telemetry
 
 import (
 	"context"
-	"os"
+	"errors"
+	"net/url"
 	"sync"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -28,7 +29,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 	configuredCloudExportersOnce.Do(func() {
 		cloudAuth, status := cloudEmitAuth(ctx)
 		if status.Err != nil {
-			slog.Warn("failed to get cloud auth", "error", status.Err)
+			slog.Warn("cloud telemetry disabled", "error", status.Err)
 			return
 		}
 		if !status.Emitting {
@@ -61,13 +62,18 @@ type CloudEmitStatus struct {
 	Credential string
 	// Org is the org the telemetry goes to, when the credential names one.
 	Org string
-	// Err is set when the credential could not be read.
+	// Err is set when the credential cannot be read, or the Cloud URL is not
+	// valid (ErrInvalidCloudURL).
 	Err error
 }
 
-// CloudEmitStatusFor returns this process's CloudEmitStatus. It reads the
-// local credential only. It does not ask Dagger Cloud if the credential is
-// valid, but it can refresh an expired login token.
+// ErrInvalidCloudURL is the CloudEmitStatus error when DAGGER_CLOUD_URL is not
+// a valid URL.
+var ErrInvalidCloudURL = errors.New("DAGGER_CLOUD_URL is not a valid URL")
+
+// CloudEmitStatusFor returns this process's CloudEmitStatus. It does not ask
+// Dagger Cloud if the credential is valid, but it can refresh an expired login
+// token.
 func CloudEmitStatusFor(ctx context.Context) CloudEmitStatus {
 	_, status := cloudEmitAuth(ctx)
 	return status
@@ -75,9 +81,6 @@ func CloudEmitStatusFor(ctx context.Context) CloudEmitStatus {
 
 func cloudEmitAuth(ctx context.Context) (*auth.Cloud, CloudEmitStatus) {
 	var status CloudEmitStatus
-	if os.Getenv("DAGGER_CLOUD_TOKEN") != "" {
-		status.Credential = "DAGGER_CLOUD_TOKEN"
-	}
 	cloudAuth, err := auth.GetCloudAuth(ctx)
 	if err != nil {
 		status.Err = err
@@ -86,21 +89,24 @@ func cloudEmitAuth(ctx context.Context) (*auth.Cloud, CloudEmitStatus) {
 	if cloudAuth == nil || cloudAuth.Token == nil {
 		return nil, status
 	}
-	if status.Credential == "" {
-		status.Credential = "dagger login"
-	}
 	if cloudAuthHasStaticHeader(cloudAuth) {
-		// An engine token names its org; an OIDC token's org is known only
-		// to Dagger Cloud.
+		// DAGGER_CLOUD_TOKEN. An engine token names its org; an OIDC token's
+		// org is known only to Dagger Cloud.
+		status.Credential = "DAGGER_CLOUD_TOKEN"
 		if token, ok := auth.ParseDaggerToken(cloudAuth.Token.AccessToken); ok {
 			status.Org = token.OrgName()
 		}
 	} else {
+		status.Credential = "dagger login"
 		if cloudAuth.Org == nil {
 			// A user's login token names no organization by itself.
 			return cloudAuth, status
 		}
 		status.Org = cloudAuth.Org.Name
+	}
+	if _, err := url.Parse(ResolveCloudURL("")); err != nil {
+		status.Err = ErrInvalidCloudURL
+		return cloudAuth, status
 	}
 	status.Emitting = true
 	return cloudAuth, status

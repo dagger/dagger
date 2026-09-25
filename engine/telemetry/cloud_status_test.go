@@ -21,3 +21,11 @@ func TestCloudEmitStatusForCloudToken(t *testing.T) {
 		Credential: "DAGGER_CLOUD_TOKEN",
 	}, CloudEmitStatusFor(t.Context()))
 }
+
+func TestCloudEmitStatusForInvalidCloudURL(t *testing.T) {
+	t.Setenv("DAGGER_CLOUD_TOKEN", "dag_acme_secret")
+	t.Setenv("DAGGER_CLOUD_URL", "://bad")
+	status := CloudEmitStatusFor(t.Context())
+	require.False(t, status.Emitting)
+	require.ErrorIs(t, status.Err, ErrInvalidCloudURL)
+}

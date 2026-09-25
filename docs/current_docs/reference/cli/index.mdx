@@ -939,7 +939,7 @@ dagger cloud traces list
 ```
 dagger cloud traces list --status failed --branch main --since 7d
 dagger cloud traces list --mine --local --limit 5
-dagger cloud traces list --pr 123 --json id,status,duration
+dagger cloud traces list --pr 123 --json
 ```
 
 ### Options
@@ -950,8 +950,8 @@ dagger cloud traces list --pr 123 --json id,status,duration
       --ci                      Only traces of CI runs
       --command string          Only traces whose command matches this glob, e.g. 'dagger check*'
       --commit string           Only traces of this commit (full or short SHA)
-      --json strings            Print JSON with these fields: id,url,command,status,message,startedAt,endedAt,duration,local,sender,repo,branch,commit,tag,pr,title,author,provider
-  -L, --limit int               Maximum number of traces to list (1-1000) (default 20)
+      --json                    Print JSON output
+  -L, --limit int               Maximum number of traces to list (at most 1000) (default 20)
       --local                   Only traces of local runs
       --max-duration duration   Only traces that ran for at most this time
       --min-duration duration   Only traces that ran for at least this time, e.g. 5m
@@ -988,8 +988,8 @@ Show if the dagger CLI on this machine sends traces to Dagger Cloud, with
 the current environment.
 
 This command shows the state of this installation, not the state of Dagger
-Cloud. It examines the local credential only. It does not ask Dagger Cloud if
-the credential is valid.
+Cloud. It does not ask Dagger Cloud if the credential is valid, but it can
+refresh an expired login token.
 
 The exit code is 0 when the CLI sends traces, and 1 when it does not.
 
@@ -1015,8 +1015,7 @@ View a Dagger Cloud trace
 
 View a Dagger Cloud trace: the overall result, the commands that caused a
 failure, check results and failed tests, each with the end of its logs, and the
-full call tree with arguments and timing. The command fetches spans and logs
-when it needs them, so it does not load the full trace first.
+full call tree with arguments and timing.
 
 The trace is a trace ID or a https://dagger.cloud/&lt;org&gt;/traces/&lt;id&gt; URL. Use
 --last for your most recent trace.
@@ -1024,8 +1023,9 @@ The trace is a trace ID or a https://dagger.cloud/&lt;org&gt;/traces/&lt;id&gt; 
 Use --span, --check or --test to show one span, check or test.
 
 Use --log to show the full logs instead of the tree. In a terminal, the logs
-open in a pager: press esc to go to the tree, and L to go back to the logs. In
-other cases, or with --output, the command writes the raw logs.
+open in a pager: press esc to go to the tree, and L to go back to the logs.
+When the output is not a terminal, or with --output, the command writes the
+raw logs.
 
 Use --web (-w) to open the trace in the Dagger Cloud web UI.
 

@@ -165,8 +165,8 @@ func TestCloudLogsWritesTextOutputOnly(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetContext(context.Background())
-	o := &traceViewOptions{check: "lint", log: true, timeout: time.Minute}
-	require.NoError(t, cli.writeTraceLogs(cmd, "trace-id", o.selector(), o))
+	o := &traceViewOptions{sel: spanSelector{check: "lint"}, log: true, timeout: time.Minute}
+	require.NoError(t, cli.writeTraceLogs(cmd, "trace-id", o.sel, o))
 
 	require.Equal(t, "hello world\n", out.String())
 

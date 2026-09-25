@@ -1,11 +1,10 @@
 kind: Added
 body: |
   New `dagger cloud traces` commands:
-  - `status` shows if this installation sends traces to Dagger Cloud. The exit
-    code is 0 when it sends traces, and 1 when it does not.
+  - `status` shows if this installation sends traces to Dagger Cloud.
   - `list` lists the local and CI traces of an org. Flags filter the traces by
     repository, branch, commit, pull request, status, sender, command, time and
-    duration. `--json` prints the fields you select.
+    duration.
   - `view` shows a trace. `--last` selects your most recent trace, `-w` opens
     it in the web UI, and `--log` shows the full logs in a pager.
 

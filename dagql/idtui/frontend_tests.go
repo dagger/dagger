@@ -78,7 +78,7 @@ type TestView struct {
 	AgentStyle bool
 
 	// TraceID, when set (by 'dagger trace'), lets a failing entry's capped log
-	// tail point at 'dagger cloud logs <trace> <span>' for the full output.
+	// tail point at 'dagger cloud traces view <trace> --log' for the full output.
 	TraceID string
 
 	sidebar *testSidebarView
@@ -2130,7 +2130,7 @@ func failingLeafTestCases(view *dagui.TestView) []*dagui.TestNode {
 // errorTailFallbackLines bounds the window when no fail/error keyword matches
 // (a panic, a timeout's goroutine dump, a non-English tool): show the last N
 // lines rather than dumping the entire log into the report. The trimmed-lines
-// marker and the 'dagger cloud logs' hint point at the rest.
+// marker and the '--log' hint point at the rest.
 const errorTailFallbackLines = 40
 
 // errorTailStart returns the line index to start rendering a failed test's
@@ -2169,10 +2169,9 @@ func errorTailStart(lines []string, context int) int {
 	return max(anchor-context, 0)
 }
 
-// cloudLogsTarget returns the 'dagger cloud logs' selector that addresses span
-// by name when possible (--test/--check), else by --span. Empty for a nil span.
-// Also used verbatim in 'dagger trace' drill-in suggestions, so it must only
-// emit selectors both commands accept.
+// cloudLogsTarget returns the 'dagger cloud traces view' selector that
+// addresses span by name when possible (--test/--check), else by --span. Empty
+// for a nil span. The drill-in suggestions and the "full:" log hint both use it.
 func cloudLogsTarget(span *dagui.Span) string {
 	switch {
 	case span == nil:
@@ -2188,9 +2187,8 @@ func cloudLogsTarget(span *dagui.Span) string {
 
 // cloudLogsHintTarget is cloudLogsTarget plus --descendants when the span
 // rolls up its subtree's logs, so the "full:" hint fetches at least the scope
-// the window above it rendered ('dagger cloud logs --span' is otherwise just
-// that span). Only for cloud-logs hints -- 'dagger trace' resolves roll-up on
-// its own and has no such flag.
+// the window above it rendered ('--log --span' is otherwise just that span).
+// Only for the log hint: without --log, the view resolves roll-up on its own.
 func cloudLogsHintTarget(span *dagui.Span) string {
 	target := cloudLogsTarget(span)
 	if span != nil && span.RollUpLogs && span.TestCaseName == "" && span.CheckName == "" {
@@ -2201,7 +2199,7 @@ func cloudLogsHintTarget(span *dagui.Span) string {
 
 // errorWindowLines renders a failed span's rolled-up logs for a final report:
 // the error-anchored window (errorTailStart) prefixed with a marker for any
-// trimmed lines, then a 'dagger cloud logs' hint for the full output when a
+// trimmed lines, then a '--log' hint for the full output when a
 // trace ID and selector target are known. Lines are prefixed with indent and
 // left unclipped -- the hint is a copy-paste command.
 func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target string) []string {
@@ -2215,7 +2213,7 @@ func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target
 		lines = append(lines, indent+line)
 	}
 	if traceID != "" && target != "" {
-		hint := out.String(fmt.Sprintf("full: dagger cloud logs %s %s", traceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+		hint := out.String(fmt.Sprintf("full: dagger cloud traces view %s --log %s", traceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 		lines = append(lines, indent+hint)
 	}
 	return lines

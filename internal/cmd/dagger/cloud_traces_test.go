@@ -32,33 +32,17 @@ func TestWriteCloudTracesStatus(t *testing.T) {
 			status: enginetel.CloudEmitStatus{Credential: "dagger login"},
 			want:   "not emitting\n  reason: logged in, but no org is selected\n  fix:    dagger cloud org use <org>\n",
 		},
+		{
+			name:   "invalid Cloud URL",
+			status: enginetel.CloudEmitStatus{Credential: "dagger login", Org: "acme", Err: enginetel.ErrInvalidCloudURL},
+			want:   "not emitting\n  reason: DAGGER_CLOUD_URL is not a valid URL\n  fix:    unset DAGGER_CLOUD_URL, or set it to a valid URL\n",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
 			require.NoError(t, writeCloudTracesStatus(&out, tc.status))
 			require.Equal(t, tc.want, out.String())
 		})
-	}
-}
-
-func TestParseTraceRef(t *testing.T) {
-	const id = "2f123ba77bf7bd2d4db2f70ed20613e8"
-
-	traceID, org, span, err := parseTraceRef(" " + strings.ToUpper(id) + "\n")
-	require.NoError(t, err)
-	require.Equal(t, id, traceID)
-	require.Empty(t, org)
-	require.Empty(t, span)
-
-	traceID, org, span, err = parseTraceRef("https://dagger.cloud/acme/traces/" + id + "?span=0102030405060708")
-	require.NoError(t, err)
-	require.Equal(t, id, traceID)
-	require.Equal(t, "acme", org)
-	require.Equal(t, "0102030405060708", span)
-
-	for _, bad := range []string{"", "nope", "https://dagger.cloud/acme/checks", "00000000000000000000000000000000"} {
-		_, _, _, err := parseTraceRef(bad)
-		require.Error(t, err, bad)
 	}
 }
 
@@ -92,39 +76,28 @@ func TestParseTimeFlag(t *testing.T) {
 }
 
 func TestCloudTracesListFilter(t *testing.T) {
-	prev := cloudTracesList
-	t.Cleanup(func() { cloudTracesList = prev })
 	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
-
-	cloudTracesList = prev
-	cloudTracesList.repos = []string{"acme/app"}
-	cloudTracesList.pr = "#42"
-	cloudTracesList.status = "failed"
-	cloudTracesList.ci = true
-	cloudTracesList.command = "dagger check*"
-	cloudTracesList.since = "1d"
-	cloudTracesList.minDuration = 90 * time.Second
-	f, err := cloudTracesListFilter(now)
+	o := &cloudTracesListOptions{
+		repos:       []string{"acme/app"},
+		status:      "failed",
+		ci:          true,
+		command:     "dagger check*",
+		since:       "1d",
+		minDuration: 90 * time.Second,
+	}
+	f, err := o.filter(now)
 	require.NoError(t, err)
 	require.Equal(t, []string{"acme/app"}, f.Repos)
-	require.Equal(t, "42", f.Change)
 	require.Equal(t, "FAILED", f.Status)
 	require.NotNil(t, f.Local)
-	require.False(t, *f.Local)
+	require.False(t, *f.Local, "--ci")
 	require.Equal(t, "dagger check*", f.Name)
 	require.True(t, now.Add(-24*time.Hour).Equal(*f.Since))
 	require.Nil(t, f.Until)
 	require.Equal(t, 90.0, f.MinDuration)
 
-	cloudTracesList = prev
-	cloudTracesList.status = "broken"
-	_, err = cloudTracesListFilter(now)
+	_, err = (&cloudTracesListOptions{status: "broken"}).filter(now)
 	require.ErrorContains(t, err, "--status")
-
-	cloudTracesList = prev
-	cloudTracesList.commit = "abc"
-	_, err = cloudTracesListFilter(now)
-	require.ErrorContains(t, err, "--commit")
 }
 
 func testTraceSummaries(now time.Time) []cloudapi.TraceSummary {
@@ -138,11 +111,13 @@ func testTraceSummaries(now time.Time) []cloudapi.TraceSummary {
 			Status:    &cloudapi.TraceStatus{Code: "STATUS_CODE_ERROR", Message: "exit 1"},
 			Timestamp: end.Add(-2 * time.Minute),
 			EndTime:   &end,
-			Sender:    &cloudapi.TraceSender{ID: "u1", Name: "Ada"},
-			Git:       &cloudapi.TraceGit{Remote: "github.com/acme/app", Ref: "0123456789abcdef", Branch: &branch},
-			CI: &cloudapi.TraceCI{
-				Provider: &provider,
-				Change:   &cloudapi.TraceCIChange{ID: "42", Title: "Fix it", HeadSHA: "fedcba9876543210"},
+			Sender:    &cloudapi.TraceSender{Name: "Ada"},
+			TraceMetadata: cloudapi.TraceMetadata{
+				Git: &cloudapi.TraceGitMetadata{Remote: "github.com/acme/app", Ref: "0123456789abcdef", Branch: &branch},
+				CI: &cloudapi.TraceCIMetadata{
+					Provider: &provider,
+					Change:   &cloudapi.TraceCIChange{ID: "42", Title: "Fix it", HeadSHA: "fedcba9876543210"},
+				},
 			},
 		},
 		{
@@ -151,15 +126,45 @@ func testTraceSummaries(now time.Time) []cloudapi.TraceSummary {
 			Status:    &cloudapi.TraceStatus{Code: "STATUS_CODE_UNSET"},
 			Timestamp: now.Add(-30 * time.Second),
 			Local:     true,
-			Git:       &cloudapi.TraceGit{Ref: "0123456789abcdef"},
+			TraceMetadata: cloudapi.TraceMetadata{
+				Git: &cloudapi.TraceGitMetadata{Ref: "0123456789abcdef"},
+			},
 		},
 	}
+}
+
+func testTraceRows(now time.Time) []traceRow {
+	traces := testTraceSummaries(now)
+	rows := make([]traceRow, len(traces))
+	for i := range traces {
+		rows[i] = newTraceRow("acme", &traces[i], now)
+	}
+	return rows
+}
+
+func TestNewTraceRow(t *testing.T) {
+	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	rows := testTraceRows(now)
+
+	ci := rows[0]
+	require.Equal(t, "https://dagger.cloud/acme/traces/2f123ba77bf7bd2d4db2f70ed20613e8", ci.URL)
+	require.Equal(t, cloudapi.TraceStateFailed, ci.Status)
+	require.Equal(t, "42", ci.PR)
+	require.Equal(t, "main", ci.Branch)
+	require.Equal(t, "fedcba9876543210", ci.Commit, "the CI change's head wins over the git ref")
+	require.Equal(t, "Fix it", ci.Title, "the CI change's title wins over the commit title")
+	require.Equal(t, 120.0, ci.Duration)
+
+	local := rows[1]
+	require.Equal(t, cloudapi.TraceStateRunning, local.Status)
+	require.Nil(t, local.EndedAt)
+	require.Equal(t, 30.0, local.Duration, "a running trace runs until now")
 }
 
 func TestWriteTracesTable(t *testing.T) {
 	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
 	var out bytes.Buffer
-	require.NoError(t, writeTracesTable(&out, testTraceSummaries(now), now))
+	require.NoError(t, writeTracesTable(&out, testTraceRows(now)))
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	require.Len(t, lines, 3)
 	require.Equal(t, []string{"ID", "STATUS", "DURATION", "COMMAND", "BRANCH/PR", "SENDER", "STARTED"}, strings.Fields(lines[0]))
@@ -167,33 +172,8 @@ func TestWriteTracesTable(t *testing.T) {
 	require.Regexp(t, `^0102030405060708090a0b0c0d0e0f10\s+running\s+30\.0s\s+dagger call build\s+0123456789ab\s+-\s+`, lines[2])
 }
 
-func TestWriteTracesJSON(t *testing.T) {
-	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
-	var out bytes.Buffer
-	require.NoError(t, writeTracesJSON(&out, "acme", testTraceSummaries(now), []string{"id", "url", "status", "pr", "branch", "duration"}, now))
-	var rows []map[string]any
-	require.NoError(t, json.Unmarshal(out.Bytes(), &rows))
-	require.Equal(t, []map[string]any{
-		{
-			"id":       "2f123ba77bf7bd2d4db2f70ed20613e8",
-			"url":      "https://dagger.cloud/acme/traces/2f123ba77bf7bd2d4db2f70ed20613e8",
-			"status":   "failed",
-			"pr":       "42",
-			"branch":   "main",
-			"duration": 120.0,
-		},
-		{
-			"id":       "0102030405060708090a0b0c0d0e0f10",
-			"url":      "https://dagger.cloud/acme/traces/0102030405060708090a0b0c0d0e0f10",
-			"status":   "running",
-			"pr":       "",
-			"branch":   "",
-			"duration": 30.0,
-		},
-	}, rows)
-}
-
 func TestRunTraceViewValidatesFlags(t *testing.T) {
+	const id = "2f123ba77bf7bd2d4db2f70ed20613e8"
 	cmd := &cobra.Command{}
 	for _, tc := range []struct {
 		name string
@@ -202,10 +182,10 @@ func TestRunTraceViewValidatesFlags(t *testing.T) {
 		err  string
 	}{
 		{"no trace", nil, traceViewOptions{}, "give a trace ID or URL, or use --last"},
-		{"trace and --last", []string{"2f123ba77bf7bd2d4db2f70ed20613e8"}, traceViewOptions{last: true}, "not both"},
-		{"--output without --log", []string{"x"}, traceViewOptions{output: "f"}, "need --log"},
-		{"--descendants without --span", []string{"x"}, traceViewOptions{log: true, descendants: true}, "--descendants needs --span"},
-		{"two selectors", []string{"x"}, traceViewOptions{check: "a", test: "b"}, "mutually exclusive"},
+		{"trace and --last", []string{id}, traceViewOptions{last: true}, "not both"},
+		{"--output without --log", []string{id}, traceViewOptions{output: "f"}, "need --log"},
+		{"--descendants without --span", []string{id}, traceViewOptions{log: true, sel: spanSelector{descendants: true}}, "--descendants needs --span"},
+		{"two selectors", []string{id}, traceViewOptions{sel: spanSelector{check: "a", test: "b"}}, "mutually exclusive"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := tc.o
@@ -260,10 +240,8 @@ func TestResolveTraceViewArgLast(t *testing.T) {
 	t.Cleanup(func() { cloudOrgFlag = prev })
 	cloudOrgFlag = ""
 
-	traceID, org, span, err := resolveTraceViewArg(t.Context(), nil, &traceViewOptions{last: true})
+	ref, err := resolveTraceViewArg(t.Context(), nil, true)
 	require.NoError(t, err)
-	require.Equal(t, "2f123ba77bf7bd2d4db2f70ed20613e8", traceID)
-	require.Equal(t, "acme", org)
-	require.Empty(t, span)
+	require.Equal(t, cloudapi.TraceRef{TraceID: "2f123ba77bf7bd2d4db2f70ed20613e8", Org: "acme"}, ref)
 	require.Equal(t, "acme", lastOrg)
 }

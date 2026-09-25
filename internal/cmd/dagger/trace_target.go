@@ -15,10 +15,14 @@ import (
 // which callers read as "the whole trace" (its root span). It backs the
 // --span/--check/--test flags of 'dagger cloud traces view', so a human can
 // name a check or test instead of copying an opaque span hex.
+//
+// Checks and tests roll up their subtree's logs; a raw span rolls up only with
+// descendants (--descendants).
 type spanSelector struct {
-	span  string
-	check string
-	test  string
+	span        string
+	check       string
+	test        string
+	descendants bool
 }
 
 // isSet reports whether any selector was given (vs. the zero "whole trace").
@@ -58,20 +62,22 @@ func (s spanSelector) validate() error {
 	if n > 1 {
 		return fmt.Errorf("--span, --check, and --test are mutually exclusive")
 	}
+	if s.descendants && s.span == "" {
+		return fmt.Errorf("--descendants needs --span; --check and --test always include the descendants' logs")
+	}
 	return nil
 }
 
 // resolveSpan turns the selector into a concrete span ID plus whether to roll up
-// descendant logs, for 'dagger cloud traces view --log'. A raw --span needs no lookup and
-// stands alone (just that span); --check/--test and the empty "whole trace"
-// selector resolve against the trace's priority spans -- checks and tests are
-// priority spans, so they're present without fetching the whole trace -- and
-// roll up their subtree. The empty selector resolves to the root span with
-// descendants, i.e. the entire trace. ('dagger trace' loads the whole trace and
-// resolves the same names against its frontend instead: resolveTraceTarget.)
+// descendant logs, when there is no frontend to resolve names against
+// (resolveTraceTarget). A raw --span needs no lookup; --check/--test and the
+// empty "whole trace" selector resolve against the trace's priority spans --
+// checks and tests are priority spans, so they're present without fetching the
+// whole trace. The empty selector resolves to the root span with descendants,
+// i.e. the entire trace.
 func (s spanSelector) resolveSpan(ctx context.Context, client *cloudapi.OTLPClient, traceID string) (spanID string, descendants bool, err error) {
 	if s.span != "" {
-		return s.span, false, nil
+		return s.span, s.descendants, nil
 	}
 
 	db, err := fetchPrioritySpans(ctx, client, traceID)

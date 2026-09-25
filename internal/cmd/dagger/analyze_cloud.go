@@ -15,17 +15,6 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-// cloudLogsCmd is a hidden alias for 'dagger cloud traces view --log'.
-var cloudLogsCmd = func() *cobra.Command {
-	cmd := newTraceViewCmd("logs [trace]", true)
-	cmd.Hidden = true
-	return cmd
-}()
-
-func init() {
-	cloudCmd.AddCommand(cloudLogsCmd)
-}
-
 // writeTraceLogs writes the selected span's full logs, as raw text, to stdout
 // or to --output. It is 'view --log' when there is no pager.
 func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) error {
@@ -56,9 +45,6 @@ func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel span
 	spanID, descendants, err := sel.resolveSpan(ctx, client, traceID)
 	if err != nil {
 		return err
-	}
-	if o.descendants {
-		descendants = true
 	}
 
 	endedWithNewline := true

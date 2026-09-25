@@ -165,7 +165,7 @@ type ViewHandle interface {
 // receive the whole trace as a plain OTLP span/log stream instead.
 type TraceFrontend interface {
 	// SetTraceID lets the frontend point surfaced failure logs at
-	// 'dagger cloud logs <trace> <span>' for the full output.
+	// 'dagger cloud traces view <trace> --log' for the full output.
 	SetTraceID(string)
 	// SetLogProvider/SetSpanProvider register the lazy fetchers fired when a
 	// span is expanded or a failure is surfaced.

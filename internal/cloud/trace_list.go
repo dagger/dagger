@@ -41,8 +41,7 @@ type TraceSummary struct {
 	EndTime   *time.Time   `json:"endTime"`
 	Local     bool         `json:"local"`
 	Sender    *TraceSender `json:"sender"`
-	Git       *TraceGit    `json:"git"`
-	CI        *TraceCI     `json:"ci"`
+	TraceMetadata
 }
 
 type TraceStatus struct {
@@ -51,28 +50,7 @@ type TraceStatus struct {
 }
 
 type TraceSender struct {
-	ID   string `json:"id"`
 	Name string `json:"name"`
-}
-
-type TraceGit struct {
-	Remote string          `json:"remote"`
-	Title  string          `json:"title"`
-	Ref    string          `json:"ref"`
-	Tag    *string         `json:"tag"`
-	Branch *string         `json:"branch"`
-	Author *TraceGitAuthor `json:"author"`
-}
-
-type TraceGitAuthor struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
-type TraceCI struct {
-	Provider   *string        `json:"provider"`
-	Repository *string        `json:"repository"`
-	Change     *TraceCIChange `json:"change"`
 }
 
 // Trace states as the CLI shows them.
@@ -86,7 +64,7 @@ const (
 // or passed by its status code.
 func (t *TraceSummary) State() string {
 	switch {
-	case t.EndTime == nil || t.EndTime.IsZero():
+	case t.EndTime == nil:
 		return TraceStateRunning
 	case t.Status != nil && t.Status.Code == "STATUS_CODE_ERROR":
 		return TraceStateFailed
@@ -97,7 +75,7 @@ func (t *TraceSummary) State() string {
 
 // Duration is the trace's run time so far, measured to now while it runs.
 func (t *TraceSummary) Duration(now time.Time) time.Duration {
-	if t.EndTime == nil || t.EndTime.IsZero() {
+	if t.EndTime == nil {
 		return now.Sub(t.Timestamp)
 	}
 	return t.EndTime.Sub(t.Timestamp)
@@ -113,7 +91,7 @@ query TraceList($org: String!, $filter: TraceListFilter, $sort: TraceListSort!, 
 			timestamp
 			endTime
 			local
-			sender { id name }
+			sender { name }
 			git {
 				remote
 				title
@@ -125,7 +103,7 @@ query TraceList($org: String!, $filter: TraceListFilter, $sort: TraceListSort!, 
 			ci {
 				provider
 				repository
-				change { id title url branch headSHA }
+				change { id title branch headSHA }
 			}
 		}
 	}
@@ -152,35 +130,4 @@ func (c *Client) TraceList(ctx context.Context, orgName string, filter TraceList
 		return nil, nil
 	}
 	return data.Org.TraceList, nil
-}
-
-const lastUserTraceOperation = `
-query LastUserTrace($org: String!) {
-	org(name: $org) {
-		lastUserTrace {
-			id
-		}
-	}
-}
-`
-
-// LastUserTraceID returns the ID of the logged-in user's most recent trace in
-// the org, or "" when there is none.
-func (c *Client) LastUserTraceID(ctx context.Context, orgName string) (string, error) {
-	var data struct {
-		Org *struct {
-			LastUserTrace *struct {
-				ID string `json:"id"`
-			} `json:"lastUserTrace"`
-		} `json:"org"`
-	}
-	if err := c.doGraphQL(ctx, "LastUserTrace", lastUserTraceOperation, map[string]any{
-		"org": orgName,
-	}, &data); err != nil {
-		return "", err
-	}
-	if data.Org == nil || data.Org.LastUserTrace == nil {
-		return "", nil
-	}
-	return data.Org.LastUserTrace.ID, nil
 }

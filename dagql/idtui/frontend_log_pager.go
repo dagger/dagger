@@ -79,11 +79,9 @@ func (p *LogPagerView) Render(ctx tuist.Context) {
 	}
 	height = max(height, 1)
 
-	if p.Logs != nil {
+	if p.Logs != nil && p.Logs.UsedHeight() > 0 {
 		// The header includes scroll percentage, so size the pager before
 		// rendering it. The log area starts after the title and divider.
-		// Size an empty buffer too: a stream (OpenLogStream) writes into it
-		// later, and text written at width 0 is lost.
 		p.Logs.SetPrefix("")
 		p.Logs.SetWidth(width)
 		p.Logs.SetHeight(max(height-2, 1))
@@ -468,8 +466,8 @@ func (fe *frontendPretty) OpenLogStream(id dagui.SpanID, title string) io.Writer
 		if fe.logPager != nil {
 			fe.closeLogPager()
 		}
-		// Size the buffer before the first write; the pager keeps it sized
-		// after that. Text written at width 0 is lost.
+		// Size the buffer before the first write: text written at width 0 is
+		// lost. The pager keeps it sized after that.
 		if fe.window.Width > 0 {
 			stream.vt.SetPrefix("")
 			stream.vt.SetWidth(fe.window.Width)
@@ -478,26 +476,20 @@ func (fe *frontendPretty) OpenLogStream(id dagui.SpanID, title string) io.Writer
 		fe.logStream = stream
 		fe.showLogPager(id, title, "", stream.vt)
 	})
-	return logStreamWriter{fe: fe, vt: stream.vt}
+	return logStreamWriter{fe: fe, stream: stream}
 }
 
 type logStreamWriter struct {
-	fe *frontendPretty
-	vt *Vterm
+	fe     *frontendPretty
+	stream *logStream
 }
 
 func (w logStreamWriter) Write(p []byte) (int, error) {
 	// Dispatch runs later on the UI goroutine; the caller may reuse p.
 	buf := append([]byte(nil), p...)
 	w.fe.dispatch(func() {
-		_, _ = w.vt.Write(buf)
-		if pager := w.fe.logPager; pager != nil && pager.Logs == w.vt {
-			pager.RefreshSearch()
-			pager.Update()
-		}
-		if w.fe.keymapBar != nil {
-			w.fe.keymapBar.Update()
-		}
+		_, _ = w.stream.vt.Write(buf)
+		w.fe.updateLogPagerForLogs(w.stream.id)
 	})
 	return len(p), nil
 }

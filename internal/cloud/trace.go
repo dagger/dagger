@@ -32,26 +32,37 @@ query GetTraceMetadata ($org: ID!, $traceID: ID!) {
 }
 `
 
-// TraceMetadata is the trace's source git/CI context: the commit it ran on and
-// whether re-running via Dagger Cloud applies.
+// TraceMetadata is the trace's source git/CI context. A query fills only the
+// fields it selects.
 type TraceMetadata struct {
 	Git *TraceGitMetadata `json:"git"`
 	CI  *TraceCIMetadata  `json:"ci"`
 }
 
 type TraceGitMetadata struct {
-	Ref string `json:"ref"`
+	Remote string          `json:"remote"`
+	Title  string          `json:"title"`
+	Ref    string          `json:"ref"`
+	Tag    *string         `json:"tag"`
+	Branch *string         `json:"branch"`
+	Author *TraceGitAuthor `json:"author"`
+}
+
+type TraceGitAuthor struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 type TraceCIMetadata struct {
 	IsNativeCI bool           `json:"isNativeCI"`
+	Provider   *string        `json:"provider"`
+	Repository *string        `json:"repository"`
 	Change     *TraceCIChange `json:"change"`
 }
 
 type TraceCIChange struct {
 	ID      string `json:"id"`
 	Title   string `json:"title"`
-	URL     string `json:"url"`
 	Branch  string `json:"branch"`
 	HeadSHA string `json:"headSHA"`
 }
@@ -69,4 +80,35 @@ func (c *Client) TraceMetadata(ctx context.Context, orgID, traceID string) (*Tra
 		return nil, err
 	}
 	return data.Trace, nil
+}
+
+const lastUserTraceOperation = `
+query LastUserTrace($org: String!) {
+	org(name: $org) {
+		lastUserTrace {
+			id
+		}
+	}
+}
+`
+
+// LastUserTraceID returns the ID of the logged-in user's most recent trace in
+// the org, or "" when there is none.
+func (c *Client) LastUserTraceID(ctx context.Context, orgName string) (string, error) {
+	var data struct {
+		Org *struct {
+			LastUserTrace *struct {
+				ID string `json:"id"`
+			} `json:"lastUserTrace"`
+		} `json:"org"`
+	}
+	if err := c.doGraphQL(ctx, "LastUserTrace", lastUserTraceOperation, map[string]any{
+		"org": orgName,
+	}, &data); err != nil {
+		return "", err
+	}
+	if data.Org == nil || data.Org.LastUserTrace == nil {
+		return "", nil
+	}
+	return data.Org.LastUserTrace.ID, nil
 }

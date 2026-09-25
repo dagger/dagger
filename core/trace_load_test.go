@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -30,23 +29,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestNormalizeTraceArg(t *testing.T) {
-	const id = "2f81064627bbd17b45441b93ac4fc8cf"
-	for _, arg := range []string{id, strings.ToUpper(id), " dagger trace " + id + "\n", "https://dagger.cloud/org/traces/" + id, "https://dagger.cloud/org/traces/" + id + "/spans/123?focus=true"} {
-		got, err := normalizeTraceArg(arg)
-		require.NoError(t, err, arg)
-		require.Equal(t, id, got)
-	}
-	for _, arg := range []string{"", "00000000000000000000000000000000", "bad", "dagger trace " + id + "; echo secret", "https://evil.example/org/traces/" + id, "https://dagger.cloud@evil.example/traces/" + id, "http://dagger.cloud/org/traces/" + id} {
-		_, err := normalizeTraceArg(arg)
-		require.Error(t, err, arg)
-		require.NotContains(t, err.Error(), arg+";")
-	}
-}
-
-// Exercise the actual registered tools, the Cloud framed transport, and the
-// session telemetry seam. Recipes travel partly in binary log payloads; the
-// fake server supplies telemetry only, so no recipe evaluation can be needed.
 func TestLoadTraceInspectionTools(t *testing.T) {
 	const traceID = "000102030405060708090a0b0c0d0e0f"
 	const rootID = "0000000000000001"
