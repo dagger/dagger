@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"path"
 	"reflect"
 	"sort"
 	"strings"
@@ -20,7 +22,18 @@ import (
 
 // UpdateWorkspaceLock refreshes the existing entries in a workspace lockfile in place.
 func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock) error {
-	entries := lock.Entries()
+	_, err := UpdateWorkspaceLockEntries(ctx, query, lock, nil)
+	return err
+}
+
+// UpdateWorkspaceLockEntries refreshes entries selected by any of selectors.
+// An empty selector list refreshes every supported entry. It returns the
+// existing entries selected for refresh, in lockfile order.
+func UpdateWorkspaceLockEntries(ctx context.Context, query *Query, lock *workspace.Lock, selectors []string) ([]workspace.LookupEntry, error) {
+	entries, err := SelectWorkspaceLockEntries(lock, selectors)
+	if err != nil {
+		return nil, err
+	}
 
 	var refreshedEntries []workspace.LookupEntry
 	for _, entry := range entries {
@@ -33,14 +46,14 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 			if ignoreUnsupportedLockEntry(ctx, entry, err) {
 				continue
 			}
-			return err
+			return nil, err
 		}
 		if err := lock.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, result); err != nil {
-			return fmt.Errorf("rewrite lock entry for %s %v: %w", entry.Operation, entry.Inputs, err)
+			return nil, fmt.Errorf("rewrite lock entry for %s %v: %w", entry.Operation, entry.Inputs, err)
 		}
 		selectedEntry, err := selectedSHAEntry(entry, result)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if containsLockEntry(refreshedEntries, selectedEntry) {
 			continue
@@ -55,7 +68,7 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 		}
 		selectedValue, err := updateWorkspaceLockEntry(ctx, query, selectedEntry)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := lock.SetLookup(
 			selectedEntry.Namespace,
@@ -63,7 +76,7 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 			selectedEntry.Inputs,
 			selectedValue,
 		); err != nil {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"write selected SHA entry for %s %v: %w",
 				selectedEntry.Operation,
 				selectedEntry.Inputs,
@@ -82,14 +95,222 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 			if ignoreUnsupportedLockEntry(ctx, entry, err) {
 				continue
 			}
-			return err
+			return nil, err
 		}
 		if err := lock.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, result); err != nil {
-			return fmt.Errorf("rewrite lock entry for %s %v: %w", entry.Operation, entry.Inputs, err)
+			return nil, fmt.Errorf("rewrite lock entry for %s %v: %w", entry.Operation, entry.Inputs, err)
 		}
 	}
 
-	return nil
+	return entries, nil
+}
+
+// SelectWorkspaceLockEntries returns supported entries matching any selector.
+// Selectors are shell-style patterns matched against user-facing identities
+// for each entry. An empty selector list selects every supported entry.
+func SelectWorkspaceLockEntries(lock *workspace.Lock, selectors []string) ([]workspace.LookupEntry, error) {
+	patternErrs := make([]error, len(selectors))
+	for i, selector := range selectors {
+		if selector == "" {
+			return nil, fmt.Errorf("lock selector must not be empty")
+		}
+		_, patternErrs[i] = matchLockSelector(selector, "")
+	}
+	var selected []workspace.LookupEntry
+	matched := make([]bool, len(selectors))
+	for _, entry := range lock.Entries() {
+		if !isSupportedLockEntry(entry) {
+			continue
+		}
+		if len(selectors) == 0 {
+			selected = append(selected, entry)
+			continue
+		}
+		entrySelected := false
+		for i, selector := range selectors {
+			ok, err := lockEntryMatchesSelector(entry, selector)
+			if err != nil {
+				// A malformed pattern may still be an exact literal selector for
+				// another entry, so defer its syntax error until every entry has
+				// been checked.
+				if patternErrs[i] != nil {
+					continue
+				}
+				return nil, err
+			}
+			if ok {
+				matched[i] = true
+				entrySelected = true
+			}
+		}
+		if entrySelected {
+			selected = append(selected, entry)
+		}
+	}
+	for i, ok := range matched {
+		if !ok {
+			if patternErrs[i] != nil {
+				return nil, fmt.Errorf("invalid lock selector %q: %w", selectors[i], patternErrs[i])
+			}
+			return nil, fmt.Errorf("lock selector %q matched no entries", selectors[i])
+		}
+	}
+	return selected, nil
+}
+
+// WorkspaceLockEntrySelector is the stable, copyable selector printed by
+// `dagger lock update --dry-run`.
+func WorkspaceLockEntrySelector(entry workspace.LookupEntry) string {
+	required, _, err := workspace.ParseLookupInputs(entry.Inputs)
+	if err != nil || len(required) == 0 {
+		return ""
+	}
+	primary, ok := required[0].(string)
+	if !ok {
+		return ""
+	}
+	switch entry.Operation {
+	case workspace.LockOperationGitLatest, workspace.LockOperationGitSHA:
+		remote := workspace.NormalizeGitRemote(primary)
+		if remote == "" {
+			remote = primary
+		}
+		if entry.Operation == workspace.LockOperationGitSHA && len(required) == 2 {
+			if ref, ok := required[1].(string); ok {
+				return remote + "@" + ref
+			}
+		}
+		return remote
+	default:
+		return primary
+	}
+}
+
+func lockEntryMatchesSelector(entry workspace.LookupEntry, selector string) (bool, error) {
+	if selector == "" {
+		return false, fmt.Errorf("lock selector must not be empty")
+	}
+	candidates := workspaceLockEntrySelectorCandidates(entry)
+	// Prefer literal equality before interpreting the selector as a pattern.
+	// This keeps selectors printed by --dry-run reusable when an input itself
+	// contains pattern metacharacters such as '[' or '?'.
+	for _, candidate := range candidates {
+		if selector == candidate {
+			return true, nil
+		}
+	}
+	for _, candidate := range candidates {
+		matched, err := matchLockSelector(selector, candidate)
+		if err != nil {
+			return false, fmt.Errorf("invalid lock selector %q: %w", selector, err)
+		}
+		if matched {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func workspaceLockEntrySelectorCandidates(entry workspace.LookupEntry) []string {
+	required, _, err := workspace.ParseLookupInputs(entry.Inputs)
+	if err != nil || len(required) == 0 {
+		return nil
+	}
+	primary, ok := required[0].(string)
+	if !ok {
+		return nil
+	}
+
+	var candidates []string
+	appendCandidate := func(candidate string) {
+		if candidate == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if candidate == existing {
+				return
+			}
+		}
+		candidates = append(candidates, candidate)
+	}
+
+	switch entry.Operation {
+	case workspace.LockOperationOCILatest, workspace.LockOperationOCISHA:
+		appendCandidate(primary)
+		if named, err := reference.ParseNormalizedNamed(primary); err == nil {
+			shortName := path.Base(reference.Path(named))
+			appendCandidate(shortName)
+			if tagged, ok := named.(reference.NamedTagged); ok {
+				appendCandidate(shortName + ":" + tagged.Tag())
+			}
+			if canonical, ok := named.(reference.Canonical); ok {
+				appendCandidate(shortName + "@" + canonical.Digest().String())
+			}
+		}
+	case workspace.LockOperationGitLatest, workspace.LockOperationGitSHA:
+		remote := workspace.NormalizeGitRemote(primary)
+		if remote == "" {
+			remote = primary
+		}
+		repositories := []string{remote, path.Base(strings.TrimSuffix(remote, ".git"))}
+		for _, repository := range repositories {
+			appendCandidate(repository)
+		}
+		if entry.Operation == workspace.LockOperationGitSHA && len(required) == 2 {
+			if ref, ok := required[1].(string); ok {
+				refs := []string{ref}
+				if short, found := strings.CutPrefix(ref, "refs/heads/"); found {
+					refs = append(refs, short)
+				} else if short, found := strings.CutPrefix(ref, "refs/tags/"); found {
+					refs = append(refs, short)
+				}
+				for _, repository := range repositories {
+					for _, ref := range refs {
+						appendCandidate(repository + "@" + ref)
+					}
+				}
+			}
+		}
+	case workspace.LockOperationVanityURL:
+		appendCandidate(primary)
+		if parsed, err := url.Parse(primary); err == nil {
+			urlPath := strings.Trim(parsed.Path, "/")
+			if urlPath != "" {
+				appendCandidate(path.Base(urlPath))
+			}
+		}
+	default:
+		appendCandidate(WorkspaceLockEntrySelector(entry))
+	}
+	return candidates
+}
+
+// Lock selectors describe flat resource identities rather than filesystem
+// paths, so '/' has no special meaning to '*'. Keep path.Match's familiar
+// shell syntax while replacing slashes with a character that cannot be passed
+// in a command-line argument.
+func matchLockSelector(pattern, candidate string) (bool, error) {
+	const slashPlaceholder = "\x00"
+	return path.Match(
+		strings.ReplaceAll(pattern, "/", slashPlaceholder),
+		strings.ReplaceAll(candidate, "/", slashPlaceholder),
+	)
+}
+
+func isSupportedLockEntry(entry workspace.LookupEntry) bool {
+	if entry.Namespace != workspace.CoreLockNamespace {
+		return false
+	}
+	switch entry.Operation {
+	case workspace.LockOperationOCILatest,
+		workspace.LockOperationOCISHA,
+		workspace.LockOperationGitLatest,
+		workspace.LockOperationGitSHA,
+		workspace.LockOperationVanityURL:
+		return true
+	default:
+		return false
+	}
 }
 
 var errUnsupportedLockEntry = errors.New("unsupported lock entry")
