@@ -71,77 +71,95 @@ func (s StreamOptions) SelectionQuery(signal string) (url.Values, error) {
 
 // ParseSelection validates the shared archive client/server query contract.
 func ParseSelection(signal string, q url.Values) (*SpanSelection, *LogSelection, error) {
-	validID := func(id string) error {
-		if _, err := trace.SpanIDFromHex(id); err != nil {
-			return fmt.Errorf("invalid span ID %q: %w", id, err)
-		}
-		return nil
-	}
-	boolean := func(key string, def bool) (bool, error) {
-		if !q.Has(key) {
-			return def, nil
-		}
-		return strconv.ParseBool(q.Get(key))
-	}
 	var spans *SpanSelection
 	var logs *LogSelection
+	var err error
 	if q.Has("root") || q.Has("listen") || q.Has("view") || q.Has("full") {
 		if signal != "traces" {
 			return nil, nil, fmt.Errorf("span selection requires traces")
 		}
-		root, err := boolean("root", true)
+		spans, err = parseSpanSelection(q)
 		if err != nil {
 			return nil, nil, err
 		}
-		if v := q.Get("view"); v != "" && v != "dagui" {
-			return nil, nil, fmt.Errorf("invalid archive view %q", v)
-		}
-		if len(q["listen"]) > 256 {
-			return nil, nil, fmt.Errorf("too many listened spans")
-		}
-		for _, id := range q["listen"] {
-			if err := validID(id); err != nil {
-				return nil, nil, err
-			}
-		}
-		full, err := boolean("full", false)
-		if err != nil {
-			return nil, nil, err
-		}
-		if full && (!root || len(q["listen"]) != 0) {
-			return nil, nil, fmt.Errorf("full view cannot select roots or subtrees")
-		}
-		spans = &SpanSelection{Full: full, NoRoot: !root, Listen: q["listen"], DagUIView: q.Get("view") == "dagui"}
 	}
 	if q.Has("span_id") || q.Has("descendants") || q.Has("records") || q.Has("after") {
 		if signal != "logs" {
 			return nil, nil, fmt.Errorf("log selection requires logs")
 		}
-		descendants, err := boolean("descendants", false)
+		logs, err = parseLogSelection(q)
 		if err != nil {
 			return nil, nil, err
 		}
-		logs = &LogSelection{SpanID: q.Get("span_id"), Descendants: descendants, Records: q.Get("records")}
-		if logs.SpanID != "" {
-			if err := validID(logs.SpanID); err != nil {
-				return nil, nil, err
-			}
-		}
-		if (descendants || logs.Records == LogRecordsLogs) && logs.SpanID == "" {
-			return nil, nil, fmt.Errorf("log selection requires a span ID")
-		}
-		switch logs.Records {
-		case LogRecordsAll, LogRecordsLogs, LogRecordsCallPayloads, LogRecordsMetadata:
-		default:
-			return nil, nil, fmt.Errorf("invalid log record class %q", logs.Records)
-		}
-		if q.Has("after") {
-			t, err := time.Parse(time.RFC3339Nano, q.Get("after"))
-			if err != nil {
-				return nil, nil, err
-			}
-			logs.After = &t
-		}
 	}
 	return spans, logs, nil
+}
+
+func validSelectionSpanID(id string) error {
+	if _, err := trace.SpanIDFromHex(id); err != nil {
+		return fmt.Errorf("invalid span ID %q: %w", id, err)
+	}
+	return nil
+}
+
+func selectionBool(q url.Values, key string, def bool) (bool, error) {
+	if !q.Has(key) {
+		return def, nil
+	}
+	return strconv.ParseBool(q.Get(key))
+}
+
+func parseSpanSelection(q url.Values) (*SpanSelection, error) {
+	root, err := selectionBool(q, "root", true)
+	if err != nil {
+		return nil, err
+	}
+	if v := q.Get("view"); v != "" && v != "dagui" {
+		return nil, fmt.Errorf("invalid archive view %q", v)
+	}
+	if len(q["listen"]) > 256 {
+		return nil, fmt.Errorf("too many listened spans")
+	}
+	for _, id := range q["listen"] {
+		if err := validSelectionSpanID(id); err != nil {
+			return nil, err
+		}
+	}
+	full, err := selectionBool(q, "full", false)
+	if err != nil {
+		return nil, err
+	}
+	if full && (!root || len(q["listen"]) != 0) {
+		return nil, fmt.Errorf("full view cannot select roots or subtrees")
+	}
+	return &SpanSelection{Full: full, NoRoot: !root, Listen: q["listen"], DagUIView: q.Get("view") == "dagui"}, nil
+}
+
+func parseLogSelection(q url.Values) (*LogSelection, error) {
+	descendants, err := selectionBool(q, "descendants", false)
+	if err != nil {
+		return nil, err
+	}
+	logs := &LogSelection{SpanID: q.Get("span_id"), Descendants: descendants, Records: q.Get("records")}
+	if logs.SpanID != "" {
+		if err := validSelectionSpanID(logs.SpanID); err != nil {
+			return nil, err
+		}
+	}
+	if (descendants || logs.Records == LogRecordsLogs) && logs.SpanID == "" {
+		return nil, fmt.Errorf("log selection requires a span ID")
+	}
+	switch logs.Records {
+	case LogRecordsAll, LogRecordsLogs, LogRecordsCallPayloads, LogRecordsMetadata:
+	default:
+		return nil, fmt.Errorf("invalid log record class %q", logs.Records)
+	}
+	if q.Has("after") {
+		t, err := time.Parse(time.RFC3339Nano, q.Get("after"))
+		if err != nil {
+			return nil, err
+		}
+		logs.After = &t
+	}
+	return logs, nil
 }
