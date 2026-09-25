@@ -272,11 +272,8 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	status, lastScreen := request(http.MethodPost, "/wait?quiet=3s&timeout=10s", "")
 	require.Equal(t, http.StatusOK, status, "%s", lastScreen)
 
-	// The first zoom can backfill a span absent from the priority set. Zoom
-	// again once it is known so its hasLogs annotation requests the output.
-	// Both happen after initial loading, and require a still-live reader.
-	status, lastScreen = request(http.MethodPost, "/zoom", selectedSpan)
-	require.Equal(t, http.StatusOK, status, "%s", lastScreen)
+	// A single late zoom must backfill the span and display its output,
+	// whether or not the priority set already included it.
 	status, lastScreen = request(http.MethodPost, "/zoom", selectedSpan)
 	require.Equal(t, http.StatusOK, status, "%s", lastScreen)
 	require.Eventually(t, func() bool {
