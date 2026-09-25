@@ -8,6 +8,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	dangskills "github.com/vito/dang/v2/.agents/skills"
@@ -37,8 +38,8 @@ import (
 var errSkillNotFound = errors.New("skill not found")
 
 // LLMSkill is the discovery-time view of a skill: enough for the model to decide
-// whether to open it. It is exactly what the ListSkills tool serves, and is
-// also exposed over the API as LLM.skills so callers can see the model's view.
+// whether to open it. ListSkills renders a compact index of this metadata;
+// LLM.skills exposes the full descriptions over the API.
 type LLMSkill struct {
 	Name        string `field:"true" json:"name" doc:"The skill name, as passed to ReadSkill."`
 	Description string `field:"true" json:"description" doc:"The one-line description from the SKILL.md frontmatter."`
@@ -464,6 +465,43 @@ func readSkill(ctx context.Context, sources []skillSource, name, file string) (s
 	return "", fmt.Errorf("unknown skill %q — call ListSkills to see what is available", name)
 }
 
+// renderSkillList keeps discovery compact without dropping skill names or
+// changing the descriptions exposed by LLM.skills and ReadSkill. Descriptions
+// are excerpts, not inferred summaries: avoid sentence heuristics that mistake
+// abbreviations or paths for sentence boundaries.
+func renderSkillList(skills []*LLMSkill) string {
+	if len(skills) == 0 {
+		return "No skills available."
+	}
+	var out strings.Builder
+	out.WriteString("Skills (description excerpts; ReadSkill gives full guidance and triggers):\n")
+	for _, skill := range skills {
+		fmt.Fprintf(&out, "- %s: %s\n", skill.Name, skillDescriptionExcerpt(skill.Description))
+	}
+	return strings.TrimSuffix(out.String(), "\n")
+}
+
+func skillDescriptionExcerpt(description string) string {
+	const maxRunes = 160
+	description = strings.Join(strings.Fields(description), " ")
+	runes := []rune(description)
+	if len(runes) <= maxRunes {
+		return description
+	}
+	// Reserve one rune for the ellipsis. Prefer a word boundary, but still
+	// bound descriptions consisting of a single long token or unspaced text.
+	end := maxRunes - 1
+	if !unicode.IsSpace(runes[end]) {
+		for i := end - 1; i > 0; i-- {
+			if unicode.IsSpace(runes[i]) {
+				end = i
+				break
+			}
+		}
+	}
+	return strings.TrimSpace(string(runes[:end])) + "…"
+}
+
 // loadSkillTools registers ListSkills and ReadSkill, the progressive skill
 // discovery/reading mechanism. Both are read-only.
 func (m *MCP) loadSkillTools(srv *dagql.Server, allTools *LLMToolSet) {
@@ -472,8 +510,8 @@ func (m *MCP) loadSkillTools(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
 		Name: "ListSkills",
 		Description: "List available skills: task-specific guidance you can load " +
-			"with ReadSkill. Each entry is a name and a one-line description; read " +
-			"the ones whose description fits your task.",
+			"with ReadSkill. Each entry is a name and a short description excerpt; " +
+			"use ReadSkill for full guidance and detailed triggers.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type":                 "object",
@@ -482,7 +520,11 @@ func (m *MCP) loadSkillTools(srv *dagql.Server, allTools *LLMToolSet) {
 			"additionalProperties": false,
 		},
 		Call: ToolFunc(srv, func(ctx context.Context, _ struct{}) (any, error) {
-			return listSkills(ctx, sources)
+			skills, err := listSkills(ctx, sources)
+			if err != nil {
+				return nil, err
+			}
+			return renderSkillList(skills), nil
 		}),
 	})
 
