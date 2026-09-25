@@ -17,8 +17,8 @@ import (
 type promptBackground struct {
 	cell color.Color
 	term termenv.Color
-	// border is the soft rule edging the prompt card: the same blend as the
-	// fill, pushed further from the terminal background.
+	// border is the faint rule edging the prompt card: the same blend as the
+	// fill at half strength, between it and the terminal background.
 	border color.Color
 }
 
@@ -36,7 +36,8 @@ func (c terminalRGBColor) Sequence(background bool) string {
 
 // blendPromptBackground follows Codex's composer fill: 12% white over a dark
 // terminal background, or 4% black over a light one. The card's border blends
-// the same way at 28% / 16%, so it reads as a soft edge rather than a rule.
+// the same way at half strength (6% / 2%), landing between the terminal
+// background and the fill, so it reads as a faint edge rather than a rule.
 // The remaining colors stay in the user's ANSI palette; only these measured,
 // theme-relative shades use RGB (or the nearest 256-color shade).
 func blendPromptBackground(bg color.Color, profile termenv.Profile) promptBackground {
@@ -45,9 +46,9 @@ func blendPromptBackground(bg color.Color, profile termenv.Profile) promptBackgr
 	}
 	r, g, b, _ := bg.RGBA()
 	r, g, b = r>>8, g>>8, b>>8
-	top, fillAlpha, borderAlpha := uint32(255), uint32(12), uint32(28)
+	top, fillAlpha, borderAlpha := uint32(255), uint32(12), uint32(6)
 	if 299*r+587*g+114*b > 128000 {
-		top, fillAlpha, borderAlpha = 0, 4, 16
+		top, fillAlpha, borderAlpha = 0, 4, 2
 	}
 	blend := func(alpha uint32) color.RGBA {
 		channel := func(c uint32) uint8 {
