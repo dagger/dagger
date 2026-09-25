@@ -63,17 +63,16 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	require.NoError(t, source.Close())
 	sourceSpan.End()
 
-	// Establish that the fixture really contains multi-megabyte output and find
-	// producer span IDs from the emitted logs, not guessed call/span names.
+	// Find producer span IDs from emitted markers, not guessed call/span names.
+	// The live OTLP forwarding path is best-effort for ordinary output; verify
+	// the large fixture's byte count against the retained archive below.
 	_, captured := sink.capture()
 	var selectedSpan, unrelatedSpan string
-	var capturedBytes int
 	for _, batch := range captured {
 		for _, resource := range batch.ResourceLogs {
 			for _, scope := range resource.ScopeLogs {
 				for _, record := range scope.LogRecords {
 					body := record.GetBody().GetStringValue()
-					capturedBytes += len(body)
 					if strings.Contains(body, selectedText) {
 						selectedSpan = hex.EncodeToString(record.SpanId)
 					}
@@ -84,7 +83,6 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 			}
 		}
 	}
-	require.GreaterOrEqual(t, capturedBytes, unrelatedBytes)
 	require.NotEmpty(t, selectedSpan)
 	require.NotEmpty(t, unrelatedSpan)
 	require.NotEqual(t, selectedSpan, unrelatedSpan)
@@ -181,6 +179,21 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	require.Equal(t, selectedText+"\n", selected.String())
 	require.Equal(t, 1, transport.logRequests())
+	// Only after proving selective reads, explicitly verify that the retained
+	// unrelated output really is large. Count streamed bytes without buffering.
+	var archivedBytes int
+	err = display.FetchLogs(targetCtx, traceID, cloud.LogSelection{SpanID: unrelatedSpan, Records: cloud.LogRecordsLogs}, func(_ context.Context, batch *collogspb.ExportLogsServiceRequest) error {
+		for _, resource := range batch.ResourceLogs {
+			for _, scope := range resource.ScopeLogs {
+				for _, record := range scope.LogRecords {
+					archivedBytes += len(record.GetBody().GetStringValue())
+				}
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, archivedBytes, unrelatedBytes)
 	require.NoError(t, closeDisplay())
 	require.EqualValues(t, 1, transport.closedLeases.Load(), "display cleanup must close its retention lease")
 
@@ -283,6 +296,14 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	}, 20*time.Second, 100*time.Millisecond, "late archive zoom did not load selected logs")
 	require.NotContains(t, lastScreen, unrelatedText)
 	require.NotContains(t, lastScreen, "context canceled")
+	// Resizing is presentation-only: a narrow view must not permanently crop
+	// the archived bytes or preserve hard wraps when the viewport widens again.
+	status, lastScreen = request(http.MethodPost, "/resize", "20x30")
+	require.Equal(t, http.StatusOK, status, "%s", lastScreen)
+	status, lastScreen = request(http.MethodPost, "/resize", "160x30")
+	require.Equal(t, http.StatusOK, status, "%s", lastScreen)
+	require.Contains(t, lastScreen, selectedText, "widening must restore the complete logical log line")
+	require.NotContains(t, lastScreen, unrelatedText)
 	require.EqualValues(t, 0, cloudRequests.Load(), "lazy browsing must stay on its selected engine archive")
 }
 
