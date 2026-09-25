@@ -183,11 +183,19 @@ func (fe *frontendPretty) generatorsRollupLines(ctx tuist.Context, r *renderer, 
 	bodyBuf := new(strings.Builder)
 	bodyOut := NewOutput(bodyBuf, termenv.WithProfile(fe.profile))
 	statuses := make([]string, 0, len(nodes))
+	detail := fe.withForkedClaims(func() {
+		for _, node := range nodes {
+			fe.renderGeneratorNode(ctx, bodyOut, r, node, 1)
+		}
+	})
 	for _, node := range nodes {
-		fe.renderGeneratorNode(ctx, bodyOut, r, node, 1)
 		statuses = append(statuses, fe.generatorStatusLine(out, r, node, "  "))
 	}
-	return condenseRollup(out, header, bodyBuf.String(), statuses, height)
+	lines, full := condenseRollup(out, header, bodyBuf.String(), statuses, height)
+	if full {
+		detail.commit()
+	}
+	return lines
 }
 
 // eachFailedLeafGenerator visits every surfaced generator that failed and has

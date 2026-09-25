@@ -393,41 +393,48 @@ func (fe *frontendPretty) checksRollupLines(ctx tuist.Context, r *renderer, chil
 
 	bodyBuf := new(strings.Builder)
 	bodyOut := NewOutput(bodyBuf, termenv.WithProfile(fe.profile))
-	for _, child := range children {
-		fe.renderCheckNode(ctx, bodyOut, r, child, 1)
-	}
+	detail := fe.withForkedClaims(func() {
+		for _, child := range children {
+			fe.renderCheckNode(ctx, bodyOut, r, child, 1)
+		}
+	})
 	statuses := make([]string, 0, len(children))
 	for _, child := range children {
 		statuses = append(statuses, fe.checkStatusLine(out, r, child, "  "))
 	}
-	return condenseRollup(out, header, bodyBuf.String(), statuses, height)
+	lines, full := condenseRollup(out, header, bodyBuf.String(), statuses, height)
+	if full {
+		detail.commit()
+	}
+	return lines
 }
 
 // condenseRollup fits an inline rollup -- a header, the full body, and one
 // status line per entry -- to height: full detail (each entry with its failure
 // cause) when it fits, else status lines only, else as many as fit with a
 // "… N more …" marker, and never below the header alone -- whose tally is the
-// at-a-glance outcome. height <= 0 means unbounded.
-func condenseRollup(out TermOutput, header, body string, statuses []string, height int) []string {
-	full := append([]string{header}, strings.Split(strings.TrimSuffix(body, "\n"), "\n")...)
-	if height <= 0 || len(full) <= height {
-		return full
+// at-a-glance outcome. height <= 0 means unbounded. full reports whether the
+// body made it in, i.e. whether the claims rendering it made should count.
+func condenseRollup(out TermOutput, header, body string, statuses []string, height int) (lines []string, full bool) {
+	all := append([]string{header}, strings.Split(strings.TrimSuffix(body, "\n"), "\n")...)
+	if height <= 0 || len(all) <= height {
+		return all, true
 	}
 
 	// Drop the per-entry failure detail and keep one status line each.
 	if len(statuses)+1 <= height {
-		return append([]string{header}, statuses...)
+		return append([]string{header}, statuses...), false
 	}
 
 	// Even the status lines overflow: show as many as fit and mark the
 	// remainder. The header alone (its tally) is the floor.
 	if height <= 1 {
-		return []string{header}
+		return []string{header}, false
 	}
 	shown := max(height-2, 0) // header + "… N more …"
-	lines := make([]string, 0, height)
+	lines = make([]string, 0, height)
 	lines = append(lines, header)
 	lines = append(lines, statuses[:shown]...)
 	lines = append(lines, summaryMoreLine(out, 2, len(statuses)-shown))
-	return lines
+	return lines, false
 }

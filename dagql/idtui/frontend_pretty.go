@@ -667,12 +667,29 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 // renderRowExtras renders what follows a row's title: inline test, check and
 // generator reports, its own inline logs, and the rest (errors, debug).
 func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagui.TraceRow, visualFocused bool) {
-	if inlineTests := s.renderInlineTests(ctx, r, row); len(inlineTests) > 0 {
+	// A tool call's CHECKS rollup nests each check's tests, so render it first,
+	// under forked claims, and leave its TESTS rollup just the cases the checks
+	// didn't represent -- tests the tool ran outside any check, or under a
+	// check condensed away to fit the screen. Tests still print first. A check
+	// row keeps its original order: its TESTS rollup claims first.
+	var inlineChecks []string
+	var testsExclude *renderClaims
+	if row.Span.LLMTool != "" {
+		testsExclude = s.fe.withForkedClaims(func() {
+			inlineChecks = s.renderInlineChecks(ctx, r, row)
+		})
+		testsExclude.commit()
+	}
+
+	if inlineTests := s.renderInlineTests(ctx, r, row, testsExclude); len(inlineTests) > 0 {
 		s.selfLineCount += len(inlineTests)
 		ctx.Lines(inlineTests...)
 	}
 
-	if inlineChecks := s.renderInlineChecks(ctx, r, row); len(inlineChecks) > 0 {
+	if row.Span.LLMTool == "" {
+		inlineChecks = s.renderInlineChecks(ctx, r, row)
+	}
+	if len(inlineChecks) > 0 {
 		s.selfLineCount += len(inlineChecks)
 		ctx.Lines(inlineChecks...)
 	}

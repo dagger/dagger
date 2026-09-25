@@ -83,6 +83,11 @@ type TestView struct {
 
 	sidebar *testSidebarView
 
+	// excluding marks an inline rollup whose View is pinned to a view filtered
+	// by a sibling rollup's claims (see renderInlineTests), so it can be reset
+	// to the live view once nothing is excluded.
+	excluding bool
+
 	// MaxHeight caps the rendered height. A zero value means fullscreen mode:
 	// use the terminal height, leaving room for the keymap sibling.
 	MaxHeight int
@@ -1747,24 +1752,33 @@ func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
 	if row.Expanded && !fe.finalRender {
 		return false
 	}
-	if row.Span.LLMTool != "" && len(fe.db.SurfacedChecksForSpan(row.Span)) > 0 {
-		// A tool call that ran checks rolls those up instead (see
-		// inlineCheckNodes), each carrying its own tests; a TESTS rollup too
-		// would list them all twice.
-		return false
-	}
 	return fe.db.TestViewForSpan(row.Span).HasTests()
 }
 
-func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *dagui.TraceRow) []string {
+// inlineTestsView is the test view a row's TESTS rollup renders: every case
+// beneath it, minus those exclude itself claimed (see renderClaims.fork) --
+// a tool call's CHECKS rollup, which nests its checks' tests under them. The
+// rest (tests the tool ran outside any check) still get their own rollup, so
+// deduping never hides a case.
+func (fe *frontendPretty) inlineTestsView(span *dagui.Span, exclude *renderClaims) *dagui.TestView {
+	view := fe.db.TestViewForSpan(span)
+	if !exclude.ownsAnyTestCases() || !view.HasTests() {
+		return view
+	}
+	return view.FilterCases(func(node *dagui.TestNode) bool {
+		return node.Span == nil || !exclude.ownsTestCase(node.Span.ID)
+	})
+}
+
+func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *dagui.TraceRow, exclude *renderClaims) []string {
 	if !s.fe.shouldRenderInlineTests(row) {
 		return nil
 	}
+	view := s.fe.inlineTestsView(row.Span, exclude)
+	if !view.HasTests() {
+		return nil
+	}
 	if s.fe.reportOnly && s.fe.finalRender {
-		view := s.fe.db.TestViewForSpan(row.Span)
-		if !view.HasTests() {
-			return nil
-		}
 		tv := &TestView{
 			Profile:         s.fe.profile,
 			AgentStyle:      s.fe.agentStyle(),
@@ -1786,6 +1800,21 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		return append([]string{""}, lines...)
 	}
 	tv := s.fe.inlineTestView(row.Span.ID)
+	// Pin the component to the filtered view while checks claim some of the
+	// cases; the row re-renders (and re-pins) on every span export, like the
+	// component itself (updateTestViews).
+	if exclude.ownsAnyTestCases() {
+		tv.View = func() *dagui.TestView { return view }
+		tv.excluding = true
+		tv.Update()
+	} else if tv.excluding {
+		spanID := row.Span.ID
+		tv.View = func() *dagui.TestView {
+			return s.fe.db.TestViewForSpan(s.fe.db.Spans.Map[spanID])
+		}
+		tv.excluding = false
+		tv.Update()
+	}
 	// Indent the summary so its TESTS heading lines up with the row's name. A
 	// shell tool call's pipe already sits under its dot (inlineReportPrefix), a
 	// cell short of the name, so it needs no extra indent.

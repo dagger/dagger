@@ -1000,12 +1000,13 @@ func TestShellToolInlineTestsAlignWithToolDot(t *testing.T) {
 	}
 }
 
-// TestShellToolInlineChecksAndGenerators verifies a tool call surfaces the
-// checks and generators it ran as inline rollups -- they sit behind the tool's
-// boundary, so nothing else in the transcript would show them -- hung off the
-// same dot-aligned pipe as its tests, and that a check's tests nest under the
-// check instead of repeating in a separate TESTS rollup.
-func TestShellToolInlineChecksAndGenerators(t *testing.T) {
+// TestShellToolInlineRollups verifies a tool call surfaces the checks and
+// generators it ran as inline rollups -- they sit behind the tool's boundary,
+// so nothing else in the transcript would show them -- hung off the same
+// dot-aligned pipe as its tests. A check's tests nest under the check, and the
+// TESTS rollup keeps just the cases no check claimed, so every test shows
+// exactly once.
+func TestShellToolInlineRollups(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()
 	const (
@@ -1015,6 +1016,7 @@ func TestShellToolInlineChecksAndGenerators(t *testing.T) {
 		lintTestByte
 		unitByte
 		docsByte
+		directTestByte
 	)
 	id := prettyTestSpanID
 	start := time.Unix(100, 0)
@@ -1032,26 +1034,30 @@ func TestShellToolInlineChecksAndGenerators(t *testing.T) {
 	tool.LLMRole, tool.LLMTool, tool.Boundary = "assistant", "CheckAll", true
 	lint := span(lintByte, id(toolByte), "check lint")
 	lint.CheckName = "lint"
+	lint.Status = sdktrace.Status{Code: codes.Error}
 	lintTest := span(lintTestByte, id(lintByte), "TestLint")
-	lintTest.TestCaseName, lintTest.TestStatus = "TestLint", dagui.TestStatusSuccess
+	lintTest.TestCaseName, lintTest.TestStatus = "TestLint", dagui.TestStatusFailure
 	unit := span(unitByte, id(toolByte), "check unit")
 	unit.CheckName = "unit"
-	unit.Status = sdktrace.Status{Code: codes.Error}
 	docs := span(docsByte, id(toolByte), "generate docs")
 	docs.GeneratorName = "docs"
+	// A test the tool ran outside any check: no check claims it, so it keeps a
+	// TESTS rollup of its own rather than vanishing behind the checks.
+	directTest := span(directTestByte, id(toolByte), "TestDirect")
+	directTest.TestCaseName, directTest.TestStatus = "TestDirect", dagui.TestStatusFailure
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{ID: id(rootByte), TraceID: prettyTestTraceID(), Name: "shell", StartTime: start},
-		tool, lint, lintTest, unit, docs,
+		tool, lint, lintTest, unit, docs, directTest,
 	})
 	db.SetPrimarySpan(id(rootByte))
 
-	fe := NewWithDB(io.Discard, db)
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 60))
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
 	fe.FrontendOpts.GCThreshold = time.Hour
 	fe.recalculateViewLocked()
 
-	lines := fe.tui.RenderLines()
+	lines := fe.tui.Frame()
 	joined := strings.Join(lines, "\n")
 	col := func(line, sub string) int {
 		i := strings.Index(line, sub)
@@ -1082,9 +1088,18 @@ func TestShellToolInlineChecksAndGenerators(t *testing.T) {
 			t.Fatalf("inline rollups missing %q:\n%s", want, joined)
 		}
 	}
-	if n := strings.Count(joined, "TESTS"); n != 1 {
-		t.Fatalf("got %d TESTS rollups, want just the one nested under its check:\n%s", n, joined)
+	assertOnce := func(what, out string) {
+		t.Helper()
+		for _, test := range []string{"TestLint", "TestDirect"} {
+			if n := strings.Count(out, test); n != 1 {
+				t.Fatalf("%s shows %s %d times, want once:\n%s", what, test, n, out)
+			}
+		}
+		if n := strings.Count(out, "TESTS"); n != 2 {
+			t.Fatalf("%s has %d TESTS rollups, want the check's and the tool's own:\n%s", what, n, out)
+		}
 	}
+	assertOnce("live row", joined)
 
 	// The final conversation report rolls them up under the tool call too.
 	fe.claims = newRenderClaims()
@@ -1095,6 +1110,7 @@ func TestShellToolInlineChecksAndGenerators(t *testing.T) {
 			t.Fatalf("conversation report missing %q:\n%s", want, report)
 		}
 	}
+	assertOnce("conversation report", report)
 }
 
 // TestChecksReportNestsSubCheckHeader verifies the final report introduces a

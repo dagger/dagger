@@ -100,9 +100,16 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 		return
 	}
 
+	// The checks rollup nests each check's tests, so render it first under
+	// forked claims; the TESTS rollup then covers only the cases it left out.
+	var checks []string
+	checkClaims := fe.withForkedClaims(func() {
+		checks = indentLines("  ", fe.renderMessageChecks(ctx, r, node.Span))
+	})
+	checkClaims.commit()
 	for _, rollup := range [][]string{
-		fe.renderMessageTests(ctx, node.Span, len(indent)),
-		indentLines("  ", fe.renderMessageChecks(ctx, r, node.Span)),
+		fe.renderMessageTests(ctx, node.Span, len(indent), checkClaims),
+		checks,
 		indentLines("  ", fe.renderMessageGenerators(ctx, r, node.Span)),
 	} {
 		if len(rollup) == 0 {
@@ -162,16 +169,13 @@ func indentLines(indent string, lines []string) []string {
 // renderMessageTests renders the tests owned directly by an LLM tool boundary.
 // The root-relative view includes tests beneath this tool but stops at nested
 // tool boundaries, so nested worker tools render and claim their own tests when
-// their message node is visited. A tool that ran checks leaves its tests to
-// the checks rollup (renderMessageChecks), which nests each check's tests.
-func (fe *frontendPretty) renderMessageTests(ctx tuist.Context, span *dagui.Span, outerIndent int) []string {
+// their message node is visited. Cases the tool's checks rollup already nested
+// under their checks (claimed by exclude) are left out; see inlineTestsView.
+func (fe *frontendPretty) renderMessageTests(ctx tuist.Context, span *dagui.Span, outerIndent int, exclude *renderClaims) []string {
 	if span == nil || span.LLMTool == "" {
 		return nil
 	}
-	if len(fe.db.SurfacedChecksForSpan(span)) > 0 {
-		return nil
-	}
-	view := fe.db.TestViewForSpan(span)
+	view := fe.inlineTestsView(span, exclude)
 	if !view.HasTests() {
 		return nil
 	}
