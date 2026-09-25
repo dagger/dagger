@@ -166,44 +166,6 @@ func (rt *AgentRuntime) associateConversationLocked(ctx context.Context) {
 	rt.controlActivity = time.Now().UTC()
 }
 
-// RestoreNotify installs a recorded edge without a level check or a model turn.
-// Both capabilities must refer to restored entries that have never been activated.
-func (ars *AgentRuntimes) RestoreNotify(ctx context.Context, target, subscriber dagql.ObjectResult[*Agent], states []AgentState) error {
-	rt, err := ars.Require(ctx, target)
-	if err != nil {
-		return err
-	}
-	sub, err := ars.Require(ctx, subscriber)
-	if err != nil {
-		return err
-	}
-	if rt == sub {
-		return errors.New("agent cannot subscribe to itself")
-	}
-	first, second := rt, sub
-	if first.key > second.key {
-		first, second = second, first
-	}
-	first.mu.Lock()
-	defer first.mu.Unlock()
-	second.mu.Lock()
-	defer second.mu.Unlock()
-	for _, endpoint := range []*AgentRuntime{rt, sub} {
-		if !endpoint.restored || endpoint.activated || endpoint.closing {
-			return fmt.Errorf("agent %q is not an inactive restored endpoint", endpoint.name)
-		}
-	}
-	set := map[AgentState]bool{}
-	for _, state := range states {
-		set[state] = true
-	}
-	// A restored snapshot is the baseline, not newly committed work. Merely
-	// relaunching through IDLE must not announce its old final reply.
-	rt.idleEventDue = false
-	rt.installSubscriptionLocked(sub.key, set, false)
-	return nil
-}
-
 // DiscardRestore rolls back only an unactivated restored entry. Keep a removal
 // tombstone for the final producer witness, while making all held handles fail
 // registry lookup. It cannot delete an unrelated or already-used live agent.

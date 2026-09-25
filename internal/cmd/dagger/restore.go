@@ -51,7 +51,8 @@ type restoreTarget interface {
 	Adopt(ctx context.Context, entry dagui.AgentRestore, agentID string) error
 	// Focus points the prompt at one of the adopted conversations.
 	Focus(ctx context.Context, entry dagui.AgentRestore, agentID string) error
-	// Subscribe installs the filter without a current-state notification.
+	// Subscribe reinstalls a recorded filter through notify. The watched agent
+	// is restored and not yet activated, so this announces nothing.
 	Subscribe(ctx context.Context, watchedID, subscriberID string, states []string) error
 	// Discard rolls back an inert runtime created by this restore attempt.
 	Discard(ctx context.Context, agentID string) error
@@ -144,7 +145,8 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 	}()
 
 	// All runtimes are inert. Install the complete graph before attaching the
-	// prompt, using restoreNotify rather than notify's immediate level check.
+	// prompt. The watched agents have not been activated, so notify does not
+	// announce their restored states.
 	for i, restored := range restoring {
 		agentID, err := dst.Rehydrate(ctx, restored.entry, restored.snapshotID)
 		if err != nil {
@@ -363,7 +365,7 @@ func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore
 func (r *sessionRestore) Subscribe(ctx context.Context, watchedID, subscriberID string, states []string) error {
 	return r.dag.Do(ctx, &dagger.Request{
 		Query: `query RestoreSubscription($watched: ID!, $subscriber: ID!, $states: [AgentState!]!) {
-  node(id: $watched) { ... on Agent { restoreNotify(subscriber: $subscriber, on: $states) } }
+  node(id: $watched) { ... on Agent { notify(subscriber: $subscriber, on: $states) } }
 }`,
 		Variables: map[string]any{"watched": watchedID, "subscriber": subscriberID, "states": states},
 	}, &dagger.Response{})

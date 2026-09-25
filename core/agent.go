@@ -828,6 +828,14 @@ func (ars *AgentRuntimes) MessageRef(ctx context.Context, msg *AgentMessage) (st
 // state, closing the race where a fast worker settles between its spawn and
 // the subscription landing — an edge trigger alone would miss that
 // completion forever.
+//
+// The level check is skipped while the target is a restored entry that
+// nothing has activated yet. Its state was reached in the session that
+// recorded it, not in this one: subscribers there already heard it, and it
+// cannot change until something activates the entry, so there is no race to
+// close. Announcing it would enqueue a historical completion and wake the
+// subscriber merely because a restore happened. That is also what lets a
+// restore reinstall recorded subscriptions through this same verb.
 func (ars *AgentRuntimes) Notify(ctx context.Context, target, subscriber dagql.ObjectResult[*Agent], states []AgentState) error {
 	rt, err := ars.Require(ctx, target)
 	if err != nil {
@@ -855,7 +863,8 @@ func (ars *AgentRuntimes) Notify(ctx context.Context, target, subscriber dagql.O
 	if rt.closing || sub.closing {
 		return errors.New("agent is closing")
 	}
-	rt.installSubscriptionLocked(sub.key, set, true)
+	inertRestore := rt.restored && !rt.activated
+	rt.installSubscriptionLocked(sub.key, set, !inertRestore)
 	return nil
 }
 
@@ -1189,9 +1198,13 @@ type AgentRuntime struct {
 	parentHandle          string
 	preTeardownState      AgentState
 	subscriptionRevisions map[string]int64
-	restored              bool
 	removed               atomic.Bool
-	activated             bool
+	// restored says the handle was supplied rather than minted; activated
+	// says send, start or resume has touched the entry since. A restored
+	// entry that is not yet activated still holds its recorded state, which
+	// Notify's level check must not announce again.
+	restored  bool
+	activated bool
 }
 
 // Name returns the agent's display name.

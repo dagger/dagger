@@ -611,7 +611,9 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 		default:
 			t.Fatalf("unexpected subscriber %s", edge.Subscriber)
 		}
-		restored[edge.Watched].mustRun(ctx, t, fmt.Sprintf(`restoreNotify(subscriber: %q, on: [%s])`, restored[edge.Subscriber].agentID, strings.Join(edge.States, ",")))
+		// The watched worker is restored and not yet activated, so the public
+		// notify reinstalls the edge without announcing its restored state.
+		restored[edge.Watched].mustRun(ctx, t, fmt.Sprintf(`notify(subscriber: %q, on: [%s])`, restored[edge.Subscriber].agentID, strings.Join(edge.States, ",")))
 	}
 	restoredChief := restored[plan["chief"].ID]
 	restoredObserver := restored[plan["observer"].ID]
@@ -619,7 +621,7 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 	for _, h := range []*agentHandle{restoredChief, restoredObserver, restoredRemoved} {
 		h.mustRun(ctx, t, "resume")
 	}
-	// An immediate public notify level check would queue the old completion.
+	// A level check against the restored state would queue the old completion.
 	// Explicitly start the subscriber loops to expose even queued stale events.
 	require.Never(t, func() bool {
 		for _, h := range []*agentHandle{restoredChief, restoredObserver, restoredRemoved} {
