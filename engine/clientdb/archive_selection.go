@@ -165,8 +165,15 @@ func (s *DB) ArchiveSpanView(ctx context.Context, traceID string, cut HighWater,
 			}
 		}
 	}
+	v.selectSpans(sel)
+	return v, nil
+}
+
+// selectSpans applies presentation selection only after the fixed-cut topology
+// and log-presence metadata have been collected.
+func (v *ArchiveSpans) selectSpans(sel *archive.SpanSelection) {
 	if sel == nil || sel.Full {
-		return v, nil
+		return
 	}
 	v.selected = map[string]bool{}
 	// Include ancestors so priority failures/checks have no dangling parents.
@@ -213,7 +220,6 @@ func (s *DB) ArchiveSpanView(ctx context.Context, traceID string, cut HighWater,
 		}
 	}
 	v.partial = len(v.selected) < len(v.nodes)
-	return v, nil
 }
 
 // Scope follows UI containment, including cause links. Reverse cause links
