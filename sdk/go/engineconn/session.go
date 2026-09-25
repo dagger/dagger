@@ -103,7 +103,10 @@ func cliSessionArgs(cfg *Config) []string {
 func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ EngineConn, rerr error) {
 	args := cliSessionArgs(cfg)
 
-	env := os.Environ()
+	// This CLI connects to an engine of its own. The SDK only gets here without
+	// a nested session or when an engine was selected explicitly, so drop any
+	// injected session; otherwise an older CLI would still join it.
+	env := withoutNestedSession(os.Environ())
 
 	if cfg.RunnerHost != "" {
 		env = append(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+cfg.RunnerHost)
@@ -311,4 +314,16 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bu.String()
+}
+
+func withoutNestedSession(environ []string) []string {
+	env := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		switch key, _, _ := strings.Cut(kv, "="); key {
+		case "DAGGER_SESSION_PORT", "DAGGER_SESSION_TOKEN":
+			continue
+		}
+		env = append(env, kv)
+	}
+	return env
 }

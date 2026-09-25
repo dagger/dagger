@@ -294,3 +294,53 @@ func TestConfiguredRunnerHost(t *testing.T) {
 		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
 	})
 }
+
+// TestExplicitEngineSelected verifies which inputs count as an explicit engine
+// choice, which outranks a nested session injected by an enclosing exec.
+func TestExplicitEngineSelected(t *testing.T) {
+	oldEngine := engineFlag
+	oldCloud := cloudFlag
+	oldCloudEnv := cloudEngineEnvSet
+	t.Cleanup(func() {
+		engineFlag = oldEngine
+		cloudFlag = oldCloud
+		cloudEngineEnvSet = oldCloudEnv
+	})
+	reset := func(t *testing.T) {
+		engineFlag = ""
+		cloudFlag = false
+		cloudEngineEnvSet = false
+		t.Setenv(engineEnv, "")
+		t.Setenv(RunnerHostEnv, "")
+	}
+
+	t.Run("default", func(t *testing.T) {
+		reset(t)
+		require.False(t, explicitEngineSelected())
+	})
+	t.Run("engine flag", func(t *testing.T) {
+		reset(t)
+		engineFlag = "tcp://engine.example.com:1234"
+		require.True(t, explicitEngineSelected())
+	})
+	t.Run("cloud flag", func(t *testing.T) {
+		reset(t)
+		cloudFlag = true
+		require.True(t, explicitEngineSelected())
+	})
+	t.Run("engine env var", func(t *testing.T) {
+		reset(t)
+		t.Setenv(engineEnv, "tcp://env.example.com:1234")
+		require.True(t, explicitEngineSelected())
+	})
+	t.Run("deprecated cloud env var", func(t *testing.T) {
+		reset(t)
+		cloudEngineEnvSet = true
+		require.True(t, explicitEngineSelected())
+	})
+	t.Run("runner host env var", func(t *testing.T) {
+		reset(t)
+		t.Setenv(RunnerHostEnv, "tcp://dev-engine:1234")
+		require.True(t, explicitEngineSelected())
+	})
+}

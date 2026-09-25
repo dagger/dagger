@@ -167,6 +167,7 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	if selectedEngine() != "" || params.RunnerHost == "" {
 		params.RunnerHost = configuredRunnerHost()
 	}
+	params.DirectEngine = explicitEngineSelected()
 
 	if RunnerImageLoader != "" {
 		backend, err := imageload.GetBackend(RunnerImageLoader)
@@ -252,6 +253,13 @@ func selectedEngine() string {
 		return "cloud"
 	}
 	return ""
+}
+
+// explicitEngineSelected reports whether the user chose an engine instead of
+// relying on the default. An explicit choice outranks the nested session that
+// an enclosing Dagger exec injects by default.
+func explicitEngineSelected() bool {
+	return selectedEngine() != "" || os.Getenv(RunnerHostEnv) != ""
 }
 
 func configuredRunnerHost() string {
