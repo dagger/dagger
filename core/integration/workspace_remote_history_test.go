@@ -570,6 +570,12 @@ func newWorkspaceHostHistoryFixture(ctx context.Context, t *testctx.T) workspace
 	git("config", "http."+url+".proxy", origin.URL)
 	require.Equal(t, url, git("remote", "get-url", "origin"))
 	require.Equal(t, shas[0]+"\tHEAD", git("ls-remote", "origin", "HEAD"))
+	// Bind the tunnel to an engine-side Git request before capture, as the
+	// controlled-origin benchmark does. A started host tunnel alone does not
+	// establish the remote Git service's DNS route.
+	remoteSHA, err := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: tunnel}).Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, shas[0], remoteSHA)
 	require.Empty(t, git("status", "--porcelain"))
 	return workspaceHostHistoryFixture{client: c, sink: sink, checkout: checkout, origin: origin, git: git, shas: shas, straySHA: straySHA}
 }
