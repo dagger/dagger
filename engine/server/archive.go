@@ -359,7 +359,7 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		}
 		<-r.Context().Done()
 		return nil
-	case "bootstrap":
+	case archive.AgentBootstrapResource:
 		return serveArchiveBootstrap(w, lease)
 	case "traces", "logs", "metrics":
 		return srv.serveArchiveSignal(w, r, m, resource)
