@@ -2858,10 +2858,10 @@ func TestFinalRenderPrimaryOutputWithoutReport(t *testing.T) {
 	db := dagui.NewDB()
 	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
 	db.PrimarySpan = spanID
-	db.PrimaryLogs[spanID] = []sdklog.Record{
+	db.IngestLogs([]sdklog.Record{
 		frontendTestLogRecord(spanID.SpanID, otellog.StringValue("/work/root\n"),
 			otellog.Int(telemetry.StdioStreamAttr, 2)),
-	}
+	})
 
 	fe := NewWithDB(io.Discard, db)
 	fe.reportOnly = true
@@ -2874,10 +2874,11 @@ func TestFinalRenderPrimaryOutputWithoutReport(t *testing.T) {
 func TestWritePrimaryOutputSeparate(t *testing.T) {
 	db := dagui.NewDB()
 	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
-	db.PrimaryLogs[spanID] = []sdklog.Record{
+	db.PrimarySpan = spanID
+	db.IngestLogs([]sdklog.Record{
 		frontendTestLogRecord(spanID.SpanID, otellog.StringValue("out\n"),
 			otellog.Int(telemetry.StdioStreamAttr, 2)),
-	}
+	})
 
 	var buf bytes.Buffer
 	require.NoError(t, writePrimaryOutput(&buf, db, spanID, true, false))
