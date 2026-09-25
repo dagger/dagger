@@ -182,6 +182,43 @@ func (c *Client) AcquireGeneration(ctx context.Context, traceID, generation stri
 	return func() { cancel(); _ = resp.Body.Close() }, nil
 }
 
+// UnsealedArchive is a leased archive whose session ended without a seal. It
+// has no bootstrap; stream it with StreamOptions.Unsealed at Cut.
+type UnsealedArchive struct {
+	Generation string
+	Cut        HighWater
+	Release    func()
+}
+
+// AcquireUnsealed leases an interrupted or incomplete archive for a
+// best-effort read of what it recorded. It fails with an ErrState request error
+// for any other state, including a sealed (closed) archive.
+func (c *Client) AcquireUnsealed(ctx context.Context, traceID, generation string) (UnsealedArchive, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), url.Values{"unsealed": {"1"}}, nil, "application/octet-stream", generation, 0)
+	if err != nil {
+		cancel()
+		return UnsealedArchive{}, err
+	}
+	fail := func(err error) (UnsealedArchive, error) {
+		resp.Body.Close()
+		cancel()
+		return UnsealedArchive{}, err
+	}
+	if err := expectStatus(resp, http.StatusOK); err != nil {
+		return fail(err)
+	}
+	gen, err := responseGeneration(resp, generation)
+	if err != nil {
+		return fail(corrupt(err))
+	}
+	cut, err := ParseHighWater(resp.Header.Get(UnsealedHighWaterHeader))
+	if err != nil {
+		return fail(corrupt(err))
+	}
+	return UnsealedArchive{Generation: gen, Cut: cut, Release: func() { cancel(); _ = resp.Body.Close() }}, nil
+}
+
 // List returns one page of archives.
 func (c *Client) List(ctx context.Context, opts ListOptions) (Page, error) {
 	query := make(url.Values)
@@ -361,12 +398,15 @@ func (c *Client) Bootstrap(ctx context.Context, traceID, expectedGeneration stri
 
 // StreamOptions fixes one finite signal read to a generation and high-water
 // cursor. Cursor is the last batch successfully acknowledged by the caller.
+// Unsealed reads an interrupted or incomplete archive at the cut returned by
+// AcquireUnsealed; its log stream then includes agent control records.
 type StreamOptions struct {
 	Generation       string
 	Cursor           int64
 	HighWater        int64
 	ExcludeSpanIDs   []string
 	ExcludeLogRowIDs []int64
+	Unsealed         bool
 }
 
 // Traces reads a finite framed trace stream. It returns the last safe resume
@@ -422,6 +462,9 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 		return cursor, fmt.Errorf("invalid archive stream cursors: cursor=%d high-water=%d", cursor, opts.HighWater)
 	}
 	query := make(url.Values)
+	if opts.Unsealed {
+		query.Set("unsealed", "1")
+	}
 	if signal == "traces" {
 		for _, spanID := range opts.ExcludeSpanIDs {
 			query.Add("exclude_span", spanID)

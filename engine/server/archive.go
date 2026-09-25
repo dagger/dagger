@@ -337,7 +337,15 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	if r.Method != http.MethodGet {
 		return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
 	}
-	lease, err := srv.archives.AcquireSource(traceID, r.Header.Get("X-Dagger-Archive-Generation"), r.URL.Query().Get("source_session"))
+	// An unsealed archive (interrupted or incomplete) has no bootstrap or
+	// verified cut; it can only be streamed at the current end of its store,
+	// with control records included, for a best-effort restore.
+	unsealed := r.URL.Query().Get("unsealed") == "1"
+	acquire := srv.archives.AcquireSource
+	if unsealed {
+		acquire = srv.archives.AcquireUnsealed
+	}
+	lease, err := acquire(traceID, r.Header.Get("X-Dagger-Archive-Generation"), r.URL.Query().Get("source_session"))
 	if err != nil {
 		return writeArchiveFailure(w, err)
 	}
@@ -345,6 +353,16 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	m := lease.Manifest()
 	if g := r.Header.Get("X-Dagger-Archive-Generation"); g != "" && g != m.Generation {
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: errors.New("generation mismatch")})
+	}
+	cut := m.HighWater
+	if unsealed {
+		if resource == archive.AgentBootstrapResource {
+			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureState, State: m.State})
+		}
+		if cut, err = srv.unsealedArchiveCut(r.Context(), m); err != nil {
+			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
+		}
+		w.Header().Set(archive.UnsealedHighWaterHeader, cut.String())
 	}
 	w.Header().Set("X-Dagger-Archive-Generation", m.Generation)
 	switch resource {
@@ -362,11 +380,24 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	case archive.AgentBootstrapResource:
 		return serveArchiveBootstrap(w, lease)
 	case "traces", "logs", "metrics":
-		return srv.serveArchiveSignal(w, r, m, resource)
+		return srv.serveArchiveSignal(w, r, m, cut, unsealed, resource)
 	default:
 		return httpErr(errors.New("unknown archive endpoint"), http.StatusNotFound)
 	}
 }
+
+// unsealedArchiveCut is the current end of an unsealed archive's store. Its
+// session is gone, so the cut is stable across the lease and every stream.
+func (srv *Server) unsealedArchiveCut(ctx context.Context, m archive.Manifest) (archive.HighWater, error) {
+	db, err := srv.clientDBs.Open(ctx, m.MainClientID)
+	if err != nil {
+		return archive.HighWater{}, err
+	}
+	defer db.Close()
+	cut := db.HighWater()
+	return archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, nil
+}
+
 func serveArchiveBootstrap(w http.ResponseWriter, lease *archive.Lease) error {
 	data, err := os.ReadFile(lease.BootstrapPath())
 	if err != nil {
@@ -382,16 +413,19 @@ func serveArchiveBootstrap(w http.ResponseWriter, lease *archive.Lease) error {
 	w.Header().Set("Content-Type", archive.BootstrapContentType)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, err = w.Write(data) //nolint:gosec // G705: verified binary bootstrap frames, never HTML; nosniff prevents reinterpretation.
+	_, err = w.Write(data)
 	return err
 }
 
-func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m archive.Manifest, signal string) error {
-	return srv.serveArchiveSignalWithPayloadLimit(w, r, m, signal, enginetel.MaxLivePayloadSize)
+// serveArchiveSignal streams one OTLP signal up to cut. A sealed archive's
+// logs omit control records, which its bootstrap already supplied; an unsealed
+// archive has no bootstrap, so they are included.
+func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m archive.Manifest, cut archive.HighWater, includeControl bool, signal string) error {
+	return srv.serveArchiveSignalWithPayloadLimit(w, r, m, cut, includeControl, signal, enginetel.MaxLivePayloadSize)
 }
 
 //nolint:gocyclo // Keep bounded batching, exclusions, and cursor advancement in one stream state machine.
-func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *http.Request, m archive.Manifest, signal string, maxPayloadSize int) (rerr error) {
+func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *http.Request, m archive.Manifest, cut archive.HighWater, includeControl bool, signal string, maxPayloadSize int) (rerr error) {
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
 		return fmt.Errorf("invalid archive payload limit %d", maxPayloadSize)
 	}
@@ -403,12 +437,12 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			return httpErr(errors.New("invalid archive cursor"), http.StatusBadRequest)
 		}
 	}
-	high := m.HighWater.Spans
+	high := cut.Spans
 	switch signal {
 	case "logs":
-		high = m.HighWater.Logs
+		high = cut.Logs
 	case "metrics":
-		high = m.HighWater.Metrics
+		high = cut.Metrics
 	}
 	if cursor > high {
 		return httpErr(errors.New("cursor exceeds archive cut"), http.StatusBadRequest)
@@ -471,7 +505,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 				return errors.New("archive log stream truncated before cut")
 			}
 			next, rowCount = rows[len(rows)-1].ID, len(rows)
-			filtered, err := archiveHistoryLogs(rows, m.TraceID, excludedLogs)
+			filtered, err := archiveHistoryLogs(rows, m.TraceID, excludedLogs, includeControl)
 			if err != nil {
 				return err
 			}
@@ -508,7 +542,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	}
 	return enginetel.WriteLiveTerminal(w, high)
 }
-func archiveHistoryLogs(rows []clientdb.Log, traceID string, excluded map[int64]bool) ([]clientdb.Log, error) {
+func archiveHistoryLogs(rows []clientdb.Log, traceID string, excluded map[int64]bool, includeControl bool) ([]clientdb.Log, error) {
 	var filtered []clientdb.Log
 	for _, row := range rows {
 		if row.TraceID.String != traceID || excluded[row.ID] {
@@ -518,9 +552,10 @@ func archiveHistoryLogs(rows []clientdb.Log, traceID string, excluded map[int64]
 		if err != nil {
 			return nil, err
 		}
-		// The bootstrap is the sole source control cut. Historical records cannot
-		// redefine it or interfere with destination runtime incarnations.
-		if agentcontrol.IsRecord(rec) {
+		// A sealed archive's bootstrap is the sole source control cut. Historical
+		// records cannot redefine it or interfere with destination runtime
+		// incarnations.
+		if agentcontrol.IsRecord(rec) && !includeControl {
 			continue
 		}
 		filtered = append(filtered, row)

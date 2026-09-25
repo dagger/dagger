@@ -738,6 +738,99 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 	require.NoError(t, target.Close())
 }
 
+// TestArchiveUnsealedAfterEngineCrash kills the source engine process without
+// any graceful finalization, so its archive is never sealed. After a restart
+// over the same state volume the archive reads as interrupted: it has no
+// bootstrap, but an unsealed lease streams everything it recorded, and the
+// agent restores from its latest recorded state and continues.
+func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
+	defer cancel()
+	host := connect(ctx, t)
+	engine := devEngineContainer(host)
+	startEngine := func(ctr *dagger.Container) (*dagger.Service, *dagger.Service, string) {
+		t.Helper()
+		service, err := devEngineContainerAsService(ctr).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true}) })
+		tunnel, err := host.Host().Tunnel(service).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = tunnel.Stop(context.WithoutCancel(ctx)) })
+		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		require.NoError(t, err)
+		return service, tunnel, endpoint
+	}
+	first, tunnel, endpoint := startEngine(engine)
+	provider := sdktrace.NewTracerProvider()
+	defer provider.Shutdown(context.WithoutCancel(ctx))
+	sourceCtx, sourceSpan := provider.Tracer("archive-acceptance").Start(ctx, "crashed source", trace.WithNewRoot())
+	defer sourceSpan.End()
+	source, sourceSink := connectWithTrace(sourceCtx, t, engineconn.Config{RunnerHost: endpoint})
+	model := cannedRecordingModel(sourceCtx, t, source, source.LLM().
+		WithPrompt("before crash").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "remembered before crash"}}).
+		WithPrompt("after crash").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "continued after crash"}}))
+	original := spawnAgent(sourceCtx, t, source, spawnOpts{model: model, name: "crash-worker"})
+	_, reply, err := original.sendAndWait(sourceCtx, t, "before crash")
+	require.NoError(t, err)
+	require.Equal(t, "remembered before crash", reply)
+	node := sourceSink.awaitRestorable(t, 1)["crash-worker"]
+	require.NotNil(t, node.Control)
+	traceID := node.Control.Trace
+	// No client close and no graceful engine stop: SIGKILL the engine while the
+	// session is still open, so finalization never runs.
+	_, err = first.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+	require.NoError(t, err)
+	_, _ = tunnel.Stop(ctx)
+	_ = source.Close()
+	sourceSpan.End()
+
+	_, _, endpoint = startEngine(engine.WithEnvVariable("ARCHIVE_CRASH_RESTART", identity.NewID()))
+	targetCtx, targetSpan := provider.Tracer("archive-acceptance").Start(ctx, "crash recovery", trace.WithNewRoot())
+	defer targetSpan.End()
+	target, targetSink := connectWithTrace(targetCtx, t, engineconn.Config{RunnerHost: endpoint})
+	client := archive.NewClient(targetSink.conn)
+	manifests, err := client.ListAll(targetCtx, archive.ListOptions{})
+	require.NoError(t, err)
+	var manifest *archive.Manifest
+	for _, candidate := range manifests {
+		if candidate.TraceID == traceID {
+			manifest = &candidate
+		}
+	}
+	require.NotNil(t, manifest, "archive disappeared across engine crash")
+	require.Equal(t, archive.StateInterrupted, manifest.State)
+	_, err = client.Acquire(targetCtx, traceID)
+	require.ErrorIs(t, err, archive.ErrState, "an unsealed archive has no verified bootstrap")
+
+	unsealed, err := client.AcquireUnsealed(targetCtx, traceID, manifest.Generation)
+	require.NoError(t, err)
+	defer unsealed.Release()
+	db := restoringDB(t)
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+	opts := func(high int64) archive.StreamOptions {
+		return archive.StreamOptions{Generation: unsealed.Generation, HighWater: high, Unsealed: true}
+	}
+	_, err = client.Traces(targetCtx, traceID, opts(unsealed.Cut.Spans), func(_ int64, batch *coltracepb.ExportTraceServiceRequest) error {
+		return importer.ImportSpans(targetCtx, batch)
+	})
+	require.NoError(t, err)
+	_, err = client.Logs(targetCtx, traceID, opts(unsealed.Cut.Logs), func(_ int64, batch *collogspb.ExportLogsServiceRequest) error {
+		return importer.ImportLogs(targetCtx, batch)
+	})
+	require.NoError(t, err)
+	plan := db.RestorePlan()
+	require.Len(t, plan, 1)
+	require.Equal(t, "crash-worker", plan[0].Name)
+	require.Equal(t, "IDLE", plan[0].State)
+	restored := restoreAgent(targetCtx, t, target, db, plan[0])
+	transcript, _ := restored.snapshot(targetCtx, t)
+	require.Contains(t, transcript, "remembered before crash")
+	_, reply, err = restored.sendAndWait(targetCtx, t, "after crash")
+	require.NoError(t, err)
+	require.Equal(t, "continued after crash", reply)
+	require.NoError(t, target.Close())
+}
+
 // TestCLIArchiveResumeIgnoresDestination runs the real from-source command and
 // drives its headless TUI prompt, rather than calling restore orchestration seams.
 func (AgentRestoreSuite) TestCLIArchiveResumeIgnoresDestination(ctx context.Context, t *testctx.T) {
