@@ -1287,6 +1287,7 @@ func traceMessage(profile termenv.Profile, url string, msg string) string {
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) (rerr error) {
 	defer func() { rerr = errors.Join(rerr, fe.db.ClosePrimaryLogs()) }()
+	defer fe.logs.Close()
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -8895,10 +8896,12 @@ type prettyLogs struct {
 	Profile       termenv.Profile
 	Output        TermOutput
 	Images        *kittyImages
+	Cache         *terminalCache
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 	return &prettyLogs{
+		Cache:         newTerminalCache(),
 		DB:            db,
 		Logs:          make(map[dagui.SpanID]*Vterm),
 		ToolArgs:      make(map[dagui.SpanID]*Vterm),
@@ -8962,13 +8965,21 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if isMedia {
 				l.spanLogs(rollUpID).WriteMedia(media, pw.Prefix+body)
 			} else {
-				fmt.Fprint(pw, body)
+				if _, err := fmt.Fprint(pw, body); err != nil {
+					return err
+				}
+			}
+			if err := l.spanLogs(rollUpID).Err(); err != nil {
+				return err
 			}
 		}
 
 		vterm := l.spanLogs(spanID)
 		if isMedia {
 			vterm.WriteMedia(media, body)
+			if err := vterm.Err(); err != nil {
+				return err
+			}
 			continue
 		}
 		if contentType == "application/json" {
@@ -8983,6 +8994,9 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			_, _ = vterm.WriteDiff([]byte(body))
 		default:
 			_, _ = fmt.Fprint(vterm, body)
+		}
+		if err := vterm.Err(); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -9064,6 +9078,7 @@ func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 	term, found := l.Logs[spanID]
 	if !found {
 		term = NewVterm(l.Profile)
+		term.cache = l.Cache
 		term.images = l.Images
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
@@ -9077,6 +9092,7 @@ func (l *prettyLogs) spanToolArgs(spanID dagui.SpanID) *Vterm {
 	term, found := l.ToolArgs[spanID]
 	if !found {
 		term = NewVterm(l.Profile)
+		term.cache = l.Cache
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
 		}
@@ -9093,6 +9109,18 @@ func (l *prettyLogs) SetWidth(width int) {
 	for _, vt := range l.ToolArgs {
 		vt.SetWidth(width)
 	}
+}
+
+// Close is separate from exporter Shutdown: final reports still need logs
+// after the telemetry SDK has shut its exporters down.
+func (l *prettyLogs) Close() {
+	for _, term := range l.Logs {
+		term.Close()
+	}
+	for _, term := range l.ToolArgs {
+		term.Close()
+	}
+	l.Cache = newTerminalCache()
 }
 
 func (l *prettyLogs) Shutdown(ctx context.Context) error {
