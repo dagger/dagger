@@ -20,7 +20,6 @@ var agentListMode bool
 var agentResume string
 var agentTrace string
 var agentFocus string
-var agentPartial bool
 var agentListArchives bool
 var agentSourceSession string
 var agentGeneration string
@@ -41,9 +40,6 @@ var agentCmd = &cobra.Command{
 		// happens (hack/designs/resume-from-trace.md §5.4).
 		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
 			return err
-		}
-		if agentPartial && agentTrace == "" {
-			return fmt.Errorf("--partial requires --trace")
 		}
 		if err := validateArchiveFlags(agentTrace, agentSourceSession, agentGeneration, agentFocus, agentListArchives, agentListMode, args); err != nil {
 			return err
@@ -92,7 +88,6 @@ var agentCmd = &cobra.Command{
 					generation:    agentGeneration,
 					sourceSession: agentSourceSession,
 					agent:         agentFocus,
-					partial:       agentPartial,
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
 					restore:              restore,
@@ -119,8 +114,6 @@ func init() {
 		"With --trace and --source-session, select the exact archive generation")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
-	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
-		"With --trace, restore the agents the trace carries enough to restore instead of failing on the first one it does not")
 }
 
 func validateArchiveFlags(traceID, source, generation, focus string, listArchives, listAgents bool, args []string) error {

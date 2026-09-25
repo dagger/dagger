@@ -11,6 +11,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -24,7 +25,6 @@ type traceRestore struct {
 	traceID       string
 	generation    string
 	agent         string
-	partial       bool
 	source        archiveRestoreSource
 	cloudSource   cloudRestoreSource
 	sourceSession string
@@ -37,7 +37,7 @@ type agentRestoreSource interface {
 	EncodedIDForCallDigest(digest string) (string, error)
 }
 
-// restoreTarget is the session half of a restore: the three verbs the plan is
+// restoreTarget is the session half of a restore: the verbs the plan is
 // executed with. It is an interface so §5.3's ORDER — every re-hydration
 // before any attach, focus last — is testable without an engine, in the style
 // of session_agent_test.go's fake runtime.
@@ -93,10 +93,10 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 	}
 
 	// Resolve every anchor, validate every edge and check focus before creating
-	// any runtime. A strict restore refuses an unrestorable agent up front: a
-	// missing worker is exactly the hole a later tool dispatch falls into, and
-	// that error would arrive minutes later with none of this context.
-	// --partial is the opt-in to best-effort, skipping exactly those entries.
+	// any runtime. Restore is best-effort: an agent the trace does not carry
+	// enough to restore is skipped with a warning naming it and why, rather
+	// than costing the rest of the session. A kept agent may still reference a
+	// skipped worker; a tool call addressing it fails when dispatched.
 	roster := make(map[string]dagui.AgentRestore, len(plan))
 	var (
 		restoring []restoredAgent
@@ -106,10 +106,8 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 		roster[entry.ID] = entry
 		snapshotID, err := resolveAnchor(src, entry)
 		if err != nil {
-			if !req.partial {
-				return fmt.Errorf("%w\n\npass --partial to restore the rest of the trace without it", err)
-			}
-			skipped = append(skipped, fmt.Sprintf("%s (%s): %v", entry.Name, entry.ID, err))
+			skipped = append(skipped, fmt.Sprintf("%s: %v", restoreLabel(entry), err))
+			warnAgentNotRestored(entry, err)
 			continue
 		}
 		restoring = append(restoring, restoredAgent{entry: entry, snapshotID: snapshotID})
@@ -135,25 +133,17 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 	if _, _, err := selectFocus(restoring, req.agent); err != nil {
 		return err
 	}
-	for _, skip := range skipped {
-		restoreNotice(ctx, "skipped unrestorable agent "+skip)
-	}
 
 	// Runtimes are created inert: nothing runs until the prompt does, and
-	// nothing can address them until they are adopted. A strict failure from
-	// here on fails the command, and the session's teardown releases whatever
-	// was created. Under --partial, an agent the engine refuses is skipped like
-	// one whose anchor did not resolve.
+	// nothing can address them until they are adopted. An agent the engine
+	// refuses is skipped like one whose anchor did not resolve.
 	restored := make([]restoredAgent, 0, len(restoring))
 	agentIDs := make(map[string]string, len(restoring))
 	for _, r := range restoring {
 		agentID, err := dst.Rehydrate(ctx, r.entry, r.snapshotID)
 		if err != nil {
-			err = fmt.Errorf("re-hydrate agent %q (%s): %w", r.entry.Name, r.entry.ID, err)
-			if !req.partial {
-				return err
-			}
-			restoreNotice(ctx, "skipped "+err.Error())
+			skipped = append(skipped, fmt.Sprintf("%s: %v", restoreLabel(r.entry), err))
+			warnAgentNotRestored(r.entry, err)
 			continue
 		}
 		r.agentID = agentID
@@ -161,7 +151,8 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 		agentIDs[r.entry.ID] = agentID
 	}
 	if len(restored) == 0 {
-		return fmt.Errorf("no agent in trace %s could be re-hydrated", req.traceID)
+		return fmt.Errorf("no agent in trace %s could be restored:\n  %s",
+			req.traceID, strings.Join(skipped, "\n  "))
 	}
 
 	// Install the recorded graph before attaching the prompt. The watched
@@ -174,16 +165,13 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 		watched, watchedOK := agentIDs[edge.Watched]
 		subscriber, subscriberOK := agentIDs[edge.Subscriber]
 		if !watchedOK || !subscriberOK {
-			// Only reachable under --partial: an endpoint was skipped.
-			restoreNotice(ctx, fmt.Sprintf("dropped subscription %s -> %s: an endpoint was not restored", edge.Watched, edge.Subscriber))
+			slog.Warn("dropped subscription to an agent that was not restored",
+				"watched", edge.Watched, "subscriber", edge.Subscriber)
 			continue
 		}
 		if err := dst.Subscribe(ctx, watched, subscriber, edge.States); err != nil {
-			err = fmt.Errorf("restore subscription %s -> %s: %w", edge.Watched, edge.Subscriber, err)
-			if !req.partial {
-				return err
-			}
-			restoreNotice(ctx, "dropped "+err.Error())
+			slog.Warn("dropped subscription that could not be restored",
+				"watched", edge.Watched, "subscriber", edge.Subscriber, "reason", err)
 		}
 	}
 	for _, r := range restored {
@@ -199,6 +187,15 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 		restoreNotice(ctx, notice)
 	}
 	return dst.Focus(ctx, focus.entry, focus.agentID)
+}
+
+// warnAgentNotRestored reports an agent a best-effort restore skipped.
+func warnAgentNotRestored(entry dagui.AgentRestore, reason error) {
+	slog.Warn("agent not restored", "agent", restoreLabel(entry), "reason", reason)
+}
+
+func restoreLabel(entry dagui.AgentRestore) string {
+	return fmt.Sprintf("%s (%s)", entry.Name, entry.ID)
 }
 
 // parentFirst rejects ambiguous handles, missing parents and lineage cycles.
@@ -244,15 +241,15 @@ func parentFirst(plan []dagui.AgentRestore) ([]dagui.AgentRestore, error) {
 }
 
 // resolveAnchor turns an entry's snapshot digest into the encoded ID of the
-// conversation to re-hydrate it from.
+// conversation to re-hydrate it from. Errors describe why without naming the
+// agent: callers already label them.
 func resolveAnchor(src agentRestoreSource, entry dagui.AgentRestore) (string, error) {
 	if !entry.Restorable() {
 		return "", entry.Err
 	}
 	snapshotID, err := src.EncodedIDForCallDigest(entry.SnapshotDigest)
 	if err != nil {
-		return "", fmt.Errorf("agent %q (%s) cannot be restored from anchor %s: %w",
-			entry.Name, entry.ID, entry.SnapshotDigest, err)
+		return "", fmt.Errorf("snapshot %s does not rebuild: %w", entry.SnapshotDigest, err)
 	}
 	return snapshotID, nil
 }
@@ -272,9 +269,8 @@ func selectFocus(restored []restoredAgent, want string) (restoredAgent, string, 
 	})
 	notice := ""
 	if len(toplevel) == 0 {
-		// Only reachable under --partial, where the chief an entry names as
-		// its parent may be one of the skipped ones. Focus among what there
-		// is rather than refusing to focus at all.
+		// The chief an entry names as its parent was skipped. Focus among
+		// what there is rather than refusing to focus at all.
 		toplevel = restored
 		notice = "no top-level agent was restored; focusing "
 	}

@@ -607,7 +607,7 @@ func TestRestorePlanRefusesAReasonlessStop(t *testing.T) {
 		t.Errorf("refusal does not name the agent: %v", entry.Err)
 	}
 	// The entry still carries what it could resolve, so a caller can name the
-	// agent and (with --partial) skip just this one.
+	// agent and skip just this one.
 	if entry.ID != scoutAgentID || entry.SnapshotDigest != "xxh3:tip" {
 		t.Errorf("refused entry dropped the facts it did have: %+v", entry)
 	}
