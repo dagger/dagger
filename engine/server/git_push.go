@@ -134,9 +134,11 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 		if !available {
 			return false, fmt.Errorf("owning client is not available to approve the push")
 		}
-		action := "pushing"
+		// The TUI highlights a leading "Allow force-push" in red, so keep the
+		// wording in sync with dagql/idtui's forcePushPromptPrefix.
+		action := "push"
 		if force {
-			action = "force pushing"
+			action = "force-push"
 		}
 		// Literal text, escaped for terminals (including bidi/control characters),
 		// not Markdown. Neither credentials nor module-supplied prose belong here.

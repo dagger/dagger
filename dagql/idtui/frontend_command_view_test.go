@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
 	sessionprompt "github.com/dagger/dagger/engine/session/prompt"
+	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
 
@@ -27,7 +28,7 @@ func TestPushConfirmationAboveInput(t *testing.T) {
 	defer fe.stopShell()
 	fe.textInput.SetValue("unfinished draft")
 	allowed := false
-	question := "Allow pushing to ssh://root@172.17.0.9/qa/remote.git @ refs/heads/approval-qa?"
+	question := "Allow push to ssh://root@172.17.0.9/qa/remote.git @ refs/heads/approval-qa?"
 	field := NewExplicitConfirm("Yes", "No", &allowed).Title(question).Inline(true)
 	form := huh.NewForm(huh.NewGroup(field))
 	fe.handlePromptForm(form, func(*huh.Form) {})
@@ -60,7 +61,7 @@ func TestPushConfirmationReportMode(t *testing.T) {
 	fe := NewWithDB(io.Discard, dagui.NewDB())
 	fe.reportOnly = true
 	allowed := false
-	if err := fe.HandlePrompt(context.Background(), "Allow pushing?", "", &allowed); !errors.Is(err, ErrNonInteractive) {
+	if err := fe.HandlePrompt(context.Background(), "Allow push?", "", &allowed); !errors.Is(err, ErrNonInteractive) {
 		t.Fatalf("report mode approval = %v", err)
 	}
 	if allowed {
@@ -152,7 +153,7 @@ func TestPushConfirmationCancellation(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		allowed := false
-		done <- fe.HandlePrompt(ctx, "", "Allow pushing?", &allowed)
+		done <- fe.HandlePrompt(ctx, "", "Allow push?", &allowed)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for fe.activeForm == nil && time.Now().Before(deadline) {
@@ -256,6 +257,43 @@ func TestPushConfirmationSpacing(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPushConfirmationHighlightsForcePush(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+	theme := frontendFormTheme()
+	question := explicitConfirmQuestionStyle(&theme.Focused)
+	if got := question.GetForeground(); got != lipgloss.Color("3") || question.GetItalic() {
+		t.Fatalf("approval question style: fg=%v italic=%v, want yellow upright", got, question.GetItalic())
+	}
+	danger := explicitConfirmDangerStyle(question)
+
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(t.Context(), stubShellHandler{})
+	defer fe.stopShell()
+
+	// A ref named after the phrase must not be flagged on a regular push.
+	cancel := mountBoolPrompt(t, fe, "", "Allow push to git@example.com:repo @ refs/heads/force-push?")
+	view := fe.activeForm.model.View()
+	if !strings.Contains(view, question.Render("Allow push to git@example.com:repo @ refs/heads/force-push?")) {
+		t.Fatalf("regular push question is not uniformly yellow: %q", view)
+	}
+	if strings.Contains(view, danger.Render(forcePushPhrase)) {
+		t.Fatalf("regular push flagged as a force-push: %q", view)
+	}
+	fe.cancelPromptForm(fe.activeForm.request)
+	cancel()
+
+	cancel = mountBoolPrompt(t, fe, "", "Allow force-push to git@example.com:repo @ refs/heads/main?")
+	defer cancel()
+	view = fe.activeForm.model.View()
+	want := question.Render("Allow ") + danger.Render("force-push") + question.Render(" to git@example.com:repo @ refs/heads/main?")
+	if !strings.Contains(view, want) {
+		t.Fatalf("force-push is not red within a yellow question:\ngot  %q\nwant %q", view, want)
 	}
 }
 

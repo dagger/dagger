@@ -26,6 +26,7 @@ type ExplicitConfirm struct {
 	width       int
 	title       string
 	titleLink   string
+	danger      string
 	description string
 	theme       *huh.Theme
 	keymap      huh.ConfirmKeyMap
@@ -57,6 +58,13 @@ func (field *ExplicitConfirm) Title(title string) *ExplicitConfirm {
 
 func (field *ExplicitConfirm) TitleLink(url string) *ExplicitConfirm {
 	field.titleLink = url
+	return field
+}
+
+// Danger renders the first occurrence of phrase within the title in red, so a
+// destructive variant of a question stands apart from its routine sibling.
+func (field *ExplicitConfirm) Danger(phrase string) *ExplicitConfirm {
+	field.danger = phrase
 	return field
 }
 
@@ -95,7 +103,7 @@ func (field *ExplicitConfirm) View() string {
 
 	var view strings.Builder
 	if field.title != "" {
-		title := explicitConfirmTitleStyle(styles).Render(field.title)
+		title := field.renderTitle(styles)
 		if field.titleLink != "" {
 			title = ansi.SetHyperlink(field.titleLink) + title + ansi.ResetHyperlink()
 		}
@@ -124,11 +132,50 @@ func (field *ExplicitConfirm) View() string {
 	return styles.Base.Render(content)
 }
 
+func (field *ExplicitConfirm) renderTitle(styles *huh.FieldStyles) string {
+	style := explicitConfirmTitleStyle(styles)
+	if field.inline {
+		style = explicitConfirmQuestionStyle(styles)
+	}
+	if field.danger == "" {
+		return style.Render(field.title)
+	}
+	before, after, found := strings.Cut(field.title, field.danger)
+	if !found {
+		return style.Render(field.title)
+	}
+	var title strings.Builder
+	if before != "" {
+		title.WriteString(style.Render(before))
+	}
+	title.WriteString(explicitConfirmDangerStyle(style).Render(field.danger))
+	if after != "" {
+		title.WriteString(style.Render(after))
+	}
+	return title.String()
+}
+
+// explicitConfirmTitleStyle is a subtle header above a confirmation's
+// description.
 func explicitConfirmTitleStyle(styles *huh.FieldStyles) lipgloss.Style {
 	return styles.Title.
 		Foreground(lipgloss.Color("8")).
 		Bold(true).
 		Italic(true)
+}
+
+// explicitConfirmQuestionStyle is for an inline title that is itself the
+// question, e.g. an approval request: it must stand out, since the run is
+// blocked until the user answers.
+func explicitConfirmQuestionStyle(styles *huh.FieldStyles) lipgloss.Style {
+	return styles.Title.
+		Foreground(lipgloss.Color("3")).
+		Bold(true).
+		Italic(false)
+}
+
+func explicitConfirmDangerStyle(base lipgloss.Style) lipgloss.Style {
+	return base.Foreground(lipgloss.Color("1"))
 }
 
 func (field *ExplicitConfirm) renderChoice(styles *huh.FieldStyles, label string, selected bool) string {

@@ -9192,12 +9192,23 @@ type TermOutput interface {
 	ColorProfile() termenv.Profile
 }
 
+// The engine's git push approval (engine/server/git_push.go) asks "Allow
+// force-push to <remote> @ <ref>?" for forced updates. Matching only the
+// prefix keeps a remote or ref that happens to contain the phrase unflagged.
+const (
+	forcePushPhrase       = "force-push"
+	forcePushPromptPrefix = "Allow " + forcePushPhrase + " "
+)
+
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
 	return fe.handleForm(ctx, func() *huh.Form {
 		field := NewExplicitConfirm("Yes", "No", dest).Title(title)
 		if title == "" {
 			// A self-contained question needs no separate Markdown description.
 			field.Title(message).Inline(true)
+			if strings.HasPrefix(message, forcePushPromptPrefix) {
+				field.Danger(forcePushPhrase)
+			}
 		} else if message == "" {
 			field.Inline(true)
 		} else {

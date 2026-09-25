@@ -25,7 +25,7 @@ type pushPromptServer struct {
 
 func (p *pushPromptServer) PromptBool(_ context.Context, req *prompt.BoolRequest) (*prompt.BoolResponse, error) {
 	p.requests = append(p.requests, req)
-	return &prompt.BoolResponse{Response: !strings.Contains(req.Prompt, "force pushing")}, nil
+	return &prompt.BoolResponse{Response: !strings.HasPrefix(req.Prompt, "Allow force-push to ")}, nil
 }
 
 type pushRoutingServer struct {
@@ -94,7 +94,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 		require.Equal(t, remote, md.Remote)
 	}
 	require.Len(t, questions.requests, 1)
-	require.Equal(t, "Allow pushing to git@example.com:repo @ refs/heads/main?", questions.requests[0].Prompt)
+	require.Equal(t, "Allow push to git@example.com:repo @ refs/heads/main?", questions.requests[0].Prompt)
 	require.Empty(t, questions.requests[0].PersistentKey)
 	for range 2 {
 		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, true, false)
@@ -132,7 +132,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 			require.Equal(t, target+"repo", authorized.Remote)
 		}
 		require.Len(t, questions.requests, before+1, "approval is scoped to the resolved destination")
-		require.Equal(t, "Allow pushing to "+target+"repo @ "+ref+"?", questions.requests[before].Prompt)
+		require.Equal(t, "Allow push to "+target+"repo @ "+ref+"?", questions.requests[before].Prompt)
 	}
 	for _, target := range []string{"https://sensitive-token@push.example.com/", "ssh://git:sensitive-password@push.example.com/", "https://push.example.com/?sensitive-token=", "file:///tmp/", "ext::sensitive-command "} {
 		routing.entries = []*git.GitConfigEntry{{Key: "url." + target + ".pushinsteadof", Value: "https://example.com/"}}
