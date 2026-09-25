@@ -3984,7 +3984,7 @@ func (fe *frontendPretty) editlineHeight() int {
 	// Count newlines in current value + 1 for the input line itself
 	val := fe.textInput.Value()
 	height := strings.Count(val, "\n") + 1
-	// PromptFrame owns the shaded prompt's two padding rows.
+	// PromptFrame owns the separator and the shaded prompt's two padding rows.
 	if fe.promptFrame != nil {
 		height += fe.promptFrame.ChromeHeight()
 	}

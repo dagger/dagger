@@ -15,7 +15,8 @@ import (
 )
 
 // PromptFrame wraps the prompt TextInput in the same full-width shaded card as
-// a submitted user message, with blank padding rows and a two-space indent.
+// a submitted user message, separated from prior output by a blank line, with
+// blank padding rows and a two-space indent.
 // Cursor positioning and key handling stay owned by the TextInput; the frame
 // reserves the horizontal padding before rendering and translates its cursor.
 type PromptFrame struct {
@@ -75,7 +76,7 @@ func (p *PromptFrame) HandleKeyPress(ctx tuist.Context, ev uv.KeyPressEvent) boo
 // ChromeHeight is the number of lines the frame adds around the text input.
 func (p *PromptFrame) ChromeHeight() int {
 	if p.enabled {
-		return 2 + len(p.attachments)
+		return 3 + len(p.attachments)
 	}
 	return len(p.attachments)
 }
@@ -152,6 +153,7 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 		_, line = cellbuf.RenderLine(buf, 0)
 		return line
 	}
+	ctx.Line("") // separate the draft from the transcript without extending its fill
 	ctx.Line(shade(""))
 	for _, line := range lines {
 		ctx.Line(shade(strings.Repeat(" ", indent) + line))
@@ -159,6 +161,6 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	ctx.Line(shade(""))
 
 	if result.Cursor != nil {
-		ctx.SetCursor(result.Cursor.Row+1, min(result.Cursor.Col+indent, max(0, width-1)))
+		ctx.SetCursor(result.Cursor.Row+2, min(result.Cursor.Col+indent, max(0, width-1)))
 	}
 }

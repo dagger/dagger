@@ -38,6 +38,9 @@ func renderPromptFrame(frame *PromptFrame, width int) tuist.RenderResult {
 
 func requirePromptBackground(t *testing.T, lines []string, width int) {
 	t.Helper()
+	require.NotEmpty(t, lines)
+	require.Equal(t, "", lines[0], "unshaded separator above the prompt")
+	lines = lines[1:]
 	joined := strings.Join(lines, "\n")
 	require.NotContains(t, joined, HorizBar)
 	require.Contains(t, joined, "\x1b[48;2;30;30;30m")
@@ -66,14 +69,14 @@ func TestPromptFrameRendersShadedInput(t *testing.T) {
 	frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
 	result := renderPromptFrame(frame, width)
 
-	require.Len(t, result.Lines, 4)
+	require.Len(t, result.Lines, 5)
 	requirePromptBackground(t, result.Lines, width)
-	require.Equal(t, strings.Repeat(" ", width), ansi.Strip(result.Lines[0]))
-	require.Equal(t, strings.Repeat(" ", width), ansi.Strip(result.Lines[3]))
-	require.Equal(t, "  hello there", strings.TrimRight(ansi.Strip(result.Lines[1]), " "))
-	require.Equal(t, "  second line", strings.TrimRight(ansi.Strip(result.Lines[2]), " "))
-	require.Equal(t, &tuist.CursorPos{Row: 2, Col: 13}, result.Cursor)
-	require.Equal(t, 2, frame.ChromeHeight())
+	require.Equal(t, strings.Repeat(" ", width), ansi.Strip(result.Lines[1]))
+	require.Equal(t, strings.Repeat(" ", width), ansi.Strip(result.Lines[4]))
+	require.Equal(t, "  hello there", strings.TrimRight(ansi.Strip(result.Lines[2]), " "))
+	require.Equal(t, "  second line", strings.TrimRight(ansi.Strip(result.Lines[3]), " "))
+	require.Equal(t, &tuist.CursorPos{Row: 3, Col: 13}, result.Cursor)
+	require.Equal(t, 3, frame.ChromeHeight())
 }
 
 func TestPromptFrameWrapAndResize(t *testing.T) {
@@ -90,16 +93,16 @@ func TestPromptFrameWrapAndResize(t *testing.T) {
 	tui.RenderOnce()
 
 	// Reserve two cells on each side before wrapping, not after rendering.
-	require.Len(t, capture.result.Lines, 4)
-	require.Equal(t, "  abcdefgh  ", ansi.Strip(capture.result.Lines[1]))
-	require.Equal(t, "  ijklmnop  ", ansi.Strip(capture.result.Lines[2]))
-	require.Equal(t, &tuist.CursorPos{Row: 2, Col: 10}, capture.result.Cursor)
+	require.Len(t, capture.result.Lines, 5)
+	require.Equal(t, "  abcdefgh  ", ansi.Strip(capture.result.Lines[2]))
+	require.Equal(t, "  ijklmnop  ", ansi.Strip(capture.result.Lines[3]))
+	require.Equal(t, &tuist.CursorPos{Row: 3, Col: 10}, capture.result.Cursor)
 	requirePromptBackground(t, capture.result.Lines, 12)
 
 	term.Resize(24, 20)
 	tui.RenderOnce()
-	require.Len(t, capture.result.Lines, 3)
-	require.Equal(t, &tuist.CursorPos{Row: 1, Col: 18}, capture.result.Cursor)
+	require.Len(t, capture.result.Lines, 4)
+	require.Equal(t, &tuist.CursorPos{Row: 2, Col: 18}, capture.result.Cursor)
 	requirePromptBackground(t, capture.result.Lines, 24)
 }
 
@@ -119,13 +122,13 @@ func TestPromptFrameStyledContentAndAttachments(t *testing.T) {
 	frame.SetAttachments([]PromptImage{{MIMEType: "image/png", Data: []byte("secret")}}, false)
 	result := renderPromptFrame(frame, 40)
 
-	require.Len(t, result.Lines, 4)
-	require.Equal(t, 3, frame.ChromeHeight())
-	require.Contains(t, ansi.Strip(result.Lines[1]), "  hello world")
-	require.Contains(t, ansi.Strip(result.Lines[2]), "  [image 1: image/png, 1 KiB]")
+	require.Len(t, result.Lines, 5)
+	require.Equal(t, 4, frame.ChromeHeight())
+	require.Contains(t, ansi.Strip(result.Lines[2]), "  hello world")
+	require.Contains(t, ansi.Strip(result.Lines[3]), "  [image 1: image/png, 1 KiB]")
 	require.NotContains(t, strings.Join(result.Lines, "\n"), "secret")
 	requirePromptBackground(t, result.Lines, 40)
-	require.Equal(t, &tuist.CursorPos{Row: 1, Col: 7}, result.Cursor)
+	require.Equal(t, &tuist.CursorPos{Row: 2, Col: 7}, result.Cursor)
 }
 
 func TestPromptFrameDisabledRendersBare(t *testing.T) {
@@ -147,10 +150,10 @@ func TestPromptFrameEmptyAndUnicodeInput(t *testing.T) {
 		frame.SetEnabled(true)
 		frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
 		result := renderPromptFrame(frame, 16)
-		require.Len(t, result.Lines, 3)
+		require.Len(t, result.Lines, 4)
 		requirePromptBackground(t, result.Lines, 16)
-		require.Equal(t, "  "+value+strings.Repeat(" ", 14-ansi.StringWidth(value)), ansi.Strip(result.Lines[1]))
-		require.Equal(t, &tuist.CursorPos{Row: 1, Col: 2 + ansi.StringWidth(value)}, result.Cursor)
+		require.Equal(t, "  "+value+strings.Repeat(" ", 14-ansi.StringWidth(value)), ansi.Strip(result.Lines[2]))
+		require.Equal(t, &tuist.CursorPos{Row: 2, Col: 2 + ansi.StringWidth(value)}, result.Cursor)
 	}
 }
 
@@ -163,7 +166,8 @@ func TestPromptFrameNoColorAndNarrowWidths(t *testing.T) {
 		frame.SetBackground(blendPromptBackground(color.Black, termenv.TrueColor).cell)
 		frame.SetAttachments(nil, true)
 		result := renderPromptFrame(frame, width)
-		for _, line := range result.Lines {
+		require.Equal(t, "", result.Lines[0])
+		for _, line := range result.Lines[1:] {
 			require.NotContains(t, line, "\x1b")
 			require.Equal(t, width, ansi.StringWidth(line))
 		}
