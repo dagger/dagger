@@ -317,6 +317,8 @@ func init() {
 	}
 
 	for _, cmd := range []*cobra.Command{
+		workspaceDoctorCmd,
+		doctorAliasCmd,
 		apiFunctionsCmd,
 		functionsAliasCmd,
 		moduleUpdateCmd,
