@@ -63,6 +63,13 @@ type restoreTestArchive struct {
 	history                  chan string
 	acquiredGeneration       string
 	bootstrapGeneration      string
+
+	// An unsealed archive: AcquireUnsealed returns unsealed (or unsealedErr),
+	// and unsealed streams deliver unsealedLogs.
+	unsealed        *archive.UnsealedArchive
+	unsealedErr     error
+	unsealedLogs    *collogspb.ExportLogsServiceRequest
+	unsealedRelease atomic.Int32
 }
 
 func (s *restoreTestArchive) AcquireGeneration(_ context.Context, _ string, generation string) (func(), error) {
@@ -72,6 +79,17 @@ func (s *restoreTestArchive) AcquireGeneration(_ context.Context, _ string, gene
 	}
 	return func() { s.released.Add(1) }, nil
 }
+func (s *restoreTestArchive) AcquireUnsealed(context.Context, string, string) (archive.UnsealedArchive, error) {
+	if s.unsealedErr != nil {
+		return archive.UnsealedArchive{}, s.unsealedErr
+	}
+	if s.unsealed == nil {
+		return archive.UnsealedArchive{}, &archive.RequestError{Kind: archive.ErrorState, State: archive.StateClosed}
+	}
+	unsealed := *s.unsealed
+	unsealed.Release = func() { s.unsealedRelease.Add(1) }
+	return unsealed, nil
+}
 func (s *restoreTestArchive) Bootstrap(_ context.Context, _ string, generation string, consume func(archive.BootstrapHeader, archive.BootstrapBatch) error) (archive.BootstrapResult, error) {
 	s.bootstrapGeneration = generation
 	if s.bootstrapErr != nil {
@@ -80,17 +98,31 @@ func (s *restoreTestArchive) Bootstrap(_ context.Context, _ string, generation s
 	err := consume(s.header, archive.BootstrapBatch{Logs: s.logs})
 	return archive.BootstrapResult{Header: s.header}, err
 }
-func (s *restoreTestArchive) Traces(ctx context.Context, _ string, _ archive.StreamOptions, _ func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+func (s *restoreTestArchive) Traces(ctx context.Context, _ string, opts archive.StreamOptions, _ func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+	if opts.Unsealed {
+		return opts.HighWater, nil
+	}
 	s.history <- "spans"
 	<-ctx.Done()
 	return 0, ctx.Err()
 }
-func (s *restoreTestArchive) Logs(ctx context.Context, _ string, _ archive.StreamOptions, _ func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+func (s *restoreTestArchive) Logs(ctx context.Context, _ string, opts archive.StreamOptions, consume func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+	if opts.Unsealed {
+		if s.unsealedLogs != nil {
+			if err := consume(opts.HighWater, s.unsealedLogs); err != nil {
+				return 0, err
+			}
+		}
+		return opts.HighWater, nil
+	}
 	s.history <- "logs"
 	<-ctx.Done()
 	return 0, ctx.Err()
 }
-func (s *restoreTestArchive) Metrics(ctx context.Context, _ string, _ archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
+func (s *restoreTestArchive) Metrics(ctx context.Context, _ string, opts archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
+	if opts.Unsealed {
+		return opts.HighWater, nil
+	}
 	s.history <- "metrics"
 	<-ctx.Done()
 	return 0, ctx.Err()
@@ -165,7 +197,7 @@ func TestRestorePlansOnlyPassErrorsForFailedAgents(t *testing.T) {
 				if sourceKind == "archive" {
 					plan, _, err = appliedArchivePlan(fe, source.header.Completion)
 				} else {
-					plan, _, err = cloudRestorePlan(fe, restoreRequest(), nil)
+					plan, _, err = observedRestorePlan(fe, restoreRequest(), nil)
 				}
 				require.NoError(t, err)
 				require.Len(t, plan.plan, 2)

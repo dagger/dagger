@@ -21,6 +21,7 @@ import (
 // A future Cloud source must supply the same verified finality and fixed cut.
 type archiveRestoreSource interface {
 	AcquireGeneration(context.Context, string, string) (func(), error)
+	AcquireUnsealed(context.Context, string, string) (archive.UnsealedArchive, error)
 	Bootstrap(context.Context, string, string, func(archive.BootstrapHeader, archive.BootstrapBatch) error) (archive.BootstrapResult, error)
 	Traces(context.Context, string, archive.StreamOptions, func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error)
 	Logs(context.Context, string, archive.StreamOptions, func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error)
