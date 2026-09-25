@@ -190,19 +190,27 @@ func cannedAgentStateLogs(traceID byte, records ...cannedStateRecord) *collogspb
 // into, the agent it re-hydrated (which republishes its identity into the new
 // trace, §4.5), and one turn spoken since.
 func liveSessionTrace() *coltracepb.ExportTraceServiceRequest {
-	return cannedTrace(liveTraceIDByte,
-		cannedSpan{id: liveRootSpanID, name: "dagger agent --trace", start: 1000},
-		cannedSpan{
-			id: liveLoopSpanID, parent: liveRootSpanID, name: "agent: interactive",
-			start: 1010,
-			attrs: cannedAgentAttrs(importChiefAgentID, "interactive", "sha256:chief"),
-		},
+	return cannedTrace(liveTraceIDByte, append(unspokenLiveSessionSpans(),
 		cannedSpan{
 			id: liveTurnSpanID, parent: liveLoopSpanID, name: "live turn",
 			start: 1020, end: 1030,
 			attrs: cannedMessageAttrs("user"),
 		},
-	)
+	)...)
+}
+
+// unspokenLiveSessionSpans is the resuming CLI's trace the moment the restore
+// lands: the root and the re-hydrated agent, with nothing said in this session
+// yet -- what the user is looking at before their first message.
+func unspokenLiveSessionSpans() []cannedSpan {
+	return []cannedSpan{
+		{id: liveRootSpanID, name: "dagger agent -r", start: 1000},
+		{
+			id: liveLoopSpanID, parent: liveRootSpanID, name: "agent: interactive",
+			start: 1010,
+			attrs: cannedAgentAttrs(importChiefAgentID, "interactive", "sha256:chief"),
+		},
+	}
 }
 
 // foreignSessionTrace is the canned capture of the session being resumed. With
@@ -237,12 +245,19 @@ func foreignSessionTrace(withWorker bool) *coltracepb.ExportTraceServiceRequest 
 // through the importer and sealed at stream end.
 func importedTraceDB(t *testing.T, withWorker bool) *dagui.DB {
 	t.Helper()
+	return importedTraceDBBeside(t, liveSessionTrace(), withWorker)
+}
+
+// importedTraceDBBeside is importedTraceDB with the live session's own trace
+// supplied by the caller.
+func importedTraceDBBeside(t *testing.T, live *coltracepb.ExportTraceServiceRequest, withWorker bool) *dagui.DB {
+	t.Helper()
 	ctx := context.Background()
 	db := dagui.NewDB()
 
 	// The live session is already publishing by the time the fetch runs: its
 	// root is the DB's root and its primary span.
-	require.NoError(t, db.ExportSpans(ctx, telemetry.SpansFromPB(liveSessionTrace().GetResourceSpans())))
+	require.NoError(t, db.ExportSpans(ctx, telemetry.SpansFromPB(live.GetResourceSpans())))
 
 	imp := enginetel.NewTraceImporter(enginetel.TraceImportSinks{
 		Spans:   db,
@@ -419,4 +434,35 @@ func TestFocusedAgentTranscriptIncludesTheImportedTurns(t *testing.T) {
 	require.Equal(t, map[string]bool{"imported turn": true, "live turn": true},
 		revealedNames(t, fe),
 		"the promoted transcript must span both of the agent's lives")
+}
+
+// TestRestoredTranscriptShowsBeforeTheFirstMessage is the moment right after
+// a restore lands, before the user has said anything: the live session's own
+// trace holds no message yet, so every turn on screen hangs off the IMPORTED
+// root. Gating promotion on the live root's subtree left the scrollback empty
+// until the first message gave that subtree something to surface.
+func TestRestoredTranscriptShowsBeforeTheFirstMessage(t *testing.T) {
+	live := cannedTrace(liveTraceIDByte, unspokenLiveSessionSpans()...)
+
+	t.Run("single agent", func(t *testing.T) {
+		db := importedTraceDBBeside(t, live, false)
+		handler := &focusShellHandler{target: importChiefAgentID}
+		fe := focusTestFrontend(t, db, handler)
+		fe.recalculateViewLocked()
+
+		require.Equal(t, map[string]bool{"imported turn": true}, revealedNames(t, fe),
+			"the restored transcript must render before this session says anything")
+	})
+
+	t.Run("focused agent", func(t *testing.T) {
+		db := importedTraceDBBeside(t, live, true)
+		handler := &focusShellHandler{target: importChiefAgentID}
+		fe := focusTestFrontend(t, db, handler)
+		fe.updateAgentRoster()
+		require.True(t, fe.agentRoster.Switchable(), "fixture: two agents, so the transcript scopes to focus")
+		fe.recalculateViewLocked()
+
+		require.Equal(t, map[string]bool{"imported turn": true}, revealedNames(t, fe),
+			"the focused agent's restored transcript must render before this session says anything")
+	})
 }

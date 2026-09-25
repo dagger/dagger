@@ -4998,14 +4998,18 @@ func (fe *frontendPretty) promoteConversationLocked() {
 	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
 		host = primary
 	}
-	if host == nil || !fe.db.HasConversationForSpan(host) {
-		return
-	}
-	if host.LLMRole != "" {
+	if host == nil || host.LLMRole != "" {
 		// The host is itself a message: there is no setup noise above it to hide.
 		return
 	}
+	// Gate on what would actually be promoted, not on the host's own subtree:
+	// a restored session's transcript hangs off the IMPORTED root, so until
+	// this session says something the host's subtree holds no message and the
+	// restored scrollback would stay hidden behind the setup rows.
 	scope, nodes := fe.conversationToPromote()
+	if len(nodes) == 0 {
+		return
+	}
 	// Withdraw the previous scope before wiring the new one: promotion only
 	// adds, so a switch that skipped this would reveal both agents' transcripts
 	// at once (see DB.DemoteConversationNodesFrom).
