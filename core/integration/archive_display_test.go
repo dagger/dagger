@@ -229,7 +229,7 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	defer stopConsole()
 	console := exec.CommandContext(consoleCtx, bin, "--progress=tty", "trace", traceID, "--source-session", manifest.SourceSession, "--generation", manifest.Generation)
 	console.Dir = destination
-	console.Env = append(cmd.Env, "DAGGER_TUI_CONSOLE="+address)
+	console.Env = append([]string{"DAGGER_TUI_CONSOLE=" + address}, cmd.Env...)
 	consoleOutput, err := os.CreateTemp(t.TempDir(), "archive-console-output")
 	require.NoError(t, err)
 	defer consoleOutput.Close()
