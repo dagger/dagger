@@ -198,13 +198,6 @@ func (db *DB) buildAgents() []*AgentNode {
 		node.State, node.WaitingOn, node.StopReason = projection.State, projection.WaitingOn, projection.StopReason
 		node.SnapshotDigest, node.PreTeardownState = projection.Digest, projection.PreTeardownState
 	}
-	visible := order[:0]
-	for _, node := range order {
-		if node.Control == nil || !node.Control.Removed {
-			visible = append(visible, node)
-		}
-	}
-	order = visible
 	sort.SliceStable(order, func(i, j int) bool {
 		a, b := order[i].Spans, order[j].Spans
 		if len(a) == 0 && len(b) == 0 {

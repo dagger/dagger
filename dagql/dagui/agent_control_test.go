@@ -79,17 +79,13 @@ func TestCanonicalCaptureFailuresStayOutOfOutput(t *testing.T) {
 	require.ErrorContains(t, err, "Host.__gitDir", "an explicit restore still explains why it cannot proceed")
 }
 
-func TestCanonicalRemovalAndMalformedRecords(t *testing.T) {
+func TestCanonicalMalformedRecords(t *testing.T) {
 	db := NewDB()
 	a := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "generation"}, Handle: "a"}, Revision: 1, State: "IDLE", Digest: "xxh3:anchor"}
 	db.ingestLogs([]sdklog.Record{controlRecord(a.Record())}, true)
 	require.Len(t, db.Agents(), 1)
-	a.Revision, a.Removed, a.State, a.StopReason = 2, true, "STOPPED", "EXPLICIT"
-	db.ingestLogs([]sdklog.Record{controlRecord(a.Record())}, true)
-	require.Empty(t, db.Agents())
-	all, _, err := db.AgentControl()
+	_, _, err := db.AgentControl()
 	require.NoError(t, err)
-	require.Len(t, all, 1, "removal evidence remains available to bootstrap consumers")
 	bad := a.Record()
 	bad.AddAttributes(log.Int(agentcontrol.VersionAttr, 99))
 	renderable := db.ingestLogs([]sdklog.Record{controlRecord(bad)}, true)

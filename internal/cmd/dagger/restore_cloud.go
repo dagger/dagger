@@ -167,9 +167,6 @@ func cloudRestorePlan(fe archiveFrontend, req traceRestore, calls map[string]*ca
 		if err := a.Validate(); err != nil {
 			return plan, nil, err
 		}
-		if a.Removed {
-			continue
-		}
 		entry := dagui.AgentRestore{
 			Source: a.Key, ID: a.Handle, Name: a.Name, ParentAgentID: a.Parent,
 			SnapshotDigest: a.Digest, LastActivity: a.Activity,

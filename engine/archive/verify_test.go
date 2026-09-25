@@ -38,7 +38,7 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 	traceID := testTraceA
 	id := call.New().Append(&ast.Type{NamedType: "LLM"}, "llm")
 	a := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: traceID, Incarnation: "incarnation"}, Handle: "agent"}, Revision: 4, State: "IDLE", Digest: id.Digest().String()}
-	for _, tc := range []string{"valid", "missing payload", "missing final revision", "missing whole agent", "capture failure", "capture failure with stray payload", "recipe corruption", "duplicate attribute", "removed tombstone"} {
+	for _, tc := range []string{"valid", "missing payload", "missing final revision", "missing whole agent", "capture failure", "capture failure with stray payload", "recipe corruption", "duplicate attribute"} {
 		t.Run(tc, func(t *testing.T) {
 			agent := a
 			want := agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{agent.Key: agent.Revision}}
@@ -60,15 +60,12 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 				agent.Digest = ""
 				agent.CaptureError = "snapshot unavailable"
 			}
-			if tc == "removed tombstone" {
-				agent.Removed = true
-			}
 			control := bootstrapControlLog(t, agent)
 			if tc == "duplicate attribute" {
 				control.Attributes = append(control.Attributes, control.Attributes[0])
 			}
 			logs := []*logpb.LogRecord{control}
-			if tc != "missing payload" && tc != "removed tombstone" && tc != "capture failure" {
+			if tc != "missing payload" && tc != "capture failure" {
 				payload, err := proto.Marshal(c)
 				require.NoError(t, err)
 				logs = append(logs, &logpb.LogRecord{TraceId: control.TraceId, SpanId: control.SpanId, Body: &commonpb.AnyValue{Value: &commonpb.AnyValue_BytesValue{BytesValue: payload}}, Attributes: []*commonpb.KeyValue{{Key: telemetry.ContentTypeAttr, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: telemetryattrs.CallPayloadContentType}}}}})
@@ -82,7 +79,7 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 			defer closeServer()
 			callbacks := 0
 			_, err = client.Bootstrap(t.Context(), traceID, "gen", func(BootstrapHeader, BootstrapBatch) error { callbacks++; return nil })
-			if tc == "valid" || tc == "removed tombstone" || tc == "capture failure" {
+			if tc == "valid" || tc == "capture failure" {
 				require.NoError(t, err)
 				require.Equal(t, 1, callbacks)
 			} else {

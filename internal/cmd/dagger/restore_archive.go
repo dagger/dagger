@@ -73,9 +73,6 @@ func appliedArchivePlan(fe idtui.AgentRestorer, completion archive.Completion) (
 		return plan, nil, fmt.Errorf("applied bootstrap differs from verified roster: %w", err)
 	}
 	for _, a := range index.Agents() {
-		if a.Removed {
-			continue
-		}
 		entry := dagui.AgentRestore{
 			Source: a.Key, ID: a.Handle, Name: a.Name, ParentAgentID: a.Parent,
 			SnapshotDigest: a.Digest, LastActivity: a.Activity,

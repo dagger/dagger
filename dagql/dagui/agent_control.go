@@ -8,8 +8,9 @@ import (
 )
 
 // AgentControl returns a copied view of the canonical control index, including
-// removal tombstones. It does not infer finality from the received records:
-// strict restore still needs the archive's independent verified manifest.
+// subscription removal tombstones. It does not infer finality from the received
+// records: strict restore still needs the archive's independent verified
+// manifest.
 // Like Agents, this method is called under the frontend's DB ownership lock.
 func (db *DB) AgentControl() ([]agentcontrol.Agent, []agentcontrol.Subscription, error) {
 	return db.agentControl.Agents(), db.agentControl.Subscriptions(), db.agentControlErr
