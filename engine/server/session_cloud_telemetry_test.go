@@ -1167,3 +1167,49 @@ func TestCloudReachabilityCache(t *testing.T) {
 	require.NoError(t, c.check(ctx, "http://up"))
 	require.Equal(t, 2, probes["http://up"])
 }
+
+// Concurrent checks of a URL without a current result share one probe, and
+// all get its result: on a cold cache, and again once the result expired.
+func TestCloudReachabilityCoalescesConcurrentChecks(t *testing.T) {
+	t.Parallel()
+	var (
+		clockMu sync.Mutex
+		clock   = time.Unix(0, 0)
+	)
+	var probes atomic.Int32
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	unreachable := errors.New("unreachable")
+	c := cloudReachability{
+		now: func() time.Time {
+			clockMu.Lock()
+			defer clockMu.Unlock()
+			return clock
+		},
+		probe: func(ctx context.Context, cloudURL string) error {
+			probes.Add(1)
+			entered <- struct{}{}
+			<-release
+			return unreachable
+		},
+	}
+
+	for round := int32(1); round <= 2; round++ {
+		release = make(chan struct{})
+		errs := make(chan error, 8)
+		go func() { errs <- c.check(context.Background(), "http://down") }()
+		<-entered
+		for range 7 {
+			go func() { errs <- c.check(context.Background(), "http://down") }()
+		}
+		close(release)
+		for range 8 {
+			require.ErrorIs(t, <-errs, unreachable)
+		}
+		require.Equal(t, round, probes.Load())
+
+		clockMu.Lock()
+		clock = clock.Add(cloudReachFailed)
+		clockMu.Unlock()
+	}
+}

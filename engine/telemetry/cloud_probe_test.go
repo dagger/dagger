@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -37,7 +38,9 @@ func TestProbeCloudURLAnyAnswerIsReachable(t *testing.T) {
 	}
 }
 
-// Without an answer the probe fails, and never outlasts its context.
+// Without an answer the probe fails, and never outlasts its context. The
+// probe goes through a copy of the exporters' transport without a proxy, so
+// an ambient proxy cannot answer for the unresolvable host.
 func TestProbeCloudURLUnreachable(t *testing.T) {
 	t.Parallel()
 	refused := func() string {
@@ -65,11 +68,34 @@ func TestProbeCloudURLUnreachable(t *testing.T) {
 			const bound = 500 * time.Millisecond
 			ctx, cancel := context.WithTimeout(context.Background(), bound)
 			defer cancel()
+			transport := cloudExportTransport.Clone()
+			transport.Proxy = nil
 			start := time.Now()
-			require.Error(t, ProbeCloudURL(ctx, cloudURL))
+			require.Error(t, probeCloudURL(ctx, cloudURL, transport))
 			require.Less(t, time.Since(start), bound+time.Second)
 		})
 	}
+}
+
+// Through a proxy, the proxy's answer counts: the probe asks whether this
+// process gets an answer from the Cloud URL the way the exporters would.
+func TestProbeCloudURLThroughProxy(t *testing.T) {
+	t.Parallel()
+	requests := make(chan *http.Request, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(proxy.Close)
+	proxyURL, err := url.Parse(proxy.URL)
+	require.NoError(t, err)
+	transport := cloudExportTransport.Clone()
+	transport.Proxy = http.ProxyURL(proxyURL)
+
+	require.NoError(t, probeCloudURL(context.Background(), "http://unreachable.invalid", transport))
+	req := <-requests
+	require.Equal(t, http.MethodHead, req.Method)
+	require.Equal(t, "http://unreachable.invalid/v1/traces", req.URL.String())
 }
 
 func TestResolveCloudURL(t *testing.T) {

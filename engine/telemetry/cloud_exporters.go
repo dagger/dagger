@@ -120,6 +120,10 @@ func ResolveCloudURL(cloudURL string) string {
 // certificates as they do. Any HTTP response counts; only failing to get one
 // is an error. ctx bounds the probe.
 func ProbeCloudURL(ctx context.Context, cloudURL string) error {
+	return probeCloudURL(ctx, cloudURL, cloudExportTransport)
+}
+
+func probeCloudURL(ctx context.Context, cloudURL string, transport http.RoundTripper) error {
 	endpoint, err := url.Parse(ResolveCloudURL(cloudURL))
 	if err != nil {
 		return fmt.Errorf("bad cloud URL: %w", err)
@@ -129,7 +133,7 @@ func ProbeCloudURL(ctx context.Context, cloudURL string) error {
 		return err
 	}
 	client := &http.Client{
-		Transport: cloudExportTransport,
+		Transport: transport,
 		// A redirect is an answer too.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
