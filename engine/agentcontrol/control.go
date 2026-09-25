@@ -118,6 +118,23 @@ func (a Agent) RestoreState() (string, error) {
 	if a.CaptureError != "" {
 		return "", fmt.Errorf("agent %q capture failed: %s", a.Handle, a.CaptureError)
 	}
+	return a.lifecycleState()
+}
+
+// ClosureRoot is the committed conversation leaf whose complete recipe closure
+// an archive must carry. A removal tombstone has none, and neither does a
+// recorded capture failure (Validate makes that the only way Digest is empty):
+// it is still witnessed, but restore carries it as unrestorable.
+func (a Agent) ClosureRoot() (string, bool) {
+	if a.Removed || a.Digest == "" {
+		return "", false
+	}
+	return a.Digest, true
+}
+
+// lifecycleState maps the recorded lifecycle facts to the state a restore
+// resumes in, independently of whether a conversation was captured.
+func (a Agent) lifecycleState() (string, error) {
 	state := a.State
 	if state == "STOPPED" && a.StopReason == "SESSION" {
 		state = a.PreTeardownState
@@ -257,7 +274,10 @@ func (idx *Index) Verify(want Expectation) error {
 		if a.Removed {
 			continue
 		}
-		if _, err := a.RestoreState(); err != nil {
+		// A recorded capture failure is a witnessed final fact, not missing
+		// data: it is carried to restore as unrestorable rather than making
+		// the whole roster unverifiable. Lifecycle facts remain strict.
+		if _, err := a.lifecycleState(); err != nil {
 			return err
 		}
 		if a.Parent != "" {

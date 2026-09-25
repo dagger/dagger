@@ -38,7 +38,7 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 	traceID := testTraceA
 	id := call.New().Append(&ast.Type{NamedType: "LLM"}, "llm")
 	a := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: traceID, Incarnation: "incarnation"}, Handle: "agent"}, Revision: 4, State: "IDLE", Digest: id.Digest().String()}
-	for _, tc := range []string{"valid", "missing payload", "missing final revision", "missing whole agent", "capture failure", "recipe corruption", "duplicate attribute", "removed tombstone"} {
+	for _, tc := range []string{"valid", "missing payload", "missing final revision", "missing whole agent", "capture failure", "capture failure with stray payload", "recipe corruption", "duplicate attribute", "removed tombstone"} {
 		t.Run(tc, func(t *testing.T) {
 			agent := a
 			want := agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{agent.Key: agent.Revision}}
@@ -54,7 +54,9 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 				key.Handle = "lost"
 				want.Agents[key] = 1
 			}
-			if tc == "capture failure" {
+			if tc == "capture failure" || tc == "capture failure with stray payload" {
+				// A recorded capture failure is a witnessed final revision with
+				// no closure root: it verifies, and restore reports it instead.
 				agent.Digest = ""
 				agent.CaptureError = "snapshot unavailable"
 			}
@@ -66,7 +68,7 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 				control.Attributes = append(control.Attributes, control.Attributes[0])
 			}
 			logs := []*logpb.LogRecord{control}
-			if tc != "missing payload" && tc != "removed tombstone" {
+			if tc != "missing payload" && tc != "removed tombstone" && tc != "capture failure" {
 				payload, err := proto.Marshal(c)
 				require.NoError(t, err)
 				logs = append(logs, &logpb.LogRecord{TraceId: control.TraceId, SpanId: control.SpanId, Body: &commonpb.AnyValue{Value: &commonpb.AnyValue_BytesValue{BytesValue: payload}}, Attributes: []*commonpb.KeyValue{{Key: telemetry.ContentTypeAttr, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: telemetryattrs.CallPayloadContentType}}}}})
@@ -80,7 +82,7 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 			defer closeServer()
 			callbacks := 0
 			_, err = client.Bootstrap(t.Context(), traceID, "gen", func(BootstrapHeader, BootstrapBatch) error { callbacks++; return nil })
-			if tc == "valid" || tc == "removed tombstone" {
+			if tc == "valid" || tc == "removed tombstone" || tc == "capture failure" {
 				require.NoError(t, err)
 				require.Equal(t, 1, callbacks)
 			} else {

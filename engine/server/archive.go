@@ -195,8 +195,11 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 		if err != nil {
 			return nil, 0, err
 		}
-		if a != nil && !a.Removed {
-			roots = append(roots, a.Digest)
+		if a == nil {
+			continue
+		}
+		if root, ok := a.ClosureRoot(); ok {
+			roots = append(roots, root)
 		}
 	}
 	_, err = archive.VerifyClosure(roots, func(d string) (*callpbv1.Call, error) {

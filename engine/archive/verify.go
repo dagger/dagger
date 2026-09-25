@@ -224,10 +224,9 @@ func ValidateBootstrap(ctx context.Context, header BootstrapHeader, batches []Bo
 	}
 	var roots []string
 	for _, a := range v.index.Agents() {
-		if a.Removed {
-			continue
+		if root, ok := a.ClosureRoot(); ok {
+			roots = append(roots, root)
 		}
-		roots = append(roots, a.Digest)
 	}
 	closure, err := VerifyClosure(roots, func(d string) (*callpbv1.Call, error) {
 		c := v.calls[d]
