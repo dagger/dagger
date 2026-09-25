@@ -41,24 +41,26 @@ func (WorkspaceSuite) TestSetupPromptReadsInputAfterTUI(ctx context.Context, t *
 	cmd.Stderr = tty
 	require.NoError(t, cmd.Start())
 
-	// Forms inside the TUI: Enter takes the preselected Skip; left arrow
-	// moves to Run.
+	// Forms inside the TUI: Run is preselected, so Enter takes it and the
+	// right arrow moves to Skip.
 	_, err = console.ExpectString("Find and install suitable modules?")
 	require.NoError(t, err)
 	time.Sleep(300 * time.Millisecond)
-	_, err = console.Send("\r")
+	_, err = console.Send("\x1b[C\r") // Skip the module recommendations.
 	require.NoError(t, err)
 
 	_, err = console.ExpectString("Enable cloud checks?")
 	require.NoError(t, err)
 	time.Sleep(300 * time.Millisecond)
-	_, err = console.Send("\x1b[D\r")
+	_, err = console.Send("\r") // Run, reaching the account prerequisite.
 	require.NoError(t, err)
 
-	// The TUI is gone now; this prompt reads stdin directly.
-	_, err = console.ExpectString("Run this command? [Y/n]")
+	// The TUI is gone now; this prompt runs as a standalone form that must
+	// read through the terminal the TUI left behind.
+	_, err = console.ExpectString("Sign up or log in?")
 	require.NoError(t, err)
-	_, err = console.SendLine("n")
+	time.Sleep(300 * time.Millisecond)
+	_, err = console.Send("\x1b[C\r") // Skip, declining the prerequisite.
 	require.NoError(t, err)
 
 	_, err = console.ExpectString("Complete the prerequisite")

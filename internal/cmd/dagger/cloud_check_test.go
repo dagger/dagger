@@ -41,7 +41,6 @@ func TestCloudChecksCommandPrompt(t *testing.T) {
 	for _, args := range []string{"signup", "integration create github --open"} {
 		command := cloudSetupCommand(args)
 		require.Equal(t, "dagger cloud "+args+" --org 'team'\"'\"'s org'", command)
-		require.Equal(t, "Complete this prerequisite?\n\n"+command+"\n\n", setupCommandPromptText("Complete this prerequisite?", command))
 	}
 }
 
@@ -81,9 +80,9 @@ func TestCloudChecksOnPrerequisites(t *testing.T) {
 		wantError   string
 		wantQueries []string
 	}{
-		{name: "GitHub required", noSource: true, wantError: "dagger cloud integration create github", wantQueries: []string{"GetUserRepositories", "GetSources"}},
-		{name: "already enabled", enabled: true, wantQueries: []string{"GetUserRepositories"}},
-		{name: "enable mapped repository", wantQueries: []string{"GetUserRepositories", "GetSources", "GetOrgMappedSources", "ConfigureSource"}},
+		{name: "GitHub App install required", noSource: true, wantError: "installations/select_target", wantQueries: []string{"GetUserRepositories", "GetSources", "GetGithubConnection"}},
+		{name: "already enabled", enabled: true, wantQueries: []string{"GetUserRepositories", "GetSources", "GetOrgDetails"}},
+		{name: "enable mapped repository", wantQueries: []string{"GetUserRepositories", "GetSources", "User", "GetOrgDetails", "GetOrgMappedSources", "ConfigureSource"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var queries []string
@@ -114,6 +113,18 @@ func TestCloudChecksOnPrerequisites(t *testing.T) {
 					if tc.noSource {
 						data = `{"sources":[]}`
 					}
+				case "GetOrgDetails":
+					// The feature gate runs even when invoked without the
+					// annotated command (e.g. from dagger init); features are
+					// active here so no trial is offered.
+					data = `{"org":{"id":"org","name":"example","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[{"name":"CLOUD_CHECKS","status":"ACTIVE"},{"name":"CLOUD_MODULES","status":"ACTIVE"},{"name":"CLOUD_ENGINES","status":"ACTIVE"}]}}`
+				case "GetGithubConnection":
+					// The identity is connected; only the app install is missing.
+					data = `{"githubConnection":{"githubLogin":"octocat","connectedAt":""}}`
+				case "User":
+					// Membership check before the org-scoped mapped-sources
+					// lookup (clear ownership error instead of "unauthorized").
+					data = `{"user":{"id":"user","orgs":[{"id":"org","name":"example"}]}}`
 				case "GetOrgMappedSources":
 					data = `{"org":{"mappedSources":[{"installationId":"installation","mode":"SELECTED","repositories":["github.com/example/other"]}]}}`
 				case "ConfigureSource":
@@ -147,7 +158,7 @@ func TestCloudChecksOnPrerequisites(t *testing.T) {
 				require.Empty(t, out.String())
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, "on\n", out.String())
+				require.Equal(t, "checks for repo github.com/example/project enabled\n", out.String())
 			}
 			require.Equal(t, tc.wantQueries, queries)
 		})
@@ -165,4 +176,193 @@ func sameStrings(value any, expected []string) bool {
 		}
 	}
 	return true
+}
+
+// Enabling checks on a repo that is already selected must still enforce the
+// org's required Cloud features: without this, `checks on` early-returns "on"
+// while checks silently never run for orgs missing CLOUD_CHECKS/CLOUD_MODULES.
+func TestCloudChecksOnEnabledRepoStillEnforcesFeatures(t *testing.T) {
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			OperationName string         `json:"operationName"`
+			Variables     map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		operation := request.OperationName
+		if operation == "" {
+			operation = "User"
+		}
+		queries = append(queries, operation)
+		var data string
+		switch operation {
+		case "GetUserRepositories":
+			// The repo is already tracked AND selected (enabled).
+			data = `{"user":{"repositories":[{"ref":"github.com/example/project","mappedSource":{"installationId":"installation","mode":"SELECTED","repositories":["github.com/example/project"]}}]}}`
+		case "GetSources":
+			// Resolves the org owning the installation for the feature gate.
+			data = `{"sources":[{"id":"installation","name":"example","orgName":"example"}]}`
+		case "GetOrgDetails":
+			// Neither feature enabled -> the trial must be offered.
+			data = `{"org":{"id":"org-1","name":"example","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[{"name":"CLOUD_CHECKS","status":"UNUSED"}]}}`
+		case "StartFeatureTrial":
+			if got := request.Variables["features"]; !sameStrings(got, []string{"CLOUD_CHECKS", "CLOUD_MODULES"}) {
+				t.Errorf("trial features: %v", got)
+			}
+			data = `{"startFeatureTrial":true}`
+		default:
+			t.Errorf("unexpected Cloud operation: %s", operation)
+			http.Error(w, "unexpected operation", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"data":%s}`, data)
+	}))
+	defer server.Close()
+	t.Setenv("DAGGER_CLOUD_URL", server.URL)
+	t.Setenv("DAGGER_CLOUD_TOKEN", "test-token")
+	oldTTY, oldWorkspace, oldOrg, oldApply := stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply
+	stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply = false, "", "", true
+	t.Cleanup(func() { stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply = oldTTY, oldWorkspace, oldOrg, oldApply })
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	requireCloudFeatures(cmd, featureCloudChecks, featureCloudModules)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	err := runCloudCheckSet(true)(cmd, []string{"github.com/example/project"})
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "Started a 14-day CLOUD_CHECKS + CLOUD_MODULES trial")
+	require.Contains(t, out.String(), "checks for repo github.com/example/project enabled\n")
+	require.Equal(t, []string{"GetUserRepositories", "GetSources", "GetOrgDetails", "StartFeatureTrial"}, queries)
+}
+
+// An org missing the Cloud features must get the trial BEFORE the org-scoped
+// mapped-sources lookup: that query is feature-gated server-side, so without
+// this ordering, state resolution dies with "unauthorized" and the trial is
+// never offered (chicken-and-egg).
+func TestCloudChecksOnUntrackedRepoStartsTrialBeforeMappedSources(t *testing.T) {
+	var queries []string
+	trialStarted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			OperationName string         `json:"operationName"`
+			Variables     map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		operation := request.OperationName
+		if operation == "" {
+			operation = "User"
+		}
+		queries = append(queries, operation)
+		var data string
+		switch operation {
+		case "GetUserRepositories":
+			data = `{"user":{"repositories":[]}}`
+		case "GetSources":
+			data = `{"sources":[{"id":"installation","name":"example","orgName":"example"}]}`
+		case "User":
+			data = `{"user":{"id":"user","orgs":[{"id":"org","name":"example"}]}}`
+		case "GetOrgDetails":
+			data = `{"org":{"id":"org","name":"example","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[]}}`
+		case "StartFeatureTrial":
+			trialStarted = true
+			data = `{"startFeatureTrial":true}`
+		case "GetOrgMappedSources":
+			// Only reachable once the features are ensured (server-side gate).
+			if !trialStarted {
+				t.Error("mappedSources queried before the feature trial was ensured")
+			}
+			data = `{"org":{"mappedSources":[{"installationId":"installation","mode":"SELECTED","repositories":[]}]}}`
+		case "ConfigureSource":
+			data = `{"configureSource":{"installationId":"installation","mode":"SELECTED"}}`
+		default:
+			t.Errorf("unexpected Cloud operation: %s", operation)
+			http.Error(w, "unexpected operation", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"data":%s}`, data)
+	}))
+	defer server.Close()
+	t.Setenv("DAGGER_CLOUD_URL", server.URL)
+	t.Setenv("DAGGER_CLOUD_TOKEN", "test-token")
+	oldTTY, oldWorkspace, oldOrg, oldApply := stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply
+	stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply = false, "", "", true
+	t.Cleanup(func() { stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply = oldTTY, oldWorkspace, oldOrg, oldApply })
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	requireCloudFeatures(cmd, featureCloudChecks, featureCloudModules)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	err := runCloudCheckSet(true)(cmd, []string{"github.com/example/project"})
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "Started a 14-day CLOUD_CHECKS + CLOUD_MODULES trial")
+	require.Contains(t, out.String(), "checks for repo github.com/example/project enabled\n")
+	require.Equal(t, []string{"GetUserRepositories", "GetSources", "User", "GetOrgDetails", "StartFeatureTrial", "GetOrgMappedSources", "ConfigureSource"}, queries)
+}
+
+// A ConfigureSource rejection for a repo the installation cannot access must
+// surface the installation settings page (and offer it interactively), not the
+// raw backend error.
+func TestCloudChecksOnRepoNotGrantedPointsAtInstallationSettings(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			OperationName string `json:"operationName"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		operation := request.OperationName
+		if operation == "" {
+			operation = "User"
+		}
+		var data string
+		switch operation {
+		case "GetUserRepositories":
+			data = `{"user":{"repositories":[]}}`
+		case "GetSources":
+			data = `{"sources":[{"id":"161781848","name":"marcosnils","orgName":"marcosnils","configUrl":"https://github.com/settings/installations/161781848"}]}`
+		case "User":
+			data = `{"user":{"id":"user","orgs":[{"id":"org","name":"marcosnils"}]}}`
+		case "GetOrgDetails":
+			data = `{"org":{"id":"org","name":"marcosnils","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[{"name":"CLOUD_CHECKS","status":"ACTIVE"},{"name":"CLOUD_MODULES","status":"ACTIVE"},{"name":"CLOUD_ENGINES","status":"ACTIVE"}]}}`
+		case "GetOrgMappedSources":
+			data = `{"org":{"mappedSources":[{"installationId":"161781848","mode":"SELECTED","repositories":[]}]}}`
+		case "ConfigureSource":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"errors":[{"message":"repository github.com/marcosnils/bin does not belong to installation 161781848. Verify that the GitHub app has been granted access to the repository."}]}`)
+			return
+		default:
+			t.Errorf("unexpected Cloud operation: %s", operation)
+			http.Error(w, "unexpected operation", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"data":%s}`, data)
+	}))
+	defer server.Close()
+	t.Setenv("DAGGER_CLOUD_URL", server.URL)
+	t.Setenv("DAGGER_CLOUD_TOKEN", "test-token")
+	oldTTY, oldWorkspace, oldOrg := stdinIsTTY, workspaceRef, cloudOrgFlag
+	stdinIsTTY, workspaceRef, cloudOrgFlag = false, "", ""
+	t.Cleanup(func() { stdinIsTTY, workspaceRef, cloudOrgFlag = oldTTY, oldWorkspace, oldOrg })
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	err := runCloudCheckSet(true)(cmd, []string{"github.com/marcosnils/bin"})
+	require.Error(t, err)
+	require.EqualError(t, err,
+		"Cloud checks need GitHub access to this repository. Visit https://github.com/settings/installations/161781848 to enable it and then run the command again")
+	require.NotContains(t, err.Error(), "does not belong to installation")
 }
