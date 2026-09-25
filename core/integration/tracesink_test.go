@@ -220,10 +220,6 @@ func (sink *agentTraceSink) committedRecipe(ctx context.Context, handle string) 
 				invalid = err
 				return
 			}
-			if selected.Removed {
-				invalid = fmt.Errorf("capture agent %q was removed", handle)
-				return
-			}
 			id, err := db.CallIDForDigest(selected.Digest)
 			if err != nil {
 				lastErr = err

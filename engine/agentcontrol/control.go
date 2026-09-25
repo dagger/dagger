@@ -32,7 +32,6 @@ type Key struct {
 type Agent struct {
 	Key
 	Revision         int64
-	Removed          bool // rollback tombstone; identity/revision still witnessed
 	Name             string
 	Parent           string
 	CallDigest       string
@@ -112,9 +111,6 @@ func (a Agent) RestoreState() (string, error) {
 	if err := a.Validate(); err != nil {
 		return "", err
 	}
-	if a.Removed {
-		return "", errors.New("agent was removed")
-	}
 	if a.CaptureError != "" {
 		return "", fmt.Errorf("agent %q capture failed: %s", a.Handle, a.CaptureError)
 	}
@@ -122,11 +118,11 @@ func (a Agent) RestoreState() (string, error) {
 }
 
 // ClosureRoot is the committed conversation leaf whose complete recipe closure
-// an archive must carry. A removal tombstone has none, and neither does a
-// recorded capture failure (Validate makes that the only way Digest is empty):
-// it is still witnessed, but restore carries it as unrestorable.
+// an archive must carry. A recorded capture failure has none (Validate makes
+// that the only way Digest is empty): it is still witnessed, but restore
+// carries it as unrestorable.
 func (a Agent) ClosureRoot() (string, bool) {
-	if a.Removed || a.Digest == "" {
+	if a.Digest == "" {
 		return "", false
 	}
 	return a.Digest, true
@@ -271,9 +267,6 @@ func (idx *Index) Verify(want Expectation) error {
 		if !ok || a.Revision != revision {
 			return fmt.Errorf("missing final revision %d for agent %q", revision, key.Handle)
 		}
-		if a.Removed {
-			continue
-		}
 		// A recorded capture failure is a witnessed final fact, not missing
 		// data: it is carried to restore as unrestorable rather than making
 		// the whole roster unverifiable. Lifecycle facts remain strict.
@@ -281,8 +274,7 @@ func (idx *Index) Verify(want Expectation) error {
 			return err
 		}
 		if a.Parent != "" {
-			parent, ok := idx.agents[Key{a.Namespace, a.Parent}]
-			if !ok || parent.Removed {
+			if _, ok := idx.agents[Key{a.Namespace, a.Parent}]; !ok {
 				return fmt.Errorf("parent %q is outside restore roster", a.Parent)
 			}
 		}
@@ -295,9 +287,6 @@ func (idx *Index) Verify(want Expectation) error {
 			}
 			seen[current] = true
 			a := idx.agents[current]
-			if a.Removed {
-				break
-			}
 			current = Key{a.Namespace, a.Parent}
 		}
 	}
@@ -307,8 +296,7 @@ func (idx *Index) Verify(want Expectation) error {
 			return fmt.Errorf("missing final subscription revision %d", revision)
 		}
 		for _, handle := range []string{s.Watched, s.Subscriber} {
-			endpoint, ok := idx.agents[Key{s.Namespace, handle}]
-			if !ok || (len(s.States) > 0 && endpoint.Removed) {
+			if _, ok := idx.agents[Key{s.Namespace, handle}]; !ok {
 				return fmt.Errorf("subscription endpoint %q is outside restore roster", handle)
 			}
 		}

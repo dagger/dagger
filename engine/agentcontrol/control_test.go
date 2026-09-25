@@ -154,7 +154,7 @@ func TestFinalRosterWitness(t *testing.T) {
 	require.ErrorContains(t, idx.Verify(want), "no recorded failure", "lifecycle facts stay strict beside a capture failure")
 }
 
-func TestParentCyclesAndRemovedRevisions(t *testing.T) {
+func TestParentCyclesAndMissingParents(t *testing.T) {
 	a, b := testAgent("a"), testAgent("b")
 	a.Parent, b.Parent = "b", "a"
 	want := Expectation{Agents: map[Key]int64{a.Key: 1, b.Key: 1}}
@@ -164,17 +164,21 @@ func TestParentCyclesAndRemovedRevisions(t *testing.T) {
 	_, err = idx.ApplyAgent(b)
 	require.NoError(t, err)
 	require.ErrorContains(t, idx.Verify(want), "parent cycle")
-	b.Revision, b.Parent, b.Removed = 2, "", true
+	b.Revision, b.Parent = 2, ""
 	_, err = idx.ApplyAgent(b)
 	require.NoError(t, err)
 	want.Agents[b.Key] = 2
-	require.ErrorContains(t, idx.Verify(want), "outside restore roster")
-	a.Revision, a.Parent = 2, ""
+	require.NoError(t, idx.Verify(want), "a later revision can break the cycle")
+	a.Revision, a.Parent = 2, "missing"
 	_, err = idx.ApplyAgent(a)
 	require.NoError(t, err)
 	want.Agents[a.Key] = 2
-	require.NoError(t, idx.Verify(want), "removed identities remain witnessed but are not executable")
+	require.ErrorContains(t, idx.Verify(want), "outside restore roster")
 	a.Revision, a.Parent = 3, "b"
+	_, err = idx.ApplyAgent(a)
+	require.NoError(t, err)
+	want.Agents[a.Key] = 3
+	require.NoError(t, idx.Verify(want))
 	a.Session = "other"
 	_, err = idx.ApplyAgent(a)
 	require.NoError(t, err)
