@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
@@ -18,10 +20,15 @@ const EngineInstanceAttr = "dagger.io/engine.instance.id"
 // ProvisionedIdentity reads standard OTEL_RESOURCE_ATTRIBUTES. Engine-controlled
 // deployment attributes also accompany telemetry posted by local SDKs. Preserve
 // those SDKs' service identity. Remote-engine streams do not use this enrichment.
-func ProvisionedIdentity(ctx context.Context, instance string) ([]*commonpb.KeyValue, error) {
+// Invalid environment entries must not prevent engine startup. Keep the valid
+// attributes on a partial read, or only the engine instance on other errors.
+func ProvisionedIdentity(ctx context.Context, instance string) []*commonpb.KeyValue {
 	res, err := resource.New(ctx, resource.WithFromEnv())
 	if err != nil {
-		return nil, err
+		slog.Warn("failed to read telemetry identity", "error", err)
+		if !errors.Is(err, resource.ErrPartialResource) {
+			res = resource.Empty()
+		}
 	}
 	attrs := make([]attribute.KeyValue, 0, res.Len()+1)
 	for _, kv := range res.Attributes() {
@@ -30,7 +37,7 @@ func ProvisionedIdentity(ctx context.Context, instance string) ([]*commonpb.KeyV
 		}
 	}
 	attrs = append(attrs, attribute.String(EngineInstanceAttr, instance))
-	return telemetry.KeyValues(attrs), nil
+	return telemetry.KeyValues(attrs)
 }
 
 // EnrichResourcePB updates only explicitly provided keys. It leaves other OTLP

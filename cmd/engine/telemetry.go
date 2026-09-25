@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -115,7 +116,9 @@ func InitTelemetry(ctx context.Context, engineInstanceID string, destinations ..
 			attribute.String(enginetel.EngineInstanceAttr, engineInstanceID),
 		),
 	)
-	if err != nil {
+	if errors.Is(err, resource.ErrPartialResource) {
+		slog.Warn("incomplete OTel resource", "error", err)
+	} else if err != nil {
 		slog.Error("failed to create OTel resource", "error", err)
 		return ctx, nil
 	}

@@ -266,11 +266,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
-	var err error
-	srv.telemetryIdentity, err = enginetel.ProvisionedIdentity(ctx, srv.engineInstanceID)
-	if err != nil {
-		return nil, fmt.Errorf("configure telemetry identity: %w", err)
-	}
+	srv.telemetryIdentity = enginetel.ProvisionedIdentity(ctx, srv.engineInstanceID)
 	if err := srv.configureLocalCacheGC(cfg.GC, ociCfg.GCConfig); err != nil {
 		return nil, err
 	}
@@ -293,6 +289,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup directories and paths
 	//
 
+	var err error
 	srv.rootDir, err = filepath.Abs(srv.rootDir)
 	if err != nil {
 		return nil, err
