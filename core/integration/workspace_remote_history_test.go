@@ -329,6 +329,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 			}
 			if demand == "deep log" || demand == "old path" {
 				oldSHA := fixture.git(ctx, t, "rev-parse", "old")
+				require.Contains(t, workspaceRemoteHistorySHAs(ctx, t, commits), oldSHA)
 				for _, commit := range commits {
 					sha, err := commit.Sha(ctx)
 					require.NoError(t, err)
@@ -373,16 +374,29 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryUnavailable(ctx context.Cont
 	ws := workspaceRemoteHistoryCommit(ctx, t, c, fixture.repo.Head().AsWorkspace(), 1)
 	_, err := fixture.server.WithExec([]string{"rm", "-rf", "/srv/repo.git"}).Sync(ctx)
 	require.NoError(t, err)
-	// Source-only operations stay usable offline. History beyond the captured
-	// boundary must fail explicitly, never return an apparently complete prefix.
-	contents, err := ws.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("selected.txt").Contents(ctx)
+	// Native descendants remain usable without the origin. Use another tree
+	// selector to exercise source materialization, rather than only a cached
+	// directory read. Even explicit full depth means no history for source-only
+	// consumption. History beyond the boundary must fail, not return a prefix.
+	firstSHA, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "local 1\n", contents)
-	_, err = ws.Git().Head().Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+	ws = workspaceRemoteHistoryCommit(ctx, t, c, ws, 2)
+	head := ws.Git().Head()
+	headSHA, err := head.CommitSHA(ctx)
+	require.NoError(t, err)
+	contents, err := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true, Depth: -1}).File("selected.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "local 2\n", contents)
+	recent, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+	require.NoError(t, err)
+	require.Equal(t, []string{headSHA, firstSHA}, workspaceRemoteHistorySHAs(ctx, t, recent))
+	_, err = head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
 	require.Error(t, err, "unavailable ancestry must not silently truncate deep history")
 	_, err = ws.Git().Head().Log(ctx, dagger.GitRefLogOpts{Paths: []string{"ancient.txt"}, Limit: 100})
 	require.Error(t, err, "unavailable ancestry must not silently omit old path matches")
 	require.NoError(t, c.Close())
 	_, full := workspaceRemoteHistoryFetches(sink, "GitRef.log")
 	require.NotEmpty(t, full, "failure must come from attempting the deferred remote fetch")
+	_, commitFetches := workspaceRemoteHistoryFetches(sink, "Workspace.withCommit")
+	require.Empty(t, commitFetches, "native descendants must commit without hydrating the unavailable origin")
 }
