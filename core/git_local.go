@@ -25,6 +25,9 @@ import (
 type LocalGitRepository struct {
 	Directory    dagql.ObjectResult[*Directory]
 	CheckoutBase *GitCheckoutBase
+	// HistorySource is the exact authorized remote anchor of owned shallow
+	// storage. Descendant commits retain one capability, not an ancestry chain.
+	HistorySource dagql.ObjectResult[*GitRef]
 }
 
 // GitCheckoutBase retains the exact canonical parent recipe of a checked commit.
@@ -114,10 +117,15 @@ func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, er
 }
 
 // ResolveShortSHA expands an abbreviated commit SHA against the repository's
-// own object database, which is fully available locally.
+// authorized object database. Owned shallow storage hydrates on this explicit
+// demand so unknown ancestry cannot hide an ambiguous prefix.
 func (repo *LocalGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	complete, err := repo.fullHistory(ctx)
+	if err != nil {
+		return "", err
+	}
 	var sha string
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err = complete.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
 		var err error
 		sha, err = git.ResolveShortSHA(ctx, prefix)
 		return err
@@ -295,6 +303,15 @@ func withTemporaryGitIndex(idx io.Reader, tmp *os.File, run func(string) error) 
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
+	// A nil refs list is a raw-storage request (identity, staging, validation).
+	// Bundle/push/export callers explicitly request refs and complete history.
+	if len(refs) > 0 && repo.HistorySource.Self() != nil {
+		complete, err := repo.fullHistory(ctx)
+		if err != nil {
+			return err
+		}
+		return complete.mount(ctx, depth, includeTags, nil, fn)
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -330,7 +347,7 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTag
 }
 
 func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
-	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
+	return ref.mountHistory(ctx, depth, includeTags, fn)
 }
 
 // readGitConfigRemotes reads the remotes configured on the repository the
@@ -420,7 +437,11 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		}
 	}()
 
-	err = ref.mount(ctx, depth, includeTags, func(git *gitutil.GitCLI) error {
+	mountDepth := depth
+	if discardGitDir {
+		mountDepth = 1
+	}
+	err = ref.mount(ctx, mountDepth, includeTags, func(git *gitutil.GitCLI) error {
 		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git url: %w", err)
@@ -502,6 +523,13 @@ func initLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.Git
 	}
 	gitDir, err := checkout.GitDir(ctx)
 	if err != nil {
+		return err
+	}
+	shallow, err := source.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "shallow")
+	if err != nil {
+		return err
+	}
+	if err := copyGitShallowBoundary(filepath.Dir(strings.TrimSuffix(string(shallow), "\n")), gitDir); err != nil {
 		return err
 	}
 	// Alternates uses one C-quoted path per line, including paths with spaces,

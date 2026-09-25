@@ -60,6 +60,31 @@ func TestNativeCommitBaseCacheScope(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2, calls, "exact recipes deduplicate, equal contents do not authorize reuse")
+	calls = 0
+	dagql.Fields[*core.GitRef]{dagql.NodeFuncWithDynamicInputs("__hydrateRepository", func(ctx context.Context, _ dagql.ObjectResult[*core.GitRef], _ gitRefHydrateRepositoryArgs) (dagql.ObjectResult[*core.Directory], error) {
+		calls++
+		dir := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory])}
+		dir.SetPath("/")
+		dir.SetSnapshot(nil)
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	}, s.gitRefHydrateRepositoryKey).IsPersistable()}.Install(srv)
+	for _, key := range []string{"first-storage", "second-storage"} {
+		dir := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory])}
+		dir.SetPath("/")
+		dir.SetSnapshot(nil)
+		storage := resolverAttach(t, ctx, srv, cache, key, dir)
+		storage, err = storage.WithContentDigest(ctx, hashutil.HashStrings("same-storage-content"), call.ExtraDigestLabelRemoteCache)
+		require.NoError(t, err)
+		id, err := storage.RecipeID(ctx)
+		require.NoError(t, err)
+		for range 2 {
+			for _, ref := range refs {
+				var result dagql.ObjectResult[*core.Directory]
+				require.NoError(t, srv.Select(ctx, ref, &result, dagql.Selector{Field: "__hydrateRepository", Args: []dagql.NamedInput{{Name: "directory", Value: dagql.NewID[*core.Directory](id)}, {Name: "scope", Value: dagql.String("forged-scope")}}}))
+			}
+		}
+	}
+	require.Equal(t, 4, calls, "hydration is scoped to both exact source and owned storage recipes")
 }
 
 func TestGitResolvedFrames(t *testing.T) {

@@ -492,6 +492,17 @@ func (repo *GitRepository) AttachDependencyResults(
 			backend.Directory = typed
 			owned = append(owned, typed)
 		}
+		if backend.HistorySource.Self() != nil {
+			if err := backend.validateHistorySource(ctx); err != nil {
+				return nil, err
+			}
+			source, err := attachLazyInput(attach, backend.HistorySource, "git history source")
+			if err != nil {
+				return nil, err
+			}
+			backend.HistorySource = source
+			owned = append(owned, source)
+		}
 		if backend.CheckoutBase != nil {
 			if err := backend.CheckoutBase.validateTree(ctx); err != nil {
 				return nil, err
@@ -646,8 +657,9 @@ type persistedGitRemotePayload struct {
 }
 
 type persistedLocalGitRepositoryPayload struct {
-	DirectoryResultID uint64                    `json:"directoryResultID"`
-	CheckoutBase      *persistedGitCheckoutBase `json:"checkoutBase,omitempty"`
+	HistorySourceResultID uint64                    `json:"historySourceResultID,omitempty"`
+	DirectoryResultID     uint64                    `json:"directoryResultID"`
+	CheckoutBase          *persistedGitCheckoutBase `json:"checkoutBase,omitempty"`
 }
 
 type persistedGitCheckoutBase struct {
@@ -775,6 +787,16 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, enc *dagql
 		payload.Local = &persistedLocalGitRepositoryPayload{
 			DirectoryResultID: dirID,
 		}
+		if backend.HistorySource.Self() != nil {
+			if err := backend.validateHistorySource(ctx); err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			sourceID, err := encodePersistedObjectRef(enc, backend.HistorySource, "git history source")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			payload.Local.HistorySourceResultID = sourceID
+		}
 		if base := backend.CheckoutBase; base != nil {
 			if err := base.validateTree(ctx); err != nil {
 				return dagql.PersistedObjectEncoding{}, err
@@ -844,6 +866,16 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 			return nil, err
 		}
 		backend := &LocalGitRepository{Directory: dir}
+		if persisted.Local.HistorySourceResultID != 0 {
+			source, err := loadPersistedObjectResultByResultID[*GitRef](ctx, dec, persisted.Local.HistorySourceResultID, "git history source")
+			if err != nil {
+				return nil, err
+			}
+			backend.HistorySource = source
+			if err := backend.validateHistorySource(ctx); err != nil {
+				return nil, err
+			}
+		}
 		if base := persisted.Local.CheckoutBase; base != nil {
 			if err := base.validate(); err != nil {
 				return nil, err
@@ -863,6 +895,9 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 					return nil, err
 				}
 			}
+		}
+		if err := backend.validateHistorySource(ctx); err != nil {
+			return nil, err
 		}
 		repo.Backend = backend
 	case persistedGitRepositoryFormRemote:
@@ -1007,7 +1042,11 @@ func (commit *GitCommit) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if commit == nil || commit.Ref == nil {
 		return nil, fmt.Errorf("git commit tree: missing commit")
 	}
-	if err := commit.prefetch(ctx, depth, includeTags); err != nil {
+	prefetchDepth := depth
+	if commit.Repo.Self().DiscardGitDir || discardGitDir {
+		prefetchDepth = 1
+	}
+	if err := commit.prefetch(ctx, prefetchDepth, includeTags); err != nil {
 		return nil, err
 	}
 	backend, err := commit.Repo.Self().Backend.Get(ctx, commit.Ref)
@@ -1386,6 +1425,9 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 		})
 	}
 
+	if handled, err := mountOwnedShallowParentHistory(ctx, refs, fn); err != nil || handled {
+		return err
+	}
 	historyRefs, err := nativeParentHistoryRefs(ctx, refs)
 	if err != nil {
 		return err

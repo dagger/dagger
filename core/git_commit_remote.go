@@ -38,10 +38,10 @@ func nativeCommitRepository(ctx context.Context, parent dagql.ObjectResult[*GitR
 		return nil, err
 	}
 	var dir dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, pinned, &dir, dagql.Selector{Field: "__nativeCommitBase"}); err != nil {
+	if err := srv.Select(ctx, pinned, &dir, dagql.Selector{Field: "__nativeCommitBase", Args: []dagql.NamedInput{{Name: "depth", Value: dagql.Int(1)}}}); err != nil {
 		return nil, err
 	}
-	return &LocalGitRepository{Directory: dir}, nil
+	return &LocalGitRepository{Directory: dir, HistorySource: pinned}, nil
 }
 
 // GitRemoteCommitBase promotes only the pinned commit's reachable closure. The
@@ -49,7 +49,10 @@ func nativeCommitRepository(ctx context.Context, parent dagql.ObjectResult[*GitR
 // neither copying its packs wholesale nor inheriting its refs is safe. Hydrate
 // through the normal authenticated fetch path, then pack into private storage
 // while the mirror lock is held. Publication never writes to the mirror.
-func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]) (_ *Directory, rerr error) {
+func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef], depth int) (_ *Directory, rerr error) {
+	if depth != 0 && depth != 1 {
+		return nil, fmt.Errorf("remote commit base depth must be zero or one")
+	}
 	ref, ok := parent.Self().Backend.(*RemoteGitRef)
 	if !ok || ref.Ref == nil || len(ref.SHA) != 40 || !IsFullGitSHA(ref.SHA) {
 		return nil, nativeCommitUnsupportedReason("remote-ref")
@@ -71,13 +74,13 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 			rerr = errors.Join(rerr, result.OnRelease(context.WithoutCancel(ctx)))
 		}
 	}()
-	// This may unshallow the mirror, just as a retained legacy checkout does.
-	// Never shift full-history hydration into Workspace.snapshot.
-	err = ref.mount(ctx, 0, false, func(_ *gitutil.GitCLI) error {
+	// Only explicit history consumers request depth zero. Ordinary commits
+	// own a single-commit source boundary, even if the mirror is already warm.
+	err = ref.mount(ctx, depth, false, func(_ *gitutil.GitCLI) error {
 		// mount holds both the mirror lock and its snapshot lease. Borrow an
 		// actual read-only mount so Git cannot freshen inherited pack mtimes.
 		return MountRef(ctx, ref.repo.Mirror.Self().snapshot, func(source string, _ *mount.Mount) error {
-			if _, err := nativeCommitGitDir(ctx, source); err != nil {
+			if _, err := nativeCommitGitDirWithShallow(ctx, source, true); err != nil {
 				return err
 			}
 			child, err = query.SnapshotManager().New(ctx, nil,
@@ -87,7 +90,7 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 				return err
 			}
 			return MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
-				return packRemoteCommitBase(ctx, source, dest, ref.SHA, MergeGitRemotes([]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}}, parent.Self().Repo.Self().Remotes))
+				return packRemoteCommitBaseDepth(ctx, source, dest, ref.SHA, MergeGitRemotes([]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}}, parent.Self().Repo.Self().Remotes), depth)
 			})
 		}, mountRefAsReadOnly)
 	})
@@ -108,18 +111,32 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 // A non-thin pack contains exactly the selected history, even when unrelated
 // objects are delta bases in the donor pack. Git reuses compressed objects where
 // possible; the cost of traversal/packing is still real and traced separately.
-func packRemoteCommitBase(ctx context.Context, source, dest, sha string, remotes []GitRemote) (rerr error) {
+func packRemoteCommitBase(ctx context.Context, source, dest, sha string, remotes []GitRemote) error {
+	if _, err := nativeCommitGitDir(ctx, source); err != nil {
+		return err
+	}
+	return packRemoteCommitBaseDepth(ctx, source, dest, sha, remotes, 0)
+}
+
+func packRemoteCommitBaseDepth(ctx context.Context, source, dest, sha string, remotes []GitRemote, depth int) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "git pack remote commit closure", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 	if len(sha) != 40 || !IsFullGitSHA(sha) {
 		return fmt.Errorf("remote commit base requires a complete SHA-1")
 	}
-	gitDir, err := nativeCommitGitDir(ctx, source)
+	gitDir, err := nativeCommitGitDirWithShallow(ctx, source, true)
 	if err != nil {
 		return err
 	}
 	if _, err := runWorkspaceCommitGit(ctx, dest, nil, "init", "--bare", "--template=", "--object-format=sha1"); err != nil {
 		return err
+	}
+	if depth == 1 {
+		// The boundary is explicit even when the borrowed mirror is complete.
+		// Never copy its unrelated shallow markers or rely on alternate metadata.
+		if err := os.WriteFile(filepath.Join(dest, "shallow"), []byte(sha+"\n"), 0644); err != nil {
+			return err
+		}
 	}
 	// pack-objects creates temporary files in its primary object database,
 	// even with an absolute output prefix. Keep that database private too.

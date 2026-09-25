@@ -52,10 +52,13 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		return nil, false, err
 	}
 	var result *Directory
-	err = ref.mount(ctx, 0, false, func(source *gitutil.GitCLI) (rerr error) {
+	err = ref.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) (rerr error) {
+		if _, err := ref.repo.nativeGitDir(ctx, source.Dir()); err != nil {
+			return err
+		}
 		// These gates run before selecting/evaluating the parent tree. Unsupported
 		// controls must re-checkout every file, including otherwise unchanged blobs.
-		plan, reason, err := planIncrementalGitCheckout(ctx, source, ref.repo.CheckoutBase.Parent.Self().Ref.SHA, ref.SHA)
+		plan, reason, err := planIncrementalGitCheckout(ctx, source, ref.repo.CheckoutBase.Parent.Self().Ref.SHA, ref.SHA, ref.repo.HistorySource.Self() != nil)
 		if err != nil {
 			return err
 		}
@@ -126,14 +129,14 @@ type incrementalGitCheckoutPlan struct {
 
 // No baseline filesystem traversal: tree/index scans are Git metadata only.
 // A supported result is immutable evidence for the immediately following apply.
-func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, parent, child string) (*incrementalGitCheckoutPlan, string, error) {
+func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, parent, child string, ownedShallow ...bool) (*incrementalGitCheckoutPlan, string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
 	if len(parent) != 40 || len(child) != 40 || !IsFullGitSHA(parent) || !IsFullGitSHA(child) {
 		return nil, "commit-format", nil
 	}
-	if _, err := nativeCommitGitDir(ctx, source.Dir()); err != nil {
+	if _, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), len(ownedShallow) > 0 && ownedShallow[0]); err != nil {
 		if nativeCommitFallback(err) {
 			return nil, "repository-layout", nil
 		}

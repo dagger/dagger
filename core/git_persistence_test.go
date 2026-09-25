@@ -82,14 +82,16 @@ func TestRemoteGitCheckoutBasePersistence(t *testing.T) {
 	var otherTree, retainedGitTree dagql.ObjectResult[*Directory]
 	require.NoError(t, srv.Select(ctx, other, &otherTree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}))
 	require.NoError(t, srv.Select(ctx, parent, &retainedGitTree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(false)}}}))
+	otherID := persistedRowID(t, cache, other)
 	otherTreeID, retainedTreeID := persistedRowID(t, cache, otherTree), persistedRowID(t, cache, retainedGitTree)
 	dir := env.directory(t, ctx, cache, srv, "owned-child", "owned-child-snapshot")
 	sha := strings.Repeat("b", 40)
-	child := env.attach(t, ctx, cache, srv, "child", &GitRepository{Backend: &LocalGitRepository{Directory: dir, CheckoutBase: &GitCheckoutBase{Parent: parent, Tree: tree, CommitSHA: sha}}, Remote: &gitutil.Remote{}})
+	child := env.attach(t, ctx, cache, srv, "child", &GitRepository{Backend: &LocalGitRepository{Directory: dir, HistorySource: parent, CheckoutBase: &GitCheckoutBase{Parent: parent, Tree: tree, CommitSHA: sha}}, Remote: &gitutil.Remote{}})
 	childID, parentID, treeID, dirID := persistedRowID(t, cache, child), persistedRowID(t, cache, parent), persistedRowID(t, cache, tree), persistedRowID(t, cache, dir)
 	require.Equal(t, map[string]uint64{
 		"objectJSON.local.directoryResultID":           dirID,
 		"objectJSON.local.checkoutBase.parentResultID": parentID,
+		"objectJSON.local.historySourceResultID":       parentID,
 		"objectJSON.local.checkoutBase.treeResultID":   treeID,
 	}, assertPersistedRefsMatchOwnership(t, ctx, cache, child))
 	encoding := persistedEncoding(t, ctx, cache, child)
@@ -101,6 +103,8 @@ func TestRemoteGitCheckoutBasePersistence(t *testing.T) {
 		loaded, err := cache.LoadResultByResultID(ctx, env.session, srv, childID)
 		require.NoError(t, err)
 		local := loaded.Unwrap().(*GitRepository).Backend.(*LocalGitRepository)
+		require.Equal(t, parentID, persistedRowID(t, cache, local.HistorySource))
+		require.NoError(t, local.validateHistorySource(ctx))
 		require.Equal(t, treeID, persistedRowID(t, cache, local.CheckoutBase.Tree))
 		require.Equal(t, parentID, persistedRowID(t, cache, local.CheckoutBase.Parent))
 		require.Equal(t, "authorized-reader", local.CheckoutBase.Parent.Self().Repo.Self().Backend.(*RemoteGitRepository).AuthUsername)
@@ -111,6 +115,15 @@ func TestRemoteGitCheckoutBasePersistence(t *testing.T) {
 		require.Equal(t, "canonical-snapshot", snapshot.SnapshotID())
 		require.True(t, (&LocalGitRef{Ref: &gitutil.Ref{SHA: sha}, repo: local}).incrementalCheckoutEligible())
 		require.Equal(t, encoding.Envelope, persistedEncoding(t, ctx, cache, loaded).Envelope)
+	}
+	for _, badSource := range []uint64{dirID, otherID, 999999} {
+		var payload persistedGitRepositoryPayload
+		require.NoError(t, json.Unmarshal(encoding.Envelope.ObjectJSON, &payload))
+		payload.Local.HistorySourceResultID = badSource
+		data, err := json.Marshal(payload)
+		require.NoError(t, err)
+		_, err = (&GitRepository{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, childID, frame), data)
+		require.Error(t, err)
 	}
 	for _, badTree := range []uint64{parentID, dirID, otherTreeID, retainedTreeID, 999999} {
 		var payload persistedGitRepositoryPayload

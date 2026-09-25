@@ -229,7 +229,8 @@ func nativeCommitFallback(err error) bool {
 //
 // The bool is false only for explicitly unsupported provenance/storage/semantics.
 // Errors (including cancellation and missing objects) must not trigger fallback.
-// Currently supported: complete snapshot-owned SHA-1 branches/commit IDs without
+// Currently supported: complete snapshot-owned SHA-1 branches/commit IDs, or
+// owned shallow history with an exact remote anchor capability, without
 // alternates or linked worktrees. Remote inputs first acquire an owned closure
 // through their exact repository recipe. Ordinary files/symlinks include Git
 // attributes and ignore rules. Changes touching gitlinks or .gitmodules use the
@@ -260,7 +261,7 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 	}
 	var gitSubdir string
 	dir, err := withGitMergeWorkspace(ctx, local.Directory, "GitRef native commit transaction", func(ws *gitMergeWorkspace) error {
-		gitDir, err := nativeCommitGitDir(ctx, ws.workDir)
+		gitDir, err := local.nativeGitDir(ctx, ws.workDir)
 		if err != nil {
 			return err
 		}
@@ -302,6 +303,10 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 // nativeCommitGitDir accepts only an object database owned by this snapshot.
 // In particular a borrowed/partial database must not become a durable output.
 func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
+	return nativeCommitGitDirWithShallow(ctx, root, false)
+}
+
+func nativeCommitGitDirWithShallow(ctx context.Context, root string, allowShallow bool) (string, error) {
 	gitDir := filepath.Join(root, ".git")
 	info, err := os.Lstat(gitDir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -321,7 +326,7 @@ func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", err
 		}
-		if len(data) != 0 {
+		if len(data) != 0 && !(allowShallow && entry.path == "shallow") {
 			return "", nativeCommitUnsupportedReason(entry.reason)
 		}
 	}
@@ -402,6 +407,9 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	}
 	meta := filepath.Join(scratch, "repo")
 	if _, err := runWorkspaceCommitGit(ctx, scratch, nil, "init", "--bare", "--template=", "--object-format=sha1", meta); err != nil {
+		return err
+	}
+	if err := copyGitShallowBoundary(filepath.Dir(parentObjects), meta); err != nil {
 		return err
 	}
 	remotes, err := readGitConfigRemotes(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(gitDir)))

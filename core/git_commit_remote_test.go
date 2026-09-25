@@ -53,6 +53,45 @@ func TestRemoteCommitBaseProvenance(t *testing.T) {
 	require.False(t, ok, "arbitrary snapshot equality is not provenance")
 }
 
+func TestOwnedShallowPromotion(t *testing.T) {
+	ctx := t.Context()
+	source, _, anchor := gitMirrorTestSource(t)
+	gitMirrorTestRun(t, source, "gc")
+	shallow := t.TempDir()
+	require.NoError(t, packRemoteCommitBaseDepth(ctx, source, shallow, anchor, nil, 1))
+	require.Equal(t, "true", gitMirrorTestRun(t, shallow, "rev-parse", "--is-shallow-repository"))
+	require.Equal(t, "1", gitMirrorTestRun(t, shallow, "rev-list", "--count", "HEAD"))
+	// Even a warm complete donor must not leak older objects into promotion.
+	want := gitMirrorTestRun(t, shallow, "rev-list", "--objects", "--no-object-names", "HEAD")
+	inventory := gitMirrorTestRun(t, shallow, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")
+	require.ElementsMatch(t, strings.Fields(want), strings.Fields(inventory))
+	original := localTreeSnapshot(t, source)
+	opts := GitCommitOpts{Message: "shallow child", Date: "2026-01-01T00:00:00Z", AuthorName: "Shallow", AuthorEmail: "shallow@example.com"}
+	require.NoError(t, withNativeCommitIndex(ctx, shallow, filepath.Join(shallow, "objects"), &gitutil.Ref{SHA: anchor}, &ChangesetPaths{Added: []string{"new"}}, opts, func(work string) error {
+		return os.WriteFile(filepath.Join(work, "new"), []byte("new\n"), 0644)
+	}))
+	child := gitMirrorTestRun(t, shallow, "rev-parse", "HEAD")
+	require.Equal(t, []string{child, anchor}, strings.Fields(gitMirrorTestRun(t, shallow, "rev-list", "--max-count=2", "HEAD")))
+	gitMirrorTestRun(t, shallow, "fsck", "--full", "--strict")
+	// A complete demand against an actually incomplete source must fail, not
+	// merely omit its shallow file and silently publish truncated ancestry.
+	err := packRemoteCommitBaseDepth(ctx, shallow, t.TempDir(), anchor, nil, 0)
+	require.Error(t, err)
+	require.False(t, nativeCommitFallback(err))
+	complete := t.TempDir()
+	require.NoError(t, packRemoteCommitBaseDepth(ctx, source, complete, anchor, nil, 0))
+	require.Equal(t, gitMirrorTestRun(t, source, "rev-list", "--count", anchor), gitMirrorTestRun(t, complete, "rev-list", "--count", anchor))
+	require.Equal(t, original, localTreeSnapshot(t, source))
+	require.NoError(t, os.RemoveAll(source))
+	gitMirrorTestRun(t, shallow, "fsck", "--full", "--strict")
+	gitMirrorTestRun(t, complete, "fsck", "--full", "--strict")
+	for _, value := range []string{anchor + "\n" + strings.Repeat("f", 40) + "\n", strings.Repeat("b", 40) + "\n"} {
+		require.NoError(t, os.WriteFile(filepath.Join(shallow, "shallow"), []byte(value), 0644))
+		_, err := ownedShallowBoundary(shallow, anchor)
+		require.ErrorContains(t, err, "boundary")
+	}
+}
+
 func TestRemoteCommitBaseIsolation(t *testing.T) {
 	ctx := t.Context()
 	source := historyRepo(t, "sha1")
