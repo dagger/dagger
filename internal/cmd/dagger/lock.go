@@ -11,6 +11,85 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var lockCmd = &cobra.Command{
+	Use:   "lock",
+	Short: "Manage Dagger lockfiles",
+	Args:  cobra.NoArgs,
+}
+
+func init() {
+	lockCmd.AddCommand(newLockListCmd())
+	lockCmd.AddCommand(newLockUpdateCmd())
+}
+
+func newLockListCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list [SELECTOR...]",
+		Short: "List matching lockfile entries",
+		Long: `List entries already recorded in the selected dagger.lock.
+
+Selectors use the same matching rules as dagger lock update. With no selectors,
+every supported entry is listed. The command prints canonical resource
+identities without resolving or writing them.`,
+		Example: `  dagger lock list
+  dagger lock list 'node:lts*' 'dagger@m*'
+  dagger lock list 'github.com/dagger/dagger@refs/heads/main'`,
+		Args: cobra.ArbitraryArgs,
+		RunE: runLockList,
+	}
+	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
+	setWorkspaceFlagPolicy(cmd)
+	return cmd
+}
+
+func newLockUpdateCmd() *cobra.Command {
+	var noGenerate bool
+	var list bool
+	cmd := &cobra.Command{
+		Use:   "update [SELECTOR...]",
+		Short: "Refresh selected lockfile entries",
+		Long: `Refresh entries already recorded in the selected dagger.lock.
+
+Selectors match user-facing resource identities instead of lockfile entry
+types. OCI entries match their full image reference, repository name, or short
+reference with a tag. For example, both "node" and "node:lts*" match
+"docker.io/library/node:lts-alpine". Git entries match a scheme-free repository
+identity or repository name, optionally followed by a ref. "dagger@main" and
+"dagger@m*" match both "refs/heads/main" and "refs/tags/main" in repositories
+named dagger. Use a qualified ref such as
+"github.com/dagger/dagger@refs/heads/main" to select only that branch. Vanity
+URL entries match their full URL or final path component.
+
+Selectors support shell-style patterns, with "*" matching across "/". Multiple
+selectors are ORed together, but every selector must match at least one entry.
+With no selectors, every supported entry is refreshed.
+
+SDK client scopes are regenerated unless --no-generate is set. Use --list to
+print the matching canonical identities without resolving or writing them. This
+is equivalent to dagger lock list with the same selectors.`,
+		Example: `  dagger lock update
+  dagger lock update 'node:lts*' 'dagger@m*'
+  dagger lock update 'github.com/dagger/dagger@refs/heads/main'
+  dagger lock update '*node*' '*python*'
+  dagger lock update --list dagger`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, selectors []string) error {
+			if list && noGenerate {
+				return fmt.Errorf("--list and --no-generate cannot be used together")
+			}
+			if list {
+				return runLockList(cmd, selectors)
+			}
+			return runLockUpdate(cmd, selectors, noGenerate)
+		},
+	}
+	cmd.Flags().BoolVar(&noGenerate, "no-generate", false, "Update the lockfile without regenerating SDK client scopes")
+	cmd.Flags().BoolVarP(&list, "list", "l", false, "List matching lock entries without resolving or updating them")
+	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
+	setWorkspaceFlagPolicy(cmd)
+	return cmd
+}
+
 func runModuleUpdate(cmd *cobra.Command, names []string) error {
 	version, err := cmd.Flags().GetString("version")
 	if err != nil {
@@ -71,17 +150,73 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 	})
 }
 
-func runWorkspaceUpdate(cmd *cobra.Command, _ []string, noGenerate bool) error {
+func runLockList(cmd *cobra.Command, selectors []string) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
-		return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger(), noGenerate)
+		return printSelectedLockEntries(ctx, cmd.OutOrStdout(), engineClient.Dagger(), selectors)
 	})
 }
 
-func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client, noGenerate bool) error {
+func runLockUpdate(cmd *cobra.Command, selectors []string, noGenerate bool) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger(), selectors, noGenerate)
+	})
+}
+
+func printSelectedLockEntries(ctx context.Context, outWriter io.Writer, dag *dagger.Client, selectors []string) error {
+	var result struct {
+		CurrentWorkspace struct {
+			Entries []string `json:"__lockEntries"`
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query: `query LockUpdateDryRun($selectors: [String!]!) {
+  currentWorkspace {
+    __lockEntries(selectors: $selectors)
+  }
+}`,
+		Variables: map[string]any{"selectors": selectors},
+	}, &dagger.Response{Data: &result}); err != nil {
+		return err
+	}
+	if len(result.CurrentWorkspace.Entries) == 0 {
+		_, err := fmt.Fprintln(outWriter, "No lock entries")
+		return err
+	}
+	for _, entry := range result.CurrentWorkspace.Entries {
+		if _, err := fmt.Fprintln(outWriter, entry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client, selectors []string, noGenerate bool) error {
 	current := dag.CurrentWorkspace()
-	updated := current.WithUpdatedLock(dagger.WorkspaceWithUpdatedLockOpts{NoGenerate: noGenerate})
+	var result struct {
+		CurrentWorkspace struct {
+			Updated struct {
+				ID dagger.ID
+			} `json:"updated"`
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query: `query LockUpdate($selectors: [String!]!, $noGenerate: Boolean!) {
+  currentWorkspace {
+    updated: __withUpdatedLock(selectors: $selectors, noGenerate: $noGenerate) { id }
+  }
+}`,
+		Variables: map[string]any{"selectors": selectors, "noGenerate": noGenerate},
+	}, &dagger.Response{Data: &result}); err != nil {
+		return err
+	}
+	if result.CurrentWorkspace.Updated.ID == "" {
+		return fmt.Errorf("lock update returned no workspace")
+	}
+	updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Updated.ID)
 	return updateMaterializedWorkspace(ctx, outWriter, dag, current, updated)
 }
 
@@ -104,10 +239,10 @@ func updateMaterializedWorkspace(ctx context.Context, outWriter io.Writer, dag *
 
 func writeWorkspaceUpdateResult(outWriter io.Writer, isEmpty bool) error {
 	if isEmpty {
-		_, err := outWriter.Write([]byte("Workspace already up to date\n"))
+		_, err := outWriter.Write([]byte("Lockfile already up to date\n"))
 		return err
 	}
 
-	_, err := outWriter.Write([]byte("Updated workspace\n"))
+	_, err := outWriter.Write([]byte("Updated dagger.lock\n"))
 	return err
 }

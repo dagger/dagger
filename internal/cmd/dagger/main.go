@@ -177,6 +177,7 @@ func init() {
 	agentCmd.GroupID = "daily"
 
 	moduleCmd.GroupID = "workspace"
+	lockCmd.GroupID = "workspace"
 	sdkCmd.GroupID = "workspace"
 	installAliasCmd.GroupID = "workspace"
 	uninstallAliasCmd.GroupID = "workspace"
@@ -205,6 +206,7 @@ func init() {
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
+		lockCmd,
 		moduleCmd,
 		sdkCmd,
 		installAliasCmd,

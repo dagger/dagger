@@ -38,23 +38,45 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 
-	cmd, _, err = rootCmd.Find([]string{"workspace", "update"})
+	cmd, _, err = rootCmd.Find([]string{"lock", "update"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
+	require.Nil(t, cmd.Flags().Lookup("dry-run"))
+	listFlag := cmd.Flags().Lookup("list")
+	require.NotNil(t, listFlag)
+	require.Equal(t, "l", listFlag.Shorthand)
+	require.NotNil(t, cmd.Flags().Lookup("no-generate"))
+
+	cmd, _, err = rootCmd.Find([]string{"lock", "list"})
+	require.NoError(t, err)
+	require.False(t, cmd.Hidden)
+	require.Nil(t, cmd.Flags().Lookup("list"))
+	require.Nil(t, cmd.Flags().Lookup("no-generate"))
 }
 
-func TestWorkspaceUpdateGlobalFlags(t *testing.T) {
+func TestLockUpdateListRejectsNoGenerate(t *testing.T) {
+	cmd := newLockUpdateCmd()
+	require.NoError(t, cmd.Flags().Set("list", "true"))
+	require.NoError(t, cmd.Flags().Set("no-generate", "true"))
+	require.EqualError(t, cmd.RunE(cmd, nil), "--list and --no-generate cannot be used together")
+}
+
+func TestLockUpdateGlobalFlags(t *testing.T) {
 	root := testRootCommand()
-	for _, flag := range []string{"--engine=auto", "--workspace=.", "--env=dev"} {
-		require.NoError(t, validateFlagCapabilities(root, []string{"workspace", "update", flag}), flag)
+	for _, command := range []string{"list", "update"} {
+		for _, flag := range []string{"--engine=auto", "--workspace=.", "--env=dev"} {
+			require.NoError(t, validateFlagCapabilities(root, []string{"lock", command, flag}), flag)
+		}
 	}
 	for _, flag := range []string{"--silent", "--progress", "--auto-apply"} {
 		arg := flag
 		if flag == "--progress" {
 			arg += "=plain"
 		}
-		require.EqualError(t, validateFlagCapabilities(root, []string{"workspace", "update", arg}),
-			fmt.Sprintf("flag %s is not supported by command %q", flag, "dagger workspace update"))
+		for _, command := range []string{"list", "update"} {
+			require.EqualError(t, validateFlagCapabilities(root, []string{"lock", command, arg}),
+				fmt.Sprintf("flag %s is not supported by command %q", flag, "dagger lock "+command))
+		}
 	}
 }
 
@@ -71,6 +93,19 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, rootCmd, cmd)
 	require.Equal(t, []string{"i"}, args)
+}
+
+func TestWorkspaceUpdateMovedToLockUpdate(t *testing.T) {
+	for _, command := range []string{"workspace", "ws"} {
+		cmd, args, err := rootCmd.Find([]string{command, "update"})
+		require.NoError(t, err)
+		require.Same(t, workspaceUpdateCmd, cmd)
+		require.Empty(t, args)
+		require.True(t, cmd.Hidden)
+		require.True(t, cmd.DisableFlagParsing)
+		require.EqualError(t, cmd.RunE(cmd, nil), "dagger workspace update has moved to dagger lock update")
+		require.EqualError(t, cmd.RunE(cmd, []string{"--no-generate"}), "dagger workspace update has moved to dagger lock update")
+	}
 }
 
 func TestWorkspaceLsCommand(t *testing.T) {
@@ -228,8 +263,10 @@ func TestCosmeticCommandAliases(t *testing.T) {
 
 	cmd, args, err := rootCmd.Find([]string{"lock"})
 	require.NoError(t, err)
-	require.Same(t, rootCmd, cmd)
-	require.Equal(t, []string{"lock"}, args)
+	require.Same(t, lockCmd, cmd)
+	require.Empty(t, args)
+	require.False(t, cmd.Hidden)
+	require.Equal(t, "workspace", cmd.GroupID)
 
 	cmd, _, err = rootCmd.Find([]string{"cloud", "login"})
 	require.NoError(t, err)
@@ -325,7 +362,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"functions",
 		"integration",
 		"listen",
-		"lock",
 		"login",
 		"logout",
 		"org",
@@ -546,7 +582,8 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	})
 
 	workspaceRef = "github.com/acme/ws"
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(newWorkspaceUpdateCmd(false), nil), "must be a local path")
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(newLockListCmd(), nil), "must be a local path")
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(newLockUpdateCmd(), nil), "must be a local path")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceEntrypointCmd, []string{"tools"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceEntrypointCmd, nil))
 	workspaceEntrypointUnset = true

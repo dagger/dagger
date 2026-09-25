@@ -235,6 +235,15 @@ var workspaceRemoteCmd = &cobra.Command{
 	RunE:  WorkspaceRemote,
 }
 
+var workspaceUpdateCmd = &cobra.Command{
+	Use:                "update",
+	Hidden:             true,
+	DisableFlagParsing: true,
+	RunE: func(*cobra.Command, []string) error {
+		return fmt.Errorf("dagger workspace update has moved to dagger lock update")
+	},
+}
+
 // activityCmd is the top-level activity command (hoisted from what was
 // `dagger workspace activity`).
 var activityCmd = &cobra.Command{
@@ -255,13 +264,7 @@ func init() {
 	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigUnset, "unset", "u", false, "Remove the value at the given key")
 	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigGlobal, "global", "g", false, "Write to user-level config instead of the repository, keyed by the workspace's git remote")
 
-	workspaceUpdateCmd := newWorkspaceUpdateCmd(false)
-	workspaceUpdateCmd.Short = "Refresh all workspace lockfile state"
-	workspaceUpdateCmd.Long = "Refresh all installed-module, client-target, and runtime entries in dagger.lock. Regenerate SDK client scopes unless --no-generate is set."
-	workspaceUpdateCmd.Example = `"dagger workspace update"`
-
 	workspaceCmd.AddCommand(activityCmd)
-	workspaceCmd.AddCommand(workspaceUpdateCmd)
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
@@ -275,6 +278,7 @@ func init() {
 	workspaceCmd.AddCommand(workspaceRemoteCmd)
 	workspaceCmd.AddCommand(workspaceRemotesCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
+	workspaceCmd.AddCommand(workspaceUpdateCmd)
 
 	addWorkspaceHereFlag(workspaceConfigCmd)
 	activityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")
