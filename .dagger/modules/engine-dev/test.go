@@ -249,7 +249,7 @@ func (dev *EngineDev) test(
 
 	return container.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithExec(args)
+		WithExec(withoutOuterSession(args...))
 }
 
 // Use direct HTTP from the runner: asking the engine to execute a dump command
