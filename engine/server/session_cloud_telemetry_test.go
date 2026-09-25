@@ -1142,7 +1142,7 @@ func TestCloudReachabilityCache(t *testing.T) {
 		probe: func(ctx context.Context, cloudURL string) error {
 			deadline, ok := ctx.Deadline()
 			require.True(t, ok)
-			require.LessOrEqual(t, deadline.Sub(time.Now()), cloudReachTimeout)
+			require.LessOrEqual(t, time.Until(deadline), cloudReachTimeout)
 			probes[cloudURL]++
 			if cloudURL == "http://down" {
 				return unreachable
