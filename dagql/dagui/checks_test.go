@@ -270,6 +270,18 @@ func TestSurfacedChecksForSpan(t *testing.T) {
 			t.Fatalf("re-rooting changed surfacing: %v vs %v", again, unscoped)
 		}
 	}
+
+	// A frame asks about the zoom root AND every tool-call row: interleaved
+	// reads for different roots must each hit their own memo entry rather than
+	// evicting one another.
+	toolNodes := db.SurfacedChecksForSpan(toolSpan)
+	rootNodes := db.SurfacedChecks()
+	if again := db.SurfacedChecksForSpan(toolSpan); &again[0] != &toolNodes[0] {
+		t.Fatal("reading the root's checks evicted the tool call's memo entry")
+	}
+	if again := db.SurfacedChecks(); &again[0] != &rootNodes[0] {
+		t.Fatal("reading the tool call's checks evicted the root's memo entry")
+	}
 }
 
 // TestSurfacedConversationForSpan is the conversation half of the same rule:

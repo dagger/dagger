@@ -44,26 +44,20 @@ func (db *DB) SurfacedChecks() []*CheckNode {
 // nested under the nearest surfaced ancestor check. Roots and children are
 // ordered failed-first, then by name.
 //
-// The result is cached per DB mutation AND per root: every other input (check
-// names, ancestor chains, boundaries, statuses) only changes when a span is
-// added or updated, and a render frame re-reads the tree for every check row.
-// Callers must treat the returned nodes as read-only.
+// The result is cached per DB mutation AND per root (see surfacedTreeMemo):
+// every other input (check names, ancestor chains, boundaries, statuses) only
+// changes when a span is added or updated, and a render frame re-reads the
+// tree for every check and tool-call row. Callers must treat the returned
+// nodes as read-only.
 func (db *DB) SurfacedChecksForSpan(root *Span) []*CheckNode {
-	r := db.surfaceRoot(root)
-	key := surfaceRootID(r)
-	if db.surfacedChecksInit && db.surfacedChecksAt == db.mutations && db.surfacedChecksRoot == key {
-		return db.surfacedChecks
-	}
-	db.surfacedChecks = db.buildSurfacedChecks(r)
-	db.surfacedChecksAt = db.mutations
-	db.surfacedChecksRoot = key
-	db.surfacedChecksInit = true
-	return db.surfacedChecks
+	return db.surfacedChecks.get(db, db.surfaceRoot(root), checkNameOf, buildSurfacedChecks)
 }
 
-func (db *DB) buildSurfacedChecks(root *Span) []*CheckNode {
-	return buildSurfacedTree(db, root,
-		func(s *Span) string { return s.CheckName },
+func checkNameOf(s *Span) string { return s.CheckName }
+
+func buildSurfacedChecks(candidates []*Span, root *Span) []*CheckNode {
+	return buildSurfacedTree(candidates, root,
+		checkNameOf,
 		func(name string, span *Span, failed bool) *CheckNode {
 			return &CheckNode{Name: name, Span: span, Failed: failed}
 		},

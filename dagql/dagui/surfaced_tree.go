@@ -4,16 +4,51 @@ import (
 	"sort"
 )
 
+// surfacedTreeMemo caches buildSurfacedTree results per root for the current
+// DB mutation. Surfacing is asked about many roots in one render frame -- the
+// zoomed span for the report sections, plus every LLM tool call row for its
+// inline rollups -- so a single-entry memo keyed by root would thrash. The
+// named candidate spans are collected once per mutation, so each additional
+// root costs a walk of just those spans' ancestor chains rather than a scan
+// of the whole trace.
+type surfacedTreeMemo[N any] struct {
+	init       bool
+	at         uint64
+	candidates []*Span
+	byRoot     map[SpanID][]*N
+}
+
+func (m *surfacedTreeMemo[N]) get(db *DB, root *Span, nameOf func(*Span) string, build func(candidates []*Span, root *Span) []*N) []*N {
+	if !m.init || m.at != db.mutations {
+		m.candidates = m.candidates[:0]
+		for span := range db.Spans.Iter() {
+			if nameOf(span) != "" {
+				m.candidates = append(m.candidates, span)
+			}
+		}
+		m.byRoot = map[SpanID][]*N{}
+		m.at = db.mutations
+		m.init = true
+	}
+	key := surfaceRootID(root)
+	if nodes, ok := m.byRoot[key]; ok {
+		return nodes
+	}
+	nodes := build(m.candidates, root)
+	m.byRoot[key] = nodes
+	return nodes
+}
+
 // buildSurfacedTree is the shared shape of buildSurfacedChecks and
-// buildSurfacedGenerators: walk every span, keep those with a name (as told by
-// nameOf) that the Boundary/Encapsulate rules let roll up to root, dedupe
+// buildSurfacedGenerators: walk the candidate spans, keep those with a name (as
+// told by nameOf) that the Boundary/Encapsulate rules let roll up to root, dedupe
 // them by name preferring a failed representative, hang each under its
 // nearest named ancestor, and sort failed-first then by name at every level.
 //
 // nodeOf constructs a node; kids and key expose its children slice and its
 // (failed, name) sort key so the tree can be built without reflection.
 func buildSurfacedTree[N any](
-	db *DB,
+	candidates []*Span,
 	root *Span,
 	nameOf func(*Span) string,
 	nodeOf func(name string, span *Span, failed bool) *N,
@@ -26,7 +61,7 @@ func buildSurfacedTree[N any](
 		failed     bool
 	}
 	byName := map[string]*info{}
-	for span := range db.Spans.Iter() {
+	for _, span := range candidates {
 		name := nameOf(span)
 		if name == "" {
 			continue
