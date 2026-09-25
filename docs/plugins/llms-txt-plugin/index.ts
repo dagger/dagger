@@ -95,12 +95,59 @@ const llmsTxtPlugin = async function pluginLlmsTxt(
       }
 
       // this route config has a `props` property that contains the current documentation.
-      const currentVersionDocsRoutes = (
-        allDocsRouteConfig.props.version as Record<string, unknown>
-      ).docs as Record<string, Record<string, unknown>>;
+      const versionProps = allDocsRouteConfig.props.version as Record<string, unknown>;
+      const currentVersionDocsRoutes = versionProps.docs as Record<
+        string,
+        Record<string, unknown>
+      >;
+
+      // Docusaurus keys `docs` by path, so `Object.entries` yields an
+      // alphabetical-by-path order. That buries "Getting Started" (which is the
+      // first thing a coding agent reads) below entries like Observability and
+      // Scaling. Instead, follow the sidebar order so the reading order matches
+      // what humans and agents see in the navigation.
+      type SidebarItem = {
+        type?: string;
+        href?: string;
+        items?: SidebarItem[];
+      };
+      const docsSidebars = (versionProps.docsSidebars ?? {}) as Record<
+        string,
+        SidebarItem[]
+      >;
+
+      const orderedPaths: string[] = [];
+      const seen = new Set<string>();
+      const collectSidebarLinks = (items: SidebarItem[] | undefined) => {
+        if (!items) return;
+        for (const item of items) {
+          // Both plain links and categories may point at a doc via `href`.
+          if (typeof item.href === "string" && item.href in currentVersionDocsRoutes && !seen.has(item.href)) {
+            seen.add(item.href);
+            orderedPaths.push(item.href);
+          }
+          if (item.items) {
+            collectSidebarLinks(item.items);
+          }
+        }
+      };
+      for (const sidebarItems of Object.values(docsSidebars)) {
+        collectSidebarLinks(sidebarItems);
+      }
+
+      // Order the records by sidebar order, then append any docs that are not
+      // referenced by a sidebar (sorted by path) so nothing is dropped.
+      const orderedEntries: [string, Record<string, unknown>][] = [
+        ...orderedPaths.map(
+          (p) => [p, currentVersionDocsRoutes[p]] as [string, Record<string, unknown>]
+        ),
+        ...Object.entries(currentVersionDocsRoutes)
+          .filter(([p]) => !seen.has(p))
+          .sort(([a], [b]) => a.localeCompare(b)),
+      ];
 
       // for every single docs route we now parse a path (which is the key) and a title
-      const docsRecords = Object.entries(currentVersionDocsRoutes).map(([path, record]) => {
+      const docsRecords = orderedEntries.map(([path, record]) => {
         return `- [${record.title}](${path}): ${record.description}`;
       });
 
