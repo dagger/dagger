@@ -165,6 +165,16 @@ func (p GitAttachableProxy) PackCheckout(req *PackCheckoutRequest, srv Git_PackC
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
 }
 
+func (p GitAttachableProxy) PackCommit(req *PackCommitRequest, srv Git_PackCommitServer) error {
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(errors.New("proxy stream closed"))
+	clientStream, err := p.client.PackCommit(grpcutil.IncomingToOutgoingContext(ctx), req)
+	if err != nil {
+		return fmt.Errorf("create client stream: %w", err)
+	}
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
+}
+
 func (p GitAttachableProxy) PackUncommitted(req *PackUncommittedRequest, srv Git_PackUncommittedServer) error {
 	ctx, cancel := context.WithCancelCause(srv.Context())
 	defer cancel(errors.New("proxy stream closed"))
