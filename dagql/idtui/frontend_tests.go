@@ -1780,7 +1780,13 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		return append([]string{""}, lines...)
 	}
 	tv := s.fe.inlineTestView(row.Span.ID)
+	// Indent the summary so its TESTS heading lines up with the row's name. A
+	// shell tool call's pipe already sits under its dot (inlineReportPrefix), a
+	// cell short of the name, so it needs no extra indent.
 	summaryIndent := 2
+	if s.fe.shellToolRow(row) {
+		summaryIndent = 0
+	}
 	if tv.SummaryIndent != summaryIndent {
 		tv.SummaryIndent = summaryIndent
 		tv.Update()
@@ -1817,17 +1823,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 
 	var prefix string
 	if !s.fe.finalRender {
-		prefixBuf := new(strings.Builder)
-		prefixOut := NewOutput(prefixBuf, termenv.WithProfile(s.fe.profile))
-		r.indentFunc = s.indentFunc(prefixOut)
-		r.fancyIndent(prefixOut, row, false, false)
-		pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
-		if s.focused {
-			pipe = hl(pipe)
-		}
-		fmt.Fprint(prefixOut, pipe.String())
-		fmt.Fprint(prefixOut, " ")
-		prefix = prefixBuf.String()
+		prefix = s.inlineReportPrefix(r, row)
 	}
 
 	ctxWidth := ctx.Width

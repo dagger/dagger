@@ -318,17 +318,7 @@ func (s *SpanTreeView) renderInlineChecks(ctx tuist.Context, r *renderer, row *d
 	}
 
 	// Prefix every rollup line with the row's tree pipe, like renderInlineTests.
-	prefixBuf := new(strings.Builder)
-	prefixOut := NewOutput(prefixBuf, termenv.WithProfile(fe.profile))
-	r.indentFunc = s.indentFunc(prefixOut)
-	r.fancyIndent(prefixOut, row, false, false)
-	pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
-	if s.focused {
-		pipe = hl(pipe)
-	}
-	fmt.Fprint(prefixOut, pipe.String())
-	fmt.Fprint(prefixOut, " ")
-	prefix := prefixBuf.String()
+	prefix := s.inlineReportPrefix(r, row)
 
 	lines := make([]string, 0, len(body)+1)
 	lines = append(lines, strings.TrimRight(prefix, " ")) // pipe-only gap above the rollup

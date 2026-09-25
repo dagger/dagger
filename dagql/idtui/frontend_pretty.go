@@ -699,6 +699,36 @@ func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagu
 	}
 }
 
+// inlineReportPrefix is the per-line prefix for a row's inline rollups (TESTS,
+// CHECKS, GENERATORS): the row's tree indent, then its bold status pipe. In
+// shell mode a tool call's title sits two cells in (behind the focus cue
+// column, see renderStep), so the pipe shifts over to line up with the faint
+// dot in front of the tool name -- the same column its log gutter uses (see
+// logLinePrefixes) -- rather than hanging two columns to its left.
+func (s *SpanTreeView) inlineReportPrefix(r *renderer, row *dagui.TraceRow) string {
+	prefixBuf := new(strings.Builder)
+	prefixOut := NewOutput(prefixBuf, termenv.WithProfile(s.fe.profile))
+	r.indentFunc = s.indentFunc(prefixOut)
+	r.fancyIndent(prefixOut, row, false, false)
+	if s.fe.shellToolRow(row) {
+		fmt.Fprint(prefixOut, "  ")
+	}
+	pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
+	if s.focused {
+		pipe = hl(pipe)
+	}
+	fmt.Fprint(prefixOut, pipe.String())
+	fmt.Fprint(prefixOut, " ")
+	return prefixBuf.String()
+}
+
+// shellToolRow reports whether a row is a tool call drawn by the live shell
+// transcript, whose title renders as "  • name" (focus cue column, faint dot,
+// then the name) rather than the tree's toggler + status icon.
+func (fe *frontendPretty) shellToolRow(row *dagui.TraceRow) bool {
+	return !fe.finalRender && fe.shell != nil && row.Span.LLMTool != ""
+}
+
 func (s *SpanTreeView) rows() *dagui.Rows {
 	if s.scope != nil {
 		return s.scope.rows
@@ -8836,7 +8866,7 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 	// flow their continuation lines through this same gutter, so they must NOT
 	// get the extra indent -- otherwise every line but the first shifts right.
 	shellIndent := ""
-	if !fe.finalRender && fe.shell != nil && span.LLMTool != "" {
+	if fe.shellToolRow(row) {
 		shellIndent = "  "
 	}
 

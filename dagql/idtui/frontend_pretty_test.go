@@ -945,6 +945,61 @@ func TestLiveInlineCheckTestsIndentedUnderTrace(t *testing.T) {
 	}
 }
 
+// TestShellToolInlineTestsAlignWithToolDot verifies a shell transcript's tool
+// call hangs its inline TESTS rollup off a pipe in the same column as the faint
+// dot in front of the tool name (where its log gutter sits too), with the
+// TESTS heading under the name -- not two columns to the left of both.
+func TestShellToolInlineTestsAlignWithToolDot(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID, toolID, testID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start},
+		{
+			ID: toolID, TraceID: prettyTestTraceID(), ParentID: rootID,
+			Name: "RunTests", LLMRole: "assistant", LLMTool: "RunTests",
+			StartTime: start.Add(time.Second), EndTime: start.Add(3 * time.Second), Final: true,
+		},
+		{
+			ID: testID, TraceID: prettyTestTraceID(), ParentID: toolID,
+			Name: "TestThing", TestCaseName: "TestThing", TestStatus: dagui.TestStatusFailure,
+			StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	lines := fe.tui.RenderLines()
+	joined := strings.Join(lines, "\n")
+	toolLine, ok := findPrettyTestLine(lines, "RunTests")
+	if !ok {
+		t.Fatalf("shell render did not include the tool row:\n%s", joined)
+	}
+	testsLine, ok := findPrettyTestLine(lines, "TESTS")
+	if !ok {
+		t.Fatalf("shell render did not include the tool's inline TESTS:\n%s", joined)
+	}
+	col := func(line, sub string) int {
+		i := strings.Index(line, sub)
+		if i < 0 {
+			return -1
+		}
+		return ansi.StringWidth(line[:i])
+	}
+	if dot, bar := col(toolLine, "•"), col(testsLine, VertBoldBar); dot < 0 || bar != dot {
+		t.Fatalf("inline TESTS pipe at column %d, want the tool dot's column %d:\n%s", bar, dot, joined)
+	}
+	if name, heading := col(toolLine, "RunTests"), col(testsLine, "TESTS"); heading != name {
+		t.Fatalf("TESTS heading at column %d, want the tool name's column %d:\n%s", heading, name, joined)
+	}
+}
+
 // TestChecksReportNestsSubCheckHeader verifies the final report introduces a
 // check's sub-checks with their own CHECKS header -- mirroring how a check nests
 // a TESTS header for its tests -- indented one level under the parent, and that
