@@ -76,11 +76,11 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:318:2)
+	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:329:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:315:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:326:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -184,7 +184,7 @@ func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:302:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:313:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -193,7 +193,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../../.d
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:336:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:347:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -258,17 +258,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:386:2)
+	Image string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:397:2)
 
-	DryRun bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:391:2)
+	DryRun bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:402:2)
 
-	RegistryUsername string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:394:2)
+	RegistryUsername string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:405:2)
 
-	RegistryPassword *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:396:2)
+	RegistryPassword *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:407:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:381:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:392:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -296,7 +296,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:367:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:378:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -351,49 +351,53 @@ type EngineDevTestOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:26:2)
+	Run string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:27:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:29:2)
+	Skip string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:30:2)
 
 	// Default: "./..."
-	Pkg string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:32:2)
+	Pkg string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:33:2)
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:35:2)
+	Failfast bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:36:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:38:2)
+	Parallel int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:39:2)
 	//
 	// How long before timing out the test run
 	//
-	Timeout string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:41:2)
+	Timeout string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:42:2)
 
-	Race bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:43:2)
+	Race bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:44:2)
 
 	// Default: 1
-	Count int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:46:2)
+	Count int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:47:2)
 
-	EnvFile *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:48:2)
+	EnvFile *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:49:2)
 	//
 	// Enable verbose output
 	//
-	TestVerbose bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:51:2)
+	TestVerbose bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:52:2)
 	//
 	// Update golden files
 	//
-	Update bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:54:2)
+	Update bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:55:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:57:2)
+	EbpfProgs []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:58:2)
+	//
+	// Elapsed times after the test runner starts at which to dump engine goroutines
+	//
+	DumpAfter []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:61:2)
 }
 
 // Run core engine tests
-func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:22:1)
+func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:23:1)
 	if r.test != nil {
 		return nil
 	}
@@ -447,6 +451,10 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
 			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
 		}
+		// `dumpAfter` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DumpAfter) {
+			q = q.Arg("dumpAfter", opts[i].DumpAfter)
+		}
 	}
 
 	return q.Execute(ctx)
@@ -457,36 +465,36 @@ type EngineDevTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:88:2)
+	Run string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:101:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:91:2)
+	Skip string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:104:2)
 
-	Update bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:93:2)
+	Update bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:106:2)
 
-	Failfast bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:95:2)
+	Failfast bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:108:2)
 
-	Parallel int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:97:2)
+	Parallel int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:110:2)
 
-	Timeout string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:99:2)
+	Timeout string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:112:2)
 
-	Race bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:101:2)
+	Race bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:114:2)
 
 	// Default: 1
-	Count int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:103:2)
+	Count int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:116:2)
 
-	EnvFile *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:105:2)
+	EnvFile *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:118:2)
 
-	TestVerbose bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:107:2)
+	TestVerbose bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:120:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:110:2)
+	EbpfProgs []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:123:2)
 }
 
 // Run telemetry tests
-func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:84:1)
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:97:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
@@ -541,7 +549,7 @@ func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset
 }
 
 // List all core engine tests
-func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:16:1)
+func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:17:1)
 	if r.tests != nil {
 		return *r.tests, nil
 	}
