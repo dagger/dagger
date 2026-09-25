@@ -46,13 +46,7 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 		return nil, nil, nil, fmt.Errorf("no cloud auth provided")
 	}
 
-	if cloudURL == "" {
-		cloudURL = os.Getenv("DAGGER_CLOUD_URL")
-	}
-	if cloudURL == "" {
-		cloudURL = "https://api.dagger.cloud"
-	}
-	cloudEndpoint, err := url.Parse(cloudURL)
+	cloudEndpoint, err := url.Parse(ResolveCloudURL(cloudURL))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("bad cloud URL: %w", err)
 	}
@@ -106,6 +100,44 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 		&sequencedLogExporter{sequencer: logSequencer, exporter: logExporter},
 		&sequencedMetricExporter{sequencer: metricSequencer, exporter: metricExporter},
 		nil
+}
+
+// ResolveCloudURL returns the Cloud API URL the Cloud exporters use for
+// cloudURL: cloudURL itself, else DAGGER_CLOUD_URL, else the default.
+func ResolveCloudURL(cloudURL string) string {
+	if cloudURL == "" {
+		cloudURL = os.Getenv("DAGGER_CLOUD_URL")
+	}
+	if cloudURL == "" {
+		cloudURL = "https://api.dagger.cloud"
+	}
+	return cloudURL
+}
+
+// ProbeCloudURL checks that the Cloud API at cloudURL answers this process:
+// one unauthenticated HEAD of its traces endpoint through the Cloud
+// exporters' transport, so it goes through the same proxy and trusts the same
+// certificates as they do. Any HTTP response counts; only failing to get one
+// is an error. ctx bounds the probe.
+func ProbeCloudURL(ctx context.Context, cloudURL string) error {
+	endpoint, err := url.Parse(ResolveCloudURL(cloudURL))
+	if err != nil {
+		return fmt.Errorf("bad cloud URL: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, endpoint.JoinPath("v1", "traces").String(), nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{
+		Transport: cloudExportTransport,
+		// A redirect is an answer too.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	return resp.Body.Close()
 }
 
 // cloudAuthHasStaticHeader reports whether the credential is sent as a fixed

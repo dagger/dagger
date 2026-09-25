@@ -47,6 +47,14 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 	if !sessionPublishesToCloud(md) {
 		return
 	}
+	// The client hands over its own Cloud URL, which it may reach when this
+	// engine cannot. Take over publishing only from a URL this engine
+	// reaches; a declined session leaves the client forwarding.
+	cloudURL := enginetel.ResolveCloudURL(md.CloudURL)
+	if err := srv.cloudReach.check(context.Background(), cloudURL); err != nil {
+		slog.Warn("session telemetry not published to Cloud: the engine cannot reach the Cloud URL", "session", sess.sessionID, "url", cloudURL, "error", err)
+		return
+	}
 	tokenRefresh := enginetel.BoundedTokenRefresh(func(ctx context.Context) (*oauth2.Token, error) {
 		return srv.refreshSessionCloudToken(ctx, sess, md.CredentialsPath)
 	})
@@ -62,6 +70,66 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 	}
 	sess.cloudSpans, sess.cloudLogs = spans, logs
 	sess.cloudMetrics = newCloudMetricQueue(metrics, sess.cloudBound)
+}
+
+const (
+	// cloudReachTimeout bounds one probe of a Cloud URL. Session start waits
+	// for it only when the URL's last answer has expired: an unresolvable or
+	// refusing host fails at once, a blackholed route takes the whole bound.
+	cloudReachTimeout = 2 * time.Second
+	// How long a probe's result stands: a reachable URL is probed again after
+	// cloudReachOK, an unreachable one after cloudReachFailed.
+	cloudReachOK     = 10 * time.Minute
+	cloudReachFailed = time.Minute
+)
+
+// cloudReachability caches, per Cloud URL, whether this engine reaches it.
+// The zero value probes with enginetel.ProbeCloudURL.
+type cloudReachability struct {
+	probe func(context.Context, string) error
+	now   func() time.Time
+
+	mu    sync.Mutex
+	known map[string]cloudReachResult
+}
+
+type cloudReachResult struct {
+	err   error
+	until time.Time
+}
+
+// check returns nil when this engine reached cloudURL within the result's
+// lifetime, probing it again when that has expired.
+func (c *cloudReachability) check(ctx context.Context, cloudURL string) error {
+	now := time.Now
+	if c.now != nil {
+		now = c.now
+	}
+	c.mu.Lock()
+	known, ok := c.known[cloudURL]
+	c.mu.Unlock()
+	if ok && now().Before(known.until) {
+		return known.err
+	}
+
+	probe := enginetel.ProbeCloudURL
+	if c.probe != nil {
+		probe = c.probe
+	}
+	ctx, cancel := context.WithTimeout(ctx, cloudReachTimeout)
+	err := probe(ctx, cloudURL)
+	cancel()
+	lifetime := cloudReachOK
+	if err != nil {
+		lifetime = cloudReachFailed
+	}
+	c.mu.Lock()
+	if c.known == nil {
+		c.known = map[string]cloudReachResult{}
+	}
+	c.known[cloudURL] = cloudReachResult{err: err, until: now().Add(lifetime)}
+	c.mu.Unlock()
+	return err
 }
 
 // publishesToCloud reports whether the session publishes its telemetry to

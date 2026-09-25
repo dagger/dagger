@@ -200,8 +200,14 @@ func (got telemetrySplitReceived) requireSpansFromOneWriter(t *testctx.T) {
 // tcp://:1234 and reaches the fake Cloud. It has no Cloud token of its own,
 // so it exports no cache facts.
 func telemetrySplitEngine(c *dagger.Client, ctr *dagger.Container, cloud telemetrySplitCloud) *dagger.Container {
+	return telemetrySplitEngineWithoutCloud(c, cloud.bind(ctr))
+}
+
+// telemetrySplitEngineWithoutCloud is telemetrySplitEngine for an engine with
+// no route to the fake Cloud.
+func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
-	return cloud.bind(ctr).
+	return ctr.
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-telemetry-split-state-"+identity.NewID())).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{
@@ -285,6 +291,40 @@ func (ClientSuite) TestTelemetrySplitPublishesOnce(ctx context.Context, t *testc
 			require.Positive(t, execSpans, "the exec's span reaches Cloud")
 		})
 	}
+}
+
+// TestTelemetrySplitEngineCannotReachCloud: the client hands the engine a
+// Cloud URL the engine has no route to, as native CI's clients hand their
+// engines an address only the clients reach. The engine declines to publish,
+// and the client forwards the session's telemetry: the exec's output and span
+// reach Cloud once, from the client.
+func (ClientSuite) TestTelemetrySplitEngineCannotReachCloud(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	cloud := newTelemetrySplitCloud(t, c)
+	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+	require.NoError(t, err)
+
+	marker := identity.NewID()
+	query := fmt.Sprintf(`{ container { from(address: %q) { withExec(args: ["sh", "-c", "echo $0-out", %q]) { exitCode } } } }`, alpineImage, marker)
+	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
+		WithNewFile("/query.graphql", query).
+		WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	got := readTelemetrySplit(ctx, t, cloud)
+	got.requireSpansFromOneWriter(t)
+	cliWriters := got.cliWriters(t)
+	output := got.output(t, marker+"-out")
+	require.True(t, got.cliLogWriters(t)[output.Writer], "the client forwards the exec's output")
+	var execSpans int
+	for _, span := range got.spans {
+		if strings.Contains(span.Name, "withExec") {
+			execSpans++
+			require.True(t, cliWriters[span.Writer], "the client forwards span %s %q", span.SpanID, span.Name)
+		}
+	}
+	require.Positive(t, execSpans, "the exec's span reaches Cloud")
 }
 
 // telemetrySplitTLS is a test CA's server certificate for the scale-out
