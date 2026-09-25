@@ -415,6 +415,123 @@ type Editor {
 	require.NotContains(t, entries, "old/")
 }
 
+// TestChangesetToolPrunesExecution covers commands such as `go test`: they
+// execute successfully but produce no file patch. No-ops and directory-only
+// changes must drop the execution, without mistaking file mode edits for no-ops.
+func (LLMSuite) TestChangesetToolPrunesExecution(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name, edit string
+		parallel   bool
+	}{
+		{name: "no-op", edit: "true"},
+		{name: "parallel no-ops", edit: "true", parallel: true},
+		{name: "directories only", edit: "mkdir -p added/empty; chmod 700 added/empty; rmdir removed"},
+		{name: "file mode only", edit: "chmod +x unchanged.txt"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c, sink := connectWithTrace(ctx, t)
+			source := c.Directory().
+				WithNewDirectory("removed").
+				WithNewFile("unchanged.txt", "keep me\n").
+				WithNewFile("dagger.toml", "[modules.runner]\nsource = \"modules/runner\"\n").
+				WithNewFile("modules/runner/dagger.json", `{"name":"runner","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+				WithNewFile("modules/runner/main.dang", fmt.Sprintf(`
+type Runner {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  run(ws: Workspace!, label: String!): Changeset! {
+    let before = container.from("alpine:3.22")
+      .withMountedCache("/counter", cacheVolume(%q))
+      .withWorkdir("/workspace")
+      .withDirectory(".", ws.directory("/", gitignore: true))
+      .withEnvVariable("LABEL", label)
+      .withEnvVariable("CACHEBUST", UUID.v7)
+    let after = before.withExec(["sh", "-ec", %q]).sync
+    after.directory(".").withoutDirectory(".git")
+      .changes(before.directory(".").withoutDirectory(".git"))
+  }
+}
+`, "no-op-replay-"+identity.NewID(), `test ! -f /counter/"$LABEL" || { echo producer-replayed >&2; exit 91; }; touch /counter/"$LABEL"; `+tc.edit))
+			calls := []dagger.LLMContentBlockInput{{
+				Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "run",
+				Arguments: dagger.JSON(`{"label":"first"}`),
+			}}
+			if tc.parallel {
+				calls = append(calls, dagger.LLMContentBlockInput{
+					Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "run",
+					Arguments: dagger.JSON(`{"label":"second"}`),
+				})
+			}
+			recording := c.LLM().WithPrompt("run the command").WithResponse(calls)
+			for _, call := range calls {
+				recording = recording.WithToolResult(call.CallID, "", false)
+			}
+			model := cannedRecordingModel(ctx, t, c, recording.WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+			ws := source.AsWorkspace()
+			base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+			result := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
+				WithPrompt("run the command").Loop()
+			transcript, err := result.Transcript(ctx)
+			require.NoError(t, err)
+			require.Contains(t, transcript, "done")
+			require.NotContains(t, transcript, "producer-replayed")
+
+			recipe, err := sink.captureLLMRecipe(ctx, t, c, result)
+			require.NoError(t, err)
+			id := new(call.ID)
+			require.NoError(t, id.Decode(string(recipe)))
+			fields := map[string]bool{}
+			collectIDFieldNames(id, fields)
+			require.False(t, fields["run"], "the tool result must not remain a recipe dependency")
+			require.False(t, fields["withExec"], "neither After nor Before may retain a command")
+			if tc.edit == "true" {
+				require.False(t, fields["withChanges"], "no-op commands must not advance workspace state")
+			}
+
+			// End the producing session before rebuilding the committed LLM. The
+			// cache-mounted sentinel rejects an actual replay of either command.
+			require.NoError(t, c.Close())
+			target := connect(ctx, t)
+			restored := dagger.Ref[*dagger.LLM](target, recipe)
+			got, err := restored.Workspace().File("unchanged.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "keep me\n", got)
+			entries, err := restored.Workspace().Directory("/").Entries(ctx)
+			require.NoError(t, err)
+			if tc.name == "directories only" {
+				require.NotContains(t, entries, "removed/")
+				empty, err := restored.Workspace().Directory("added/empty").Entries(ctx)
+				require.NoError(t, err)
+				require.Empty(t, empty)
+				stat, err := restored.Workspace().Directory("/").Stat(ctx, "added/empty")
+				require.NoError(t, err)
+				permissions, err := stat.Permissions(ctx)
+				require.NoError(t, err)
+				require.Equal(t, 0o700, permissions)
+			} else {
+				require.Contains(t, entries, "removed/")
+				require.NotContains(t, entries, "added/")
+			}
+			if tc.name == "file mode only" {
+				stat, err := restored.Workspace().Directory("/").Stat(ctx, "unchanged.txt")
+				require.NoError(t, err)
+				permissions, err := stat.Permissions(ctx)
+				require.NoError(t, err)
+				require.Equal(t, 0o111, permissions&0o111, "the executable-bit edit must not be treated as a no-op")
+			}
+			transcript, err = restored.Transcript(ctx)
+			require.NoError(t, err)
+			require.Contains(t, transcript, "run")
+			require.Contains(t, transcript, "done")
+		})
+	}
+}
+
 // TestChangesetToolKeepsEmptyDirectories locks in that a Changeset-returning
 // tool's empty directories survive the engine's patch normalization
 // (core.normalizeChangesetToPatch). Git patches carry file content only, so
