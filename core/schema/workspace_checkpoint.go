@@ -341,30 +341,11 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	} else {
 		args := []dagql.NamedInput{{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)}}
 		if remote.Scheme == gitutil.SSHProtocol {
-			caller, err := engine.ClientMetadataFromContext(ctx)
+			sshArgs, err := checkpointSSHAuthArgs(ctx, srv)
 			if err != nil {
 				return inst, err
 			}
-			if caller.SSHAuthSocketPath != "" {
-				// Pass a scoped socket explicitly so a previously cached, unauthenticated
-				// Query.git cannot hide the prepared agent, and this capture does not
-				// authenticate unrelated reads through that same per-client cache entry.
-				var socket dagql.ObjectResult[*core.Socket]
-				if err := srv.Select(ctx, srv.Root(), &socket,
-					dagql.Selector{Field: "host"},
-					dagql.Selector{Field: "_sshAuthSocket"},
-				); err != nil {
-					return inst, fmt.Errorf("scope workspace snapshot SSH authentication: %w", err)
-				}
-				socketID, err := socket.ID()
-				if err != nil {
-					return inst, err
-				}
-				args = append(args,
-					dagql.NamedInput{Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](socketID))},
-					dagql.NamedInput{Name: "sshAuthSocketScoped", Value: dagql.NewBoolean(true)},
-				)
-			}
+			args = append(args, sshArgs...)
 		}
 		if err := srv.Select(ctx, srv.Root(), &repo, dagql.Selector{Field: "git", Args: args}); err != nil {
 			return inst, fmt.Errorf("load workspace snapshot remote: %w", err)
@@ -487,6 +468,35 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 
 	nextPhase("checkpoint compose metadata")
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, captured, workspaceEnv)
+}
+
+func checkpointSSHAuthArgs(ctx context.Context, srv *dagql.Server) ([]dagql.NamedInput, error) {
+	caller, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if caller.SSHAuthSocketPath == "" {
+		return nil, nil
+	}
+
+	// Pass a scoped socket explicitly so a previously cached, unauthenticated
+	// Query.git cannot hide the prepared agent, and this capture does not
+	// authenticate unrelated reads through that same per-client cache entry.
+	var socket dagql.ObjectResult[*core.Socket]
+	if err := srv.Select(ctx, srv.Root(), &socket,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{Field: "_sshAuthSocket"},
+	); err != nil {
+		return nil, fmt.Errorf("scope workspace snapshot SSH authentication: %w", err)
+	}
+	socketID, err := socket.ID()
+	if err != nil {
+		return nil, err
+	}
+	return []dagql.NamedInput{
+		{Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](socketID))},
+		{Name: "sshAuthSocketScoped", Value: dagql.NewBoolean(true)},
+	}, nil
 }
 
 func checkpointWorkspaceMetadataComposition(
