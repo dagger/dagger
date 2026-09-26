@@ -159,12 +159,13 @@ func TestComposedLLMCredentialIsolatedAcrossSessions(t *testing.T) {
 			for _, session := range []string{"first", "second"} {
 				t.Run(session, func(t *testing.T) {
 					md := &engine.ClientMetadata{SessionID: session, ClientID: session + "-client"}
-					var newLease func(engine.ClientLeaseKind, string) (*engine.ClientLifecycleLease, error)
-					newLease = func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
-						return engine.NewClientLifecycleLease(kind, owner, nil, newLease), nil
+					var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+					newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
+						return engine.NewClientLifecycleLease(kind, owner, nil, func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+							return newLease(kind, owner), nil
+						})
 					}
-					lease, err := newLease(engine.ClientLeaseRequest, "llm-auth-test")
-					require.NoError(t, err)
+					lease := newLease(engine.ClientLeaseRequest, "llm-auth-test")
 					t.Cleanup(lease.Release)
 					scope, err := engine.NewClientScope(md, lease)
 					require.NoError(t, err)
