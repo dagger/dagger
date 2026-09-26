@@ -1788,10 +1788,10 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("agent: %s", rt.name),
 		agentSpanAttrs(ctx, rt.name, rt.self)...)
 
-	// Publish the loop span as the agent's state channel, and seed it with
-	// the state the loop is starting in, plus the digest of the conversation
-	// it is starting FROM — so an agent that never steps still carries a
-	// resume anchor, and a consumer needs no special case for its absence.
+	// Publish a control revision for the loop's start: the state it starts
+	// in, plus the digest of the conversation it is starting FROM — so an
+	// agent that never steps still carries a resume anchor, and a consumer
+	// needs no special case for its absence.
 	// Everything after this point flows through transitionLocked, which
 	// publishes on every change of the projection (design §3.3: telemetry is
 	// the directory) and, via commitLast, on every commit.

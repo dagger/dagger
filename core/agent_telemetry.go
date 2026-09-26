@@ -21,7 +21,6 @@ import (
 // in favour of capability-based addressing, and nominates telemetry as the
 // discovery plane instead. Loop spans carry immutable diagnostic identity;
 // agent_control.go publishes the complete revisioned mutable projection.
-// There is no separate state or snapshot log authority.
 
 // AgentInstrumentationScope names the logger emitting agent control records.
 const AgentInstrumentationScope = "dagger.io/agent"
