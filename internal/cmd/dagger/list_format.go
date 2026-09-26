@@ -99,21 +99,7 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 		absolute = absolute || addr.Absolute
 	}
 	// Collection dimensions precede the target type dimension.
-	slices.SortStableFunc(dimensions, func(a, b string) int {
-		if a == artifact.ModuleDimension && b != a {
-			return -1
-		}
-		if b == artifact.ModuleDimension && a != b {
-			return 1
-		}
-		if strings.HasPrefix(a, "type:") == strings.HasPrefix(b, "type:") {
-			return 0
-		}
-		if strings.HasPrefix(a, "type:") {
-			return 1
-		}
-		return -1
-	})
+	slices.SortStableFunc(dimensions, compareArtifactDimensions)
 	header := []string{}
 	if absolute {
 		header = append(header, "WORKSPACE")
@@ -159,6 +145,24 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 		}
 	}
 	return writer.Flush()
+}
+
+// compareArtifactDimensions orders the module dimension first and type
+// dimensions last.
+func compareArtifactDimensions(a, b string) int {
+	if a == artifact.ModuleDimension && b != a {
+		return -1
+	}
+	if b == artifact.ModuleDimension && a != b {
+		return 1
+	}
+	if strings.HasPrefix(a, "type:") == strings.HasPrefix(b, "type:") {
+		return 0
+	}
+	if strings.HasPrefix(a, "type:") {
+		return 1
+	}
+	return -1
 }
 
 func artifactDimensionCell(item listedArtifact, dimension string) string {
