@@ -20,8 +20,7 @@ import (
 // archiveRestoreSource keeps source selection separate from graph restoration.
 // A future Cloud source must supply the same verified finality and fixed cut.
 type archiveRestoreSource interface {
-	Acquire(context.Context, string) (func(), error)
-	AcquireUnsealed(context.Context, string) (archive.UnsealedArchive, error)
+	Unsealed(context.Context, string) (archive.UnsealedArchive, error)
 	Bootstrap(context.Context, string, func(archive.BootstrapHeader, archive.BootstrapBatch) error) (archive.BootstrapResult, error)
 	Traces(context.Context, string, archive.StreamOptions, func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error)
 	Logs(context.Context, string, archive.StreamOptions, func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error)
@@ -114,23 +113,16 @@ func archiveCut(header archive.BootstrapHeader) (enginetel.ArchiveCut, error) {
 	}, nil
 }
 
-type archiveAcquireError struct{ error }
+// archiveUnavailableError is a local archive failure from before any of the
+// bootstrap was applied, so another source may still be tried.
+type archiveUnavailableError struct{ error }
 
-func (e *archiveAcquireError) Unwrap() error { return e.error }
+func (e *archiveUnavailableError) Unwrap() error { return e.error }
 
-// restoreArchive keeps the reader lease from before bootstrap through remainder
-// completion. The returned cleanup cancels and joins background import on exit.
-func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, target restoreTarget, req traceRestore) (cleanup func(), rerr error) {
-	release, err := source.Acquire(ctx, req.traceID)
-	if err != nil {
-		return nil, &archiveAcquireError{archiveRestoreError(req.traceID, err)}
-	}
-	defer func() {
-		if rerr != nil {
-			release()
-		}
-	}()
-
+// restoreArchive applies the bootstrap and restores the agent graph, then
+// imports history in the background. The returned cleanup cancels and joins
+// background import on exit.
+func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, target restoreTarget, req traceRestore) (func(), error) {
 	var importer *enginetel.ArchiveTraceImporter
 	var cut enginetel.ArchiveCut
 	result, err := source.Bootstrap(ctx, req.traceID, func(header archive.BootstrapHeader, batch archive.BootstrapBatch) error {
@@ -150,7 +142,11 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 		return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Spans: batch.Traces, Logs: batch.Logs})
 	})
 	if err != nil {
-		return nil, archiveRestoreError(req.traceID, err)
+		err = archiveRestoreError(req.traceID, err)
+		if importer == nil {
+			err = &archiveUnavailableError{err}
+		}
+		return nil, err
 	}
 	if importer == nil {
 		return nil, errors.New("verified archive bootstrap contains no restore data")
@@ -167,7 +163,6 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 	}
 
 	return startHistoricalImport(ctx, func(ctx context.Context) error {
-		defer release()
 		return importArchiveRemainder(ctx, source, req.traceID, importer, cut)
 	}, func(err error) {
 		restoreNotice(ctx, fmt.Sprintf("historical telemetry import incomplete: %v; restored agents remain usable", err))

@@ -25,10 +25,10 @@ func TestManagerStartupIndexesCorruptManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("corrupt archive prevented engine startup: %v", err)
 	}
-	_, err = manager.Acquire(testTraceA)
+	_, err = manager.Manifest(testTraceA)
 	var failure *Failure
 	if !errors.As(err, &failure) || failure.Kind != FailureCorrupt {
-		t.Fatalf("acquire error = %v", err)
+		t.Fatalf("lookup error = %v", err)
 	}
 }
 
@@ -57,14 +57,6 @@ func TestManagerStartupMarksInterrupted(t *testing.T) {
 	}
 	if manifest.State != StateInterrupted {
 		t.Fatalf("state = %q, want interrupted", manifest.State)
-	}
-	if _, err := restarted.Acquire(testTraceA); err == nil {
-		t.Fatal("interrupted archive was resumable")
-	} else {
-		var failure *Failure
-		if !errors.As(err, &failure) || failure.Kind != FailureState || failure.State != StateInterrupted {
-			t.Fatalf("unexpected acquire error: %v", err)
-		}
 	}
 }
 
@@ -104,15 +96,7 @@ func TestManagerFinalizationMetadata(t *testing.T) {
 	if closed.ExpiresAt != now.Add(time.Hour) {
 		t.Fatalf("expires = %s", closed.ExpiresAt)
 	}
-	lease, err := manager.Acquire(testTraceA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer lease.Release()
-	if lease.Manifest().TraceID != testTraceA {
-		t.Fatal("trace changed")
-	}
-	if _, err := os.Stat(lease.BootstrapPath()); err != nil {
+	if _, err := os.Stat(manager.BootstrapPath(testTraceA)); err != nil {
 		t.Fatal(err)
 	}
 	if matches, _ := filepath.Glob(filepath.Join(root, ".tmp-*")); len(matches) != 0 {
@@ -120,7 +104,7 @@ func TestManagerFinalizationMetadata(t *testing.T) {
 	}
 }
 
-func TestManagerQuotaLeaseAndExpiry(t *testing.T) {
+func TestManagerQuotaAndExpiry(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	var removed []string
@@ -148,10 +132,6 @@ func TestManagerQuotaLeaseAndExpiry(t *testing.T) {
 		return closed
 	}
 	old := closeArchive(testTraceA, "old-client")
-	lease, err := manager.Acquire(testTraceA)
-	if err != nil {
-		t.Fatal(err)
-	}
 	now = now.Add(time.Minute)
 	newest := closeArchive(testTraceB, "new-client")
 	if newest.ClosedAt.Before(*old.ClosedAt) {
@@ -165,37 +145,27 @@ func TestManagerQuotaLeaseAndExpiry(t *testing.T) {
 	if overage == 0 {
 		t.Fatal("expected newest oversize overage")
 	}
-	if len(removed) != 0 {
-		t.Fatalf("leased store removed early: %v", removed)
-	}
-	gapReader, err := manager.Acquire(testTraceA)
-	if err != nil {
-		t.Fatalf("leased archive unavailable between import requests: %v", err)
-	}
-	gapReader.Release()
-	lease.Release()
-	if _, err := manager.GC(); err != nil {
-		t.Fatal(err)
-	}
 	if len(removed) != 1 || removed[0] != "old-client" {
 		t.Fatalf("removed = %v", removed)
 	}
-	newReader, err := manager.Acquire(testTraceB)
-	if err != nil {
-		t.Fatalf("newest archive evicted: %v", err)
+	var failure *Failure
+	if _, err := manager.Manifest(testTraceA); !errors.As(err, &failure) || failure.Kind != FailureNotFound {
+		t.Fatalf("collected archive lookup = %v, want not found", err)
 	}
-	newReader.Release()
+	if _, err := manager.Manifest(testTraceB); err != nil {
+		t.Fatalf("newest archive collected: %v", err)
+	}
 
 	now = now.Add(2 * time.Hour)
 	if _, err := manager.GC(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.Acquire(testTraceB); err == nil {
+	if _, err := manager.Manifest(testTraceB); err == nil {
 		t.Fatal("expired archive remained")
 	}
 }
 
-func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
+func TestManagerRetriesStoreDeletion(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	removeReady := false
@@ -224,6 +194,8 @@ func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The store is still open (e.g. a reader is streaming it): leave the
+	// archive in place and retry on the next GC.
 	now = now.Add(2 * time.Hour)
 	if _, err := manager.GC(); err != nil {
 		t.Fatal(err)
@@ -232,10 +204,7 @@ func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
 		t.Fatalf("remove attempts = %d, want 1", removeAttempts)
 	}
 	if _, err := os.Stat(filepath.Join(root, testTraceA+".json")); err != nil {
-		t.Fatalf("pending manifest removed before store: %v", err)
-	}
-	if _, err := manager.Acquire(testTraceA); err == nil {
-		t.Fatal("pending archive remained acquirable")
+		t.Fatalf("manifest removed before store: %v", err)
 	}
 
 	removeReady = true
@@ -249,6 +218,9 @@ func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("%s remains after retry: %v", name, err)
 		}
+	}
+	if _, err := manager.Manifest(testTraceA); err == nil {
+		t.Fatal("deleted archive remained")
 	}
 }
 

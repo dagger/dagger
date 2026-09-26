@@ -28,8 +28,8 @@ const (
 
 // AgentBootstrapResource names the agent-restore bootstrap within an archive.
 // It is agent-specific: final agent/subscription control records plus the
-// recipe closure of their snapshots. The lease and OTLP signal streams
-// alongside it are generic telemetry resources.
+// recipe closure of their snapshots. The OTLP signal streams alongside it are
+// generic telemetry resources.
 const AgentBootstrapResource = "agent-bootstrap"
 
 // HTTPDoer is the transport required by the archive client. engine/client's
@@ -143,54 +143,33 @@ type ListOptions struct {
 	ExcludeTraceID string
 }
 
-// Acquire holds retention protection across bootstrap and all remainder
-// requests. Release it when import finishes or the caller exits. Cancellation
-// also releases the server lease; it never keeps a detached background reader.
-func (c *Client) Acquire(ctx context.Context, traceID string) (func(), error) {
-	ctx, cancel := context.WithCancel(ctx)
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), nil, "application/octet-stream", 0) //nolint:bodyclose // The returned release function owns the streaming lease body.
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	if err := expectStatus(resp, http.StatusOK); err != nil {
-		resp.Body.Close()
-		cancel()
-		return nil, err
-	}
-	return func() { cancel(); _ = resp.Body.Close() }, nil
-}
-
-// UnsealedArchive is a leased archive whose session ended without a seal. It
-// has no bootstrap; stream it with StreamOptions.Unsealed at Cut.
+// UnsealedArchive is an archive whose session ended without a seal. It has no
+// bootstrap; stream it with StreamOptions.Unsealed at Cut.
 type UnsealedArchive struct {
-	Cut     HighWater
-	Release func()
+	Cut HighWater
 }
 
-// AcquireUnsealed leases an interrupted or incomplete archive for a
-// best-effort read of what it recorded. It fails with an ErrState request error
-// for any other state, including a sealed (closed) archive.
-func (c *Client) AcquireUnsealed(ctx context.Context, traceID string) (UnsealedArchive, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), url.Values{"unsealed": {"1"}}, "application/octet-stream", 0)
+// Unsealed looks up an interrupted or incomplete archive for a best-effort
+// read of what it recorded; Cut is the current end of its store. It fails
+// with an ErrState request error for any other state, including a sealed
+// (closed) archive.
+func (c *Client) Unsealed(ctx context.Context, traceID string) (UnsealedArchive, error) {
+	resp, err := c.do(ctx, http.MethodGet, archivePath+"/"+url.PathEscape(traceID), url.Values{"unsealed": {"1"}}, "application/json", 0)
 	if err != nil {
-		cancel()
 		return UnsealedArchive{}, err
 	}
-	fail := func(err error) (UnsealedArchive, error) {
-		resp.Body.Close()
-		cancel()
-		return UnsealedArchive{}, err
-	}
+	defer resp.Body.Close()
 	if err := expectStatus(resp, http.StatusOK); err != nil {
-		return fail(err)
+		return UnsealedArchive{}, err
 	}
-	cut, err := ParseHighWater(resp.Header.Get(UnsealedHighWaterHeader))
-	if err != nil {
-		return fail(corrupt(err))
+	if err := expectContentType(resp, "application/json"); err != nil {
+		return UnsealedArchive{}, corrupt(err)
 	}
-	return UnsealedArchive{Cut: cut, Release: func() { cancel(); _ = resp.Body.Close() }}, nil
+	var manifest Manifest
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxErrorResponseSize)).Decode(&manifest); err != nil {
+		return UnsealedArchive{}, corrupt(fmt.Errorf("decode archive manifest: %w", err))
+	}
+	return UnsealedArchive{Cut: manifest.HighWater}, nil
 }
 
 // List returns one page of archives.
@@ -343,7 +322,7 @@ func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(Boo
 
 // StreamOptions fixes one finite signal read to a high-water cursor. Cursor is
 // the last batch successfully acknowledged by the caller. Unsealed reads an
-// interrupted or incomplete archive at the cut returned by AcquireUnsealed; its
+// interrupted or incomplete archive at the cut returned by Unsealed; its
 // log stream then includes agent control records.
 type StreamOptions struct {
 	Cursor    int64
@@ -546,7 +525,7 @@ func expectStatus(resp *http.Response, want int) error {
 	}
 	kind := ErrorTransient
 	switch resp.StatusCode {
-	case http.StatusNotFound, http.StatusGone:
+	case http.StatusNotFound:
 		kind = ErrorCleanMiss
 	case http.StatusConflict:
 		kind = ErrorState

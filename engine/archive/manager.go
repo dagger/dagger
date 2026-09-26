@@ -43,26 +43,6 @@ func (s State) Unsealed() bool {
 	return s == StateInterrupted || s == StateIncomplete
 }
 
-// UnsealedHighWaterHeader carries the cut an unsealed archive is streamed at,
-// as "spans,logs,metrics". A sealed archive's cut comes from its bootstrap.
-const UnsealedHighWaterHeader = "X-Dagger-Archive-High-Water"
-
-func (h HighWater) String() string {
-	return fmt.Sprintf("%d,%d,%d", h.Spans, h.Logs, h.Metrics)
-}
-
-// ParseHighWater parses HighWater.String output.
-func ParseHighWater(s string) (HighWater, error) {
-	var h HighWater
-	if n, err := fmt.Sscanf(s, "%d,%d,%d", &h.Spans, &h.Logs, &h.Metrics); err != nil || n != 3 {
-		return HighWater{}, fmt.Errorf("invalid archive high-water %q", s)
-	}
-	if h.Spans < 0 || h.Logs < 0 || h.Metrics < 0 {
-		return HighWater{}, fmt.Errorf("invalid archive high-water %q", s)
-	}
-	return h, nil
-}
-
 type HighWater struct {
 	Spans   int64 `json:"spans"`
 	Logs    int64 `json:"logs"`
@@ -98,7 +78,6 @@ type FailureKind string
 
 const (
 	FailureNotFound FailureKind = "not_found"
-	FailureEvicted  FailureKind = "evicted"
 	FailureState    FailureKind = "state"
 	FailureCorrupt  FailureKind = "corrupt"
 	FailureIO       FailureKind = "io"
@@ -129,13 +108,6 @@ type Config struct {
 	RemoveStore func(string) (bool, error)
 }
 
-type entry struct {
-	manifest Manifest
-	leases   int
-	deleting bool
-	removing bool
-}
-
 type Manager struct {
 	root        string
 	ttl         time.Duration
@@ -144,9 +116,7 @@ type Manager struct {
 	removeStore func(string) (bool, error)
 
 	mu      sync.RWMutex
-	entries map[string]*entry
-	pending map[string]*entry
-	evicted map[string]struct{}
+	entries map[string]*Manifest
 	corrupt map[string]error
 }
 
@@ -174,7 +144,7 @@ func NewManager(cfg Config) (*Manager, error) {
 	}
 	m := &Manager{
 		root: cfg.Root, ttl: cfg.TTL, quota: cfg.QuotaBytes, now: cfg.Now,
-		removeStore: cfg.RemoveStore, entries: map[string]*entry{}, pending: map[string]*entry{}, evicted: map[string]struct{}{}, corrupt: map[string]error{},
+		removeStore: cfg.RemoveStore, entries: map[string]*Manifest{}, corrupt: map[string]error{},
 	}
 	if err := m.load(); err != nil {
 		return nil, err
@@ -182,15 +152,12 @@ func NewManager(cfg Config) (*Manager, error) {
 	return m, nil
 }
 
-func (m *Manager) findLocked(traceID string) (*entry, error) {
-	if ent, ok := m.entries[traceID]; ok && !ent.deleting {
-		return ent, nil
+func (m *Manager) findLocked(traceID string) (*Manifest, error) {
+	if manifest, ok := m.entries[traceID]; ok {
+		return manifest, nil
 	}
 	if err := m.corrupt[traceID]; err != nil {
 		return nil, &Failure{Kind: FailureCorrupt, Err: err}
-	}
-	if _, ok := m.evicted[traceID]; ok {
-		return nil, &Failure{Kind: FailureEvicted}
 	}
 	return nil, &Failure{Kind: FailureNotFound}
 }
@@ -231,8 +198,7 @@ func (m *Manager) load() error {
 				return err
 			}
 		}
-		copy := manifest
-		m.entries[traceID] = &entry{manifest: copy}
+		m.entries[traceID] = &manifest
 	}
 	return nil
 }
@@ -303,33 +269,29 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 	if _, exists := m.entries[traceID]; exists {
 		return Manifest{}, fmt.Errorf("archive for trace %s is already registered", traceID)
 	}
-	if _, deleting := m.pending[traceID]; deleting {
-		return Manifest{}, fmt.Errorf("archive for trace %s is pending deletion", traceID)
-	}
 	if err := m.corrupt[traceID]; err != nil {
 		return Manifest{}, &Failure{Kind: FailureCorrupt, Err: err}
 	}
 	if err := m.writeManifest(manifest); err != nil {
 		return Manifest{}, err
 	}
-	m.entries[traceID] = &entry{manifest: manifest}
-	delete(m.evicted, traceID)
+	m.entries[traceID] = &manifest
 	return manifest, nil
 }
 
 func (m *Manager) BeginFinalizing(traceID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ent, err := m.mutable(traceID, StateActive)
+	current, err := m.mutable(traceID, StateActive)
 	if err != nil {
 		return err
 	}
-	next := ent.manifest
+	next := *current
 	next.State = StateFinalizing
 	if err := m.writeManifest(next); err != nil {
 		return err
 	}
-	ent.manifest = next
+	*current = next
 	return nil
 }
 
@@ -369,29 +331,29 @@ func (m *Manager) Finalize(traceID string, in FinalizeInput) (Manifest, error) {
 	if err := atomicWrite(filepath.Join(m.root, sidecar), in.BootstrapBytes, 0o600); err != nil {
 		return Manifest{}, fmt.Errorf("write archive bootstrap: %w", err)
 	}
-	ent.manifest.State = StateClosed
-	ent.manifest.ClosedAt = &now
-	ent.manifest.ExpiresAt = now.Add(m.ttl)
-	ent.manifest.SealAt = &sealAt
-	ent.manifest.HighWater = in.HighWater
-	ent.manifest.Bootstrap = Bootstrap{File: sidecar, Records: records, SHA256: hex.EncodeToString(digest[:])}
+	ent.State = StateClosed
+	ent.ClosedAt = &now
+	ent.ExpiresAt = now.Add(m.ttl)
+	ent.SealAt = &sealAt
+	ent.HighWater = in.HighWater
+	ent.Bootstrap = Bootstrap{File: sidecar, Records: records, SHA256: hex.EncodeToString(digest[:])}
 	baseSize := in.StoreSizeBytes + int64(len(in.BootstrapBytes))
-	ent.manifest.SizeBytes = baseSize
+	ent.SizeBytes = baseSize
 	for range 2 {
-		manifestBytes, err := json.Marshal(ent.manifest)
+		manifestBytes, err := json.Marshal(*ent)
 		if err != nil {
 			return Manifest{}, err
 		}
-		ent.manifest.SizeBytes = baseSize + int64(len(manifestBytes))
+		ent.SizeBytes = baseSize + int64(len(manifestBytes))
 	}
-	ent.manifest.Failure = ""
-	if err := m.writeManifest(ent.manifest); err != nil {
-		ent.manifest.State = StateIncomplete
-		ent.manifest.Failure = err.Error()
-		_ = m.writeManifest(ent.manifest)
+	ent.Failure = ""
+	if err := m.writeManifest(*ent); err != nil {
+		ent.State = StateIncomplete
+		ent.Failure = err.Error()
+		_ = m.writeManifest(*ent)
 		return Manifest{}, err
 	}
-	return ent.manifest, nil
+	return *ent, nil
 }
 
 func (m *Manager) MarkIncomplete(traceID string, cause error) error {
@@ -401,11 +363,11 @@ func (m *Manager) MarkIncomplete(traceID string, cause error) error {
 	if err != nil {
 		return err
 	}
-	ent.manifest.State = StateIncomplete
+	ent.State = StateIncomplete
 	if cause != nil {
-		ent.manifest.Failure = cause.Error()
+		ent.Failure = cause.Error()
 	}
-	return m.writeManifest(ent.manifest)
+	return m.writeManifest(*ent)
 }
 
 // SetTitle records the session title the main client published into an active
@@ -420,15 +382,15 @@ func (m *Manager) SetTitle(traceID, title string) error {
 	if err != nil {
 		return err
 	}
-	if title == "" || title == ent.manifest.Title {
+	if title == "" || title == ent.Title {
 		return nil
 	}
-	next := ent.manifest
+	next := *ent
 	next.Title = title
 	if err := m.writeManifest(next); err != nil {
 		return err
 	}
-	ent.manifest = next
+	*ent = next
 	return nil
 }
 
@@ -470,80 +432,20 @@ func SanitizeTitle(title string) string {
 	return strings.TrimSpace(string(runes)) + "…"
 }
 
-func (m *Manager) mutable(traceID string, want State) (*entry, error) {
+func (m *Manager) mutable(traceID string, want State) (*Manifest, error) {
 	ent, err := m.findLocked(traceID)
 	if err != nil {
 		return nil, err
 	}
-	if ent.manifest.State != want {
-		return nil, &Failure{Kind: FailureState, State: ent.manifest.State}
+	if ent.State != want {
+		return nil, &Failure{Kind: FailureState, State: ent.State}
 	}
 	return ent, nil
 }
 
-type Lease struct {
-	manager  *Manager
-	entry    *entry
-	manifest Manifest
-	once     sync.Once
-}
-
-func (l *Lease) Manifest() Manifest { return l.manifest }
-func (l *Lease) BootstrapPath() string {
-	return filepath.Join(l.manager.root, l.manifest.Bootstrap.File)
-}
-func (l *Lease) Release() { l.once.Do(func() { l.manager.release(l.entry) }) }
-
-func (m *Manager) Acquire(traceID string) (*Lease, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	ent, err := m.findLocked(traceID)
-	if err != nil {
-		return nil, err
-	}
-	if ent.manifest.State != StateClosed {
-		return nil, &Failure{Kind: FailureState, State: ent.manifest.State}
-	}
-	return m.leaseLocked(ent)
-}
-
-// AcquireUnsealed leases an archive that was never sealed: its engine stopped
-// before graceful finalization (interrupted), or finalization failed
-// (incomplete). Such an archive has no bootstrap, completion witness or fixed
-// cut. Its session is gone, so nothing writes to it anymore, and readers may
-// stream what it recorded for a best-effort restore.
-func (m *Manager) AcquireUnsealed(traceID string) (*Lease, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	ent, err := m.findLocked(traceID)
-	if err != nil {
-		return nil, err
-	}
-	if !ent.manifest.State.Unsealed() {
-		return nil, &Failure{Kind: FailureState, State: ent.manifest.State}
-	}
-	return m.leaseLocked(ent)
-}
-
-func (m *Manager) leaseLocked(ent *entry) (*Lease, error) {
-	if ent.leases == 0 && !ent.manifest.ExpiresAt.After(m.now()) {
-		return nil, &Failure{Kind: FailureEvicted}
-	}
-	ent.leases++
-	return &Lease{manager: m, entry: ent, manifest: ent.manifest}, nil
-}
-
-func (m *Manager) release(ent *entry) {
-	m.mu.Lock()
-	ent.leases--
-	deleting := ent.deleting && ent.leases == 0 && !ent.removing
-	if deleting {
-		ent.removing = true
-	}
-	m.mu.Unlock()
-	if deleting {
-		_ = m.deleteEntry(ent)
-	}
+// BootstrapPath is where a sealed archive's agent bootstrap is stored.
+func (m *Manager) BootstrapPath(traceID string) string {
+	return filepath.Join(m.root, traceID+".bootstrap")
 }
 
 type Page struct {
@@ -558,8 +460,8 @@ func (m *Manager) List(after, excludeTraceID string, limit int) Page {
 	m.mu.RLock()
 	all := make([]Manifest, 0, len(m.entries))
 	for traceID, ent := range m.entries {
-		if !ent.deleting && traceID != excludeTraceID && traceID > after {
-			manifest := ent.manifest
+		if traceID != excludeTraceID && traceID > after {
+			manifest := *ent
 			if manifest.Title == "" {
 				manifest.Title = "Agent session " + manifest.StartedAt.Format(time.RFC3339)
 			}
@@ -583,7 +485,7 @@ func (m *Manager) Manifest(traceID string) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, err
 	}
-	return ent.manifest, nil
+	return *ent, nil
 }
 
 func (m *Manager) KeepSet() map[string]bool {
@@ -591,103 +493,72 @@ func (m *Manager) KeepSet() map[string]bool {
 	defer m.mu.RUnlock()
 	keep := make(map[string]bool, len(m.entries))
 	for _, ent := range m.entries {
-		if !ent.deleting {
-			keep[ent.manifest.MainClientID] = true
-		}
+		keep[ent.MainClientID] = true
 	}
 	return keep
 }
 
-func (m *Manager) markDeletingLocked(ent *entry) {
-	ent.deleting = true
-	key := ent.manifest.TraceID
-	delete(m.entries, key)
-	m.pending[key] = ent
-	m.evicted[key] = struct{}{}
-}
-
+// GC deletes expired archives, then the oldest closed archives until the
+// retained ones fit the quota. The newest closed archive is kept even when it
+// alone exceeds the quota; overage reports by how much. An archive whose store
+// is still open is left in place and retried by the next GC.
 func (m *Manager) GC() (overage int64, err error) {
 	now := m.now()
-	m.mu.Lock()
-	closed := make([]*entry, 0, len(m.entries))
+	var doomed, closed []Manifest
+	m.mu.RLock()
 	for _, ent := range m.entries {
-		switch ent.manifest.State {
-		case StateClosed:
-			if !ent.deleting {
-				closed = append(closed, ent)
-			}
-		case StateInterrupted, StateIncomplete:
-			if !ent.deleting && !ent.manifest.ExpiresAt.After(now) {
-				m.markDeletingLocked(ent)
-			}
+		switch {
+		case ent.State != StateClosed && !ent.State.Unsealed():
+			// Active or finalizing: owned by a live session.
+		case !ent.ExpiresAt.After(now):
+			doomed = append(doomed, *ent)
+		case ent.State == StateClosed:
+			closed = append(closed, *ent)
 		}
 	}
+	m.mu.RUnlock()
 	sort.Slice(closed, func(i, j int) bool {
-		return closed[i].manifest.ClosedAt.Before(*closed[j].manifest.ClosedAt)
+		return closed[i].ClosedAt.Before(*closed[j].ClosedAt)
 	})
-	var ready []*entry
 	var retained int64
-	var newest *entry
-	for _, ent := range closed {
-		if ent.leases == 0 && !ent.manifest.ExpiresAt.After(now) {
-			m.markDeletingLocked(ent)
-			continue
-		}
-		newest = ent
-		retained += ent.manifest.SizeBytes
+	for _, manifest := range closed {
+		retained += manifest.SizeBytes
 	}
-	// Keep the newest non-expired closed archive even when it alone exceeds the
-	// soft quota. Older archives are selected until the target is reached.
-	for _, ent := range closed {
-		if retained <= m.quota || ent.deleting || ent == newest || ent.leases > 0 {
-			continue
+	for _, manifest := range closed[:max(len(closed)-1, 0)] {
+		if retained <= m.quota {
+			break
 		}
-		m.markDeletingLocked(ent)
-		retained -= ent.manifest.SizeBytes
+		doomed = append(doomed, manifest)
+		retained -= manifest.SizeBytes
 	}
 	if retained > m.quota {
 		overage = retained - m.quota
 	}
-	for _, ent := range m.pending {
-		if ent.leases == 0 && !ent.removing {
-			ent.removing = true
-			ready = append(ready, ent)
-		}
-	}
-	m.mu.Unlock()
-	for _, ent := range ready {
-		err = errors.Join(err, m.deleteEntry(ent))
+	for _, manifest := range doomed {
+		err = errors.Join(err, m.delete(manifest))
 	}
 	return overage, err
 }
 
-func (m *Manager) deleteEntry(ent *entry) (rerr error) {
-	complete := false
-	defer func() {
-		m.mu.Lock()
-		ent.removing = false
-		if complete {
-			delete(m.pending, ent.manifest.TraceID)
-		}
-		m.mu.Unlock()
-	}()
+func (m *Manager) delete(manifest Manifest) error {
 	if m.removeStore != nil {
-		removed, err := m.removeStore(ent.manifest.MainClientID)
-		if err != nil {
+		removed, err := m.removeStore(manifest.MainClientID)
+		if err != nil || !removed {
 			return err
-		}
-		if !removed {
-			return nil
 		}
 	}
 	var result error
-	if ent.manifest.Bootstrap.File != "" {
-		if err := os.Remove(filepath.Join(m.root, ent.manifest.Bootstrap.File)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if manifest.Bootstrap.File != "" {
+		if err := os.Remove(filepath.Join(m.root, manifest.Bootstrap.File)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			result = errors.Join(result, err)
 		}
 	}
-	result = errors.Join(result, removeAndSync(filepath.Join(m.root, ent.manifest.TraceID+".json")))
-	complete = result == nil
+	result = errors.Join(result, removeAndSync(filepath.Join(m.root, manifest.TraceID+".json")))
+	if result == nil {
+		m.mu.Lock()
+		delete(m.entries, manifest.TraceID)
+		m.mu.Unlock()
+	}
 	return result
 }
 

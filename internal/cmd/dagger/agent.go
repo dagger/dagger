@@ -235,7 +235,7 @@ type agentArchiveLister interface {
 	ListAll(context.Context, archive.ListOptions) ([]archive.Manifest, error)
 }
 
-// Listing only reads archive metadata: no leases, bootstrap, module composition,
+// Listing only reads archive metadata: no bootstrap, module composition,
 // provider lookup, or runtime restoration are needed.
 func listAgentArchives(ctx context.Context, source agentArchiveLister, out io.Writer) error {
 	manifests, err := source.ListAll(ctx, archive.ListOptions{})
