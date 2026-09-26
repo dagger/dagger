@@ -467,6 +467,7 @@ func (s *LLMSession) ensureTitle(a *sessionAgent, initialPrompt string) string {
 	s.titleL.Unlock()
 
 	emitSessionTitle(s.primaryCtx, title)
+	s.setEngineSessionTitle(title)
 	return title
 }
 
@@ -517,6 +518,28 @@ func normalizeSessionTitle(title string) string {
 		cut = maxSessionTitleRunes - len([]rune(ellipsis))
 	}
 	return strings.TrimSpace(string(runes[:cut])) + ellipsis
+}
+
+// setEngineSessionTitle names the session's engine archive. The span-name
+// record from emitSessionTitle only reaches the frontend and Cloud; the CLI's
+// own telemetry never flows through the engine. Best-effort: an older engine
+// without the API keeps its generic archive title.
+func (s *LLMSession) setEngineSessionTitle(title string) {
+	if s.dag == nil {
+		return
+	}
+	// Plumbing keeps the call's span out of the interactive view; it shares
+	// the session's trace, which is what the engine keys the title on.
+	ctx := s.plumbingCtx
+	if ctx == nil {
+		ctx = s.primaryCtx
+	}
+	if ctx == nil {
+		return
+	}
+	if err := s.dag.SetSessionTitle(ctx, title); err != nil {
+		slog.Debug("failed to set engine session title", "error", err)
+	}
 }
 
 // emitSessionTitle attaches the title to the primary span in both mutable live

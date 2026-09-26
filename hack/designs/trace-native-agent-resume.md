@@ -651,15 +651,16 @@ Use configurable TTL/quota retention. The old PR's seven-day/10-GiB defaults are
 starting point to reassess, not correctness requirements. Active-reader leases and
 clear expired/evicted errors are requirements.
 
-Archive titles are derived by the engine from the trace, not set through an API.
-The CLI publishes the session title as a span-name log record
-(`dagger.io/log.role=span.name`), regenerated after a reset or branch. The log
-exporter accepts such a record as the title only when its origin is the
-session's main client and its trace is the archive's: nested clients (e.g. a
-`dagger agent` run by a tool) share the trace and the main client's store, but
-do not name the session. The title is written into the active manifest as it
-arrives (held until registration if it arrives first), so active listings and
-archives recovered after a crash show it, and the sealed manifest inherits it.
+Archive titles are set through the experimental `Query.setSessionTitle` API,
+which the CLI calls whenever it (re)generates the session title after a reset or
+branch. The CLI's own span-name log record (`dagger.io/log.role=span.name`)
+cannot serve: the CLI exports its telemetry to the frontend and Cloud only,
+never through the engine. Only the session's main client may set the title;
+module clients and nested CLIs (including one in a container the main client
+started) are refused. The title is keyed by the caller's trace and written into
+the active manifest as it arrives (held until registration if it arrives
+first), so active listings and archives recovered after a crash show it, and
+the sealed manifest inherits it.
 Titles are sanitized to one bounded printable line; untitled archives list as
 `Agent session <start>`.
 
