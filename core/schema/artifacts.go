@@ -395,13 +395,14 @@ func (*artifactsSchema) one(ctx context.Context, parent *core.Artifacts, _ struc
 }
 func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
 	var workspaceID uint64
-	for i, artifact := range parent.Entries {
-		if slices.ContainsFunc(artifact.DimensionKeys, func(key *core.ArtifactDimensionKey) bool {
-			return !strings.HasPrefix(key.Dimension, "type:")
+	for i, entry := range parent.Entries {
+		// Module and type keys are static. Only collection keys are resolved.
+		if slices.ContainsFunc(entry.DimensionKeys, func(key *core.ArtifactDimensionKey) bool {
+			return key.Dimension != artifact.ModuleDimension && !strings.HasPrefix(key.Dimension, "type:")
 		}) {
 			return "", fmt.Errorf("a selection with resolved collection keys has no single DAG address; use the individual artifact addresses")
 		}
-		id, err := artifact.Workspace.ID()
+		id, err := entry.Workspace.ID()
 		if err != nil {
 			return "", err
 		}
