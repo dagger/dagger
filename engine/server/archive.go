@@ -15,12 +15,15 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -103,10 +106,13 @@ type pendingArchiveTitle struct {
 	title   string
 }
 
-// SetSessionTitle implements Query.setSessionTitle: it names the calling
-// session's archive. Only the session's main client may name it; module
-// clients and nested CLIs (including ones in a container the main client
-// started) are separate clients and are refused.
+// SetSessionTitle implements Query.setSessionTitle. It names the calling
+// session's archive and publishes the title into the session's telemetry as a
+// span-name record on the main client's primary span, so every consumer of the
+// trace -- the CLI's frontend via its live stream, Cloud, the archive's own
+// history -- renames the session from this one call. Only the session's main
+// client may name it; module clients and nested CLIs (including ones in a
+// container the main client started) are separate clients and are refused.
 func (srv *Server) SetSessionTitle(ctx context.Context, title string) error {
 	if archive.SanitizeTitle(title) == "" {
 		return errors.New("session title must not be empty")
@@ -124,7 +130,46 @@ func (srv *Server) SetSessionTitle(ctx context.Context, title string) error {
 		return errors.New("session title requires a trace")
 	}
 	sess.setArchiveTitle(traceID.String(), title)
+	sess.scopeMu.Lock()
+	md := record.clientMetadata
+	sess.scopeMu.Unlock()
+	sess.publishSessionTitle(ctx, md, title)
 	return nil
+}
+
+// publishSessionTitle emits title as a span-name record on the main client's
+// declared primary span. A client that declares none (older CLIs, SDKs
+// connecting directly) keeps its span name; its archive is still titled.
+func (sess *daggerSession) publishSessionTitle(ctx context.Context, md *engine.ClientMetadata, title string) {
+	if md == nil || sess.loggerProvider == nil {
+		return
+	}
+	primary, ok := primarySpanContext(md)
+	if !ok {
+		return
+	}
+	// Attribute the record to the primary span, from the main client's origin,
+	// so it routes to the main client's store and live stream.
+	ctx = trace.ContextWithSpanContext(context.WithoutCancel(ctx), primary)
+	ctx = engine.ContextWithClientMetadata(ctx, md)
+	var rec log.Record
+	rec.SetTimestamp(time.Now())
+	rec.SetBody(log.StringValue(title))
+	rec.AddAttributes(log.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	sess.loggerProvider.Logger(InstrumentationLibrary).Emit(ctx, rec)
+}
+
+func primarySpanContext(md *engine.ClientMetadata) (trace.SpanContext, bool) {
+	traceID, err := trace.TraceIDFromHex(md.PrimaryTraceID)
+	if err != nil {
+		return trace.SpanContext{}, false
+	}
+	spanID, err := trace.SpanIDFromHex(md.PrimarySpanID)
+	if err != nil {
+		return trace.SpanContext{}, false
+	}
+	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled, Remote: true})
+	return sc, sc.IsValid()
 }
 
 // setArchiveTitle records the session title into the active manifest, so
