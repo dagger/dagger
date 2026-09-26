@@ -438,6 +438,18 @@ func TestArchiveSharedTraceBelongsToFirstSession(t *testing.T) {
 	require.Equal(t, first.mainClientCallerID, m.MainClientID)
 }
 
+// TestArchiveInitFailureIsNotFatal: an unusable archive directory disables
+// archives instead of keeping the engine from starting.
+func TestArchiveInitFailureIsNotFatal(t *testing.T) {
+	root := t.TempDir()
+	// A file where the telemetry directory belongs: unusable even as root.
+	require.NoError(t, os.WriteFile(filepath.Join(root, "telemetry"), nil, 0o600))
+	srv := &Server{rootDir: root}
+	require.NoError(t, srv.initArchives())
+	require.Nil(t, srv.archives)
+	require.NotNil(t, srv.clientDBs, "live telemetry stores do not depend on archives")
+}
+
 type failingReleaseContainer struct{}
 
 func (failingReleaseContainer) Start(context.Context, bkgw.StartRequest) (bkgw.ContainerProcess, error) {

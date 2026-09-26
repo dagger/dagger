@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/dagger/dagger/engine/slog"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -161,6 +162,10 @@ func (m *Manager) findLocked(traceID string) (*Manifest, error) {
 	return nil, &Failure{Kind: FailureNotFound}
 }
 
+// load indexes the manifests under root. One bad manifest never fails the
+// load: an unreadable or invalid one is indexed as corrupt, and one whose
+// interrupted state cannot be persisted is still served as interrupted (the
+// next startup retries the rewrite). Only an unreadable root fails.
 func (m *Manager) load() error {
 	files, err := os.ReadDir(m.root)
 	if err != nil {
@@ -172,22 +177,10 @@ func (m *Manager) load() error {
 		}
 		path := filepath.Join(m.root, file.Name())
 		traceID := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
-		data, err := os.ReadFile(path)
+		manifest, err := readManifest(path, traceID)
 		if err != nil {
-			m.corrupt[traceID] = fmt.Errorf("read archive manifest %s: %w", file.Name(), err)
-			continue
-		}
-		var manifest Manifest
-		if err := json.Unmarshal(data, &manifest); err != nil {
-			m.corrupt[traceID] = fmt.Errorf("decode archive manifest %s: %w", file.Name(), err)
-			continue
-		}
-		if manifest.TraceID != traceID {
-			m.corrupt[traceID] = errors.New("archive manifest filename and trace ID differ")
-			continue
-		}
-		if err := validateManifest(manifest); err != nil {
-			m.corrupt[traceID] = fmt.Errorf("invalid archive manifest %s: %w", file.Name(), err)
+			slog.Warn("skipping corrupt telemetry archive", "traceID", traceID, "err", err)
+			m.corrupt[traceID] = err
 			continue
 		}
 		if manifest.State == StateActive || manifest.State == StateFinalizing {
@@ -195,7 +188,7 @@ func (m *Manager) load() error {
 			manifest.Failure = "engine stopped before graceful archive finalization"
 			m.recordStoreSize(&manifest)
 			if err := m.writeManifest(manifest); err != nil {
-				return err
+				slog.Warn("persist interrupted telemetry archive", "traceID", traceID, "err", err)
 			}
 		} else if manifest.State.Unsealed() && manifest.SizeBytes == 0 {
 			// Unsealed before sizes were recorded; size it for quota accounting.
@@ -204,6 +197,25 @@ func (m *Manager) load() error {
 		m.entries[traceID] = &manifest
 	}
 	return nil
+}
+
+func readManifest(path, traceID string) (Manifest, error) {
+	name := filepath.Base(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("read archive manifest %s: %w", name, err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return Manifest{}, fmt.Errorf("decode archive manifest %s: %w", name, err)
+	}
+	if manifest.TraceID != traceID {
+		return Manifest{}, errors.New("archive manifest filename and trace ID differ")
+	}
+	if err := validateManifest(manifest); err != nil {
+		return Manifest{}, fmt.Errorf("invalid archive manifest %s: %w", name, err)
+	}
+	return manifest, nil
 }
 
 // recordStoreSize sizes an unsealed archive's store so it counts toward the

@@ -50,8 +50,15 @@ func (srv *Server) initArchives() error {
 			return fmt.Errorf("archive quota: %w", err)
 		}
 	}
+	// Archives are an optional feature: an engine whose archive directory is
+	// unusable (e.g. a full disk left by the crash it is recovering from)
+	// still boots, without archives.
 	srv.archives, err = archive.NewManager(config)
-	return err
+	if err != nil {
+		slog.Error("telemetry archives disabled", "err", err)
+		srv.archives = nil
+	}
+	return nil
 }
 
 func (sess *daggerSession) ensureArchive(traceID string) (rerr error) {
