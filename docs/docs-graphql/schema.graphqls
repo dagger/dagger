@@ -5483,6 +5483,17 @@ type Query implements Node {
   """The current UTC time in RFC3339 format. Never cached."""
   currentTimestamp: String!
 
+  """
+  Name the current session.
+
+  The title labels the session's engine archive, as listed by dagger agent
+  --resume. The latest title wins. Only the session's main client may set it.
+  """
+  setSessionTitle(
+    """The title, sanitized to a single printable line."""
+    title: String!
+  ): Void @experimental(reason: "Session APIs are likely to change.")
+
   """Creates an empty directory."""
   directory: Directory!
 

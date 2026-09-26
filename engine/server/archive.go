@@ -22,6 +22,7 @@ import (
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -102,12 +103,34 @@ type pendingArchiveTitle struct {
 	title   string
 }
 
-// setArchiveTitle records a session title published by the main client into
-// the active manifest, so listings show it while the session runs and an
-// archive recovered after an engine crash keeps it. The exporter only passes
-// titles whose origin is the main client: nested clients (e.g. a dagger agent
-// run by a tool) share the trace and the main client's store, but do not name
-// the session.
+// SetSessionTitle implements Query.setSessionTitle: it names the calling
+// session's archive. Only the session's main client may name it; module
+// clients and nested CLIs (including ones in a container the main client
+// started) are separate clients and are refused.
+func (srv *Server) SetSessionTitle(ctx context.Context, title string) error {
+	if archive.SanitizeTitle(title) == "" {
+		return errors.New("session title must not be empty")
+	}
+	record, err := srv.clientRecordFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	sess := record.daggerSession
+	if record.clientID != sess.mainClientCallerID {
+		return errors.New("only the session's main client can set its title")
+	}
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	if !traceID.IsValid() {
+		return errors.New("session title requires a trace")
+	}
+	sess.setArchiveTitle(traceID.String(), title)
+	return nil
+}
+
+// setArchiveTitle records the session title into the active manifest, so
+// listings show it while the session runs and an archive recovered after an
+// engine crash keeps it. A title set before the archive exists is held until
+// registration.
 func (sess *daggerSession) setArchiveTitle(traceID, title string) {
 	if sess.telemetryPubSub.srv.archives == nil || archive.SanitizeTitle(title) == "" {
 		return

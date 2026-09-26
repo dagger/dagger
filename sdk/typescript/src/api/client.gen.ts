@@ -14804,6 +14804,7 @@ export class Client extends BaseClient {
   private readonly _currentTimestamp?: string = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _serveModule?: Void = undefined
+  private readonly _setSessionTitle?: Void = undefined
   private readonly _version?: string = undefined
 
   /**
@@ -14815,6 +14816,7 @@ export class Client extends BaseClient {
     _currentTimestamp?: string,
     _defaultPlatform?: Platform,
     _serveModule?: Void,
+    _setSessionTitle?: Void,
     _version?: string,
   ) {
     super(ctx)
@@ -14823,6 +14825,7 @@ export class Client extends BaseClient {
     this._currentTimestamp = _currentTimestamp
     this._defaultPlatform = _defaultPlatform
     this._serveModule = _serveModule
+    this._setSessionTitle = _setSessionTitle
     this._version = _version
   }
 
@@ -15231,6 +15234,19 @@ export class Client extends BaseClient {
   setSecret = (name: string, plaintext: string): Secret => {
     const ctx = this._ctx.select("setSecret", { name, plaintext })
     return new Secret(ctx)
+  }
+
+  /**
+   * Name the current session.
+   *
+   * The title labels the session's engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+   * @param title The title, sanitized to a single printable line.
+   * @experimental
+   */
+  setSessionTitle = async (title: string): Promise<void> => {
+    const ctx = this._ctx.select("setSessionTitle", { title })
+
+    await ctx.execute()
   }
 
   /**

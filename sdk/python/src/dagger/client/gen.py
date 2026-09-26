@@ -14834,6 +14834,40 @@ class Query(Root):
         _ctx = self._select("setSecret", _args)
         return Secret(_ctx)
 
+    async def set_session_title(self, title: str) -> Void | None:
+        """Name the current session.
+
+        The title labels the session's engine archive, as listed by dagger
+        agent --resume. The latest title wins. Only the session's main client
+        may set it.
+
+        .. caution::
+            Experimental: Session APIs are likely to change.
+
+        Parameters
+        ----------
+        title:
+            The title, sanitized to a single printable line.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("title", title),
+        ]
+        _ctx = self._select("setSessionTitle", _args)
+        await _ctx.execute()
+
     def source_map(
         self,
         filename: str,

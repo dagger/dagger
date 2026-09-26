@@ -14465,6 +14465,7 @@ type Query struct {
 	defaultPlatform  *Platform
 	id               *ID
 	serveModule      *Void
+	setSessionTitle  *Void
 	version          *string
 }
 
@@ -15155,6 +15156,18 @@ func (r *Query) SetSecret(name string, plaintext string) *Secret {
 	return &Secret{
 		query: q,
 	}
+}
+
+// Name the current session.
+//
+// The title labels the session's engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+//
+// Experimental: Session APIs are likely to change.
+func (r *Query) SetSessionTitle(ctx context.Context, title string) error {
+	q := r.query.Select("setSessionTitle")
+	q = q.Arg("title", title)
+
+	return q.Execute(ctx)
 }
 
 // Creates source map metadata.

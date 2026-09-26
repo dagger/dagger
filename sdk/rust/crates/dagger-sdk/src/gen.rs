@@ -14137,6 +14137,17 @@ impl Query {
         let query = self.selection.select("currentTimestamp");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Name the current session.
+    /// The title labels the session's engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+    ///
+    /// # Arguments
+    ///
+    /// * `title` - The title, sanitized to a single printable line.
+    pub async fn set_session_title(&self, title: impl Into<String>) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("setSessionTitle");
+        query = query.arg("title", title.into());
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Creates an empty directory.
     pub fn directory(&self) -> Directory {
         let query = self.selection.select("directory");

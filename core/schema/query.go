@@ -107,7 +107,27 @@ func (s *querySchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Returns the live current time").
 			Doc(`The current UTC time in RFC3339 format. Never cached.`),
+
+		dagql.Func("setSessionTitle", s.setSessionTitle).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Mutates the calling session's title.").
+			Experimental("Session APIs are likely to change.").
+			Doc(`Name the current session.`,
+				`The title labels the session's engine archive, as listed by
+				dagger agent --resume. The latest title wins. Only the session's
+				main client may set it.`).
+			Args(
+				dagql.Arg("title").Doc(`The title, sanitized to a single printable line.`),
+			),
 	}.Install(srv)
+}
+
+type setSessionTitleArgs struct {
+	Title string
+}
+
+func (s *querySchema) setSessionTitle(ctx context.Context, parent *core.Query, args setSessionTitleArgs) (dagql.Nullable[core.Void], error) {
+	return dagql.Null[core.Void](), parent.SetSessionTitle(ctx, args.Title)
 }
 
 type pipelineArgs struct {
