@@ -237,7 +237,7 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	}
 
 	// The blocking edges here hang by design when one breaks (a turn that
-	// never lands leaves awaitAgents polling), so bound the whole thing into
+	// never lands leaves awaitRestorable polling), so bound the whole thing into
 	// a located failure.
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
 	defer cancel()

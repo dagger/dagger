@@ -1701,12 +1701,17 @@ func (sink *agentTraceSink) awaitAgent(t *testctx.T, state string) *dagui.AgentN
 	return node
 }
 
-// awaitAgents blocks until the trace has published the given number of
-// agents, each with an addressable call digest AND a resume anchor, and
-// returns them keyed by display name. It is awaitAgent's multi-agent form:
-// what a restore reads is the anchor, so waiting on the roster alone would
-// race the record that makes the trace restorable at all.
-func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dagui.AgentNode {
+// awaitRestorable blocks until the trace has published the given number of
+// agents, each with an addressable call digest AND a resume anchor, and every
+// anchor REBUILDS from the payloads the client holds; it returns them keyed by
+// display name. Waiting on the roster alone would race the record that makes
+// the trace restorable at all, and the anchor record and its payload ride
+// different pipelines — the record is a log, while call frames arrive through
+// spans and the payload log lane. A capture taken in between serves a trace
+// whose anchor names a conversation nothing can rebuild (the "never reached
+// this client" restore failure, seen as a CI flake on the worker dismissed
+// right after its turn).
+func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]*dagui.AgentNode {
 	t.Helper()
 	byName := map[string]*dagui.AgentNode{}
 	var captureErr error
@@ -1731,19 +1736,6 @@ func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dag
 		})
 	}, 60*time.Second, 100*time.Millisecond)
 	require.NoError(t, captureErr)
-	return byName
-}
-
-// awaitRestorable is awaitAgents plus the property a restore actually needs:
-// every agent's resume anchor REBUILDS from the payloads the client holds.
-// The anchor record and its payload ride different pipelines — the record is
-// a log, while call frames arrive through spans and the payload log lane. A
-// capture taken in between serves a trace whose anchor names a conversation nothing
-// can rebuild (the "never reached this client" restore failure, seen as a CI
-// flake on the worker dismissed right after its turn).
-func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]*dagui.AgentNode {
-	t.Helper()
-	byName := sink.awaitAgents(t, count)
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
 		sink.read(func(db *dagui.DB) {
 			for name, node := range byName {
