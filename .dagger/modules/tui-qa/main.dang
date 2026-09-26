@@ -225,8 +225,8 @@ type TuiQa {
 
     # Cloud auth: forwarded from the configured `cloudCredentials` secret so
     # the CLI under test is logged in (no-op when none is configured).
-    # Resume uses args: ["agent", "--trace", id] against an engine that holds
-    # the verified archive, never a mounted local JSON session file.
+    # Resume uses args: ["agent", "-r", id] against an engine that holds
+    # the verified archive, or fetches the trace from Cloud with these creds.
     let runner = withCredentials(base2, cloudCredentials, daggerConfig)
 
     # run the command under test as a persistent service serving the console.

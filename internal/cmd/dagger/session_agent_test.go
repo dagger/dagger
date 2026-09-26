@@ -272,7 +272,7 @@ func TestSessionTitleGeneratedOnceAndPublishedOnPrimarySpan(t *testing.T) {
 	agent := session.newAgent("agent")
 
 	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "please fix the cache tests"))
-	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "a later autosave"))
+	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "a later prompt"))
 	require.Equal(t, 1, calls)
 
 	primary.End()

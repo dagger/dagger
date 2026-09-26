@@ -165,7 +165,7 @@ func TestStatusLineOmitsContextBarWhenUnknown(t *testing.T) {
 	}
 }
 
-// TestStatusLineSeededFromResume reproduces the resume ordering: LoadSession
+// TestStatusLineSeededFromResume reproduces the resume ordering: restore
 // pushes the restored conversation's stats via SetStatusLine before the
 // interactive shell (and thus the status line component) is created. The
 // frontend must retain that data and seed the new status line with it, so a
