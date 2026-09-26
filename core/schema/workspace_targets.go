@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/workspace"
 )
 
 // workspaceEntrypointNames uses the active install policy, including explicit
@@ -30,19 +29,9 @@ func workspaceEntrypointNames(ctx context.Context, ws *core.Workspace) (map[stri
 		}
 	}
 
-	cfg, err := workspaceConfigWithCompatFallback(ctx, ws)
+	cfg, err := workspaceEffectiveConfig(ctx, ws)
 	if err != nil {
 		return nil, err
-	}
-	cfg, err = workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
-	if err != nil {
-		return nil, err
-	}
-	if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
-		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
-		if err != nil {
-			return nil, err
-		}
 	}
 	for name, entry := range cfg.Modules {
 		names[name] = entry.Entrypoint

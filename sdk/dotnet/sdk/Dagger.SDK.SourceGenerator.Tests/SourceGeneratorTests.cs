@@ -7,6 +7,7 @@ using Dagger.SDK.SourceGenerator.Tests.Utils;
 using Dagger.SDK.SourceGenerator.Types;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Dagger.SDK.SourceGenerator.Tests;
@@ -72,6 +73,44 @@ public class SourceGeneratorTests
     public void FormatsIdScalarName()
     {
         Assert.AreEqual("Id", Formatter.FormatType("ID"));
+    }
+
+    [TestMethod]
+    public void CustomScalarDefaultsAreAppliedByTheEngine()
+    {
+        var introspection = JsonSerializer.Deserialize<Introspection>(
+            """
+            {"__schema":{"types":[
+              {"kind":"SCALAR","name":"JSON"},
+              {"kind":"OBJECT","name":"Query","fields":[
+                {"name":"evaluate","type":{"kind":"SCALAR","name":"String"},"args":[
+                  {"name":"arguments","type":{"kind":"NON_NULL","ofType":{"kind":"SCALAR","name":"JSON"}},"defaultValue":"\"{}\""}
+                ]}
+              ]}
+            ]}}
+            """
+        )!;
+
+        var code = new CodeGenerator(new CodeRenderer()).Generate(introspection);
+
+        StringAssert.Contains(code, "JSON? arguments = null");
+        var method = CSharpSyntaxTree
+            .ParseText(code)
+            .GetRoot()
+            .DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .Single(candidate => candidate.Identifier.ValueText == "EvaluateAsync");
+        var parameters = method.ParameterList.Parameters.Select(parameter =>
+            parameter.Identifier.ValueText
+        );
+        var locals = method
+            .DescendantNodes()
+            .OfType<VariableDeclaratorSyntax>()
+            .Select(variable => variable.Identifier.ValueText);
+        Assert.IsFalse(
+            parameters.Intersect(locals).Any(),
+            "Generated local variables must not shadow API parameters."
+        );
     }
 
     [TestMethod]

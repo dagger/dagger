@@ -53,12 +53,21 @@ func (m *HelloWithGenerators) LazyExecFailure() *dagger.Changeset {
 }
 
 func (m *HelloWithGenerators) WorkspaceGeneratorsEmpty(ctx context.Context, ws *dagger.Workspace) (bool, error) {
-	generated := ws.Generators(dagger.WorkspaceGeneratorsOpts{
-		Include: []string{"toolchain-generators:*"},
-	}).Run()
-	empty, err := generated.IsEmpty(ctx)
+	items, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"toolchain-generators"}}).FilterTypes([]string{"Generator"}).Items(ctx)
 	if err != nil {
 		return false, err
+	}
+	empty := true
+	for _, artifact := range items {
+		id, err := artifact.Value().ID(ctx)
+		if err != nil {
+			return false, err
+		}
+		itemEmpty, err := dagger.Ref[*dagger.Changeset](dag, id).IsEmpty(ctx)
+		if err != nil {
+			return false, err
+		}
+		empty = empty && itemEmpty
 	}
 	return empty, nil
 }

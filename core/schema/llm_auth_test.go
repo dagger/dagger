@@ -189,18 +189,16 @@ func TestComposedLLMCredentialIsolatedAcrossSessions(t *testing.T) {
 					require.NoError(t, err)
 					srv.dag = dag
 					srv.deps = core.NewSchemaBuilder(root, nil)
-					dagql.Fields[*core.Query]{
-						dagql.Func("authTestAgents", func(context.Context, *core.Query, struct{}) (*core.AgentMiddlewareGroup, error) {
-							return &core.AgentMiddlewareGroup{}, nil
-						}),
-					}.Install(dag)
-
-					// Compose without a base on a session-independent group. Its
-					// default llm() re-selects the same pinned model and provider in
-					// both sessions, but must not alias their live endpoint objects.
+					// Compose onto a default llm(). It re-selects the same pinned model
+					// and provider in both sessions, but must not alias their live
+					// endpoint objects.
 					var llm dagql.ObjectResult[*core.LLM]
 					require.NoError(t, dag.Select(ctx, dag.Root(), &llm,
-						dagql.Selector{Field: "authTestAgents"}, dagql.Selector{Field: "compose"}))
+						dagql.Selector{Field: "llm"},
+						dagql.Selector{Field: "compose", Args: []dagql.NamedInput{{
+							Name:  "expertise",
+							Value: dagql.ArrayInput[dagql.ID[*core.Expertise]]{},
+						}}}))
 					if withResource && previous != nil {
 						// The miss produced a genuinely fresh LLM. A later load must
 						// not canonicalize it to the previous session's endpoint.

@@ -282,7 +282,7 @@ func (v *containerValue) String() string {
 }
 
 func (v *containerValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).Container().Sync(ctx)
+	return c.CurrentWorkspace().Resolve(v.address).Container().Sync(ctx)
 }
 
 // directoryValue is a pflag.Value that builds a dagger.Directory from a host path.
@@ -304,7 +304,7 @@ func (v *directoryValue) String() string {
 }
 
 func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
-	return dag.Address(v.String()).
+	return dag.CurrentWorkspace().Resolve(v.String()).
 		Directory(
 			dagger.AddressDirectoryOpts{
 				Exclude: modArg.Ignore,
@@ -334,7 +334,7 @@ func (v *workspaceValue) String() string {
 }
 
 func (v *workspaceValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return dag.Address(v.address).Directory().AsWorkspace(), nil
+	return dag.CurrentWorkspace().Resolve(v.address).Directory().AsWorkspace(), nil
 }
 
 // fileValue is a pflag.Value that builds a dagger.File from a host path.
@@ -356,7 +356,7 @@ func (v *fileValue) String() string {
 }
 
 func (v *fileValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).File().Sync(ctx)
+	return c.CurrentWorkspace().Resolve(v.address).File().Sync(ctx)
 }
 
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
@@ -382,7 +382,7 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 	if !strings.Contains(v.address, ":") {
 		slog.Warn("deprecation: missig URI scheme in secret argument \"" + v.address + "\". Add env:// prefix to prevent errors in future versions")
 	}
-	return c.Address(v.address).Secret(), nil
+	return c.CurrentWorkspace().Resolve(v.address).Secret(), nil
 }
 
 // serviceValue is a pflag.Value that builds a dagger.Service from a host:port
@@ -405,7 +405,7 @@ func (v *serviceValue) Set(s string) error {
 }
 
 func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	svc := c.Address(v.address).Service()
+	svc := c.CurrentWorkspace().Resolve(v.address).Service()
 	// tcp:// and udp:// host services are started eagerly: the caller expects
 	// the tunnel up for the duration of the call. Module references resolve to
 	// services that start lazily on first use via service bindings; starting
@@ -481,7 +481,7 @@ func (v *socketValue) Set(s string) error {
 }
 
 func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).Socket(), nil
+	return c.CurrentWorkspace().Resolve(v.address).Socket(), nil
 }
 
 // cacheVolumeValue is a pflag.Value that builds a dagger.CacheVolume from a
@@ -538,7 +538,7 @@ func (v *volumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.Modul
 	if v.address == "" {
 		return nil, fmt.Errorf("volume address cannot be empty")
 	}
-	return dag.Address(v.address).Volume(), nil
+	return dag.CurrentWorkspace().Resolve(v.address).Volume(), nil
 }
 
 type moduleValue struct {
@@ -680,7 +680,7 @@ func (v *gitRepositoryValue) Set(s string) error {
 }
 
 func (v *gitRepositoryValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).GitRepository(), nil
+	return c.CurrentWorkspace().Resolve(v.address).GitRepository(), nil
 }
 
 type gitRefValue struct {
@@ -701,7 +701,7 @@ func (v *gitRefValue) Set(s string) error {
 }
 
 func (v *gitRefValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).GitRef(), nil
+	return c.CurrentWorkspace().Resolve(v.address).GitRef(), nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a

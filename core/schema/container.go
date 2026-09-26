@@ -41,6 +41,9 @@ type containerSchema struct{}
 var _ SchemaResolvers = &containerSchema{}
 
 func (s *containerSchema) Install(srv *dagql.Server) {
+	srv.InstallObject(dagql.NewClass[core.Command](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[core.Command]{}.Install(srv)
+
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithDynamicInputs("container", s.container, s.containerDynamicInputs).
 			Doc(`Creates a scratch container, with no image or metadata.`,
@@ -936,6 +939,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("withDefaultTerminalCmd", s.withDefaultTerminalCmd).
 			View(AllVersion).
+			Deprecated("Use withShell.").
 			Doc(`Set the default command to invoke for the container's terminal API.`).
 			Args(
 				dagql.Arg("args").Doc(`The args of the command.`),
@@ -948,6 +952,38 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				"--privileged" flag. Containerization does not provide any security
 				guarantees when using this option. It should only be used when
 				absolutely necessary and only with trusted commands.`),
+			),
+
+		dagql.NodeFunc("withShell", s.withShell).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Set the shell used by terminal() and withRun().`).
+			Args(
+				dagql.Arg("interactive").Doc(`Command arguments for interactive use. Example: ["sh"].`),
+				dagql.Arg("batch").Doc(`Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".`),
+				disableNestingArg,
+				legacyNestingArg,
+				deprecatedNestingArg,
+				dagql.Arg("insecureRootCapabilities").Doc(`Give the shell all root capabilities. Use only with trusted commands.`),
+			),
+
+		dagql.NodeFunc("shell", s.shell).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Return the configured shell command. Defaults to ["sh"].`).
+			Args(dagql.Arg("batch").Doc(`Return the batch command instead of the interactive command.`)),
+
+		dagql.NodeFunc("withRun", s.withRun).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc(`Execute a script with the configured batch shell and return the modified container.`).
+			Args(
+				dagql.Arg("command").Doc(`Script to append to the shell command as one argument.`),
+				dagql.Arg("shell").Doc(`Override the batch shell arguments. Example: ["bash", "-c"].`),
+				dagql.Arg("disableDaggerInDagger").
+					View(AfterVersion(defaultNestingVersion)).
+					Doc(`Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.`),
+				legacyNestingArg,
+				deprecatedNestingArg,
+				dagql.Arg("insecureRootCapabilities").Doc(`Override whether the shell has all root capabilities.`),
 			),
 
 		dagql.NodeFunc("terminal", s.terminal).
@@ -4722,7 +4758,10 @@ func (s *containerSchema) withoutFocus(ctx context.Context, parent *core.Contain
 }
 
 type containerWithDefaultTerminalCmdArgs struct {
-	core.DefaultTerminalCmdOpts
+	Args                          []string
+	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
+	InsecureRootCapabilities      dagql.Optional[dagql.Boolean] `default:"false"`
+	DisableDaggerInDagger         bool                          `default:"false"`
 }
 
 func (s *containerSchema) withDefaultTerminalCmd(
@@ -4733,19 +4772,123 @@ func (s *containerSchema) withDefaultTerminalCmd(
 	if core.Supports(ctx, defaultNestingVersion) {
 		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(!args.DisableDaggerInDagger))
 	}
+	return withContainerShell(ctx, parent, core.DefaultTerminalCmdOpts{
+		Args:                          args.Args,
+		DisableDaggerInDagger:         args.DisableDaggerInDagger,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      args.InsecureRootCapabilities,
+	})
+}
+
+func withContainerShell(ctx context.Context, parent dagql.ObjectResult[*core.Container], opts core.DefaultTerminalCmdOpts) (*core.Container, error) {
 	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
-	ctr.DefaultTerminalCmd = args.DefaultTerminalCmdOpts
+	ctr.DefaultTerminalCmd = opts
 	if parentPendingLazy {
 		ctr.Lazy = &core.ContainerWithDefaultTerminalCmdLazy{
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
-			Opts:      args.DefaultTerminalCmdOpts,
+			Opts:      opts,
 		}
 	}
 	return ctr, nil
+}
+
+type containerWithShellArgs struct {
+	Interactive                   []string
+	Batch                         dagql.Optional[dagql.ArrayInput[dagql.String]]
+	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
+	InsecureRootCapabilities      dagql.Optional[dagql.Boolean] `default:"false"`
+	DisableDaggerInDagger         bool                          `default:"false"`
+}
+
+func (s *containerSchema) withShell(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithShellArgs) (*core.Container, error) {
+	if len(args.Interactive) == 0 {
+		return nil, fmt.Errorf("interactive shell arguments must not be empty")
+	}
+	if core.Supports(ctx, defaultNestingVersion) {
+		args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(!args.DisableDaggerInDagger))
+	}
+	opts := core.DefaultTerminalCmdOpts{
+		Args:                          args.Interactive,
+		DisableDaggerInDagger:         args.DisableDaggerInDagger,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      args.InsecureRootCapabilities,
+	}
+	if args.Batch.Valid {
+		if len(args.Batch.Value) == 0 {
+			return nil, fmt.Errorf("batch shell arguments must not be empty")
+		}
+		opts.Batch = make([]string, len(args.Batch.Value))
+		for i, arg := range args.Batch.Value {
+			opts.Batch[i] = string(arg)
+		}
+	}
+	return withContainerShell(ctx, parent, opts)
+}
+
+func (s *containerSchema) shell(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct {
+	Batch bool `default:"false"`
+}) (core.Command, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return core.Command{}, err
+	}
+	return parent.Self().Shell(args.Batch, core.Supports(ctx, defaultNestingVersion)), nil
+}
+
+type containerWithRunArgs struct {
+	Command                       string
+	Shell                         dagql.Optional[dagql.ArrayInput[dagql.String]]
+	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean]
+	InsecureRootCapabilities      dagql.Optional[dagql.Boolean]
+	DisableDaggerInDagger         dagql.Optional[dagql.Boolean]
+}
+
+func (s *containerSchema) withRun(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithRunArgs) (res dagql.ObjectResult[*core.Container], _ error) {
+	if args.Shell.Valid && len(args.Shell.Value) == 0 {
+		return res, fmt.Errorf("shell arguments must not be empty")
+	}
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return res, err
+	}
+	defaultNesting := core.Supports(ctx, defaultNestingVersion)
+	shell := parent.Self().Shell(true, defaultNesting)
+	if args.Shell.Valid {
+		shell.Args = make([]string, len(args.Shell.Value))
+		for i, arg := range args.Shell.Value {
+			shell.Args[i] = string(arg)
+		}
+	}
+	if defaultNesting {
+		if args.DisableDaggerInDagger.Valid {
+			shell.PrivilegedNesting = !args.DisableDaggerInDagger.Value.Bool()
+		}
+	} else if args.ExperimentalPrivilegedNesting.Valid {
+		shell.PrivilegedNesting = args.ExperimentalPrivilegedNesting.Value.Bool()
+	}
+	if args.InsecureRootCapabilities.Valid {
+		shell.InsecureRootCapabilities = bool(args.InsecureRootCapabilities.Value)
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	execArgs := []dagql.NamedInput{
+		{Name: "args", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(append(shell.Args, args.Command)...))},
+		{Name: "insecureRootCapabilities", Value: dagql.Boolean(shell.InsecureRootCapabilities)},
+	}
+	if defaultNesting {
+		execArgs = append(execArgs, dagql.NamedInput{Name: "disableDaggerInDagger", Value: dagql.Boolean(!shell.PrivilegedNesting)})
+	} else {
+		execArgs = append(execArgs, dagql.NamedInput{Name: "experimentalPrivilegedNesting", Value: dagql.Boolean(shell.PrivilegedNesting)})
+	}
+	return res, srv.Canonical().Select(ctx, parent, &res, dagql.Selector{
+		Field: "withExec",
+		View:  dagql.CurrentCall(ctx).View,
+		Args:  execArgs,
+	})
 }
 
 type containerTerminalArgs struct {

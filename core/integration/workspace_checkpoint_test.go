@@ -328,17 +328,19 @@ func (*Probe) Frozen() error { return nil }
 	require.NoError(t, err)
 	var got struct {
 		Node struct {
-			Checks struct{ List []struct{ Name string } }
+			Artifacts struct {
+				Checks struct{ List []struct{ Name string } }
+			}
 		}
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query: `query($id: ID!) { node(id: $id) { ... on Workspace {
-   checks(noGenerate: true) { list { name } }
+   artifacts { checks: filterTypes(types: ["Check"]) { list: items { name: uri } } }
   } } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &got}))
-	require.Len(t, got.Node.Checks.List, 1)
-	require.Equal(t, "probe:frozen", got.Node.Checks.List[0].Name)
+	require.Len(t, got.Node.Artifacts.Checks.List, 1)
+	require.Equal(t, "dag://probe/frozen", got.Node.Artifacts.Checks.List[0].Name)
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotPinsGitOverlayRecipe(ctx context.Context, t *testctx.T) {

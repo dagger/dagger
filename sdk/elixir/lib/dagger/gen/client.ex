@@ -16,7 +16,7 @@ defmodule Dagger.Client do
   @type t() :: %__MODULE__{}
 
   @doc """
-  initialize an address to load directories, containers, secrets or other object types.
+  Resolve external references only.
   """
   @spec address(t(), String.t()) :: Dagger.Address.t()
   def address(%__MODULE__{} = client, value) do

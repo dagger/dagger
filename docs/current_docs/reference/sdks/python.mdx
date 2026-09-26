@@ -755,7 +755,7 @@ dagger api call my-module build
 dagger check
 
 # Confirm generated code is up to date
-dagger check --generate
+dagger check --generated=true
 ```
 
 You can also write Python tests that run inside a container built by your module, executed as a check so they run with `dagger check` and in CI:
@@ -810,7 +810,7 @@ class MyModule:
 
 ### CI
 
-In CI, run `dagger check` to execute every check, and `dagger check --generate` to confirm generated code is up to date:
+In CI, run `dagger check` to execute every check, including checks that generated code is up to date:
 
 ```yaml title=".github/workflows/ci.yml" template
 jobs:

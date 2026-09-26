@@ -17,11 +17,8 @@ type workspaceContextKey struct{}
 // Workspace-typed arguments are resolved from this Workspace rather than the
 // ambient current workspace.
 //
-// This is the Workspace-based counterpart to [EnvToContext]. Group runs
-// (GeneratorGroup, CheckGroup, UpGroup) thread the workspace they were rolled
-// up from through it, so every leaf across the group's modules receives the
-// same workspace — under the same dagql ID — rather than each leaf re-deriving
-// a per-call equivalent that defeats (module, workspace)-keyed caching.
+// Artifact evaluation binds the workspace that supplied the artifact. Every
+// target receives the same workspace ID, including its overlay edits.
 //
 // It is also threaded at LLM tool dispatch when the LLM is bound to
 // a Workspace (via LLM.withWorkspace), letting the agent operate on its own

@@ -9,15 +9,12 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-// Recompose replaces the selected middleware's owned contributions, preserving
+// RecomposeExpertise replaces the selected expertise's owned contributions, preserving
 // the state of its tool objects while loading new implementations. Unowned
-// prompts and bindings, and contributions from other middleware, are retained.
+// prompts and bindings, and contributions from other expertise, are retained.
 // Every replacement is recorded as a real selector, including the module-state
 // rebind, rather than an in-memory change to an old object's class.
-func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
-	if r.BoundWorkspace.Self() != nil {
-		ctx = WorkspaceToContext(ctx, r.BoundWorkspace)
-	}
+func RecomposeExpertise(ctx context.Context, base dagql.ObjectResult[*LLM], expertise []*Expertise) (dagql.ObjectResult[*LLM], error) {
 	acc := base
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -27,8 +24,8 @@ func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectR
 	// every entrypoint would erase contributions from earlier ones in the same
 	// module; checking tool state before all have run would reject their tools.
 	removed := map[string]bool{}
-	for _, agent := range r.Agents {
-		owner := agent.Node.OriginalModule.Self().Name()
+	for _, entry := range expertise {
+		owner := entry.OriginalModule().Name()
 		if removed[owner] {
 			continue
 		}
@@ -40,10 +37,10 @@ func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectR
 			return base, err
 		}
 	}
-	for _, agent := range r.Agents {
-		next, err := agent.Node.RunAgent(ctx, acc)
+	for _, entry := range expertise {
+		next, err := entry.Run(ctx, acc)
 		if err != nil {
-			return base, fmt.Errorf("recompose agent %q: %w", agent.Name(), err)
+			return base, fmt.Errorf("recompose agent %q: %w", entry.Name(), err)
 		}
 		acc = next
 	}
@@ -51,7 +48,7 @@ func (r *AgentMiddlewareGroup) Recompose(ctx context.Context, base dagql.ObjectR
 	if err != nil {
 		return base, err
 	}
-	warnToolNameCollisions(ctx, acc.Self())
+	acc.Self().WarnToolNameCollisions(ctx)
 	return acc, nil
 }
 
@@ -80,7 +77,7 @@ func preserveRecomposedTools(ctx context.Context, srv *dagql.Server, previous, c
 			return candidate, fmt.Errorf("reload would discard tool state for %q; use a fresh composition to reset it explicitly", old.typeName())
 		}
 		if old.Owner != "" && next.Owner != "" && old.Owner != next.Owner {
-			return candidate, fmt.Errorf("reload would replace tool binding %q owned by another middleware", old.typeName())
+			return candidate, fmt.Errorf("reload would replace tool binding %q owned by other expertise", old.typeName())
 		}
 		if stableIDDigest(old.id) == stableIDDigest(next.id) && old.Version == next.Version {
 			continue
@@ -153,9 +150,9 @@ func loadRecomposeBinding(ctx context.Context, srv *dagql.Server, binding boundT
 // A binding slot is currently a GraphQL type name. Before transferring state,
 // also check installation name and intrinsic module/object identity. Source
 // location is deliberately not identity: replacing a remote dependency with a
-// local clone (or a fork) is how middleware can fix itself without losing state.
+// local clone (or a fork) is how expertise can fix itself without losing state.
 // Equivalent cached implementations may also carry a different source's metadata.
-// The selected middleware is trusted code with access to the base conversation;
+// The selected expertise is trusted code with access to the base conversation;
 // preserveRecomposedTools separately prevents claiming another owner's bindings.
 func sameToolStateIdentity(previous, candidate *ModuleObject) error {
 	oldMod, newMod := previous.Module.Self(), candidate.Module.Self()

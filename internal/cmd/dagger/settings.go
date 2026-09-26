@@ -260,9 +260,9 @@ func workspaceSettingDisplayValue(setting workspaceSetting) string {
 }
 
 // normalizeEntrypointFunctionRef rewrites a short-form entrypoint function
-// reference ("image") to the long form the config stores ("provider:image").
-// Only object-typed settings are candidates, so a string setting whose value
-// matches a function name is left alone.
+// reference ("image") to the DAG address the config stores
+// ("dag://provider/image"). Only object-typed settings are candidates, so a
+// string setting whose value matches a function name is left alone.
 func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, setting workspaceSetting, value string) (string, error) {
 	if !setting.IsObject || !workspacepkg.IsShortFormModuleRef(value) {
 		return value, nil
@@ -306,7 +306,7 @@ func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, set
 	want := gqlFieldName(value)
 	for _, fn := range functions.CurrentWorkspace.Module.Functions {
 		if fn == want {
-			return entrypoint + ":" + value, nil
+			return "dag://" + entrypoint + "/" + value, nil
 		}
 	}
 	return value, nil

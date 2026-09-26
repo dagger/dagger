@@ -228,9 +228,8 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&envfileSchema{},
 		&addressSchema{},
 		&checksSchema{},
-		&generatorsSchema{},
-		&upSchema{},
-		&terminalsSchema{},
+		&generatorSchema{},
+		&artifactsSchema{},
 		&agentsSchema{},
 		&workspaceSchema{},
 	} {
@@ -477,6 +476,15 @@ func buildCoreObjectLikeTypeDef[T dagql.Typed](
 			{Name: "name", Value: dagql.String(introspectionType.Name)},
 			{Name: "description", Value: dagql.String(introspectionType.Description)},
 		},
+	}); err != nil {
+		return zero, false, err
+	}
+
+	// Core names already have their final GraphQL spelling (WorkspaceSDK,
+	// LLM, etc.). Module-name normalization must not change them.
+	if err := dag.Select(ctx, obj, &obj, dagql.Selector{
+		Field: "__withName",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
 	}); err != nil {
 		return zero, false, err
 	}

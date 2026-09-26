@@ -305,7 +305,7 @@ dagger module settings go base <project>-dev:test-runtime
 Run the tests again:
 
 ```shell
-dagger check go:test-all
+dagger check dag://go/test-all
 ```
 
 The tests that skipped before now run, and the output gains a services section showing Postgres starting alongside them. The `go` module still owns the test logic. The project's own code is two functions that describe its runtime and its database, and `dagger.toml` connects them.

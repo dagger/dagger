@@ -18,8 +18,8 @@ dagger module install dagger.io/kubernetes/helm
 
 ```bash
 dagger check                       # run every check in the workspace
-dagger check helm:lint             # lint every discovered chart
-dagger check helm:assert-template  # render discovered values files and fail on errors
+dagger check dag://helm/lint             # lint every discovered chart
+dagger check dag://helm/assert-template  # render discovered values files and fail on errors
 ```
 
 The module discovers charts by finding every `Chart.yaml` in the workspace and treats the containing directory as the chart root, so templates, subcharts, CRDs, and files referenced through `.Files` are all available to Helm. You can see which charts the module finds with `charts`.

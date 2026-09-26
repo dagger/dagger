@@ -1,7 +1,7 @@
 Expected stderr:
 
 CHECKS  ✘ 1 failed
-✘ test-summary X.Xs ERROR
+✘ dag://test-summary X.Xs ERROR
   TESTS
     ✘ github.com/dagger/dagger/dagql/idtui/viztest FAIL
     ✘ viztest › TestProvision FAIL
@@ -24,4 +24,4 @@ CHECKS  ✘ 1 failed
     ✔ 2 passed
 
 RUN LOCALLY
-  dagger check "test-summary"
+  dagger check "dag://test-summary"
