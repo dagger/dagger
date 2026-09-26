@@ -138,6 +138,10 @@ type Workspace struct {
 	// workspace selection.
 	selectedEnv string
 
+	// moduleClients maps a module scope path to the local client targets its
+	// config declares, as read when this workspace was loaded. Internal only.
+	moduleClients map[string][]string
+
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
 	ConfigFile string
@@ -515,6 +519,19 @@ func (ws *Workspace) SelectedEnv() string {
 
 func (ws *Workspace) SetSelectedEnv(name string) {
 	ws.selectedEnv = name
+}
+
+// ModuleClients returns the local client targets the workspace config declares
+// for the module scope at modulePath, both workspace-root-relative.
+func (ws *Workspace) ModuleClients(modulePath string) []string {
+	if ws == nil {
+		return nil
+	}
+	return ws.moduleClients[modulePath]
+}
+
+func (ws *Workspace) SetModuleClients(clients map[string][]string) {
+	ws.moduleClients = clients
 }
 
 // MountsDir returns the read-only directory tree holding mounted content,

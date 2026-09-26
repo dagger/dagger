@@ -3265,6 +3265,55 @@ func TestImplicitInputRecomputedAfterCacheConfigIDRewrite(t *testing.T) {
 	assert.DeepEqual(t, observed, []bool{false, true})
 }
 
+func TestImplicitInputSetByDynamicInputHook(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	cache := newCache(t)
+
+	var calls atomic.Int64
+	scope := "a"
+	declaredInput := dagql.ImplicitInput{
+		Name: "declared",
+		Resolver: func(context.Context, map[string]dagql.Input) (dagql.Input, error) {
+			return dagql.NewString("declared"), nil
+		},
+	}
+	dagql.Fields[Query]{
+		dagql.NodeFuncWithDynamicInputs("hookScopedCounter", func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct{}) (int, error) {
+			return int(calls.Add(1)), nil
+		}, func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct{}, req *dagql.CallRequest) error {
+			return req.SetImplicitInput(ctx, "hookScope", dagql.NewString(scope))
+		}).WithInput(declaredInput),
+	}.Install(srv)
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID:  "client-a",
+		SessionID: "dagql-test-session",
+	})
+	ctx = dagql.ContextWithCache(ctx, cache)
+
+	counter := func() int {
+		t.Helper()
+		var res dagql.AnyResult
+		require.NoError(t, srv.Select(ctx, srv.Root(), &res, dagql.Selector{Field: "hookScopedCounter"}))
+		frame, err := res.ResultCall()
+		require.NoError(t, err)
+		require.Empty(t, frame.Args)
+		var names []string
+		for _, input := range frame.ImplicitInputs {
+			names = append(names, input.Name)
+		}
+		require.Equal(t, []string{"declared", "hookScope"}, names)
+		return int(res.Unwrap().(dagql.Int))
+	}
+
+	require.Equal(t, 1, counter())
+	require.Equal(t, 1, counter())
+	scope = "b"
+	require.Equal(t, 2, counter())
+	scope = "a"
+	require.Equal(t, 1, counter())
+}
+
 func TestServerSelect(t *testing.T) {
 	// Create a new server with a simple object hierarchy for testing
 	srv := newExternalDagqlServerForTest(t, Query{})

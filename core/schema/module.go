@@ -3166,13 +3166,19 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if !parentMod.Self().Source.Valid {
 		return inst, fmt.Errorf("failed to get source implementation digest for module: no module source available")
 	}
-	sourceDigest, err := parentMod.Self().Source.Value.Self().SourceImplementationDigest(ctx)
+	src := parentMod.Self().Source.Value.Self()
+	sourceDigest, err := src.SourceImplementationDigest(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source implementation digest for module: %w", err)
 	}
 	scopedDigestInputs := []string{"Module._implementationScoped", sourceDigest.String()}
 	if parentMod.Self().AsModuleVariantDigest != "" {
 		scopedDigestInputs = append(scopedDigestInputs, parentMod.Self().AsModuleVariantDigest)
+	}
+	// A git module's code can serve modules beside it in its repository, which
+	// its own files do not cover; its commit covers the whole tree.
+	if src.Kind == core.ModuleSourceKindGit && src.Git != nil {
+		scopedDigestInputs = append(scopedDigestInputs, "gitCommit:"+src.Git.Commit)
 	}
 	scopedDigest := hashutil.HashStrings(scopedDigestInputs...)
 	dag, err := core.CurrentDagqlServer(ctx)
