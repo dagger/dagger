@@ -56,9 +56,6 @@ func (capture *cloudRestoreCapture) ImportLogs(ctx context.Context, req *collogs
 				if frame.Digest == "" {
 					return errors.New("call payload has no digest")
 				}
-				if old := capture.calls[frame.Digest]; old != nil && !proto.Equal(old, frame) {
-					return fmt.Errorf("conflicting call payload %s", frame.Digest)
-				}
 				capture.calls[frame.Digest] = frame
 			}
 		}
