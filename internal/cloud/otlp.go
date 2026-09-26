@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"mime"
 	"net/http"
 	"net/url"
@@ -508,36 +509,156 @@ func (c *OTLPClient) streamMetrics(ctx context.Context, traceID string, sink Tra
 	})
 }
 
-func (c *OTLPClient) openStream(ctx context.Context, kind, endpoint string) (*http.Response, error) {
-	usedHeader := c.auth.currentHeader()
-	resp, err := c.requestStream(ctx, kind, endpoint, usedHeader)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode == http.StatusOK {
-		return resp, nil
-	}
+const (
+	// Admission retries are per stream, before any payload can reach the sink.
+	// The one OAuth refresh retry is separate from this allowance.
+	otlpAdmissionMaxRetries  = 5
+	otlpAdmissionRetryBudget = 30 * time.Second
+)
 
-	status := resp.StatusCode
-	unauthorizedErr := closeResponseError(endpoint, resp)
-	if status != http.StatusUnauthorized || !c.auth.canRefresh() {
-		return nil, unauthorizedErr
-	}
+func (c *OTLPClient) openStream(ctx context.Context, kind, endpoint string) (_ *http.Response, rerr error) {
+	// Start the budget only on admission rejection, not on ordinary successful
+	// reads. Unlike a context deadline, this timer can be stopped at admission:
+	// a successful stream may legitimately take much longer to download.
+	streamCtx, cancel := context.WithCancelCause(ctx)
+	var budgetTimer *time.Timer
+	var deadline time.Time
+	var unauthorizedErr, admissionErr error
+	defer func() {
+		if budgetTimer != nil {
+			budgetTimer.Stop()
+		}
+		if rerr != nil {
+			cancel(nil)
+			rerr = errors.Join(unauthorizedErr, admissionErr, rerr)
+		}
+	}()
 
-	refreshedHeader, err := c.auth.refreshHeader(ctx, usedHeader)
-	if err != nil {
-		return nil, errors.Join(unauthorizedErr, fmt.Errorf("refresh cloud OAuth credential: %w", err))
-	}
+	refreshed := false
+	retries := 0
+	for {
+		if err := context.Cause(streamCtx); err != nil {
+			return nil, err
+		}
+		if budgetTimer != nil && !time.Now().Before(deadline) {
+			return nil, context.DeadlineExceeded
+		}
+		usedHeader := c.auth.currentHeader()
+		resp, err := c.requestStream(streamCtx, kind, endpoint, usedHeader)
+		if err != nil {
+			return nil, errors.Join(err, context.Cause(streamCtx))
+		}
+		if resp.StatusCode == http.StatusOK {
+			// If the timer already fired, don't return a body that is about to
+			// be canceled, even if its callback hasn't run yet.
+			if budgetTimer != nil && (!budgetTimer.Stop() || !time.Now().Before(deadline)) {
+				resp.Body.Close()
+				return nil, context.DeadlineExceeded
+			}
+			if err := context.Cause(streamCtx); err != nil {
+				resp.Body.Close()
+				return nil, err
+			}
+			resp.Body = &otlpStreamBody{ReadCloser: resp.Body, cancel: cancel}
+			return resp, nil
+		}
 
-	resp, err = c.requestStream(ctx, kind, endpoint, refreshedHeader)
+		if resp.StatusCode == http.StatusServiceUnavailable {
+			if budgetTimer == nil {
+				deadline = time.Now().Add(otlpAdmissionRetryBudget)
+				budgetTimer = time.AfterFunc(otlpAdmissionRetryBudget, func() {
+					cancel(context.DeadlineExceeded)
+				})
+			}
+			retryAfter := resp.Header.Get("Retry-After")
+			// Read a bounded error message and release the connection before
+			// sleeping. The retry budget also covers reading this error body.
+			admissionErr = closeResponseError(endpoint, resp)
+			if err := context.Cause(streamCtx); err != nil {
+				return nil, err
+			}
+			if retries == otlpAdmissionMaxRetries {
+				return nil, fmt.Errorf("cloud OTLP admission retries exhausted after %d retries", retries)
+			}
+			delay, ok := parseOTLPRetryAfter(retryAfter, time.Now())
+			if !ok {
+				delay = otlpAdmissionBackoff(retries)
+			}
+			remaining := time.Until(deadline)
+			if callerDeadline, ok := ctx.Deadline(); ok {
+				remaining = min(remaining, time.Until(callerDeadline))
+			}
+			if delay >= remaining {
+				return nil, fmt.Errorf("cloud OTLP admission retry delay %s does not fit remaining budget %s: %w",
+					delay, max(remaining, 0), context.DeadlineExceeded)
+			}
+			slog.Debug("waiting for cloud OTLP admission", "kind", kind, "retry", retries+1, "delay", delay)
+			timer := time.NewTimer(delay)
+			select {
+			case <-streamCtx.Done():
+				timer.Stop()
+				return nil, context.Cause(streamCtx)
+			case <-timer.C:
+			}
+			retries++
+			continue
+		}
+
+		status := resp.StatusCode
+		err = closeResponseError(endpoint, resp)
+		if status != http.StatusUnauthorized || refreshed || !c.auth.canRefresh() {
+			return nil, errors.Join(err, context.Cause(streamCtx))
+		}
+		unauthorizedErr = err
+		refreshed = true
+		if _, err := c.auth.refreshHeader(streamCtx, usedHeader); err != nil {
+			return nil, errors.Join(fmt.Errorf("refresh cloud OAuth credential: %w", err), context.Cause(streamCtx))
+		}
+	}
+}
+
+// otlpStreamBody releases the opening request's context when the consumer is
+// done. The admission timer has already been stopped; only caller cancellation
+// applies while consuming an accepted stream.
+type otlpStreamBody struct {
+	io.ReadCloser
+	cancel context.CancelCauseFunc
+}
+
+func (b *otlpStreamBody) Close() error {
+	defer b.cancel(nil)
+	return b.ReadCloser.Close()
+}
+
+func parseOTLPRetryAfter(value string, now time.Time) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	if strings.IndexFunc(value, func(r rune) bool { return r < '0' || r > '9' }) == -1 {
+		// Saturate valid but enormous delta-seconds instead of treating them
+		// as invalid and retrying earlier than the server requested.
+		const maxDelay = time.Duration(1<<63 - 1)
+		seconds, err := strconv.ParseUint(value, 10, 64)
+		if err != nil || seconds > uint64(maxDelay/time.Second) {
+			return maxDelay, true
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	date, err := http.ParseTime(value)
 	if err != nil {
-		return nil, errors.Join(unauthorizedErr, fmt.Errorf("retry after refreshing authorization: %w", err))
+		return 0, false
 	}
-	if resp.StatusCode != http.StatusOK {
-		retryErr := closeResponseError(endpoint, resp)
-		return nil, errors.Join(unauthorizedErr, fmt.Errorf("retry after refreshing authorization: %w", retryErr))
+	return max(date.Sub(now), 0), true
+}
+
+func otlpAdmissionBackoff(retry int) time.Duration {
+	delay := 500 * time.Millisecond
+	for range retry {
+		delay = min(2*delay, 5*time.Second)
 	}
-	return resp, nil
+	// Equal jitter avoids synchronized retries without allowing a hot loop.
+	return delay/2 + time.Duration(rand.Int64N(int64(delay/2))) //nolint:gosec // Retry jitter does not require cryptographic randomness.
 }
 
 func (c *OTLPClient) requestStream(ctx context.Context, kind, endpoint, authHeader string) (*http.Response, error) {
