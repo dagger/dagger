@@ -7,16 +7,13 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -83,11 +80,10 @@ type LLMSession struct {
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
 
-	// primaryCtx carries the interactive command's root span. The generated
-	// title is emitted and applied there, while the model call that derives it
-	// stays beneath plumbingCtx. Title generation is attempted once per title
-	// identity; resetTitle starts a fresh identity after branch/resume.
-	primaryCtx      context.Context
+	// Title generation is attempted once per title identity; resetTitle
+	// starts a fresh identity after branch/resume. Both the model call that
+	// derives the title and the API call that publishes it stay beneath
+	// plumbingCtx; the rename itself comes back from the engine.
 	title           string
 	titleAttempted  bool
 	titleGeneration uint64
@@ -136,10 +132,9 @@ func newRestoringLLMSession(ctx context.Context, dag *dagger.Client, shellHandle
 
 func newLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler, frontend idtui.Frontend, initialLLM *dagger.LLM, restoring bool) (*LLMSession, error) {
 	s := &LLMSession{
-		dag:        dag,
-		shell:      shellHandler,
-		frontend:   frontend,
-		primaryCtx: ctx,
+		dag:      dag,
+		shell:    shellHandler,
+		frontend: frontend,
 	}
 
 	// Allocate a span to tuck all the internal plumbing into, so it doesn't
@@ -524,44 +519,23 @@ func normalizeSessionTitle(title string) string {
 // publishTitle names the session through Query.setSessionTitle. The engine
 // titles the archive and publishes the rename into the session's telemetry,
 // which reaches this CLI's frontend (and its command span, see
-// primarySpanNamer) and Cloud like any other engine record. Only an engine
-// without the API falls back to naming the span locally.
+// primarySpanNamer) and Cloud like any other engine record.
 func (s *LLMSession) publishTitle(title string) {
 	publish := s.titlePublisher
 	if publish == nil && s.dag != nil {
 		publish = s.dag.SetSessionTitle
 	}
-	if publish != nil {
-		// Plumbing keeps the call's span out of the interactive view.
-		ctx := s.plumbingCtx
-		if ctx == nil {
-			ctx = s.primaryCtx
-		}
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		err := publish(ctx, title)
-		if err == nil {
-			return
-		}
-		slog.Debug("failed to set session title; naming the span locally", "error", err)
-	}
-	emitSessionTitle(s.primaryCtx, title)
-}
-
-// emitSessionTitle is the fallback for engines without Query.setSessionTitle:
-// it attaches the title to the primary span in both mutable live span state
-// and durable OTLP log form, the same record the engine would publish.
-func emitSessionTitle(ctx context.Context, title string) {
-	if ctx == nil || title == "" {
+	if publish == nil {
 		return
 	}
-	trace.SpanFromContext(ctx).SetName(title)
-	rec := log.Record{}
-	rec.SetTimestamp(time.Now())
-	rec.SetBody(log.StringValue(title))
-	rec.AddAttributes(log.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
-	telemetry.Logger(ctx, InstrumentationLibrary).Emit(ctx, rec)
+	// Plumbing keeps the call's span out of the interactive view.
+	ctx := s.plumbingCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := publish(ctx, title); err != nil {
+		slog.Debug("failed to set session title", "error", err)
+	}
 }
 
 // AgentStepped notifies the session that the trace reported a step boundary

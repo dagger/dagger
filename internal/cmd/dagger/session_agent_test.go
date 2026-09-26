@@ -249,7 +249,7 @@ func TestSessionTitleGenerationTelemetryIsContained(t *testing.T) {
 	require.Equal(t, generation.SpanContext().SpanID(), reply.Parent().SpanID())
 }
 
-func TestSessionTitleGeneratedOnceAndPublishedOnPrimarySpan(t *testing.T) {
+func TestSessionTitleGeneratedOncePublishedThroughTheAPI(t *testing.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 	t.Cleanup(func() { require.NoError(t, tracerProvider.Shutdown(context.Background())) })
@@ -259,59 +259,15 @@ func TestSessionTitleGeneratedOnceAndPublishedOnPrimarySpan(t *testing.T) {
 	loggerProvider := sdklog.NewLoggerProvider(sdklog.WithProcessor(logRecorder))
 	t.Cleanup(func() { require.NoError(t, loggerProvider.Shutdown(context.Background())) })
 	ctx = telemetry.WithLoggerProvider(ctx, loggerProvider)
+	plumbingCtx, plumbing := tracerProvider.Tracer("test").Start(ctx, "plumbing")
 
 	calls := 0
+	var published []string
 	session := &LLMSession{
-		primaryCtx:  ctx,
-		plumbingCtx: context.Background(),
+		plumbingCtx: plumbingCtx,
 		titleGenerator: func(context.Context, *sessionAgent, string) (string, error) {
 			calls++
 			return "Title: Fix flaky cache tests.\nExtra explanation", nil
-		},
-	}
-	agent := session.newAgent("agent")
-
-	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "please fix the cache tests"))
-	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "a later prompt"))
-	require.Equal(t, 1, calls)
-
-	primary.End()
-	ended := spanRecorder.Ended()
-	require.Len(t, ended, 1)
-	require.Equal(t, "Fix flaky cache tests", ended[0].Name())
-
-	require.Len(t, logRecorder.records, 1)
-	record := logRecorder.records[0]
-	require.Equal(t, "Fix flaky cache tests", record.Body().AsString())
-	require.Equal(t, primary.SpanContext().SpanID(), record.SpanID())
-	var role string
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
-		if kv.Key == telemetryattrs.LogRoleAttr {
-			role = kv.Value.AsString()
-		}
-		return true
-	})
-	require.Equal(t, telemetryattrs.LogRoleSpanName, role)
-}
-
-func TestSessionTitlePublishedThroughTheAPI(t *testing.T) {
-	spanRecorder := tracetest.NewSpanRecorder()
-	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
-	t.Cleanup(func() { require.NoError(t, tracerProvider.Shutdown(context.Background())) })
-	ctx, primary := tracerProvider.Tracer("test").Start(context.Background(), "dagger agent")
-	plumbingCtx, plumbing := tracerProvider.Tracer("test").Start(ctx, "plumbing")
-
-	logRecorder := new(sessionTitleLogRecorder)
-	loggerProvider := sdklog.NewLoggerProvider(sdklog.WithProcessor(logRecorder))
-	t.Cleanup(func() { require.NoError(t, loggerProvider.Shutdown(context.Background())) })
-	ctx = telemetry.WithLoggerProvider(ctx, loggerProvider)
-
-	var published []string
-	session := &LLMSession{
-		primaryCtx:  ctx,
-		plumbingCtx: plumbingCtx,
-		titleGenerator: func(context.Context, *sessionAgent, string) (string, error) {
-			return "Fix flaky cache tests", nil
 		},
 		titlePublisher: func(ctx context.Context, title string) error {
 			require.Equal(t, plumbing.SpanContext().SpanID(), trace.SpanContextFromContext(ctx).SpanID(), "the API call stays under plumbing")
@@ -319,7 +275,11 @@ func TestSessionTitlePublishedThroughTheAPI(t *testing.T) {
 			return nil
 		},
 	}
-	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(session.newAgent("agent"), "please fix the cache tests"))
+	agent := session.newAgent("agent")
+
+	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "please fix the cache tests"))
+	require.Equal(t, "Fix flaky cache tests", session.ensureTitle(agent, "a later prompt"))
+	require.Equal(t, 1, calls)
 	require.Equal(t, []string{"Fix flaky cache tests"}, published)
 
 	// The CLI names nothing itself: the rename arrives back from the engine.
@@ -329,18 +289,6 @@ func TestSessionTitlePublishedThroughTheAPI(t *testing.T) {
 	for _, span := range spanRecorder.Ended() {
 		require.NotEqual(t, "Fix flaky cache tests", span.Name())
 	}
-
-	// Without the API (an older engine), the CLI names its span locally.
-	fallback := &LLMSession{
-		primaryCtx: ctx,
-		titleGenerator: func(context.Context, *sessionAgent, string) (string, error) {
-			return "Local title", nil
-		},
-		titlePublisher: func(context.Context, string) error { return errors.New("Cannot query field \"setSessionTitle\"") },
-	}
-	require.Equal(t, "Local title", fallback.ensureTitle(fallback.newAgent("agent"), "prompt"))
-	require.Len(t, logRecorder.records, 1)
-	require.Equal(t, "Local title", logRecorder.records[0].Body().AsString())
 }
 
 func TestPrimarySpanNamerAppliesEngineRename(t *testing.T) {
@@ -375,7 +323,6 @@ func TestPrimarySpanNamerAppliesEngineRename(t *testing.T) {
 func TestSessionTitleFallsBackAndResetsForBranch(t *testing.T) {
 	calls := 0
 	session := &LLMSession{
-		primaryCtx: context.Background(),
 		titleGenerator: func(context.Context, *sessionAgent, string) (string, error) {
 			calls++
 			return "", errors.New("small model unavailable")
