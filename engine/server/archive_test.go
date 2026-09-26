@@ -210,11 +210,6 @@ func TestArchiveBootstrapSplitsLargeRecipeClosure(t *testing.T) {
 			require.Greater(t, len(batches), 1)
 			require.NoError(t, archive.ValidateBootstrap(t.Context(), header, batches))
 			require.Equal(t, records, terminal.LogRecords)
-			var exclusions []int64
-			for i := int64(2); i <= cut.Logs; i++ {
-				exclusions = append(exclusions, i)
-			}
-			require.Equal(t, exclusions, terminal.Exclusions.LogRowIDs)
 		})
 	}
 }
@@ -235,14 +230,13 @@ func TestArchiveHistorySplitsLargeBatches(t *testing.T) {
 					traceID = "02000000000000000000000000000000"
 				}
 				appendArchiveSignalRow(t, db, signal, i, traceID, value)
-				if i <= 8 && (signal == "metrics" || i%2 == 0) {
+				if i <= 8 && (signal == "metrics" || traceID == archiveTestTrace) {
 					expected = append(expected, value)
 				}
 			}
-			url := "/?exclude_log=1&exclude_log=5&exclude_span=0000000000000001&exclude_span=0000000000000005"
 			const maxPayloadSize = 1400
 			read := func(after int64) ([]string, int64, int) {
-				req := httptest.NewRequest(http.MethodGet, url, nil)
+				req := httptest.NewRequest(http.MethodGet, "/", nil)
 				req.Header.Set(enginetel.LiveCursorHeader, strconv.FormatInt(after, 10))
 				resp := httptest.NewRecorder()
 				require.NoError(t, srv.serveArchiveSignalWithPayloadLimit(resp, req, manifest, manifest.HighWater, false, signal, maxPayloadSize))
@@ -274,7 +268,7 @@ func TestArchiveHistorySplitsLargeBatches(t *testing.T) {
 				return values, firstCursor, firstCount
 			}
 			values, firstCursor, firstCount := read(0)
-			require.Equal(t, expected, values, "split frames must retain every non-excluded record through the cut")
+			require.Equal(t, expected, values, "split frames must retain every in-trace record through the cut")
 			require.Less(t, firstCursor, int64(8), "the first batch must have been split")
 			resumed, _, _ := read(firstCursor)
 			require.Equal(t, expected[firstCount:], resumed, "resume must neither duplicate nor skip records")
@@ -554,12 +548,36 @@ func TestArchiveHTTPBootstrapBeforeHistoryAndAuthentication(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Positive(t, applied)
-	// No history request was necessary for verified control and recipes.
-	opts := archive.StreamOptions{Generation: result.Header.Generation, HighWater: result.Header.HighWater.Logs, ExcludeLogRowIDs: result.Terminal.Exclusions.LogRowIDs}
-	cursor, err := c.Logs(t.Context(), archiveTestTrace, opts, nil)
+	// History re-delivers the bootstrap's call payload, which the frontend
+	// ignores by digest, but never its control record.
+	opts := archive.StreamOptions{Generation: result.Header.Generation, HighWater: result.Header.HighWater.Logs}
+	control, payloads := 0, 0
+	cursor, err := c.Logs(t.Context(), archiveTestTrace, opts, countArchiveLogKinds(&control, &payloads))
 	require.NoError(t, err)
 	require.Equal(t, opts.HighWater, cursor)
+	require.Zero(t, control, "sealed history must not redefine the bootstrap's control cut")
+	require.Equal(t, 1, payloads)
 	release()
+}
+
+func countArchiveLogKinds(control, payloads *int) func(int64, *collogspb.ExportLogsServiceRequest) error {
+	return func(_ int64, batch *collogspb.ExportLogsServiceRequest) error {
+		for _, resource := range batch.ResourceLogs {
+			for _, scope := range resource.ScopeLogs {
+				for _, rec := range scope.LogRecords {
+					for _, kv := range rec.Attributes {
+						switch {
+						case kv.Key == agentcontrol.VersionAttr:
+							*control++
+						case kv.Key == telemetry.ContentTypeAttr && kv.Value.GetStringValue() == telemetryattrs.CallPayloadContentType:
+							*payloads++
+						}
+					}
+				}
+			}
+		}
+		return nil
+	}
 }
 
 // TestArchiveHTTPUnsealedStreamsRecordedControl: an archive whose engine
@@ -600,23 +618,7 @@ func TestArchiveHTTPUnsealedStreamsRecordedControl(t *testing.T) {
 	require.Equal(t, int64(2), unsealed.Cut.Logs, "control record and payload")
 
 	var control, payloads int
-	cursor, err := c.Logs(t.Context(), archiveTestTrace, archive.StreamOptions{Generation: unsealed.Generation, HighWater: unsealed.Cut.Logs, Unsealed: true}, func(_ int64, batch *collogspb.ExportLogsServiceRequest) error {
-		for _, resource := range batch.ResourceLogs {
-			for _, scope := range resource.ScopeLogs {
-				for _, rec := range scope.LogRecords {
-					for _, kv := range rec.Attributes {
-						switch {
-						case kv.Key == agentcontrol.VersionAttr:
-							control++
-						case kv.Key == telemetry.ContentTypeAttr && kv.Value.GetStringValue() == telemetryattrs.CallPayloadContentType:
-							payloads++
-						}
-					}
-				}
-			}
-		}
-		return nil
-	})
+	cursor, err := c.Logs(t.Context(), archiveTestTrace, archive.StreamOptions{Generation: unsealed.Generation, HighWater: unsealed.Cut.Logs, Unsealed: true}, countArchiveLogKinds(&control, &payloads))
 	require.NoError(t, err)
 	require.Equal(t, unsealed.Cut.Logs, cursor)
 	require.Equal(t, 1, control, "unsealed log streams carry the control records a bootstrap would have")

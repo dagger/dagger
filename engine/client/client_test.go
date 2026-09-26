@@ -25,14 +25,14 @@ import (
 )
 
 func TestServeHTTPPreservesArchiveQueries(t *testing.T) {
-	const query = "after=a%2Fb%2Bc&exclude_log=4&exclude_log=8&exclude_span=aa%3Abb&limit=3"
+	const query = "after=a%2Fb%2Bc&limit=3&unsealed=1"
 	client := &Client{Params: Params{SecretToken: "session-secret"}, closeCtx: context.Background()}
 	called := false
 	client.httpClient = &httpClient{secretToken: "engine-secret", inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		called = true
 		require.Equal(t, query, req.URL.RawQuery)
 		require.Equal(t, "a/b+c", req.URL.Query().Get("after"))
-		require.Equal(t, []string{"4", "8"}, req.URL.Query()["exclude_log"])
+		require.Equal(t, "1", req.URL.Query().Get("unsealed"))
 		require.Equal(t, "generation-1", req.Header.Get("X-Dagger-Archive-Generation"))
 		require.Equal(t, "27", req.Header.Get(enginetel.LiveCursorHeader))
 		token, _, ok := req.BasicAuth()

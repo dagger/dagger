@@ -168,7 +168,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 
 	return startHistoricalImport(ctx, func(ctx context.Context) error {
 		defer release()
-		return importArchiveRemainder(ctx, source, req.traceID, result, importer, cut)
+		return importArchiveRemainder(ctx, source, req.traceID, importer, cut)
 	}, func(err error) {
 		restoreNotice(ctx, fmt.Sprintf("historical telemetry import incomplete: %v; restored agents remain usable", err))
 	}), nil
@@ -199,7 +199,11 @@ func startHistoricalImport(ctx context.Context, run func(context.Context) error,
 	return func() { cancel(); <-done }
 }
 
-func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, traceID string, result archive.BootstrapResult, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut) error {
+// importArchiveRemainder streams each signal from cursor 0 to the cut for
+// scrollback. Log history re-delivers the call payloads bootstrap already
+// applied; the frontend ignores digests it already has, and a sealed archive's
+// history never includes control records.
+func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut) error {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var resultErr error
@@ -209,10 +213,8 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 			switch signal {
 			case enginetel.ArchiveSpans:
 				opts.HighWater = cut.HighWater.Spans
-				opts.ExcludeSpanIDs = result.Terminal.Exclusions.SpanIDs
 			case enginetel.ArchiveLogs:
 				opts.HighWater = cut.HighWater.Logs
-				opts.ExcludeLogRowIDs = result.Terminal.Exclusions.LogRowIDs
 			case enginetel.ArchiveMetrics:
 				opts.HighWater = cut.HighWater.Metrics
 			}

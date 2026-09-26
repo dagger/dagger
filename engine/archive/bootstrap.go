@@ -46,19 +46,13 @@ type BootstrapSignal struct {
 	Records int64
 }
 
-type BootstrapExclusions struct {
-	SpanIDs   []string `json:"spanIDs,omitempty"`
-	LogRowIDs []int64  `json:"logRowIDs,omitempty"`
-}
-
 type BootstrapTerminal struct {
-	TraceRecords int64               `json:"traceRecords"`
-	LogRecords   int64               `json:"logRecords"`
-	SHA256       string              `json:"sha256"`
-	Exclusions   BootstrapExclusions `json:"exclusions"`
+	TraceRecords int64  `json:"traceRecords"`
+	LogRecords   int64  `json:"logRecords"`
+	SHA256       string `json:"sha256"`
 }
 
-func BuildBootstrap(header BootstrapHeader, signals []BootstrapSignal, exclusions BootstrapExclusions) ([]byte, int64, error) {
+func BuildBootstrap(header BootstrapHeader, signals []BootstrapSignal) ([]byte, int64, error) {
 	header.Version = ManifestVersion
 	headerPayload, err := json.Marshal(header)
 	if err != nil {
@@ -91,7 +85,6 @@ func BuildBootstrap(header BootstrapHeader, signals []BootstrapSignal, exclusion
 		}
 	}
 	terminal.SHA256 = hex.EncodeToString(hash.Sum(nil))
-	terminal.Exclusions = exclusions
 	payload, err := json.Marshal(terminal)
 	if err != nil {
 		return nil, 0, err
