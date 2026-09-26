@@ -42,7 +42,7 @@ func TestVerifyClosure(t *testing.T) {
 }
 
 func TestBootstrapTruncationNeverAppliesPartialSignals(t *testing.T) {
-	data, _, err := BuildBootstrap(BootstrapHeader{TraceID: testTraceA, SealAt: time.Now().UTC().Format(time.RFC3339Nano)}, []BootstrapSignal{{Kind: BootstrapFrameLogs}})
+	data, _, err := BuildBootstrap(BootstrapHeader{TraceID: testTraceA, SealAt: time.Now().UTC().Format(time.RFC3339Nano)}, []BootstrapSignal{{}})
 	require.NoError(t, err)
 	client, closeServer := bootstrapTestClient(t, data[:len(data)-1])
 	defer closeServer()

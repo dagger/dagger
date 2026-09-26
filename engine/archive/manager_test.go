@@ -228,7 +228,7 @@ func testBootstrap(t *testing.T, manifest Manifest, cut HighWater, sealAt time.T
 	t.Helper()
 	var signals []BootstrapSignal
 	if records > 0 {
-		signals = []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: []byte("otlp"), Records: records}}
+		signals = []BootstrapSignal{{Payload: []byte("otlp"), Records: records}}
 	}
 	data, _, err := BuildBootstrap(BootstrapHeader{
 		TraceID: manifest.TraceID,
@@ -355,7 +355,7 @@ func TestSanitizeTitle(t *testing.T) {
 
 func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {
 	header := BootstrapHeader{TraceID: testTraceA, SealAt: time.Now().UTC().Format(time.RFC3339Nano)}
-	data, records, err := BuildBootstrap(header, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: []byte("otlp"), Records: 7}})
+	data, records, err := BuildBootstrap(header, []BootstrapSignal{{Payload: []byte("otlp"), Records: 7}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decodedHeader.TraceID != header.TraceID || terminal.TraceRecords != 7 {
+	if decodedHeader.TraceID != header.TraceID || terminal.LogRecords != 7 {
 		t.Fatalf("unexpected decode: %+v %+v", decodedHeader, terminal)
 	}
 	if _, _, err := DecodeBootstrap(bytes.NewReader(data[:len(data)-1]), nil, nil); err == nil {

@@ -70,7 +70,7 @@ var agentCmd = &cobra.Command{
 		err = withEngine(
 			cmd.Context(), params,
 			func(ctx context.Context, engineClient *client.Client) error {
-				source := archive.NewClient(client.EngineConn(engineClient)).WithStallTimeout(30 * time.Second)
+				source := archive.NewClient(client.EngineConn(engineClient))
 				if listArchives {
 					return listAgentArchives(ctx, source, cmd.OutOrStdout())
 				}

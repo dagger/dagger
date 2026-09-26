@@ -715,9 +715,6 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 	db := restoringDB(t)
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
 	result, err := client.Bootstrap(targetCtx, traceID, func(_ archive.BootstrapHeader, batch archive.BootstrapBatch) error {
-		if batch.Traces != nil {
-			return importer.ImportSpans(targetCtx, batch.Traces)
-		}
 		return importer.ImportLogs(targetCtx, batch.Logs)
 	})
 	require.NoError(t, err)

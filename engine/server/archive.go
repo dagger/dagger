@@ -285,7 +285,7 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 		if err != nil {
 			return nil, 0, err
 		}
-		signals = append(signals, archive.BootstrapSignal{Kind: archive.BootstrapFrameLogs, Payload: payload, Records: int64(end - start)})
+		signals = append(signals, archive.BootstrapSignal{Payload: payload, Records: int64(end - start)})
 		start = end
 	}
 	return archive.BuildBootstrap(header, signals)
