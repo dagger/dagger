@@ -7,9 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/agentcontrol"
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -74,24 +72,29 @@ func DecodeLogRecord(row Log) (sdklog.Record, error) {
 	return rec, nil
 }
 
+// archiveLookup indexes the newest agent-control record per agent and
+// subscription edge, and remembers the traces whose control records failed
+// to decode. Call payloads are found through callLookup instead.
 type archiveLookup struct {
 	mu       sync.RWMutex
 	index    agentcontrol.Index
 	agents   map[agentcontrol.Key]int64
 	edges    map[agentcontrol.EdgeKey]int64
-	calls    map[string]map[string]int64 // trace -> digest -> first row
 	failures map[string]error
 }
 
 func newArchiveLookup() *archiveLookup {
-	return &archiveLookup{agents: map[agentcontrol.Key]int64{}, edges: map[agentcontrol.EdgeKey]int64{}, calls: map[string]map[string]int64{}, failures: map[string]error{}}
+	return &archiveLookup{agents: map[agentcontrol.Key]int64{}, edges: map[agentcontrol.EdgeKey]int64{}, failures: map[string]error{}}
 }
+
+var controlVersionMarker = []byte(`"` + agentcontrol.VersionAttr + `"`)
+
 func (idx *archiveLookup) add(row Log) { idx.addAll([]Log{row}) }
 func (idx *archiveLookup) addAll(rows []Log) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	for _, row := range rows {
-		if !bytes.Contains(row.Attributes, []byte(agentcontrol.VersionAttr)) && !bytes.Contains(row.Attributes, []byte(telemetryattrs.CallPayloadContentType)) {
+		if !bytes.Contains(row.Attributes, controlVersionMarker) {
 			continue
 		}
 		rec, err := DecodeLogRecord(row)
@@ -99,56 +102,25 @@ func (idx *archiveLookup) addAll(rows []Log) {
 			idx.failures[row.TraceID.String] = err
 			continue
 		}
-		if agentcontrol.IsRecord(rec) {
-			a, s, err := agentcontrol.Decode(rec)
-			if err != nil {
-				idx.failures[row.TraceID.String] = err
-				continue
+		if !agentcontrol.IsRecord(rec) {
+			continue
+		}
+		a, s, err := agentcontrol.Decode(rec)
+		if err != nil {
+			idx.failures[row.TraceID.String] = err
+			continue
+		}
+		changed, err := idx.index.ApplyRecord(rec)
+		if err != nil {
+			idx.failures[row.TraceID.String] = err
+			continue
+		}
+		if changed {
+			if a != nil {
+				idx.agents[a.Key] = row.ID
+			} else {
+				idx.edges[s.EdgeKey] = row.ID
 			}
-			changed, err := idx.index.ApplyRecord(rec)
-			if err != nil {
-				idx.failures[row.TraceID.String] = err
-				continue
-			}
-			if changed {
-				if a != nil {
-					idx.agents[a.Key] = row.ID
-				} else {
-					idx.edges[s.EdgeKey] = row.ID
-				}
-			}
-			continue
-		}
-		payload := false
-		rec.WalkAttributes(func(a log.KeyValue) bool {
-			if a.Key == telemetry.ContentTypeAttr && a.Value.AsString() == telemetryattrs.CallPayloadContentType {
-				payload = true
-			}
-			return true
-		})
-		if !payload {
-			continue
-		}
-		var call callpbv1.Call
-		if rec.Body().Kind() != log.KindBytes {
-			idx.failures[row.TraceID.String] = fmt.Errorf("call body is not bytes")
-			continue
-		}
-		if err := proto.Unmarshal(rec.Body().AsBytes(), &call); err != nil {
-			idx.failures[row.TraceID.String] = fmt.Errorf("invalid call payload: %w", err)
-			continue
-		}
-		if call.Digest == "" {
-			idx.failures[row.TraceID.String] = fmt.Errorf("call payload has no digest")
-			continue
-		}
-		calls := idx.calls[row.TraceID.String]
-		if calls == nil {
-			calls = map[string]int64{}
-			idx.calls[row.TraceID.String] = calls
-		}
-		if calls[call.Digest] == 0 {
-			calls[call.Digest] = row.ID
 		}
 	}
 }
@@ -203,11 +175,10 @@ func (s *DB) ControlRows(ctx context.Context, traceID string, through int64, wan
 	return rows, nil
 }
 
+// CallPayload returns the log row carrying digest's call payload, as long as
+// it lies within the cut and belongs to traceID.
 func (s *DB) CallPayload(ctx context.Context, traceID, digest string, through int64) (Log, error) {
-	idx := s.archiveIdx
-	idx.mu.RLock()
-	id := idx.calls[traceID][digest]
-	idx.mu.RUnlock()
+	_, id := s.callIdx.rows(digest)
 	if id == 0 || id > through {
 		return Log{}, fmt.Errorf("missing persisted call %s at cut %d", digest, through)
 	}
@@ -217,6 +188,9 @@ func (s *DB) CallPayload(ctx context.Context, traceID, digest string, through in
 	}
 	if !ok {
 		return Log{}, fmt.Errorf("missing call row %d", id)
+	}
+	if row.TraceID.String != traceID {
+		return Log{}, fmt.Errorf("persisted call %s is in trace %s, not %s", digest, row.TraceID.String, traceID)
 	}
 	return row, nil
 }
