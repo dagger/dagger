@@ -306,11 +306,5 @@ func (node *AgentNode) restoreEntry() AgentRestore {
 				"this trace predates agent control records, so it carries nothing to restore it from",
 				node.Name, node.ID)}
 	}
-	state, err := a.RestoreState()
-	failure := ""
-	if state == "FAILED" {
-		failure = a.Failure
-	}
-	return AgentRestore{Source: a.Key, ID: a.Handle, Name: a.Name, State: state, Error: failure,
-		SnapshotDigest: a.Digest, ParentAgentID: a.Parent, LastActivity: a.Activity, Err: err}
+	return RestoreEntryFromControl(*a)
 }

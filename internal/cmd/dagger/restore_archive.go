@@ -61,27 +61,9 @@ func appliedArchivePlan(fe idtui.AgentRestorer, completion archive.Completion) (
 		subscriptions[s.Key] = true
 	}
 	for _, a := range agents {
-		if !roster[a.Key] {
-			continue
+		if roster[a.Key] {
+			plan.plan = append(plan.plan, dagui.RestoreEntryFromControl(a))
 		}
-		entry := dagui.AgentRestore{
-			Source: a.Key, ID: a.Handle, Name: a.Name, ParentAgentID: a.Parent,
-			SnapshotDigest: a.Digest, LastActivity: a.Activity,
-		}
-		// An agent whose record cannot be mapped to a restore state is carried
-		// as unrestorable rather than failing the plan: restore skips exactly
-		// this entry and warns why.
-		state, err := a.RestoreState()
-		if err != nil {
-			entry.Err = err
-		}
-		entry.State = state
-		// A stopped failure retains its diagnostic, but spawn only accepts an
-		// error when restoring FAILED (including a session-stopped failure).
-		if state == "FAILED" {
-			entry.Error = a.Failure
-		}
-		plan.plan = append(plan.plan, entry)
 	}
 	// Removal tombstones are part of the roster, but are never installed.
 	var active []agentcontrol.Subscription
