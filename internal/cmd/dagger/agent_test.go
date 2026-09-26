@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,34 @@ func (c agentTestConn) Host() string { return "agent-test" }
 func (c agentTestConn) Close() error { return nil }
 func (c agentTestConn) Do(req *http.Request) (*http.Response, error) {
 	return c.do(req)
+}
+
+func TestResumeServable(t *testing.T) {
+	const traceID = "0123456789abcdef0123456789abcdef"
+	archiveReply := func(status int, body string) *archive.Client {
+		return archive.NewClient(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+			require.Equal(t, "/v1/telemetry/archives/"+traceID, req.URL.Path)
+			return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+		}})
+	}
+	for _, tc := range []struct {
+		name   string
+		source *archive.Client
+		cloud  bool
+		want   bool
+	}{
+		{name: "live archive", source: archiveReply(http.StatusConflict, `{"error":"state","state":"active"}`), want: true},
+		{name: "sealed archive", source: archiveReply(http.StatusConflict, `{"error":"state","state":"closed"}`), want: true},
+		{name: "unsealed archive", source: archiveReply(http.StatusOK, `{"traceID":"`+traceID+`","state":"interrupted"}`), want: true},
+		{name: "no archive, no cloud", source: archiveReply(http.StatusNotFound, `{"error":"not_found"}`)},
+		{name: "no archive, cloud", source: archiveReply(http.StatusNotFound, `{"error":"not_found"}`), cloud: true, want: true},
+		{name: "archive unavailable, no cloud", source: archiveReply(http.StatusServiceUnavailable, `{"error":"io"}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resumeServable(t.Context(), tc.source, traceID, func(context.Context) bool { return tc.cloud })
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestRestoreSessionInitializationNeedsNoProvider(t *testing.T) {
