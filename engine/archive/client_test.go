@@ -71,7 +71,6 @@ func TestClientTypedErrors(t *testing.T) {
 	}{
 		{name: "unsupported", status: http.StatusNotFound, body: "not found", want: ErrCleanMiss},
 		{name: "not found", status: http.StatusNotFound, body: `{"error":"not_found","message":"missing"}`, want: ErrCleanMiss},
-		{name: "evicted", status: http.StatusGone, body: `{"error":"evicted","message":"gone"}`, want: ErrCleanMiss},
 		{name: "state", status: http.StatusConflict, body: `{"error":"state","state":"active","message":"active"}`, want: ErrState, state: StateActive},
 		{name: "corrupt", status: http.StatusUnprocessableEntity, body: `{"error":"corrupt","message":"bad sidecar"}`, want: ErrCorrupt},
 		{name: "transient", status: http.StatusServiceUnavailable, body: "try again", want: ErrTransient},

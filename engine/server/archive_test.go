@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -130,16 +128,11 @@ func TestArchiveFinalWitnessAndClosure(t *testing.T) {
 			if failure != "none" && failure != "capture" {
 				require.Error(t, err)
 				require.Equal(t, archive.StateIncomplete, m.State)
-				_, err = srv.archives.Acquire(archiveTestTrace)
-				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
 			require.Equal(t, archive.StateClosed, m.State)
-			lease, err := srv.archives.Acquire(archiveTestTrace)
-			require.NoError(t, err)
-			defer lease.Release()
-			data, err := os.ReadFile(lease.BootstrapPath())
+			data, err := os.ReadFile(srv.archives.BootstrapPath(archiveTestTrace))
 			require.NoError(t, err)
 			header, terminal, err := archive.VerifyBootstrap(bytes.NewReader(data))
 			require.NoError(t, err)
@@ -375,20 +368,16 @@ func archiveSignalValues(t *testing.T, signal string, payload []byte) []string {
 func TestArchiveReopensWithPersistedProjection(t *testing.T) {
 	srv, sess, db, want := archiveFixture(t)
 	require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
-	lease, err := srv.archives.Acquire(archiveTestTrace)
-	require.NoError(t, err)
-	root := filepath.Dir(lease.BootstrapPath())
-	lease.Release()
+	root := filepath.Dir(srv.archives.BootstrapPath(archiveTestTrace))
 	require.NoError(t, db.Close())
 	require.NoError(t, srv.clientDBs.Close())
 	// Reconstruct both registries: no session object or in-memory index remains.
 	dbs := clientdb.NewDBs(srv.clientDBs.Root)
 	manager, err := archive.NewManager(archive.Config{Root: root, RemoveStore: dbs.Remove})
 	require.NoError(t, err)
-	lease, err = manager.Acquire(archiveTestTrace)
+	manifest, err := manager.Manifest(archiveTestTrace)
 	require.NoError(t, err)
-	defer lease.Release()
-	manifest := lease.Manifest()
+	require.Equal(t, archive.StateClosed, manifest.State)
 	reopened, err := dbs.Open(t.Context(), manifest.MainClientID)
 	require.NoError(t, err)
 	defer reopened.Close()
@@ -444,55 +433,30 @@ func TestArchiveSharedTraceBelongsToFirstSession(t *testing.T) {
 	require.Equal(t, first.mainClientCallerID, m.MainClientID)
 }
 
-func TestArchiveLeaseProtectsRequestGapsAndCancels(t *testing.T) {
-	for _, cancelOnly := range []bool{false, true} {
-		t.Run(fmt.Sprint(cancelOnly), func(t *testing.T) {
-			srv, sess, db, _ := archiveFixture(t)
-			require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
-			lease, err := srv.archives.Acquire(archiveTestTrace)
-			require.NoError(t, err)
-			root, manifest := filepath.Dir(lease.BootstrapPath()), lease.Manifest()
-			lease.Release()
-			require.NoError(t, db.Close())
-			var now atomic.Int64
-			now.Store(time.Now().UnixNano())
-			srv.archives, err = archive.NewManager(archive.Config{Root: root, Now: func() time.Time { return time.Unix(0, now.Load()) }, RemoveStore: srv.clientDBs.Remove})
-			require.NoError(t, err)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := srv.serveArchiveHTTP(w, r, sess.clientRecords["main"]); err != nil {
-					t.Errorf("archive HTTP: %v", err)
-				}
-			}))
-			defer server.Close()
-			client, err := archive.NewClientWithURL(server.Client(), server.URL)
-			require.NoError(t, err)
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			release, err := client.Acquire(ctx, archiveTestTrace)
-			require.NoError(t, err)
-			defer release()
-			now.Store(manifest.ExpiresAt.Add(time.Hour).UnixNano())
-			_, err = srv.archives.GC()
-			require.NoError(t, err)
-			// The long-lived lease survives the idle gap before the next request.
-			_, err = client.Bootstrap(t.Context(), archiveTestTrace, nil)
-			require.NoError(t, err)
-			if cancelOnly {
-				cancel()
-			} else {
-				release()
-			}
-			require.Eventually(t, func() bool {
-				_, err := srv.archives.GC()
-				if err != nil {
-					return false
-				}
-				_, err = srv.archives.Manifest(archiveTestTrace)
-				var failure *archive.Failure
-				return errors.As(err, &failure) && failure.Kind == archive.FailureEvicted
-			}, time.Second, time.Millisecond)
-		})
-	}
+// TestArchiveCollectedIsCleanMiss: an archive GC has collected is a plain
+// not-found, so a restore may fall back to another source.
+func TestArchiveCollectedIsCleanMiss(t *testing.T) {
+	srv, sess, db, _ := archiveFixture(t)
+	require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
+	manifest, err := srv.archives.Manifest(archiveTestTrace)
+	require.NoError(t, err)
+	root := filepath.Dir(srv.archives.BootstrapPath(archiveTestTrace))
+	require.NoError(t, db.Close())
+	expired := manifest.ExpiresAt.Add(time.Hour)
+	srv.archives, err = archive.NewManager(archive.Config{Root: root, Now: func() time.Time { return expired }, RemoveStore: srv.clientDBs.Remove})
+	require.NoError(t, err)
+	_, err = srv.archives.GC()
+	require.NoError(t, err)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := srv.serveArchiveHTTP(w, r, sess.clientRecords["main"]); err != nil {
+			t.Errorf("archive HTTP: %v", err)
+		}
+	}))
+	defer server.Close()
+	client, err := archive.NewClientWithURL(server.Client(), server.URL)
+	require.NoError(t, err)
+	_, err = client.Bootstrap(t.Context(), archiveTestTrace, nil)
+	require.True(t, archive.IsCleanMiss(err), "error = %v", err)
 }
 
 func TestArchiveHTTPBootstrapBeforeHistoryAndAuthentication(t *testing.T) {
@@ -508,9 +472,6 @@ func TestArchiveHTTPBootstrapBeforeHistoryAndAuthentication(t *testing.T) {
 	defer httpServer.Close()
 	c, err := archive.NewClientWithURL(httpServer.Client(), httpServer.URL)
 	require.NoError(t, err)
-	release, err := c.Acquire(t.Context(), archiveTestTrace)
-	require.NoError(t, err)
-	defer release()
 	applied := 0
 	result, err := c.Bootstrap(t.Context(), archiveTestTrace, func(_ archive.BootstrapHeader, b archive.BootstrapBatch) error {
 		require.NotNil(t, b.Logs)
@@ -528,7 +489,6 @@ func TestArchiveHTTPBootstrapBeforeHistoryAndAuthentication(t *testing.T) {
 	require.Equal(t, opts.HighWater, cursor)
 	require.Zero(t, control, "sealed history must not redefine the bootstrap's control cut")
 	require.Equal(t, 1, payloads)
-	release()
 }
 
 func countArchiveLogKinds(control, payloads *int) func(int64, *collogspb.ExportLogsServiceRequest) error {
@@ -553,8 +513,8 @@ func countArchiveLogKinds(control, payloads *int) func(int64, *collogspb.ExportL
 
 // TestArchiveHTTPUnsealedStreamsRecordedControl: an archive whose engine
 // stopped before sealing it (reopened as interrupted) refuses the ordinary
-// lease and bootstrap, but an unsealed lease streams everything it recorded,
-// control records included, at a stable cut.
+// bootstrap, but an unsealed read streams everything it recorded, control
+// records included, at a stable cut.
 func TestArchiveHTTPUnsealedStreamsRecordedControl(t *testing.T) {
 	srv, sess, db, _ := archiveFixture(t)
 	require.NoError(t, db.Close())
@@ -575,15 +535,14 @@ func TestArchiveHTTPUnsealedStreamsRecordedControl(t *testing.T) {
 	c, err := archive.NewClientWithURL(httpServer.Client(), httpServer.URL)
 	require.NoError(t, err)
 
-	_, err = c.Acquire(t.Context(), archiveTestTrace)
-	require.ErrorIs(t, err, archive.ErrState, "an unsealed archive has no verified cut")
+	_, err = c.Bootstrap(t.Context(), archiveTestTrace, nil)
+	require.ErrorIs(t, err, archive.ErrState, "an unsealed archive never serves an agent bootstrap")
 	var requestErr *archive.RequestError
 	require.ErrorAs(t, err, &requestErr)
 	require.Equal(t, archive.StateInterrupted, requestErr.State)
 
-	unsealed, err := c.AcquireUnsealed(t.Context(), archiveTestTrace)
+	unsealed, err := c.Unsealed(t.Context(), archiveTestTrace)
 	require.NoError(t, err)
-	defer unsealed.Release()
 	require.Equal(t, int64(2), unsealed.Cut.Logs, "control record and payload")
 
 	var control, payloads int
@@ -592,9 +551,6 @@ func TestArchiveHTTPUnsealedStreamsRecordedControl(t *testing.T) {
 	require.Equal(t, unsealed.Cut.Logs, cursor)
 	require.Equal(t, 1, control, "unsealed log streams carry the control records a bootstrap would have")
 	require.Equal(t, 1, payloads)
-
-	_, err = c.Bootstrap(t.Context(), archiveTestTrace, nil)
-	require.ErrorIs(t, err, archive.ErrState, "an unsealed archive never serves an agent bootstrap")
 }
 
 // TestArchiveTitleFromTrace: the engine takes an archive's title from the
@@ -689,7 +645,7 @@ func TestArchiveTitleFromTrace(t *testing.T) {
 	})
 }
 
-// TestArchiveHTTPUnsealedRefusesSealedAndActive: the unsealed lease is only
+// TestArchiveHTTPUnsealedRefusesSealedAndActive: the unsealed read is only
 // for archives whose session ended without a seal.
 func TestArchiveHTTPUnsealedRefusesSealedAndActive(t *testing.T) {
 	srv, sess, _, _ := archiveFixture(t)
@@ -701,9 +657,9 @@ func TestArchiveHTTPUnsealedRefusesSealedAndActive(t *testing.T) {
 	defer httpServer.Close()
 	c, err := archive.NewClientWithURL(httpServer.Client(), httpServer.URL)
 	require.NoError(t, err)
-	_, err = c.AcquireUnsealed(t.Context(), archiveTestTrace)
+	_, err = c.Unsealed(t.Context(), archiveTestTrace)
 	require.ErrorIs(t, err, archive.ErrState, "a still-active session is not unsealed")
 	require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
-	_, err = c.AcquireUnsealed(t.Context(), archiveTestTrace)
+	_, err = c.Unsealed(t.Context(), archiveTestTrace)
 	require.ErrorIs(t, err, archive.ErrState, "a sealed archive uses its bootstrap")
 }

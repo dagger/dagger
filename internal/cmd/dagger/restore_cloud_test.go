@@ -87,7 +87,7 @@ func TestCloudRestoreFallbackHTTP(t *testing.T) {
 	require.NoError(t, err)
 	source, err = source.WithBaseURL(server.URL)
 	require.NoError(t, err)
-	local := &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
+	local := &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
 	req := restoreRequest()
 	req.source, req.cloudSource = local, source
 	fe := cloudTestFrontend{newRestoreTestFrontend()}
@@ -127,15 +127,15 @@ func TestCloudRestoreUnavailableLocalAPI(t *testing.T) {
 	require.False(t, canFallbackToCloud(t.Context(), archive.ErrTransient))
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	require.False(t, canFallbackToCloud(ctx, &archiveAcquireError{archive.ErrTransient}))
-	require.True(t, canFallbackToCloud(t.Context(), &archiveAcquireError{archive.ErrTransient}))
+	require.False(t, canFallbackToCloud(ctx, &archiveUnavailableError{archive.ErrTransient}))
+	require.True(t, canFallbackToCloud(t.Context(), &archiveUnavailableError{archive.ErrTransient}))
 }
 
 func TestCloudRestoreSourceDecisions(t *testing.T) {
 	for _, failure := range []error{archive.ErrCorrupt, archive.ErrState, &archive.RequestError{Kind: archive.ErrorTransient, StatusCode: http.StatusForbidden}} {
 		t.Run(failure.Error(), func(t *testing.T) {
 			req := restoreRequest()
-			req.source = &restoreTestArchive{acquireErr: failure}
+			req.source = &restoreTestArchive{bootstrapErr: failure}
 			req.cloudSource = cloudRestoreFunc(func(context.Context, string, cloud.TraceImportSink) error { t.Fatal("must not fall back"); return nil })
 			_, err := restoreTraceSources(t.Context(), newRestoreTestFrontend(), newFakeRestoreTarget(), req)
 			require.ErrorIs(t, err, failure)
@@ -182,7 +182,7 @@ func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
 				chief.State = "PAUSED"
 				records = append(records, chief.Record())
 			}
-			req.source = &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
+			req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
 			req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
 				if err := sink.ImportLogs(ctx, controlLogs(records...)); err != nil {
 					return err
@@ -228,7 +228,7 @@ func TestCloudRestoreSkipsCorruptSnapshot(t *testing.T) {
 	tamperCloudFrame(t, records, worker.Digest)
 	records = append(records, chief.Record(), worker.Record(), edge.Record())
 	req := restoreRequest()
-	req.source = &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
+	req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
 	req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
 		return sink.ImportLogs(ctx, controlLogs(records...))
 	})
@@ -249,7 +249,7 @@ func TestCloudRestoreSkipsCaptureFailure(t *testing.T) {
 	worker.Digest, worker.CaptureError = "", "Host.directory is session-local"
 	records = append(records, chief.Record(), worker.Record(), edge.Record())
 	req := restoreRequest()
-	req.source = &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
+	req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
 	req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
 		return sink.ImportLogs(ctx, controlLogs(records...))
 	})
@@ -274,7 +274,7 @@ func TestUnsealedArchiveRestoresLatestRecordedState(t *testing.T) {
 			worker.State, worker.Failure = "RUNNING", ""
 			records = append(records, chief.Record(), worker.Record(), edge.Record())
 			source := &restoreTestArchive{
-				acquireErr:   &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureState, State: state},
+				bootstrapErr: &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureState, State: state},
 				unsealed:     &archive.UnsealedArchive{Cut: archive.HighWater{Logs: 1}},
 				unsealedLogs: controlLogs(records...),
 			}
@@ -294,7 +294,6 @@ func TestUnsealedArchiveRestoresLatestRecordedState(t *testing.T) {
 			require.Equal(t, "chief", target.focused)
 			require.Contains(t, warnings.String(), "engine archive was not sealed")
 			require.Contains(t, warnings.String(), string(state))
-			require.EqualValues(t, 1, source.unsealedRelease.Load(), "the unsealed lease is released")
 		})
 	}
 }
@@ -309,7 +308,7 @@ func TestUnsealedArchiveFallsBackToCloud(t *testing.T) {
 
 	t.Run("cloud succeeds", func(t *testing.T) {
 		req := restoreRequest()
-		req.source = &restoreTestArchive{acquireErr: interrupted, unsealedErr: errors.New("store unreadable")}
+		req.source = &restoreTestArchive{bootstrapErr: interrupted, unsealedErr: errors.New("store unreadable")}
 		req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
 			return sink.ImportLogs(ctx, controlLogs(records...))
 		})
@@ -322,7 +321,7 @@ func TestUnsealedArchiveFallsBackToCloud(t *testing.T) {
 
 	t.Run("cloud fails too", func(t *testing.T) {
 		req := restoreRequest()
-		req.source = &restoreTestArchive{acquireErr: interrupted, unsealedErr: errors.New("store unreadable")}
+		req.source = &restoreTestArchive{bootstrapErr: interrupted, unsealedErr: errors.New("store unreadable")}
 		req.cloudSource = cloudRestoreFunc(func(context.Context, string, cloud.TraceImportSink) error {
 			return errors.New("cloud unreachable")
 		})
@@ -336,8 +335,8 @@ func TestUnsealedArchiveFallsBackToCloud(t *testing.T) {
 	t.Run("sealed-state failures do not try unsealed", func(t *testing.T) {
 		req := restoreRequest()
 		source := &restoreTestArchive{
-			acquireErr:  &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureState, State: archive.StateActive},
-			unsealedErr: errors.New("must not be called"),
+			bootstrapErr: &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureState, State: archive.StateActive},
+			unsealedErr:  errors.New("must not be called"),
 		}
 		req.source = source
 		req.cloudSource = cloudRestoreFunc(func(context.Context, string, cloud.TraceImportSink) error {
@@ -359,7 +358,7 @@ func TestCloudRestoreSourceSelectionAndRemoval(t *testing.T) {
 	edge.States = nil
 	records = append(records, chief.Record(), worker.Record(), edge.Record(), other.Record())
 	req := restoreRequest()
-	req.source = &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
+	req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
 	req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
 		return sink.ImportLogs(ctx, controlLogs(records...))
 	})

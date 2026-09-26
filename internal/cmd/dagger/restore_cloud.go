@@ -74,8 +74,8 @@ func canFallbackToCloud(ctx context.Context, err error) bool {
 	if archive.IsCleanMiss(err) {
 		return true
 	}
-	var acquireErr *archiveAcquireError
-	if !errors.As(err, &acquireErr) || !errors.Is(err, archive.ErrTransient) {
+	var unavailable *archiveUnavailableError
+	if !errors.As(err, &unavailable) || !errors.Is(err, archive.ErrTransient) {
 		return false
 	}
 	var requestErr *archive.RequestError
@@ -154,11 +154,10 @@ func unsealedArchiveState(err error) (archive.State, bool) {
 // each agent's recipe closure verified on its own. restored reports whether the
 // restore got as far as installing the agent graph.
 func restoreUnsealedArchive(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, target restoreTarget, req traceRestore) (_ func(), restored bool, _ error) {
-	unsealed, err := source.AcquireUnsealed(ctx, req.traceID)
+	unsealed, err := source.Unsealed(ctx, req.traceID)
 	if err != nil {
 		return nil, false, err
 	}
-	defer unsealed.Release()
 	plan, edges, err := observedTracePlan(ctx, fe, req, unsealedArchiveFetcher{source: source, archive: unsealed})
 	if err != nil {
 		return nil, false, err

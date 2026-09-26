@@ -712,9 +712,6 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 	}
 	require.NotNil(t, manifest, "archive disappeared across engine restart")
 	require.Equal(t, archive.StateClosed, manifest.State, "archive failure: %s", manifest.Failure)
-	release, err := client.Acquire(targetCtx, traceID)
-	require.NoError(t, err)
-	defer release()
 	db := restoringDB(t)
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
 	result, err := client.Bootstrap(targetCtx, traceID, func(_ archive.BootstrapHeader, batch archive.BootstrapBatch) error {
@@ -741,7 +738,7 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 // TestArchiveUnsealedAfterEngineCrash kills the source engine process without
 // any graceful finalization, so its archive is never sealed. After a restart
 // over the same state volume the archive reads as interrupted: it has no
-// bootstrap, but an unsealed lease streams everything it recorded, and the
+// bootstrap, but an unsealed read streams everything it recorded, and the
 // agent restores from its latest recorded state and continues.
 func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context, t *testctx.T) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
@@ -799,12 +796,11 @@ func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context
 	}
 	require.NotNil(t, manifest, "archive disappeared across engine crash")
 	require.Equal(t, archive.StateInterrupted, manifest.State)
-	_, err = client.Acquire(targetCtx, traceID)
+	_, err = client.Bootstrap(targetCtx, traceID, nil)
 	require.ErrorIs(t, err, archive.ErrState, "an unsealed archive has no verified bootstrap")
 
-	unsealed, err := client.AcquireUnsealed(targetCtx, traceID)
+	unsealed, err := client.Unsealed(targetCtx, traceID)
 	require.NoError(t, err)
-	defer unsealed.Release()
 	db := restoringDB(t)
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
 	opts := func(high int64) archive.StreamOptions {

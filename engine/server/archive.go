@@ -342,51 +342,39 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		return writeArchiveJSON(w, http.StatusOK, srv.archives.List(r.URL.Query().Get("after"), exclude, limit))
 	}
 	parts := strings.Split(path, "/")
-	if len(parts) != 2 {
+	if len(parts) > 2 {
 		return httpErr(errors.New("unknown archive endpoint"), http.StatusNotFound)
 	}
-	traceID, resource := parts[0], parts[1]
 	if r.Method != http.MethodGet {
 		return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
+	}
+	m, err := srv.archives.Manifest(parts[0])
+	if err != nil {
+		return writeArchiveFailure(w, err)
 	}
 	// An unsealed archive (interrupted or incomplete) has no bootstrap or
 	// verified cut; it can only be streamed at the current end of its store,
 	// with control records included, for a best-effort restore.
 	unsealed := r.URL.Query().Get("unsealed") == "1"
-	acquire := srv.archives.Acquire
-	if unsealed {
-		acquire = srv.archives.AcquireUnsealed
+	if unsealed != m.State.Unsealed() || (!unsealed && m.State != archive.StateClosed) {
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureState, State: m.State})
 	}
-	lease, err := acquire(traceID)
-	if err != nil {
-		return writeArchiveFailure(w, err)
-	}
-	defer lease.Release()
-	m := lease.Manifest()
 	cut := m.HighWater
 	if unsealed {
-		if resource == archive.AgentBootstrapResource {
-			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureState, State: m.State})
-		}
 		if cut, err = srv.unsealedArchiveCut(r.Context(), m); err != nil {
 			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
 		}
-		w.Header().Set(archive.UnsealedHighWaterHeader, cut.String())
 	}
-	switch resource {
-	case "lease":
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte{1}); err != nil {
-			return err
-		}
-		if err := http.NewResponseController(w).Flush(); err != nil {
-			return err
-		}
-		<-r.Context().Done()
-		return nil
+	if len(parts) == 1 {
+		m.HighWater = cut
+		return writeArchiveJSON(w, http.StatusOK, m)
+	}
+	switch resource := parts[1]; resource {
 	case archive.AgentBootstrapResource:
-		return serveArchiveBootstrap(w, lease)
+		if unsealed {
+			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureState, State: m.State})
+		}
+		return serveArchiveBootstrap(w, srv.archives.BootstrapPath(m.TraceID), m)
 	case "traces", "logs", "metrics":
 		return srv.serveArchiveSignal(w, r, m, cut, unsealed, resource)
 	default:
@@ -395,7 +383,7 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 }
 
 // unsealedArchiveCut is the current end of an unsealed archive's store. Its
-// session is gone, so the cut is stable across the lease and every stream.
+// session is gone, so the cut is stable across every stream.
 func (srv *Server) unsealedArchiveCut(ctx context.Context, m archive.Manifest) (archive.HighWater, error) {
 	db, err := srv.clientDBs.Open(ctx, m.MainClientID)
 	if err != nil {
@@ -406,13 +394,17 @@ func (srv *Server) unsealedArchiveCut(ctx context.Context, m archive.Manifest) (
 	return archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, nil
 }
 
-func serveArchiveBootstrap(w http.ResponseWriter, lease *archive.Lease) error {
-	data, err := os.ReadFile(lease.BootstrapPath())
+func serveArchiveBootstrap(w http.ResponseWriter, path string, m archive.Manifest) error {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		// Collected since the manifest lookup.
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureNotFound})
+	}
 	if err != nil {
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: err})
 	}
 	hash := sha256.Sum256(data)
-	if hex.EncodeToString(hash[:]) != lease.Manifest().Bootstrap.SHA256 {
+	if hex.EncodeToString(hash[:]) != m.Bootstrap.SHA256 {
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: errors.New("bootstrap checksum mismatch")})
 	}
 	if _, _, err := archive.VerifyBootstrap(bytes.NewReader(data)); err != nil {
@@ -574,8 +566,6 @@ func writeArchiveFailure(w http.ResponseWriter, err error) error {
 		switch kind {
 		case archive.FailureNotFound:
 			status = http.StatusNotFound
-		case archive.FailureEvicted:
-			status = http.StatusGone
 		case archive.FailureState:
 			status = http.StatusConflict
 		case archive.FailureCorrupt:

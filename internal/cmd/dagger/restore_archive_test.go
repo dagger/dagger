@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,36 +56,26 @@ func (f *restoreTestFrontend) LogExporter() sdklog.Exporter        { return f.db
 func (f *restoreTestFrontend) MetricExporter() sdkmetric.Exporter  { return f.db.MetricExporter() }
 
 type restoreTestArchive struct {
-	header                   archive.BootstrapHeader
-	logs                     *collogspb.ExportLogsServiceRequest
-	acquireErr, bootstrapErr error
-	released                 atomic.Int32
-	history                  chan string
+	header       archive.BootstrapHeader
+	logs         *collogspb.ExportLogsServiceRequest
+	bootstrapErr error
+	history      chan string
 
-	// An unsealed archive: AcquireUnsealed returns unsealed (or unsealedErr),
-	// and unsealed streams deliver unsealedLogs.
-	unsealed        *archive.UnsealedArchive
-	unsealedErr     error
-	unsealedLogs    *collogspb.ExportLogsServiceRequest
-	unsealedRelease atomic.Int32
+	// An unsealed archive: Unsealed returns unsealed (or unsealedErr), and
+	// unsealed streams deliver unsealedLogs.
+	unsealed     *archive.UnsealedArchive
+	unsealedErr  error
+	unsealedLogs *collogspb.ExportLogsServiceRequest
 }
 
-func (s *restoreTestArchive) Acquire(context.Context, string) (func(), error) {
-	if s.acquireErr != nil {
-		return nil, s.acquireErr
-	}
-	return func() { s.released.Add(1) }, nil
-}
-func (s *restoreTestArchive) AcquireUnsealed(context.Context, string) (archive.UnsealedArchive, error) {
+func (s *restoreTestArchive) Unsealed(context.Context, string) (archive.UnsealedArchive, error) {
 	if s.unsealedErr != nil {
 		return archive.UnsealedArchive{}, s.unsealedErr
 	}
 	if s.unsealed == nil {
 		return archive.UnsealedArchive{}, &archive.RequestError{Kind: archive.ErrorState, State: archive.StateClosed}
 	}
-	unsealed := *s.unsealed
-	unsealed.Release = func() { s.unsealedRelease.Add(1) }
-	return unsealed, nil
+	return *s.unsealed, nil
 }
 func (s *restoreTestArchive) Bootstrap(_ context.Context, _ string, consume func(archive.BootstrapHeader, archive.BootstrapBatch) error) (archive.BootstrapResult, error) {
 	if s.bootstrapErr != nil {
@@ -276,7 +265,6 @@ func TestArchivePromptDoesNotWaitForHistory(t *testing.T) {
 	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
 	require.NoError(t, err)
 	require.Equal(t, "chief", target.focused)
-	require.Zero(t, source.released.Load(), "lease must span bootstrap-to-remainder gap")
 	for range 3 {
 		select {
 		case <-source.history:
@@ -285,7 +273,6 @@ func TestArchivePromptDoesNotWaitForHistory(t *testing.T) {
 		}
 	}
 	cleanup()
-	require.EqualValues(t, 1, source.released.Load(), "exit must cancel readers and release exactly once")
 }
 
 func TestArchiveRestoreWaitsForFrontendApplication(t *testing.T) {
@@ -336,7 +323,6 @@ func TestArchiveBootstrapFailureNeverCreatesRuntime(t *testing.T) {
 			require.ErrorIs(t, err, fail)
 			require.Nil(t, cleanup)
 			require.Empty(t, target.calls)
-			require.EqualValues(t, 1, source.released.Load())
 			if errors.Is(fail, archive.ErrCleanMiss) {
 				require.ErrorContains(t, err, "no retained engine archive")
 			}
