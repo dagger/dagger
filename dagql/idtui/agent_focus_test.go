@@ -598,6 +598,90 @@ func TestNavDigitWithoutAnEntryIsUnclaimed(t *testing.T) {
 	require.False(t, solo.inputFocused(), "single-agent roster must not claim digit bindings")
 }
 
+func TestInsertCycleKeepsModeAndDrafts(t *testing.T) {
+	handler := &focusShellHandler{target: "agent-chief"}
+	fe := focusTestFrontend(t, threeAgentDB(t), handler)
+
+	require.Contains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "alt+[/] prev/next agent")
+	fe.textInput.SetValue("chief draft")
+	for _, step := range []struct {
+		key   string
+		agent string
+		draft string
+	}{
+		{"alt+]", "scout", ""},
+		{"alt+]", "docs", ""},
+		{"alt+]", "chief", "chief draft"},
+		{"alt+[", "docs", "docs draft"},
+		{"alt+[", "scout", "scout draft"},
+		{"alt+[", "chief", "chief draft"},
+		{"alt+[", "docs", "docs draft"},
+	} {
+		fe.tui.Inject(tuist.ParseKey(step.key))
+		fe.tui.Step()
+		require.Equal(t, step.agent, focusedRosterName(t, fe))
+		require.True(t, fe.inputFocused(), "cycling must preserve insert mode")
+		require.Equal(t, step.draft, fe.textInput.Value())
+		fe.textInput.SetValue(step.agent + " draft")
+	}
+
+	// Unmodified brackets still type, rather than navigating the roster.
+	fe.textInput.SetValue("")
+	fe.tui.Inject(tuist.ParseKey("["))
+	fe.tui.Inject(tuist.ParseKey("]"))
+	fe.tui.Step()
+	require.Equal(t, "[]", fe.textInput.Value())
+	require.Equal(t, "docs", focusedRosterName(t, fe))
+}
+
+func TestInsertCycleSkipsReadOnlyAgents(t *testing.T) {
+	db := threeAgentDB(t)
+	delete(db.Calls, "sha256:scout")
+	fe := focusTestFrontend(t, db, &focusShellHandler{target: "agent-chief"})
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
+	require.Error(t, fe.promptErr)
+	fe.setPromptError(nil)
+
+	for _, step := range []struct {
+		key   rune
+		agent string
+	}{
+		{']', "docs"},
+		{'[', "chief"},
+	} {
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: step.key, Mod: uv.ModAlt}))
+		require.Equal(t, step.agent, focusedRosterName(t, fe))
+		require.True(t, fe.inputFocused())
+		require.NoError(t, fe.promptErr)
+	}
+}
+
+func TestInsertCycleWithNobodyToCycleTo(t *testing.T) {
+	for _, names := range [][]string{nil, {"chief"}, {"chief", "scout"}} {
+		db := dagui.NewDB()
+		calls, snapshots := rosterTraceFor(names...)
+		for digest, call := range calls {
+			db.Calls[digest] = call
+		}
+		db.ImportSnapshots(snapshots)
+		handler := &focusShellHandler{target: "agent-chief"}
+		fe := focusTestFrontend(t, db, handler)
+		if len(names) == 2 {
+			delete(db.Calls, "sha256:scout")
+			require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
+			require.Error(t, fe.promptErr)
+			fe.setPromptError(nil)
+		}
+		for _, key := range []rune{'[', ']'} {
+			require.False(t, pressEditlineKey(t, fe, uv.Key{Code: key, Mod: uv.ModAlt}))
+		}
+		require.True(t, fe.inputFocused())
+		require.Empty(t, handler.focusedAgents())
+		require.NoError(t, fe.promptErr)
+		require.NotContains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "prev/next agent")
+	}
+}
+
 // TestNavCycleWalksTheRoster covers [/]: one step per press, wrapping at both
 // ends, WITHOUT leaving nav mode. A cycle is a survey verb -- you tap it until
 // you land on the one you want -- so the presses here are consecutive, with no
@@ -668,8 +752,8 @@ func TestNavCycleWithNobodyToCycleTo(t *testing.T) {
 	pressNavKey(t, solo, ']')
 	pressNavKey(t, solo, '[')
 	require.False(t, solo.inputFocused(), "no strip, no cycle bindings")
-	require.False(t, solo.navCycleAgent(1), "the binding reports the no-op")
-	require.False(t, solo.navCycleAgent(-1))
+	require.False(t, solo.cycleAgent(1), "the binding reports the no-op")
+	require.False(t, solo.cycleAgent(-1))
 
 	// Two agents, one of them watch-only: the strip is up, but there is still
 	// only one agent focus can move to -- itself.
