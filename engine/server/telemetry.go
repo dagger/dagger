@@ -867,6 +867,17 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	appendStart := time.Now()
 	stats, appendErr := db.AppendLogs(inserts)
+	if appendErr == nil {
+		// Restore-critical rows must reach the file before the engine can
+		// be killed, or an unsealed archive has nothing to restore from. A
+		// write is enough for that; fsync is left to the session-end seal.
+		for _, rec := range logs {
+			if agentcontrol.IsRecord(rec) || enginetel.IsCallPayloadRecord(rec) {
+				appendErr = db.FlushLogs(ctx)
+				break
+			}
+		}
+	}
 	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
 	return appendErr
 }
