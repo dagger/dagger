@@ -43,10 +43,8 @@ type AgentNode struct {
 	// Spans are the agent's loop spans, oldest first. The last is current.
 	Spans []*Span
 
-	// State is the agent's lifecycle state, and WaitingOn what it is parked
-	// on when that state is WAITING_INPUT.
-	State     string
-	WaitingOn string
+	// State is the agent's lifecycle state.
+	State string
 
 	// StopReason says what ended a STOPPED agent: EXPLICIT for a stop
 	// somebody asked for, SESSION for the one session teardown performs on
@@ -163,7 +161,7 @@ func (db *DB) buildAgents() []*AgentNode {
 		}
 		node.Control = &projection
 		node.Name, node.CallDigest = projection.Name, projection.CallDigest
-		node.State, node.WaitingOn, node.StopReason = projection.State, projection.WaitingOn, projection.StopReason
+		node.State, node.StopReason = projection.State, projection.StopReason
 		node.SnapshotDigest, node.PreTeardownState = projection.Digest, projection.PreTeardownState
 	}
 	sort.SliceStable(order, func(i, j int) bool {

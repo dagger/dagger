@@ -30,7 +30,6 @@ import (
 // the directory contract promises.
 type recordedState struct {
 	state       string
-	waitingOn   string
 	stopReason  string
 	digest      string
 	body        string
@@ -50,8 +49,6 @@ func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 		switch kv.Key {
 		case telemetryattrs.AgentStateAttr:
 			got.state = kv.Value.AsString()
-		case telemetryattrs.AgentWaitingOnAttr:
-			got.waitingOn = kv.Value.AsString()
 		case telemetryattrs.AgentStopReasonAttr:
 			got.stopReason = kv.Value.AsString()
 		case telemetryattrs.AgentSnapshotDigestAttr:

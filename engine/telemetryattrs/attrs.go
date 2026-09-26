@@ -245,7 +245,7 @@ const CallPayloadDigestAttr = "dagger.io/dag.call.digest"
 //     that same frozen snapshot, so an attribute written later would never
 //     reach a client.
 //
-//   - MUTABLE state (AgentStateAttr, AgentWaitingOnAttr, AgentStopReasonAttr,
+//   - MUTABLE state (AgentStateAttr, AgentStopReasonAttr,
 //     AgentSnapshotDigestAttr) rides revisioned agent control LOG RECORDS
 //     (engine/agentcontrol), each a complete projection of the agent rather
 //     than a delta. The highest revision in a namespace wins.
@@ -282,10 +282,6 @@ const (
 	// the AgentState enum tokens ("IDLE", "RUNNING", "WAITING_INPUT",
 	// "PAUSED", "STOPPED", "FAILED"). (string)
 	AgentStateAttr = "dagger.io/agent.state"
-
-	// AgentWaitingOnAttr carries what the agent is blocked on when its state
-	// is WAITING_INPUT — the parked question's text. Empty otherwise. (string)
-	AgentWaitingOnAttr = "dagger.io/agent.waiting_on"
 
 	// AgentStopReasonAttr distinguishes a stop somebody asked for from a stop
 	// the session's teardown performed: "EXPLICIT" | "SESSION". Empty unless

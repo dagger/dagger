@@ -38,7 +38,6 @@ type Agent struct {
 	Digest           string
 	CaptureError     string
 	State            string
-	WaitingOn        string
 	StopReason       string
 	PreTeardownState string
 	Failure          string
