@@ -308,8 +308,11 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 	return res.Workspace.Agents.Compose.ID, nil
 }
 
-// Capture once before binding or composing tools. A failed capture must not
-// silently introduce a live checkout dependency into the committed recipe.
+// Attempt the effectful capture once before binding or composing tools. Capture
+// is best effort: startup and reload fall back to the live workspace (with a
+// warning) when git capture refuses, e.g. a dirty submodule, an oversized or
+// special untracked file, or a cancelled untracked-files prompt. A recipe built
+// on the live workspace is not portable, so a trace resume may not reproduce it.
 func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
 	workspace := dag.CurrentWorkspace()
 	id, err := workspace.Snapshot().ID(ctx)
@@ -317,7 +320,8 @@ func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspa
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("capture workspace for agent: %w", err)
+		slog.WarnContext(ctx, "could not snapshot workspace; continuing with the live workspace", "error", err)
+		return workspace, nil
 	}
 	return dagger.Ref[*dagger.Workspace](dag, id), nil
 }

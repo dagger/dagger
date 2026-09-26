@@ -109,7 +109,7 @@ func (DaggerCMDSuite) TestTraceRestoreRuntimeQueries(ctx context.Context, t *tes
 	require.Equal(t, "original failure", workerError)
 }
 
-func TestComposeAgentsRequiresSnapshot(t *testing.T) {
+func TestComposeAgentsSnapshotFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		captureErr string
@@ -174,18 +174,18 @@ func TestComposeAgentsRequiresSnapshot(t *testing.T) {
 				require.Empty(t, warnings.String())
 				return
 			}
-			if tc.captureErr != "" {
-				require.ErrorContains(t, err, tc.captureErr)
-				require.ErrorContains(t, err, "capture workspace for agent")
-				require.False(t, composed)
-				require.Zero(t, liveReads)
-				return
-			}
 			require.NoError(t, err)
 			require.Equal(t, "composed-agent", id)
 			require.True(t, composed)
-			require.Zero(t, liveReads)
-			require.Empty(t, warnings.String())
+			if tc.captureErr != "" {
+				require.Equal(t, 1, liveReads)
+				require.Contains(t, warnings.String(), "level=WARN")
+				require.Contains(t, warnings.String(), tc.captureErr)
+				require.Contains(t, warnings.String(), "continuing with the live workspace")
+			} else {
+				require.Zero(t, liveReads)
+				require.Empty(t, warnings.String())
+			}
 		})
 	}
 }
