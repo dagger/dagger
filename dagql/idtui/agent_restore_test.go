@@ -21,7 +21,7 @@ import (
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 )
 
-// The seam `dagger agent --trace` reads the restore plan through
+// The seam `dagger agent -r` reads the restore plan through
 // (hack/designs/resume-from-trace.md §5.1, "Reading the DB back"): the
 // projection and the anchor rebuild are reads OF the frontend's DB, which the
 // frontend owns single-threaded, so the CLI cannot reach for the DB directly.

@@ -26,7 +26,7 @@ import (
 )
 
 // The fetch (hack/designs/resume-from-trace.md §5.1, build order slice 5):
-// `dagger agent --trace <id>` streaming a past session's whole trace out of
+// `dagger agent -r <trace-id>` streaming a past session's whole trace out of
 // Dagger Cloud and into the live frontend's DB.
 //
 // The fake server below is built to the wire shape Cloud actually deploys —

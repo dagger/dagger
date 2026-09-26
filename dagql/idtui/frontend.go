@@ -206,7 +206,7 @@ type TraceFrontend interface {
 // a signature drift here would otherwise silently disable them.
 var _ TraceFrontend = (*frontendPretty)(nil)
 
-// AgentRestorer is the optional interface `dagger agent --trace` drives to
+// AgentRestorer is the optional interface `dagger agent -r` drives to
 // read a restore plan out of the frontend's DB
 // (hack/designs/resume-from-trace.md §5.1, "Reading the DB back").
 //
@@ -217,7 +217,7 @@ var _ TraceFrontend = (*frontendPretty)(nil)
 // lock is the frontend's, and only the frontend can take it.
 //
 // Only the pretty frontend implements it; a plain/dots/logs frontend holds no
-// span DB to restore from, so `--trace` fails there rather than silently
+// span DB to restore from, so `-r` fails there rather than silently
 // restoring nothing.
 type AgentRestorer interface {
 	// WaitForEventLoop acknowledges application of all previously enqueued telemetry,
