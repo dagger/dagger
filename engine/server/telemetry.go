@@ -478,9 +478,6 @@ type originLogExporter struct {
 func (exp originLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
 	stamped := make([]sdklog.Record, len(records))
 	for i := range records {
-		if agentcontrol.IsRecord(records[i]) {
-			return fmt.Errorf("agent control records may only be emitted by engine runtimes")
-		}
 		stamped[i] = records[i].Clone()
 		stamped[i].AddAttributes(log.String(telemetryattrs.TelemetryOriginClientIDAttr, exp.origin))
 	}
