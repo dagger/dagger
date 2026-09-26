@@ -101,7 +101,6 @@ func TestClientTypedErrors(t *testing.T) {
 
 func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 	traceID := strings.Repeat("a", 32)
-	generation := "generation"
 	traces := &coltracepb.ExportTraceServiceRequest{ResourceSpans: []*otlptracev1.ResourceSpans{{
 		Resource: &otlpresourcev1.Resource{},
 		ScopeSpans: []*otlptracev1.ScopeSpans{{Spans: []*otlptracev1.Span{{
@@ -112,8 +111,8 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 	tracePayload, _ := proto.Marshal(traces)
 	logPayload, _ := proto.Marshal(logs)
 	sealAt := time.Now().UTC().Format(time.RFC3339Nano)
-	data, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session",
-		Generation: generation, TraceID: traceID, SealAt: sealAt,
+	data, _, err := BuildBootstrap(BootstrapHeader{
+		TraceID: traceID, SealAt: sealAt,
 		HighWater: HighWater{Spans: 5, Logs: 7, Metrics: 9},
 	}, []BootstrapSignal{
 		{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 1},
@@ -124,10 +123,10 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 	}
 
 	var kinds []BootstrapFrameKind
-	client, closeServer := bootstrapTestClient(t, generation, data)
+	client, closeServer := bootstrapTestClient(t, data)
 	defer closeServer()
-	result, err := client.Bootstrap(context.Background(), traceID, generation, func(header BootstrapHeader, batch BootstrapBatch) error {
-		if header.TraceID != traceID || header.Generation != generation || header.SealAt != sealAt {
+	result, err := client.Bootstrap(context.Background(), traceID, func(header BootstrapHeader, batch BootstrapBatch) error {
+		if header.TraceID != traceID || header.SealAt != sealAt {
 			t.Fatalf("consumer received unvalidated header: %+v", header)
 		}
 		if batch.Traces != nil {
@@ -144,40 +143,31 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 	if !slices.Equal(kinds, []BootstrapFrameKind{BootstrapFrameTraces, BootstrapFrameLogs}) {
 		t.Fatalf("bootstrap kinds = %v", kinds)
 	}
-	if result.Header.Generation != generation || result.Header.HighWater.Metrics != 9 || result.Terminal.TraceRecords != 1 || result.Terminal.LogRecords != 0 {
+	if result.Header.TraceID != traceID || result.Header.HighWater.Metrics != 9 || result.Terminal.TraceRecords != 1 || result.Terminal.LogRecords != 0 {
 		t.Fatalf("unexpected bootstrap result: %+v", result)
 	}
 
 	t.Run("missing terminal is transient", func(t *testing.T) {
-		client, closeServer := bootstrapTestClient(t, generation, data[:len(data)-1])
+		client, closeServer := bootstrapTestClient(t, data[:len(data)-1])
 		defer closeServer()
-		_, err := client.Bootstrap(context.Background(), traceID, generation, nil)
+		_, err := client.Bootstrap(context.Background(), traceID, nil)
 		if !errors.Is(err, ErrTransient) {
 			t.Fatalf("error = %v, want transient", err)
 		}
 	})
 
-	t.Run("generation mismatch is corruption", func(t *testing.T) {
-		client, closeServer := bootstrapTestClient(t, "other-generation", data)
-		defer closeServer()
-		_, err := client.Bootstrap(context.Background(), traceID, generation, nil)
-		if !errors.Is(err, ErrCorrupt) {
-			t.Fatalf("error = %v, want corruption", err)
-		}
-	})
-
 	t.Run("invalid header stops before signal consumption", func(t *testing.T) {
 		wrongTrace := strings.Repeat("b", 32)
-		invalid, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session",
-			Generation: generation, TraceID: wrongTrace, SealAt: sealAt,
+		invalid, _, err := BuildBootstrap(BootstrapHeader{
+			TraceID: wrongTrace, SealAt: sealAt,
 		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 1}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		client, closeServer := bootstrapTestClient(t, generation, invalid)
+		client, closeServer := bootstrapTestClient(t, invalid)
 		defer closeServer()
 		consumed := false
-		_, err = client.Bootstrap(context.Background(), traceID, generation, func(BootstrapHeader, BootstrapBatch) error {
+		_, err = client.Bootstrap(context.Background(), traceID, func(BootstrapHeader, BootstrapBatch) error {
 			consumed = true
 			return nil
 		})
@@ -197,24 +187,24 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 		} else {
 			corrupted[checksum] = '0'
 		}
-		client, closeServer := bootstrapTestClient(t, generation, corrupted)
+		client, closeServer := bootstrapTestClient(t, corrupted)
 		defer closeServer()
-		_, err := client.Bootstrap(context.Background(), traceID, generation, nil)
+		_, err := client.Bootstrap(context.Background(), traceID, nil)
 		if !errors.Is(err, ErrCorrupt) {
 			t.Fatalf("error = %v, want corruption", err)
 		}
 	})
 
 	t.Run("terminal count mismatch is corruption", func(t *testing.T) {
-		mismatch, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session",
-			Generation: generation, TraceID: traceID, SealAt: sealAt,
+		mismatch, _, err := BuildBootstrap(BootstrapHeader{
+			TraceID: traceID, SealAt: sealAt,
 		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 2}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		client, closeServer := bootstrapTestClient(t, generation, mismatch)
+		client, closeServer := bootstrapTestClient(t, mismatch)
 		defer closeServer()
-		_, err = client.Bootstrap(context.Background(), traceID, generation, nil)
+		_, err = client.Bootstrap(context.Background(), traceID, nil)
 		if !errors.Is(err, ErrCorrupt) {
 			t.Fatalf("error = %v, want corruption", err)
 		}
@@ -223,7 +213,6 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 
 func TestClientFiniteSignalStreams(t *testing.T) {
 	traceID := strings.Repeat("c", 32)
-	generation := "generation"
 	traces := &coltracepb.ExportTraceServiceRequest{ResourceSpans: []*otlptracev1.ResourceSpans{{}}}
 	logs := &collogspb.ExportLogsServiceRequest{ResourceLogs: []*otlplogsv1.ResourceLogs{{}}}
 	metrics := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: []*otlpmetricsv1.ResourceMetrics{{}}}
@@ -232,11 +221,7 @@ func TestClientFiniteSignalStreams(t *testing.T) {
 	metricPayload, _ := proto.Marshal(metrics)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get(archiveGenerationHeader); got != generation {
-			t.Errorf("generation header = %q", got)
-		}
 		w.Header().Set("Content-Type", enginetel.LiveContentType)
-		w.Header().Set(archiveGenerationHeader, generation)
 		switch r.URL.Path {
 		case archiveResourcePath(traceID, "traces"):
 			if got := r.Header.Get(enginetel.LiveCursorHeader); got != "1" {
@@ -258,7 +243,7 @@ func TestClientFiniteSignalStreams(t *testing.T) {
 	client := testArchiveClient(t, server)
 
 	traceCursor, err := client.Traces(context.Background(), traceID, StreamOptions{
-		Generation: generation, Cursor: 1, HighWater: 5,
+		Cursor: 1, HighWater: 5,
 	}, func(cursor int64, batch *coltracepb.ExportTraceServiceRequest) error {
 		if cursor != 3 || len(batch.ResourceSpans) != 1 {
 			t.Fatalf("trace batch cursor=%d batch=%+v", cursor, batch)
@@ -269,7 +254,7 @@ func TestClientFiniteSignalStreams(t *testing.T) {
 		t.Fatalf("traces cursor=%d err=%v", traceCursor, err)
 	}
 	logCursor, err := client.Logs(context.Background(), traceID, StreamOptions{
-		Generation: generation, HighWater: 2,
+		HighWater: 2,
 	}, func(_ int64, batch *collogspb.ExportLogsServiceRequest) error {
 		if len(batch.ResourceLogs) != 1 {
 			t.Fatalf("logs batch = %+v", batch)
@@ -280,7 +265,7 @@ func TestClientFiniteSignalStreams(t *testing.T) {
 		t.Fatalf("logs cursor=%d err=%v", logCursor, err)
 	}
 	metricCursor, err := client.Metrics(context.Background(), traceID, StreamOptions{
-		Generation: generation, HighWater: 1,
+		HighWater: 1,
 	}, func(_ int64, batch *colmetricspb.ExportMetricsServiceRequest) error {
 		if len(batch.ResourceMetrics) != 1 {
 			t.Fatalf("metrics batch = %+v", batch)
@@ -294,7 +279,6 @@ func TestClientFiniteSignalStreams(t *testing.T) {
 
 func TestClientStreamEnforcesCursorAndTerminal(t *testing.T) {
 	traceID := strings.Repeat("d", 32)
-	generation := "generation"
 	payload, _ := proto.Marshal(&coltracepb.ExportTraceServiceRequest{})
 	tests := []struct {
 		name string
@@ -310,12 +294,11 @@ func TestClientStreamEnforcesCursorAndTerminal(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", enginetel.LiveContentType)
-				w.Header().Set(archiveGenerationHeader, generation)
 				test.body(w)
 			}))
 			defer server.Close()
 			client := testArchiveClient(t, server)
-			_, err := client.Traces(context.Background(), traceID, StreamOptions{Generation: generation, HighWater: 2}, nil)
+			_, err := client.Traces(context.Background(), traceID, StreamOptions{HighWater: 2}, nil)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
@@ -325,14 +308,13 @@ func TestClientStreamEnforcesCursorAndTerminal(t *testing.T) {
 	t.Run("consumer failure preserves acknowledged cursor", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", enginetel.LiveContentType)
-			w.Header().Set(archiveGenerationHeader, generation)
 			_ = enginetel.WriteLiveFrame(w, 2, payload)
 			_ = enginetel.WriteLiveTerminal(w, 2)
 		}))
 		defer server.Close()
 		client := testArchiveClient(t, server)
 		consumeErr := errors.New("frontend barrier failed")
-		cursor, err := client.Traces(context.Background(), traceID, StreamOptions{Generation: generation, Cursor: 1, HighWater: 2}, func(int64, *coltracepb.ExportTraceServiceRequest) error {
+		cursor, err := client.Traces(context.Background(), traceID, StreamOptions{Cursor: 1, HighWater: 2}, func(int64, *coltracepb.ExportTraceServiceRequest) error {
 			return consumeErr
 		})
 		if cursor != 1 || !errors.Is(err, consumeErr) {
@@ -347,8 +329,7 @@ func TestClientBootstrapIdleTimeout(t *testing.T) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header: http.Header{
-				"Content-Type":          []string{BootstrapContentType},
-				archiveGenerationHeader: []string{"generation"},
+				"Content-Type": []string{BootstrapContentType},
 			},
 			Body: body,
 		}, nil
@@ -359,7 +340,7 @@ func TestClientBootstrapIdleTimeout(t *testing.T) {
 	}
 	started := time.Now()
 	_, err = client.WithStallTimeout(20*time.Millisecond).Bootstrap(
-		context.Background(), strings.Repeat("a", 32), "generation", nil)
+		context.Background(), strings.Repeat("a", 32), nil)
 	if !errors.Is(err, ErrStreamStalled) || !errors.Is(err, ErrTransient) {
 		t.Fatalf("error = %v, want stalled transient", err)
 	}
@@ -396,11 +377,10 @@ func testArchiveClient(t *testing.T, server *httptest.Server) *Client {
 	return client
 }
 
-func bootstrapTestClient(t *testing.T, generation string, data []byte) (*Client, func()) {
+func bootstrapTestClient(t *testing.T, data []byte) (*Client, func()) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", BootstrapContentType)
-		w.Header().Set(archiveGenerationHeader, generation)
 		_, _ = w.Write(data)
 	}))
 	return testArchiveClient(t, server), server.Close

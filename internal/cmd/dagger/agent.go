@@ -24,8 +24,6 @@ var agentListMode bool
 var agentResume agentResumeFlag
 var agentTrace string
 var agentFocus string
-var agentSourceSession string
-var agentGeneration string
 
 var agentCmd = &cobra.Command{
 	Use:   "agent [FILTERS] [OPTIONS]",
@@ -50,7 +48,7 @@ var agentCmd = &cobra.Command{
 		if err := validateAgentTraceFlags(traceID, args); err != nil {
 			return err
 		}
-		if err := validateArchiveFlags(traceID, agentSourceSession, agentGeneration, agentFocus, listArchives, agentListMode, args); err != nil {
+		if err := validateArchiveFlags(traceID, agentFocus, listArchives, agentListMode, args); err != nil {
 			return err
 		}
 		// The prompt is about to use the LLM, so renew an expired subscription
@@ -76,7 +74,6 @@ var agentCmd = &cobra.Command{
 				if listArchives {
 					return listAgentArchives(ctx, source, cmd.OutOrStdout())
 				}
-				source = source.WithSourceSession(agentSourceSession)
 				dag := engineClient.Dagger()
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
@@ -96,11 +93,9 @@ var agentCmd = &cobra.Command{
 					return err
 				}
 				restore := traceRestore{
-					source:        source,
-					traceID:       traceID,
-					generation:    agentGeneration,
-					sourceSession: agentSourceSession,
-					agent:         agentFocus,
+					source:  source,
+					traceID: traceID,
+					agent:   agentFocus,
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
 					restore:              restore,
@@ -183,29 +178,22 @@ func init() {
 	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentResumeList)
 	agentCmd.Flags().StringVar(&agentTrace, "trace", "", "Restore agents from a past session's trace")
 	_ = agentCmd.Flags().MarkDeprecated("trace", "use -r/--resume <trace-id> instead")
-	agentCmd.Flags().StringVar(&agentSourceSession, "source-session", "",
-		"With -r, select the source session in an engine archive or Cloud trace")
-	agentCmd.Flags().StringVar(&agentGeneration, "generation", "",
-		"With -r and --source-session, select the exact archive generation")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With -r, focus this restored agent (runtime handle or name) instead of the top-level one")
 }
 
-func validateArchiveFlags(traceID, source, generation, focus string, listArchives, listAgents bool, args []string) error {
+func validateArchiveFlags(traceID, focus string, listArchives, listAgents bool, args []string) error {
 	if listArchives {
-		if listAgents || len(args) != 0 || source != "" || generation != "" || focus != "" {
-			return fmt.Errorf("-r without a trace ID lists archives; do not combine it with agent names, --list, --agent, --source-session, or --generation")
+		if listAgents || len(args) != 0 || focus != "" {
+			return fmt.Errorf("-r without a trace ID lists archives; do not combine it with agent names, --list, or --agent")
 		}
 		return nil
 	}
 	if traceID != "" && listAgents {
 		return fmt.Errorf("-r/--resume cannot be combined with --list")
 	}
-	if traceID == "" && (source != "" || generation != "" || focus != "") {
-		return fmt.Errorf("--source-session, --generation, and --agent require -r/--resume <trace-id>")
-	}
-	if generation != "" && source == "" {
-		return fmt.Errorf("--generation requires --source-session; discover engine cuts with a bare -r")
+	if traceID == "" && focus != "" {
+		return fmt.Errorf("--agent requires -r/--resume <trace-id>")
 	}
 	return nil
 }
@@ -222,13 +210,13 @@ func listAgentArchives(ctx context.Context, source agentArchiveLister, out io.Wr
 		return err
 	}
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "TRACE\tSOURCE SESSION\tGENERATION\tSTATE\tSTARTED\tTITLE"); err != nil {
+	if _, err := fmt.Fprintln(w, "TRACE\tSTATE\tSTARTED\tTITLE"); err != nil {
 		return err
 	}
 	for _, m := range manifests {
 		// Quoting prevents user-provided titles from injecting terminal controls
 		// or breaking a metadata row into multiple lines.
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%q\n", m.TraceID, m.SourceSession, m.Generation, m.State, m.StartedAt.UTC().Format(time.RFC3339), m.Title); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%q\n", m.TraceID, m.State, m.StartedAt.UTC().Format(time.RFC3339), m.Title); err != nil {
 			return err
 		}
 	}

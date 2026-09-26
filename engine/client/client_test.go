@@ -33,7 +33,6 @@ func TestServeHTTPPreservesArchiveQueries(t *testing.T) {
 		require.Equal(t, query, req.URL.RawQuery)
 		require.Equal(t, "a/b+c", req.URL.Query().Get("after"))
 		require.Equal(t, "1", req.URL.Query().Get("unsealed"))
-		require.Equal(t, "generation-1", req.Header.Get("X-Dagger-Archive-Generation"))
 		require.Equal(t, "27", req.Header.Get(enginetel.LiveCursorHeader))
 		token, _, ok := req.BasicAuth()
 		require.True(t, ok)
@@ -41,7 +40,6 @@ func TestServeHTTPPreservesArchiveQueries(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("archive")), Request: req}, nil
 	})}}
 	req := httptest.NewRequest(http.MethodGet, "/v1/telemetry/archives/trace/logs?"+query, nil)
-	req.Header.Set("X-Dagger-Archive-Generation", "generation-1")
 	req.Header.Set(enginetel.LiveCursorHeader, "27")
 	req.SetBasicAuth("session-secret", "")
 	response := httptest.NewRecorder()

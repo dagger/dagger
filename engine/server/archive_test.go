@@ -428,49 +428,20 @@ func TestControlPersistenceRetriesOnlyFailedTargets(t *testing.T) {
 	require.Error(t, originLogExporter{origin: "child", next: exp}.Export(t.Context(), []sdklog.Record{foreign}))
 }
 
-func TestArchiveSharedTraceKeepsSourceClosuresSeparate(t *testing.T) {
+// TestArchiveSharedTraceBelongsToFirstSession: an archive is keyed by trace ID
+// alone. A later session sharing the trace (e.g. a nested session that
+// inherited TRACEPARENT) cannot register its own archive, and the first
+// session's archive is unaffected.
+func TestArchiveSharedTraceBelongsToFirstSession(t *testing.T) {
 	srv, first, _, _ := archiveFixture(t)
 	second := &daggerSession{sessionID: "second", mainClientCallerID: "second-main", clientRecords: map[string]*clientRecord{}}
 	second.telemetryPubSub = NewPubSub(srv)
-	second.clientRecords["second-main"] = &clientRecord{daggerSession: second, clientID: "second-main"}
-	id := call.New().Append(&ast.Type{NamedType: "LLM"}, "secondRecipe")
-	a := archiveAgent()
-	a.Session, a.Handle, a.Digest = second.sessionID, "second-worker", id.Digest().String()
-	control := controlTestRecord(t, a.Record())
-	payloadBytes, err := proto.Marshal(id.Call())
-	require.NoError(t, err)
-	payload := scopedLogRecord(t, "test", logapi.BytesValue(payloadBytes), logapi.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
-	for _, rec := range []sdklog.Record{control, payload} {
-		rec.AddAttributes(logapi.String(telemetryattrs.TelemetryOriginClientIDAttr, "second-main"))
-		require.NoError(t, sessionLogExporter{sess: second, ps: second.telemetryPubSub}.Export(t.Context(), []sdklog.Record{rec}))
-	}
-	second.archiveExpected = agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{a.Key: a.Revision}}
+	require.Error(t, second.ensureArchive(archiveTestTrace))
 	require.NoError(t, srv.finalizeSessionArchive(t.Context(), first, nil))
-	require.NoError(t, srv.finalizeSessionArchive(t.Context(), second, nil))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := srv.serveArchiveHTTP(w, r, first.clientRecords["main"]); err != nil {
-			t.Errorf("archive HTTP: %v", err)
-		}
-	}))
-	defer server.Close()
-	client, err := archive.NewClientWithURL(server.Client(), server.URL)
+	m, err := srv.archives.Manifest(archiveTestTrace)
 	require.NoError(t, err)
-	_, err = client.Bootstrap(t.Context(), archiveTestTrace, "", nil)
-	require.ErrorIs(t, err, archive.ErrState)
-	require.False(t, archive.IsCleanMiss(err))
-	for _, sess := range []*daggerSession{first, second} {
-		generation := sess.archiveManifest.Generation
-		release, err := client.AcquireGeneration(t.Context(), archiveTestTrace, generation)
-		require.NoError(t, err)
-		result, err := client.Bootstrap(t.Context(), archiveTestTrace, generation, nil)
-		release()
-		require.NoError(t, err)
-		require.Equal(t, sess.sessionID, result.Header.SourceSession)
-		require.Len(t, result.Header.Completion.Agents, 1)
-		require.Equal(t, sess.sessionID, result.Header.Completion.Agents[0].Key.Session)
-	}
-	_, err = client.WithSourceSession(second.sessionID).Bootstrap(t.Context(), archiveTestTrace, first.archiveManifest.Generation, nil)
-	require.ErrorIs(t, err, archive.ErrCorrupt)
+	require.Equal(t, archive.StateClosed, m.State)
+	require.Equal(t, first.mainClientCallerID, m.MainClientID)
 }
 
 func TestArchiveLeaseProtectsRequestGapsAndCancels(t *testing.T) {
@@ -504,7 +475,7 @@ func TestArchiveLeaseProtectsRequestGapsAndCancels(t *testing.T) {
 			_, err = srv.archives.GC()
 			require.NoError(t, err)
 			// The long-lived lease survives the idle gap before the next request.
-			_, err = client.Bootstrap(t.Context(), archiveTestTrace, manifest.Generation, nil)
+			_, err = client.Bootstrap(t.Context(), archiveTestTrace, nil)
 			require.NoError(t, err)
 			if cancelOnly {
 				cancel()
@@ -541,7 +512,7 @@ func TestArchiveHTTPBootstrapBeforeHistoryAndAuthentication(t *testing.T) {
 	require.NoError(t, err)
 	defer release()
 	applied := 0
-	result, err := c.Bootstrap(t.Context(), archiveTestTrace, "", func(_ archive.BootstrapHeader, b archive.BootstrapBatch) error {
+	result, err := c.Bootstrap(t.Context(), archiveTestTrace, func(_ archive.BootstrapHeader, b archive.BootstrapBatch) error {
 		require.NotNil(t, b.Logs)
 		applied++
 		return nil
@@ -550,7 +521,7 @@ func TestArchiveHTTPBootstrapBeforeHistoryAndAuthentication(t *testing.T) {
 	require.Positive(t, applied)
 	// History re-delivers the bootstrap's call payload, which the frontend
 	// ignores by digest, but never its control record.
-	opts := archive.StreamOptions{Generation: result.Header.Generation, HighWater: result.Header.HighWater.Logs}
+	opts := archive.StreamOptions{HighWater: result.Header.HighWater.Logs}
 	control, payloads := 0, 0
 	cursor, err := c.Logs(t.Context(), archiveTestTrace, opts, countArchiveLogKinds(&control, &payloads))
 	require.NoError(t, err)
@@ -586,7 +557,6 @@ func countArchiveLogKinds(control, payloads *int) func(int64, *collogspb.ExportL
 // control records included, at a stable cut.
 func TestArchiveHTTPUnsealedStreamsRecordedControl(t *testing.T) {
 	srv, sess, db, _ := archiveFixture(t)
-	manifest := *sess.archiveManifest
 	require.NoError(t, db.Close())
 	// Restart: the manager reopens the still-active manifest as interrupted.
 	manager, err := archive.NewManager(archive.Config{Root: filepath.Join(filepath.Dir(srv.clientDBs.Root), "archives"), RemoveStore: srv.clientDBs.Remove})
@@ -611,22 +581,19 @@ func TestArchiveHTTPUnsealedStreamsRecordedControl(t *testing.T) {
 	require.ErrorAs(t, err, &requestErr)
 	require.Equal(t, archive.StateInterrupted, requestErr.State)
 
-	unsealed, err := c.AcquireUnsealed(t.Context(), archiveTestTrace, "")
+	unsealed, err := c.AcquireUnsealed(t.Context(), archiveTestTrace)
 	require.NoError(t, err)
 	defer unsealed.Release()
-	require.Equal(t, manifest.Generation, unsealed.Generation)
 	require.Equal(t, int64(2), unsealed.Cut.Logs, "control record and payload")
 
 	var control, payloads int
-	cursor, err := c.Logs(t.Context(), archiveTestTrace, archive.StreamOptions{Generation: unsealed.Generation, HighWater: unsealed.Cut.Logs, Unsealed: true}, countArchiveLogKinds(&control, &payloads))
+	cursor, err := c.Logs(t.Context(), archiveTestTrace, archive.StreamOptions{HighWater: unsealed.Cut.Logs, Unsealed: true}, countArchiveLogKinds(&control, &payloads))
 	require.NoError(t, err)
 	require.Equal(t, unsealed.Cut.Logs, cursor)
 	require.Equal(t, 1, control, "unsealed log streams carry the control records a bootstrap would have")
 	require.Equal(t, 1, payloads)
 
-	_, err = c.AcquireGeneration(t.Context(), archiveTestTrace, unsealed.Generation)
-	require.ErrorIs(t, err, archive.ErrState)
-	_, err = c.Bootstrap(t.Context(), archiveTestTrace, unsealed.Generation, nil)
+	_, err = c.Bootstrap(t.Context(), archiveTestTrace, nil)
 	require.ErrorIs(t, err, archive.ErrState, "an unsealed archive never serves an agent bootstrap")
 }
 
@@ -734,9 +701,9 @@ func TestArchiveHTTPUnsealedRefusesSealedAndActive(t *testing.T) {
 	defer httpServer.Close()
 	c, err := archive.NewClientWithURL(httpServer.Client(), httpServer.URL)
 	require.NoError(t, err)
-	_, err = c.AcquireUnsealed(t.Context(), archiveTestTrace, "")
+	_, err = c.AcquireUnsealed(t.Context(), archiveTestTrace)
 	require.ErrorIs(t, err, archive.ErrState, "a still-active session is not unsealed")
 	require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
-	_, err = c.AcquireUnsealed(t.Context(), archiveTestTrace, "")
+	_, err = c.AcquireUnsealed(t.Context(), archiveTestTrace)
 	require.ErrorIs(t, err, archive.ErrState, "a sealed archive uses its bootstrap")
 }

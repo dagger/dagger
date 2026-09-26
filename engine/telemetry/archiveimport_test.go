@@ -73,7 +73,7 @@ func (c *importSpanCounter) ExportSpans(_ context.Context, spans []sdktrace.Read
 func (*importSpanCounter) Shutdown(context.Context) error { return nil }
 
 func archiveImportCut() ArchiveCut {
-	return ArchiveCut{Generation: "fixed", HighWater: ArchiveHighWater{Spans: 10, Logs: 10, Metrics: 10}, SealAt: time.Unix(20, 0)}
+	return ArchiveCut{HighWater: ArchiveHighWater{Spans: 10, Logs: 10, Metrics: 10}, SealAt: time.Unix(20, 0)}
 }
 func archiveImportLogs() *collogpb.ExportLogsServiceRequest {
 	return &collogpb.ExportLogsServiceRequest{ResourceLogs: []*logpb.ResourceLogs{{Resource: &resourcepb.Resource{}, ScopeLogs: []*logpb.ScopeLogs{{LogRecords: []*logpb.LogRecord{{Body: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "history"}}}}}}}}}
@@ -139,7 +139,7 @@ func TestArchiveImportCursorRetriesOnlyBarrier(t *testing.T) {
 	require.NoError(t, imp.ImportAndWait(t.Context(), archiveImportCut(), ArchiveImportBatch{Cursor: 8, Logs: &collogpb.ExportLogsServiceRequest{}}))
 	require.EqualValues(t, 8, imp.enqueued[ArchiveLogs], "empty data frame advances its cursor")
 	wrong := archiveImportCut()
-	wrong.Generation = "other"
+	wrong.SealAt = wrong.SealAt.Add(time.Second)
 	require.ErrorIs(t, imp.ImportAndWait(t.Context(), wrong, batch), ErrArchiveCutMismatch)
 	require.Error(t, imp.ImportAndWait(t.Context(), archiveImportCut(), ArchiveImportBatch{Cursor: 11, Logs: archiveImportLogs()}))
 }

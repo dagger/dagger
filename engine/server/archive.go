@@ -74,7 +74,7 @@ func (sess *daggerSession) ensureArchive(traceID string) (rerr error) {
 		}
 		return nil
 	}
-	manifest, err := srv.archives.RegisterSession(traceID, sess.sessionID, sess.mainClientCallerID)
+	manifest, err := srv.archives.Register(traceID, sess.mainClientCallerID)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (sess *daggerSession) setArchiveTitle(traceID, title string) {
 // setArchiveTitleLocked requires archiveMu, which serializes title writes.
 func (sess *daggerSession) setArchiveTitleLocked(manifest archive.Manifest, title string) {
 	// Titles are advisory; a finalizing or sealed archive keeps its title.
-	if err := sess.telemetryPubSub.srv.archives.SetTitle(manifest.TraceID, manifest.Generation, title); err != nil {
+	if err := sess.telemetryPubSub.srv.archives.SetTitle(manifest.TraceID, title); err != nil {
 		slog.Debug("record archive title", "err", err)
 	}
 }
@@ -172,7 +172,7 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 	}
 	defer func() {
 		if rerr != nil {
-			_ = srv.archives.MarkIncomplete(manifest.TraceID, manifest.Generation, rerr)
+			_ = srv.archives.MarkIncomplete(manifest.TraceID, rerr)
 		}
 	}()
 	if err := errors.Join(drainErr, sess.archiveCloseErr, registrationErr); err != nil {
@@ -181,7 +181,7 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 	if sess.archiveExpected.Agents == nil {
 		return errors.New("missing independent final roster witness")
 	}
-	if err := srv.archives.BeginFinalizing(manifest.TraceID, manifest.Generation); err != nil {
+	if err := srv.archives.BeginFinalizing(manifest.TraceID); err != nil {
 		return err
 	}
 	db, err := srv.clientDBs.Open(ctx, manifest.MainClientID)
@@ -209,7 +209,7 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 	if err != nil {
 		return err
 	}
-	_, err = srv.archives.Finalize(manifest.TraceID, manifest.Generation, archive.FinalizeInput{
+	_, err = srv.archives.Finalize(manifest.TraceID, archive.FinalizeInput{
 		HighWater: header.HighWater, SealAt: seal, StoreSizeBytes: size, BootstrapBytes: data, BootstrapRecords: records,
 	})
 	return err
@@ -272,7 +272,7 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 		}
 		return 0
 	})
-	header := archive.BootstrapHeader{Generation: manifest.Generation, TraceID: manifest.TraceID, SourceSession: manifest.SourceSession, SealAt: time.Now().UTC().Format(time.RFC3339Nano), HighWater: archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, Completion: archive.Witness(want)}
+	header := archive.BootstrapHeader{TraceID: manifest.TraceID, SealAt: time.Now().UTC().Format(time.RFC3339Nano), HighWater: archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, Completion: archive.Witness(want)}
 	var signals []archive.BootstrapSignal
 	var batches []archive.BootstrapBatch
 	for start := 0; start < len(rows); {
@@ -336,7 +336,7 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		record.daggerSession.archiveMu.Lock()
 		exclude := ""
 		if m := record.daggerSession.archiveManifest; m != nil {
-			exclude = m.Generation
+			exclude = m.TraceID
 		}
 		record.daggerSession.archiveMu.Unlock()
 		return writeArchiveJSON(w, http.StatusOK, srv.archives.List(r.URL.Query().Get("after"), exclude, limit))
@@ -353,19 +353,16 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	// verified cut; it can only be streamed at the current end of its store,
 	// with control records included, for a best-effort restore.
 	unsealed := r.URL.Query().Get("unsealed") == "1"
-	acquire := srv.archives.AcquireSource
+	acquire := srv.archives.Acquire
 	if unsealed {
 		acquire = srv.archives.AcquireUnsealed
 	}
-	lease, err := acquire(traceID, r.Header.Get("X-Dagger-Archive-Generation"), r.URL.Query().Get("source_session"))
+	lease, err := acquire(traceID)
 	if err != nil {
 		return writeArchiveFailure(w, err)
 	}
 	defer lease.Release()
 	m := lease.Manifest()
-	if g := r.Header.Get("X-Dagger-Archive-Generation"); g != "" && g != m.Generation {
-		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: errors.New("generation mismatch")})
-	}
 	cut := m.HighWater
 	if unsealed {
 		if resource == archive.AgentBootstrapResource {
@@ -376,7 +373,6 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		}
 		w.Header().Set(archive.UnsealedHighWaterHeader, cut.String())
 	}
-	w.Header().Set("X-Dagger-Archive-Generation", m.Generation)
 	switch resource {
 	case "lease":
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -580,7 +576,7 @@ func writeArchiveFailure(w http.ResponseWriter, err error) error {
 			status = http.StatusNotFound
 		case archive.FailureEvicted:
 			status = http.StatusGone
-		case archive.FailureState, archive.FailureAmbiguous:
+		case archive.FailureState:
 			status = http.StatusConflict
 		case archive.FailureCorrupt:
 			status = http.StatusUnprocessableEntity

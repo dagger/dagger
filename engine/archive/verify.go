@@ -111,10 +111,9 @@ func VerifyClosure(roots []string, load func(string) (*callpbv1.Call, error)) (m
 }
 
 type bootstrapVerifier struct {
-	trace         string
-	sourceSession string
-	index         agentcontrol.Index
-	calls         map[string]*callpbv1.Call
+	trace string
+	index agentcontrol.Index
+	calls map[string]*callpbv1.Call
 }
 
 func (v *bootstrapVerifier) Export(_ context.Context, records []sdklog.Record) error {
@@ -133,8 +132,8 @@ func (v *bootstrapVerifier) Export(_ context.Context, records []sdklog.Record) e
 			} else {
 				ns = s.Namespace
 			}
-			if ns.Trace != v.trace || ns.Session != v.sourceSession {
-				return errors.New("control namespace source session or trace mismatch")
+			if ns.Trace != v.trace {
+				return errors.New("control namespace trace mismatch")
 			}
 			if _, err := v.index.ApplyRecord(r); err != nil {
 				return err
@@ -172,7 +171,7 @@ func ValidateBootstrap(ctx context.Context, header BootstrapHeader, batches []Bo
 	if err != nil {
 		return err
 	}
-	v := &bootstrapVerifier{trace: header.TraceID, sourceSession: header.SourceSession, calls: map[string]*callpbv1.Call{}}
+	v := &bootstrapVerifier{trace: header.TraceID, calls: map[string]*callpbv1.Call{}}
 	for _, b := range batches {
 		if b.Traces != nil {
 			for _, resource := range b.Traces.GetResourceSpans() {

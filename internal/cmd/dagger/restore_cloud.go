@@ -5,8 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
-	"strings"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -84,7 +83,7 @@ func canFallbackToCloud(ctx context.Context, err error) bool {
 }
 
 // Prefer the persisted local cut. Missing or unavailable archive service may
-// fall back before bootstrap import. Never hide ambiguity, rejected authority,
+// fall back before bootstrap import. Never hide rejected authority,
 // corruption, or a partial local bootstrap behind a different source.
 //
 // A local archive that was never sealed (the engine stopped before finalizing
@@ -114,9 +113,6 @@ func restoreTraceSources(ctx context.Context, fe archiveFrontend, target restore
 	}
 	if !fallback {
 		return nil, err
-	}
-	if req.generation != "" {
-		return nil, fmt.Errorf("selected engine archive generation %s is unavailable: %w; Cloud traces have no engine generation selector; omit --generation to use Cloud", req.generation, err)
 	}
 	// A failed unsealed local attempt is part of the story when Cloud fails too.
 	fail := func(cloudErr error) error { return errors.Join(unsealedErr, cloudErr) }
@@ -158,7 +154,7 @@ func unsealedArchiveState(err error) (archive.State, bool) {
 // each agent's recipe closure verified on its own. restored reports whether the
 // restore got as far as installing the agent graph.
 func restoreUnsealedArchive(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, target restoreTarget, req traceRestore) (_ func(), restored bool, _ error) {
-	unsealed, err := source.AcquireUnsealed(ctx, req.traceID, req.generation)
+	unsealed, err := source.AcquireUnsealed(ctx, req.traceID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -182,7 +178,7 @@ type unsealedArchiveFetcher struct {
 
 func (f unsealedArchiveFetcher) FetchTrace(ctx context.Context, traceID string, sink cloud.TraceImportSink) error {
 	opts := func(high int64) archive.StreamOptions {
-		return archive.StreamOptions{Generation: f.archive.Generation, HighWater: high, Unsealed: true}
+		return archive.StreamOptions{HighWater: high, Unsealed: true}
 	}
 	if _, err := f.source.Traces(ctx, traceID, opts(f.archive.Cut.Spans), func(_ int64, batch *coltracepb.ExportTraceServiceRequest) error {
 		return sink.ImportSpans(ctx, batch)
@@ -239,25 +235,21 @@ func observedRestorePlan(fe archiveFrontend, req traceRestore, calls map[string]
 	if err != nil {
 		return plan, nil, err
 	}
-	namespaces := map[agentcontrol.Namespace]bool{}
+	// A trace can carry several namespaces, e.g. a nested session that
+	// inherited TRACEPARENT. Restore the most recently active one.
+	var ns agentcontrol.Namespace
+	var nsActivity time.Time
+	found := false
 	for _, a := range agents {
-		if a.Trace == req.traceID && (req.sourceSession == "" || a.Session == req.sourceSession) {
-			namespaces[a.Namespace] = true
+		if a.Trace == req.traceID && (!found || a.Activity.After(nsActivity)) {
+			ns, nsActivity, found = a.Namespace, a.Activity, true
 		}
 	}
-	if len(namespaces) == 0 {
-		return plan, nil, fmt.Errorf("no canonical agent records for the requested source; the trace may be missing, incomplete, or from an older producer")
-	}
-	if len(namespaces) > 1 {
-		var choices []string
-		for ns := range namespaces {
-			choices = append(choices, fmt.Sprintf("source-session=%q incarnation=%q", ns.Session, ns.Incarnation))
-		}
-		sort.Strings(choices)
-		return plan, nil, fmt.Errorf("ambiguous source namespaces (%s); select --source-session, or use a trace containing one runtime incarnation", strings.Join(choices, ", "))
+	if !found {
+		return plan, nil, fmt.Errorf("no canonical agent records for the requested trace; the trace may be missing, incomplete, or from an older producer")
 	}
 	for _, a := range agents {
-		if !namespaces[a.Namespace] {
+		if a.Namespace != ns {
 			continue
 		}
 		if err := a.Validate(); err != nil {
@@ -282,7 +274,7 @@ func observedRestorePlan(fe archiveFrontend, req traceRestore, calls map[string]
 	}
 	var active []agentcontrol.Subscription
 	for _, edge := range edges {
-		if !namespaces[edge.Namespace] {
+		if edge.Namespace != ns {
 			continue
 		}
 		if err := edge.Validate(); err != nil {
