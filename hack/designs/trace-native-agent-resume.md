@@ -494,9 +494,12 @@ formed one global sequence. Imported source facts must not overwrite destination
 runtime facts after rehydration.
 
 A bootstrap installs a projection at a known cut. Historical import may populate
-old spans/logs for display, but must not regress that projection. Use revision-aware
-application and/or explicit exclusion of control rows already folded into bootstrap.
-Tests must cover older control records arriving after new live agent activity.
+old spans/logs for display, but must not regress that projection. A sealed
+archive's history stream never carries control records; the bootstrap is their
+sole source. History does re-deliver the bootstrap's call payloads, which are
+idempotent on the frontend (a digest it already has is ignored), so no exclusion
+list is kept. Tests must cover older control records arriving after new live
+agent activity.
 
 ## 5. Lifecycle restoration
 
@@ -703,7 +706,9 @@ The verified bootstrap includes:
   verified digests and references.
 - Minimal identity/display context needed to install the roster without walking
   the full historical span ancestry.
-- Remainder import cursors/exclusions preventing duplicates or state regression.
+- Fixed per-signal high-water cuts for the remainder import. History streams each
+  signal from cursor 0 to its cut, filtering control records and re-delivering
+  idempotent call payloads rather than excluding bootstrap rows.
 
 Closure traversal must include receivers, explicit arguments, implicit inputs,
 module references, and nested literal references. A digest or old engine-local
@@ -738,9 +743,11 @@ binding paths; their broader portability hardening remains deferred (§7).
 In the local archive path, the all-anchors barrier prevents an unverified runtime
 graph from becoming usable, not every possible evaluation side effect.
 
-Historical downloads use the bootstrap's fixed generation/cuts and exclusion rules,
-with reconnect cursors and bounded retries. They must not redefine the live primary
-span, infer new restore state, or overwrite newer control revisions. A background
+Historical downloads use the bootstrap's fixed generation/cuts, with reconnect
+cursors and bounded retries. They must not redefine the live primary span, infer
+new restore state, or overwrite newer control revisions. Sealed history omits
+control records and re-delivers call payloads the bootstrap applied; the frontend
+ignores digests it already has. A background
 history failure produces a visible nonfatal warning; a verified restored runtime
 remains usable. Required bootstrap failures are fatal before prompt activation.
 
