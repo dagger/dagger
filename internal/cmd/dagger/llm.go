@@ -93,6 +93,8 @@ type LLMSession struct {
 	titleGeneration uint64
 	titleL          sync.Mutex
 	titleGenerator  func(context.Context, *sessionAgent, string) (string, error)
+	// titlePublisher overrides Query.setSessionTitle (tests).
+	titlePublisher func(context.Context, string) error
 
 	// subscriptionLabelCache caches the OAuth subscription label for the status
 	// line, resolved lazily on first use.
@@ -466,8 +468,7 @@ func (s *LLMSession) ensureTitle(a *sessionAgent, initialPrompt string) string {
 	s.title = title
 	s.titleL.Unlock()
 
-	emitSessionTitle(s.primaryCtx, title)
-	s.setEngineSessionTitle(title)
+	s.publishTitle(title)
 	return title
 }
 
@@ -520,31 +521,37 @@ func normalizeSessionTitle(title string) string {
 	return strings.TrimSpace(string(runes[:cut])) + ellipsis
 }
 
-// setEngineSessionTitle names the session's engine archive. The span-name
-// record from emitSessionTitle only reaches the frontend and Cloud; the CLI's
-// own telemetry never flows through the engine. Best-effort: an older engine
-// without the API keeps its generic archive title.
-func (s *LLMSession) setEngineSessionTitle(title string) {
-	if s.dag == nil {
-		return
+// publishTitle names the session through Query.setSessionTitle. The engine
+// titles the archive and publishes the rename into the session's telemetry,
+// which reaches this CLI's frontend (and its command span, see
+// primarySpanNamer) and Cloud like any other engine record. Only an engine
+// without the API falls back to naming the span locally.
+func (s *LLMSession) publishTitle(title string) {
+	publish := s.titlePublisher
+	if publish == nil && s.dag != nil {
+		publish = s.dag.SetSessionTitle
 	}
-	// Plumbing keeps the call's span out of the interactive view; it shares
-	// the session's trace, which is what the engine keys the title on.
-	ctx := s.plumbingCtx
-	if ctx == nil {
-		ctx = s.primaryCtx
+	if publish != nil {
+		// Plumbing keeps the call's span out of the interactive view.
+		ctx := s.plumbingCtx
+		if ctx == nil {
+			ctx = s.primaryCtx
+		}
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		err := publish(ctx, title)
+		if err == nil {
+			return
+		}
+		slog.Debug("failed to set session title; naming the span locally", "error", err)
 	}
-	if ctx == nil {
-		return
-	}
-	if err := s.dag.SetSessionTitle(ctx, title); err != nil {
-		slog.Debug("failed to set engine session title", "error", err)
-	}
+	emitSessionTitle(s.primaryCtx, title)
 }
 
-// emitSessionTitle attaches the title to the primary span in both mutable live
-// span state and durable OTLP log form. The role attribute lets downstream
-// consumers recognize this record without interpreting ordinary log bodies.
+// emitSessionTitle is the fallback for engines without Query.setSessionTitle:
+// it attaches the title to the primary span in both mutable live span state
+// and durable OTLP log form, the same record the engine would publish.
 func emitSessionTitle(ctx context.Context, title string) {
 	if ctx == nil || title == "" {
 		return

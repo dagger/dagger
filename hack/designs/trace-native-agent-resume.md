@@ -653,9 +653,15 @@ clear expired/evicted errors are requirements.
 
 Archive titles are set through the experimental `Query.setSessionTitle` API,
 which the CLI calls whenever it (re)generates the session title after a reset or
-branch. The CLI's own span-name log record (`dagger.io/log.role=span.name`)
-cannot serve: the CLI exports its telemetry to the frontend and Cloud only,
-never through the engine. Only the session's main client may set the title;
+branch. The API is the single source of the rename: besides titling the archive,
+the engine publishes a span-name log record (`dagger.io/log.role=span.name`) on
+the main client's primary span, which the client declares at connect
+(`ClientMetadata.PrimaryTraceID`/`PrimarySpanID`, the span `Connect` was called
+under: the CLI's command span, including `dagger session`'s for SDK clients).
+That record reaches the CLI's frontend through its live stream, Cloud, and the
+archive's own history like any engine telemetry, and the CLI applies it to its
+live command span so the span it exports carries the title. Only the session's
+main client may set the title;
 module clients and nested CLIs (including one in a container the main client
 started) are refused. The title is keyed by the caller's trace and written into
 the active manifest as it arrives (held until registration if it arrives
