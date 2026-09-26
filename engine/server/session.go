@@ -1057,11 +1057,19 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	slog.Debug("stopped services")
 
+	// Errors that make the archive's final cut untrustworthy; see
+	// finalizeSessionArchive. Other teardown errors do not affect sealing.
+	var archiveErrs error
+
 	if sess.agents != nil {
-		errs = errors.Join(errs, sess.closeArchiveControl(ctx))
+		closeErr := sess.closeArchiveControl(ctx)
+		errs = errors.Join(errs, closeErr)
+		archiveErrs = errors.Join(archiveErrs, closeErr)
 		if err := sess.agents.KillAll(ctx, errors.New("session closed")); err != nil {
 			slog.Warn("error stopping agents", "error", err)
-			errs = errors.Join(errs, fmt.Errorf("stop session agents: %w", err))
+			killErr := fmt.Errorf("stop session agents: %w", err)
+			errs = errors.Join(errs, killErr)
+			archiveErrs = errors.Join(archiveErrs, killErr)
 		}
 	}
 
@@ -1154,8 +1162,10 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	defer cancelTelemetry()
 	srv.stampSessionComplete(telemetryCtx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
-	errs = errors.Join(errs, sess.shutdownTelemetry(telemetryCtx))
-	errs = errors.Join(errs, srv.finalizeSessionArchive(telemetryCtx, sess, errs))
+	telemetryErr := sess.shutdownTelemetry(telemetryCtx)
+	errs = errors.Join(errs, telemetryErr)
+	archiveErrs = errors.Join(archiveErrs, telemetryErr)
+	errs = errors.Join(errs, srv.finalizeSessionArchive(telemetryCtx, sess, archiveErrs))
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {

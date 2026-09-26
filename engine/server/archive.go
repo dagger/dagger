@@ -32,7 +32,11 @@ func (srv *Server) initArchives() error {
 	// Telemetry archives survive worker cache resets and engine restart.
 	srv.clientDBDir = filepath.Join(srv.rootDir, "telemetry", "clientdbs")
 	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
-	config := archive.Config{Root: filepath.Join(srv.rootDir, "telemetry", "archives"), RemoveStore: srv.clientDBs.Remove}
+	config := archive.Config{
+		Root:        filepath.Join(srv.rootDir, "telemetry", "archives"),
+		RemoveStore: srv.clientDBs.Remove,
+		StoreSize:   srv.clientDBs.StoreSize,
+	}
 	var err error
 	if value := os.Getenv("_EXPERIMENTAL_DAGGER_ARCHIVE_TTL"); value != "" {
 		config.TTL, err = time.ParseDuration(value)
@@ -159,7 +163,12 @@ func (sess *daggerSession) closeArchiveControl(ctx context.Context) error {
 	return nil
 }
 
-func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSession, drainErr error) (rerr error) {
+// finalizeSessionArchive seals the session's archive, or marks it incomplete.
+// teardownErr carries only the teardown errors that make the final cut
+// untrustworthy: closing agent control, killing agents, and the final
+// telemetry shutdown barrier. Unrelated teardown failures (services, cache
+// release, ...) do not affect what the store recorded and must not unseal it.
+func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSession, teardownErr error) (rerr error) {
 	sess.archiveMu.Lock()
 	manifest := sess.archiveManifest
 	registrationErr := sess.archiveRegisterErr
@@ -172,7 +181,7 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 			_ = srv.archives.MarkIncomplete(manifest.TraceID, rerr)
 		}
 	}()
-	if err := errors.Join(drainErr, sess.archiveCloseErr, registrationErr); err != nil {
+	if err := errors.Join(teardownErr, sess.archiveCloseErr, registrationErr); err != nil {
 		return err
 	}
 	if sess.archiveExpected.Agents == nil {
