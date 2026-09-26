@@ -26,9 +26,9 @@ import (
 // flattens them to a bare digest), and array members that are only ever
 // sub-selected.
 //
-// Calls that do get a recording span still carry dagger.io/dag.call for legacy
-// clients. A span copy is not a protected delivery: every frame must also cross
-// the payload log lane used by archive and Cloud integrity verification.
+// Spans carry only the call's digest (dagger.io/dag.digest); the payload log
+// lane is the sole carrier of call data, including for calls that do get a
+// span.
 //
 // The claim store is scoped per target — the client and its ancestors,
 // exactly the per-client DBs telemetry fans out to — NOT to the session. A
