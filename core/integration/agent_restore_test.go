@@ -14,9 +14,9 @@ package core
 // recording expects, so "a send continues the conversation rather than opening
 // an empty one" is decided by the model, not by the test.
 //
-// It needs its own CLI session (to point telemetry at the sink) and a second
-// one to restore into, so it skips when nested, like the other trace tests in
-// agent_runtime_test.go.
+// The Cloud-fetch tests start their source session with sink.clientOpts, which
+// an inherited (nested) session ignores, so they skip when nested. The rest use
+// connectWithTrace, which starts its own CLI session either way.
 
 import (
 	"context"

@@ -374,10 +374,10 @@ func llmWithPrompt(ctx context.Context, t *testctx.T, c *dagger.Client, model, p
 	return id
 }
 
-// rehydrateAgent runs the restore chain of design §3.2 verbatim —
-// loadLLMFromID(<snapshot>) { spawn(handle:, name:, state:, error:) } — and
-// returns a handle on the restored instance. Error-returning, because half
-// the point of a restore is which calls it refuses.
+// rehydrateAgent runs the restore chain of design §3.2 —
+// node(id: <snapshot>) { ... on LLM { spawn(handle:, name:, state:, error:) } }
+// — and returns a handle on the restored instance. Error-returning, because
+// half the point of a restore is which calls it refuses.
 func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText string) (*agentHandle, error) {
 	return rehydrateAgentWithParent(ctx, c, llmID, handle, name, state, errText, "")
 }
@@ -1672,8 +1672,8 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	// Lookup on an agent with NO runtime entry: clear error — message is a
 	// pure lookup and never creates one. The handle for such an instance is
 	// the bare agent(handle:, name:) lookup, since spawn now creates the entry
-	// it mints (see TestSendRequiresRuntime for why a miss must never be a
-	// constructor).
+	// it mints (see TestRuntimeVerbsRequireRuntime for why a miss must never
+	// be a constructor).
 	ghost := unmintedAgent(ctx, t, c, identity.NewID(), "never-ran")
 	_, err = ghost.run(ctx, t, `message(ref: "#99") { delivery }`)
 	require.ErrorContains(t, err, "no runtime entry")
@@ -1681,8 +1681,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 
 // awaitAgent blocks until the trace has published exactly one agent, in the
 // given state and with an addressable call digest, and returns that roster
-// entry — identity folded from the loop span's attributes, state from its
-// log records.
+// entry — identity and state folded from its control record.
 func (sink *agentTraceSink) awaitAgent(t *testctx.T, state string) *dagui.AgentNode {
 	t.Helper()
 	var node *dagui.AgentNode
@@ -1844,9 +1843,8 @@ func (AgentRuntimeSuite) TestRosterAddressing(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	require.Equal(t, "FAILED", state)
 
-	// (1) The engine published the agent, and the client folded it into a
-	// roster entry: identity from the loop span's attributes, state from
-	// its log records.
+	// (1) The engine published the agent, and the client folded its control
+	// record into a roster entry.
 	node := sink.awaitAgent(t, "FAILED")
 	require.Equal(t, "rostered", node.Name)
 
@@ -1893,14 +1891,15 @@ const hirerWorkerPrompt = "You are a worker hired by the hirer module."
 // The doubt it settles is whether the reconstruction walk still closes when
 // the chain was not assembled by the client's own session. Every frame it
 // needs is looked up by digest in the client's DB, which holds only the
-// payloads that arrived on spans it ingested (dagql/dagui/extract.go:8-43),
-// and the chain here mixes all three kinds: calls the client made, calls the
-// MODULE made from its nested session (the system prompt hire composes in,
-// and the agent(handle:, name:) lookup spawn re-execs), and a module provenance
-// frame — pulled in by binding a module object as the seed's toolset, the
-// shape a chief's own conversation has. A missing frame does not error at
-// spawn time: the roster entry silently degrades to read-only, i.e. the user
-// watches a worker they can never talk to.
+// payloads that reached it, on spans or the call-payload log channel
+// (dagql/dagui/extract.go), and the chain here mixes all three kinds: calls
+// the client made, calls the MODULE made from its nested session (the system
+// prompt hire composes in, and the agent(handle:, name:) lookup spawn
+// re-execs), and a module provenance frame — pulled in by binding a module
+// object as the seed's toolset, the shape a chief's own conversation has. A
+// missing frame does not error at spawn time: the roster entry silently
+// degrades to read-only, i.e. the user watches a worker they can never talk
+// to.
 func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *testctx.T) {
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
 		t.Skip("needs its own CLI session to forward telemetry to the sink")
@@ -2279,6 +2278,7 @@ func (AgentRuntimeSuite) TestAgentArgumentAfterSpawnerReleased(ctx context.Conte
 	require.Equal(t, "IDLE", rebuilt.state(ctx, t))
 }
 
+// newHostWorkspaceRoot creates a temp workspace root with an empty .git to act
 // as a boundary: detection walks up to a .git and stops there
 // (core/workspace/detect.go:62-81), so an empty one is enough to make the
 // session's currentWorkspace this directory rather than whatever the test
@@ -2343,7 +2343,7 @@ func queryID(ctx context.Context, t *testctx.T, c *dagger.Client, query, path st
 // second loop from the seed: the live agent kept running while a fresh,
 // history-less one received the user's message.
 //
-// The registry now keys on the spawn-minted InstanceID (core/agent.go), a
+// The registry now keys on the spawn-minted Handle (core/agent.go), a
 // literal on the pinned chain that survives re-execution whatever the leaves
 // do — so all three cases address the live runtime, and the assertions past
 // the rebuild are what pins that.
@@ -2731,8 +2731,8 @@ func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *
 // is an agent it cannot address, which would make the restored session's own
 // trace unresumable in turn (§8's chained resume).
 //
-// rehydrate therefore opens and immediately ends an identity span, and
-// publishes its state and snapshot on it. The test asserts the whole loop a
+// rehydrate therefore publishes a control record for the entry as soon as it
+// is created, before any loop starts. The test asserts the whole loop a
 // client actually walks: roster entry, addressable digest, rebuilt handle,
 // and — through that handle — the restored conversation.
 func (AgentRuntimeSuite) TestRehydratePublishesIdentity(ctx context.Context, t *testctx.T) {
@@ -2751,7 +2751,7 @@ func (AgentRuntimeSuite) TestRehydratePublishesIdentity(ctx context.Context, t *
 	require.NoError(t, err)
 
 	// The restored agent is on the roster without ever having been started:
-	// identity from the span it published, state and anchor from its records.
+	// identity, state and anchor all come from its control record.
 	node := sink.awaitAgent(t, "IDLE")
 	require.Equal(t, handle, node.ID)
 	require.Equal(t, "restored", node.Name)
