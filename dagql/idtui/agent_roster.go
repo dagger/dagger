@@ -180,7 +180,9 @@ func (r *AgentRoster) layout(width int) (line string, tabStart, tabEnd int) {
 		}
 		var part string
 		if entry.Focused {
-			part = r.focusTab(content)
+			// The strip leads the line, so a tab at column 0 sits flush with
+			// the screen edge, where the card above draws no left border.
+			part = r.focusTab(content, col > 0)
 		} else {
 			part = " " + content + " "
 		}
@@ -206,11 +208,13 @@ func (r *AgentRoster) layout(width int) (line string, tabStart, tabEnd int) {
 // focusTab marks the focused entry's tab around its content, padding
 // included: filled with the prompt card's shade when one is known, else
 // reverse video. With the card's border known too, the padding cells become
-// thin side edges in that color, so the tab hangs off the card above it. The
-// fill is applied per cell so the segments' own styling (faint number, colored
+// thin side edges in that color, so the tab hangs off the card above it --
+// except the left edge when leftEdge is false (the tab leads the line, and the
+// card has no left border to continue), which stays filled padding. The fill
+// is applied per cell so the segments' own styling (faint number, colored
 // symbol) survives inside it. A leading reset drops the status line's dim
 // foreground, so the tab reads at full contrast.
-func (r *AgentRoster) focusTab(content string) string {
+func (r *AgentRoster) focusTab(content string, leftEdge bool) string {
 	if r.profile == termenv.Ascii {
 		return " " + content + " "
 	}
@@ -236,7 +240,11 @@ func (r *AgentRoster) focusTab(content string) string {
 			style.Bg = bg
 		})
 	}
-	return ansi.ResetStyle + side(rosterTabLeftEdge) + fill(content) + side(rosterTabRightEdge)
+	left := fill(" ")
+	if leftEdge {
+		left = side(rosterTabLeftEdge)
+	}
+	return ansi.ResetStyle + left + fill(content) + side(rosterTabRightEdge)
 }
 
 // agentStateDisplay maps a lifecycle state to its compact symbol and color.
