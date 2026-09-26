@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dagger/testctx"
 	mcpclient "github.com/mark3labs/mcp-go/client"
@@ -80,6 +81,35 @@ func (MCPSuite) TestModuleWithPrivilegedStillExposesModuleMethods(ctx context.Co
 	require.Contains(t, tools, "greeting")
 
 	require.Contains(t, callToolText(ctx, t, cli, "greeting", map[string]any{}), "hello from module")
+}
+
+// TestExitsWhenClientClosesStdin covers the shutdown sequence of the MCP stdio
+// transport: the client closes the server's stdin and waits for it to exit,
+// with signals only as a fallback. mcp-go's stdio client, used by this suite,
+// sends none: its Close closes stdin and then waits for the process. Before
+// the pipe attachable forwarded stdin EOF to the engine, that wait never
+// ended (the suite's cleanupExec hid it by signalling the process first).
+func (MCPSuite) TestExitsWhenClientClosesStdin(ctx context.Context, t *testctx.T) {
+	modDir := initMCPTestModule(ctx, t)
+	// mcp-go closes the server's stderr before waiting for it, so progress
+	// output written on the way out would end the process with SIGPIPE and
+	// mask the exit status this test checks.
+	var cmd *exec.Cmd
+	cli := startMCPClientWithCmd(ctx, t, modDir, func(c *exec.Cmd) { cmd = c }, "--silent")
+	require.Contains(t, listToolNames(ctx, t, cli), "greeting")
+
+	closed := make(chan error, 1)
+	go func() { closed <- cli.Close() }()
+	select {
+	case err := <-closed:
+		require.NoError(t, err, "dagger mcp should exit cleanly once its stdin is closed")
+	case <-time.After(60 * time.Second):
+		// Close is still inside cmd.Wait. End the process here so that wait
+		// returns before cleanupExec waits on the same command.
+		_ = cmd.Process.Kill()
+		<-closed
+		t.Fatal("dagger mcp did not exit within 60s of its stdin closing")
+	}
 }
 
 func (MCPSuite) TestFailureIncludesDiagnosticLogs(ctx context.Context, t *testctx.T) {
@@ -156,6 +186,13 @@ func initMCPTestModule(ctx context.Context, t testing.TB) string {
 // to the subprocess.
 func startMCPClient(ctx context.Context, t testing.TB, workdir string, extraArgs ...string) *mcpclient.Client {
 	t.Helper()
+	return startMCPClientWithCmd(ctx, t, workdir, nil, extraArgs...)
+}
+
+// startMCPClientWithCmd is startMCPClient with a hook that receives the
+// server's exec.Cmd, for tests that need the process itself.
+func startMCPClientWithCmd(ctx context.Context, t testing.TB, workdir string, onCmd func(*exec.Cmd), extraArgs ...string) *mcpclient.Client {
+	t.Helper()
 
 	args := append([]string{"--progress=plain", "mcp"}, extraArgs...)
 	stdio := transport.NewStdioWithOptions(
@@ -167,6 +204,9 @@ func startMCPClient(ctx context.Context, t testing.TB, workdir string, extraArgs
 			cleanupExec(t, cmd)
 			cmd.Dir = workdir
 			cmd.Env = append(os.Environ(), env...)
+			if onCmd != nil {
+				onCmd(cmd)
+			}
 			return cmd, nil
 		}),
 	)
