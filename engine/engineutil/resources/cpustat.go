@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -78,6 +80,10 @@ func (s *cpuStatSampler) sample(ctx context.Context) error {
 	}
 
 	bs, err := os.ReadFile(s.cpuStatFilePath)
+	ctx = enginetel.WithObservationTime(ctx, time.Now())
+	defer func() {
+		enginetel.ObserveResourceAvailability(ctx, cpuStatFile, sample.cpuUsage.value != nil)
+	}()
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return nil

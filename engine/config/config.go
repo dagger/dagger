@@ -39,6 +39,10 @@ type Config struct {
 }
 
 type TelemetryConfig struct {
+	// OTLP enables the internal operation/workload destination. It does not
+	// replace Cloud/UI export or the existing engine-wide resource export.
+	OTLP *OTLPConfig `json:"otlp,omitempty" jsonschema:"-"`
+
 	// ResourceMetrics enables cgroup v2 resource metrics for the engine process.
 	// It is disabled by default. Export requires OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
 	// in the engine environment. Other OTLP settings use the standard environment variables.
@@ -50,6 +54,23 @@ type TelemetryConfig struct {
 	// environment, the credential it is sent under. The
 	// _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT environment variable enables it too.
 	CacheFacts bool `json:"cacheFacts,omitempty" jsonschema:"default=false"`
+}
+
+// OTLPConfig configures the internal operation destination through the normal
+// engine config. Its fixed signals are selected engine spans and workload
+// observations. Queues are memory-only; the receiver controls persistence.
+type OTLPConfig struct {
+	// Endpoint is an HTTP(S) base URL. For HTTP, signal suffixes are appended.
+	Endpoint string `json:"endpoint"`
+	// Protocol selects the standard exporter transport. Default: http/protobuf.
+	Protocol string `json:"protocol,omitempty" jsonschema:"enum=http/protobuf,enum=grpc"`
+	// Headers contains optional destination-specific authentication headers.
+	Headers map[string]string `json:"headers,omitempty"`
+	// QueueSize bounds pending span records and metric points per signal,
+	// across all sessions. Default: 16384.
+	QueueSize int `json:"queueSize,omitempty" jsonschema:"minimum=1,maximum=1048576"`
+	// SampleIntervalMs sets resource observation cadence. Default: 1000.
+	SampleIntervalMs int `json:"sampleIntervalMs,omitempty" jsonschema:"minimum=100,maximum=60000"`
 }
 
 type LogLevel string

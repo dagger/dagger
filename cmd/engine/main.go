@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/ebpf"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
 	"github.com/dagger/dagger/internal/buildkit/util/appcontext"
@@ -325,6 +326,7 @@ func main() { //nolint:gocyclo
 	// telemetry so the process resource carries it.
 	engineInstanceID := uuid.NewString()
 	var factExport *cacheFactExport
+	var otlpDestination *enginetel.OTLPDestination
 
 	app.Action = func(c *cli.Context) error {
 		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
@@ -369,6 +371,16 @@ func main() { //nolint:gocyclo
 		cfg, err := config.LoadDefault()
 		if err != nil {
 			return err
+		}
+		if otlp := cfg.Telemetry.OTLP; otlp != nil {
+			otlpDestination, err = enginetel.NewOTLPDestination(ctx, enginetel.OTLPOptions{
+				Endpoint: otlp.Endpoint, Protocol: otlp.Protocol, Headers: otlp.Headers,
+				QueueSize: otlp.QueueSize, EngineInstanceID: engineInstanceID,
+				SampleInterval: time.Duration(otlp.SampleIntervalMs) * time.Millisecond,
+			})
+			if err != nil {
+				return err
+			}
 		}
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
 		factExport = newCacheFactExport(ctx, processResource, cfg.Telemetry)
@@ -497,6 +509,7 @@ func main() { //nolint:gocyclo
 			BuildkitConfig:   &bkcfg,
 			EngineInstanceID: engineInstanceID,
 			CacheFactExport:  serverCacheFactExport(factExport),
+			OTLPDestination:  otlpDestination,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
@@ -614,7 +627,16 @@ func main() { //nolint:gocyclo
 		// fact provider; flush them before the global providers close.
 		factExport.shutdownAtExit(ctx)
 		closeResourceMetrics(ctx, resourceMetrics)
+		// Providers finish before the engine-owned destination drains. Their
+		// shared processor/exporter wrappers do not close the destination.
 		telemetry.Close()
+		if otlpDestination != nil {
+			flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			if err := otlpDestination.Shutdown(flushCtx); err != nil {
+				bklog.G(ctx).WithError(err).Warn("OTLP telemetry shutdown incomplete")
+			}
+			cancel()
+		}
 		return nil
 	}
 

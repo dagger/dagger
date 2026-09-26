@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -44,6 +46,10 @@ func newMemoryCurrentSampler(cgroupPath string, meter metric.Meter, commonAttrs 
 func (s *memoryCurrentSampler) sample(ctx context.Context) error {
 	sample := newInt64GaugeSample(s.memoryCurrent, s.commonAttrs)
 	bs, err := os.ReadFile(s.memoryCurrentFilePath)
+	ctx = enginetel.WithObservationTime(ctx, time.Now())
+	defer func() {
+		enginetel.ObserveResourceAvailability(ctx, memoryCurrentFile, sample.value != nil)
+	}()
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return nil
