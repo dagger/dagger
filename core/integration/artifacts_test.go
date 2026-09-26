@@ -1582,7 +1582,7 @@ func (ArtifactsSuite) TestUnknownEnvironment(ctx context.Context, t *testctx.T) 
 	base := nativeWorkspaceBase(t, c).
 		WithDirectory(".", artifactSource(c))
 	for _, command := range [][]string{
-		{"list", "-a"}, {"check", "-l"}, {"generate", "-l"},
+		{"list", "-a", "--type=Check"}, {"check", "-l"}, {"generate", "-l"},
 		{"up", "-l"}, {"shell", "-l"}, {"agent", "-l"},
 	} {
 		t.Run(strings.Join(command, " "), func(ctx context.Context, t *testctx.T) {
