@@ -1183,7 +1183,7 @@ func (a *sessionAgent) refreshUIFromRuntime() {
 		slog.Debug("could not refresh status line", "error", err)
 	}
 	// $agent is a session-local reference, not a persistence recipe. Keep it
-	// pointed at the focused conversation without serializing portable IDs.
+	// pointed at the focused conversation.
 	if a.session.shell != nil {
 		id, err := llm.ID(a.session.plumbingCtx)
 		if err != nil {
