@@ -162,6 +162,24 @@ func (WorkspaceSuite) TestWorkspaceSnapshotContentOnlyTreesPreserveHistory(ctx c
 	require.Equal(t, "first", contents, "prior dagql result remains immutable")
 }
 
+// workspaceRecipeFields lists every call field in a recipe, for spotting
+// client-bound inputs (Host.__gitDir) that cannot be restored without the
+// originating checkout. It needs a real recipe, not an engine-local handle:
+// capture one through the trace sink.
+func workspaceRecipeFields(t *testctx.T, recipe string) []string {
+	t.Helper()
+	var id call.ID
+	require.NoError(t, id.Decode(recipe))
+	dag, err := id.ToProto()
+	require.NoError(t, err)
+	require.NotNil(t, dag.GetRecipe(), "ID is an engine-local handle, not a recipe")
+	var fields []string
+	for _, vertex := range dag.GetRecipe().CallsByDigest {
+		fields = append(fields, vertex.Field)
+	}
+	return fields
+}
+
 // requireWorkspaceRecipeUsesHostGit checks that recording a committed leaf has
 // not made session-local repository history portable. Publication itself does
 // not preflight replayability; the recipe must retain its originating-client
