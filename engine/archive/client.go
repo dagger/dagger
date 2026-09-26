@@ -139,12 +139,12 @@ type UnsealedArchive struct {
 // with an ErrState request error for any other state, including a sealed
 // (closed) archive.
 func (c *Client) Unsealed(ctx context.Context, traceID string) (UnsealedArchive, error) {
-	resp, err := c.do(ctx, http.MethodGet, archivePath+"/"+url.PathEscape(traceID), url.Values{"unsealed": {"1"}}, "application/json", 0)
+	resp, err := c.get(ctx, archivePath+"/"+url.PathEscape(traceID), url.Values{"unsealed": {"1"}}, "application/json", 0)
 	if err != nil {
 		return UnsealedArchive{}, err
 	}
 	defer resp.Body.Close()
-	if err := expectStatus(resp, http.StatusOK); err != nil {
+	if err := expectOK(resp); err != nil {
 		return UnsealedArchive{}, err
 	}
 	if err := expectContentType(resp, "application/json"); err != nil {
@@ -166,12 +166,12 @@ func (c *Client) List(ctx context.Context, opts ListOptions) (Page, error) {
 	if opts.Limit != 0 {
 		query.Set("limit", strconv.Itoa(opts.Limit))
 	}
-	resp, err := c.do(ctx, http.MethodGet, archivePath, query, "application/json", 0)
+	resp, err := c.get(ctx, archivePath, query, "application/json", 0)
 	if err != nil {
 		return Page{}, err
 	}
 	defer resp.Body.Close()
-	if err := expectStatus(resp, http.StatusOK); err != nil {
+	if err := expectOK(resp); err != nil {
 		return Page{}, err
 	}
 	if err := expectContentType(resp, "application/json"); err != nil {
@@ -230,12 +230,12 @@ type BootstrapResult struct {
 // telemetry. The engine verified the roster and recipe closure when it built
 // the bootstrap.
 func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(BootstrapHeader, BootstrapBatch) error) (BootstrapResult, error) {
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, AgentBootstrapResource), nil, BootstrapContentType, 0)
+	resp, err := c.get(ctx, archiveResourcePath(traceID, AgentBootstrapResource), nil, BootstrapContentType, 0)
 	if err != nil {
 		return BootstrapResult{}, err
 	}
 	defer resp.Body.Close()
-	if err := expectStatus(resp, http.StatusOK); err != nil {
+	if err := expectOK(resp); err != nil {
 		return BootstrapResult{}, err
 	}
 	if err := expectContentType(resp, BootstrapContentType); err != nil {
@@ -333,12 +333,12 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 	if opts.Unsealed {
 		query.Set("unsealed", "1")
 	}
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, signal), query, enginetel.LiveContentType, cursor)
+	resp, err := c.get(ctx, archiveResourcePath(traceID, signal), query, enginetel.LiveContentType, cursor)
 	if err != nil {
 		return cursor, err
 	}
 	defer resp.Body.Close()
-	if err := expectStatus(resp, http.StatusOK); err != nil {
+	if err := expectOK(resp); err != nil {
 		return cursor, err
 	}
 	if err := expectContentType(resp, enginetel.LiveContentType); err != nil {
@@ -385,14 +385,15 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 	}
 }
 
-func (c *Client) do(ctx context.Context, method, path string, query url.Values, accept string, cursor int64) (*http.Response, error) {
+// get issues one GET against the archive API. Every archive read is a GET.
+func (c *Client) get(ctx context.Context, path string, query url.Values, accept string, cursor int64) (*http.Response, error) {
 	if c == nil || c.http == nil || c.baseURL == nil {
 		return nil, transient(errors.New("archive HTTP client is not configured"))
 	}
 	target := *c.baseURL
 	target.Path = strings.TrimRight(target.Path, "/") + path
 	target.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, method, target.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("create archive request: %w", err)
 	}
@@ -413,8 +414,9 @@ func archiveResourcePath(traceID, resource string) string {
 	return archivePath + "/" + url.PathEscape(traceID) + "/" + resource
 }
 
-func expectStatus(resp *http.Response, want int) error {
-	if resp.StatusCode == want {
+// expectOK classifies any non-200 archive response by its status and body.
+func expectOK(resp *http.Response) error {
+	if resp.StatusCode == http.StatusOK {
 		return nil
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorResponseSize))
