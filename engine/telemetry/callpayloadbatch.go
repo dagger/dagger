@@ -59,9 +59,13 @@ const (
 // context; when that ends, it cancels the export in flight and returns only
 // once the worker has stopped, so the caller may shut the exporter down.
 type CallPayloadBatchProcessor struct {
-	exporter    sdklog.Exporter
-	accept      func(sdklog.Record) bool
-	terminalErr error // sticky loss: a later empty flush cannot report durability
+	exporter sdklog.Exporter
+	accept   func(sdklog.Record) bool
+	// terminalErr accumulates every loss (dropped batches, records emitted
+	// after shutdown) for Shutdown, so the session-end seal learns of it even
+	// when the loss happened long before. ForceFlush deliberately reports only
+	// its own pass: a single in-session drop must not fail every later flush.
+	terminalErr error
 
 	// ctx ends the worker's own exports (the coalesced and retried ones);
 	// Shutdown cancels it when its own context ends.
@@ -89,8 +93,9 @@ func NewCallPayloadBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchPro
 }
 
 // NewControlBatchProcessor protects revisioned agent and subscription records
-// from the ordinary bounded queue. Capture success is not a delivery receipt;
-// ForceFlush/Shutdown return all terminal persistence failures.
+// from the ordinary bounded queue. Capture success is not a delivery receipt:
+// ForceFlush returns the persistence failures of its own pass, and Shutdown
+// returns every terminal persistence failure of the processor's lifetime.
 func NewControlBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchProcessor {
 	return newProtectedBatchProcessor(exporter, agentcontrol.IsRecord)
 }
@@ -235,8 +240,13 @@ func (processor *CallPayloadBatchProcessor) run() {
 	// passes continue until the queue is observed empty.
 	export := func(ctx context.Context, drain bool) error {
 		disarm()
+		// Only this call's outcome: drops from earlier passes stay in
+		// terminalErr for Shutdown rather than failing every later flush.
+		var errs error
 		for {
-			retryIn, more, err := processor.exportPass(ctx)
+			retryIn, more, dropped, failed := processor.exportPass(ctx)
+			errs = errors.Join(errs, dropped)
+			err := errors.Join(errs, failed)
 			switch {
 			case retryIn > 0:
 				if drain {
@@ -249,16 +259,16 @@ func (processor *CallPayloadBatchProcessor) run() {
 						// Only this drain was canceled. The failed batch is
 						// still queued, so resume its background retries.
 						arm(retryIn)
-						return errors.Join(err, context.Cause(ctx), processor.deliveryError())
+						return errors.Join(err, context.Cause(ctx))
 					}
 				}
 				arm(retryIn)
-				return errors.Join(err, processor.deliveryError())
+				return err
 			case !more:
-				return errors.Join(err, processor.deliveryError())
+				return err
 			case !drain:
 				arm(CallPayloadExportDelay)
-				return errors.Join(err, processor.deliveryError())
+				return err
 			}
 		}
 	}
@@ -282,9 +292,13 @@ func (processor *CallPayloadBatchProcessor) run() {
 			stop()
 		case request := <-processor.shutdown:
 			disarm()
-			err := errors.Join(processor.drain(request.ctx), processor.deliveryError())
+			// Every loss of the processor's lifetime (drops during the drain
+			// included) is already in terminalErr; add what the drain left
+			// undelivered, and keep the result terminal for later calls.
+			interrupted := processor.drain(request.ctx)
 			processor.mu.Lock()
-			processor.terminalErr = errors.Join(processor.terminalErr, err)
+			processor.terminalErr = errors.Join(processor.terminalErr, interrupted)
+			err := processor.terminalErr
 			processor.mu.Unlock()
 			request.done <- err
 			return
@@ -304,42 +318,44 @@ func (processor *CallPayloadBatchProcessor) withWorker(ctx context.Context) (con
 
 // drain exports everything queued for Shutdown, retrying a failed batch
 // after its backoff for as long as ctx allows; a batch that spends
-// CallPayloadMaxExportAttempts is dropped as usual. It reports the drops,
-// and the last failure when ctx ends first, not failures a retry repaired.
+// CallPayloadMaxExportAttempts is dropped as usual, which exportPass records
+// in terminalErr. It reports what ctx cut short: the last failure still
+// queued for retry, and ctx's error — not failures a retry repaired.
 func (processor *CallPayloadBatchProcessor) drain(ctx context.Context) error {
 	defer processor.cancel()
-	var dropped, retrying error
+	var retrying error
 	for {
 		if err := ctx.Err(); err != nil {
-			return errors.Join(dropped, retrying, err)
+			return errors.Join(retrying, err)
 		}
-		retryIn, more, err := processor.exportPass(ctx)
+		retryIn, more, _, failed := processor.exportPass(ctx)
 		if retryIn > 0 {
-			retrying = err
+			retrying = failed
 			retry := time.NewTimer(retryIn)
 			select {
 			case <-retry.C:
 				continue
 			case <-ctx.Done():
 				stopTimer(retry)
-				return errors.Join(dropped, retrying, ctx.Err())
+				return errors.Join(retrying, ctx.Err())
 			}
 		}
 		retrying = nil
-		dropped = errors.Join(dropped, err)
 		if !more {
-			return dropped
+			return nil
 		}
 	}
 }
 
 // exportPass takes everything currently queued and exports it in bounded
 // batches, in order. On a failed export the unexported tail (failed batch
-// first) goes back to the head of the queue and retryIn says how long to back
-// off before trying again; 0 means the pass completed, with any batch that
-// exceeded its attempts given up on. more reports whether records arrived
-// while the pass ran and are now queued.
-func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (retryIn time.Duration, more bool, err error) {
+// first) goes back to the head of the queue, retryIn says how long to back
+// off before trying again, and failed is that export's error; 0 means the pass
+// completed, with any batch that exceeded its attempts given up on. dropped
+// reports this pass's give-ups (each also accumulated into terminalErr for
+// Shutdown). more reports whether records arrived while the pass ran and are
+// now queued.
+func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (retryIn time.Duration, more bool, dropped, failed error) {
 	processor.mu.Lock()
 	queued := processor.queue
 	processor.queue = nil
@@ -362,7 +378,7 @@ func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (ret
 			processor.queue = append(queued, processor.queue...)
 			processor.failures = failures
 			processor.mu.Unlock()
-			return callPayloadRetryDelay(failures), false, errors.Join(err, exportErr)
+			return callPayloadRetryDelay(failures), false, dropped, exportErr
 		}
 		// Give up on this batch alone; the rest of the queue gets a fresh
 		// start. This can leave a client's closure permanently partial
@@ -373,10 +389,11 @@ func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (ret
 			"attempts", failures,
 			"digests", digests,
 			"err", exportErr)
+		dropErr := fmt.Errorf("dropping %d protected records after %d failed exports: %w", batchSize, failures, exportErr)
 		processor.mu.Lock()
-		processor.terminalErr = errors.Join(processor.terminalErr, fmt.Errorf("dropping %d protected records after %d failed exports: %w", batchSize, failures, exportErr))
+		processor.terminalErr = errors.Join(processor.terminalErr, dropErr)
 		processor.mu.Unlock()
-		err = errors.Join(err, processor.deliveryError())
+		dropped = errors.Join(dropped, dropErr)
 		failures = 0
 		clear(batch)
 		queued = queued[batchSize:]
@@ -385,7 +402,7 @@ func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (ret
 	processor.failures = 0
 	more = len(processor.queue) > 0
 	processor.mu.Unlock()
-	return 0, more, err
+	return 0, more, dropped, nil
 }
 
 func (processor *CallPayloadBatchProcessor) deliveryError() error {
