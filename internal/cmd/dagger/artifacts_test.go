@@ -67,9 +67,51 @@ func TestArtifactPathsUseModuleSelectors(t *testing.T) {
 	}
 }
 
+func TestArtifactDimensionHelp(t *testing.T) {
+	defs := artifact.Dimensions{
+		{Identifier: "go/modules", Name: "go-module", QualifiedName: "go-modules", ItemType: "GoModule", CollectionType: "GoModules", KeyName: "path"},
+		{Identifier: "type:GoModule", Kind: "TYPE", Name: "go-module", ItemType: "GoModule", KeyName: "name"},
+		{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check", KeyName: "name"},
+		{Identifier: "type:Expertise", Kind: "TYPE", Name: "expertise", ItemType: "Expertise", KeyName: "name"},
+	}
+	cmd := &cobra.Command{Use: "check"}
+	registerCommandArtifactFlags(cmd)
+	registerArtifactDimensionHelp(cmd, defs, defs)
+	require.NoError(t, cmd.ParseFlags([]string{"--go-modules", "--go-module=."}))
+	help := artifactCommandFlags(cmd)
+	require.Contains(t, help, "--go-module PATH")
+	require.Contains(t, help, "--go-modules ")
+	require.Contains(t, help, "--artifact-go-module NAME")
+	require.NotContains(t, help, "stringArray")
+	keys := artifactKeyFlags(cmd)
+	require.Contains(t, keys, dagaddress.Pair{Dimension: "go/modules"})
+	require.Contains(t, keys, dagaddress.Pair{Dimension: "go/modules", Key: ".", HasKey: true})
+}
+
+func TestArtifactDimensionHelpSelection(t *testing.T) {
+	defs := artifact.Dimensions{
+		{Identifier: "go/modules", Name: "go-module", ItemType: "GoModule", CollectionType: "GoModules", KeyName: "path"},
+		{Identifier: "type:GoModule", Kind: "TYPE", Name: "go-module", ItemType: "GoModule"},
+		{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check"},
+		{Identifier: "type:Container", Kind: "TYPE", Name: "container", ItemType: "Container"},
+	}
+	root := &cobra.Command{Use: "dagger"}
+	list := newListCommand()
+	child := &cobra.Command{Use: "checks"}
+	root.AddCommand(list)
+	list.AddCommand(child)
+	registerArtifactDimensionHelp(list, defs, defs)
+	registerArtifactDimensionHelp(child, defs, artifact.Dimensions{defs[0], defs[2]})
+	require.Nil(t, child.Flag("container"))
+	require.Nil(t, child.Flag("artifact-go-module"))
+	require.NotNil(t, child.Flag("check"))
+	require.Equal(t, list.Flag("go-module").Usage, child.Flag("go-module").Usage)
+	require.Contains(t, child.Flag("go-module").Usage, "values: 'dagger list go-modules -a'")
+}
+
 func TestArtifactListFlagsRequireList(t *testing.T) {
 	for _, command := range []string{"check", "generate", "up", "shell", "agent"} {
-		for _, flag := range []string{"-f=table", "--absolute", "--abs"} {
+		for _, flag := range []string{"-a", "-f=table", "--absolute", "--abs"} {
 			t.Run(command+flag, func(t *testing.T) {
 				cmd := &cobra.Command{Use: command}
 				cmd.Flags().BoolP("list", "l", false, "")
@@ -117,6 +159,8 @@ func TestArtifactPreparationDoesNotConnect(t *testing.T) {
 	previous := listCmd
 	t.Cleanup(func() { listCmd = previous })
 	for _, args := range [][]string{
+		{"list", "-a"},
+		{"list", "-a", "--type=Container"},
 		{"list", "--type=Check"},
 		{"list", "--help"},
 		{"help", "list"},
@@ -225,6 +269,7 @@ func registerArtifactDimensionFlags(cmd *cobra.Command, dimensions []string) {
 func TestArtifactSelectorFlags(t *testing.T) {
 	defs := artifact.Dimensions{
 		{Identifier: "module", Kind: "MODULE", Name: "module"},
+		{Identifier: "go/tests", Kind: "COLLECTION", Name: "go-test", QualifiedName: "go-tests"},
 		{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check"},
 		{Identifier: "type:Container", Kind: "TYPE", Name: "container", ItemType: "Container"},
 		{Identifier: "type:Generator", Kind: "TYPE", Name: "generator", ItemType: "Generator"},
@@ -246,7 +291,7 @@ func TestArtifactSelectorFlags(t *testing.T) {
 	for _, cmd := range []*cobra.Command{check, list} {
 		selected := defs
 		if cmd == check {
-			selected = defs[:2]
+			selected = defs[:3]
 		}
 		registerArtifactDimensionHelp(cmd, defs, selected)
 		registerArtifactModuleFlags(cmd, defs, selected, paths)
@@ -273,6 +318,8 @@ func TestArtifactSelectorFlags(t *testing.T) {
 		}, artifactKeyFlags(cmd))
 		require.NoError(t, cmd.ParseFlags([]string{"--by-go=false"}))
 		require.NotContains(t, artifactKeyFlags(cmd), dagaddress.Pair{Dimension: "module", Key: "go", HasKey: true})
+		// A path scope without matching types or modules is an empty selection.
+		require.NoError(t, validateArtifactDimensionFlags(cmd, artifact.Dimensions{defs[1]}))
 	}
 	require.Nil(t, check.Flag("container"))
 	require.NotNil(t, list.Flag("container"))

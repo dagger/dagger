@@ -41,7 +41,7 @@ func TestArtifactListArguments(t *testing.T) {
 		{Dimension: "go/all", Key: "./app/bar"},
 	}}, names, nil)
 	require.NoError(t, err)
-	require.Equal(t, "--go-test=TestFoo --all=./app/bar", args)
+	require.Equal(t, "--go-test=TestFoo --go-all=./app/bar", args)
 	for _, key := range []string{"a b", "$(echo injected)", "x; echo injected", "a'b", "a\nb", "!history", "a'b!c", "", "*.go"} {
 		t.Run(key, func(t *testing.T) {
 			args, err := artifactCLIArguments(listedArtifact{URI: "dag+check://go/tests", DimensionKeys: []struct{ Dimension, Key string }{{Dimension: "go/tests", Key: key}, {Dimension: "type:Check", Key: "go/tests"}}, DisplayKeys: map[string]string{"type:Check": "tests"}}, names, nil)

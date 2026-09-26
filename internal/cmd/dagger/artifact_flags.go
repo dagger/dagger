@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -10,7 +11,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
-type artifactFlagNames struct{ Key string }
+const artifactPresenceFlag = "dagger.io/artifact-presence"
+
+type artifactFlagNames struct{ Key, Presence string }
 
 // Allocate all names together. A flag has the same meaning in every peer command.
 func artifactDimensionFlagNames(cmd *cobra.Command, dimensions artifact.Dimensions) map[string]artifactFlagNames {
@@ -21,19 +24,35 @@ func artifactDimensionFlagNames(cmd *cobra.Command, dimensions artifact.Dimensio
 
 	type request struct {
 		id         string
+		kind       string
+		depth      int
 		candidates []string
 	}
 	var requests []request
 	dims := slices.Clone(dimensions)
 	slices.SortFunc(dims, func(a, b *artifact.Dimension) int {
+		if depth := cmp.Compare(strings.Count(a.Identifier, "/"), strings.Count(b.Identifier, "/")); depth != 0 {
+			return depth
+		}
 		return strings.Compare(a.Identifier, b.Identifier)
 	})
-	for _, d := range dims {
-		if d.Kind == "MODULE" {
-			names[d.Identifier] = artifactFlagNames{Key: "module"}
-			continue
+	// Collection keys have priority over type names.
+	for _, kind := range []string{"collection-key", "collection-presence", "type"} {
+		for _, d := range dims {
+			if d.Kind == "MODULE" {
+				names[d.Identifier] = artifactFlagNames{Key: "module"}
+				continue
+			}
+			if (kind == "type") != (d.Kind == "TYPE") {
+				continue
+			}
+			presence := kind == "collection-presence"
+			candidates := dims.Names(d, presence)
+			if kind == "type" {
+				candidates = []string{d.Name, "artifact-" + d.Name}
+			}
+			requests = append(requests, request{d.Identifier, kind, strings.Count(d.Identifier, "/"), candidates})
 		}
-		requests = append(requests, request{d.Identifier, []string{d.Name, "artifact-" + d.Name}})
 	}
 	for i, req := range requests {
 		chosen := ""
@@ -43,7 +62,7 @@ func artifactDimensionFlagNames(cmd *cobra.Command, dimensions artifact.Dimensio
 			}
 			conflict := false
 			for j, other := range requests {
-				if i == j || level >= len(other.candidates) {
+				if i == j || other.kind != req.kind || other.depth > req.depth || level >= len(other.candidates) {
 					continue
 				}
 				if other.candidates[level] == candidate {
@@ -58,13 +77,22 @@ func artifactDimensionFlagNames(cmd *cobra.Command, dimensions artifact.Dimensio
 		}
 		if chosen == "" {
 			chosen = "dimension-" + cliName(strings.ReplaceAll(strings.TrimPrefix(req.id, "/"), "/", "-"))
+			if req.kind == "collection-presence" {
+				chosen += "-all"
+			}
 			base := chosen
 			for n := 2; reserved[chosen]; n++ {
 				chosen = fmt.Sprintf("%s-%d", base, n)
 			}
 		}
 		reserved[chosen] = true
-		names[req.id] = artifactFlagNames{Key: chosen}
+		n := names[req.id]
+		if req.kind == "collection-presence" {
+			n.Presence = chosen
+		} else {
+			n.Key = chosen
+		}
+		names[req.id] = n
 	}
 	return names
 }
@@ -90,7 +118,7 @@ func artifactModuleFlagNames(cmd *cobra.Command, dimensions artifact.Dimensions,
 	reserved := artifactReservedFlags(cmd)
 	reserved[artifact.ModuleDimension] = true
 	for _, names := range artifactDimensionFlagNames(cmd, dimensions) {
-		reserved[names.Key] = true
+		reserved[names.Key], reserved[names.Presence] = true, true
 	}
 	modules := map[string]bool{}
 	counts := map[string]int{}

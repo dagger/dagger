@@ -35,6 +35,15 @@ func TestArtifactListFormats(t *testing.T) {
 	t.Run("link retains canonical identity", func(t *testing.T) {
 		require.Equal(t, items[0].URI+"\n"+items[1].URI+"\n", render("link", items))
 	})
+	t.Run("schema matrices use collection presence", func(t *testing.T) {
+		item := items[0]
+		item.URI = "dag+check://go/modules/generate/stale"
+		item.DimensionKeys = item.DimensionKeys[1:]
+		item.Presence = []string{"go/modules"}
+		item.PresenceNames = map[string]string{"go/modules": "go-modules"}
+		require.Equal(t, "--go-modules --check=stale   # Check files\n", render("cli", []listedArtifact{item}))
+		require.Regexp(t, `\* +stale`, render("table", []listedArtifact{item}))
+	})
 	t.Run("static artifacts use qualified type keys", func(t *testing.T) {
 		item := listedArtifact{URI: "dag+container://backend/container", DimensionKeys: []struct{ Dimension, Key string }{{"type:Container", "backend/container"}}, DisplayKeys: map[string]string{"type:Container": "backend/container"}}
 		require.Equal(t, "CONTAINER\nbackend/container\n", render("table", []listedArtifact{item}))
@@ -48,6 +57,12 @@ func TestArtifactListFormats(t *testing.T) {
 		require.Contains(t, out, "github.com/acme/ws@abc")
 		require.NotContains(t, out, "LINK")
 		require.Equal(t, "-W github.com/acme/ws@abc --go-module=. --check=stale   # Check files\n", render("cli", []listedArtifact{item}))
+	})
+	t.Run("collection filters can select descendants", func(t *testing.T) {
+		item := items[0]
+		item.CollectionItem = true
+		item.OmitTypeKey = true
+		require.Equal(t, "--go-module=.   # Check files\n", render("cli", []listedArtifact{item}))
 	})
 	t.Run("cli omission preserves table and link identity", func(t *testing.T) {
 		item := items[0]

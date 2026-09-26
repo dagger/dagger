@@ -9,6 +9,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestArtifactCollectionTypeKeys(t *testing.T) {
+	item := listedArtifact{
+		URI: "dag+go-test://go/modules/tests?go-module=./api&go-test=TestHealth", CollectionItem: true,
+		DimensionKeys: []struct{ Dimension, Key string }{{"go/modules", "./api"}, {"go/modules/tests", "TestHealth"}, {"type:GoTest", "go/modules/tests"}},
+	}
+	path := artifactListPath{URI: "dag+check://go/modules/tests/run", Dimensions: []string{"go/modules", "go/modules/tests", "type:Check"}}
+	for _, tc := range []struct {
+		name  string
+		paths []artifactListPath
+		omit  bool
+	}{
+		{"descendant operations", []artifactListPath{path}, true},
+		{"module checks do not match a test key", []artifactListPath{path, {URI: "dag+check://go/modules/test", Dimensions: []string{"go/modules", "type:Check"}}}, true},
+		{"empty sibling counts", []artifactListPath{path, {URI: "dag+check://other/tests/run", Dimensions: path.Dimensions}}, false},
+		{"unknown schema", nil, false},
+		{"path boundaries", []artifactListPath{{URI: "dag+check://go/modules/tests-extra/run", Dimensions: path.Dimensions}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			other := item
+			other.DimensionKeys = slices.Clone(item.DimensionKeys)
+			other.DimensionKeys[0].Key = "other"
+			items := []listedArtifact{item, other}
+			require.NoError(t, omitCollectionTypeKeys(items, tc.paths))
+			for _, got := range items {
+				require.Equal(t, tc.omit, got.OmitTypeKey)
+				require.Equal(t, item.URI, got.URI, "display must preserve the complete link")
+			}
+		})
+	}
+}
+
 func TestArtifactCLITypeKeyOmission(t *testing.T) {
 	item := listedArtifact{
 		URI: "dag+check://go/modules/tests/run?go-module=.&go-test=TestFoo",
@@ -67,6 +98,19 @@ func TestArtifactCLITypeKeyOmission(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, canOmitArtifactCLITypeKey(row, index, commandArtifactTypes(&cobra.Command{Use: "shell"})))
 	})
+	t.Run("schema matrix and repeated keys keep their filters", func(t *testing.T) {
+		index, err := newArtifactNameIndex([]artifactListPath{run})
+		require.NoError(t, err)
+		matrix := item
+		matrix.DimensionKeys = []struct{ Dimension, Key string }{{"module", "go"}, {"type:Check", "go/modules/tests/run"}}
+		matrix.Presence = []string{"go/modules", "go/modules/tests"}
+		require.True(t, canOmitArtifactCLITypeKey(matrix, index, []string{"Check"}))
+		group := item
+		group.DimensionKeys = append(slices.Clone(item.DimensionKeys), struct{ Dimension, Key string }{"go/modules/tests", "TestBar"})
+		require.True(t, canOmitArtifactCLITypeKey(group, index, []string{"Check"}))
+		group.CollectionItem = true
+		require.False(t, canOmitArtifactCLITypeKey(group, index, []string{"Check"}))
+	})
 	t.Run("cached proof preserves module and dimension scope", func(t *testing.T) {
 		paths := []artifactListPath{run, {URI: "dag+check://go/modules/check", ModuleName: "go", Dimensions: []string{"module", "go/modules", "type:Check"}}}
 		index, err := newArtifactNameIndex(paths)
@@ -99,6 +143,39 @@ func TestArtifactCLITypeKeyOmission(t *testing.T) {
 	}
 }
 
+func TestArtifactListProduct(t *testing.T) {
+	row := func(module, test string) listedArtifact {
+		return listedArtifact{DimensionKeys: []struct{ Dimension, Key string }{{"go/modules", module}, {"go/modules/tests", test}}}
+	}
+	t.Run("full product collapses", func(t *testing.T) {
+		items := []listedArtifact{row("api", "health"), row("api", "ready"), row("worker", "health"), row("worker", "ready")}
+		require.True(t, artifactRowsFormProduct(items))
+		require.Len(t, artifactListRows(items, false), 1)
+		require.Len(t, artifactListRows(items, true), 4)
+	})
+	t.Run("diagonal pairs cannot become independent flags", func(t *testing.T) {
+		items := []listedArtifact{row("api", "health"), row("worker", "ready")}
+		require.False(t, artifactRowsFormProduct(items))
+		require.Len(t, artifactListRows(items, false), 2)
+	})
+	t.Run("duplicate rows cannot fill missing pairs", func(t *testing.T) {
+		items := []listedArtifact{row("api", "health"), row("api", "health"), row("worker", "ready"), row("worker", "ready")}
+		require.False(t, artifactRowsFormProduct(items))
+	})
+	t.Run("missing dimension is not an empty key", func(t *testing.T) {
+		missing := listedArtifact{DimensionKeys: []struct{ Dimension, Key string }{{"go/modules", "api"}}}
+		require.False(t, artifactRowsFormProduct([]listedArtifact{row("api", ""), missing}))
+	})
+	t.Run("empty keys can form a product", func(t *testing.T) {
+		require.True(t, artifactRowsFormProduct([]listedArtifact{row("api", ""), row("worker", "")}))
+	})
+	t.Run("order does not change identity", func(t *testing.T) {
+		a, b := row("api", "health"), row("worker", "health")
+		slices.Reverse(b.DimensionKeys)
+		require.True(t, artifactRowsFormProduct([]listedArtifact{a, b}))
+	})
+}
+
 func TestArtifactProjectionFlagNames(t *testing.T) {
 	defs := artifact.Dimensions{
 		{Identifier: "build/skip", Name: "skip", QualifiedName: "build-skip"},
@@ -111,7 +188,23 @@ func TestArtifactProjectionFlagNames(t *testing.T) {
 	check.Flags().StringArray("skip", nil, "")
 	root.AddCommand(list, check)
 	for _, cmd := range []*cobra.Command{list, check} {
-		require.Equal(t, "artifact-skip", artifactDimensionFlagNames(cmd, defs)[defs[0].Identifier].Key)
+		require.Equal(t, "build-skip", artifactDimensionFlagNames(cmd, defs)[defs[0].Identifier].Key)
 		require.Equal(t, "go-test", artifactDimensionFlagNames(cmd, defs)[defs[1].Identifier].Key)
+	}
+}
+
+func TestArtifactCollectionFlagNames(t *testing.T) {
+	defs := artifact.Dimensions{
+		{Identifier: "/tools/items", Kind: "COLLECTION", Name: "item"},
+		{Identifier: "/tools/other", Kind: "COLLECTION", Name: "item"},
+		{Identifier: "/tools/parents", Kind: "COLLECTION", Name: "parent"},
+		{Identifier: "/tools/parents/items", Kind: "COLLECTION", Name: "item"},
+	}
+	for range 2 {
+		names := artifactDimensionFlagNames(&cobra.Command{Use: "check"}, defs)
+		require.Equal(t, artifactFlagNames{Key: "tools-items-item", Presence: "tools-items"}, names["/tools/items"])
+		require.Equal(t, artifactFlagNames{Key: "tools-other-item", Presence: "tools-other"}, names["/tools/other"])
+		require.Equal(t, artifactFlagNames{Key: "tools-parents-item", Presence: "tools-parents-items"}, names["/tools/parents/items"])
+		slices.Reverse(defs)
 	}
 }

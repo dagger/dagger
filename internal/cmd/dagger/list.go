@@ -11,14 +11,28 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func artifactTypeCommands(types []string) map[string]string {
+func artifactTypeCommands(types []string, collectionTypes map[string]bool) map[string]string {
 	byName := map[string][]string{}
 	for _, typeName := range types {
-		name := inflection.Plural(cliName(typeName))
+		name := cliName(typeName)
+		if !collectionTypes[typeName] {
+			name = inflection.Plural(name)
+		}
 		byName[name] = append(byName[name], typeName)
 	}
 	commands := map[string]string{}
 	for name, matches := range byName {
+		// A collection owns its declared name, even when an item type has
+		// the same plural: GoModules selects its collection items.
+		for _, typeName := range matches {
+			if collectionTypes[typeName] {
+				commands[name] = typeName
+				break
+			}
+		}
+		if commands[name] != "" {
+			continue
+		}
 		if len(matches) == 1 {
 			commands[name] = matches[0]
 		} else {
@@ -146,11 +160,17 @@ func loadListCommands(ctx context.Context, ec *client.Client, requested string) 
 	if err != nil {
 		return err
 	}
+	collectionTypes := map[string]bool{}
+	for _, dimension := range dimensions {
+		if dimension.Kind == "COLLECTION" {
+			collectionTypes[dimension.CollectionType] = true
+		}
+	}
 	if err := registerArtifactFilters(ctx, dag, listCmd, dimensions, dimensions, artifacts); err != nil {
 		return err
 	}
 	var selectedCommand *cobra.Command
-	for name, typeName := range artifactTypeCommands(artifactTypeNames(types)) {
+	for name, typeName := range artifactTypeCommands(artifactTypeNames(types), collectionTypes) {
 		short := "List " + typeName + " artifacts"
 		for _, typ := range types {
 			if typ.Name == typeName && typ.Comment != "" {
@@ -158,13 +178,18 @@ func loadListCommands(ctx context.Context, ec *client.Client, requested string) 
 				break
 			}
 		}
-		cmd := addListCommand(name, short, typeName)
+		var cmd *cobra.Command
+		if collectionTypes[typeName] {
+			cmd = addListCommand(name, "List "+typeName+" items", "collections", artifactListCollection, typeName)
+		} else {
+			cmd = addListCommand(name, short, "types", artifactListType, typeName)
+		}
 		if name == requested {
 			selectedCommand = cmd
 		}
 	}
 	if selectedCommand != nil {
-		selected, err := artifactDimensions(ctx, dag, listArtifactTargets(artifacts, selectedCommand))
+		selected, err := artifactDimensions(ctx, dag, listArtifactTargets(artifacts, selectedCommand, dimensions))
 		if err != nil {
 			return err
 		}
@@ -173,14 +198,14 @@ func loadListCommands(ctx context.Context, ec *client.Client, requested string) 
 	return nil
 }
 
-func addListCommand(name, short, typeName string) *cobra.Command {
+func addListCommand(name, short, group, key, value string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               name + " [address...]",
 		Short:             short,
-		GroupID:           "types",
+		GroupID:           group,
 		Args:              cobra.ArbitraryArgs,
 		RunE:              runArtifacts,
-		Annotations:       map[string]string{artifactListType: typeName},
+		Annotations:       map[string]string{key: value},
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
 	registerArtifactListFlags(cmd)
@@ -190,7 +215,8 @@ func addListCommand(name, short, typeName string) *cobra.Command {
 	return cmd
 }
 
-// Unknown flags require schema metadata before Cobra can parse them.
+// Unknown flags require schema metadata before Cobra can distinguish keys from
+// whole-collection booleans. Do not guess from singular or plural spelling.
 func needsArtifactDiscovery(cmd *cobra.Command, args []string) bool {
 	cmd.InitDefaultHelpFlag()
 	flags := copyCommandFlags(cmd, "artifact dimensions")

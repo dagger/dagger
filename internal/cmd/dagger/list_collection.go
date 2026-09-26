@@ -28,8 +28,9 @@ func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.C
 		return nil, err
 	}
 	names := map[string]string{}
+	presence := map[string]string{}
 	for id, allocated := range artifactDimensionFlagNames(cmd, definitions) {
-		names[id] = allocated.Key
+		names[id], presence[id] = allocated.Key, allocated.Presence
 	}
 	paths, err := readArtifactListPaths(ctx, dag, all)
 	if err != nil {
@@ -37,6 +38,9 @@ func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.C
 	}
 	index, err := newArtifactNameIndex(paths)
 	if err != nil {
+		return nil, err
+	}
+	if err := omitCollectionTypeKeys(items, paths); err != nil {
 		return nil, err
 	}
 	if format == "cli" {
@@ -52,7 +56,7 @@ func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.C
 	for i := range items {
 		item := &items[i]
 		filters := itemDimensionFilters(*item)
-		item.DisplayKeys = map[string]string{}
+		item.DisplayKeys, item.PresenceNames = map[string]string{}, presence
 		for _, key := range item.DimensionKeys {
 			if key.Dimension == artifact.ModuleDimension {
 				item.ModuleFlag = moduleFlags[key.Key]
@@ -80,6 +84,9 @@ func itemDimensionFilters(item listedArtifact) []dagaddress.Pair {
 	var filters []dagaddress.Pair
 	for _, key := range item.DimensionKeys {
 		filters = append(filters, dagaddress.Pair{Dimension: key.Dimension, Key: key.Key, HasKey: true})
+	}
+	for _, id := range item.Presence {
+		filters = append(filters, dagaddress.Pair{Dimension: id})
 	}
 	return filters
 }
