@@ -16,12 +16,15 @@ upstream's session-dependent behavior. It no longer puts every local branch and
 tag's history into literal trace payloads. The associated origin-metadata fix and
 fresh-server full-history tests are removed. Remote-backed capture is unchanged.
 
-`Workspace.withCommit` patch normalization is retained: the selected merged delta
-and pending remainder no longer replay their original Changeset producers. This
-does not make a client-dependent base repository portable. Tests now distinguish
-that boundary. Earlier local-history portability results below are historical,
-not current guarantees; this scope decision supersedes conflicting requirements
-in the historical design sections.
+`Workspace.withCommit` patch normalization was tried and then dropped
+(`244d52c`): commit-time changeset capture is not part of this change, and
+`Workspace.withCommit` is unchanged from main. Tool-call changesets are still
+normalized to patch form when they are recorded into a conversation
+(`core/mcp.go`), which is what keeps a restored conversation from replaying its
+original Changeset producers. A client-dependent base repository is not made
+portable by either. Earlier local-history portability results below are
+historical, not current guarantees; this scope decision supersedes conflicting
+requirements in the historical design sections.
 
 Cloud resume is supported again: try the connected engine first, then transparently
 fetch the whole Cloud trace when the archive is absent, evicted, or its endpoint
@@ -186,16 +189,11 @@ race run outside the engine harness failed because it lacked a `dagger` executab
   successful execution is not evidence of correct module SDK generation.
 - [x] Obsolete flattening and strict agent-capture rejection assertions are removed;
   existing Workspace snapshot/commit behavior is not a general portability guarantee.
-- [x] Committed-local-Workspace capture no longer retains the original live
-  incoming Changeset in either the commit recipe or pending remainder (`3db0f6c`).
-  Capture materializes the selected resolved delta after the original eager
-  three-way merge, preserving author, pending-edit and conflict semantics.
-  Actual engine tests pass for `TestWorkspaceWithCommitFreezesHostAndAuthor`,
-  `TestWorkspaceWithCommitIncomingChanges` (clean and unrelated-dirt cases),
-  `TestWorkspaceWithCommitMergeConflicts` (all three variants), and
-  `TestWorkspaceWithCommitScopedHistory`. Producer partial/all-commit tests use
-  an explicit immutable fixture base and preserve the absence-of-producer-call
-  assertion, independently of local snapshot portability.
+- [ ] Committed-local-Workspace capture: the `3db0f6c` commit-time changeset
+  capture was reverted in `244d52c`. `Workspace.withCommit` is unchanged from
+  main; the producer partial/all-commit tests keep their explicit immutable
+  fixture base and absence-of-producer-call assertion. Snapshot-time
+  portability of a committed local Workspace remains follow-up work.
 - [ ] Broader acceptance/performance work in §13 remains. No constant-time startup,
   crash-completeness, Cloud finality parity, or end-to-end latency claim is made.
   Internal flattening is removed; broader dependency portability remains deferred.
