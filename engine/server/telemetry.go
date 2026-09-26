@@ -871,19 +871,29 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	appendStart := time.Now()
 	stats, appendErr := db.AppendLogs(inserts)
-	if appendErr == nil {
-		// Restore-critical rows must reach the file before the engine can
-		// be killed, or an unsealed archive has nothing to restore from. A
+	if appendErr == nil && hasControlRecord(logs) {
+		// Agent control rows must reach the file before the engine can be
+		// killed, or an unsealed archive has no roster to restore from. A
 		// write is enough for that; fsync is left to the session-end seal.
-		for _, rec := range logs {
-			if agentcontrol.IsRecord(rec) || enginetel.IsCallPayloadRecord(rec) {
-				appendErr = db.FlushLogs(ctx)
-				break
-			}
-		}
+		//
+		// Only control rows (rare, agent sessions only) pay for this: every
+		// call emits payloads, and flushing for them would drain the
+		// in-memory tail on nearly every batch, pushing live readers onto
+		// file scans. Payloads spill with the ordinary tail, and any already
+		// appended ahead of a control row are written by its flush too.
+		appendErr = db.FlushLogs(ctx)
 	}
 	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
 	return appendErr
+}
+
+func hasControlRecord(logs []sdklog.Record) bool {
+	for _, rec := range logs {
+		if agentcontrol.IsRecord(rec) {
+			return true
+		}
+	}
+	return false
 }
 
 func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
