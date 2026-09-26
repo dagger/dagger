@@ -118,7 +118,7 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 	}, []BootstrapSignal{
 		{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 1},
 		{Kind: BootstrapFrameLogs, Payload: logPayload, Records: 0},
-	}, BootstrapExclusions{SpanIDs: []string{"span"}, LogRowIDs: []int64{4}})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 		wrongTrace := strings.Repeat("b", 32)
 		invalid, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session",
 			Generation: generation, TraceID: wrongTrace, SealAt: sealAt,
-		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 1}}, BootstrapExclusions{})
+		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 1}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -208,7 +208,7 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 	t.Run("terminal count mismatch is corruption", func(t *testing.T) {
 		mismatch, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session",
 			Generation: generation, TraceID: traceID, SealAt: sealAt,
-		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 2}}, BootstrapExclusions{})
+		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 2}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -242,15 +242,9 @@ func TestClientFiniteSignalStreams(t *testing.T) {
 			if got := r.Header.Get(enginetel.LiveCursorHeader); got != "1" {
 				t.Errorf("trace cursor header = %q", got)
 			}
-			if !slices.Equal(r.URL.Query()["exclude_span"], []string{"span-a", "span-b"}) {
-				t.Errorf("span exclusions = %v", r.URL.Query()["exclude_span"])
-			}
 			_ = enginetel.WriteLiveFrame(w, 3, tracePayload)
-			_ = enginetel.WriteLiveTerminal(w, 5) // excluded tail advances the terminal scan cursor
+			_ = enginetel.WriteLiveTerminal(w, 5) // a filtered tail advances the terminal scan cursor
 		case archiveResourcePath(traceID, "logs"):
-			if !slices.Equal(r.URL.Query()["exclude_log"], []string{"4", "8"}) {
-				t.Errorf("log exclusions = %v", r.URL.Query()["exclude_log"])
-			}
 			_ = enginetel.WriteLiveFrame(w, 2, logPayload)
 			_ = enginetel.WriteLiveTerminal(w, 2)
 		case archiveResourcePath(traceID, "metrics"):
@@ -264,7 +258,7 @@ func TestClientFiniteSignalStreams(t *testing.T) {
 	client := testArchiveClient(t, server)
 
 	traceCursor, err := client.Traces(context.Background(), traceID, StreamOptions{
-		Generation: generation, Cursor: 1, HighWater: 5, ExcludeSpanIDs: []string{"span-a", "span-b"},
+		Generation: generation, Cursor: 1, HighWater: 5,
 	}, func(cursor int64, batch *coltracepb.ExportTraceServiceRequest) error {
 		if cursor != 3 || len(batch.ResourceSpans) != 1 {
 			t.Fatalf("trace batch cursor=%d batch=%+v", cursor, batch)
@@ -275,7 +269,7 @@ func TestClientFiniteSignalStreams(t *testing.T) {
 		t.Fatalf("traces cursor=%d err=%v", traceCursor, err)
 	}
 	logCursor, err := client.Logs(context.Background(), traceID, StreamOptions{
-		Generation: generation, HighWater: 2, ExcludeLogRowIDs: []int64{4, 8},
+		Generation: generation, HighWater: 2,
 	}, func(_ int64, batch *collogspb.ExportLogsServiceRequest) error {
 		if len(batch.ResourceLogs) != 1 {
 			t.Fatalf("logs batch = %+v", batch)

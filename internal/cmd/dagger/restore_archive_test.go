@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/agentcontrol"
@@ -428,5 +429,65 @@ func TestHistoricalFailureWarnsWithoutBreakingPrompt(t *testing.T) {
 		require.ErrorIs(t, err, failure)
 	case <-time.After(time.Second):
 		t.Fatal("historical import failure was not surfaced")
+	}
+}
+
+// historyTestArchive serves a finite history whose log stream re-delivers
+// rows the bootstrap already applied, as history from cursor 0 does.
+type historyTestArchive struct {
+	*restoreTestArchive
+	historyLogs *collogspb.ExportLogsServiceRequest
+}
+
+func (s historyTestArchive) Traces(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+	return opts.HighWater, nil
+}
+func (s historyTestArchive) Logs(_ context.Context, _ string, opts archive.StreamOptions, consume func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+	return opts.HighWater, consume(opts.HighWater, s.historyLogs)
+}
+func (s historyTestArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
+	return opts.HighWater, nil
+}
+
+// TestArchiveHistoryRedeliveryIsIdempotent: history streams from cursor 0, so
+// it re-delivers the bootstrap's call payloads. Re-applying them (and, though
+// sealed history filters them, its control records) changes nothing the
+// restore depends on.
+func TestArchiveHistoryRedeliveryIsIdempotent(t *testing.T) {
+	chief, worker, edge, payloads := cloudControlFixture(t)
+	source, _, _, _ := canonicalArchive() //nolint:dogsled // The fixture's digests come from cloudControlFixture.
+	source.logs = controlLogs(append(payloads, chief.Record(), worker.Record(), edge.Record())...)
+	source.header.HighWater = archive.HighWater{Logs: int64(len(payloads) + 3)}
+	fe := cloudTestFrontend{newRestoreTestFrontend()}
+	cut, err := archiveCut(source.header)
+	require.NoError(t, err)
+	importer, err := enginetel.NewArchiveTraceImporter(enginetel.TraceImportSinks{
+		Spans: fe.SpanExporter(), Logs: fe.LogExporter(), Metrics: fe.MetricExporter(), Barrier: fe,
+	}, cut)
+	require.NoError(t, err)
+	require.NoError(t, importer.ImportAndWait(t.Context(), cut, enginetel.ArchiveImportBatch{Logs: source.logs}))
+	before, beforeEdges, err := appliedArchivePlan(fe, source.header.Completion)
+	require.NoError(t, err)
+	calls := map[string]*callpbv1.Call{}
+	for digest, call := range fe.db.Calls {
+		calls[digest] = call
+	}
+	mutations := fe.db.MutationCount()
+
+	history := historyTestArchive{restoreTestArchive: source, historyLogs: source.logs}
+	require.NoError(t, importArchiveRemainder(t.Context(), history, source.header.TraceID, importer, cut))
+
+	after, afterEdges, err := appliedArchivePlan(fe, source.header.Completion)
+	require.NoError(t, err)
+	require.Equal(t, before.plan, after.plan)
+	require.Equal(t, beforeEdges, afterEdges)
+	require.Len(t, fe.db.Calls, len(calls))
+	for digest, call := range calls {
+		require.Same(t, call, fe.db.Calls[digest], "a re-delivered payload must not replace the applied call")
+	}
+	require.Equal(t, mutations, fe.db.MutationCount(), "re-delivery must not invalidate frontend views")
+	for _, entry := range after.plan {
+		_, err := fe.EncodedIDForCallDigest(entry.SnapshotDigest)
+		require.NoError(t, err)
 	}
 }

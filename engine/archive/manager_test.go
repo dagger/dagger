@@ -261,7 +261,7 @@ func testBootstrap(t *testing.T, manifest Manifest, cut HighWater, sealAt time.T
 	data, _, err := BuildBootstrap(BootstrapHeader{
 		Generation: manifest.Generation, TraceID: manifest.TraceID, SourceSession: manifest.SourceSession,
 		SealAt: sealAt.UTC().Format(time.RFC3339Nano), HighWater: cut,
-	}, signals, BootstrapExclusions{})
+	}, signals)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +419,7 @@ func TestSanitizeTitle(t *testing.T) {
 
 func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {
 	header := BootstrapHeader{Generation: "generation", TraceID: testTraceA, SealAt: time.Now().UTC().Format(time.RFC3339Nano)}
-	data, records, err := BuildBootstrap(header, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: []byte("otlp"), Records: 7}}, BootstrapExclusions{SpanIDs: []string{"span"}})
+	data, records, err := BuildBootstrap(header, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: []byte("otlp"), Records: 7}})
 	if err != nil {
 		t.Fatal(err)
 	}

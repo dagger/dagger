@@ -73,7 +73,7 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 			req := &collogpb.ExportLogsServiceRequest{ResourceLogs: []*logpb.ResourceLogs{{Resource: &resourcepb.Resource{}, ScopeLogs: []*logpb.ScopeLogs{{LogRecords: logs}}}}}
 			payload, err := proto.Marshal(req)
 			require.NoError(t, err)
-			data, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session", TraceID: traceID, Generation: "gen", SealAt: time.Now().UTC().Format(time.RFC3339Nano), Completion: Witness(want)}, []BootstrapSignal{{Kind: BootstrapFrameLogs, Payload: payload, Records: int64(len(logs))}}, BootstrapExclusions{})
+			data, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session", TraceID: traceID, Generation: "gen", SealAt: time.Now().UTC().Format(time.RFC3339Nano), Completion: Witness(want)}, []BootstrapSignal{{Kind: BootstrapFrameLogs, Payload: payload, Records: int64(len(logs))}})
 			require.NoError(t, err)
 			client, closeServer := bootstrapTestClient(t, "gen", data)
 			defer closeServer()
@@ -92,7 +92,7 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 }
 
 func TestBootstrapTruncationNeverAppliesPartialSignals(t *testing.T) {
-	data, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session", TraceID: testTraceA, Generation: "gen", SealAt: time.Now().UTC().Format(time.RFC3339Nano)}, []BootstrapSignal{{Kind: BootstrapFrameLogs}}, BootstrapExclusions{})
+	data, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session", TraceID: testTraceA, Generation: "gen", SealAt: time.Now().UTC().Format(time.RFC3339Nano)}, []BootstrapSignal{{Kind: BootstrapFrameLogs}})
 	require.NoError(t, err)
 	client, closeServer := bootstrapTestClient(t, "gen", data[:len(data)-1])
 	defer closeServer()

@@ -381,16 +381,14 @@ func (c *Client) Bootstrap(ctx context.Context, traceID, expectedGeneration stri
 // Unsealed reads an interrupted or incomplete archive at the cut returned by
 // AcquireUnsealed; its log stream then includes agent control records.
 type StreamOptions struct {
-	Generation       string
-	Cursor           int64
-	HighWater        int64
-	ExcludeSpanIDs   []string
-	ExcludeLogRowIDs []int64
-	Unsealed         bool
+	Generation string
+	Cursor     int64
+	HighWater  int64
+	Unsealed   bool
 }
 
 // Traces reads a finite framed trace stream. It returns the last safe resume
-// cursor, including terminal progress across excluded rows.
+// cursor.
 func (c *Client) Traces(ctx context.Context, traceID string, opts StreamOptions, consume func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
 	return c.stream(ctx, traceID, "traces", opts, func(cursor int64, payload []byte) error {
 		batch := &coltracepb.ExportTraceServiceRequest{}
@@ -444,16 +442,6 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 	query := make(url.Values)
 	if opts.Unsealed {
 		query.Set("unsealed", "1")
-	}
-	if signal == "traces" {
-		for _, spanID := range opts.ExcludeSpanIDs {
-			query.Add("exclude_span", spanID)
-		}
-	}
-	if signal == "logs" {
-		for _, rowID := range opts.ExcludeLogRowIDs {
-			query.Add("exclude_log", strconv.FormatInt(rowID, 10))
-		}
 	}
 	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, signal), query, nil, enginetel.LiveContentType, opts.Generation, cursor)
 	if err != nil {

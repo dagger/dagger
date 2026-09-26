@@ -273,7 +273,6 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 	header := archive.BootstrapHeader{Generation: manifest.Generation, TraceID: manifest.TraceID, SourceSession: manifest.SourceSession, SealAt: time.Now().UTC().Format(time.RFC3339Nano), HighWater: archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, Completion: archive.Witness(want)}
 	var signals []archive.BootstrapSignal
 	var batches []archive.BootstrapBatch
-	var exclusions archive.BootstrapExclusions
 	for start := 0; start < len(rows); {
 		end := min(start+otlpBatchSize, len(rows))
 		req := &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows[start:end])}
@@ -294,15 +293,12 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 		batches = append(batches, archive.BootstrapBatch{Logs: req})
 		start = end
 	}
-	for _, row := range rows {
-		exclusions.LogRowIDs = append(exclusions.LogRowIDs, row.ID)
-	}
 	// Verify converted OTLP as well: the display codec must not silently skip a
 	// malformed row and leave a plausible terminal count/empty projection.
 	if err := archive.ValidateBootstrap(ctx, header, batches); err != nil {
 		return nil, 0, err
 	}
-	return archive.BuildBootstrap(header, signals, exclusions)
+	return archive.BuildBootstrap(header, signals)
 }
 
 func (srv *Server) archiveRequestRecord(clientID, sessionID, token string) (*clientRecord, error) {
@@ -433,12 +429,13 @@ func serveArchiveBootstrap(w http.ResponseWriter, lease *archive.Lease) error {
 
 // serveArchiveSignal streams one OTLP signal up to cut. A sealed archive's
 // logs omit control records, which its bootstrap already supplied; an unsealed
-// archive has no bootstrap, so they are included.
+// archive has no bootstrap, so they are included. Call payloads the bootstrap
+// also carried are re-sent: the frontend ignores digests it already has.
 func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m archive.Manifest, cut archive.HighWater, includeControl bool, signal string) error {
 	return srv.serveArchiveSignalWithPayloadLimit(w, r, m, cut, includeControl, signal, enginetel.MaxLivePayloadSize)
 }
 
-//nolint:gocyclo // Keep bounded batching, exclusions, and cursor advancement in one stream state machine.
+//nolint:gocyclo // Keep bounded batching and cursor advancement in one stream state machine.
 func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *http.Request, m archive.Manifest, cut archive.HighWater, includeControl bool, signal string, maxPayloadSize int) (rerr error) {
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
 		return fmt.Errorf("invalid archive payload limit %d", maxPayloadSize)
@@ -466,18 +463,6 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
 	}
 	defer db.Close()
-	excludedSpans := map[string]bool{}
-	for _, s := range r.URL.Query()["exclude_span"] {
-		excludedSpans[s] = true
-	}
-	excludedLogs := map[int64]bool{}
-	for _, s := range r.URL.Query()["exclude_log"] {
-		id, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			return httpErr(err, http.StatusBadRequest)
-		}
-		excludedLogs[id] = true
-	}
 	w.Header().Set("Content-Type", enginetel.LiveContentType)
 	w.Header().Set("Cache-Control", "no-store")
 	defer func() {
@@ -505,7 +490,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			next, rowCount = rows[len(rows)-1].ID, len(rows)
 			var spans []sdktrace.ReadOnlySpan
 			for _, row := range rows {
-				if row.TraceID == m.TraceID && !excludedSpans[row.SpanID] {
+				if row.TraceID == m.TraceID {
 					spans = append(spans, row.ReadOnly())
 				}
 			}
@@ -519,7 +504,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 				return errors.New("archive log stream truncated before cut")
 			}
 			next, rowCount = rows[len(rows)-1].ID, len(rows)
-			filtered, err := archiveHistoryLogs(rows, m.TraceID, excludedLogs, includeControl)
+			filtered, err := archiveHistoryLogs(rows, m.TraceID, includeControl)
 			if err != nil {
 				return err
 			}
@@ -539,8 +524,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			if rowCount == 1 {
 				return fmt.Errorf("archive %s row %d is %d bytes (maximum %d)", signal, next, size, maxPayloadSize)
 			}
-			// Retry a smaller prefix at the last written cursor, including rows
-			// filtered out above so exclusions do not change resume semantics.
+			// Retry a smaller prefix at the last written cursor.
 			batchLimit = max(1, rowCount/2)
 			continue
 		}
@@ -556,10 +540,10 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	}
 	return enginetel.WriteLiveTerminal(w, high)
 }
-func archiveHistoryLogs(rows []clientdb.Log, traceID string, excluded map[int64]bool, includeControl bool) ([]clientdb.Log, error) {
+func archiveHistoryLogs(rows []clientdb.Log, traceID string, includeControl bool) ([]clientdb.Log, error) {
 	var filtered []clientdb.Log
 	for _, row := range rows {
-		if row.TraceID.String != traceID || excluded[row.ID] {
+		if row.TraceID.String != traceID {
 			continue
 		}
 		rec, err := clientdb.DecodeLogRecord(row)
