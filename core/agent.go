@@ -555,7 +555,9 @@ func (ars *AgentRuntimes) Require(ctx context.Context, agent dagql.ObjectResult[
 // be invisible to the roster.
 //
 // parentHandle is the recorded parent a restore supplies; empty derives the
-// parent from the calling agent, if any.
+// parent from the calling agent, if any. A supplied parent must already have
+// an entry in this session and may be neither the agent itself nor one of its
+// descendants (see checkParentLocked).
 func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr string, restored bool, parentHandle string) (*AgentRuntime, error) {
 	key, err := agentKey(agent)
 	if err != nil {
@@ -575,12 +577,19 @@ func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*
 	ars.mu.Lock()
 	_, found := ars.entries[key]
 	closing := ars.closing
+	var parentErr error
+	if parentHandle != "" {
+		parentErr = ars.checkParentLocked(key, name, parentHandle)
+	}
 	ars.mu.Unlock()
 	if closing {
 		return nil, errors.New("agent registry is closing")
 	}
 	if found {
 		return nil, fmt.Errorf("agent %q already has a runtime entry in this session: a restore must happen before anything else addresses the instance", name)
+	}
+	if parentErr != nil {
+		return nil, parentErr
 	}
 	// Lease acquisition may enter the client lifecycle registry. Never hold the
 	// agent registry mutex across it: lifecycle callbacks can inspect agents.
@@ -611,6 +620,16 @@ func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*
 		lease.Release()
 		return nil, fmt.Errorf("agent %q acquired a runtime entry or registry closed while creation was staging", name)
 	}
+	// Lineage is re-checked where the entry becomes visible: an invalid
+	// parent makes every control record for this agent fail validation,
+	// poisoning the whole protected batch.
+	if parentHandle != "" {
+		if err := ars.checkParentLocked(key, name, parentHandle); err != nil {
+			ars.mu.Unlock()
+			lease.Release()
+			return nil, err
+		}
+	}
 	rt.control = newAgentControlPublisher(ctx)
 	ars.entries[key] = rt
 	// Creation and initial publication are complete before exposing the entry.
@@ -619,6 +638,32 @@ func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*
 	rt.mu.Unlock()
 	ars.mu.Unlock()
 	return rt, nil
+}
+
+// checkParentLocked refuses lineage the control archive cannot validate: a
+// self-parent, a parent with no runtime entry in this session, or a parent
+// chain leading back to key. Restore installs parents first, so a recorded
+// parent is always present by the time its child is created. Requires ars.mu.
+func (ars *AgentRuntimes) checkParentLocked(key, name, parent string) error {
+	if parent == key {
+		return fmt.Errorf("agent %q cannot be its own parent", name)
+	}
+	if _, ok := ars.entries[parent]; !ok {
+		return fmt.Errorf("agent %q: parent %q has no runtime entry in this session: restore the parent first, or omit parentHandle", name, parent)
+	}
+	seen := map[string]bool{}
+	for cur := parent; cur != "" && !seen[cur]; {
+		seen[cur] = true
+		rt, ok := ars.entries[cur]
+		if !ok {
+			break
+		}
+		if rt.parentHandle == key {
+			return fmt.Errorf("agent %q: parent %q descends from it; lineage cannot form a cycle", name, parent)
+		}
+		cur = rt.parentHandle
+	}
+	return nil
 }
 
 // Reseed replaces an existing entry's committed conversation with the given

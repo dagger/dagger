@@ -222,7 +222,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("handle").Doc(`The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.`),
 				dagql.Arg("state").Doc(`The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.`,
 					`RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.`),
-				dagql.Arg("parentHandle").Doc(`Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle.`),
+				dagql.Arg("parentHandle").Doc(`Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle. The parent must already be restored in this session and cannot be the agent itself or its descendant.`),
 				dagql.Arg("error").Doc(`The loop error to create the agent with, for state FAILED. Refused with any other state.`),
 			),
 		// agent is deliberately cached (no DoNotCache): the runtime handle

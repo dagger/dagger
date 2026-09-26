@@ -200,11 +200,11 @@ func TestCloseControlWaitsForProducersAndPreservesCause(t *testing.T) {
 	require.Equal(t, "PAUSED", state, "capture pre-teardown facts before cancellation rewrites them")
 }
 
-// A producer that outlives teardown's deadline costs the archive its fixed
-// cut, never the session its leases or publisher goroutines: a held tombstone
-// lease blocks the client-scope drain forever.
-func TestCloseControlFailureStillReleases(t *testing.T) {
-	var released atomic.Int32
+// leasedAgentContext is a client scope whose agent tombstone leases count
+// their releases.
+func leasedAgentContext(t *testing.T) (context.Context, *atomic.Int32) {
+	t.Helper()
+	released := &atomic.Int32{}
 	request := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "request", nil,
 		func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
 			if kind != engine.ClientLeaseAgentTombstone {
@@ -215,8 +215,16 @@ func TestCloseControlFailureStillReleases(t *testing.T) {
 	scope, err := engine.NewClientScope(&engine.ClientMetadata{ClientID: "client", SessionID: "session"}, request)
 	require.NoError(t, err)
 	_, recCtx := stateRecorderCtx(t)
-	base, err := engine.ContextWithClientScope(recCtx, scope)
+	ctx, err := engine.ContextWithClientScope(recCtx, scope)
 	require.NoError(t, err)
+	return ctx, released
+}
+
+// A producer that outlives teardown's deadline costs the archive its fixed
+// cut, never the session its leases or publisher goroutines: a held tombstone
+// lease blocks the client-scope drain forever.
+func TestCloseControlFailureStillReleases(t *testing.T) {
+	base, released := leasedAgentContext(t)
 	registry := NewAgentRuntimes()
 	start := func(id string, unwind <-chan struct{}) *AgentRuntime {
 		ctx := testAgentContext(t, base, id, id)
@@ -262,4 +270,51 @@ func TestCloseControlFailureStillReleases(t *testing.T) {
 	_, err = registry.CloseControl(t.Context())
 	require.Error(t, err, "publishers closed before quiescence: no later witness is trustworthy")
 	require.EqualValues(t, 2, released.Load())
+}
+
+// An invalid parent makes every control record for the agent fail
+// validation, poisoning the archive's whole protected batch: refuse it at
+// creation instead.
+func TestAgentCreateRejectsInvalidParent(t *testing.T) {
+	base, released := leasedAgentContext(t)
+	registry := NewAgentRuntimes()
+	create := func(id, parent string) (*AgentRuntime, error) {
+		ctx := testAgentContext(t, base, id, id)
+		agent, ok := AgentFromContext(ctx)
+		require.True(t, ok)
+		return registry.Create(ctx, agent, AgentStateIdle, "", true, parent)
+	}
+	_, err := create("chief", "")
+	require.NoError(t, err)
+
+	_, err = create("self", "self")
+	require.ErrorContains(t, err, "cannot be its own parent")
+
+	_, err = create("orphan", "ghost")
+	require.ErrorContains(t, err, "restore the parent first, or omit parentHandle")
+
+	// Lineage already recorded as x -> y: y may not then name x as its parent.
+	xCtx := testAgentContext(t, base, "x", "x")
+	xAgent, _ := AgentFromContext(xCtx)
+	x := newAgentRuntime(registry, "x", xAgent)
+	x.parentHandle = "y"
+	registry.mu.Lock()
+	registry.entries["x"] = x
+	registry.mu.Unlock()
+	_, err = create("y", "x")
+	require.ErrorContains(t, err, "cycle")
+
+	for _, id := range []string{"self", "orphan", "y"} {
+		registry.mu.Lock()
+		_, found := registry.entries[id]
+		registry.mu.Unlock()
+		require.False(t, found, "rejected agent %q must not be installed", id)
+	}
+
+	worker, err := create("worker", "chief")
+	require.NoError(t, err)
+	require.Equal(t, "chief", worker.parentHandle)
+
+	require.NoError(t, registry.KillAll(t.Context(), nil))
+	require.EqualValues(t, 2, released.Load(), "rejections hold no lease; accepted ones release at teardown")
 }
