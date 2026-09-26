@@ -33,9 +33,9 @@ type KeymapBar struct {
 	// Keys returns the current set of key bindings to display.
 	Keys func(out *termenv.Output) []key.Binding
 
-	// Snug reports whether the keymap should omit its usual separating line.
-	// Agent mode uses this while the status bar is directly above the keymap.
-	Snug func() bool
+	// Hidden reports whether the bar should render nothing. The shell hides
+	// it: a hint above the prompt and the keymap HUD bubble stand in for it.
+	Hidden func() bool
 
 	// PressedKey is the key string that was most recently pressed.
 	PressedKey string
@@ -45,7 +45,7 @@ type KeymapBar struct {
 }
 
 func (kb *KeymapBar) Render(ctx tuist.Context) {
-	if kb.Keys == nil {
+	if kb.Keys == nil || (kb.Hidden != nil && kb.Hidden()) {
 		return
 	}
 
@@ -65,9 +65,7 @@ func (kb *KeymapBar) Render(ctx tuist.Context) {
 	if view == "" {
 		return
 	}
-	if kb.Snug == nil || !kb.Snug() {
-		ctx.Line("")
-	}
+	ctx.Line("")
 	ctx.Line(view)
 }
 
@@ -80,10 +78,7 @@ func RenderKeymap(out io.Writer, style lipgloss.Style, keys []key.Binding, press
 		if mainKey == "" {
 			mainKey = k.Keys()[0]
 		}
-		var pressed bool
-		if time.Since(pressedKeyAt) < keypressDuration {
-			pressed = slices.Contains(k.Keys(), pressedKey)
-		}
+		pressed := keyPressed(k, pressedKey, pressedKeyAt)
 		if !k.Enabled() && !pressed {
 			continue
 		}
@@ -101,6 +96,46 @@ func RenderKeymap(out io.Writer, style lipgloss.Style, keys []key.Binding, press
 	res := w.String()
 	fmt.Fprint(out, res)
 	return lipgloss.Width(res)
+}
+
+// keyPressed reports whether k was pressed recently enough to highlight.
+func keyPressed(k key.Binding, pressedKey string, pressedKeyAt time.Time) bool {
+	return time.Since(pressedKeyAt) < keypressDuration && slices.Contains(k.Keys(), pressedKey)
+}
+
+// RenderKeymapLines renders key bindings one per line, the keys bold in a
+// column padded to the widest one and their descriptions in style beside
+// them. Like RenderKeymap, it skips disabled bindings unless just pressed and
+// lights up a pressed binding.
+func RenderKeymapLines(style lipgloss.Style, keys []key.Binding, pressedKey string, pressedKeyAt time.Time) []string {
+	type entry struct {
+		key, desc string
+		pressed   bool
+	}
+	var entries []entry
+	keyWidth := 0
+	for _, k := range keys {
+		mainKey := k.Help().Key
+		if mainKey == "" && len(k.Keys()) > 0 {
+			mainKey = k.Keys()[0]
+		}
+		pressed := keyPressed(k, pressedKey, pressedKeyAt)
+		if !k.Enabled() && !pressed {
+			continue
+		}
+		entries = append(entries, entry{mainKey, k.Help().Desc, pressed})
+		keyWidth = max(keyWidth, lipgloss.Width(mainKey))
+	}
+	lines := make([]string, 0, len(entries))
+	for _, e := range entries {
+		descStyle := style
+		if e.pressed {
+			descStyle = descStyle.Foreground(nil)
+		}
+		pad := strings.Repeat(" ", keyWidth-lipgloss.Width(e.key))
+		lines = append(lines, lipgloss.NewStyle().Bold(true).Render(e.key)+pad+"  "+descStyle.Render(e.desc))
+	}
+	return lines
 }
 
 func (kb *KeymapBar) renderKeys(out *termenv.Output, style lipgloss.Style, keys []key.Binding) {

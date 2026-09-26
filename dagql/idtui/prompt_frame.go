@@ -46,6 +46,35 @@ type PromptFrame struct {
 	// tab reports the columns of the focused agent tab on the line beneath
 	// the card (see SetTabSource).
 	tab func(width int) (start, end int, ok bool)
+	// hint renders the right-aligned key hint on the line above the card (see
+	// SetHintSource).
+	hint func() string
+}
+
+// SetHintSource sets the key hint drawn right-aligned in the line separating
+// the draft from the transcript. Without a shaded card there is no such line,
+// so a hint source adds one. It is read at render time; whoever changes the
+// hint re-renders the frame. A hint too wide for the line is dropped.
+func (p *PromptFrame) SetHintSource(hint func() string) {
+	p.hint = hint
+	p.Update()
+}
+
+// hintLine renders the separator line above the draft, carrying the hint
+// right-aligned when it fits.
+func (p *PromptFrame) hintLine(width int) string {
+	if p.hint == nil {
+		return ""
+	}
+	hint := p.hint()
+	hintWidth := ansi.StringWidth(hint)
+	if hint == "" || width <= 0 {
+		return hint
+	}
+	if hintWidth > width {
+		return ""
+	}
+	return strings.Repeat(" ", width-hintWidth) + hint
 }
 
 // SetTabSource sets how the frame finds the focused agent's tab on the line
@@ -116,10 +145,19 @@ func (p *PromptFrame) HandleKeyPress(ctx tuist.Context, ev uv.KeyPressEvent) boo
 	return p.keyHandler(ctx, ev)
 }
 
+// OpensWithSeparator reports whether the frame's first line separates it from
+// what's above: the shaded card's gap, or the line carrying the key hint.
+func (p *PromptFrame) OpensWithSeparator() bool {
+	return p.enabled || p.hint != nil
+}
+
 // ChromeHeight is the number of lines the frame adds around the text input.
 func (p *PromptFrame) ChromeHeight() int {
 	if p.enabled {
 		return 3 + len(p.attachments)
+	}
+	if p.hint != nil {
+		return 1 + len(p.attachments)
 	}
 	return len(p.attachments)
 }
@@ -159,9 +197,14 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	}
 
 	if !p.enabled {
+		row := 0
+		if p.hint != nil {
+			ctx.Line(p.hintLine(ctx.Width))
+			row = 1
+		}
 		ctx.Lines(lines...)
 		if result.Cursor != nil {
-			ctx.SetCursor(result.Cursor.Row, result.Cursor.Col)
+			ctx.SetCursor(result.Cursor.Row+row, result.Cursor.Col)
 		}
 		return
 	}
@@ -213,7 +256,9 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 			}
 		}
 	}
-	ctx.Line("") // separate the draft from the transcript without extending its fill
+	// Separate the draft from the transcript without extending its fill; the
+	// separator carries the key hint.
+	ctx.Line(p.hintLine(width))
 	ctx.Line(edge(strings.Repeat(promptTopEdge, width)))
 	gutter := strings.Repeat(" ", indent)
 	focused := p.isFocused != nil && p.isFocused(p.input)

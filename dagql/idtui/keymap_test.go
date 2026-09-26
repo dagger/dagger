@@ -41,19 +41,37 @@ func TestKeymapBarAlwaysHasLeadingBlankLine(t *testing.T) {
 	}
 }
 
-func TestKeymapBarCanSitSnugAgainstStatusBar(t *testing.T) {
+func TestKeymapBarCanHide(t *testing.T) {
 	binding := key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm"))
 	bar := &KeymapBar{
 		Profile: termenv.Ascii,
 		Keys: func(*termenv.Output) []key.Binding {
 			return []key.Binding{binding}
 		},
-		Snug: func() bool { return true },
+		Hidden: func() bool { return true },
 	}
 	tui := tuist.New(tuist.NewHeadlessTerminal(80, 10))
 	tui.AddChild(bar)
-	lines := tui.RenderLines()
-	if len(lines) != 1 || !strings.Contains(ansi.Strip(lines[0]), "enter confirm") {
-		t.Fatalf("snug keymap rendered a separating line: %#v", lines)
+	if lines := tui.RenderLines(); len(lines) != 0 {
+		t.Fatalf("hidden keymap rendered lines: %#v", lines)
+	}
+}
+
+// TestRenderKeymapLinesAlignsDescriptions: the keymap bubble lists one key
+// per line, descriptions lined up past the widest key, and leaves out
+// disabled keys like the bar does.
+func TestRenderKeymapLinesAlignsDescriptions(t *testing.T) {
+	lines := RenderKeymapLines(lipgloss.NewStyle(), []key.Binding{
+		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
+		key.NewBinding(key.WithKeys("ctrl+h"), key.WithHelp("ctrl+h", "toggle hud")),
+		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "go to error"), key.WithDisabled()),
+	}, "", time.Time{})
+	var plain []string
+	for _, line := range lines {
+		plain = append(plain, ansi.Strip(line))
+	}
+	want := []string{"esc     nav mode", "ctrl+h  toggle hud"}
+	if strings.Join(plain, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("keymap lines = %q, want %q", plain, want)
 	}
 }

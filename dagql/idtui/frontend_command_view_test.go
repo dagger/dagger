@@ -207,9 +207,9 @@ func TestPushConfirmationSpacing(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		promptMode bool
-		// Blank rows between the question and the draft: the shaded frame
-		// opens with its own separator and padding row; a bare plain-shell
-		// prompt needs the form's trailing spacer.
+		// Rows between the question and the draft: the prompt frame opens with
+		// its separator line carrying the key hint, and the shaded frame adds
+		// its padding row.
 		blanksBelow int
 	}{
 		{name: "framed", promptMode: true, blanksBelow: 2},
@@ -251,8 +251,12 @@ func TestPushConfirmationSpacing(t *testing.T) {
 			if got := draftAt - questionAt - 1; got != tc.blanksBelow {
 				t.Fatalf("rows between question and draft = %d, want %d:\n%s", got, tc.blanksBelow, frame)
 			}
-			for _, line := range lines[questionAt+1 : draftAt] {
-				if strings.TrimSpace(line) != "" {
+			for i, line := range lines[questionAt+1 : draftAt] {
+				want := ""
+				if i == 0 {
+					want = ansi.Strip(fe.keymapHint())
+				}
+				if strings.TrimSpace(line) != want {
 					t.Fatalf("unexpected content between question and draft:\n%s", frame)
 				}
 			}
@@ -260,10 +264,10 @@ func TestPushConfirmationSpacing(t *testing.T) {
 	}
 }
 
-// TestPushConfirmationKeepsKeymapSnug: a form mounts above the draft, leaving
-// the status line directly above the keymap, so swapping the keymap to the
-// form's controls must not open a blank row between the two.
-func TestPushConfirmationKeepsKeymapSnug(t *testing.T) {
+// TestShellAnchorsStatusLineAtBottom: the shell hides the keymap bar, so the
+// status line (and its agent tabs) sits on the bottom row -- even while a form
+// is up, whose keys the keymap bubble lists instead.
+func TestShellAnchorsStatusLineAtBottom(t *testing.T) {
 	t.Setenv("TERM", "dumb")
 	t.Setenv("NO_COLOR", "1")
 	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(100, 30))
@@ -280,17 +284,15 @@ func TestPushConfirmationKeepsKeymapSnug(t *testing.T) {
 	}
 	lines := strings.Split(ansi.Strip(strings.Join(fe.tui.Step(), "\n")), "\n")
 	frame := strings.Join(lines, "\n")
-	statusAt := -1
-	for i, line := range lines {
-		if strings.Contains(line, model) {
-			statusAt = i
-		}
+	if !strings.Contains(lines[len(lines)-1], model) {
+		t.Fatalf("status line must be the bottom row:\n%s", frame)
 	}
-	if statusAt < 0 || statusAt+1 >= len(lines) {
-		t.Fatalf("status line missing or last:\n%s", frame)
+	if strings.Contains(frame, "enter submit") {
+		t.Fatalf("form keys must not render outside the keymap bubble:\n%s", frame)
 	}
-	if !strings.Contains(lines[statusAt+1], "enter submit") {
-		t.Fatalf("form keymap must sit directly under the status line:\n%s", frame)
+	fe.toggleKeymap()
+	if frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n")); !strings.Contains(frame, "enter") || !strings.Contains(frame, "submit") {
+		t.Fatalf("keymap bubble must list the form's keys:\n%s", frame)
 	}
 }
 

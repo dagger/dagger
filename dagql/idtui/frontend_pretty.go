@@ -316,11 +316,15 @@ type frontendPretty struct {
 	terminalTitle    string
 	terminalTitleSet bool
 
-	// notification bubbles (single overlay with a Container of bubbles)
+	// notification bubbles (single overlay with a Container of bubbles), aka
+	// the HUD
 	notifications         map[string]*NotificationBubble // keyed by section title
 	notificationContainer *tuist.Container
 	notificationOverlay   *tuist.OverlayHandle
 	notificationsHidden   bool
+	// keymapBubble lists every available key in the HUD while shown (see
+	// toggleKeymap). It is pinned first so taller bubbles can't push it off.
+	keymapBubble *NotificationBubble
 
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
@@ -436,9 +440,7 @@ func (h *commandViewHandle) Update(fn func()) {
 		if h.fe.commandView != nil {
 			h.fe.commandView.Update()
 		}
-		if h.fe.keymapBar != nil {
-			h.fe.keymapBar.Update()
-		}
+		h.fe.refreshKeymap()
 		h.fe.Update()
 	})
 }
@@ -1114,6 +1116,7 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		promptColorProfile: promptProfile,
 	}
 	tui.AddInputListener(fe.handlePromptBackground)
+	tui.AddInputListener(fe.handleHUDKey)
 	tui.AddChild(fe)
 	return fe
 }
@@ -1130,24 +1133,16 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 			// Create new bubble
 			bubble := newNotificationBubble(fe, section)
 			fe.notifications[title] = bubble
+			fe.ensureHUD()
 
-			// Lazily create the container and overlay on first notification
-			if fe.notificationContainer == nil {
-				fe.notificationContainer = &tuist.Container{}
-				fe.notificationOverlay = fe.tui.ShowOverlay(fe.notificationContainer, &tuist.OverlayOptions{
-					Width:  tuist.SizeAbs(notificationWidth(fe.window.Width)),
-					Anchor: tuist.AnchorTopRight,
-					Margin: tuist.OverlayMargin{Right: 1},
-				})
-				fe.notificationOverlay.SetHidden(fe.notificationsHidden)
-			}
-
-			// Untitled goes first, titled appends
+			// Untitled goes first (after the pinned keymap), titled appends
 			if title == "" {
-				fe.notificationContainer.Children = append(
-					[]tuist.Component{bubble},
-					fe.notificationContainer.Children...,
-				)
+				at := 0
+				if fe.keymapBubble != nil {
+					at = 1
+				}
+				fe.notificationContainer.Children = slices.Insert(
+					fe.notificationContainer.Children, at, tuist.Component(bubble))
 				fe.notificationContainer.Update()
 			} else {
 				fe.notificationContainer.AddChild(bubble)
@@ -1158,12 +1153,128 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	})
 }
 
-// toggleNotifications hides the bubbles without discarding their content, so
-// updates received while hidden are visible when they are shown again.
+// ensureHUD lazily creates the HUD: the overlay stacking bubbles at the top
+// right of the screen.
+func (fe *frontendPretty) ensureHUD() {
+	if fe.notificationContainer != nil {
+		return
+	}
+	fe.notificationContainer = &tuist.Container{}
+	fe.notificationOverlay = fe.tui.ShowOverlay(fe.notificationContainer, &tuist.OverlayOptions{
+		Width:  tuist.SizeAbs(notificationWidth(fe.window.Width)),
+		Anchor: tuist.AnchorTopRight,
+		Margin: tuist.OverlayMargin{Right: 1},
+	})
+	fe.notificationOverlay.SetHidden(fe.notificationsHidden)
+}
+
+// toggleNotifications hides the HUD's bubbles without discarding their
+// content, so updates received while hidden are visible when they are shown
+// again.
 func (fe *frontendPretty) toggleNotifications() {
 	fe.notificationsHidden = !fe.notificationsHidden
 	if fe.notificationOverlay != nil {
 		fe.notificationOverlay.SetHidden(fe.notificationsHidden)
+	}
+}
+
+// toggleKeymap shows or dismisses the keymap bubble: every key available
+// right now, pinned at the top of the HUD. Showing it reveals a hidden HUD,
+// since asking for the keymap is asking to see it.
+func (fe *frontendPretty) toggleKeymap() {
+	if fe.keymapBubble != nil && !fe.notificationsHidden {
+		fe.notificationContainer.RemoveChild(fe.keymapBubble)
+		fe.keymapBubble = nil
+		return
+	}
+	if fe.keymapBubble == nil {
+		fe.ensureHUD()
+		fe.keymapBubble = newNotificationBubble(fe, SidebarSection{
+			Title:       "Keymap",
+			ContentFunc: fe.keymapBubbleBody,
+		})
+		fe.notificationContainer.Children = slices.Insert(
+			fe.notificationContainer.Children, 0, tuist.Component(fe.keymapBubble))
+		fe.notificationContainer.Update()
+	}
+	if fe.notificationsHidden {
+		fe.toggleNotifications()
+	}
+}
+
+// keymapBubbleBody lists the keys for the current focus, one per line, along
+// with the HUD's own keys wherever the focused view leaves them out.
+func (fe *frontendPretty) keymapBubbleBody(int) string {
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
+	keys := fe.keys(out)
+	for _, hudKey := range fe.hudKeys() {
+		if !slices.ContainsFunc(keys, func(k key.Binding) bool {
+			return k.Help().Key == hudKey.Help().Key
+		}) {
+			keys = append(keys, hudKey)
+		}
+	}
+	return strings.Join(RenderKeymapLines(KeymapStyle, keys, fe.pressedKey, fe.pressedKeyAt), "\n")
+}
+
+// Keys toggling the keymap bubble. Terminals disagree on ctrl+?: with the
+// kitty protocol it arrives as ctrl+shift+/, and legacy encodings fold it
+// (and ctrl+/) into ctrl+_.
+var keymapToggleKeys = []string{"ctrl+?", "ctrl+shift+/", "ctrl+shift+?", "ctrl+/", "ctrl+_"}
+
+// hudToggleKey shows and hides the HUD.
+const hudToggleKey = "ctrl+h"
+
+// hudKeys are the keys governing the HUD, advertised by the shell's hint in
+// place of a full keymap.
+func (fe *frontendPretty) hudKeys() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(key.WithKeys(keymapToggleKeys...), key.WithHelp("ctrl+?", "toggle keymap")),
+		key.NewBinding(key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, "toggle hud")),
+	}
+}
+
+// keymapHint renders the shell's compact key hint, shown above the prompt.
+func (fe *frontendPretty) keymapHint() string {
+	if view, ok := fe.commandView.(interface{ HideKeymap() bool }); ok && view.HideKeymap() {
+		return ""
+	}
+	var hint strings.Builder
+	RenderKeymap(&hint, KeymapStyle, fe.hudKeys(), fe.pressedKey, fe.pressedKeyAt)
+	return hint.String()
+}
+
+// handleHUDKey toggles the HUD and its keymap from anywhere -- the prompt,
+// nav mode, a form, a pager -- before the focused component sees the key.
+func (fe *frontendPretty) handleHUDKey(_ tuist.Context, event uv.Event) bool {
+	ev, ok := event.(uv.KeyPressEvent)
+	if !ok || fe.backgrounded || fe.quitting {
+		return false
+	}
+	keyStr := uv.Key(ev).String()
+	switch {
+	case keyStr == hudToggleKey:
+		fe.recordKeyPress(keyStr)
+		fe.toggleNotifications()
+	case slices.Contains(keymapToggleKeys, keyStr):
+		fe.recordKeyPress(keyStr)
+		fe.toggleKeymap()
+	default:
+		return false
+	}
+	fe.Update()
+	return true
+}
+
+// refreshKeymap re-renders everything listing the current keys: the keymap
+// bar and the keymap bubble. (The shell's hint is fixed; only a key press
+// re-renders it, to light the key up.)
+func (fe *frontendPretty) refreshKeymap() {
+	if fe.keymapBar != nil {
+		fe.keymapBar.Update()
+	}
+	if fe.keymapBubble != nil {
+		fe.keymapBubble.Update()
 	}
 }
 
@@ -1290,6 +1401,9 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 		}
 		return fe.statusLine.FocusedTab(width)
 	})
+	// The keymap bar is hidden in the shell; the line above the prompt
+	// carries a hint to the keymap bubble instead.
+	fe.promptFrame.SetHintSource(fe.keymapHint)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.promptFrame)
@@ -1300,7 +1414,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.syncPrompt()
 	fe.tui.SetFocus(fe.textInput)
 	fe.syncHardwareCursor()
-	fe.keymapBar.Update()
+	fe.refreshKeymap()
 }
 
 func (fe *frontendPretty) stopShell() {
@@ -1334,11 +1448,13 @@ func (fe *frontendPretty) stopShell() {
 		fe.notificationOverlay = nil
 		fe.notificationContainer = nil
 		fe.notifications = make(map[string]*NotificationBubble)
+		fe.keymapBubble = nil
 	}
 	fe.shell = nil
 	fe.shellCtx = nil
 	fe.completionMenu = nil
 	fe.syncHardwareCursor()
+	fe.refreshKeymap() // the keymap bar returns without the shell
 }
 
 func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
@@ -1761,9 +1877,7 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 	fe.tui.AddChild(fe.keymapBar)
 	fe.activeForm = active
 	fe.syncHardwareCursor()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 }
 
 // completePromptForm tears down exactly one form. Late callbacks and duplicate
@@ -1794,9 +1908,7 @@ func (fe *frontendPretty) completePromptForm(active *activePromptForm, invokeRes
 		fe.quitAction(ErrInterrupted)
 	}
 	fe.activateNextPromptForm()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 	fe.Update()
 }
 
@@ -1861,10 +1973,11 @@ func (b *blankLine) Render(ctx tuist.Context) {
 }
 
 // formNeedsTrailingSpace reports whether a blank line must follow an active
-// form. The shaded prompt frame and the (non-snug) keymap bar each open with
-// their own blank line; only a bare plain-shell prompt would hug the form.
+// form. The prompt frame opens with its own separator line (the shaded card's,
+// or the one carrying the key hint), as does the keymap bar; only a bare
+// plain-shell prompt would hug the form.
 func (fe *frontendPretty) formNeedsTrailingSpace() bool {
-	return fe.promptFrame != nil && !fe.promptFrame.enabled
+	return fe.promptFrame != nil && !fe.promptFrame.OpensWithSeparator()
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
@@ -2486,7 +2599,7 @@ func (fe *frontendPretty) setupTUI() {
 		Profile:          fe.profile,
 		UsingCloudEngine: fe.UsingCloudEngine,
 		Keys:             fe.keys,
-		Snug:             fe.keymapSnug,
+		Hidden:           fe.keymapBarHidden,
 	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
@@ -2604,9 +2717,18 @@ func (fe *frontendPretty) recordKeyPress(keyStr string) {
 	if fe.keymapBar != nil {
 		fe.keymapBar.PressedKey = keyStr
 		fe.keymapBar.PressedKeyAt = fe.pressedKeyAt
-		fe.keymapBar.Update()
 	}
+	fe.refreshPressedKey()
 	fe.scheduleKeypressClear()
+}
+
+// refreshPressedKey re-renders whatever lights up the pressed key: the keymap
+// bar and bubble, and the shell's hint when the key is one it names.
+func (fe *frontendPretty) refreshPressedKey() {
+	fe.refreshKeymap()
+	if fe.promptFrame != nil && (fe.pressedKey == hudToggleKey || slices.Contains(keymapToggleKeys, fe.pressedKey)) {
+		fe.promptFrame.Update()
+	}
 }
 
 // scheduleKeypressClear starts a one-shot timer that re-renders the keymap
@@ -2614,11 +2736,7 @@ func (fe *frontendPretty) recordKeyPress(keyStr string) {
 func (fe *frontendPretty) scheduleKeypressClear() {
 	go func() {
 		time.Sleep(keypressDuration + 50*time.Millisecond)
-		fe.dispatch(func() {
-			if fe.keymapBar != nil {
-				fe.keymapBar.Update()
-			}
-		})
+		fe.dispatch(fe.refreshPressedKey)
 	}()
 }
 
@@ -3115,7 +3233,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	if fe.inputFocused() {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
-			key.NewBinding(key.WithKeys("ctrl+o"), key.WithHelp("ctrl+o", "toggle overlays")),
+			key.NewBinding(key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, "toggle hud")),
 		}
 		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
 			bnds = append(bnds,
@@ -3149,8 +3267,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
 			KeyEnabled(fe.shell != nil)),
-		key.NewBinding(key.WithKeys("ctrl+o"),
-			key.WithHelp("ctrl+o", "toggle overlays"),
+		key.NewBinding(key.WithKeys(hudToggleKey),
+			key.WithHelp(hudToggleKey, "toggle hud"),
 			KeyEnabled(fe.shell != nil || fe.notificationOverlay != nil)),
 		key.NewBinding(key.WithKeys("w"),
 			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
@@ -3221,17 +3339,16 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	return binds
 }
 
-// keymapSnug reports whether the keymap hugs the status line directly above
-// it. Search inputs are inserted between the two, so they need the keymap's
-// separating line; prompt forms mount above the draft and leave the status
-// line in place, so they don't.
-func (fe *frontendPretty) keymapSnug() bool {
-	return fe.statusLine != nil && fe.searchInput == nil && fe.logSearchInput == nil
+// keymapBarHidden reports whether the keymap bar at the bottom of the screen
+// is hidden: in the shell it is, so the agent tabs anchor the bottom, and the
+// hint above the prompt points at the keymap bubble instead.
+func (fe *frontendPretty) keymapBarHidden() bool {
+	return fe.promptFrame != nil
 }
 
 func (fe *frontendPretty) keymapHeight() int {
-	if fe.keymapSnug() {
-		return 1
+	if fe.keymapBarHidden() {
+		return 0
 	}
 	return 2
 }
@@ -5743,9 +5860,6 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 	}
 
 	switch keyStr {
-	case "ctrl+o":
-		fe.toggleNotifications()
-		return true
 	case "ctrl+v":
 		if fe.acceptsPromptImages() {
 			fe.pastePromptImage()
@@ -5903,10 +6017,6 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	keyStr := k.String()
 	lastKey := fe.pressedKey
 	fe.recordKeyPress(keyStr)
-	if keyStr == "ctrl+o" {
-		fe.toggleNotifications()
-		return
-	}
 	if fe.logPager != nil {
 		switch keyStr {
 		case "q", "esc", "alt+esc":
@@ -6397,7 +6507,7 @@ func (fe *frontendPretty) handleShellDone(err error, serial bool) {
 
 func (fe *frontendPretty) enterNavMode() {
 	fe.focusNavigationTarget()
-	fe.keymapBar.Update()
+	fe.refreshKeymap()
 }
 
 func (fe *frontendPretty) enterSearchMode() {
@@ -6418,7 +6528,7 @@ func (fe *frontendPretty) enterSearchMode() {
 	fe.tui.AddChild(fe.keymapBar)
 	fe.searchFocus = fe.tui.PushFocus(fe.searchInput)
 	fe.syncHardwareCursor()
-	fe.keymapBar.Update()
+	fe.refreshKeymap()
 }
 
 func (fe *frontendPretty) exitSearchMode() {
@@ -6430,7 +6540,7 @@ func (fe *frontendPretty) exitSearchMode() {
 	fe.searchInput = nil
 	fe.searchFocus = nil
 	fe.syncHardwareCursor()
-	fe.keymapBar.Update()
+	fe.refreshKeymap()
 }
 
 func (fe *frontendPretty) confirmSearch(query string) {
@@ -6467,7 +6577,7 @@ func (fe *frontendPretty) enterInsertMode() {
 		fe.syncPrompt()
 		fe.tui.SetFocus(fe.textInput)
 		fe.syncHardwareCursor()
-		fe.keymapBar.Update()
+		fe.refreshKeymap()
 	}
 }
 
@@ -7033,9 +7143,7 @@ func (fe *frontendPretty) syncPrompt() {
 				fe.Update() // attachment rows change the transcript's height budget
 			}
 		}
-		if fe.keymapBar != nil {
-			fe.keymapBar.Update()
-		}
+		fe.refreshKeymap()
 		if init != nil {
 			fe.runShellAsync(init)
 		}
