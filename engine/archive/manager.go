@@ -1,9 +1,7 @@
 package archive
 
 import (
-	"bytes"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -52,7 +50,6 @@ type HighWater struct {
 type Bootstrap struct {
 	File    string `json:"file"`
 	Records int64  `json:"records"`
-	SHA256  string `json:"sha256"`
 }
 
 // Manifest describes one archive. An archive is identified by its trace ID
@@ -295,6 +292,8 @@ func (m *Manager) BeginFinalizing(traceID string) error {
 	return nil
 }
 
+// FinalizeInput is the sealed cut. The caller built and verified the
+// bootstrap for exactly this cut.
 type FinalizeInput struct {
 	HighWater        HighWater
 	SealAt           time.Time
@@ -315,19 +314,7 @@ func (m *Manager) Finalize(traceID string, in FinalizeInput) (Manifest, error) {
 	if sealAt.IsZero() {
 		sealAt = now
 	}
-	header, terminal, err := VerifyBootstrap(bytes.NewReader(in.BootstrapBytes))
-	if err != nil {
-		return Manifest{}, fmt.Errorf("verify archive bootstrap: %w", err)
-	}
-	if header.TraceID != traceID || header.HighWater != in.HighWater || header.SealAt != sealAt.Format(time.RFC3339Nano) {
-		return Manifest{}, errors.New("bootstrap fixed cut does not match archive finalization")
-	}
-	records := terminal.TraceRecords + terminal.LogRecords
-	if in.BootstrapRecords != 0 && in.BootstrapRecords != records {
-		return Manifest{}, fmt.Errorf("bootstrap record count is %d, want %d", in.BootstrapRecords, records)
-	}
 	sidecar := traceID + ".bootstrap"
-	digest := sha256.Sum256(in.BootstrapBytes)
 	if err := atomicWrite(filepath.Join(m.root, sidecar), in.BootstrapBytes, 0o600); err != nil {
 		return Manifest{}, fmt.Errorf("write archive bootstrap: %w", err)
 	}
@@ -336,7 +323,7 @@ func (m *Manager) Finalize(traceID string, in FinalizeInput) (Manifest, error) {
 	ent.ExpiresAt = now.Add(m.ttl)
 	ent.SealAt = &sealAt
 	ent.HighWater = in.HighWater
-	ent.Bootstrap = Bootstrap{File: sidecar, Records: records, SHA256: hex.EncodeToString(digest[:])}
+	ent.Bootstrap = Bootstrap{File: sidecar, Records: in.BootstrapRecords}
 	baseSize := in.StoreSizeBytes + int64(len(in.BootstrapBytes))
 	ent.SizeBytes = baseSize
 	for range 2 {

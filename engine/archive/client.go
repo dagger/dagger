@@ -234,21 +234,18 @@ type BootstrapBatch struct {
 	Logs   *collogspb.ExportLogsServiceRequest
 }
 
-// BootstrapResult is the verified immutable cut described by a bootstrap.
+// BootstrapResult is the immutable cut described by a bootstrap.
 type BootstrapResult struct {
 	Header   BootstrapHeader
 	Terminal BootstrapTerminal
 }
 
-type consumerError struct{ err error }
-
-func (e *consumerError) Error() string { return e.err.Error() }
-func (e *consumerError) Unwrap() error { return e.err }
-
-// Bootstrap buffers and validates the complete raw bootstrap (identity, fixed
-// cut, terminal checksum/counts, producer witness and recipe closure) before
-// invoking consume. Consumers may then apply the verified batches and wait for
-// their frontend barrier, without loading unrelated historical telemetry.
+// Bootstrap buffers the complete raw bootstrap and checks its header and
+// terminal checksum before invoking consume, so a truncated or corrupt
+// bootstrap never applies part of itself. Consumers may then apply the batches
+// and wait for their frontend barrier, without loading unrelated historical
+// telemetry. The engine verified the roster and recipe closure when it built
+// the bootstrap.
 func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(BootstrapHeader, BootstrapBatch) error) (BootstrapResult, error) {
 	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, AgentBootstrapResource), nil, BootstrapContentType, 0)
 	if err != nil {
@@ -262,16 +259,9 @@ func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(Boo
 		return BootstrapResult{}, corrupt(err)
 	}
 
-	streamBody := c.streamBody(resp.Body)
-	var streamHeader BootstrapHeader
 	var batches []BootstrapBatch
-	var traceRecords, logRecords int64
-	header, terminal, err := DecodeBootstrap(streamBody, func(header BootstrapHeader) error {
-		if err := validateBootstrapHeader(header, traceID); err != nil {
-			return err
-		}
-		streamHeader = header
-		return nil
+	header, terminal, err := DecodeBootstrap(c.streamBody(resp.Body), func(header BootstrapHeader) error {
+		return validateBootstrapHeader(header, traceID)
 	}, func(kind BootstrapFrameKind, payload []byte) error {
 		var batch BootstrapBatch
 		switch kind {
@@ -280,13 +270,11 @@ func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(Boo
 			if err := proto.Unmarshal(payload, batch.Traces); err != nil {
 				return fmt.Errorf("decode bootstrap traces: %w", err)
 			}
-			traceRecords += countTraceRecords(batch.Traces)
 		case BootstrapFrameLogs:
 			batch.Logs = &collogspb.ExportLogsServiceRequest{}
 			if err := proto.Unmarshal(payload, batch.Logs); err != nil {
 				return fmt.Errorf("decode bootstrap logs: %w", err)
 			}
-			logRecords += countLogRecords(batch.Logs)
 		default:
 			return fmt.Errorf("unexpected bootstrap signal frame %d", kind)
 		}
@@ -295,24 +283,14 @@ func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(Boo
 	})
 	result := BootstrapResult{Header: header, Terminal: terminal}
 	if err != nil {
-		var consumeErr *consumerError
-		if errors.As(err, &consumeErr) {
-			return result, consumeErr.err
-		}
 		if errors.Is(err, ErrBootstrapIncomplete) || errors.Is(err, ErrStreamStalled) {
 			return result, transient(err)
 		}
-		return result, corrupt(fmt.Errorf("verify archive bootstrap: %w", err))
-	}
-	if terminal.TraceRecords != traceRecords || terminal.LogRecords != logRecords {
-		return result, corrupt(fmt.Errorf("bootstrap terminal records are traces=%d logs=%d, decoded traces=%d logs=%d", terminal.TraceRecords, terminal.LogRecords, traceRecords, logRecords))
-	}
-	if err := ValidateBootstrap(ctx, header, batches); err != nil {
-		return result, corrupt(err)
+		return result, corrupt(fmt.Errorf("decode archive bootstrap: %w", err))
 	}
 	for _, batch := range batches {
 		if consume != nil {
-			if err := consume(streamHeader, batch); err != nil {
+			if err := consume(header, batch); err != nil {
 				return result, err
 			}
 		}
@@ -575,24 +553,4 @@ func transient(err error) error {
 		return err
 	}
 	return &RequestError{Kind: ErrorTransient, Err: err}
-}
-
-func countTraceRecords(req *coltracepb.ExportTraceServiceRequest) int64 {
-	var count int64
-	for _, resource := range req.GetResourceSpans() {
-		for _, scope := range resource.GetScopeSpans() {
-			count += int64(len(scope.GetSpans()))
-		}
-	}
-	return count
-}
-
-func countLogRecords(req *collogspb.ExportLogsServiceRequest) int64 {
-	var count int64
-	for _, resource := range req.GetResourceLogs() {
-		for _, scope := range resource.GetScopeLogs() {
-			count += int64(len(scope.GetLogRecords()))
-		}
-	}
-	return count
 }

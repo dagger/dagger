@@ -29,9 +29,8 @@ type cloudRestoreSource interface {
 	FetchTrace(context.Context, string, cloud.TraceImportSink) error
 }
 
-// cloudRestoreCapture retains exact producer payloads for integrity checks.
-// Re-encoding a frontend-rebuilt ID can normalize identity annotations; validate
-// the received frames, as the local archive verifier does, not a lossy round trip.
+// cloudRestoreCapture retains the received call payloads so each snapshot's
+// recipe closure can be checked for completeness before it is rebuilt.
 type cloudRestoreCapture struct {
 	*enginetel.TraceImporter
 	calls map[string]*callpbv1.Call

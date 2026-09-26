@@ -134,7 +134,7 @@ func TestArchiveFinalWitnessAndClosure(t *testing.T) {
 			require.Equal(t, archive.StateClosed, m.State)
 			data, err := os.ReadFile(srv.archives.BootstrapPath(archiveTestTrace))
 			require.NoError(t, err)
-			header, terminal, err := archive.VerifyBootstrap(bytes.NewReader(data))
+			header, terminal, err := archive.DecodeBootstrap(bytes.NewReader(data), nil, nil)
 			require.NoError(t, err)
 			require.Len(t, header.Completion.Agents, 1)
 			require.Equal(t, want.Agents[a.Key], header.Completion.Agents[0].Revision)
@@ -182,7 +182,7 @@ func TestArchiveBootstrapSplitsLargeRecipeClosure(t *testing.T) {
 			cut, err := db.Checkpoint(t.Context())
 			require.NoError(t, err)
 
-			data, records, err := buildArchiveBootstrapWithPayloadLimit(t.Context(), db, *sess.archiveManifest, cut, want, maxPayloadSize)
+			data, records, err := buildArchiveBootstrapWithPayloadLimit(t.Context(), db, *sess.archiveManifest, cut, want, time.Now(), maxPayloadSize)
 			if oversized {
 				require.ErrorContains(t, err, "bootstrap log row 3")
 				require.Nil(t, data, "a single oversized recipe must not produce a partial bootstrap")
@@ -190,18 +190,17 @@ func TestArchiveBootstrapSplitsLargeRecipeClosure(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, int64(count+2), records)
-			var batches []archive.BootstrapBatch
-			header, terminal, err := archive.DecodeBootstrap(bytes.NewReader(data), nil, func(kind archive.BootstrapFrameKind, payload []byte) error {
+			var frames int
+			_, terminal, err := archive.DecodeBootstrap(bytes.NewReader(data), nil, func(kind archive.BootstrapFrameKind, payload []byte) error {
 				require.Equal(t, archive.BootstrapFrameLogs, kind)
 				require.LessOrEqual(t, len(payload), maxPayloadSize)
 				var logs collogspb.ExportLogsServiceRequest
 				require.NoError(t, proto.Unmarshal(payload, &logs))
-				batches = append(batches, archive.BootstrapBatch{Logs: &logs})
+				frames++
 				return nil
 			})
 			require.NoError(t, err)
-			require.Greater(t, len(batches), 1)
-			require.NoError(t, archive.ValidateBootstrap(t.Context(), header, batches))
+			require.Greater(t, frames, 1)
 			require.Equal(t, records, terminal.LogRecords)
 		})
 	}
@@ -384,7 +383,7 @@ func TestArchiveReopensWithPersistedProjection(t *testing.T) {
 	rows, err := reopened.ControlRows(t.Context(), archiveTestTrace, manifest.HighWater.Logs, want)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	data, _, err := buildArchiveBootstrap(t.Context(), reopened, manifest, clientdb.HighWater{Spans: manifest.HighWater.Spans, Logs: manifest.HighWater.Logs, Metrics: manifest.HighWater.Metrics}, want)
+	data, _, err := buildArchiveBootstrap(t.Context(), reopened, manifest, clientdb.HighWater{Spans: manifest.HighWater.Spans, Logs: manifest.HighWater.Logs, Metrics: manifest.HighWater.Metrics}, want, time.Now())
 	require.NoError(t, err)
 	require.NotEmpty(t, data)
 }

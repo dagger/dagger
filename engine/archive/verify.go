@@ -1,25 +1,15 @@
 package archive
 
 import (
-	"context"
-	"encoding/hex"
-	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/agentcontrol"
-	"github.com/dagger/dagger/engine/telemetryattrs"
-	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/log"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
-	"google.golang.org/protobuf/proto"
 )
 
-// Completion is an independently supplied roster/revision witness, not a
-// second lifecycle projection. The actual facts remain typed OTLP records.
+// Completion is the final roster the producer witnessed when the archive was
+// sealed: the agents and subscriptions a restore installs from the bootstrap.
 type Completion struct {
 	Agents        []AgentRevision        `json:"agents"`
 	Subscriptions []SubscriptionRevision `json:"subscriptions"`
@@ -43,25 +33,10 @@ func Witness(want agentcontrol.Expectation) Completion {
 	}
 	return out
 }
-func (w Completion) Expectation() (agentcontrol.Expectation, error) {
-	out := agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{}, Subscriptions: map[agentcontrol.EdgeKey]int64{}}
-	for _, a := range w.Agents {
-		if _, ok := out.Agents[a.Key]; ok {
-			return out, errors.New("duplicate agent witness")
-		}
-		out.Agents[a.Key] = a.Revision
-	}
-	for _, s := range w.Subscriptions {
-		if _, ok := out.Subscriptions[s.Key]; ok {
-			return out, errors.New("duplicate subscription witness")
-		}
-		out.Subscriptions[s.Key] = s.Revision
-	}
-	return out, nil
-}
 
-// VerifyClosure loads and validates raw recipes without evaluating any recipe.
-// The returned payloads are exactly the dependency closure of the anchors.
+// VerifyClosure loads the recipe closure of the anchors without evaluating any
+// recipe, failing on a missing or cyclic dependency. The returned payloads are
+// exactly the dependency closure of the anchors.
 func VerifyClosure(roots []string, load func(string) (*callpbv1.Call, error)) (map[string]*callpbv1.Call, error) {
 	calls := map[string]*callpbv1.Call{}
 	visiting := map[string]bool{}
@@ -77,17 +52,11 @@ func VerifyClosure(roots []string, load func(string) (*callpbv1.Call, error)) (m
 		if err != nil {
 			return err
 		}
-		if c == nil || c.Digest != d {
-			return fmt.Errorf("call digest mismatch %s", d)
-		}
-		if c.Type == nil {
-			return fmt.Errorf("missing call type %s", d)
-		}
-		visiting[d] = true
 		refs, err := call.RecipeReferences(c)
 		if err != nil {
-			return err
+			return fmt.Errorf("call %s: %w", d, err)
 		}
+		visiting[d] = true
 		for _, ref := range refs {
 			if err := visit(ref); err != nil {
 				return err
@@ -102,143 +71,5 @@ func VerifyClosure(roots []string, load func(string) (*callpbv1.Call, error)) (m
 			return nil, err
 		}
 	}
-	if len(roots) > 0 {
-		if err := call.ValidateRecipeDAG(&callpbv1.RecipeDAG{RootDigest: roots[0], CallsByDigest: calls}); err != nil {
-			return nil, err
-		}
-	}
 	return calls, nil
-}
-
-type bootstrapVerifier struct {
-	trace string
-	index agentcontrol.Index
-	calls map[string]*callpbv1.Call
-}
-
-func (v *bootstrapVerifier) Export(_ context.Context, records []sdklog.Record) error {
-	for _, r := range records {
-		if r.TraceID().String() != v.trace {
-			return errors.New("bootstrap contains a foreign trace")
-		}
-		if agentcontrol.IsRecord(r) {
-			a, s, err := agentcontrol.Decode(r)
-			if err != nil {
-				return err
-			}
-			ns := agentcontrol.Namespace{}
-			if a != nil {
-				ns = a.Namespace
-			} else {
-				ns = s.Namespace
-			}
-			if ns.Trace != v.trace {
-				return errors.New("control namespace trace mismatch")
-			}
-			if _, err := v.index.ApplyRecord(r); err != nil {
-				return err
-			}
-			continue
-		}
-		payload := false
-		r.WalkAttributes(func(kv log.KeyValue) bool {
-			if kv.Key == telemetry.ContentTypeAttr && kv.Value.AsString() == telemetryattrs.CallPayloadContentType {
-				payload = true
-			}
-			return true
-		})
-		if !payload {
-			return errors.New("bootstrap contains non-control, non-payload log")
-		}
-		if r.Body().Kind() != log.KindBytes {
-			return errors.New("call payload body is not bytes")
-		}
-		var c callpbv1.Call
-		if err := proto.Unmarshal(r.Body().AsBytes(), &c); err != nil {
-			return err
-		}
-		if old := v.calls[c.Digest]; old != nil && !proto.Equal(old, &c) {
-			return fmt.Errorf("conflicting payload %s", c.Digest)
-		}
-		v.calls[c.Digest] = &c
-	}
-	return nil
-}
-func (*bootstrapVerifier) ForceFlush(context.Context) error { return nil }
-func (*bootstrapVerifier) Shutdown(context.Context) error   { return nil }
-func ValidateBootstrap(ctx context.Context, header BootstrapHeader, batches []BootstrapBatch) error {
-	want, err := header.Completion.Expectation()
-	if err != nil {
-		return err
-	}
-	v := &bootstrapVerifier{trace: header.TraceID, calls: map[string]*callpbv1.Call{}}
-	for _, b := range batches {
-		if b.Traces != nil {
-			for _, resource := range b.Traces.GetResourceSpans() {
-				for _, scope := range resource.GetScopeSpans() {
-					for _, span := range scope.GetSpans() {
-						if hex.EncodeToString(span.GetTraceId()) != header.TraceID {
-							return errors.New("foreign bootstrap span")
-						}
-					}
-				}
-			}
-		}
-		if b.Logs != nil {
-			for _, resource := range b.Logs.ResourceLogs {
-				if resource == nil {
-					return errors.New("nil bootstrap log resource")
-				}
-				if resource.Resource == nil {
-					resource.Resource = &resourcepb.Resource{}
-				}
-				for _, scope := range resource.ScopeLogs {
-					if scope == nil {
-						return errors.New("nil bootstrap log scope")
-					}
-					for _, rec := range scope.LogRecords {
-						if rec == nil {
-							return errors.New("nil bootstrap record")
-						}
-						if rec.Body == nil {
-							rec.Body = &commonpb.AnyValue{}
-						}
-						seen := map[string]bool{}
-						for _, kv := range rec.Attributes {
-							if kv == nil || kv.Value == nil || seen[kv.Key] {
-								return errors.New("nil or duplicate bootstrap attribute")
-							}
-							seen[kv.Key] = true
-						}
-					}
-				}
-			}
-			if err := telemetry.ReexportLogsFromPB(ctx, v, b.Logs); err != nil {
-				return err
-			}
-		}
-	}
-	if err := v.index.Verify(want); err != nil {
-		return err
-	}
-	var roots []string
-	for _, a := range v.index.Agents() {
-		if root, ok := a.ClosureRoot(); ok {
-			roots = append(roots, root)
-		}
-	}
-	closure, err := VerifyClosure(roots, func(d string) (*callpbv1.Call, error) {
-		c := v.calls[d]
-		if c == nil {
-			return nil, fmt.Errorf("missing bootstrap call %s", d)
-		}
-		return c, nil
-	})
-	if err != nil {
-		return err
-	}
-	if len(closure) != len(v.calls) {
-		return errors.New("bootstrap contains payloads outside required closure")
-	}
-	return nil
 }

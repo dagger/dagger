@@ -362,19 +362,19 @@ func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {
 	if records != 7 {
 		t.Fatalf("records = %d", records)
 	}
-	decodedHeader, terminal, err := VerifyBootstrap(bytes.NewReader(data))
+	decodedHeader, terminal, err := DecodeBootstrap(bytes.NewReader(data), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if decodedHeader.TraceID != header.TraceID || terminal.TraceRecords != 7 {
 		t.Fatalf("unexpected decode: %+v %+v", decodedHeader, terminal)
 	}
-	if _, _, err := VerifyBootstrap(bytes.NewReader(data[:len(data)-1])); err == nil {
+	if _, _, err := DecodeBootstrap(bytes.NewReader(data[:len(data)-1]), nil, nil); err == nil {
 		t.Fatal("truncated bootstrap verified")
 	}
 	corrupt := append([]byte(nil), data...)
 	corrupt[12] ^= 1
-	if _, _, err := VerifyBootstrap(bytes.NewReader(corrupt)); err == nil {
+	if _, _, err := DecodeBootstrap(bytes.NewReader(corrupt), nil, nil); err == nil {
 		t.Fatal("corrupt bootstrap verified")
 	}
 }
