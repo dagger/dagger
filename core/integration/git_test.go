@@ -827,11 +827,20 @@ sleep infinity
 	}()
 
 	sshPort := 2222
-	sshSvc := hostKeyGen.
+	// Keep one sshd running until every subtest finishes: start.sh creates
+	// the repository's commits on startup, so a restarted service would
+	// advertise a different main than the checkout cloned below.
+	sshSvc, err := hostKeyGen.
 		WithMountedFile("/root/start.sh", setupScript).
 		WithExposedPort(sshPort).
 		WithDefaultArgs([]string{"sh", "/root/start.sh"}).
-		AsService()
+		AsService().
+		Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := sshSvc.Stop(ctx)
+		require.NoError(t, err)
+	})
 
 	sshHost, err := sshSvc.Hostname(ctx)
 	require.NoError(t, err)
