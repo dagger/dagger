@@ -86,7 +86,7 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The module name, and the full path key in the artifact type dimension.
+     * The module name, collection keys, and full path key in the artifact type dimension.
      */
     public function dimensionKeys(): array
     {

@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A schema path and its dimensions.
+ * A schema path and its dimensions. The path can exist even when its collections have no runtime items.
  */
 class ArtifactPath extends Client\AbstractObject implements Client\IdAble, Node
 {

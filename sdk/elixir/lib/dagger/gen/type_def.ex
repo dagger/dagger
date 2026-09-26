@@ -16,6 +16,34 @@ defmodule Dagger.TypeDef do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Collection metadata, or null if this object is not a collection.
+  """
+  @spec as_collection(t()) :: {:ok, Dagger.CollectionTypeDef.t() | nil} | {:error, term()}
+  def as_collection(%__MODULE__{} = type_def) do
+    query_builder =
+      type_def.query_builder |> QB.select("asCollection") |> QB.select("id")
+
+    case Client.execute(type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.CollectionTypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("CollectionTypeDef"),
+           client: type_def.client
+         }}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
   If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
   """
   @spec as_enum(t()) :: {:ok, Dagger.EnumTypeDef.t() | nil} | {:error, term()}
@@ -228,6 +256,62 @@ defmodule Dagger.TypeDef do
       type_def.query_builder |> QB.select("optional")
 
     Client.execute(type_def.client, query_builder)
+  end
+
+  @doc """
+  Mark this object as a collection.
+  """
+  @spec with_collection(t()) :: Dagger.TypeDef.t()
+  def with_collection(%__MODULE__{} = type_def) do
+    query_builder =
+      type_def.query_builder |> QB.select("withCollection")
+
+    %Dagger.TypeDef{
+      query_builder: query_builder,
+      client: type_def.client
+    }
+  end
+
+  @doc """
+  Select the field that receives changes from the original collection.
+  """
+  @spec with_collection_delta(t(), String.t()) :: Dagger.TypeDef.t()
+  def with_collection_delta(%__MODULE__{} = type_def, name) do
+    query_builder =
+      type_def.query_builder |> QB.select("withCollectionDelta") |> QB.put_arg("name", name)
+
+    %Dagger.TypeDef{
+      query_builder: query_builder,
+      client: type_def.client
+    }
+  end
+
+  @doc """
+  Select the item lookup function for this collection.
+  """
+  @spec with_collection_get(t(), String.t()) :: Dagger.TypeDef.t()
+  def with_collection_get(%__MODULE__{} = type_def, name) do
+    query_builder =
+      type_def.query_builder |> QB.select("withCollectionGet") |> QB.put_arg("name", name)
+
+    %Dagger.TypeDef{
+      query_builder: query_builder,
+      client: type_def.client
+    }
+  end
+
+  @doc """
+  Select the stored keys field for this collection.
+  """
+  @spec with_collection_keys(t(), String.t()) :: Dagger.TypeDef.t()
+  def with_collection_keys(%__MODULE__{} = type_def, name) do
+    query_builder =
+      type_def.query_builder |> QB.select("withCollectionKeys") |> QB.put_arg("name", name)
+
+    %Dagger.TypeDef{
+      query_builder: query_builder,
+      client: type_def.client
+    }
   end
 
   @doc """
