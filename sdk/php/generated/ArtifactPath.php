@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A schema path and its dimensions. The path can exist even when its collections have no runtime items.
+ * A schema path and its dimensions.
  */
 class ArtifactPath extends Client\AbstractObject implements Client\IdAble, Node
 {
@@ -20,6 +20,15 @@ class ArtifactPath extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The installed module name.
+     */
+    public function moduleName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'moduleName');
     }
 
     /**
@@ -38,6 +47,15 @@ class ArtifactPath extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
+    }
+
+    /**
+     * A module load failure for this path, or an empty string.
+     */
+    public function loadError(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('loadError');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'loadError');
     }
 
     /**

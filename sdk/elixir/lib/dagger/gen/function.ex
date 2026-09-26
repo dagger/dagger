@@ -138,7 +138,7 @@ defmodule Dagger.Function do
   end
 
   @doc """
-  Returns the function with a flag indicating it is an agent middleware.
+  Returns the function with a flag indicating it is a source of expertise.
 
   > #### Experimental {: .warning}
   >

@@ -1288,13 +1288,79 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Set the shell used by terminal() and withRun().
+     */
+    public function withShell(
+        array $interactive,
+        ?array $batch = null,
+        ?bool $disableDaggerInDagger = false,
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withShell');
+        $innerQueryBuilder->setArgument('interactive', $interactive);
+        if (null !== $batch) {
+        $innerQueryBuilder->setArgument('batch', $batch);
+        }
+        if (null !== $disableDaggerInDagger) {
+        $innerQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return the configured shell command. Defaults to ["sh"].
+     */
+    public function shell(?bool $batch = false): Command
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('shell');
+        if (null !== $batch) {
+        $innerQueryBuilder->setArgument('batch', $batch);
+        }
+        return new \Dagger\Command($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Execute a script with the configured batch shell and return the modified container.
+     */
+    public function withRun(
+        string $command,
+        ?array $shell = null,
+        ?bool $disableDaggerInDagger = null,
+        ?bool $experimentalPrivilegedNesting = null,
+        ?bool $insecureRootCapabilities = null,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRun');
+        $innerQueryBuilder->setArgument('command', $command);
+        if (null !== $shell) {
+        $innerQueryBuilder->setArgument('shell', $shell);
+        }
+        if (null !== $disableDaggerInDagger) {
+        $innerQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
      */
     public function terminal(
         ?array $cmd = [],
         ?bool $disableDaggerInDagger = false,
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
+        ?bool $experimentalPrivilegedNesting = null,
+        ?bool $insecureRootCapabilities = null,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $cmd) {

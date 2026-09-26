@@ -23,15 +23,6 @@ class Changeset extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * A check that passes when the changeset is empty.
-     */
-    public function stale(): Check
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stale');
-        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Force evaluation in the engine.
      */
     public function sync(): Changeset

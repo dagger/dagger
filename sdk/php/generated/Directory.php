@@ -475,8 +475,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         ?Container $container = null,
         ?array $cmd = [],
         ?bool $disableDaggerInDagger = false,
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
+        ?bool $experimentalPrivilegedNesting = null,
+        ?bool $insecureRootCapabilities = null,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $container) {

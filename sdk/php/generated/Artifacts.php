@@ -23,19 +23,67 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+     * Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
      */
-    public function pathDefinitions(?bool $absolute = false): array
+    public function asExpertise(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asExpertise');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'asExpertise');
+    }
+
+    /**
+     * Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+     */
+    public function asGenerators(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asGenerators');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'asGenerators');
+    }
+
+    /**
+     * Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+     */
+    public function asChecks(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asChecks');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'asChecks');
+    }
+
+    /**
+     * Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+     */
+    public function asChangesets(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asChangesets');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'asChangesets');
+    }
+
+    /**
+     * Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+     */
+    public function asServices(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asServices');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'asServices');
+    }
+
+    /**
+     * List selected schema paths. Does not read runtime values.
+     */
+    public function pathDefinitions(?bool $absolute = false, ?bool $typeAssertion = false): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pathDefinitions');
         if (null !== $absolute) {
         $leafQueryBuilder->setArgument('absolute', $absolute);
         }
+        if (null !== $typeAssertion) {
+        $leafQueryBuilder->setArgument('typeAssertion', $typeAssertion);
+        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'pathDefinitions');
     }
 
     /**
-     * List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+     * List dimensions on the selected schema paths. Does not read runtime values.
      */
     public function dimensionDefinitions(): array
     {
@@ -59,51 +107,21 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * List the modules represented in this selection without evaluating artifact values.
+     */
+    public function modules(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('modules');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'modules');
+    }
+
+    /**
      * List concrete type definitions represented in this selection, sorted by name with no duplicates.
      */
     public function types(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('types');
         return (array)$this->queryLeaf($leafQueryBuilder, 'types');
-    }
-
-    /**
-     * Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
-     */
-    public function filterCheckCommand(?bool $generated = null): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterCheckCommand');
-        if (null !== $generated) {
-        $innerQueryBuilder->setArgument('generated', $generated);
-        }
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Select Changeset artifacts marked generate, using each workspace's generator settings.
-     */
-    public function filterGenerateCommand(): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterGenerateCommand');
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Select LLM artifacts marked agent.
-     */
-    public function filterAgentCommand(): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterAgentCommand');
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Select Service artifacts marked up, using each workspace's service settings.
-     */
-    public function filterUpCommand(): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterUpCommand');
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -185,6 +203,16 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterPath');
         $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+     */
+    public function filterPathPattern(string $pattern): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterPathPattern');
+        $innerQueryBuilder->setArgument('pattern', $pattern);
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -19,17 +19,11 @@ directive @cache(
 """Indicates that this function is a check."""
 directive @check on FIELD_DEFINITION
 
-"""A dynamic collection with stored keys and an item lookup function."""
-directive @collection on OBJECT
-
 """Indicates that the argument defaults to a container address."""
 directive @defaultAddress(address: String!) on ARGUMENT_DEFINITION
 
 """Indicates that the argument defaults to a contextual path."""
 directive @defaultPath(path: String!) on ARGUMENT_DEFINITION
-
-"""Receives changes from the original collection."""
-directive @delta on FIELD_DEFINITION
 
 """Indicates the underlying value of an enum member."""
 directive @enumValue(value: String!) on ENUM_VALUE
@@ -55,14 +49,8 @@ directive @experimental(
 """Indicates that this function is a generate function."""
 directive @generate on FIELD_DEFINITION
 
-"""The item lookup function of a collection."""
-directive @get on FIELD_DEFINITION
-
 """Filter directory contents using .gitignore-style glob patterns."""
 directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
-
-"""The stored keys field of a collection."""
-directive @keys on FIELD_DEFINITION
 
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
@@ -461,9 +449,7 @@ type Artifact implements Node {
   """
   path: [String!]!
 
-  """
-  The module name, collection keys, and full path key in the artifact type dimension.
-  """
+  """The module name, and the full path key in the artifact type dimension."""
   dimensionKeys: [ArtifactDimensionKey!]!
 
   """The directives carried by this artifact."""
@@ -483,12 +469,7 @@ type ArtifactDimension implements Node {
   """How this dimension gets its keys."""
   kind: ArtifactDimensionKind!
 
-  """The collection type, or null for a static dimension."""
-  collectionType: String
-
-  """
-  Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
-  """
+  """Stable identifier: type:TypeName for an artifact type, or module."""
   identifier: String!
 
   """Short name used to select this dimension."""
@@ -497,18 +478,8 @@ type ArtifactDimension implements Node {
   """Qualified name used when the short name is ambiguous."""
   qualifiedName: String!
 
-  """
-  The collection item or artifact type name, or empty for the module dimension.
-  """
+  """The artifact type name, or empty for the module dimension."""
   itemType: String!
-
-  """The collection key argument name, or name for a static dimension."""
-  keyName: String!
-
-  """
-  The collection key argument description, or empty for a static dimension.
-  """
-  keyDescription: String!
 }
 
 type ArtifactDimensionKey implements Node {
@@ -523,14 +494,11 @@ type ArtifactDimensionKey implements Node {
 }
 
 enum ArtifactDimensionKind {
-  COLLECTION
   MODULE
   TYPE
 }
 
-"""
-A schema path and its dimensions. The path can exist even when its collections have no runtime items.
-"""
+"""A schema path and its dimensions."""
 type ArtifactPath implements Node {
   """A unique identifier for this ArtifactPath."""
   id: ID!
@@ -600,26 +568,17 @@ type Artifacts implements Node {
   """
   asServices: [Service!]!
 
-  """
-  List selected schema paths, including empty collections. Does not read runtime
-  values. Applies type keys and collection presence; collection key values
-  require items.
-  """
+  """List selected schema paths. Does not read runtime values."""
   pathDefinitions(
     """Prefix each address with the workspace's Git address and commit."""
     absolute: Boolean = false
 
     """Include the artifact type in each address scheme."""
     typeAssertion: Boolean = false
-
-    """
-    Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.
-    """
-    dimension: String
   ): [ArtifactPath!]!
 
   """
-  List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+  List dimensions on the selected schema paths. Does not read runtime values.
   """
   dimensionDefinitions: [ArtifactDimension!]!
 
@@ -641,28 +600,6 @@ type Artifacts implements Node {
   List concrete type definitions represented in this selection, sorted by name with no duplicates.
   """
   types: [TypeDef!]!
-
-  """
-  Select Check artifacts for dagger check, using each workspace's check and
-  generator settings. Include staleness checks from Generators.
-  """
-  filterCheckCommand(
-    """
-    Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
-    """
-    generated: Boolean
-  ): Artifacts! @deprecated(reason: "Use filterTypes and apply workspace settings in the caller.")
-
-  """Select Generator artifacts, using each workspace's generator settings."""
-  filterGenerateCommand: Artifacts! @deprecated(reason: "Use filterTypes and apply workspace settings in the caller.")
-
-  """Select Expertise artifacts."""
-  filterAgentCommand: Artifacts! @deprecated(reason: "Use filterTypes with Expertise.")
-
-  """
-  Select Service artifacts, using each workspace's service settings. Does not require the up directive.
-  """
-  filterUpCommand: Artifacts! @deprecated(reason: "Use filterTypes and apply workspace settings in the caller.")
 
   """
   Keep artifacts with any listed directive. Does not filter by type or workspace settings.
@@ -744,13 +681,6 @@ type Artifacts implements Node {
   List keys represented in this selection for the given dimension, sorted with no duplicates.
   """
   dimensionKeys(dimension: String!): [String!]!
-
-  """
-  List collection items represented in this selection for the given dimension.
-  Preserve parent keys and remove duplicate item addresses. Does not evaluate
-  item values.
-  """
-  dimensionItems(dimension: String!): [Artifact!]!
 
   """Enumerate complete artifacts without evaluating their values."""
   items: [Artifact!]!
@@ -967,31 +897,6 @@ type Cloud implements Node {
 
   """The trace URL for the current session"""
   traceURL: String!
-}
-
-type CollectionDelta implements Node {
-  """A unique identifier for this CollectionDelta."""
-  id: ID!
-
-  """Current keys absent from the original collection, in current order."""
-  addedKeys: [String!]!
-
-  """Original keys absent from the current collection, in original order."""
-  removedKeys: [String!]!
-}
-
-type CollectionTypeDef implements Node {
-  """A unique identifier for this CollectionTypeDef."""
-  id: ID!
-
-  """The type of collection keys."""
-  keyType: TypeDef!
-
-  """The object type returned by get."""
-  valueType: TypeDef!
-
-  """The type of batch operations, or null when there are none."""
-  batchType: TypeDef
 }
 
 """A command's arguments and execution settings."""
@@ -5680,6 +5585,15 @@ type ObjectTypeDef implements Node {
   """A unique identifier for this ObjectTypeDef."""
   id: ID!
 
+  """Static fields defined on this object, if any."""
+  fields: [FieldTypeDef!]!
+
+  """Functions defined on this object, if any."""
+  functions: [Function!]!
+
+  """The function used to construct new instances of this object, if any."""
+  constructor: Function
+
   """The name of the object."""
   name: String!
 
@@ -5696,15 +5610,6 @@ type ObjectTypeDef implements Node {
   If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
   """
   sourceModuleName: String!
-
-  """Static fields defined on this object, if any."""
-  fields: [FieldTypeDef!]!
-
-  """Functions defined on this object, if any."""
-  functions: [Function!]!
-
-  """The function used to construct new instances of this object, if any."""
-  constructor: Function
 }
 
 """How to handle patch hunks that no longer apply to the target content."""
@@ -6443,30 +6348,6 @@ type TypeDef implements Node {
   """A unique identifier for this TypeDef."""
   id: ID!
 
-  """Mark this object as a collection."""
-  withCollection: TypeDef!
-
-  """Select the stored keys field for this collection."""
-  withCollectionKeys(name: String!): TypeDef!
-
-  """Select the item lookup function for this collection."""
-  withCollectionGet(name: String!): TypeDef!
-
-  """Select the field that receives changes from the original collection."""
-  withCollectionDelta(name: String!): TypeDef!
-
-  """Collection metadata, or null if this object is not a collection."""
-  asCollection: CollectionTypeDef
-
-  """The canonical non-optional name of the type."""
-  name: String!
-
-  """The kind of type this is (e.g. primitive, list, object)."""
-  kind: TypeDefKind!
-
-  """Whether this type can be set to null. Defaults to false."""
-  optional: Boolean!
-
   """Sets whether this type can be set to null."""
   withOptional(optional: Boolean!): TypeDef!
 
@@ -6577,6 +6458,15 @@ type TypeDef implements Node {
     """If deprecated, the reason or migration path."""
     deprecated: String
   ): TypeDef!
+
+  """The canonical non-optional name of the type."""
+  name: String!
+
+  """The kind of type this is (e.g. primitive, list, object)."""
+  kind: TypeDefKind!
+
+  """Whether this type can be set to null. Defaults to false."""
+  optional: Boolean!
 
   """
   If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
