@@ -35,6 +35,17 @@ func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.
 		return nil, fmt.Errorf("command %q does not select artifacts", cmd.Name())
 	}
 	selected := all.FilterTypes(types)
+	if cmd.Name() == "generate" {
+		// Type filters keep load failures. Generate reports them as warnings
+		// and runs the other generators.
+		failures, err := artifactLoadFailures(ctx, dag, selected)
+		if err != nil {
+			return nil, err
+		}
+		for _, failure := range failures {
+			selected = selected.WithoutURI(failure.URI)
+		}
+	}
 	if cmd.Name() == "agent" || cmd.Name() == "shell" {
 		return selected, nil
 	}

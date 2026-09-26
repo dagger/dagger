@@ -928,6 +928,12 @@ func (*artifactsSchema) asGenerators(ctx context.Context, parent dagql.ObjectRes
 	return artifactValuesAs[*core.Generator](ctx, parent)
 }
 
+// Generation can repair a module that fails to load, so a load failure does
+// not stop the other generators. Other conversions report it.
+func skipsLoadFailures(typeName string) bool {
+	return typeName == "Generator"
+}
+
 func (*artifactsSchema) asChecks(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Check], error) {
 	return artifactValuesAs[*core.Check](ctx, parent)
 }
@@ -949,6 +955,11 @@ func artifactValuesAs[T dagql.Typed](ctx context.Context, parent dagql.ObjectRes
 	}
 	var value T
 	typeName := value.Type().NamedType
+	if skipsLoadFailures(typeName) {
+		items = slices.DeleteFunc(slices.Clone(items), func(item dagql.ObjectResult[*core.Artifact]) bool {
+			return item.Self().LoadFailure != nil
+		})
+	}
 	// Validate the whole selection before evaluating any artifact.
 	for _, item := range items {
 		if err := item.Self().AssertType([]string{core.ArtifactTypeName(typeName)}); err != nil {

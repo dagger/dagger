@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -235,8 +236,21 @@ func (a *Artifacts) FilterDirectives(directives []string, exclude bool) *Artifac
 	return selected
 }
 
+// FilterTypes keeps artifacts of any listed type. A module that failed to
+// load has no schema, so its load failure can hide artifacts of any type. The
+// failure stays in the selection, unless the filter can match nothing, so
+// consumers report the error instead of an incomplete result.
 func (a *Artifacts) FilterTypes(types []string, exclude bool) *Artifacts {
-	selected := a.filter(func(artifact *Artifact) bool { return slices.Contains(types, artifact.TypeName) != exclude })
+	return a.filterTypes(types, exclude, exclude || len(types) > 0)
+}
+
+func (a *Artifacts) filterTypes(types []string, exclude, keepLoadFailures bool) *Artifacts {
+	selected := a.filter(func(artifact *Artifact) bool {
+		if artifact.LoadFailure != nil && keepLoadFailures {
+			return true
+		}
+		return slices.Contains(types, artifact.TypeName) != exclude
+	})
 	if exclude {
 		selected.Selector.Paths = selected.exactPaths()
 		return selected
@@ -342,7 +356,7 @@ func (a *Artifacts) FilterTypeNames(names []string) *Artifacts {
 	if types == nil {
 		types = []string{}
 	}
-	return a.FilterTypes(types, false)
+	return a.filterTypes(types, false, len(names) > 0)
 }
 
 func (a *Artifacts) Types() []string {
@@ -569,6 +583,11 @@ func (a *Artifacts) One() (*Artifact, error) {
 func (a *Artifact) AssertType(types []string) error {
 	if len(types) == 0 || slices.Contains(types, ArtifactTypeName(a.TypeName)) {
 		return nil
+	}
+	if a.LoadFailure != nil {
+		// A load failure is a failed check. The module has no schema to
+		// show that it has no artifact of the asserted type.
+		return errors.New(a.LoadFailure.Message)
 	}
 	uri, err := a.URI(ArtifactURIOpts{DimensionKeys: true})
 	if err != nil {
