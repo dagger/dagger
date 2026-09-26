@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -91,9 +92,10 @@ Examples:
 				slog.Warn("failed to refresh LLM OAuth tokens", "error", err)
 			}
 		}
-		// Set once the prompt exits with agents behind it; read after the TUI
-		// has torn down. Atomic because a second Ctrl+D exits the frontend
-		// without waiting for the run to return.
+		// Set once the prompt exits with agents behind it and an engine archive
+		// or Cloud can serve the trace; read after the TUI has torn down.
+		// Atomic because a second Ctrl+D exits the frontend without waiting
+		// for the run to return.
 		var resumeTrace atomic.Pointer[string]
 		err = withEngine(
 			cmd.Context(),
@@ -135,7 +137,9 @@ Examples:
 					restore:              restore,
 					generateSessionTitle: true,
 					exitedResumable: func(traceID string) {
-						resumeTrace.Store(&traceID)
+						if resumeServable(ctx, source, traceID, cloudTraceConfigured) {
+							resumeTrace.Store(&traceID)
+						}
 					},
 				})
 			},
@@ -145,6 +149,37 @@ Examples:
 		}
 		return err
 	},
+}
+
+// archiveLookup is the slice of the archive client resumeServable needs.
+type archiveLookup interface {
+	Unsealed(context.Context, string) (archive.UnsealedArchive, error)
+}
+
+// resumeServable reports whether `dagger agent --resume traceID` has a source
+// to restore from, so the exit hint is not printed when nothing can serve it.
+// The connected engine is asked first: a manifest in any state (the live
+// session's archive is still active) means it retains the trace. Otherwise the
+// run must be publishing to Dagger Cloud, the same condition that yields a
+// Cloud trace URL.
+func resumeServable(ctx context.Context, source archiveLookup, traceID string, cloudConfigured func(context.Context) bool) bool {
+	// The prompt may have exited through a cancellation; a bounded lookup on
+	// the still-connected engine must not delay exit.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_, err := source.Unsealed(ctx, traceID)
+	var requestErr *archive.RequestError
+	if err == nil || (errors.As(err, &requestErr) && requestErr.Kind == archive.ErrorState) {
+		return true
+	}
+	return cloudConfigured(ctx)
+}
+
+// cloudTraceConfigured reports whether this run publishes its trace to Dagger
+// Cloud, i.e. whether the CLI has a Cloud trace URL for it.
+func cloudTraceConfigured(ctx context.Context) bool {
+	_, _, ok := enginetel.URLForTrace(ctx)
+	return ok
 }
 
 // printResumeHint tells the user how to come back to the session they just
