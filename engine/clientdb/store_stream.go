@@ -50,11 +50,19 @@ type logStream[Row any] struct {
 	capWaiters int
 
 	spillReq      chan struct{}
-	checkpointReq chan chan error
+	checkpointReq chan checkpointRequest
 	lifecycleMu   sync.Mutex
 	closeReq      chan chan error
 	closed        bool
 	fatalErr      error
+}
+
+// checkpointRequest asks the spiller to write the whole tail to the file. With
+// sync it also fsyncs, making the rows durable; without, they only survive the
+// process (the page cache holds them), which is what a crash recovery needs.
+type checkpointRequest struct {
+	sync     bool
+	response chan error
 }
 
 func openLogStream[Row any](
@@ -88,7 +96,7 @@ func openLogStream[Row any](
 		spill:         spill,
 		onAppend:      onAppend,
 		spillReq:      make(chan struct{}, 1),
-		checkpointReq: make(chan chan error),
+		checkpointReq: make(chan checkpointRequest),
 		closeReq:      make(chan chan error),
 	}
 	stream.cond = sync.NewCond(&stream.mu)
@@ -283,7 +291,7 @@ func (s *logStream[Row]) runSpiller() {
 					break
 				}
 			}
-		case response := <-s.checkpointReq:
+		case req := <-s.checkpointReq:
 			var err error
 			for {
 				spilled, spillErr := s.spillOnce(true)
@@ -292,14 +300,14 @@ func (s *logStream[Row]) runSpiller() {
 					break
 				}
 			}
-			if err == nil {
+			if err == nil && req.sync {
 				if s.spill.testSyncHook != nil {
 					err = s.spill.testSyncHook()
 				} else {
 					err = s.spill.file.Sync()
 				}
 			}
-			response <- err
+			req.response <- err
 		case response := <-s.closeReq:
 			var err error
 			for {
@@ -379,7 +387,18 @@ func (s *logStream[Row]) setFatal(err error) {
 	s.mu.Unlock()
 }
 
+// checkpoint writes the tail to the file and fsyncs it.
 func (s *logStream[Row]) checkpoint(ctx context.Context) error {
+	return s.spillAll(ctx, true)
+}
+
+// flush writes the tail to the file without fsyncing: the rows survive the
+// engine process dying, not the machine.
+func (s *logStream[Row]) flush(ctx context.Context) error {
+	return s.spillAll(ctx, false)
+}
+
+func (s *logStream[Row]) spillAll(ctx context.Context, sync bool) error {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
 	s.mu.Lock()
@@ -388,14 +407,14 @@ func (s *logStream[Row]) checkpoint(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	response := make(chan error, 1)
+	req := checkpointRequest{sync: sync, response: make(chan error, 1)}
 	select {
-	case s.checkpointReq <- response:
+	case s.checkpointReq <- req:
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
 	select {
-	case err := <-response:
+	case err := <-req.response:
 		return err
 	case <-ctx.Done():
 		return context.Cause(ctx)

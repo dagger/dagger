@@ -31,6 +31,11 @@ func (s *DB) Checkpoint(ctx context.Context) (HighWater, error) {
 	return cut, err
 }
 
+// FlushLogs writes the in-memory log tail to its file without fsyncing, so
+// restore-critical rows survive the engine process being killed. Session end
+// still Checkpoints for real durability.
+func (s *DB) FlushLogs(ctx context.Context) error { return s.logs.flush(ctx) }
+
 // HighWater reports the current end of each stream without a persistence
 // barrier. Use it only for a store no producer writes to anymore, such as an
 // archive whose session ended without sealing.
