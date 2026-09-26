@@ -83,6 +83,14 @@ type ClientMetadata struct {
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
 	Labels map[string]string `json:"labels"`
 
+	// PrimaryTraceID and PrimarySpanID (hex) identify the client-side span
+	// that represents this client's session, e.g. the CLI's command span. The
+	// engine attributes session-level telemetry to it, such as the span-name
+	// record published by Query.setSessionTitle. Only meaningful for a
+	// session's main client.
+	PrimaryTraceID string `json:"primary_trace_id,omitempty"`
+	PrimarySpanID  string `json:"primary_span_id,omitempty"`
+
 	// Interactive mode
 	Interactive bool `json:"interactive"`
 

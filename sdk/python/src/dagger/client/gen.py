@@ -14837,9 +14837,10 @@ class Query(Root):
     async def set_session_title(self, title: str) -> Void | None:
         """Name the current session.
 
-        The title labels the session's engine archive, as listed by dagger
-        agent --resume. The latest title wins. Only the session's main client
-        may set it.
+        The title renames the session wherever its telemetry is shown (the
+        calling client's primary span, e.g. the CLI's command span) and labels
+        its engine archive, as listed by dagger agent --resume. The latest
+        title wins. Only the session's main client may set it.
 
         .. caution::
             Experimental: Session APIs are likely to change.

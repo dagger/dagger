@@ -745,6 +745,43 @@ func TestSetSessionTitle(t *testing.T) {
 		srv.archives = manager
 		require.Equal(t, "Crashed mid-session", listTitles(t, srv)[archive.StateInterrupted])
 	})
+
+	t.Run("published on the primary span", func(t *testing.T) {
+		srv, sess, _, _ := archiveFixture(t)
+		capture := new(callPayloadRecordCapture)
+		sess.loggerProvider = sdklog.NewLoggerProvider(
+			sdklog.WithProcessor(telemetryOriginLogProcessor{sessionID: sess.sessionID}),
+			sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)),
+		)
+		primary := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{7}})
+		main := sess.clientRecords["main"]
+		main.clientMetadata.SessionID = sess.sessionID
+		main.clientMetadata.ClientID = main.clientID
+		main.clientMetadata.PrimaryTraceID = primary.TraceID().String()
+		main.clientMetadata.PrimarySpanID = primary.SpanID().String()
+
+		// Called from any span (here the resolver's), the rename lands on the
+		// declared primary span, from the main client's origin.
+		require.NoError(t, setTitle(t, srv, sess, "Deploy the docs", trace.TraceID{1}))
+		require.Len(t, capture.records, 1)
+		rec := capture.records[0]
+		require.Equal(t, "Deploy the docs", rec.Body().AsString())
+		require.Equal(t, primary.TraceID(), rec.TraceID())
+		require.Equal(t, primary.SpanID(), rec.SpanID())
+		attrs := map[string]string{}
+		rec.WalkAttributes(func(kv logapi.KeyValue) bool {
+			attrs[kv.Key] = kv.Value.AsString()
+			return true
+		})
+		require.Equal(t, telemetryattrs.LogRoleSpanName, attrs[telemetryattrs.LogRoleAttr])
+		require.Equal(t, "main", attrs[telemetryattrs.TelemetryOriginClientIDAttr])
+
+		// Without a declared primary span, only the archive is titled.
+		main.clientMetadata.PrimarySpanID = ""
+		require.NoError(t, setTitle(t, srv, sess, "Archive only", trace.TraceID{1}))
+		require.Len(t, capture.records, 1)
+		require.Equal(t, "Archive only", listTitles(t, srv)[archive.StateActive])
+	})
 }
 
 // TestArchiveHTTPUnsealedRefusesSealedAndActive: the unsealed read is only
