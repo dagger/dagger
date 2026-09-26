@@ -70,11 +70,15 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		}
 		return loaded, nil
 	case map[string]any:
-		res, err := dagql.NewResultForCurrentCall(ctx, &ModuleObject{
+		obj := &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
 			Fields:  value,
-		})
+		}
+		if err := obj.restoreCollectionBase(ctx); err != nil {
+			return nil, err
+		}
+		res, err := dagql.NewResultForCurrentCall(ctx, obj)
 		if err != nil {
 			return nil, err
 		}
@@ -109,9 +113,9 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 		if err != nil {
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
 		}
-		return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
+		return t.objectToSDKInput(ctx, parentCall, x.Self())
 	case *ModuleObject:
-		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentCall(ctx), x.Fields)
+		return t.objectToSDKInput(ctx, dagql.CurrentCall(ctx), x)
 	case dagql.IDable:
 		dag, err := CurrentDagqlServer(ctx)
 		if err != nil {
@@ -134,13 +138,21 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			if err != nil {
 				return nil, fmt.Errorf("loaded module object SDK input call frame: %w", err)
 			}
-			return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
+			return t.objectToSDKInput(ctx, parentCall, x.Self())
 		default:
 			return nil, fmt.Errorf("unexpected value type %T", x)
 		}
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput cannot handle %T", t, x)
 	}
+}
+
+func (t *ModuleObjectType) objectToSDKInput(ctx context.Context, parentCall *dagql.ResultCall, obj *ModuleObject) (map[string]any, error) {
+	fields, err := obj.collectionSDKFields(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return moduleObjectFieldsToSDKInput(ctx, t, parentCall, fields)
 }
 
 func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, parentCall *dagql.ResultCall, fields map[string]any) (map[string]any, error) {
@@ -345,6 +357,25 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
 	objFields := obj.Fields
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled {
+		base := obj
+		if obj.CollectionBase != nil {
+			base = obj.CollectionBase.Unwrap().(*ModuleObject)
+		}
+		keys, err := base.collectionKeys(ctx)
+		if err != nil {
+			return err
+		}
+		texts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			texts = append(texts, key.text)
+		}
+		// Compare base contents, not session-local handles. Never recurse through
+		// the original collection's reference to itself.
+		if err := content.CollectKeyed(collectionBaseField, func() error { return content.CollectJSONable(texts) }); err != nil {
+			return err
+		}
+	}
 	parentCall, err := value.ResultCall()
 	if err != nil {
 		return fmt.Errorf("resolve module object result call: %w", err)
@@ -452,9 +483,14 @@ type ModuleObject struct {
 
 	TypeDef *ObjectTypeDef
 	Fields  map[string]any
+
+	CollectionBatch bool
+	// Set once when the value is attached. Ordinary copies retain this reference.
+	CollectionBase dagql.AnyResult
 }
 
 var _ dagql.HasDependencyResults = (*ModuleObject)(nil)
+var _ dagql.HasResultReference = (*ModuleObject)(nil)
 
 const (
 	persistedModuleObjectValueKindNull      = "null"
@@ -475,7 +511,8 @@ type persistedModuleObjectValue struct {
 }
 
 type persistedModuleObjectPayload struct {
-	Fields map[string]persistedModuleObjectValue `json:"fields,omitempty"`
+	Fields         map[string]persistedModuleObjectValue `json:"fields,omitempty"`
+	CollectionBase uint64                                `json:"collectionBase,omitempty"`
 }
 
 func (obj *ModuleObject) AttachDependencyResults(
@@ -486,8 +523,11 @@ func (obj *ModuleObject) AttachDependencyResults(
 	if obj == nil {
 		return nil, nil
 	}
+	owned, err := obj.attachCollectionBase(self, attach)
+	if err != nil {
+		return nil, err
+	}
 
-	owned := make([]dagql.AnyResult, 0, 1+len(obj.Fields))
 	if obj.Module.Self() != nil {
 		// The object's class resolves its fields against this module, and its
 		// provider scopes it for every call. The object must own it: the
@@ -766,11 +806,20 @@ func persistedModuleObjectValueHasCallID(val persistedModuleObjectValue) bool {
 }
 
 func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	if obj == nil || len(obj.Fields) == 0 {
+	if obj == nil {
 		return encodePersistedObjectPayload(persistedModuleObjectPayload{})
 	}
 	payload := persistedModuleObjectPayload{
 		Fields: make(map[string]persistedModuleObjectValue, len(obj.Fields)),
+	}
+	// A base that points to self is restored before the cache publishes it. Encoding
+	// it as a child reference would require recursively decoding the same value.
+	if obj.CollectionBase != nil && obj.CollectionBase.Unwrap() != obj {
+		var err error
+		payload.CollectionBase, err = encodePersistedObjectRef(enc, obj.CollectionBase, "collection base")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
 	}
 	fieldNames := slices.Collect(maps.Keys(obj.Fields))
 	slices.Sort(fieldNames)
@@ -808,11 +857,20 @@ func (obj *ModuleObject) DecodePersistedObject(ctx context.Context, dec *dagql.P
 		}
 		fields[name] = decoded
 	}
-	return &ModuleObject{
-		Module:  obj.Module,
-		TypeDef: obj.TypeDef,
-		Fields:  fields,
-	}, nil
+	decoded := &ModuleObject{
+		Module:          obj.Module,
+		TypeDef:         obj.TypeDef,
+		Fields:          fields,
+		CollectionBatch: obj.CollectionBatch,
+	}
+	if payload.CollectionBase != 0 {
+		var err error
+		decoded.CollectionBase, err = loadPersistedResultByResultID(ctx, dec, payload.CollectionBase, "collection base")
+		if err != nil {
+			return nil, err
+		}
+	}
+	return decoded, nil
 }
 
 // DecodedDependencyResults reports the module a decoded object captured from
@@ -1059,8 +1117,12 @@ func persistedModuleObjectFieldName(field reflect.StructField) (string, bool) {
 }
 
 func (obj *ModuleObject) Type() *ast.Type {
+	name := obj.TypeDef.Name
+	if obj.CollectionBatch {
+		name += "_Batch"
+	}
 	return &ast.Type{
-		NamedType: obj.TypeDef.Name,
+		NamedType: name,
 		NonNull:   true,
 	}
 }
@@ -1076,6 +1138,9 @@ func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 	}
 	if obj.TypeDef.SourceMap.Valid {
 		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.Value.Self().TypeDirective())
+	}
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled && !obj.CollectionBatch {
+		def.Directives = append(def.Directives, &ast.Directive{Name: "collection"})
 	}
 	return def
 }
@@ -1106,16 +1171,22 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
 	}
-	fields, err := obj.fields()
+	var fields []dagql.Field[*ModuleObject]
+	var err error
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled {
+		fields, err = obj.collectionFields(ctx, dag)
+	} else {
+		fields, err = obj.fields()
+		if err != nil {
+			return err
+		}
+		var funs []dagql.Field[*ModuleObject]
+		funs, err = obj.functions(ctx, dag)
+		fields = append(fields, funs...)
+	}
 	if err != nil {
 		return err
 	}
-
-	funs, err := obj.functions(ctx, dag)
-	if err != nil {
-		return err
-	}
-	fields = append(fields, funs...)
 
 	// Engine-only state transfer is deliberately absent from TypeDef.Functions:
 	// it must not become an author method, tool, or entrypoint proxy.
@@ -1138,6 +1209,9 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 }
 
 func (obj *ModuleObject) isMainObject() bool {
+	if obj.CollectionBatch {
+		return false
+	}
 	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
@@ -1322,7 +1396,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		)
 	}
 
-	// Forward the installed public fields.
+	// Forward the installed public fields, including collection operations.
 	for _, field := range fields {
 		if strings.HasPrefix(field.Spec.Name, "__") {
 			continue

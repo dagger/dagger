@@ -87,7 +87,7 @@ func TestCoreSchemaObjectsHavePersistedFamilies(t *testing.T) {
 		families[name] = family.Name
 	}
 	require.Equal(t, persistedSchemaExpectedWithoutCodec, missing, "every installed core object either has a codec pair with a registered family or is one of the documented exceptions")
-	for _, name := range []string{"EnvVariable", "Port", "Label", "HealthcheckConfig", "SDKConfig", "ModuleConfigClient", "Schema", "GitBundleRef", "CurrentModule", "WorkspaceMigration", "WorkspaceMigrationStep", "Cloud", "Terminal", "Artifact", "Artifacts", "Address", "WorkspaceSDK", "Container", "Directory", "GitRepository"} {
+	for _, name := range []string{"EnvVariable", "Port", "Label", "HealthcheckConfig", "SDKConfig", "ModuleConfigClient", "Schema", "GitBundleRef", "CurrentModule", "WorkspaceMigration", "WorkspaceMigrationStep", "Cloud", "Terminal", "Artifact", "Artifacts", "CollectionTypeDef", "CollectionDelta", "Address", "WorkspaceSDK", "Container", "Directory", "GitRepository"} {
 		require.Contains(t, families, name, "%s is an installed core object with a family", name)
 	}
 }

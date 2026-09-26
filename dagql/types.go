@@ -244,6 +244,14 @@ type HasDependencyResults interface {
 	AttachDependencyResults(context.Context, AnyResult, func(AnyResult) (AnyResult, error)) ([]AnyResult, error)
 }
 
+// HasResultReference restores a value's internal reference to its own attached
+// result. The cache calls this before publishing a decoded persisted payload.
+// Implementations must preserve references that are already set, and must not
+// resolve self: the payload is still being installed.
+type HasResultReference interface {
+	InitializeResultReference(self AnyResult)
+}
+
 // DependencyResult is an attached dependency result with a kind flag.
 type DependencyResult struct {
 	Result AnyResult

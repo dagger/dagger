@@ -138,7 +138,7 @@ func commandPathExclusions(command string, generated bool, cfg *workspace.Config
 	return exclusions
 }
 
-// Settings skip schema paths. Batch the metadata reads.
+// Settings skip schema paths, not collection keys. Batch the metadata reads.
 func commandSkippedPaths(ctx context.Context, dag *dagger.Client, selected *dagger.Artifacts, exclusions []commandPathExclusion) ([]string, error) {
 	if len(exclusions) == 0 {
 		return nil, nil

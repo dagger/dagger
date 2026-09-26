@@ -68,10 +68,13 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * List selected schema paths. Does not read runtime values.
+     * List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
      */
-    public function pathDefinitions(?bool $absolute = false, ?bool $typeAssertion = false): array
-    {
+    public function pathDefinitions(
+        ?bool $absolute = false,
+        ?bool $typeAssertion = false,
+        ?string $dimension = null,
+    ): array {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pathDefinitions');
         if (null !== $absolute) {
         $leafQueryBuilder->setArgument('absolute', $absolute);
@@ -79,11 +82,14 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $typeAssertion) {
         $leafQueryBuilder->setArgument('typeAssertion', $typeAssertion);
         }
+        if (null !== $dimension) {
+        $leafQueryBuilder->setArgument('dimension', $dimension);
+        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'pathDefinitions');
     }
 
     /**
-     * List dimensions on the selected schema paths. Does not read runtime values.
+     * List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
      */
     public function dimensionDefinitions(): array
     {
@@ -266,6 +272,16 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
         $leafQueryBuilder->setArgument('dimension', $dimension);
         return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
+    }
+
+    /**
+     * List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+     */
+    public function dimensionItems(string $dimension): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionItems');
+        $leafQueryBuilder->setArgument('dimension', $dimension);
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionItems');
     }
 
     /**

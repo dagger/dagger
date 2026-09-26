@@ -3,7 +3,12 @@ import ts from "typescript"
 import { IntrospectionError } from "../../../common/errors/index.js"
 import { AST, Location } from "../typescript_module/index.js"
 import { DaggerConstructor } from "./constructor.js"
-import { FUNCTION_DECORATOR, OBJECT_DECORATOR } from "./decorator.js"
+import {
+  COLLECTION_DECORATOR,
+  FUNCTION_DECORATOR,
+  GET_DECORATOR,
+  OBJECT_DECORATOR,
+} from "./decorator.js"
 import { DaggerFunction, DaggerFunctions } from "./function.js"
 import { Locatable } from "./locatable.js"
 import { DaggerObjectBase } from "./objectBase.js"
@@ -24,6 +29,7 @@ import { References } from "./reference.js"
  * ```
  */
 export class DaggerObject extends Locatable implements DaggerObjectBase {
+  public isCollection: boolean
   public name: string
   public description: string
   public deprecated?: string
@@ -52,7 +58,11 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
     }
     this.name = this.node.name.getText()
 
-    if (!this.ast.isNodeDecoratedWith(node, OBJECT_DECORATOR)) {
+    this.isCollection = this.ast.isNodeDecoratedWith(node, COLLECTION_DECORATOR)
+    if (
+      !this.isCollection &&
+      !this.ast.isNodeDecoratedWith(node, OBJECT_DECORATOR)
+    ) {
       throw new IntrospectionError(
         `class ${this.name} at ${AST.getNodePosition(node)} is used by the module but not exposed with a dagger decorator.`,
       )
@@ -91,7 +101,8 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
 
       if (
         ts.isMethodDeclaration(member) &&
-        this.ast.isNodeDecoratedWith(member, FUNCTION_DECORATOR)
+        (this.ast.isNodeDecoratedWith(member, FUNCTION_DECORATOR) ||
+          this.ast.isNodeDecoratedWith(member, GET_DECORATOR))
       ) {
         const daggerFunction = new DaggerFunction(member, this.ast)
         this.methods[daggerFunction.alias ?? daggerFunction.name] =

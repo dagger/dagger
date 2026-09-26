@@ -33,8 +33,17 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 			if d.Kind == "MODULE" {
 				return moduleDimension, nil
 			}
-			return typeDimension, nil
+			if d.Kind == "TYPE" {
+				return typeDimension, nil
+			}
+			return collectionDimension, nil
 		}).Doc("How this dimension gets its keys."),
+		dagql.Func("collectionType", func(_ context.Context, d *core.ArtifactDimension, _ struct{}) (dagql.Nullable[dagql.String], error) {
+			if d.Kind != "COLLECTION" {
+				return dagql.Null[dagql.String](), nil
+			}
+			return dagql.NonNull(dagql.String(d.CollectionType)), nil
+		}).Doc("The collection type, or null for a static dimension."),
 	}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.ArtifactDimensionKey](srv).View(AfterVersion("v1.0.0-0")))
 	artifactClass := dagql.NewClass[*core.Artifact](srv).View(AfterVersion("v1.0.0-0"))
@@ -52,8 +61,8 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
 		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services."),
-		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths. Does not read runtime values.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme.")),
-		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths. Does not read runtime values."),
+		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme."), dagql.Arg("dimension").Doc("Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.")),
+		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		// Each invocation gets a new cache key. Retain its results so SDK clients can load their IDs.
 		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
 		dagql.Func("modules", s.modules).Doc("List the modules represented in this selection without evaluating artifact values."),
@@ -74,6 +83,8 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 			Args(dagql.Arg("uri").Doc("A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]")),
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
+		dagql.Func("dimensionItems", s.dimensionItems).Doc("List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values."),
+		dagql.Func("__evaluationItems", s.evaluationItems),
 		dagql.Func("items", s.items).Doc("Enumerate complete artifacts without evaluating their values."),
 		dagql.Func("one", s.one).Doc("Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line."),
 		dagql.Func("uri", s.uri).Doc("The DAG address that selects this whole selection: filterUri(uri) selects the same set."),
@@ -268,11 +279,23 @@ func (*artifactsSchema) dimensionDefinitions(_ context.Context, parent *core.Art
 func (s *artifactsSchema) pathDefinitions(ctx context.Context, parent *core.Artifacts, args struct {
 	Absolute      bool `default:"false"`
 	TypeAssertion bool `default:"false"`
+	Dimension     dagql.Optional[dagql.String]
 }) ([]*core.ArtifactPath, error) {
 	var err error
 	parent, err = parent.SchemaSelection()
 	if err != nil {
 		return nil, err
+	}
+	if args.Dimension.Valid {
+		dimension, err := parent.ResolveDimension(args.Dimension.Value.String())
+		if err != nil {
+			return nil, err
+		}
+		items, err := parent.DimensionItems(dimension)
+		if err != nil {
+			return nil, err
+		}
+		parent = &core.Artifacts{Entries: items}
 	}
 	paths := map[string]*core.ArtifactPath{}
 	for _, entry := range parent.Entries {
@@ -329,9 +352,28 @@ func (s *artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifa
 		slices.Sort(keys)
 		return slices.Compact(keys), nil
 	}
-	return []string{}, nil
+	items, err := s.dimensionItems(ctx, parent, args)
+	if err != nil {
+		return nil, err
+	}
+	return (&core.Artifacts{Entries: items}).DimensionKeys(dimension), nil
 }
 
+func (*artifactsSchema) dimensionItems(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]*core.Artifact, error) {
+	dimension, err := parent.ResolveDimension(args.Dimension)
+	if err != nil {
+		return nil, err
+	}
+	filtered, err := parent.FilterDimensions([]string{args.Dimension}).BindDimensions()
+	if err != nil {
+		return nil, err
+	}
+	expanded, err := expandArtifacts(ctx, filtered.ForDimensionKeys(dimension))
+	if err != nil {
+		return nil, err
+	}
+	return expanded.DimensionItems(dimension)
+}
 func (*artifactsSchema) items(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
 	expanded, err := expandArtifacts(ctx, parent)
 	if err != nil {
@@ -353,8 +395,14 @@ func (*artifactsSchema) one(ctx context.Context, parent *core.Artifacts, _ struc
 }
 func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
 	var workspaceID uint64
-	for i, artifact := range parent.Entries {
-		id, err := artifact.Workspace.ID()
+	for i, entry := range parent.Entries {
+		// Module and type keys are static. Only collection keys are resolved.
+		if slices.ContainsFunc(entry.DimensionKeys, func(key *core.ArtifactDimensionKey) bool {
+			return key.Dimension != artifact.ModuleDimension && !strings.HasPrefix(key.Dimension, "type:")
+		}) {
+			return "", fmt.Errorf("a selection with resolved collection keys has no single DAG address; use the individual artifact addresses")
+		}
+		id, err := entry.Workspace.ID()
 		if err != nil {
 			return "", err
 		}
@@ -362,6 +410,9 @@ func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{
 			return "", fmt.Errorf("a selection from multiple workspaces has no single DAG address; use the individual artifact addresses")
 		}
 		workspaceID = id.EngineResultID()
+	}
+	if len(parent.Selector.ExcludedURIs) > 0 {
+		return "", fmt.Errorf("one DAG address cannot express collection key exclusions")
 	}
 	bound, err := parent.BindDimensions()
 	if err != nil {
@@ -378,6 +429,15 @@ func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{
 }
 
 func expandArtifacts(ctx context.Context, parent *core.Artifacts) (*core.Artifacts, error) {
+	if len(parent.Entries) > 0 && parent.Entries[0].Workspace.Self() != nil {
+		ws := parent.Entries[0].Workspace
+		var err error
+		ctx, err = withWorkspaceClientContext(ctx, ws.Self())
+		if err != nil {
+			return nil, err
+		}
+		ctx = core.WorkspaceToContext(ctx, ws)
+	}
 	return parent.Expand(ctx)
 }
 func (*artifactsSchema) artifactURI(_ context.Context, parent *core.Artifact, args struct {
@@ -780,7 +840,7 @@ func (s *workspaceSchema) sdkArtifactNodes(ctx context.Context, parent dagql.Obj
 // Entries must be sorted by path before checking for duplicate paths.
 func validateArtifactPaths(entries []*core.Artifact) error {
 	for i := 1; i < len(entries); i++ {
-		if slices.Equal(entries[i-1].Path, entries[i].Path) {
+		if slices.Equal(entries[i-1].Path, entries[i].Path) && len(entries[i-1].DimensionDefinitions()) == len(entries[i].DimensionDefinitions()) {
 			return fmt.Errorf("ambiguous artifact path %q", strings.Join(entries[i].Path, "/"))
 		}
 	}
@@ -822,6 +882,16 @@ func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ 
 	return parent.Node.Description, nil
 }
 
+// Keep planned artifacts in the query graph so value evaluation, remote
+// execution, and saved result IDs all refer to the same batch selection.
+func (*artifactsSchema) evaluationItems(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
+	selection, err := expandArtifacts(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	return selection.Batch(ctx)
+}
+
 func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], args struct {
 	FailFast  bool      `default:"false"`
 	Arguments core.JSON `default:"{}"`
@@ -835,7 +905,7 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		return nil, err
 	}
 	var selection dagql.ObjectResultArray[*core.Artifact]
-	if err := srv.Select(ctx, parent, &selection, dagql.Selector{Field: "items"}); err != nil {
+	if err := srv.Select(ctx, parent, &selection, dagql.Selector{Field: "__evaluationItems"}); err != nil {
 		return nil, err
 	}
 	results := make([]*core.ArtifactResult, len(selection))

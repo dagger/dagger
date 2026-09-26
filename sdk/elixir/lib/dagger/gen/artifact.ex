@@ -50,7 +50,7 @@ defmodule Dagger.Artifact do
   end
 
   @doc """
-  The module name, and the full path key in the artifact type dimension.
+  The module name, collection keys, and full path key in the artifact type dimension.
   """
   @spec dimension_keys(t()) :: {:ok, [Dagger.ArtifactDimensionKey.t()]} | {:error, term()}
   def dimension_keys(%__MODULE__{} = artifact) do

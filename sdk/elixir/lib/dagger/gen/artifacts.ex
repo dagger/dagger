@@ -131,7 +131,7 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  List dimensions on the selected schema paths. Does not read runtime values.
+  List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
   """
   @spec dimension_definitions(t()) :: {:ok, [Dagger.ArtifactDimension.t()]} | {:error, term()}
   def dimension_definitions(%__MODULE__{} = artifacts) do
@@ -147,6 +147,32 @@ defmodule Dagger.Artifacts do
              |> QB.select("node")
              |> QB.put_arg("id", id)
              |> QB.inline_fragment("ArtifactDimension"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+  """
+  @spec dimension_items(t(), String.t()) :: {:ok, [Dagger.Artifact.t()]} | {:error, term()}
+  def dimension_items(%__MODULE__{} = artifacts, dimension) do
+    query_builder =
+      artifacts.query_builder
+      |> QB.select("dimensionItems")
+      |> QB.put_arg("dimension", dimension)
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Artifact{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Artifact"),
            client: artifacts.client
          }
        end}
@@ -395,16 +421,20 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  List selected schema paths. Does not read runtime values.
+  List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
   """
-  @spec path_definitions(t(), [{:absolute, boolean() | nil}, {:type_assertion, boolean() | nil}]) ::
-          {:ok, [Dagger.ArtifactPath.t()]} | {:error, term()}
+  @spec path_definitions(t(), [
+          {:absolute, boolean() | nil},
+          {:type_assertion, boolean() | nil},
+          {:dimension, String.t() | nil}
+        ]) :: {:ok, [Dagger.ArtifactPath.t()]} | {:error, term()}
   def path_definitions(%__MODULE__{} = artifacts, optional_args \\ []) do
     query_builder =
       artifacts.query_builder
       |> QB.select("pathDefinitions")
       |> QB.maybe_put_arg("absolute", optional_args[:absolute])
       |> QB.maybe_put_arg("typeAssertion", optional_args[:type_assertion])
+      |> QB.maybe_put_arg("dimension", optional_args[:dimension])
       |> QB.select("id")
 
     with {:ok, items} <- Client.execute(artifacts.client, query_builder) do

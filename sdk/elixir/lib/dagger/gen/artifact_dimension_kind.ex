@@ -6,7 +6,10 @@ defmodule Dagger.ArtifactDimensionKind do
 
   use Dagger.Core.Base, kind: :enum, name: "ArtifactDimensionKind"
 
-  @type t() :: :MODULE | :TYPE
+  @type t() :: :COLLECTION | :MODULE | :TYPE
+
+  @spec collection() :: :COLLECTION
+  def collection(), do: :COLLECTION
 
   @spec module() :: :MODULE
   def module(), do: :MODULE
@@ -18,6 +21,7 @@ defmodule Dagger.ArtifactDimensionKind do
   @spec from_string(String.t()) :: t()
   def from_string(string)
 
+  def from_string("COLLECTION"), do: :COLLECTION
   def from_string("MODULE"), do: :MODULE
   def from_string("TYPE"), do: :TYPE
 end

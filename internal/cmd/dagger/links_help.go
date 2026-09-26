@@ -28,19 +28,20 @@ SELECTION
 
 DIMENSIONS
   Query parameters select dimension keys:
-    'dag://?module=go&check=test'
+    'dag://go/modules/test?go-module=./app&go-module=./lib'
 
   Select a module with --module=go, or --go when available.
   If --go conflicts with another flag, use --by-go.
   The equivalent link is 'dag://?module=go'. Module names come from the
-  workspace configuration.
+  workspace configuration. A module filter does not load collection keys.
 
   Type flags match path suffixes. For example, --check=stale selects all
   matching checks. Use --check=/go/generate/stale to match a complete path.
   Use 'dagger check --help' to see available filters.
 
   Repeated keys in one dimension select alternatives. Different dimensions
-  must all match. Named flags, such as --module=go, apply to all links.
+  must all match. Named flags, such as --go-module=./app, apply to all links.
+  Use 'dagger list --help' to find collection commands that list available keys.
 `,
 }
 

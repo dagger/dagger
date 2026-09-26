@@ -101,7 +101,7 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 		return nil, err
 	}
 	// currentWorkspace has a new identity on each call. Resolve it once so
-	// address selections from this command share one workspace.
+	// address selections from this command can share a collection batch.
 	workspaceID, err := ws.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -167,7 +167,7 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 
 func requireArtifactModules(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, filters []dagaddress.DimensionFilter) error {
 	// A failed module has no schema. Module selectors can exclude it; type
-	// selectors cannot prove that it has no matching artifacts.
+	// and collection selectors cannot prove that it has no matching artifacts.
 	for _, filter := range filters {
 		if filter.Dimension == artifact.ModuleDimension && filter.Keys != nil {
 			selection = selection.FilterDimensionKeys(filter.Dimension, filter.Keys)
@@ -190,6 +190,7 @@ func requireArtifactModules(ctx context.Context, dag *dagger.Client, selection *
 type artifactLoadFailure struct{ URI, LoadError string }
 
 func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]artifactLoadFailure, error) {
+	// Read schema metadata so a collection's own load field stays deferred.
 	artifacts = artifacts.FilterURI("dag://*/load")
 	id, err := artifacts.ID(ctx)
 	if err != nil {
@@ -234,6 +235,9 @@ func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *dagg
 		if err != nil {
 			return nil, err
 		}
+		if err := validateArtifactDimensionFlags(cmd, defs); err != nil {
+			return nil, err
+		}
 		if err := bindArtifactDimensions(keys, defs); err != nil {
 			return nil, err
 		}
@@ -245,14 +249,14 @@ func validateArtifactListFlags(cmd *cobra.Command) error {
 	if isArtifactCommand(cmd) {
 		list, _ := cmd.Flags().GetBool("list")
 		if !list {
-			for _, name := range []string{"absolute", "abs", "format"} {
+			for _, name := range []string{"all", "absolute", "abs", "format"} {
 				if cmd.Flags().Changed(name) {
 					return fmt.Errorf("--%s requires --list", name)
 				}
 			}
 		}
 	}
-	if flag := cmd.Flags().Lookup("format"); flag != nil && (isArtifactCommand(cmd) || cmd.Name() == "list" || cmd.Annotations[artifactListType] != "") {
+	if flag := cmd.Flags().Lookup("format"); flag != nil && (isArtifactCommand(cmd) || cmd.Name() == "list" || cmd.Annotations[artifactListType] != "" || cmd.Annotations[artifactListCollection] != "") {
 		return validateArtifactListFormat(flag.Value.String())
 	}
 	return nil
