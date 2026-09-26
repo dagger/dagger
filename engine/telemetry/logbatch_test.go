@@ -5,6 +5,7 @@ import (
 	"errors"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -479,8 +480,7 @@ func TestCallPayloadBatchProcessorDropsBatchAfterMaxAttempts(t *testing.T) {
 	logger := provider.Logger("test.core")
 	logger.Emit(t.Context(), payloadRecordWithBody("doomed"))
 
-	// A drain retries to completion; exhausted loss remains sticky even once
-	// a later batch succeeds.
+	// A drain retries to completion and reports the drop it caused.
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	err := proc.ForceFlush(ctx)
@@ -489,12 +489,17 @@ func TestCallPayloadBatchProcessorDropsBatchAfterMaxAttempts(t *testing.T) {
 	require.Equal(t, CallPayloadMaxExportAttempts, attempts)
 	require.Empty(t, bodies)
 
-	// The queue is clear: a later record exports on the first try.
+	// The queue is clear: a later record exports on the first try, and that
+	// flush reports only its own pass — an earlier drop must not fail every
+	// later in-session flush.
 	logger.Emit(t.Context(), payloadRecordWithBody("repaired"))
-	require.ErrorContains(t, proc.ForceFlush(ctx), "dropping 1 protected records")
+	require.NoError(t, proc.ForceFlush(ctx))
 	_, bodies, _ = exp.stats()
 	require.Equal(t, []string{"repaired"}, bodies)
-	require.ErrorContains(t, proc.Shutdown(ctx), "dropping 1 protected records")
+	// Shutdown still reports the loss, exactly once, for the session seal.
+	err = proc.Shutdown(ctx)
+	require.ErrorContains(t, err, "dropping 1 protected records")
+	require.Equal(t, 1, strings.Count(err.Error(), "dropping"))
 }
 
 // captureLogExporter keeps every record it is handed.

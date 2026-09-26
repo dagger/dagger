@@ -79,7 +79,9 @@ func TestControlCanceledDrainRetryLifecycle(t *testing.T) {
 					require.ErrorIs(t, proc.Shutdown(t.Context()), context.DeadlineExceeded)
 				} else {
 					require.Equal(t, CallPayloadMaxExportAttempts, attempts, "flush cancellation must preserve the retry budget")
-					require.ErrorContains(t, proc.ForceFlush(t.Context()), "dropping 1 protected records")
+					// The background retries dropped the batch; a later flush
+					// has nothing of its own to report, but Shutdown does.
+					require.NoError(t, proc.ForceFlush(t.Context()))
 					require.ErrorContains(t, proc.Shutdown(t.Context()), "dropping 1 protected records")
 				}
 			})
@@ -100,4 +102,34 @@ func TestControlDrainRetriesPersistence(t *testing.T) {
 	attempts, _, _ := exporter.stats()
 	require.Equal(t, 3, attempts)
 	require.NoError(t, proc.ForceFlush(ctx))
+}
+
+// One dropped control batch must not poison later in-session flushes (they
+// back ReadLogs/ReadTrace and client shutdown), yet the session-end Shutdown
+// must still learn of the loss, as must a record emitted after it.
+func TestControlDropIsOneShotForFlushTerminalForShutdown(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		exporter := &flakyLogExporter{failures: CallPayloadMaxExportAttempts}
+		proc := NewControlBatchProcessor(exporter)
+		logger := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc)).Logger("test")
+		agent := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "incarnation"}, Handle: "worker"}, Revision: 1, State: "IDLE", Digest: "snapshot"}
+		logger.Emit(t.Context(), agent.Record())
+		require.ErrorContains(t, proc.ForceFlush(t.Context()), "dropping 1 protected records")
+
+		agent.Revision = 2
+		logger.Emit(t.Context(), agent.Record())
+		require.NoError(t, proc.ForceFlush(t.Context()))
+		require.NoError(t, proc.ForceFlush(t.Context()))
+		attempts, _, batches := exporter.stats()
+		require.Equal(t, CallPayloadMaxExportAttempts+1, attempts)
+		require.Equal(t, []int{1}, batches)
+
+		require.ErrorContains(t, proc.Shutdown(t.Context()), "dropping 1 protected records")
+		logger.Emit(t.Context(), agent.Record())
+		err := proc.Shutdown(t.Context())
+		require.ErrorContains(t, err, "dropping 1 protected records")
+		require.ErrorContains(t, err, "emitted after shutdown")
+	})
 }
