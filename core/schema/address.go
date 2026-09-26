@@ -26,7 +26,7 @@ type moduleRefCycleKey struct{}
 
 // resolveModuleRef resolves a DAG address in the address's workspace. A value
 // without the dag:// scheme keeps its external meaning: it is never looked up
-// in the workspace. See the dagaddress package.
+// in the workspace. See hack/designs/collections-issue.md, section 4, "Scheme".
 //
 // typeName is the GraphQL type the caller loads; a different artifact type is
 // an error. The legacy client schema keeps its <module>:<function> lookup.

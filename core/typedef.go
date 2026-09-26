@@ -1184,6 +1184,8 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 }
 
 type ObjectTypeDef struct {
+	Collection *CollectionConfig
+
 	// Name is the standardized name of the object (CamelCase), as used for the object in the graphql schema
 	Name        string                                         `field:"true" doc:"The name of the object." doNotCache:"simple field selection"`
 	Description string                                         `field:"true" doc:"The doc string for the object, if any." doNotCache:"simple field selection"`
@@ -2771,6 +2773,8 @@ type persistedTypeDef struct {
 }
 
 type persistedObjectTypeDef struct {
+	Collection *CollectionConfig `json:"collection,omitempty"`
+
 	Name                string   `json:"name,omitempty"`
 	Description         string   `json:"description,omitempty"`
 	SourceMapResultID   uint64   `json:"sourceMapResultID,omitempty"`
@@ -3128,6 +3132,7 @@ func encodePersistedObjectTypeDef(enc *dagql.PersistEncodeContext, obj *ObjectTy
 		return nil, nil
 	}
 	payload := &persistedObjectTypeDef{
+		Collection:        obj.Collection,
 		Name:              obj.Name,
 		Description:       obj.Description,
 		Deprecated:        obj.Deprecated,
@@ -3172,6 +3177,7 @@ func decodePersistedObjectTypeDef(ctx context.Context, dec *dagql.PersistDecodeC
 		return nil, nil
 	}
 	decoded := &ObjectTypeDef{
+		Collection:       obj.Collection,
 		Name:             obj.Name,
 		Description:      obj.Description,
 		Deprecated:       obj.Deprecated,
