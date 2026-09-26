@@ -228,7 +228,7 @@ func TestCloudRestoreSkipsIncompleteSnapshot(t *testing.T) {
 func TestCloudRestoreSkipsCaptureFailure(t *testing.T) {
 	warnings := captureRestoreWarnings(t)
 	chief, worker, edge, records := cloudControlFixture(t)
-	worker.Digest, worker.CaptureError = "", "Host.directory is session-local"
+	worker.Digest, worker.CaptureError = "", "no committed conversation"
 	records = append(records, chief.Record(), worker.Record(), edge.Record())
 	req := restoreRequest()
 	req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
@@ -241,7 +241,7 @@ func TestCloudRestoreSkipsCaptureFailure(t *testing.T) {
 	cleanup()
 	require.Equal(t, []string{"rehydrate:chief", "adopt:chief", "focus:chief"}, target.calls)
 	require.Contains(t, warnings.String(), "worker (worker)")
-	require.Contains(t, warnings.String(), "Host.directory is session-local")
+	require.Contains(t, warnings.String(), "no committed conversation")
 }
 
 // TestUnsealedArchiveRestoresLatestRecordedState: a local archive whose engine

@@ -359,7 +359,7 @@ func TestArchiveRestoreSkipsCaptureFailure(t *testing.T) {
 	warnings := captureRestoreWarnings(t)
 	source, chief, worker, edge := canonicalArchive()
 	worker.Revision++
-	worker.Digest, worker.CaptureError = "", "Host.directory is session-local"
+	worker.Digest, worker.CaptureError = "", "no committed conversation"
 	want := agentcontrol.Expectation{
 		Agents:        map[agentcontrol.Key]int64{chief.Key: chief.Revision, worker.Key: worker.Revision},
 		Subscriptions: map[agentcontrol.EdgeKey]int64{edge.EdgeKey: edge.Revision},
@@ -374,7 +374,7 @@ func TestArchiveRestoreSkipsCaptureFailure(t *testing.T) {
 	require.Equal(t, []string{"rehydrate:chief", "adopt:chief", "focus:chief"}, target.calls,
 		"restore skips the failed capture and drops its subscription")
 	require.Contains(t, warnings.String(), "worker (worker)")
-	require.Contains(t, warnings.String(), "capture failed: Host.directory is session-local")
+	require.Contains(t, warnings.String(), "capture failed: no committed conversation")
 	require.Contains(t, warnings.String(), "dropped subscription")
 }
 
