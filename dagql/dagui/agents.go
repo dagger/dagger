@@ -240,14 +240,14 @@ func (entry AgentRestore) Restorable() bool {
 // it. The §3.1 state mapping is agentcontrol.Agent.RestoreState, shared with
 // archive verification so it cannot drift between callers.
 //
-// Agents this session already holds are left out: an agent with a loop or
-// identity span in the LIVE trace has a runtime entry here already, whether
-// it was spawned in this session or restored into it earlier, and
+// Agents this session already holds are left out: an agent with a control
+// record or loop span in the LIVE trace has a runtime entry here already,
+// whether it was spawned in this session or restored into it earlier, and
 // re-hydrating it is precisely what LLM.spawn(handle:) refuses. That is what
 // makes running a restore twice a no-op instead of a second re-hydration —
 // and it takes the trace ID to see, because a re-hydrated agent republishes
-// its identity, state and snapshot into the new trace (§4.5), so nothing
-// else about its entry distinguishes it from a source-trace one.
+// its control record into the new trace (§4.5), so nothing else about its
+// entry distinguishes it from a source-trace one.
 func (db *DB) RestorePlan() []AgentRestore {
 	live := db.liveTraceID()
 	var plan []AgentRestore

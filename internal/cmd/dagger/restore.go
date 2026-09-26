@@ -20,7 +20,7 @@ import (
 // installation, and prompt attachment are distinct ordered phases. Original
 // historical telemetry arrives after focus; it is never re-emitted by an LLM.
 
-// traceRestore describes a verified source archive, not a local session file.
+// traceRestore names the trace to restore and how to reach its archive.
 type traceRestore struct {
 	traceID     string
 	agent       string

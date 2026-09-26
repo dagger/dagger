@@ -95,7 +95,7 @@ var (
 	AgentStateRunning = AgentStates.Register("RUNNING",
 		"A model request or tool evaluation is in flight.")
 	AgentStateWaitingInput = AgentStates.Register("WAITING_INPUT",
-		"Blocked on input from the user (derived; see waitingOn).")
+		"Blocked on input from the user.")
 	AgentStatePaused = AgentStates.Register("PAUSED",
 		"Mailbox accepting but not draining, until resume.")
 	AgentStateStopped = AgentStates.Register("STOPPED",
