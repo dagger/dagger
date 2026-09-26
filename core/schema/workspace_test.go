@@ -370,6 +370,60 @@ func TestWorkspaceExportCompositionSkipsReconstruction(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSnapshotScopesSSHAuth(t *testing.T) {
+	for _, tc := range []struct {
+		name, remote, socket string
+		wantSocket           bool
+	}{
+		{"SSH with agent", "ssh://git@example.com/private.git", "/agent.sock", true},
+		{"SSH without agent", "ssh://git@example.com/private.git", "", false},
+		{"HTTPS with agent", "https://example.com/private.git", "/agent.sock", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+				ClientID: "owner", SessionID: "snapshot-test", SSHAuthSocketPath: tc.socket,
+			})
+			cache, err := dagql.NewCache(ctx, "", nil, nil)
+			require.NoError(t, err)
+			ctx = dagql.ContextWithCache(ctx, cache)
+			srv, err := dagql.NewServer(ctx, &core.Query{})
+			require.NoError(t, err)
+			srv.InstallObject(dagql.NewClass[*core.Socket](srv))
+			stop := errors.New("injected remote boundary")
+			var scoped, loaded bool
+			dagql.Fields[*core.Query]{
+				dagql.Func("host", func(context.Context, *core.Query, struct{}) (*core.Host, error) { return &core.Host{}, nil }),
+				dagql.Func("git", func(_ context.Context, _ *core.Query, args struct {
+					URL                 string
+					SSHAuthSocket       dagql.Optional[dagql.ID[*core.Socket]] `name:"sshAuthSocket"`
+					SSHAuthSocketScoped bool                                   `name:"sshAuthSocketScoped" default:"false"`
+				}) (*core.GitRepository, error) {
+					loaded = true
+					require.Equal(t, tc.remote, args.URL)
+					require.Equal(t, tc.wantSocket, args.SSHAuthSocket.Valid)
+					require.Equal(t, tc.wantSocket, args.SSHAuthSocketScoped)
+					return nil, stop
+				}),
+			}.Install(srv)
+			dagql.Fields[*core.Host]{
+				dagql.Func("_sshAuthSocket", func(ctx context.Context, _ *core.Host, _ struct{}) (*core.Socket, error) {
+					scoped = true
+					caller, err := engine.ClientMetadataFromContext(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "owner", caller.ClientID)
+					require.Equal(t, tc.socket, caller.SSHAuthSocketPath)
+					return &core.Socket{Kind: core.SocketKindSSHHandle, Handle: "snapshot-auth"}, nil
+				}),
+			}.Install(srv)
+			_, err = (&workspaceSchema{}).checkpointCapturedGitComposition(ctx, srv, &core.Workspace{},
+				&gitsession.CaptureGitMetadata{RemoteUrl: tc.remote}, nil, "")
+			require.ErrorContains(t, err, stop.Error())
+			require.True(t, loaded)
+			require.Equal(t, tc.wantSocket, scoped)
+		})
+	}
+}
+
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})
 	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "ClientID", "userConfigKey", "userConfigOverlay"} {

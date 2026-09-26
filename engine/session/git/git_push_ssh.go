@@ -78,11 +78,11 @@ func (a *pushSSHAgent) close() {
 func (m *pushSSHAuth) prepare(ctx context.Context, remote string) (string, error) {
 	u, err := gitutil.ParseURL(remote)
 	if err != nil || u.Scheme != gitutil.SSHProtocol || u.Host == "" {
-		return "", errors.New("invalid SSH push destination")
+		return "", errors.New("invalid SSH remote")
 	}
 	if u.User != nil {
 		if _, password := u.User.Password(); password {
-			return "", errors.New("SSH push destination must not contain a password")
+			return "", errors.New("SSH remote must not contain a password")
 		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -119,7 +119,7 @@ func (m *pushSSHAuth) prepare(ctx context.Context, remote string) (string, error
 		return configuredAgent, nil
 	}
 	if len(keys) == 0 {
-		return "", errors.New("no SSH identity files found for push; configure an IdentityFile or SSH_AUTH_SOCK")
+		return "", errors.New("no SSH identity files found; configure an IdentityFile or SSH_AUTH_SOCK")
 	}
 	a, err := startPushSSHAgent(m.ctx)
 	if err != nil {
@@ -152,7 +152,7 @@ func startPushSSHAgent(ctx context.Context) (*pushSSHAgent, error) {
 	a.cmd = exec.CommandContext(ctx, "ssh-agent", "-D", "-a", a.socket)
 	if err := a.cmd.Start(); err != nil {
 		os.RemoveAll(dir)
-		return nil, fmt.Errorf("start SSH agent for push (OpenSSH is required): %w", err)
+		return nil, fmt.Errorf("start SSH agent (OpenSSH is required): %w", err)
 	}
 	go func() { _ = a.cmd.Wait(); close(a.done) }()
 	readyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -218,7 +218,7 @@ func (m *pushSSHAuth) addKey(ctx context.Context, a *pushSSHAgent, key string) e
 		var passphrase string
 		label := strconv.QuoteToASCII(key)
 		form := huh.NewForm(huh.NewGroup(huh.NewInput().Title("SSH key passphrase").
-			Description("Unlock " + label + " for this push session").EchoMode(huh.EchoModePassword).Value(&passphrase)))
+			Description("Unlock " + label + " for this Git session").EchoMode(huh.EchoModePassword).Value(&passphrase)))
 		if err := m.handler.HandleForm(r.Context(), form); err != nil {
 			promptErr = errors.New("SSH key unlocking canceled or unavailable")
 			http.Error(w, "key unlocking canceled", http.StatusForbidden)
@@ -248,7 +248,7 @@ func (m *pushSSHAuth) addKey(ctx context.Context, a *pushSSHAgent, key string) e
 		if m.handler == nil || m.askpassExecutable == "" {
 			return errors.New("could not load SSH identity; an encrypted key requires an interactive dagger CLI")
 		}
-		return errors.New("could not load SSH identity for push (key unsupported, unreadable, or incorrect passphrase)")
+		return errors.New("could not load SSH identity (key unsupported, unreadable, or incorrect passphrase)")
 	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", a.socket)
 	if err != nil {
@@ -257,7 +257,7 @@ func (m *pushSSHAuth) addKey(ctx context.Context, a *pushSSHAgent, key string) e
 	defer conn.Close()
 	keys, err := agent.NewClient(conn).List()
 	if err != nil || len(keys) == 0 {
-		return errors.New("SSH agent has no identities after loading the push key")
+		return errors.New("SSH agent has no identities after loading the key")
 	}
 	return nil
 }
@@ -302,7 +302,7 @@ func pushSSHIdentities(ctx context.Context, remote *gitutil.GitURL) ([]string, s
 	u := &url.URL{Host: remote.Host}
 	host := u.Hostname()
 	if host == "" || strings.HasPrefix(host, "-") || strings.ContainsAny(host, "\r\n\x00") {
-		return nil, "", errors.New("invalid SSH push host")
+		return nil, "", errors.New("invalid SSH host")
 	}
 	args := []string{"-G", "-oCanonicalizeHostname=no"}
 	if remote.User != nil {
@@ -316,7 +316,7 @@ func pushSSHIdentities(ctx context.Context, remote *gitutil.GitURL) ([]string, s
 	defer cancel()
 	out, err := exec.CommandContext(configCtx, "ssh", args...).Output()
 	if err != nil {
-		return nil, "", errors.New("cannot discover SSH identities for push (OpenSSH is required)")
+		return nil, "", errors.New("cannot discover SSH identities (OpenSSH is required)")
 	}
 	return parsePushSSHIdentities(string(out))
 }
