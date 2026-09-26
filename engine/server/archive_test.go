@@ -650,20 +650,25 @@ func TestArchiveHTTPUnsealedStreamsRecordedControl(t *testing.T) {
 	require.Equal(t, 1, payloads)
 }
 
-// TestArchiveTitleFromTrace: the engine takes an archive's title from the
-// span-name records its main client publishes into the archive's own trace,
-// persisting it while the archive is active (so listings and crash recovery see
-// it); the sealed manifest inherits it. Nested clients share the trace and the
-// main client's store, but never name the session.
-func TestArchiveTitleFromTrace(t *testing.T) {
-	titleRecordFrom := func(origin, title string, traceID trace.TraceID) sdklog.Record {
-		rec := scopedLogRecord(t, "dagger.io/cli", logapi.StringValue(title), logapi.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
-		rec.SetTraceID(traceID)
-		rec.AddAttributes(logapi.String(telemetryattrs.TelemetryOriginClientIDAttr, origin))
-		return rec
+// TestSetSessionTitle: Query.setSessionTitle names the calling session's
+// archive, persisting the title while the archive is active (so listings and
+// crash recovery see it); the sealed manifest inherits it. Only the session's
+// main client may set it.
+func TestSetSessionTitle(t *testing.T) {
+	// callerCtx is a resolver context for clientID in sess, on traceID.
+	callerCtx := func(t *testing.T, srv *Server, sess *daggerSession, clientID string, traceID trace.TraceID) context.Context {
+		t.Helper()
+		if srv.daggerSessions == nil {
+			srv.daggerSessions = map[string]*daggerSession{}
+		}
+		srv.daggerSessions[sess.sessionID] = sess
+		sess.state.Store(sessionStateInitialized)
+		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{SessionID: sess.sessionID, ClientID: clientID})
+		return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: trace.SpanID{1}}))
 	}
-	titleRecord := func(title string, traceID trace.TraceID) sdklog.Record {
-		return titleRecordFrom("main", title, traceID)
+	setTitle := func(t *testing.T, srv *Server, sess *daggerSession, title string, traceID trace.TraceID) error {
+		t.Helper()
+		return srv.SetSessionTitle(callerCtx(t, srv, sess, sess.mainClientCallerID, traceID), title)
 	}
 	listTitles := func(t *testing.T, srv *Server) map[archive.State]string {
 		t.Helper()
@@ -685,24 +690,26 @@ func TestArchiveTitleFromTrace(t *testing.T) {
 
 	t.Run("active and sealed", func(t *testing.T) {
 		srv, sess, _, _ := archiveFixture(t)
-		exp := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
 		require.True(t, strings.HasPrefix(listTitles(t, srv)[archive.StateActive], "Agent session "), "untitled archives fall back to their start time")
 
-		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Investigate cache misses", trace.TraceID{1})}))
+		require.NoError(t, setTitle(t, srv, sess, "Investigate cache misses", trace.TraceID{1}))
 		require.Equal(t, "Investigate cache misses", listTitles(t, srv)[archive.StateActive])
 
-		// Another trace's title never renames this archive.
-		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Foreign", trace.TraceID{2})}))
+		// A title on another trace never renames this archive.
+		require.NoError(t, setTitle(t, srv, sess, "Foreign", trace.TraceID{2}))
 		require.Equal(t, "Investigate cache misses", listTitles(t, srv)[archive.StateActive])
 
-		// Neither does a nested client's, e.g. a dagger agent run by a tool:
-		// it shares the trace and routes into the main client's store.
+		// A nested client (a module, or a dagger CLI run in a container) shares
+		// the trace but cannot name the session.
 		sess.clientRecords["nested"] = &clientRecord{daggerSession: sess, clientID: "nested", parentClientIDs: []string{"main"}}
-		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecordFrom("nested", "Nested agent session", trace.TraceID{1})}))
+		require.Error(t, srv.SetSessionTitle(callerCtx(t, srv, sess, "nested", trace.TraceID{1}), "Nested agent session"))
 		require.Equal(t, "Investigate cache misses", listTitles(t, srv)[archive.StateActive])
+
+		// Empty titles are refused.
+		require.Error(t, setTitle(t, srv, sess, " \n ", trace.TraceID{1}))
 
 		// A reset regenerates the title; the latest wins and is sanitized.
-		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Fix\x1b[2J the\nbuild", trace.TraceID{1})}))
+		require.NoError(t, setTitle(t, srv, sess, "Fix\x1b[2J the\nbuild", trace.TraceID{1}))
 		require.Equal(t, "Fix [2J the build", listTitles(t, srv)[archive.StateActive])
 
 		require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
@@ -721,8 +728,7 @@ func TestArchiveTitleFromTrace(t *testing.T) {
 		sess := &daggerSession{sessionID: "session", mainClientCallerID: "main", clientRecords: map[string]*clientRecord{}}
 		sess.telemetryPubSub = NewPubSub(srv)
 		sess.clientRecords["main"] = &clientRecord{daggerSession: sess, clientID: "main"}
-		exp := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
-		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Early title", trace.TraceID{1})}))
+		require.NoError(t, setTitle(t, srv, sess, "Early title", trace.TraceID{1}))
 		require.NoError(t, sess.ensureArchive(archiveTestTrace))
 		m, err := manager.Manifest(archiveTestTrace)
 		require.NoError(t, err)
@@ -731,8 +737,7 @@ func TestArchiveTitleFromTrace(t *testing.T) {
 
 	t.Run("interrupted", func(t *testing.T) {
 		srv, sess, db, _ := archiveFixture(t)
-		exp := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
-		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Crashed mid-session", trace.TraceID{1})}))
+		require.NoError(t, setTitle(t, srv, sess, "Crashed mid-session", trace.TraceID{1}))
 		require.NoError(t, db.Close())
 		// Restart: the manager reopens the still-active manifest as interrupted.
 		manager, err := archive.NewManager(archive.Config{Root: filepath.Join(filepath.Dir(srv.clientDBs.Root), "archives"), RemoveStore: srv.clientDBs.Remove})

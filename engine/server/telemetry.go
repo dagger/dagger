@@ -279,7 +279,6 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	// revisions with it. Only store writes, which can succeed on retry, fail
 	// the batch.
 	routed := make([]routedLogRecord, 0, len(records))
-	var title *pendingArchiveTitle // the batch's latest main-client title
 	for _, rec := range records {
 		digest, payload, err := classifyCallPayloadRecord(rec)
 		if err != nil {
@@ -333,10 +332,6 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		if !payload {
 			digest = ""
 		}
-		if origin == exp.sess.mainClientCallerID && isSpanNameRecord(rec) && rec.Body().Kind() == log.KindString {
-			// Only the main client names the session; see setArchiveTitle.
-			title = &pendingArchiveTitle{traceID: rec.TraceID().String(), title: rec.Body().AsString()}
-		}
 		routed = append(routed, routedLogRecord{rec: withoutLogOrigin(rec), route: route, digest: digest})
 	}
 
@@ -370,27 +365,9 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			return nil
 		})
 	}
-	err := eg.Wait()
-	if title != nil {
-		// Titles are advisory and independent of the store writes above.
-		exp.sess.setArchiveTitle(title.traceID, title.title)
-	}
-	return err
+	return eg.Wait()
 }
 
-// isSpanNameRecord reports whether a record renames its span, which is how a
-// session publishes its title (telemetryattrs.LogRoleSpanName).
-func isSpanNameRecord(rec sdklog.Record) bool {
-	found := false
-	rec.WalkAttributes(func(kv log.KeyValue) bool {
-		if kv.Key != telemetryattrs.LogRoleAttr {
-			return true
-		}
-		found = kv.Value.Kind() == log.KindString && kv.Value.AsString() == telemetryattrs.LogRoleSpanName
-		return false
-	})
-	return found
-}
 func (sessionLogExporter) ForceFlush(context.Context) error { return nil }
 func (sessionLogExporter) Shutdown(context.Context) error   { return nil }
 

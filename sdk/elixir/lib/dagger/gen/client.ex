@@ -650,6 +650,26 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Name the current session.
+
+  The title labels the session's engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+
+  > #### Experimental {: .warning}
+  >
+  > "Session APIs are likely to change."
+  """
+  @spec set_session_title(t(), String.t()) :: :ok | {:error, term()}
+  def set_session_title(%__MODULE__{} = client, title) do
+    query_builder =
+      client.query_builder |> QB.select("setSessionTitle") |> QB.put_arg("title", title)
+
+    case Client.execute(client.client, query_builder) do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
+  @doc """
   Creates source map metadata.
   """
   @spec source_map(t(), String.t(), integer(), integer()) :: Dagger.SourceMap.t()

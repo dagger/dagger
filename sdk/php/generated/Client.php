@@ -56,6 +56,18 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Name the current session.
+     *
+     * The title labels the session's engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+     */
+    public function setSessionTitle(string $title): void
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('setSessionTitle');
+        $leafQueryBuilder->setArgument('title', $title);
+        $this->queryLeaf($leafQueryBuilder, 'setSessionTitle');
+    }
+
+    /**
      * Creates an empty directory.
      */
     public function directory(): Directory
