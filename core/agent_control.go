@@ -39,9 +39,15 @@ func newAgentControlPublisher(ctx context.Context) *agentControlPublisher {
 }
 
 // Preserve only telemetry routing and providers, not resolver/query values.
+// The span itself (not just its SpanContext) is kept so Tracer(ctx) still
+// reaches the real TracerProvider, and the agent identity so emitted message
+// spans keep their gen_ai.agent.* attributes; the runtime retains both anyway.
 func agentTelemetryContext(ctx context.Context) context.Context {
-	out := trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx))
+	out := trace.ContextWithSpan(context.Background(), trace.SpanFromContext(ctx))
 	out = telemetry.WithLoggerProvider(out, telemetry.LoggerProvider(ctx))
+	if agent, ok := AgentFromContext(ctx); ok {
+		out = AgentToContext(out, agent)
+	}
 	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
 		out = engine.ContextWithClientMetadata(out, md)
 	}
