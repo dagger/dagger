@@ -3,7 +3,9 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -287,7 +289,21 @@ func (c *entrypointFuncCtx) renderObjectDef(obj *TypedefObject) string {
 	if sm := sourceMapExpr(obj.Location); sm != "" {
 		opts["sourceMap"] = sm
 	}
-	return fmt.Sprintf("dag.typeDef().withObject(%s%s)", jsString(obj.Name), optsLit(opts))
+	result := fmt.Sprintf("dag.typeDef().withObject(%s%s)", jsString(obj.Name), optsLit(opts))
+	if obj.IsCollection {
+		result += ".withCollection()"
+	}
+	for _, name := range slices.Sorted(maps.Keys(obj.Methods)) {
+		method := obj.Methods[name]
+		if method.IsCollectionGet {
+			member := method.Name
+			if method.Alias != "" {
+				member = method.Alias
+			}
+			result += fmt.Sprintf(".withCollectionGet(%s)", jsString(member))
+		}
+	}
+	return result
 }
 
 func (c *entrypointFuncCtx) renderFieldCall(prop *TypedefProperty) string {
@@ -301,7 +317,14 @@ func (c *entrypointFuncCtx) renderFieldCall(prop *TypedefProperty) string {
 	if sm := sourceMapExpr(prop.Location); sm != "" {
 		opts["sourceMap"] = sm
 	}
-	return fmt.Sprintf(".withField(%s, %s%s)", jsString(propFieldName(prop)), c.renderTypeDef(prop.Type), optsLit(opts))
+	result := fmt.Sprintf(".withField(%s, %s%s)", jsString(propFieldName(prop)), c.renderTypeDef(prop.Type), optsLit(opts))
+	if prop.IsCollectionKeys {
+		result += fmt.Sprintf(".withCollectionKeys(%s)", jsString(propFieldName(prop)))
+	}
+	if prop.IsCollectionDelta {
+		result += fmt.Sprintf(".withCollectionDelta(%s)", jsString(propFieldName(prop)))
+	}
+	return result
 }
 
 func (c *entrypointFuncCtx) renderEnumDef(e *TypedefEnum) string {

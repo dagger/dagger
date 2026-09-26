@@ -32,6 +32,10 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 
 	docPragmas, docComment := parsePragmaComment(funcDecl.Doc.Text())
 	spec.doc = docComment
+	spec.isCollectionGet, err = collectionPragma(docPragmas, "get")
+	if err != nil {
+		return nil, err
+	}
 
 	if v, ok := docPragmas["cache"]; ok {
 		spec.cachePolicy, ok = v.(string)
@@ -159,14 +163,15 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 }
 
 type funcTypeSpec struct {
-	name        string
-	doc         string
-	sourceMap   *sourceMap
-	cachePolicy string
-	isCheck     bool
-	isGenerator bool
-	isUp        bool
-	isAgent     bool
+	isCollectionGet bool
+	name            string
+	doc             string
+	sourceMap       *sourceMap
+	cachePolicy     string
+	isCheck         bool
+	isGenerator     bool
+	isUp            bool
+	isAgent         bool
 
 	argSpecs []paramSpec
 
