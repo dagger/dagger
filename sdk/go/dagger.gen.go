@@ -11456,7 +11456,7 @@ type LLMSpawnOpts struct {
 	//
 	// Default: IDLE
 	State AgentState
-	// Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle.
+	// Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle. The parent must already be restored in this session and cannot be the agent itself or its descendant.
 	ParentHandle string
 	// The loop error to create the agent with, for state FAILED. Refused with any other state.
 	Error string

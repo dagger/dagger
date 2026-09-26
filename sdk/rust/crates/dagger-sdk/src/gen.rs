@@ -11279,7 +11279,7 @@ pub struct LlmSpawnOpts<'a> {
     /// Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
-    /// Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle.
+    /// Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle. The parent must already be restored in this session and cannot be the agent itself or its descendant.
     #[builder(setter(into, strip_option), default)]
     pub parent_handle: Option<&'a str>,
     /// The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
