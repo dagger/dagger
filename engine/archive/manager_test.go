@@ -17,18 +17,62 @@ const (
 )
 
 func TestManagerStartupIndexesCorruptManifest(t *testing.T) {
+	const testTraceC = "33333333333333333333333333333333"
 	root := t.TempDir()
+	healthy, err := NewManager(Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := healthy.Register(testTraceB, "healthy"); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, testTraceA+".json"), []byte(`{"version":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Unreadable: a dangling link (unlike a permission bit, this holds as root).
+	if err := os.Symlink(filepath.Join(root, "missing"), filepath.Join(root, testTraceC+".json")); err != nil {
 		t.Fatal(err)
 	}
 	manager, err := NewManager(Config{Root: root})
 	if err != nil {
 		t.Fatalf("corrupt archive prevented engine startup: %v", err)
 	}
-	_, err = manager.Manifest(testTraceA)
-	var failure *Failure
-	if !errors.As(err, &failure) || failure.Kind != FailureCorrupt {
-		t.Fatalf("lookup error = %v", err)
+	for _, traceID := range []string{testTraceA, testTraceC} {
+		_, err = manager.Manifest(traceID)
+		var failure *Failure
+		if !errors.As(err, &failure) || failure.Kind != FailureCorrupt {
+			t.Fatalf("lookup %s error = %v", traceID, err)
+		}
+	}
+	if manifest, err := manager.Manifest(testTraceB); err != nil || manifest.State != StateInterrupted {
+		t.Fatalf("healthy archive = %+v, %v; want it loaded as interrupted", manifest, err)
+	}
+}
+
+// TestManagerStartupToleratesUnwritableRoot: an interrupted archive whose state
+// cannot be persisted (e.g. a full disk) is still loaded, as interrupted.
+func TestManagerStartupToleratesUnwritableRoot(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("directory permissions do not bind root")
+	}
+	root := t.TempDir()
+	manager, err := NewManager(Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Register(testTraceA, "crashed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+	restarted, err := NewManager(Config{Root: root})
+	if err != nil {
+		t.Fatalf("unwritable archive root prevented engine startup: %v", err)
+	}
+	if manifest, err := restarted.Manifest(testTraceA); err != nil || manifest.State != StateInterrupted {
+		t.Fatalf("archive = %+v, %v; want it loaded as interrupted", manifest, err)
 	}
 }
 
