@@ -14,9 +14,9 @@ package core
 // recording expects, so "a send continues the conversation rather than opening
 // an empty one" is decided by the model, not by the test.
 //
-// The Cloud-fetch tests start their source session with sink.clientOpts, which
-// an inherited (nested) session ignores, so they skip when nested. The rest use
-// connectWithTrace, which starts its own CLI session either way.
+// It needs its own CLI session (to point telemetry at the sink) and a second
+// one to restore into, so it skips when nested, like the other trace tests in
+// agent_runtime_test.go.
 
 import (
 	"context"
@@ -645,6 +645,36 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 	require.Empty(t, restoredRemoved.mustRun(ctx, t, "snapshot { messages { role } }").Get("snapshot.messages").Array())
 }
 
+// startArchiveEngine starts ctr as a dev engine service tunneled to the host and
+// returns the service, its tunnel and the tunnel's tcp endpoint. Both are
+// killed on cleanup; the archive tests restart the engine over its state volume.
+func startArchiveEngine(ctx context.Context, t *testctx.T, host *dagger.Client, ctr *dagger.Container) (*dagger.Service, *dagger.Service, string) {
+	t.Helper()
+	service, err := devEngineContainerAsService(ctr).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true}) })
+	tunnel, err := host.Host().Tunnel(service).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = tunnel.Stop(context.WithoutCancel(ctx)) })
+	endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+	return service, tunnel, endpoint
+}
+
+// listedArchive returns the engine's listed manifest for traceID, or nil.
+func listedArchive(ctx context.Context, t *testctx.T, client *archive.Client, traceID string) *archive.Manifest {
+	t.Helper()
+	manifests, err := client.ListAll(ctx, archive.ListOptions{})
+	require.NoError(t, err)
+	var manifest *archive.Manifest
+	for _, candidate := range manifests {
+		if candidate.TraceID == traceID {
+			manifest = &candidate
+		}
+	}
+	return manifest
+}
+
 // TestArchiveSurvivesEngineRestart seals a real source session, stops the actual
 // engine process, and starts a different process over the same state volume.
 // No historical stream is downloaded before restoring and executing a new turn.
@@ -653,19 +683,7 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 	defer cancel()
 	host := connect(ctx, t)
 	engine := devEngineContainer(host)
-	startEngine := func(ctr *dagger.Container) (*dagger.Service, *dagger.Service, string) {
-		t.Helper()
-		service, err := devEngineContainerAsService(ctr).Start(ctx)
-		require.NoError(t, err)
-		t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true}) })
-		tunnel, err := host.Host().Tunnel(service).Start(ctx)
-		require.NoError(t, err)
-		t.Cleanup(func() { _, _ = tunnel.Stop(context.WithoutCancel(ctx)) })
-		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
-		require.NoError(t, err)
-		return service, tunnel, endpoint
-	}
-	first, tunnel, endpoint := startEngine(engine)
+	first, tunnel, endpoint := startArchiveEngine(ctx, t, host, engine)
 	provider := sdktrace.NewTracerProvider()
 	defer provider.Shutdown(context.WithoutCancel(ctx))
 	sourceCtx, sourceSpan := provider.Tracer("archive-acceptance").Start(ctx, "archive source", trace.WithNewRoot())
@@ -689,21 +707,14 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 	require.NoError(t, err)
 	// A different service identity makes this a process restart, not a second
 	// connection to a still-running engine. The mounted state cache is unchanged.
-	_, _, endpoint = startEngine(engine.WithEnvVariable("ARCHIVE_RESTART", identity.NewID()))
+	_, _, endpoint = startArchiveEngine(ctx, t, host, engine.WithEnvVariable("ARCHIVE_RESTART", identity.NewID()))
 	targetCtx, targetSpan := provider.Tracer("archive-acceptance").Start(ctx, "archive destination", trace.WithNewRoot())
 	defer targetSpan.End()
 	target, targetSink := connectWithTrace(targetCtx, t, engineconn.Config{RunnerHost: endpoint})
 	client := archive.NewClient(targetSink.conn)
 	// First authenticated request: no executable GraphQL query has primed the
 	// destination client. Archive access must establish authorization itself.
-	manifests, err := client.ListAll(targetCtx, archive.ListOptions{})
-	require.NoError(t, err)
-	var manifest *archive.Manifest
-	for _, candidate := range manifests {
-		if candidate.TraceID == traceID {
-			manifest = &candidate
-		}
-	}
+	manifest := listedArchive(targetCtx, t, client, traceID)
 	require.NotNil(t, manifest, "archive disappeared across engine restart")
 	require.Equal(t, archive.StateClosed, manifest.State, "archive failure: %s", manifest.Failure)
 	db := restoringDB(t)
@@ -736,19 +747,7 @@ func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context
 	defer cancel()
 	host := connect(ctx, t)
 	engine := devEngineContainer(host)
-	startEngine := func(ctr *dagger.Container) (*dagger.Service, *dagger.Service, string) {
-		t.Helper()
-		service, err := devEngineContainerAsService(ctr).Start(ctx)
-		require.NoError(t, err)
-		t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true}) })
-		tunnel, err := host.Host().Tunnel(service).Start(ctx)
-		require.NoError(t, err)
-		t.Cleanup(func() { _, _ = tunnel.Stop(context.WithoutCancel(ctx)) })
-		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
-		require.NoError(t, err)
-		return service, tunnel, endpoint
-	}
-	first, tunnel, endpoint := startEngine(engine)
+	first, tunnel, endpoint := startArchiveEngine(ctx, t, host, engine)
 	provider := sdktrace.NewTracerProvider()
 	defer provider.Shutdown(context.WithoutCancel(ctx))
 	sourceCtx, sourceSpan := provider.Tracer("archive-acceptance").Start(ctx, "crashed source", trace.WithNewRoot())
@@ -772,19 +771,12 @@ func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context
 	_ = source.Close()
 	sourceSpan.End()
 
-	_, _, endpoint = startEngine(engine.WithEnvVariable("ARCHIVE_CRASH_RESTART", identity.NewID()))
+	_, _, endpoint = startArchiveEngine(ctx, t, host, engine.WithEnvVariable("ARCHIVE_CRASH_RESTART", identity.NewID()))
 	targetCtx, targetSpan := provider.Tracer("archive-acceptance").Start(ctx, "crash recovery", trace.WithNewRoot())
 	defer targetSpan.End()
 	target, targetSink := connectWithTrace(targetCtx, t, engineconn.Config{RunnerHost: endpoint})
 	client := archive.NewClient(targetSink.conn)
-	manifests, err := client.ListAll(targetCtx, archive.ListOptions{})
-	require.NoError(t, err)
-	var manifest *archive.Manifest
-	for _, candidate := range manifests {
-		if candidate.TraceID == traceID {
-			manifest = &candidate
-		}
-	}
+	manifest := listedArchive(targetCtx, t, client, traceID)
 	require.NotNil(t, manifest, "archive disappeared across engine crash")
 	require.Equal(t, archive.StateInterrupted, manifest.State)
 	_, err = client.Bootstrap(targetCtx, traceID, nil)
