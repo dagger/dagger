@@ -23,86 +23,6 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Mark this object as a collection.
-     */
-    public function withCollection(): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCollection');
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Select the stored keys field for this collection.
-     */
-    public function withCollectionKeys(string $name): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCollectionKeys');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Select the item lookup function for this collection.
-     */
-    public function withCollectionGet(string $name): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCollectionGet');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Select the field that receives changes from the original collection.
-     */
-    public function withCollectionDelta(string $name): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCollectionDelta');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Collection metadata, or null if this object is not a collection.
-     */
-    public function asCollection(): ?CollectionTypeDef
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('asCollection');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\CollectionTypeDef::class, new \Dagger\Id((string)$id), 'CollectionTypeDef');
-    }
-
-    /**
-     * The canonical non-optional name of the type.
-     */
-    public function name(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
-    }
-
-    /**
-     * The kind of type this is (e.g. primitive, list, object).
-     */
-    public function kind(): TypeDefKind
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
-        return \Dagger\TypeDefKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
-    }
-
-    /**
-     * Whether this type can be set to null. Defaults to false.
-     */
-    public function optional(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('optional');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'optional');
-    }
-
-    /**
      * Sets whether this type can be set to null.
      */
     public function withOptional(bool $optional): TypeDef
@@ -297,6 +217,33 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('deprecated', $deprecated);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The canonical non-optional name of the type.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The kind of type this is (e.g. primitive, list, object).
+     */
+    public function kind(): TypeDefKind
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
+        return \Dagger\TypeDefKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+    }
+
+    /**
+     * Whether this type can be set to null. Defaults to false.
+     */
+    public function optional(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('optional');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'optional');
     }
 
     /**

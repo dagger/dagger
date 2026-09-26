@@ -50,7 +50,7 @@ defmodule Dagger.Artifact do
   end
 
   @doc """
-  The selected keys for each dimension. Empty for static artifacts.
+  The module name, and the full path key in the artifact type dimension.
   """
   @spec dimension_keys(t()) :: {:ok, [Dagger.ArtifactDimensionKey.t()]} | {:error, term()}
   def dimension_keys(%__MODULE__{} = artifact) do
@@ -101,6 +101,17 @@ defmodule Dagger.Artifact do
   def load_error(%__MODULE__{} = artifact) do
     query_builder =
       artifact.query_builder |> QB.select("loadError")
+
+    Client.execute(artifact.client, query_builder)
+  end
+
+  @doc """
+  The installed module name.
+  """
+  @spec module_name(t()) :: {:ok, String.t()} | {:error, term()}
+  def module_name(%__MODULE__{} = artifact) do
+    query_builder =
+      artifact.query_builder |> QB.select("moduleName")
 
     Client.execute(artifact.client, query_builder)
   end

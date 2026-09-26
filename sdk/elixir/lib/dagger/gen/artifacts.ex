@@ -16,7 +16,122 @@ defmodule Dagger.Artifacts do
   @type t() :: %__MODULE__{}
 
   @doc """
-  List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+  Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+  """
+  @spec as_changesets(t()) :: {:ok, [Dagger.Changeset.t()]} | {:error, term()}
+  def as_changesets(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("asChangesets") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Changeset{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Changeset"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+  """
+  @spec as_checks(t()) :: {:ok, [Dagger.Check.t()]} | {:error, term()}
+  def as_checks(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("asChecks") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Check{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Check"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+  """
+  @spec as_expertise(t()) :: {:ok, [Dagger.Expertise.t()]} | {:error, term()}
+  def as_expertise(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("asExpertise") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Expertise{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Expertise"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+  """
+  @spec as_generators(t()) :: {:ok, [Dagger.Generator.t()]} | {:error, term()}
+  def as_generators(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("asGenerators") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Generator{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Generator"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+  """
+  @spec as_services(t()) :: {:ok, [Dagger.Service.t()]} | {:error, term()}
+  def as_services(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("asServices") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Service{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Service"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  List dimensions on the selected schema paths. Does not read runtime values.
   """
   @spec dimension_definitions(t()) :: {:ok, [Dagger.ArtifactDimension.t()]} | {:error, term()}
   def dimension_definitions(%__MODULE__{} = artifacts) do
@@ -58,36 +173,6 @@ defmodule Dagger.Artifacts do
       artifacts.query_builder |> QB.select("dimensions")
 
     Client.execute(artifacts.client, query_builder)
-  end
-
-  @doc """
-  Select LLM artifacts marked agent.
-  """
-  @spec filter_agent_command(t()) :: Dagger.Artifacts.t()
-  def filter_agent_command(%__MODULE__{} = artifacts) do
-    query_builder =
-      artifacts.query_builder |> QB.select("filterAgentCommand")
-
-    %Dagger.Artifacts{
-      query_builder: query_builder,
-      client: artifacts.client
-    }
-  end
-
-  @doc """
-  Select Check artifacts for dagger check, using each workspace's check and generator settings. Include stale checks only for Changesets marked generate.
-  """
-  @spec filter_check_command(t(), [{:generated, boolean() | nil}]) :: Dagger.Artifacts.t()
-  def filter_check_command(%__MODULE__{} = artifacts, optional_args \\ []) do
-    query_builder =
-      artifacts.query_builder
-      |> QB.select("filterCheckCommand")
-      |> QB.maybe_put_arg("generated", optional_args[:generated])
-
-    %Dagger.Artifacts{
-      query_builder: query_builder,
-      client: artifacts.client
-    }
   end
 
   @doc """
@@ -134,20 +219,6 @@ defmodule Dagger.Artifacts do
       |> QB.select("filterDirectives")
       |> QB.put_arg("directives", directives)
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
-
-    %Dagger.Artifacts{
-      query_builder: query_builder,
-      client: artifacts.client
-    }
-  end
-
-  @doc """
-  Select Changeset artifacts marked generate, using each workspace's generator settings.
-  """
-  @spec filter_generate_command(t()) :: Dagger.Artifacts.t()
-  def filter_generate_command(%__MODULE__{} = artifacts) do
-    query_builder =
-      artifacts.query_builder |> QB.select("filterGenerateCommand")
 
     %Dagger.Artifacts{
       query_builder: query_builder,
@@ -206,6 +277,20 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
+  Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+  """
+  @spec filter_path_pattern(t(), String.t()) :: Dagger.Artifacts.t()
+  def filter_path_pattern(%__MODULE__{} = artifacts, pattern) do
+    query_builder =
+      artifacts.query_builder |> QB.select("filterPathPattern") |> QB.put_arg("pattern", pattern)
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
   Keep artifacts of any listed concrete GraphQL type.
   """
   @spec filter_types(t(), [String.t()], [{:exclude, boolean() | nil}]) :: Dagger.Artifacts.t()
@@ -215,20 +300,6 @@ defmodule Dagger.Artifacts do
       |> QB.select("filterTypes")
       |> QB.put_arg("types", types)
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
-
-    %Dagger.Artifacts{
-      query_builder: query_builder,
-      client: artifacts.client
-    }
-  end
-
-  @doc """
-  Select Service artifacts marked up, using each workspace's service settings.
-  """
-  @spec filter_up_command(t()) :: Dagger.Artifacts.t()
-  def filter_up_command(%__MODULE__{} = artifacts) do
-    query_builder =
-      artifacts.query_builder |> QB.select("filterUpCommand")
 
     %Dagger.Artifacts{
       query_builder: query_builder,
@@ -287,6 +358,29 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
+  List the modules represented in this selection without evaluating artifact values.
+  """
+  @spec modules(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}
+  def modules(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("modules") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Module{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Module"),
+           client: artifacts.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
   """
   @spec one(t()) :: Dagger.Artifact.t()
@@ -301,15 +395,16 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  List selected schema paths, including empty collections. Does not read runtime values or resolve dimension-key filters.
+  List selected schema paths. Does not read runtime values.
   """
-  @spec path_definitions(t(), [{:absolute, boolean() | nil}]) ::
+  @spec path_definitions(t(), [{:absolute, boolean() | nil}, {:type_assertion, boolean() | nil}]) ::
           {:ok, [Dagger.ArtifactPath.t()]} | {:error, term()}
   def path_definitions(%__MODULE__{} = artifacts, optional_args \\ []) do
     query_builder =
       artifacts.query_builder
       |> QB.select("pathDefinitions")
       |> QB.maybe_put_arg("absolute", optional_args[:absolute])
+      |> QB.maybe_put_arg("typeAssertion", optional_args[:type_assertion])
       |> QB.select("id")
 
     with {:ok, items} <- Client.execute(artifacts.client, query_builder) do

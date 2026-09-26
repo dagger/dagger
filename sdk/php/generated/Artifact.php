@@ -68,6 +68,15 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The installed module name.
+     */
+    public function moduleName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'moduleName');
+    }
+
+    /**
      * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
      */
     public function path(): array
@@ -77,7 +86,7 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The selected keys for each dimension. Empty for static artifacts.
+     * The module name, and the full path key in the artifact type dimension.
      */
     public function dimensionKeys(): array
     {

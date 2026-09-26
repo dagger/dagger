@@ -1008,7 +1008,7 @@ func (r *Artifact) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The module name, collection keys, and full path key in the artifact type dimension.
+// The module name, and the full path key in the artifact type dimension.
 func (r *Artifact) DimensionKeys(ctx context.Context) ([]ArtifactDimensionKey, error) {
 	q := r.query.Select("dimensionKeys")
 
@@ -1199,34 +1199,18 @@ func (r *Artifact) AsNode() Node {
 type ArtifactDimension struct {
 	query *querybuilder.Selection
 
-	collectionType *string
-	id             *ID
-	identifier     *string
-	itemType       *string
-	keyDescription *string
-	keyName        *string
-	kind           *ArtifactDimensionKind
-	name           *string
-	qualifiedName  *string
+	id            *ID
+	identifier    *string
+	itemType      *string
+	kind          *ArtifactDimensionKind
+	name          *string
+	qualifiedName *string
 }
 
 func (r *ArtifactDimension) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimension {
 	return &ArtifactDimension{
 		query: q,
 	}
-}
-
-// The collection type, or null for a static dimension.
-func (r *ArtifactDimension) CollectionType(ctx context.Context) (string, error) {
-	if r.collectionType != nil {
-		return *r.collectionType, nil
-	}
-	q := r.query.Select("collectionType")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this ArtifactDimension.
@@ -1269,7 +1253,7 @@ func (r *ArtifactDimension) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+// Stable identifier: type:TypeName for an artifact type, or module.
 func (r *ArtifactDimension) Identifier(ctx context.Context) (string, error) {
 	if r.identifier != nil {
 		return *r.identifier, nil
@@ -1282,38 +1266,12 @@ func (r *ArtifactDimension) Identifier(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The collection item or artifact type name, or empty for the module dimension.
+// The artifact type name, or empty for the module dimension.
 func (r *ArtifactDimension) ItemType(ctx context.Context) (string, error) {
 	if r.itemType != nil {
 		return *r.itemType, nil
 	}
 	q := r.query.Select("itemType")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The collection key argument description, or empty for a static dimension.
-func (r *ArtifactDimension) KeyDescription(ctx context.Context) (string, error) {
-	if r.keyDescription != nil {
-		return *r.keyDescription, nil
-	}
-	q := r.query.Select("keyDescription")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The collection key argument name, or name for a static dimension.
-func (r *ArtifactDimension) KeyName(ctx context.Context) (string, error) {
-	if r.keyName != nil {
-		return *r.keyName, nil
-	}
-	q := r.query.Select("keyName")
 
 	var response string
 
@@ -1456,7 +1414,7 @@ func (r *ArtifactDimensionKey) AsNode() Node {
 	}
 }
 
-// A schema path and its dimensions. The path can exist even when its collections have no runtime items.
+// A schema path and its dimensions.
 type ArtifactPath struct {
 	query *querybuilder.Selection
 
@@ -1873,7 +1831,7 @@ func (r *Artifacts) AsServices(ctx context.Context) ([]Service, error) {
 	return convert(response), nil
 }
 
-// List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+// List dimensions on the selected schema paths. Does not read runtime values.
 func (r *Artifacts) DimensionDefinitions(ctx context.Context) ([]ArtifactDimension, error) {
 	q := r.query.Select("dimensionDefinitions")
 
@@ -1906,40 +1864,6 @@ func (r *Artifacts) DimensionDefinitions(ctx context.Context) ([]ArtifactDimensi
 	return convert(response), nil
 }
 
-// List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
-func (r *Artifacts) DimensionItems(ctx context.Context, dimension string) ([]Artifact, error) {
-	q := r.query.Select("dimensionItems")
-	q = q.Arg("dimension", dimension)
-
-	q = q.Select("id")
-
-	type dimensionItems struct {
-		Id ID
-	}
-
-	convert := func(fields []dimensionItems) []Artifact {
-		out := []Artifact{}
-
-		for i := range fields {
-			val := Artifact{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Artifact")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []dimensionItems
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
 // List keys represented in this selection for the given dimension, sorted with no duplicates.
 func (r *Artifacts) DimensionKeys(ctx context.Context, dimension string) ([]string, error) {
 	q := r.query.Select("dimensionKeys")
@@ -1959,40 +1883,6 @@ func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Select Expertise artifacts.
-//
-// Deprecated: Use filterTypes with Expertise.
-func (r *Artifacts) FilterAgentCommand() *Artifacts {
-	q := r.query.Select("filterAgentCommand")
-
-	return &Artifacts{
-		query: q,
-	}
-}
-
-// ArtifactsFilterCheckCommandOpts contains options for Artifacts.FilterCheckCommand
-type ArtifactsFilterCheckCommandOpts struct {
-	// Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
-	Generated bool
-}
-
-// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.
-//
-// Deprecated: Use filterTypes and apply workspace settings in the caller.
-func (r *Artifacts) FilterCheckCommand(opts ...ArtifactsFilterCheckCommandOpts) *Artifacts {
-	q := r.query.Select("filterCheckCommand")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `generated` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Generated) {
-			q = q.Arg("generated", opts[i].Generated)
-		}
-	}
-
-	return &Artifacts{
-		query: q,
-	}
 }
 
 // Keep artifacts with any listed key in this dimension.
@@ -2032,17 +1922,6 @@ func (r *Artifacts) FilterDirectives(directives []string, opts ...ArtifactsFilte
 		}
 	}
 	q = q.Arg("directives", directives)
-
-	return &Artifacts{
-		query: q,
-	}
-}
-
-// Select Generator artifacts, using each workspace's generator settings.
-//
-// Deprecated: Use filterTypes and apply workspace settings in the caller.
-func (r *Artifacts) FilterGenerateCommand() *Artifacts {
-	q := r.query.Select("filterGenerateCommand")
 
 	return &Artifacts{
 		query: q,
@@ -2129,17 +2008,6 @@ func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts
 		}
 	}
 	q = q.Arg("types", types)
-
-	return &Artifacts{
-		query: q,
-	}
-}
-
-// Select Service artifacts, using each workspace's service settings. Does not require the up directive.
-//
-// Deprecated: Use filterTypes and apply workspace settings in the caller.
-func (r *Artifacts) FilterUpCommand() *Artifacts {
-	q := r.query.Select("filterUpCommand")
 
 	return &Artifacts{
 		query: q,
@@ -2279,11 +2147,9 @@ type ArtifactsPathDefinitionsOpts struct {
 	Absolute bool
 	// Include the artifact type in each address scheme.
 	TypeAssertion bool
-	// Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.
-	Dimension string
 }
 
-// List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
+// List selected schema paths. Does not read runtime values.
 func (r *Artifacts) PathDefinitions(ctx context.Context, opts ...ArtifactsPathDefinitionsOpts) ([]ArtifactPath, error) {
 	q := r.query.Select("pathDefinitions")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -2294,10 +2160,6 @@ func (r *Artifacts) PathDefinitions(ctx context.Context, opts ...ArtifactsPathDe
 		// `typeAssertion` optional argument
 		if !querybuilder.IsZeroValue(opts[i].TypeAssertion) {
 			q = q.Arg("typeAssertion", opts[i].TypeAssertion)
-		}
-		// `dimension` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Dimension) {
-			q = q.Arg("dimension", opts[i].Dimension)
 		}
 	}
 
@@ -3101,181 +2963,6 @@ func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
 // AsNode returns this Cloud as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Cloud) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type CollectionDelta struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-
-func (r *CollectionDelta) WithGraphQLQuery(q *querybuilder.Selection) *CollectionDelta {
-	return &CollectionDelta{
-		query: q,
-	}
-}
-
-// Current keys absent from the original collection, in current order.
-func (r *CollectionDelta) AddedKeys(ctx context.Context) ([]string, error) {
-	q := r.query.Select("addedKeys")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this CollectionDelta.
-func (r *CollectionDelta) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *CollectionDelta) XXX_GraphQLType() string {
-	return "CollectionDelta"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *CollectionDelta) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *CollectionDelta) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *CollectionDelta) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Original keys absent from the current collection, in original order.
-func (r *CollectionDelta) RemovedKeys(ctx context.Context) ([]string, error) {
-	q := r.query.Select("removedKeys")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// AsNode returns this CollectionDelta as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *CollectionDelta) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type CollectionTypeDef struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-
-func (r *CollectionTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *CollectionTypeDef {
-	return &CollectionTypeDef{
-		query: q,
-	}
-}
-
-// The type of batch operations, or null when there are none.
-func (r *CollectionTypeDef) BatchType(ctx context.Context) (*TypeDef, error) {
-	q := r.query.Select("batchType")
-
-	q = q.Select("id")
-	var objectID *ID
-	if err := q.Bind(&objectID).Execute(ctx); err != nil {
-		return nil, err
-	}
-	if objectID == nil {
-		return nil, nil
-	}
-	return &TypeDef{
-		query: selectNode(q.Root(), *objectID, "TypeDef"),
-	}, nil
-}
-
-// A unique identifier for this CollectionTypeDef.
-func (r *CollectionTypeDef) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *CollectionTypeDef) XXX_GraphQLType() string {
-	return "CollectionTypeDef"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *CollectionTypeDef) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *CollectionTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *CollectionTypeDef) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// The type of collection keys.
-func (r *CollectionTypeDef) KeyType() *TypeDef {
-	q := r.query.Select("keyType")
-
-	return &TypeDef{
-		query: q,
-	}
-}
-
-// The object type returned by get.
-func (r *CollectionTypeDef) ValueType() *TypeDef {
-	q := r.query.Select("valueType")
-
-	return &TypeDef{
-		query: q,
-	}
-}
-
-// AsNode returns this CollectionTypeDef as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *CollectionTypeDef) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -17918,23 +17605,6 @@ func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
 	}
 }
 
-// Collection metadata, or null if this object is not a collection.
-func (r *TypeDef) AsCollection(ctx context.Context) (*CollectionTypeDef, error) {
-	q := r.query.Select("asCollection")
-
-	q = q.Select("id")
-	var objectID *ID
-	if err := q.Bind(&objectID).Execute(ctx); err != nil {
-		return nil, err
-	}
-	if objectID == nil {
-		return nil, nil
-	}
-	return &CollectionTypeDef{
-		query: selectNode(q.Root(), *objectID, "CollectionTypeDef"),
-	}, nil
-}
-
 // If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
 func (r *TypeDef) AsEnum(ctx context.Context) (*EnumTypeDef, error) {
 	q := r.query.Select("asEnum")
@@ -18114,45 +17784,6 @@ func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Mark this object as a collection.
-func (r *TypeDef) WithCollection() *TypeDef {
-	q := r.query.Select("withCollection")
-
-	return &TypeDef{
-		query: q,
-	}
-}
-
-// Select the field that receives changes from the original collection.
-func (r *TypeDef) WithCollectionDelta(name string) *TypeDef {
-	q := r.query.Select("withCollectionDelta")
-	q = q.Arg("name", name)
-
-	return &TypeDef{
-		query: q,
-	}
-}
-
-// Select the item lookup function for this collection.
-func (r *TypeDef) WithCollectionGet(name string) *TypeDef {
-	q := r.query.Select("withCollectionGet")
-	q = q.Arg("name", name)
-
-	return &TypeDef{
-		query: q,
-	}
-}
-
-// Select the stored keys field for this collection.
-func (r *TypeDef) WithCollectionKeys(name string) *TypeDef {
-	q := r.query.Select("withCollectionKeys")
-	q = q.Arg("name", name)
-
-	return &TypeDef{
-		query: q,
-	}
 }
 
 // Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
@@ -21337,8 +20968,6 @@ func (ArtifactDimensionKind) IsEnum() {}
 
 func (v ArtifactDimensionKind) Name() string {
 	switch v {
-	case ArtifactDimensionKindCollection:
-		return "COLLECTION"
 	case ArtifactDimensionKindModule:
 		return "MODULE"
 	case ArtifactDimensionKindType:
@@ -21371,8 +21000,6 @@ func (v *ArtifactDimensionKind) UnmarshalJSON(dt []byte) error {
 	switch s {
 	case "":
 		*v = ""
-	case "COLLECTION":
-		*v = ArtifactDimensionKindCollection
 	case "MODULE":
 		*v = ArtifactDimensionKindModule
 	case "TYPE":
@@ -21384,8 +21011,6 @@ func (v *ArtifactDimensionKind) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	ArtifactDimensionKindCollection ArtifactDimensionKind = "COLLECTION"
-
 	ArtifactDimensionKindModule ArtifactDimensionKind = "MODULE"
 
 	ArtifactDimensionKindType ArtifactDimensionKind = "TYPE"

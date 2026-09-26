@@ -16,6 +16,34 @@ defmodule Dagger.Module do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The source used to resolve contextual files and directories, when different from source.
+  """
+  @spec context_source(t()) :: {:ok, Dagger.ModuleSource.t() | nil} | {:error, term()}
+  def context_source(%__MODULE__{} = module) do
+    query_builder =
+      module.query_builder |> QB.select("contextSource") |> QB.select("id")
+
+    case Client.execute(module.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.ModuleSource{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ModuleSource"),
+           client: module.client
+         }}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
   The dependencies of the module.
   """
   @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}

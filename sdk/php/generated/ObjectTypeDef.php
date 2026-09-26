@@ -23,6 +23,38 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Static fields defined on this object, if any.
+     */
+    public function fields(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fields');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
+    }
+
+    /**
+     * Functions defined on this object, if any.
+     */
+    public function functions(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('functions');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'functions');
+    }
+
+    /**
+     * The function used to construct new instances of this object, if any.
+     */
+    public function constructor(): ?Function_
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('constructor');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Function_::class, new \Dagger\Id((string)$id), 'Function');
+    }
+
+    /**
      * The name of the object.
      */
     public function name(): string
@@ -70,37 +102,5 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceModuleName');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sourceModuleName');
-    }
-
-    /**
-     * Static fields defined on this object, if any.
-     */
-    public function fields(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fields');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
-    }
-
-    /**
-     * Functions defined on this object, if any.
-     */
-    public function functions(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('functions');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'functions');
-    }
-
-    /**
-     * The function used to construct new instances of this object, if any.
-     */
-    public function constructor(): ?Function_
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('constructor');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\Function_::class, new \Dagger\Id((string)$id), 'Function');
     }
 }

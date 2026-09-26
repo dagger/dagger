@@ -20,16 +20,16 @@ class ArtifactDimension extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * The schema type name of the collection that supplies this dimension.
+     * How this dimension gets its keys.
      */
-    public function collectionType(): string
+    public function kind(): ArtifactDimensionKind
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('collectionType');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'collectionType');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
+        return \Dagger\ArtifactDimensionKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
     }
 
     /**
-     * Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+     * Stable identifier: type:TypeName for an artifact type, or module.
      */
     public function identifier(): string
     {
@@ -38,7 +38,7 @@ class ArtifactDimension extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * Short name derived from the author item type.
+     * Short name used to select this dimension.
      */
     public function name(): string
     {
@@ -47,7 +47,7 @@ class ArtifactDimension extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * Author parent type and field name, in CLI case.
+     * Qualified name used when the short name is ambiguous.
      */
     public function qualifiedName(): string
     {
@@ -56,29 +56,11 @@ class ArtifactDimension extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * The author item type name.
+     * The artifact type name, or empty for the module dimension.
      */
     public function itemType(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('itemType');
         return (string)$this->queryLeaf($leafQueryBuilder, 'itemType');
-    }
-
-    /**
-     * The name of the author get function's key argument.
-     */
-    public function keyName(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('keyName');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'keyName');
-    }
-
-    /**
-     * The description of the author get function's key argument.
-     */
-    public function keyDescription(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('keyDescription');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'keyDescription');
     }
 }

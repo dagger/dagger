@@ -16,17 +16,6 @@ defmodule Dagger.ArtifactDimension do
   @type t() :: %__MODULE__{}
 
   @doc """
-  The schema type name of the collection that supplies this dimension.
-  """
-  @spec collection_type(t()) :: {:ok, String.t()} | {:error, term()}
-  def collection_type(%__MODULE__{} = artifact_dimension) do
-    query_builder =
-      artifact_dimension.query_builder |> QB.select("collectionType")
-
-    Client.execute(artifact_dimension.client, query_builder)
-  end
-
-  @doc """
   A unique identifier for this ArtifactDimension.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
@@ -38,7 +27,7 @@ defmodule Dagger.ArtifactDimension do
   end
 
   @doc """
-  Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+  Stable identifier: type:TypeName for an artifact type, or module.
   """
   @spec identifier(t()) :: {:ok, String.t()} | {:error, term()}
   def identifier(%__MODULE__{} = artifact_dimension) do
@@ -49,7 +38,7 @@ defmodule Dagger.ArtifactDimension do
   end
 
   @doc """
-  The author item type name.
+  The artifact type name, or empty for the module dimension.
   """
   @spec item_type(t()) :: {:ok, String.t()} | {:error, term()}
   def item_type(%__MODULE__{} = artifact_dimension) do
@@ -60,29 +49,21 @@ defmodule Dagger.ArtifactDimension do
   end
 
   @doc """
-  The description of the author get function's key argument.
+  How this dimension gets its keys.
   """
-  @spec key_description(t()) :: {:ok, String.t()} | {:error, term()}
-  def key_description(%__MODULE__{} = artifact_dimension) do
+  @spec kind(t()) :: {:ok, Dagger.ArtifactDimensionKind.t()} | {:error, term()}
+  def kind(%__MODULE__{} = artifact_dimension) do
     query_builder =
-      artifact_dimension.query_builder |> QB.select("keyDescription")
+      artifact_dimension.query_builder |> QB.select("kind")
 
-    Client.execute(artifact_dimension.client, query_builder)
+    case Client.execute(artifact_dimension.client, query_builder) do
+      {:ok, enum} -> {:ok, Dagger.ArtifactDimensionKind.from_string(enum)}
+      error -> error
+    end
   end
 
   @doc """
-  The name of the author get function's key argument.
-  """
-  @spec key_name(t()) :: {:ok, String.t()} | {:error, term()}
-  def key_name(%__MODULE__{} = artifact_dimension) do
-    query_builder =
-      artifact_dimension.query_builder |> QB.select("keyName")
-
-    Client.execute(artifact_dimension.client, query_builder)
-  end
-
-  @doc """
-  Short name derived from the author item type.
+  Short name used to select this dimension.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = artifact_dimension) do
@@ -93,7 +74,7 @@ defmodule Dagger.ArtifactDimension do
   end
 
   @doc """
-  Author parent type and field name, in CLI case.
+  Qualified name used when the short name is ambiguous.
   """
   @spec qualified_name(t()) :: {:ok, String.t()} | {:error, term()}
   def qualified_name(%__MODULE__{} = artifact_dimension) do

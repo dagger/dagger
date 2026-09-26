@@ -229,7 +229,6 @@ export type ArtifactValueOpts = {
 }
 
 export enum ArtifactDimensionKind {
-  Collection = "COLLECTION",
   Module = "MODULE",
   Type = "TYPE",
 }
@@ -242,8 +241,6 @@ export function ArtifactDimensionKindValueToName(
   value: ArtifactDimensionKind,
 ): string {
   switch (value) {
-    case ArtifactDimensionKind.Collection:
-      return "COLLECTION"
     case ArtifactDimensionKind.Module:
       return "MODULE"
     case ArtifactDimensionKind.Type:
@@ -261,8 +258,6 @@ export function ArtifactDimensionKindNameToValue(
   name: string,
 ): ArtifactDimensionKind {
   switch (name) {
-    case "COLLECTION":
-      return ArtifactDimensionKind.Collection
     case "MODULE":
       return ArtifactDimensionKind.Module
     case "TYPE":
@@ -271,13 +266,6 @@ export function ArtifactDimensionKindNameToValue(
       return name as ArtifactDimensionKind
   }
 }
-export type ArtifactsFilterCheckCommandOpts = {
-  /**
-   * Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
-   */
-  generated?: boolean
-}
-
 export type ArtifactsFilterDirectivesOpts = {
   /**
    * Remove the matching artifacts instead.
@@ -316,11 +304,6 @@ export type ArtifactsPathDefinitionsOpts = {
    * Include the artifact type in each address scheme.
    */
   typeAssertion?: boolean
-
-  /**
-   * Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.
-   */
-  dimension?: string
 }
 
 export type ArtifactsValuesOpts = {
@@ -4306,6 +4289,25 @@ export function WorkspaceCommitPickStatusNameToValue(
       return name as WorkspaceCommitPickStatus
   }
 }
+export type __DirectiveArgsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __FieldArgsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeEnumValuesOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeFieldsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeInputFieldsOpts = {
+  includeDeprecated?: boolean
+}
 
 /**
  * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
@@ -4908,7 +4910,7 @@ export class Artifact extends BaseClient {
   }
 
   /**
-   * The module name, collection keys, and full path key in the artifact type dimension.
+   * The module name, and the full path key in the artifact type dimension.
    */
   dimensionKeys = async (): Promise<ArtifactDimensionKey[]> => {
     type dimensionKeys = {
@@ -5009,11 +5011,8 @@ export class Artifact extends BaseClient {
 
 export class ArtifactDimension extends BaseClient {
   private readonly _id?: ID = undefined
-  private readonly _collectionType?: string = undefined
   private readonly _identifier?: string = undefined
   private readonly _itemType?: string = undefined
-  private readonly _keyDescription?: string = undefined
-  private readonly _keyName?: string = undefined
   private readonly _kind?: ArtifactDimensionKind = undefined
   private readonly _name?: string = undefined
   private readonly _qualifiedName?: string = undefined
@@ -5024,11 +5023,8 @@ export class ArtifactDimension extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
-    _collectionType?: string,
     _identifier?: string,
     _itemType?: string,
-    _keyDescription?: string,
-    _keyName?: string,
     _kind?: ArtifactDimensionKind,
     _name?: string,
     _qualifiedName?: string,
@@ -5036,11 +5032,8 @@ export class ArtifactDimension extends BaseClient {
     super(ctx)
 
     this._id = _id
-    this._collectionType = _collectionType
     this._identifier = _identifier
     this._itemType = _itemType
-    this._keyDescription = _keyDescription
-    this._keyName = _keyName
     this._kind = _kind
     this._name = _name
     this._qualifiedName = _qualifiedName
@@ -5062,22 +5055,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * The collection type, or null for a static dimension.
-   */
-  collectionType = async (): Promise<string> => {
-    if (this._collectionType) {
-      return this._collectionType
-    }
-
-    const ctx = this._ctx.select("collectionType")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+   * Stable identifier: type:TypeName for an artifact type, or module.
    */
   identifier = async (): Promise<string> => {
     if (this._identifier) {
@@ -5092,7 +5070,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * The collection item or artifact type name, or empty for the module dimension.
+   * The artifact type name, or empty for the module dimension.
    */
   itemType = async (): Promise<string> => {
     if (this._itemType) {
@@ -5100,36 +5078,6 @@ export class ArtifactDimension extends BaseClient {
     }
 
     const ctx = this._ctx.select("itemType")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The collection key argument description, or empty for a static dimension.
-   */
-  keyDescription = async (): Promise<string> => {
-    if (this._keyDescription) {
-      return this._keyDescription
-    }
-
-    const ctx = this._ctx.select("keyDescription")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The collection key argument name, or name for a static dimension.
-   */
-  keyName = async (): Promise<string> => {
-    if (this._keyName) {
-      return this._keyName
-    }
-
-    const ctx = this._ctx.select("keyName")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -5245,7 +5193,7 @@ export class ArtifactDimensionKey extends BaseClient {
 }
 
 /**
- * A schema path and its dimensions. The path can exist even when its collections have no runtime items.
+ * A schema path and its dimensions.
  */
 export class ArtifactPath extends BaseClient {
   private readonly _id?: ID = undefined
@@ -5541,7 +5489,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+   * List dimensions on the selected schema paths. Does not read runtime values.
    */
   dimensionDefinitions = async (): Promise<ArtifactDimension[]> => {
     type dimensionDefinitions = {
@@ -5555,23 +5503,6 @@ export class Artifacts extends BaseClient {
     return response.map(
       (r) =>
         new ArtifactDimension(ctx.copy().selectNode(r.id, "ArtifactDimension")),
-    )
-  }
-
-  /**
-   * List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
-   */
-  dimensionItems = async (dimension: string): Promise<Artifact[]> => {
-    type dimensionItems = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("dimensionItems", { dimension }).select("id")
-
-    const response: Awaited<dimensionItems[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new Artifact(ctx.copy().selectNode(r.id, "Artifact")),
     )
   }
 
@@ -5595,25 +5526,6 @@ export class Artifacts extends BaseClient {
     const response: Awaited<string[]> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Select Expertise artifacts.
-   * @deprecated Use filterTypes with Expertise.
-   */
-  filterAgentCommand = (): Artifacts => {
-    const ctx = this._ctx.select("filterAgentCommand")
-    return new Artifacts(ctx)
-  }
-
-  /**
-   * Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.
-   * @param opts.generated Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
-   * @deprecated Use filterTypes and apply workspace settings in the caller.
-   */
-  filterCheckCommand = (opts?: ArtifactsFilterCheckCommandOpts): Artifacts => {
-    const ctx = this._ctx.select("filterCheckCommand", { ...opts })
-    return new Artifacts(ctx)
   }
 
   /**
@@ -5641,15 +5553,6 @@ export class Artifacts extends BaseClient {
     opts?: ArtifactsFilterDirectivesOpts,
   ): Artifacts => {
     const ctx = this._ctx.select("filterDirectives", { directives, ...opts })
-    return new Artifacts(ctx)
-  }
-
-  /**
-   * Select Generator artifacts, using each workspace's generator settings.
-   * @deprecated Use filterTypes and apply workspace settings in the caller.
-   */
-  filterGenerateCommand = (): Artifacts => {
-    const ctx = this._ctx.select("filterGenerateCommand")
     return new Artifacts(ctx)
   }
 
@@ -5709,15 +5612,6 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Select Service artifacts, using each workspace's service settings. Does not require the up directive.
-   * @deprecated Use filterTypes and apply workspace settings in the caller.
-   */
-  filterUpCommand = (): Artifacts => {
-    const ctx = this._ctx.select("filterUpCommand")
-    return new Artifacts(ctx)
-  }
-
-  /**
    * Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
    *
    * The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
@@ -5771,10 +5665,9 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
+   * List selected schema paths. Does not read runtime values.
    * @param opts.absolute Prefix each address with the workspace's Git address and commit.
    * @param opts.typeAssertion Include the artifact type in each address scheme.
-   * @param opts.dimension Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.
    */
   pathDefinitions = async (
     opts?: ArtifactsPathDefinitionsOpts,
@@ -6328,114 +6221,6 @@ export class Cloud extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
-  }
-}
-
-export class CollectionDelta extends BaseClient {
-  private readonly _id?: ID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this CollectionDelta.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Current keys absent from the original collection, in current order.
-   */
-  addedKeys = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("addedKeys")
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Original keys absent from the current collection, in original order.
-   */
-  removedKeys = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("removedKeys")
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
-  }
-}
-
-export class CollectionTypeDef extends BaseClient {
-  private readonly _id?: ID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this CollectionTypeDef.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The type of batch operations, or null when there are none.
-   */
-  batchType = async (): Promise<TypeDef | null> => {
-    const ctx = this._ctx.select("batchType").select("id")
-
-    const response: Awaited<string | null> = await ctx.execute()
-
-    if (response === null) {
-      return null
-    }
-    return new TypeDef(ctx.copy().selectNode(response, "TypeDef"))
-  }
-
-  /**
-   * The type of collection keys.
-   */
-  keyType = (): TypeDef => {
-    const ctx = this._ctx.select("keyType")
-    return new TypeDef(ctx)
-  }
-
-  /**
-   * The object type returned by get.
-   */
-  valueType = (): TypeDef => {
-    const ctx = this._ctx.select("valueType")
-    return new TypeDef(ctx)
   }
 }
 
@@ -17272,22 +17057,6 @@ export class TypeDef extends BaseClient {
   }
 
   /**
-   * Collection metadata, or null if this object is not a collection.
-   */
-  asCollection = async (): Promise<CollectionTypeDef | null> => {
-    const ctx = this._ctx.select("asCollection").select("id")
-
-    const response: Awaited<string | null> = await ctx.execute()
-
-    if (response === null) {
-      return null
-    }
-    return new CollectionTypeDef(
-      ctx.copy().selectNode(response, "CollectionTypeDef"),
-    )
-  }
-
-  /**
    * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
    */
   asEnum = async (): Promise<EnumTypeDef | null> => {
@@ -17416,38 +17185,6 @@ export class TypeDef extends BaseClient {
     const response: Awaited<boolean> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Mark this object as a collection.
-   */
-  withCollection = (): TypeDef => {
-    const ctx = this._ctx.select("withCollection")
-    return new TypeDef(ctx)
-  }
-
-  /**
-   * Select the field that receives changes from the original collection.
-   */
-  withCollectionDelta = (name: string): TypeDef => {
-    const ctx = this._ctx.select("withCollectionDelta", { name })
-    return new TypeDef(ctx)
-  }
-
-  /**
-   * Select the item lookup function for this collection.
-   */
-  withCollectionGet = (name: string): TypeDef => {
-    const ctx = this._ctx.select("withCollectionGet", { name })
-    return new TypeDef(ctx)
-  }
-
-  /**
-   * Select the stored keys field for this collection.
-   */
-  withCollectionKeys = (name: string): TypeDef => {
-    const ctx = this._ctx.select("withCollectionKeys", { name })
-    return new TypeDef(ctx)
   }
 
   /**

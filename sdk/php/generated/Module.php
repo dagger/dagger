@@ -23,6 +23,20 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     }
 
     /**
+     * The source used to resolve contextual files and directories, when different from source.
+     */
+    public function contextSource(): ?ModuleSource
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('contextSource');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\ModuleSource::class, new \Dagger\Id((string)$id), 'ModuleSource');
+    }
+
+    /**
      * Forces evaluation of the module, including any loading into the engine and associated validation.
      */
     public function sync(): Module

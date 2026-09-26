@@ -1104,7 +1104,7 @@ impl Artifact {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The module name, collection keys, and full path key in the artifact type dimension.
+    /// The module name, and the full path key in the artifact type dimension.
     pub async fn dimension_keys(&self) -> Result<Vec<ArtifactDimensionKey>, DaggerError> {
         let query = self.selection.select("dimensionKeys");
         let query = query.select("id");
@@ -1188,12 +1188,7 @@ impl ArtifactDimension {
         let query = self.selection.select("kind");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The collection type, or null for a static dimension.
-    pub async fn collection_type(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("collectionType");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+    /// Stable identifier: type:TypeName for an artifact type, or module.
     pub async fn identifier(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("identifier");
         query.execute(self.graphql_client.clone()).await
@@ -1208,19 +1203,9 @@ impl ArtifactDimension {
         let query = self.selection.select("qualifiedName");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The collection item or artifact type name, or empty for the module dimension.
+    /// The artifact type name, or empty for the module dimension.
     pub async fn item_type(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("itemType");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The collection key argument name, or name for a static dimension.
-    pub async fn key_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("keyName");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The collection key argument description, or empty for a static dimension.
-    pub async fn key_description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("keyDescription");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -1441,13 +1426,10 @@ pub struct Artifacts {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ArtifactsPathDefinitionsOpts<'a> {
+pub struct ArtifactsPathDefinitionsOpts {
     /// Prefix each address with the workspace's Git address and commit.
     #[builder(setter(into, strip_option), default)]
     pub absolute: Option<bool>,
-    /// Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.
-    #[builder(setter(into, strip_option), default)]
-    pub dimension: Option<&'a str>,
     /// Include the artifact type in each address scheme.
     #[builder(setter(into, strip_option), default)]
     pub type_assertion: Option<bool>,
@@ -1460,12 +1442,6 @@ pub struct ArtifactsValuesOpts {
     /// Cancel remaining work after the first failure.
     #[builder(setter(into, strip_option), default)]
     pub fail_fast: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ArtifactsFilterCheckCommandOpts {
-    /// Include generated-file checks. Defaults to the workspace check-generated setting, or true when unset.
-    #[builder(setter(into, strip_option), default)]
-    pub generated: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsFilterDirectivesOpts {
@@ -1605,7 +1581,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
+    /// List selected schema paths. Does not read runtime values.
     ///
     /// # Arguments
     ///
@@ -1626,14 +1602,14 @@ impl Artifacts {
             })
             .collect())
     }
-    /// List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
+    /// List selected schema paths. Does not read runtime values.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn path_definitions_opts<'a>(
+    pub async fn path_definitions_opts(
         &self,
-        opts: ArtifactsPathDefinitionsOpts<'a>,
+        opts: ArtifactsPathDefinitionsOpts,
     ) -> Result<Vec<ArtifactPath>, DaggerError> {
         let mut query = self.selection.select("pathDefinitions");
         if let Some(absolute) = opts.absolute {
@@ -1641,9 +1617,6 @@ impl Artifacts {
         }
         if let Some(type_assertion) = opts.type_assertion {
             query = query.arg("typeAssertion", type_assertion);
-        }
-        if let Some(dimension) = opts.dimension {
-            query = query.arg("dimension", dimension);
         }
         let query = query.select("id");
         let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
@@ -1659,7 +1632,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+    /// List dimensions on the selected schema paths. Does not read runtime values.
     pub async fn dimension_definitions(&self) -> Result<Vec<ArtifactDimension>, DaggerError> {
         let query = self.selection.select("dimensionDefinitions");
         let query = query.select("id");
@@ -1760,62 +1733,6 @@ impl Artifacts {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
-    }
-    /// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn filter_check_command(&self) -> Artifacts {
-        let query = self.selection.select("filterCheckCommand");
-        Artifacts {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Select Check artifacts for dagger check, using each workspace's check and generator settings. Include staleness checks from Generators.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn filter_check_command_opts(&self, opts: ArtifactsFilterCheckCommandOpts) -> Artifacts {
-        let mut query = self.selection.select("filterCheckCommand");
-        if let Some(generated) = opts.generated {
-            query = query.arg("generated", generated);
-        }
-        Artifacts {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Select Generator artifacts, using each workspace's generator settings.
-    pub fn filter_generate_command(&self) -> Artifacts {
-        let query = self.selection.select("filterGenerateCommand");
-        Artifacts {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Select Expertise artifacts.
-    pub fn filter_agent_command(&self) -> Artifacts {
-        let query = self.selection.select("filterAgentCommand");
-        Artifacts {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Select Service artifacts, using each workspace's service settings. Does not require the up directive.
-    pub fn filter_up_command(&self) -> Artifacts {
-        let query = self.selection.select("filterUpCommand");
-        Artifacts {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
     }
     /// Keep artifacts with any listed directive. Does not filter by type or workspace settings.
     ///
@@ -2104,27 +2021,6 @@ impl Artifacts {
         let mut query = self.selection.select("dimensionKeys");
         query = query.arg("dimension", dimension.into());
         query.execute(self.graphql_client.clone()).await
-    }
-    /// List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
-    pub async fn dimension_items(
-        &self,
-        dimension: impl Into<String>,
-    ) -> Result<Vec<Artifact>, DaggerError> {
-        let mut query = self.selection.select("dimensionItems");
-        query = query.arg("dimension", dimension.into());
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Artifact {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Artifact"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
     }
     /// Enumerate complete artifacts without evaluating their values.
     pub async fn items(&self) -> Result<Vec<Artifact>, DaggerError> {
@@ -2712,135 +2608,6 @@ impl Cloud {
     }
 }
 impl Node for Cloud {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
-pub struct CollectionDelta {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for CollectionDelta {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for CollectionDelta {
-    fn graphql_type() -> &'static str {
-        "CollectionDelta"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl CollectionDelta {
-    /// A unique identifier for this CollectionDelta.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Current keys absent from the original collection, in current order.
-    pub async fn added_keys(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("addedKeys");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Original keys absent from the current collection, in original order.
-    pub async fn removed_keys(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("removedKeys");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-impl Node for CollectionDelta {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
-pub struct CollectionTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for CollectionTypeDef {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for CollectionTypeDef {
-    fn graphql_type() -> &'static str {
-        "CollectionTypeDef"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl CollectionTypeDef {
-    /// A unique identifier for this CollectionTypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The type of collection keys.
-    pub fn key_type(&self) -> TypeDef {
-        let query = self.selection.select("keyType");
-        TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// The object type returned by get.
-    pub fn value_type(&self) -> TypeDef {
-        let query = self.selection.select("valueType");
-        TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// The type of batch operations, or null when there are none.
-    pub async fn batch_type(&self) -> Result<Option<TypeDef>, DaggerError> {
-        let query = self.selection.select("batchType");
-        let query = query.select("id");
-        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(id.map(|id| TypeDef {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("TypeDef"),
-            graphql_client: self.graphql_client.clone(),
-        }))
-    }
-}
-impl Node for CollectionTypeDef {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -14768,41 +14535,6 @@ impl ObjectTypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The name of the object.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The doc string for the object, if any.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The location of this object declaration.
-    pub async fn source_map(&self) -> Result<Option<SourceMap>, DaggerError> {
-        let query = self.selection.select("sourceMap");
-        let query = query.select("id");
-        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(id.map(|id| SourceMap {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("SourceMap"),
-            graphql_client: self.graphql_client.clone(),
-        }))
-    }
-    /// The reason this enum member is deprecated, if any.
-    pub async fn deprecated(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("deprecated");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
-    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceModuleName");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Static fields defined on this object, if any.
     pub async fn fields(&self) -> Result<Vec<FieldTypeDef>, DaggerError> {
         let query = self.selection.select("fields");
@@ -14851,6 +14583,41 @@ impl ObjectTypeDef {
                 .inline_fragment("Function"),
             graphql_client: self.graphql_client.clone(),
         }))
+    }
+    /// The name of the object.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The doc string for the object, if any.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The location of this object declaration.
+    pub async fn source_map(&self) -> Result<Option<SourceMap>, DaggerError> {
+        let query = self.selection.select("sourceMap");
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| SourceMap {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("SourceMap"),
+            graphql_client: self.graphql_client.clone(),
+        }))
+    }
+    /// The reason this enum member is deprecated, if any.
+    pub async fn deprecated(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("deprecated");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceModuleName");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 impl Node for ObjectTypeDef {
@@ -17060,75 +16827,6 @@ impl TypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Mark this object as a collection.
-    pub fn with_collection(&self) -> TypeDef {
-        let query = self.selection.select("withCollection");
-        TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Select the stored keys field for this collection.
-    pub fn with_collection_keys(&self, name: impl Into<String>) -> TypeDef {
-        let mut query = self.selection.select("withCollectionKeys");
-        query = query.arg("name", name.into());
-        TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Select the item lookup function for this collection.
-    pub fn with_collection_get(&self, name: impl Into<String>) -> TypeDef {
-        let mut query = self.selection.select("withCollectionGet");
-        query = query.arg("name", name.into());
-        TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Select the field that receives changes from the original collection.
-    pub fn with_collection_delta(&self, name: impl Into<String>) -> TypeDef {
-        let mut query = self.selection.select("withCollectionDelta");
-        query = query.arg("name", name.into());
-        TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Collection metadata, or null if this object is not a collection.
-    pub async fn as_collection(&self) -> Result<Option<CollectionTypeDef>, DaggerError> {
-        let query = self.selection.select("asCollection");
-        let query = query.select("id");
-        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(id.map(|id| CollectionTypeDef {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("CollectionTypeDef"),
-            graphql_client: self.graphql_client.clone(),
-        }))
-    }
-    /// The canonical non-optional name of the type.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The kind of type this is (e.g. primitive, list, object).
-    pub async fn kind(&self) -> Result<TypeDefKind, DaggerError> {
-        let query = self.selection.select("kind");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Whether this type can be set to null. Defaults to false.
-    pub async fn optional(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("optional");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Sets whether this type can be set to null.
     pub fn with_optional(&self, optional: bool) -> TypeDef {
         let mut query = self.selection.select("withOptional");
@@ -17503,6 +17201,21 @@ impl TypeDef {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// The canonical non-optional name of the type.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The kind of type this is (e.g. primitive, list, object).
+    pub async fn kind(&self) -> Result<TypeDefKind, DaggerError> {
+        let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether this type can be set to null. Defaults to false.
+    pub async fn optional(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("optional");
+        query.execute(self.graphql_client.clone()).await
     }
     /// If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
     pub async fn as_list(&self) -> Result<Option<ListTypeDef>, DaggerError> {
@@ -20277,8 +19990,6 @@ pub enum AgentState {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ArtifactDimensionKind {
-    #[serde(rename = "COLLECTION")]
-    Collection,
     #[serde(rename = "MODULE")]
     Module,
     #[serde(rename = "TYPE")]
