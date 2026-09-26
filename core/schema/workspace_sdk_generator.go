@@ -150,6 +150,136 @@ func validateSDKModuleGenerationGraph(cfg *workspace.Config, configDir string) e
 type sdkModuleGeneratorPlan struct {
 	invocationCWD string
 	ordered       []*sdkModuleGraphScope
+	// owner assigns dependencies from other SDKs to the generator that needs them.
+	owner  map[string]string
+	inputs map[string][]string
+	last   map[string]int
+}
+
+func sdkModuleScopeLabel(node *sdkModuleGraphScope) string {
+	return sdkModuleLocalInputLabel(node.path)
+}
+
+func sdkModuleLocalInputLabel(path string) string {
+	path = cleanWorkspaceRelPath(path)
+	if path == "." {
+		return "./"
+	}
+	return "./" + path
+}
+
+// Group the work by its triggering client inputs. Updates pass their selected
+// targets; explicit generation uses all recorded clients. A selected local
+// dependency is also an input because it is regenerated earlier in this run.
+// This describes the existing selection policy, not a content-change test.
+func (plan *sdkModuleGeneratorPlan) planProgress(configDir string, targets map[string][]string) error {
+	plan.inputs = map[string][]string{}
+	plan.last = map[string]int{}
+	for i, node := range plan.ordered {
+		clients := node.scope.Clients
+		if targets != nil {
+			clients = targets[node.key]
+		}
+		seen := map[string]bool{}
+		add := func(label string) {
+			if !seen[label] {
+				plan.inputs[node.key] = append(plan.inputs[node.key], label)
+				seen[label] = true
+			}
+			plan.last[label] = i
+		}
+		for _, target := range clients {
+			ref, err := resolveSDKManagedClientModule(configDir, target)
+			if err != nil {
+				return fmt.Errorf("generation input %q: %w", target, err)
+			}
+			if workspace.IsLocalRef(ref, "") {
+				ref = sdkModuleLocalInputLabel(ref)
+			}
+			add(ref)
+		}
+		for _, dependency := range node.dependencies {
+			add(sdkModuleScopeLabel(dependency))
+		}
+	}
+	return nil
+}
+
+type sdkModuleInputProgress struct {
+	ctx   context.Context
+	span  trace.Span
+	input string
+	err   error
+}
+
+type sdkModuleScopeProgress struct {
+	spans  []trace.Span
+	inputs []*sdkModuleInputProgress
+}
+
+type sdkModuleGeneratorProgress struct {
+	plan   *sdkModuleGeneratorPlan
+	scopes map[string]*sdkModuleScopeProgress
+	inputs map[string]*sdkModuleInputProgress
+}
+
+func (p *sdkModuleGeneratorProgress) start(ctx context.Context, node *sdkModuleGraphScope) context.Context {
+	if p.inputs == nil {
+		p.inputs = map[string]*sdkModuleInputProgress{}
+	}
+	work := &sdkModuleScopeProgress{}
+	p.scopes[node.key] = work
+	var scopeCtx context.Context
+	for _, input := range p.plan.inputs[node.key] {
+		// Keep groups separate when multiple SDK generators share an input.
+		key := trace.SpanFromContext(ctx).SpanContext().SpanID().String() + ":" + input
+		group := p.inputs[key]
+		if group == nil {
+			inputCtx, span := core.Tracer(ctx).Start(ctx, "changed: "+input, telemetry.Reveal())
+			group = &sdkModuleInputProgress{ctx: inputCtx, span: span, input: input}
+			p.inputs[key] = group
+		}
+		opts := []trace.SpanStartOption{telemetry.Reveal()}
+		if scopeCtx != nil {
+			// Each row represents the same operation, executed only once.
+			opts = append(opts, trace.WithLinks(trace.Link{SpanContext: trace.SpanFromContext(scopeCtx).SpanContext()}))
+		}
+		rowCtx, span := core.Tracer(group.ctx).Start(group.ctx, "re-generate "+sdkModuleScopeLabel(node), opts...)
+		if scopeCtx == nil {
+			scopeCtx = rowCtx
+		}
+		work.spans = append(work.spans, span)
+		work.inputs = append(work.inputs, group)
+	}
+	if scopeCtx == nil {
+		// Explicit generation can select a module with no client inputs.
+		var span trace.Span
+		scopeCtx, span = core.Tracer(ctx).Start(ctx, "re-generate "+sdkModuleScopeLabel(node), telemetry.Reveal())
+		work.spans = append(work.spans, span)
+	}
+	return scopeCtx
+}
+
+func (p *sdkModuleGeneratorProgress) finish(index int, err error) {
+	// End every appearance together. Scope durations measure only their own
+	// generation, not the work of later downstream scopes.
+	for key, scope := range p.scopes {
+		for _, span := range scope.spans {
+			telemetry.EndWithCause(span, &err)
+		}
+		if err != nil {
+			for _, input := range scope.inputs {
+				input.err = err
+			}
+		}
+		delete(p.scopes, key)
+	}
+	for key, input := range p.inputs {
+		if err != nil || p.plan.last[input.input] <= index {
+			telemetry.EndWithCause(input.span, &input.err)
+			delete(p.inputs, key)
+		}
+	}
 }
 
 func selectSDKModuleGeneratorProviders(specs []*core.SyntheticGeneratorSpec) (map[string]bool, error) {
@@ -346,16 +476,18 @@ func planSDKModuleScopes(
 
 	plan := &sdkModuleGeneratorPlan{
 		invocationCWD: cleanWorkspaceRelPath(invocationCWD),
+		owner:         map[string]string{},
 	}
 	required := map[string]bool{}
-	var requireScope func(*sdkModuleGraphScope)
-	requireScope = func(node *sdkModuleGraphScope) {
+	var requireScope func(*sdkModuleGraphScope, string)
+	requireScope = func(node *sdkModuleGraphScope, owner string) {
 		if required[node.key] {
 			return
 		}
 		required[node.key] = true
+		plan.owner[node.key] = owner
 		for _, dependency := range node.dependencies {
-			requireScope(dependency)
+			requireScope(dependency, owner)
 		}
 	}
 	for _, node := range scopes {
@@ -365,12 +497,15 @@ func planSDKModuleScopes(
 		if !node.scope.IsModule && len(node.scope.Clients) == 0 {
 			continue
 		}
-		requireScope(node)
+		requireScope(node, node.sdkName)
 	}
 	for _, node := range ordered {
 		if required[node.key] {
 			plan.ordered = append(plan.ordered, node)
 		}
+	}
+	if err := plan.planProgress(configDir, nil); err != nil {
+		return nil, err
 	}
 	return plan, nil
 }
@@ -395,8 +530,8 @@ func runSDKModuleGeneratorGraph(
 	// Each selected SDK is a distinct generator in the CLI, even though their
 	// scopes are evaluated together as one dependency-ordered graph. Keep the
 	// spans open for the whole graph so their duration and result describe the
-	// aggregate operation, while parenting each provider's scope work to the
-	// matching span so its rolled-up detail remains useful.
+	// aggregate operation. Input groups stay under their SDK generator, with
+	// a regeneration row for each consumer of that input.
 	providerCtx := make(map[string]context.Context, len(specs))
 	var spans []trace.Span
 	if generatorSpans {
@@ -405,9 +540,8 @@ func runSDKModuleGeneratorGraph(
 				continue
 			}
 			generatorCtx, span := core.Tracer(ctx).Start(ctx, spec.Name,
+				telemetry.Reveal(),
 				trace.WithAttributes(
-					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 					attribute.String(telemetry.GeneratorNameAttr, spec.Name),
 				),
 			)
@@ -421,8 +555,10 @@ func runSDKModuleGeneratorGraph(
 		}
 	}()
 
+	progress := &sdkModuleGeneratorProgress{plan: plan, scopes: map[string]*sdkModuleScopeProgress{}}
+	defer func() { progress.finish(len(plan.ordered)-1, rerr) }()
 	current := base
-	for _, node := range plan.ordered {
+	for i, node := range plan.ordered {
 		selected, err := selectSDKModule(staged.Config, node.sdkName)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
@@ -430,8 +566,12 @@ func runSDKModuleGeneratorGraph(
 		generatorCtx := ctx
 		if selectedCtx, ok := providerCtx[node.sdkName]; ok {
 			generatorCtx = selectedCtx
+		} else if ownerCtx, ok := providerCtx[plan.owner[node.key]]; ok {
+			generatorCtx = ownerCtx
 		}
-		current, err = s.generateSDKModuleScope(generatorCtx, current, staged, selected, node.configScope, node.path, node.scope)
+		scopeCtx := progress.start(generatorCtx, node)
+		current, err = s.generateSDKModuleScope(scopeCtx, current, staged, selected, node.configScope, node.path, node.scope)
+		progress.finish(i, err)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("generate SDK scope %q: %w", node.path, err)
 		}

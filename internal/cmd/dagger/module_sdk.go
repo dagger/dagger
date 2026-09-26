@@ -306,7 +306,11 @@ func runSDKModuleClientUpdate(cmd *cobra.Command, modules []string) error {
 	if workspaceEnv != "" {
 		return fmt.Errorf("module client update does not support --env; SDK scopes live in the base workspace config")
 	}
-	return mutateSDKModuleWorkspace(cmd, `
+	name := "update clients"
+	if len(modules) > 0 {
+		name += ": " + strings.Join(modules, ", ")
+	}
+	return mutateSDKModuleWorkspaceWithProgress(cmd, name, `
 query ModuleClientUpdate($modules: [String!], $all: Boolean, $sdk: String) {
   currentWorkspace {
     result: withUpdatedClients(modules: $modules, all: $all, sdk: $sdk) { id }
@@ -355,32 +359,46 @@ func mutateSDKModuleWorkspaceWithDisposition(
 	disposition changesetDisposition,
 	afterApply func(context.Context, *dagger.Workspace) error,
 ) error {
+	return mutateSDKModuleWorkspaceOperation(cmd, query, variables, disposition, afterApply, "")
+}
+
+func mutateSDKModuleWorkspaceWithProgress(cmd *cobra.Command, name, query string, variables map[string]any, afterApply func(context.Context, *dagger.Workspace) error) error {
+	return mutateSDKModuleWorkspaceOperation(cmd, query, variables, changesetDispositionForAutoApply(autoApply), afterApply, name)
+}
+
+func mutateSDKModuleWorkspaceOperation(cmd *cobra.Command, query string, variables map[string]any, disposition changesetDisposition, afterApply func(context.Context, *dagger.Workspace) error, progressName string) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		dag := ec.Dagger()
-		var result struct {
-			CurrentWorkspace struct {
-				Result struct {
-					ID dagger.ID
+		run := func(ctx context.Context) error {
+			dag := ec.Dagger()
+			var result struct {
+				CurrentWorkspace struct {
+					Result struct {
+						ID dagger.ID
+					}
 				}
 			}
-		}
-		if err := dag.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &result}); err != nil {
-			return err
-		}
-		if result.CurrentWorkspace.Result.ID == "" {
-			return fmt.Errorf("SDK-module workspace operation returned no workspace")
-		}
+			if err := dag.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &result}); err != nil {
+				return err
+			}
+			if result.CurrentWorkspace.Result.ID == "" {
+				return fmt.Errorf("SDK-module workspace operation returned no workspace")
+			}
 
-		current := dag.CurrentWorkspace()
-		updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID)
-		applied, err := handleWorkspaceResponseWithDisposition(ctx, dag, current, updated, disposition, cmd.OutOrStdout())
-		if err != nil || !applied || afterApply == nil {
-			return err
+			current := dag.CurrentWorkspace()
+			updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID)
+			applied, err := handleWorkspaceResponseWithDisposition(ctx, dag, current, updated, disposition, cmd.OutOrStdout())
+			if err != nil || !applied || afterApply == nil {
+				return err
+			}
+			return afterApply(ctx, current)
 		}
-		return afterApply(ctx, current)
+		if progressName != "" {
+			return withWorkspaceUpdateProgress(ctx, cmd, progressName, run)
+		}
+		return run(ctx)
 	})
 }
 
