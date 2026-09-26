@@ -165,6 +165,85 @@ func TestManagerQuotaAndExpiry(t *testing.T) {
 	}
 }
 
+func TestManagerQuotaCountsUnsealedArchives(t *testing.T) {
+	const testTraceC = "33333333333333333333333333333333"
+	root := t.TempDir()
+	now := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	sealAt := now.Add(2 * time.Minute)
+	bootstrap := testBootstrap(t, Manifest{TraceID: testTraceC}, HighWater{}, sealAt, 0)
+	sizes := map[string]int64{"crashed": 30, "failed": 30}
+	var removed []string
+	config := Config{
+		// Room for the sealed archive and one unsealed store, not both.
+		Root: root, TTL: time.Hour, QuotaBytes: 40 + int64(len(bootstrap)), Now: func() time.Time { return now },
+		RemoveStore: func(clientID string) (bool, error) { removed = append(removed, clientID); return true, nil },
+		StoreSize:   func(clientID string) (int64, error) { return sizes[clientID], nil },
+	}
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Oldest: a session the engine crashed under, recovered as interrupted.
+	if _, err := manager.Register(testTraceA, "crashed"); err != nil {
+		t.Fatal(err)
+	}
+	manager, err = NewManager(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	interrupted, err := manager.Manifest(testTraceA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if interrupted.State != StateInterrupted || interrupted.SizeBytes != 30 {
+		t.Fatalf("interrupted = %+v, want sized interrupted archive", interrupted)
+	}
+	// Next: a session whose finalization failed.
+	now = now.Add(time.Minute)
+	if _, err := manager.Register(testTraceB, "failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.MarkIncomplete(testTraceB, errors.New("drain failed")); err != nil {
+		t.Fatal(err)
+	}
+	incomplete, err := manager.Manifest(testTraceB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if incomplete.State != StateIncomplete || incomplete.SizeBytes != 30 {
+		t.Fatalf("incomplete = %+v, want sized incomplete archive", incomplete)
+	}
+	// Newest: a sealed archive.
+	now = sealAt
+	if _, err := manager.Register(testTraceC, "sealed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.BeginFinalizing(testTraceC); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Finalize(testTraceC, FinalizeInput{SealAt: sealAt, BootstrapBytes: bootstrap}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unsealed stores count toward the quota and are evicted oldest-first
+	// alongside sealed ones, well before their TTL.
+	overage, err := manager.GC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overage != 0 {
+		t.Fatalf("overage = %d", overage)
+	}
+	if len(removed) != 1 || removed[0] != "crashed" {
+		t.Fatalf("removed = %v, want only the oldest (interrupted) store", removed)
+	}
+	for _, traceID := range []string{testTraceB, testTraceC} {
+		if _, err := manager.Manifest(traceID); err != nil {
+			t.Fatalf("archive %s collected: %v", traceID, err)
+		}
+	}
+}
+
 func TestManagerRetriesStoreDeletion(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)

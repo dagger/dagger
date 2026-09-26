@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +12,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/agentcontrol"
@@ -21,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -56,7 +61,7 @@ func archiveFixture(t *testing.T) (*Server, *daggerSession, *clientdb.DB, agentc
 	t.Helper()
 	root := t.TempDir()
 	dbs := clientdb.NewDBs(filepath.Join(root, "stores"))
-	manager, err := archive.NewManager(archive.Config{Root: filepath.Join(root, "archives"), RemoveStore: dbs.Remove})
+	manager, err := archive.NewManager(archive.Config{Root: filepath.Join(root, "archives"), RemoveStore: dbs.Remove, StoreSize: dbs.StoreSize})
 	require.NoError(t, err)
 	srv := &Server{clientDBs: dbs, archives: manager}
 	sess := &daggerSession{sessionID: "session", mainClientCallerID: "main", clientRecords: map[string]*clientRecord{}}
@@ -128,6 +133,8 @@ func TestArchiveFinalWitnessAndClosure(t *testing.T) {
 			if failure != "none" && failure != "capture" {
 				require.Error(t, err)
 				require.Equal(t, archive.StateIncomplete, m.State)
+				// An unsealed store still counts toward the archive quota.
+				require.Positive(t, m.SizeBytes)
 				return
 			}
 			require.NoError(t, err)
@@ -429,6 +436,53 @@ func TestArchiveSharedTraceBelongsToFirstSession(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, archive.StateClosed, m.State)
 	require.Equal(t, first.mainClientCallerID, m.MainClientID)
+}
+
+type failingReleaseContainer struct{}
+
+func (failingReleaseContainer) Start(context.Context, bkgw.StartRequest) (bkgw.ContainerProcess, error) {
+	return nil, errors.New("unused")
+}
+func (failingReleaseContainer) Release(context.Context) error {
+	return errors.New("container release failed")
+}
+
+// TestArchiveSealsDespiteUnrelatedTeardownError: only teardown errors that
+// affect the recorded telemetry may leave an archive unsealed.
+func TestArchiveSealsDespiteUnrelatedTeardownError(t *testing.T) {
+	srv := newTeardownTestServer(t)
+	root := t.TempDir()
+	srv.clientDBs = clientdb.NewDBs(filepath.Join(root, "stores"))
+	manager, err := archive.NewManager(archive.Config{Root: filepath.Join(root, "archives"), RemoveStore: srv.clientDBs.Remove, StoreSize: srv.clientDBs.StoreSize})
+	require.NoError(t, err)
+	srv.archives = manager
+	srv.telemetryPubSub = NewPubSub(srv)
+
+	md := &engine.ClientMetadata{SessionID: "session", ClientID: "main"}
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "main", clientMetadata: md, shutdownCh: make(chan struct{})}}
+	sess := &daggerSession{
+		sessionID:          md.SessionID,
+		mainClientCallerID: md.ClientID,
+		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
+		services:           core.NewServices(),
+		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
+		containers:         map[bkgw.Container]struct{}{failingReleaseContainer{}: {}},
+		shutdownCh:         make(chan struct{}),
+		telemetryPubSub:    srv.telemetryPubSub,
+	}
+	client.daggerSession = sess
+	installTestClientRecords(sess)
+	require.NoError(t, client.retainTelemetryDB(t.Context()))
+	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
+	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	srv.initializeSessionTelemetry(sess, nil)
+	require.NoError(t, sess.ensureArchive(archiveTestTrace))
+	sess.archiveExpected = agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{}, Subscriptions: map[agentcontrol.EdgeKey]int64{}}
+
+	require.ErrorContains(t, srv.removeDaggerSession(t.Context(), sess), "container release failed")
+	m, err := srv.archives.Manifest(archiveTestTrace)
+	require.NoError(t, err)
+	require.Equal(t, archive.StateClosed, m.State, "failure: %s", m.Failure)
 }
 
 // TestArchiveCollectedIsCleanMiss: an archive GC has collected is a plain

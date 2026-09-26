@@ -100,6 +100,9 @@ type Config struct {
 	QuotaBytes  int64
 	Now         func() time.Time
 	RemoveStore func(string) (bool, error)
+	// StoreSize reports the on-disk size of a main client's telemetry store.
+	// It sizes archives that end unsealed, so they count toward the quota.
+	StoreSize func(clientID string) (int64, error)
 }
 
 type Manager struct {
@@ -108,6 +111,7 @@ type Manager struct {
 	quota       int64
 	now         func() time.Time
 	removeStore func(string) (bool, error)
+	storeSize   func(string) (int64, error)
 
 	mu      sync.RWMutex
 	entries map[string]*Manifest
@@ -138,7 +142,8 @@ func NewManager(cfg Config) (*Manager, error) {
 	}
 	m := &Manager{
 		root: cfg.Root, ttl: cfg.TTL, quota: cfg.QuotaBytes, now: cfg.Now,
-		removeStore: cfg.RemoveStore, entries: map[string]*Manifest{}, corrupt: map[string]error{},
+		removeStore: cfg.RemoveStore, storeSize: cfg.StoreSize,
+		entries: map[string]*Manifest{}, corrupt: map[string]error{},
 	}
 	if err := m.load(); err != nil {
 		return nil, err
@@ -188,13 +193,28 @@ func (m *Manager) load() error {
 		if manifest.State == StateActive || manifest.State == StateFinalizing {
 			manifest.State = StateInterrupted
 			manifest.Failure = "engine stopped before graceful archive finalization"
+			m.recordStoreSize(&manifest)
 			if err := m.writeManifest(manifest); err != nil {
 				return err
 			}
+		} else if manifest.State.Unsealed() && manifest.SizeBytes == 0 {
+			// Unsealed before sizes were recorded; size it for quota accounting.
+			m.recordStoreSize(&manifest)
 		}
 		m.entries[traceID] = &manifest
 	}
 	return nil
+}
+
+// recordStoreSize sizes an unsealed archive's store so it counts toward the
+// quota. Sizing is best effort: on failure the previous size is kept.
+func (m *Manager) recordStoreSize(manifest *Manifest) {
+	if m.storeSize == nil {
+		return
+	}
+	if size, err := m.storeSize(manifest.MainClientID); err == nil && size >= 0 {
+		manifest.SizeBytes = size
+	}
 }
 
 func validateManifest(manifest Manifest) error {
@@ -330,6 +350,7 @@ func (m *Manager) MarkIncomplete(traceID string, cause error) error {
 	if cause != nil {
 		ent.Failure = cause.Error()
 	}
+	m.recordStoreSize(ent)
 	return m.writeManifest(*ent)
 }
 
@@ -461,13 +482,14 @@ func (m *Manager) KeepSet() map[string]bool {
 	return keep
 }
 
-// GC deletes expired archives, then the oldest closed archives until the
-// retained ones fit the quota. The newest closed archive is kept even when it
-// alone exceeds the quota; overage reports by how much. An archive whose store
-// is still open is left in place and retried by the next GC.
+// GC deletes expired archives, then the oldest ended archives (closed or
+// unsealed) until the retained ones fit the quota. The newest ended archive is
+// kept even when it alone exceeds the quota; overage reports by how much. An
+// archive whose store is still open is left in place and retried by the next
+// GC.
 func (m *Manager) GC() (overage int64, err error) {
 	now := m.now()
-	var doomed, closed []Manifest
+	var doomed, ended []Manifest
 	m.mu.RLock()
 	for _, ent := range m.entries {
 		switch {
@@ -475,19 +497,23 @@ func (m *Manager) GC() (overage int64, err error) {
 			// Active or finalizing: owned by a live session.
 		case !ent.ExpiresAt.After(now):
 			doomed = append(doomed, *ent)
-		case ent.State == StateClosed:
-			closed = append(closed, *ent)
+		default:
+			ended = append(ended, *ent)
 		}
 	}
 	m.mu.RUnlock()
-	sort.Slice(closed, func(i, j int) bool {
-		return closed[i].ClosedAt.Before(*closed[j].ClosedAt)
+	sort.Slice(ended, func(i, j int) bool {
+		ei, ej := ended[i].endedAt(), ended[j].endedAt()
+		if !ei.Equal(ej) {
+			return ei.Before(ej)
+		}
+		return ended[i].TraceID < ended[j].TraceID
 	})
 	var retained int64
-	for _, manifest := range closed {
+	for _, manifest := range ended {
 		retained += manifest.SizeBytes
 	}
-	for _, manifest := range closed[:max(len(closed)-1, 0)] {
+	for _, manifest := range ended[:max(len(ended)-1, 0)] {
 		if retained <= m.quota {
 			break
 		}
@@ -501,6 +527,15 @@ func (m *Manager) GC() (overage int64, err error) {
 		err = errors.Join(err, m.delete(manifest))
 	}
 	return overage, err
+}
+
+// endedAt orders archives for quota eviction. An unsealed archive has no close
+// time, so it ages from when its session started.
+func (manifest Manifest) endedAt() time.Time {
+	if manifest.ClosedAt != nil {
+		return *manifest.ClosedAt
+	}
+	return manifest.StartedAt
 }
 
 func (m *Manager) delete(manifest Manifest) error {
