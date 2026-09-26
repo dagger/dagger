@@ -253,22 +253,7 @@ func observedRestorePlan(fe archiveFrontend, req traceRestore, calls map[string]
 		if err := a.Validate(); err != nil {
 			return plan, nil, err
 		}
-		entry := dagui.AgentRestore{
-			Source: a.Key, ID: a.Handle, Name: a.Name, ParentAgentID: a.Parent,
-			SnapshotDigest: a.Digest, LastActivity: a.Activity,
-		}
-		// As for archives: restore skips an unmappable agent and warns why.
-		state, err := a.RestoreState()
-		if err != nil {
-			entry.Err = err
-		}
-		entry.State = state
-		// A stopped failure retains its diagnostic, but spawn only accepts an
-		// error when restoring FAILED (including a session-stopped failure).
-		if state == "FAILED" {
-			entry.Error = a.Failure
-		}
-		plan.plan = append(plan.plan, entry)
+		plan.plan = append(plan.plan, dagui.RestoreEntryFromControl(a))
 	}
 	var active []agentcontrol.Subscription
 	for _, edge := range edges {
