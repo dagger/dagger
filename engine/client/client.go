@@ -679,18 +679,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		return fmt.Errorf("connect session attachables: %w", err)
 	}
 
-	c.eg.Go(func() error {
-		ctx, cancel, err := c.withClientCloseCancel(ctx)
-		if err != nil {
-			return err
-		}
-		go func() {
-			<-ctx.Done()
-			cancel(errors.New("startSession context done"))
-		}()
-		c.sessionSrv.Run(ctx)
-		return nil
-	})
+	c.runSessionAttachables()
 
 	c.httpClient = c.newHTTPClient()
 	return nil
@@ -742,21 +731,25 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 		return fmt.Errorf("connect session attachables: %w", err)
 	}
 
-	c.eg.Go(func() error {
-		ctx, cancel, err := c.withClientCloseCancel(ctx)
-		if err != nil {
-			return err
-		}
-		go func() {
-			<-ctx.Done()
-			cancel(errors.New("startSession context done"))
-		}()
-		c.sessionSrv.Run(ctx)
-		return nil
-	})
+	c.runSessionAttachables()
 
 	c.httpClient = c.newHTTPClient()
 	return nil
+}
+
+// runSessionAttachables keeps host services available through shutdown. A
+// cancelled command still needs them to persist workspace locks and finish
+// other cleanup; Close stops them after the engine acknowledges shutdown.
+func (c *Client) runSessionAttachables() {
+	c.eg.Go(func() error {
+		ctx, cancel, err := c.withClientCloseCancel(c.internalCtx)
+		if err != nil {
+			return err
+		}
+		defer cancel(errors.New("session attachables stopped"))
+		c.sessionSrv.Run(ctx)
+		return nil
+	})
 }
 
 func ConnectSessionAttachables(
