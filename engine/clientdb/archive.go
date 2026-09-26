@@ -31,8 +31,6 @@ func (s *DB) Checkpoint(ctx context.Context) (HighWater, error) {
 	return cut, err
 }
 
-func (s *DB) CheckpointLogs(ctx context.Context) error { return s.logs.checkpoint(ctx) }
-
 // HighWater reports the current end of each stream without a persistence
 // barrier. Use it only for a store no producer writes to anymore, such as an
 // archive whose session ended without sealing.
