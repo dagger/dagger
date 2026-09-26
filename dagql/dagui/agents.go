@@ -57,10 +57,6 @@ type AgentNode struct {
 	// ID from the call payloads it has ingested and re-hydrates the instance
 	// from it.
 	SnapshotDigest string
-
-	// PreTeardownState is the state held before a session-teardown stop, and
-	// what a restore puts back when State is a teardown STOPPED.
-	PreTeardownState string
 }
 
 // Span returns the agent's current loop span — the one a caller should scope
@@ -162,7 +158,7 @@ func (db *DB) buildAgents() []*AgentNode {
 		node.Control = &projection
 		node.Name, node.CallDigest = projection.Name, projection.CallDigest
 		node.State, node.StopReason = projection.State, projection.StopReason
-		node.SnapshotDigest, node.PreTeardownState = projection.Digest, projection.PreTeardownState
+		node.SnapshotDigest = projection.Digest
 	}
 	sort.SliceStable(order, func(i, j int) bool {
 		a, b := order[i].Spans, order[j].Spans
