@@ -26,17 +26,17 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-// recordedState is one published agent-state record, flattened to the fields
-// the directory contract promises.
+// recordedState is one emitted log record, reduced to the lifecycle fields,
+// body and content type the tests assert on.
 type recordedState struct {
 	state       string
 	stopReason  string
-	digest      string
 	body        string
 	contentType string
 }
 
-// stateRecorder captures agent state records emitted through a context.
+// stateRecorder captures log records emitted through a context, keeping
+// agent control records whole.
 type stateRecorder struct {
 	mu      sync.Mutex
 	records []recordedState
@@ -51,8 +51,6 @@ func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 			got.state = kv.Value.AsString()
 		case telemetryattrs.AgentStopReasonAttr:
 			got.stopReason = kv.Value.AsString()
-		case telemetryattrs.AgentSnapshotDigestAttr:
-			got.digest = kv.Value.AsString()
 		case telemetry.ContentTypeAttr:
 			got.contentType = kv.Value.AsString()
 		}
@@ -87,7 +85,7 @@ func (r *stateRecorder) states() []string {
 }
 
 // stateRecorderCtx returns a context whose logger provider records every
-// agent state record emitted through it.
+// log record emitted through it.
 func stateRecorderCtx(t *testing.T) (*stateRecorder, context.Context) {
 	t.Helper()
 	rec := &stateRecorder{}

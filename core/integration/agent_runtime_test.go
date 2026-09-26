@@ -1757,8 +1757,8 @@ func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]
 }
 
 // awaitAgentState blocks until the trace shows the named agent in the given
-// lifecycle state. State records ride their own exports, so the roster can be
-// complete while an agent's latest transition is still in flight.
+// lifecycle state. Control records ride their own exports, so the roster can
+// be complete while an agent's latest transition is still in flight.
 func (sink *agentTraceSink) awaitAgentState(t *testctx.T, name, state string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
