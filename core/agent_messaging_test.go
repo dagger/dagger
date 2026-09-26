@@ -102,9 +102,9 @@ func twoAgentRegistry(t *testing.T) (ars *AgentRuntimes, rtA, rtB *AgentRuntime,
 
 	ars = NewAgentRuntimes()
 	var err error
-	rtA, err = ars.Create(base, agentA, AgentStateIdle, "", false)
+	rtA, err = ars.Create(base, agentA, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
-	rtB, err = ars.Create(base, agentB, AgentStateIdle, "", false)
+	rtB, err = ars.Create(base, agentB, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
 	return ars, rtA, rtB, ctxA, ctxB
 }
@@ -319,9 +319,9 @@ func TestEventDelivery(t *testing.T) {
 	require.True(t, ok)
 
 	ars := NewAgentRuntimes()
-	chief, err := ars.Create(base, agentA, AgentStateIdle, "", false)
+	chief, err := ars.Create(base, agentA, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
-	scout, err := ars.Create(base, agentB, AgentStateIdle, "", false)
+	scout, err := ars.Create(base, agentB, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
 
 	// Subscribe the chief to scout completions. Scout is inert (projects
@@ -393,7 +393,7 @@ func TestDrainWindowProjectsRunning(t *testing.T) {
 	require.True(t, ok)
 
 	ars := NewAgentRuntimes()
-	rt, err := ars.Create(base, agent, AgentStateIdle, "", false)
+	rt, err := ars.Create(base, agent, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
 
 	rt.mu.Lock()
