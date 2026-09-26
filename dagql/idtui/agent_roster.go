@@ -32,7 +32,8 @@ type AgentRosterEntry struct {
 
 // AgentRoster renders a compact list of the session's live agents as tabs — a
 // faint jump number, display name and lifecycle symbol each, padded by a cell
-// either side — on one line, the focused tab filled like the prompt card:
+// either side — on one line, the focused tab filled like the prompt card and
+// edged by its border, the card's bottom edge opening above it:
 //
 //	1 agent ▶  2 scout ○  3 docs ▶  4 tests needs you
 //
@@ -50,11 +51,20 @@ type AgentRoster struct {
 	// without the frontend having to push updates into it (same pattern as
 	// StatusLine.liveStats).
 	entries func() []AgentRosterEntry
-	// background, when set, returns the fill for the focused entry's tab: the
-	// prompt card's shade, so the tab reads as part of the prompt it
-	// addresses. Nil (or a nil color) falls back to reverse video.
-	background func() color.Color
+	// tabColors, when set, returns the focused entry's tab colors: the prompt
+	// card's shade as its fill and the card's border as its side edges, so
+	// the tab reads as part of the prompt it addresses -- the card's bottom
+	// edge opens above it (see PromptFrame.SetTabSource). A nil fill falls
+	// back to reverse video; a nil border leaves the sides as plain padding.
+	tabColors func() (fill, border color.Color)
 }
+
+// Glyphs for the focused tab's sides: eighth blocks drawn flush against the
+// cell's outer edge, continuing the card's border down around the tab.
+const (
+	rosterTabLeftEdge  = "▏"
+	rosterTabRightEdge = "▕"
+)
 
 // NewAgentRoster creates a roster strip sourcing its entries from the given
 // callback.
@@ -62,11 +72,11 @@ func NewAgentRoster(profile termenv.Profile, entries func() []AgentRosterEntry) 
 	return &AgentRoster{profile: profile, entries: entries}
 }
 
-// SetBackgroundSource sets where the focused tab's fill comes from (see
-// AgentRoster.background). It is read at render time; whoever changes the
-// color re-renders the roster's host.
-func (r *AgentRoster) SetBackgroundSource(background func() color.Color) {
-	r.background = background
+// SetTabColorSource sets where the focused tab's colors come from (see
+// AgentRoster.tabColors). It is read at render time; whoever changes the
+// colors re-renders the roster's host.
+func (r *AgentRoster) SetTabColorSource(colors func() (fill, border color.Color)) {
+	r.tabColors = colors
 	r.Update()
 }
 
@@ -107,13 +117,28 @@ func (r *AgentRoster) Render(ctx tuist.Context) {
 // Line renders the roster as a single line, truncated to width when positive.
 // The status line places it before the context meter.
 func (r *AgentRoster) Line(width int) string {
+	line, _, _ := r.layout(width)
+	return line
+}
+
+// FocusedTab reports the columns [start, end) the focused entry's tab spans
+// in Line(width), clipped to what survives truncation. ok is false when no
+// entry is focused or its tab is truncated away entirely.
+func (r *AgentRoster) FocusedTab(width int) (start, end int, ok bool) {
+	_, start, end = r.layout(width)
+	return start, end, start < end
+}
+
+// layout renders the roster line along with the focused tab's column span.
+func (r *AgentRoster) layout(width int) (line string, tabStart, tabEnd int) {
 	if !r.Visible() {
-		return ""
+		return "", 0, 0
 	}
 
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(r.profile))
 	entries := r.Entries()
 	parts := make([]string, 0, len(entries))
+	col := 0
 	for i, entry := range entries {
 		label, labelColor := agentStateDisplay(entry.State)
 
@@ -149,45 +174,77 @@ func (r *AgentRoster) Line(width int) string {
 		}
 		// Each entry is a tab with a cell of padding either side, which the
 		// focused tab's fill covers too.
-		part := " " + number + nameStyle.String()
+		content := number + nameStyle.String()
 		if label != "" {
-			part += " " + out.String(label).Foreground(labelColor).String()
+			content += " " + out.String(label).Foreground(labelColor).String()
 		}
-		part += " "
+		var part string
 		if entry.Focused {
-			part = r.focusTab(part)
+			// The strip leads the line, so a tab at column 0 sits flush with
+			// the screen edge, where the card above draws no left border.
+			part = r.focusTab(content, col > 0)
+		} else {
+			part = " " + content + " "
 		}
+		partWidth := ansi.StringWidth(part)
+		if entry.Focused {
+			tabStart, tabEnd = col, col+partWidth
+		}
+		col += partWidth
 		parts = append(parts, part)
 	}
 
 	// The tabs' own padding separates them.
-	line := strings.Join(parts, "")
-	if width > 0 {
+	line = strings.Join(parts, "")
+	if width > 0 && col > width {
 		line = ansi.Truncate(line, width, "…")
+		// Only the cells before the ellipsis survive.
+		tabEnd = min(tabEnd, width-1)
+		tabStart = min(tabStart, tabEnd)
 	}
-	return line
+	return line, tabStart, tabEnd
 }
 
-// focusTab marks the focused entry's tab, padding included: filled with the
-// prompt card's shade when one is known, else reverse video. The fill is
-// applied per cell so the segments' own styling (faint number, colored symbol)
-// survives inside it. A leading reset drops the status line's dim foreground,
-// so the tab reads at full contrast.
-func (r *AgentRoster) focusTab(part string) string {
+// focusTab marks the focused entry's tab around its content, padding
+// included: filled with the prompt card's shade when one is known, else
+// reverse video. With the card's border known too, the padding cells become
+// thin side edges in that color, so the tab hangs off the card above it --
+// except the left edge when leftEdge is false (the tab leads the line, and the
+// card has no left border to continue), which stays filled padding. The fill
+// is applied per cell so the segments' own styling (faint number, colored
+// symbol) survives inside it. A leading reset drops the status line's dim
+// foreground, so the tab reads at full contrast.
+func (r *AgentRoster) focusTab(content string, leftEdge bool) string {
 	if r.profile == termenv.Ascii {
-		return part
+		return " " + content + " "
 	}
-	var bg color.Color
-	if r.background != nil {
-		bg = r.background()
+	var bg, border color.Color
+	if r.tabColors != nil {
+		bg, border = r.tabColors()
 	}
-	return ansi.ResetStyle + restyleCells(part, func(style *cellbuf.Style) {
-		if bg != nil {
+	fill := func(s string) string {
+		return restyleCells(s, func(style *cellbuf.Style) {
+			if bg != nil {
+				style.Bg = bg
+			} else {
+				style.Reverse(true)
+			}
+		})
+	}
+	if bg == nil || border == nil {
+		return ansi.ResetStyle + fill(" "+content+" ")
+	}
+	side := func(glyph string) string {
+		return restyleCells(glyph, func(style *cellbuf.Style) {
+			style.Fg = border
 			style.Bg = bg
-		} else {
-			style.Reverse(true)
-		}
-	})
+		})
+	}
+	left := fill(" ")
+	if leftEdge {
+		left = side(rosterTabLeftEdge)
+	}
+	return ansi.ResetStyle + left + fill(content) + side(rosterTabRightEdge)
 }
 
 // agentStateDisplay maps a lifecycle state to its compact symbol and color.

@@ -146,7 +146,7 @@ func (fe *frontendPretty) refreshSearchMatches() {
 		fe.searchIdx = -1
 	}
 	fe.dirtySearchTrees()
-	fe.keymapBar.Update()
+	fe.refreshKeymap()
 }
 
 // matchRowIndex returns the row index for a search match. If the match's

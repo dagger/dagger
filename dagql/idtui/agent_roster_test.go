@@ -120,37 +120,51 @@ func TestAgentRosterFocusTabSpansEntry(t *testing.T) {
 		{ID: "b", Name: "scout", State: "RUNNING", Focused: true},
 		{ID: "c", Name: "docs", State: "IDLE"},
 	}
-	shade := blendPromptBackground(color.Black, termenv.TrueColor).cell
+	shades := blendPromptBackground(color.Black, termenv.TrueColor)
+	shade := shades.cell
 
 	for _, tc := range []struct {
-		name       string
-		background func() color.Color
-		filled     func(cellbuf.Style) bool
+		name   string
+		colors func() (color.Color, color.Color)
+		// sides are the tab's outer cells: padding, or the card's border.
+		left, right string
+		filled      func(cellbuf.Style) bool
 	}{
 		{
-			name:       "prompt shade",
-			background: func() color.Color { return shade },
-			filled:     func(s cellbuf.Style) bool { return s.Bg == shade },
+			name:   "prompt shade",
+			colors: func() (color.Color, color.Color) { return shade, nil },
+			left:   " ", right: " ",
+			filled: func(s cellbuf.Style) bool { return s.Bg == shade },
 		},
 		{
-			name:   "no shade known",
+			name:   "prompt shade and border",
+			colors: func() (color.Color, color.Color) { return shade, shades.border },
+			left:   rosterTabLeftEdge, right: rosterTabRightEdge,
+			filled: func(s cellbuf.Style) bool { return s.Bg == shade },
+		},
+		{
+			name: "no shade known",
+			left: " ", right: " ",
 			filled: func(s cellbuf.Style) bool { return s.Attrs&cellbuf.ReverseAttr != 0 },
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			roster := NewAgentRoster(termenv.TrueColor, func() []AgentRosterEntry { return entries })
-			if tc.background != nil {
-				roster.SetBackgroundSource(tc.background)
+			if tc.colors != nil {
+				roster.SetTabColorSource(tc.colors)
 			}
 			line := roster.Line(100)
 			plain := ansi.Strip(line)
-			tab := " 2 scout " + CaretRightFilled + " "
+			tab := tc.left + "2 scout " + CaretRightFilled + tc.right
 			start := strings.Index(plain, tab)
 			if start < 0 {
 				t.Fatalf("roster missing the focused entry %q: %q", tab, plain)
 			}
 			first := ansi.StringWidth(plain[:start])
 			last := first + ansi.StringWidth(tab) - 1
+			if gotStart, gotEnd, ok := roster.FocusedTab(100); !ok || gotStart != first || gotEnd != last+1 {
+				t.Fatalf("FocusedTab = %d..%d (ok=%v), want %d..%d", gotStart, gotEnd, ok, first, last+1)
+			}
 
 			buf := cellbuf.NewBuffer(ansi.StringWidth(line), 1)
 			cellbuf.SetContent(buf, line)
@@ -163,8 +177,57 @@ func TestAgentRosterFocusTabSpansEntry(t *testing.T) {
 					t.Fatalf("cell %d (%q) filled=%v, want %v (tab spans %d..%d): %q",
 						x, cell.String(), !want, want, first, last, line)
 				}
+				if tc.left != " " && (x == first || x == last) && cell.Style.Fg != shades.border {
+					t.Fatalf("tab side at cell %d not in the border color: %q", x, line)
+				}
 			}
 		})
+	}
+}
+
+// TestAgentRosterLeadingTabHasNoLeftEdge: the prompt card draws no left
+// border, so a focused tab at column 0 has nothing to continue on its left --
+// it keeps a filled padding cell there, and only its right side is an edge.
+func TestAgentRosterLeadingTabHasNoLeftEdge(t *testing.T) {
+	entries := []AgentRosterEntry{
+		{Name: "chief", State: "IDLE", Focused: true},
+		{Name: "scout", State: "RUNNING"},
+	}
+	shades := blendPromptBackground(color.Black, termenv.TrueColor)
+	roster := NewAgentRoster(termenv.TrueColor, func() []AgentRosterEntry { return entries })
+	roster.SetTabColorSource(func() (color.Color, color.Color) { return shades.cell, shades.border })
+
+	line := roster.Line(100)
+	tab := " 1 chief " + DotEmpty + rosterTabRightEdge
+	if plain := ansi.Strip(line); !strings.HasPrefix(plain, tab) {
+		t.Fatalf("expected the leading tab %q without a left edge, got %q", tab, plain)
+	}
+	if start, end, ok := roster.FocusedTab(100); !ok || start != 0 || end != ansi.StringWidth(tab) {
+		t.Fatalf("FocusedTab = %d..%d (ok=%v), want 0..%d", start, end, ok, ansi.StringWidth(tab))
+	}
+	buf := cellbuf.NewBuffer(ansi.StringWidth(line), 1)
+	cellbuf.SetContent(buf, line)
+	if cell := buf.Cell(0, 0); cell == nil || cell.Style.Bg != shades.cell {
+		t.Fatalf("leading padding cell not filled with the card's shade: %q", line)
+	}
+}
+
+// TestAgentRosterFocusedTabClipsToTruncation: the prompt card opens its edge
+// over the columns FocusedTab reports, so they must match what survives the
+// strip's truncation -- never extending over the ellipsis or past it.
+func TestAgentRosterFocusedTabClipsToTruncation(t *testing.T) {
+	entries := []AgentRosterEntry{
+		{Name: "chief", State: "IDLE"},
+		{Name: "scout", State: "RUNNING", Focused: true},
+		{Name: "docs", State: "IDLE"},
+	}
+	roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry { return entries })
+	// " 1 chief ○ " is 11 cells; the focused tab starts there.
+	if start, end, ok := roster.FocusedTab(15); !ok || start != 11 || end != 14 {
+		t.Fatalf("truncated FocusedTab = %d..%d (ok=%v), want 11..14", start, end, ok)
+	}
+	if _, _, ok := roster.FocusedTab(11); ok {
+		t.Fatal("a focused tab truncated away must not report columns")
 	}
 }
 

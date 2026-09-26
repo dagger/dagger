@@ -43,6 +43,47 @@ type PromptFrame struct {
 	// isFocused reports whether a component owns the keyboard (see
 	// SetFocusSource).
 	isFocused func(tuist.Component) bool
+	// tab reports the columns of the focused agent tab on the line beneath
+	// the card (see SetTabSource).
+	tab func(width int) (start, end int, ok bool)
+	// hint renders the right-aligned key hint on the line above the card (see
+	// SetHintSource).
+	hint func() string
+}
+
+// SetHintSource sets the key hint drawn right-aligned in the line separating
+// the draft from the transcript. Without a shaded card there is no such line,
+// so a hint source adds one. It is read at render time; whoever changes the
+// hint re-renders the frame. A hint too wide for the line is dropped.
+func (p *PromptFrame) SetHintSource(hint func() string) {
+	p.hint = hint
+	p.Update()
+}
+
+// hintLine renders the separator line above the draft, carrying the hint
+// right-aligned when it fits.
+func (p *PromptFrame) hintLine(width int) string {
+	if p.hint == nil {
+		return ""
+	}
+	hint := p.hint()
+	hintWidth := ansi.StringWidth(hint)
+	if hint == "" || width <= 0 {
+		return hint
+	}
+	if hintWidth > width {
+		return ""
+	}
+	return strings.Repeat(" ", width-hintWidth) + hint
+}
+
+// SetTabSource sets how the frame finds the focused agent's tab on the line
+// beneath it, normally the status line's FocusedTab. The card's bottom edge
+// opens over those columns so the tab reads as hanging off the card. It is
+// read at render time; whoever moves the tab re-renders the frame.
+func (p *PromptFrame) SetTabSource(tab func(width int) (start, end int, ok bool)) {
+	p.tab = tab
+	p.Update()
 }
 
 // SetFocusSource sets how the frame asks whether its input is focused,
@@ -104,10 +145,19 @@ func (p *PromptFrame) HandleKeyPress(ctx tuist.Context, ev uv.KeyPressEvent) boo
 	return p.keyHandler(ctx, ev)
 }
 
+// OpensWithSeparator reports whether the frame's first line separates it from
+// what's above: the shaded card's gap, or the line carrying the key hint.
+func (p *PromptFrame) OpensWithSeparator() bool {
+	return p.enabled || p.hint != nil
+}
+
 // ChromeHeight is the number of lines the frame adds around the text input.
 func (p *PromptFrame) ChromeHeight() int {
 	if p.enabled {
 		return 3 + len(p.attachments)
+	}
+	if p.hint != nil {
+		return 1 + len(p.attachments)
 	}
 	return len(p.attachments)
 }
@@ -147,9 +197,14 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	}
 
 	if !p.enabled {
+		row := 0
+		if p.hint != nil {
+			ctx.Line(p.hintLine(ctx.Width))
+			row = 1
+		}
 		ctx.Lines(lines...)
 		if result.Cursor != nil {
-			ctx.SetCursor(result.Cursor.Row, result.Cursor.Col)
+			ctx.SetCursor(result.Cursor.Row+row, result.Cursor.Col)
 		}
 		return
 	}
@@ -179,17 +234,32 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	// The padding rows double as the card's edges: a thin rule along the top
 	// of the first and the bottom of the last draws a soft border hugging the
 	// fill, without adding rows.
-	edge := func(glyph string) string {
+	edge := func(rule string) string {
 		if p.profile == termenv.Ascii || p.background == nil || p.border == nil {
 			return shade("")
 		}
-		return restyleCells(strings.Repeat(glyph, width), func(style *cellbuf.Style) {
+		return restyleCells(rule, func(style *cellbuf.Style) {
 			style.Fg = p.border
 			style.Bg = p.background
 		})
 	}
-	ctx.Line("") // separate the draft from the transcript without extending its fill
-	ctx.Line(edge(promptTopEdge))
+	// The bottom edge opens above the focused agent's tab, whose own side
+	// edges continue the border down around it, so the tab joins the card.
+	bottom := strings.Repeat(promptBottomEdge, width)
+	if p.tab != nil {
+		if start, end, ok := p.tab(width); ok {
+			start, end = max(start, 0), min(end, width)
+			if start < end {
+				bottom = strings.Repeat(promptBottomEdge, start) +
+					strings.Repeat(" ", end-start) +
+					strings.Repeat(promptBottomEdge, width-end)
+			}
+		}
+	}
+	// Separate the draft from the transcript without extending its fill; the
+	// separator carries the key hint.
+	ctx.Line(p.hintLine(width))
+	ctx.Line(edge(strings.Repeat(promptTopEdge, width)))
 	gutter := strings.Repeat(" ", indent)
 	focused := p.isFocused != nil && p.isFocused(p.input)
 	for i, line := range lines {
@@ -201,7 +271,7 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 		}
 		ctx.Line(shade(prefix + line))
 	}
-	ctx.Line(edge(promptBottomEdge))
+	ctx.Line(edge(bottom))
 
 	if result.Cursor != nil {
 		ctx.SetCursor(result.Cursor.Row+2, min(result.Cursor.Col+indent, max(0, width-1)))
