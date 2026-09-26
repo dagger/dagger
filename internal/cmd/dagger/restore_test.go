@@ -317,8 +317,8 @@ func TestRestoreSkipsARefusedRehydration(t *testing.T) {
 	require.NotContains(t, dst.calls, "adopt:agent-chief")
 	require.Contains(t, dst.calls, "adopt:agent-scout")
 	require.Contains(t, dst.calls, "adopt:agent-tests")
-	// With the chief gone, neither worker is top-level; focus falls back to
-	// the most recently active of what was restored.
+	// With the chief gone, both workers are restored top-level; focus goes to
+	// the most recently active of them.
 	require.Equal(t, "agent-tests", dst.focused)
 	require.Contains(t, warnings.String(), "interactive (agent-chief)")
 	require.Contains(t, warnings.String(), "already has a runtime entry")
@@ -369,24 +369,105 @@ func TestRestoreInstallsGraphBeforeAttachment(t *testing.T) {
 }
 
 func TestRestoreRejectsInvalidGraphBeforeCreation(t *testing.T) {
-	for _, mode := range []string{"cycle", "missing parent", "duplicate", "missing endpoint"} {
+	for _, mode := range []string{"cycle", "duplicate"} {
 		t.Run(mode, func(t *testing.T) {
 			src, dst := chiefAndWorkers(), newFakeRestoreTarget()
-			var edges []agentcontrol.Subscription
 			switch mode {
 			case "cycle":
 				src.plan[0].ParentAgentID = "agent-scout"
-			case "missing parent":
-				src.plan[0].ParentAgentID = "missing"
 			case "duplicate":
 				src.plan = append(src.plan, src.plan[0])
-			case "missing endpoint":
-				edges = []agentcontrol.Subscription{{EdgeKey: agentcontrol.EdgeKey{Namespace: agentcontrol.Namespace{Session: "s", Trace: "t", Incarnation: "i"}, Watched: "agent-chief", Subscriber: "missing"}, Revision: 1}}
 			}
-			require.Error(t, executeRestoreGraph(t.Context(), src, dst, restoreRequest(), edges))
+			require.Error(t, executeRestoreGraph(t.Context(), src, dst, restoreRequest(), nil))
 			require.Empty(t, dst.calls)
 		})
 	}
+}
+
+// parentRecordingTarget also records the parent each agent was spawned under.
+type parentRecordingTarget struct {
+	*fakeRestoreTarget
+	parents map[string]string
+}
+
+func (f *parentRecordingTarget) Rehydrate(ctx context.Context, entry dagui.AgentRestore, snapshotID string) (string, error) {
+	f.parents[entry.ID] = entry.ParentAgentID
+	return f.fakeRestoreTarget.Rehydrate(ctx, entry, snapshotID)
+}
+
+// TestRestoreDetachesAgentsWhoseParentWasNotRestored: a parent absent from
+// the trace, or skipped, costs neither the restore nor its workers. They are
+// restored top-level: naming a parent outside the new session's roster would
+// leave its archive unable to seal.
+func TestRestoreDetachesAgentsWhoseParentWasNotRestored(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		breakPlan func(*fakeRestorePlan, *fakeRestoreTarget)
+		calls     []string
+	}{
+		{"parent outside the roster", func(src *fakeRestorePlan, _ *fakeRestoreTarget) {
+			src.plan = src.plan[1:]
+		}, []string{
+			"rehydrate:agent-scout", "rehydrate:agent-tests",
+			"adopt:agent-scout", "adopt:agent-tests", "focus:agent-tests",
+		}},
+		{"parent anchor does not rebuild", func(src *fakeRestorePlan, _ *fakeRestoreTarget) {
+			delete(src.anchors, "xxh3:chief")
+		}, []string{
+			"rehydrate:agent-scout", "rehydrate:agent-tests",
+			"adopt:agent-scout", "adopt:agent-tests", "focus:agent-tests",
+		}},
+		{"parent refused by the engine", func(_ *fakeRestorePlan, dst *fakeRestoreTarget) {
+			dst.failOn = "agent-chief"
+		}, []string{
+			"rehydrate:agent-chief", "rehydrate:agent-scout", "rehydrate:agent-tests",
+			"adopt:agent-scout", "adopt:agent-tests", "focus:agent-tests",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			warnings := captureRestoreWarnings(t)
+			src := chiefAndWorkers()
+			dst := &parentRecordingTarget{fakeRestoreTarget: newFakeRestoreTarget(), parents: map[string]string{}}
+			tc.breakPlan(src, dst.fakeRestoreTarget)
+			require.NoError(t, executeRestorePlan(t.Context(), src, dst, restoreRequest()))
+			require.Equal(t, tc.calls, dst.calls)
+			require.Equal(t, "", dst.parents["agent-scout"])
+			require.Equal(t, "", dst.parents["agent-tests"])
+			require.Contains(t, warnings.String(), "restoring agent without its parent")
+			require.Contains(t, warnings.String(), "scout (agent-scout)")
+			require.Contains(t, warnings.String(), "parent=agent-chief")
+		})
+	}
+
+	t.Run("restored parent is kept", func(t *testing.T) {
+		src := chiefAndWorkers()
+		dst := &parentRecordingTarget{fakeRestoreTarget: newFakeRestoreTarget(), parents: map[string]string{}}
+		require.NoError(t, executeRestorePlan(t.Context(), src, dst, restoreRequest()))
+		require.Equal(t, map[string]string{"agent-chief": "", "agent-scout": "agent-chief", "agent-tests": "agent-chief"}, dst.parents)
+	})
+}
+
+// TestRestoreDropsEdgesOutsideTheRoster: a subscription naming an agent the
+// trace never carried is dropped with a warning, like one to a skipped agent.
+func TestRestoreDropsEdgesOutsideTheRoster(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	ns := agentcontrol.Namespace{Session: "source", Trace: restoreRequest().traceID, Incarnation: "generation"}
+	for i := range src.plan {
+		src.plan[i].Source = agentcontrol.Key{Namespace: ns, Handle: src.plan[i].ID}
+	}
+	edges := []agentcontrol.Subscription{
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-chief", Subscriber: "missing"}, Revision: 1, States: []string{"IDLE"}},
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-tests", Subscriber: "agent-chief"}, Revision: 1, States: []string{"IDLE"}},
+	}
+	require.NoError(t, executeRestoreGraph(t.Context(), src, dst, restoreRequest(), edges))
+	require.Equal(t, []string{
+		"rehydrate:agent-chief", "rehydrate:agent-scout", "rehydrate:agent-tests",
+		"subscribe:handle:agent-tests:handle:agent-chief:[IDLE]",
+		"adopt:agent-chief", "adopt:agent-scout", "adopt:agent-tests", "focus:agent-chief",
+	}, dst.calls)
+	require.Contains(t, warnings.String(), "dropped subscription to an agent that was not restored")
+	require.Contains(t, warnings.String(), "subscriber=missing")
 }
 
 // TestAgentTraceFlagConflicts is §5.4's surface: a restored session's

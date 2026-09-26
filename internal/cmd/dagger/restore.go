@@ -94,7 +94,9 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 	// any runtime. Restore is best-effort: an agent the trace does not carry
 	// enough to restore is skipped with a warning naming it and why, rather
 	// than costing the rest of the session. A kept agent may still reference a
-	// skipped worker; a tool call addressing it fails when dispatched.
+	// skipped worker; a tool call addressing it fails when dispatched. A
+	// subscription to an agent absent from the roster is dropped like one to a
+	// skipped agent, below.
 	roster := make(map[string]dagui.AgentRestore, len(plan))
 	var (
 		restoring []restoredAgent
@@ -116,10 +118,7 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 		}
 		for _, handle := range []string{edge.Watched, edge.Subscriber} {
 			entry, ok := roster[handle]
-			if !ok {
-				return fmt.Errorf("subscription endpoint %q is outside restore roster", handle)
-			}
-			if entry.Source.Namespace != edge.Namespace {
+			if ok && entry.Source.Namespace != edge.Namespace {
 				return fmt.Errorf("subscription endpoint %q belongs to another source namespace", handle)
 			}
 		}
@@ -138,6 +137,18 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 	restored := make([]restoredAgent, 0, len(restoring))
 	agentIDs := make(map[string]string, len(restoring))
 	for _, r := range restoring {
+		// The plan is parent-first, so a parent that is restored already has
+		// a runtime. One that was skipped, or is absent from the trace, must
+		// not be named: the new session's control records would reference an
+		// agent outside its roster, and its archive could never seal. The
+		// agent is restored top-level instead.
+		if parent := r.entry.ParentAgentID; parent != "" {
+			if _, ok := agentIDs[parent]; !ok {
+				slog.Warn("restoring agent without its parent, which was not restored",
+					"agent", restoreLabel(r.entry), "parent", parent)
+				r.entry.ParentAgentID = ""
+			}
+		}
 		agentID, err := dst.Rehydrate(ctx, r.entry, r.snapshotID)
 		if err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s: %v", restoreLabel(r.entry), err))
@@ -196,8 +207,10 @@ func restoreLabel(entry dagui.AgentRestore) string {
 	return fmt.Sprintf("%s (%s)", entry.Name, entry.ID)
 }
 
-// parentFirst rejects ambiguous handles, missing parents and lineage cycles.
-// A stable DFS retains archive order among independent agents.
+// parentFirst rejects ambiguous handles and lineage cycles. A parent missing
+// from the roster (e.g. its records never reached Cloud) is not fatal: the
+// entry is ordered as a root, and executeRestoreGraph restores it without a
+// parent. A stable DFS retains archive order among independent agents.
 func parentFirst(plan []dagui.AgentRestore) ([]dagui.AgentRestore, error) {
 	byID := make(map[string]dagui.AgentRestore, len(plan))
 	for _, entry := range plan {
@@ -215,7 +228,7 @@ func parentFirst(plan []dagui.AgentRestore) ([]dagui.AgentRestore, error) {
 		}
 		entry, ok := byID[id]
 		if !ok {
-			return fmt.Errorf("parent %q is outside restore roster", id)
+			return nil // a parent outside the roster
 		}
 		if visiting[id] {
 			return fmt.Errorf("cycle in restored lineage at agent %q", id)
@@ -268,8 +281,9 @@ func selectFocus(restored []restoredAgent, want string) (restoredAgent, string, 
 	notice := ""
 	if len(toplevel) == 0 {
 		// The chief an entry names as its parent was skipped. Focus among
-		// what there is rather than refusing to focus at all.
-		toplevel = restored
+		// what there is rather than refusing to focus at all. Cloned: the
+		// sort below must not reorder the caller's parent-first plan.
+		toplevel = slices.Clone(restored)
 		notice = "no top-level agent was restored; focusing "
 	}
 	if len(toplevel) == 1 {
