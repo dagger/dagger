@@ -389,9 +389,6 @@ type FinalizeInput struct {
 	StoreSizeBytes   int64
 	BootstrapBytes   []byte
 	BootstrapRecords int64
-	// Title is the latest session title recorded in the trace at the cut. It
-	// is sanitized like SetTitle; an empty title keeps the current one.
-	Title string
 }
 
 func (m *Manager) Finalize(traceID, generation string, in FinalizeInput) (Manifest, error) {
@@ -428,9 +425,6 @@ func (m *Manager) Finalize(traceID, generation string, in FinalizeInput) (Manife
 	ent.manifest.SealAt = &sealAt
 	ent.manifest.HighWater = in.HighWater
 	ent.manifest.Bootstrap = Bootstrap{File: sidecar, Records: records, SHA256: hex.EncodeToString(digest[:])}
-	if title := SanitizeTitle(in.Title); title != "" {
-		ent.manifest.Title = title
-	}
 	baseSize := in.StoreSizeBytes + int64(len(in.BootstrapBytes))
 	ent.manifest.SizeBytes = baseSize
 	for range 2 {
@@ -464,10 +458,10 @@ func (m *Manager) MarkIncomplete(traceID, generation string, cause error) error 
 	return m.writeManifest(ent.manifest)
 }
 
-// SetTitle records the latest session title the engine derived from an active
+// SetTitle records the session title the main client published into an active
 // archive's trace. It is persisted immediately, so an archive recovered after
-// an engine crash keeps it. The title is sanitized first; an unchanged or
-// empty title writes nothing.
+// an engine crash keeps it, and the sealed manifest inherits it. The title is
+// sanitized first; an unchanged or empty title writes nothing.
 func (m *Manager) SetTitle(traceID, generation, title string) error {
 	title = SanitizeTitle(title)
 	m.mu.Lock()

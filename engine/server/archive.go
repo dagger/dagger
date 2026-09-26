@@ -79,44 +79,47 @@ func (sess *daggerSession) ensureArchive(traceID string) (rerr error) {
 		return err
 	}
 	sess.archiveManifest = &manifest
-	// The title may have been recorded before the first control record.
-	sess.syncArchiveTitleLocked(context.Background(), manifest)
+	// The session may have named itself before its first control record.
+	if sess.archivePendingTitle.traceID == traceID {
+		sess.setArchiveTitleLocked(manifest, sess.archivePendingTitle.title)
+	}
+	sess.archivePendingTitle = pendingArchiveTitle{}
 	return nil
 }
 
-// syncArchiveTitle persists the latest session title recorded in the archive's
-// own trace into its active manifest, so listings show it while the session
-// runs and an archive recovered after an engine crash keeps it. The title
-// comes from the main client's telemetry store index, where span-name records
-// are classified as they arrive.
-func (sess *daggerSession) syncArchiveTitle(ctx context.Context) {
+// pendingArchiveTitle holds a session title that arrived before the archive
+// was registered.
+type pendingArchiveTitle struct {
+	traceID string
+	title   string
+}
+
+// setArchiveTitle records a session title published by the main client into
+// the active manifest, so listings show it while the session runs and an
+// archive recovered after an engine crash keeps it. The exporter only passes
+// titles whose origin is the main client: nested clients (e.g. a dagger agent
+// run by a tool) share the trace and the main client's store, but do not name
+// the session.
+func (sess *daggerSession) setArchiveTitle(traceID, title string) {
+	if sess.telemetryPubSub.srv.archives == nil || archive.SanitizeTitle(title) == "" {
+		return
+	}
 	sess.archiveMu.Lock()
 	defer sess.archiveMu.Unlock()
 	if sess.archiveManifest == nil {
+		sess.archivePendingTitle = pendingArchiveTitle{traceID: traceID, title: title}
 		return
 	}
-	sess.syncArchiveTitleLocked(ctx, *sess.archiveManifest)
+	if sess.archiveManifest.TraceID != traceID {
+		return
+	}
+	sess.setArchiveTitleLocked(*sess.archiveManifest, title)
 }
 
-// syncArchiveTitleLocked requires archiveMu, which serializes reading the index
-// and writing the manifest, so an older title can never overwrite a newer one.
-func (sess *daggerSession) syncArchiveTitleLocked(ctx context.Context, manifest archive.Manifest) {
-	srv := sess.telemetryPubSub.srv
-	if srv.archives == nil || srv.clientDBs == nil {
-		return
-	}
-	db, err := srv.clientDBs.Open(ctx, manifest.MainClientID)
-	if err != nil {
-		slog.Debug("open archive store for title", "err", err)
-		return
-	}
-	title := db.Title(manifest.TraceID)
-	_ = db.Close()
-	if title == "" {
-		return
-	}
-	// Titles are advisory. A finalizing archive takes its title from the cut.
-	if err := srv.archives.SetTitle(manifest.TraceID, manifest.Generation, title); err != nil {
+// setArchiveTitleLocked requires archiveMu, which serializes title writes.
+func (sess *daggerSession) setArchiveTitleLocked(manifest archive.Manifest, title string) {
+	// Titles are advisory; a finalizing or sealed archive keeps its title.
+	if err := sess.telemetryPubSub.srv.archives.SetTitle(manifest.TraceID, manifest.Generation, title); err != nil {
 		slog.Debug("record archive title", "err", err)
 	}
 }
@@ -208,7 +211,6 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 	}
 	_, err = srv.archives.Finalize(manifest.TraceID, manifest.Generation, archive.FinalizeInput{
 		HighWater: header.HighWater, SealAt: seal, StoreSizeBytes: size, BootstrapBytes: data, BootstrapRecords: records,
-		Title: db.Title(manifest.TraceID),
 	})
 	return err
 }

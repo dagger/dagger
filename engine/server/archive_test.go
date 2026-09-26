@@ -630,15 +630,20 @@ func TestArchiveHTTPUnsealedStreamsRecordedControl(t *testing.T) {
 	require.ErrorIs(t, err, archive.ErrState, "an unsealed archive never serves an agent bootstrap")
 }
 
-// TestArchiveTitleFromTrace: the engine derives an archive's title from the
-// latest span-name record in the archive's own trace, persisting it while the
-// archive is active (so listings and crash recovery see it) and at the seal.
+// TestArchiveTitleFromTrace: the engine takes an archive's title from the
+// span-name records its main client publishes into the archive's own trace,
+// persisting it while the archive is active (so listings and crash recovery see
+// it); the sealed manifest inherits it. Nested clients share the trace and the
+// main client's store, but never name the session.
 func TestArchiveTitleFromTrace(t *testing.T) {
-	titleRecord := func(title string, traceID trace.TraceID) sdklog.Record {
+	titleRecordFrom := func(origin, title string, traceID trace.TraceID) sdklog.Record {
 		rec := scopedLogRecord(t, "dagger.io/cli", logapi.StringValue(title), logapi.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
 		rec.SetTraceID(traceID)
-		rec.AddAttributes(logapi.String(telemetryattrs.TelemetryOriginClientIDAttr, "main"))
+		rec.AddAttributes(logapi.String(telemetryattrs.TelemetryOriginClientIDAttr, origin))
 		return rec
+	}
+	titleRecord := func(title string, traceID trace.TraceID) sdklog.Record {
+		return titleRecordFrom("main", title, traceID)
 	}
 	listTitles := func(t *testing.T, srv *Server) map[archive.State]string {
 		t.Helper()
@@ -668,6 +673,12 @@ func TestArchiveTitleFromTrace(t *testing.T) {
 
 		// Another trace's title never renames this archive.
 		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Foreign", trace.TraceID{2})}))
+		require.Equal(t, "Investigate cache misses", listTitles(t, srv)[archive.StateActive])
+
+		// Neither does a nested client's, e.g. a dagger agent run by a tool:
+		// it shares the trace and routes into the main client's store.
+		sess.clientRecords["nested"] = &clientRecord{daggerSession: sess, clientID: "nested", parentClientIDs: []string{"main"}}
+		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecordFrom("nested", "Nested agent session", trace.TraceID{1})}))
 		require.Equal(t, "Investigate cache misses", listTitles(t, srv)[archive.StateActive])
 
 		// A reset regenerates the title; the latest wins and is sanitized.
