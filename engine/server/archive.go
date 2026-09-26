@@ -406,7 +406,6 @@ func (srv *Server) serveArchiveSignal(w http.ResponseWriter, r *http.Request, m 
 	return srv.serveArchiveSignalWithPayloadLimit(w, r, m, cut, includeControl, signal, enginetel.MaxLivePayloadSize)
 }
 
-//nolint:gocyclo // Keep bounded batching and cursor advancement in one stream state machine.
 func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *http.Request, m archive.Manifest, cut archive.HighWater, includeControl bool, signal string, maxPayloadSize int) (rerr error) {
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
 		return fmt.Errorf("invalid archive payload limit %d", maxPayloadSize)
