@@ -122,7 +122,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 	if err != nil {
 		return err
 	}
-	if err := artifactResultErrors(results); err != nil {
+	if err := artifactResultErrorsWithOutput(results); err != nil {
 		return err
 	}
 	changes := make([]*dagger.Changeset, 0, len(results))
