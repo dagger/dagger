@@ -112,7 +112,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 				return err
 			}
 		}
-		return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Logs: batch.Logs})
+		return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Logs: batch.Logs})
 	})
 	if err != nil {
 		err = archiveRestoreError(req.traceID, err)
@@ -124,7 +124,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 	if importer == nil {
 		return nil, errors.New("verified archive bootstrap contains no restore data")
 	}
-	if err := importer.Wait(ctx, cut); err != nil {
+	if err := importer.Wait(ctx); err != nil {
 		return nil, err
 	}
 	plan, subscriptions, err := appliedArchivePlan(fe, result.Header.Completion)
@@ -187,15 +187,15 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 				switch signal {
 				case enginetel.ArchiveSpans:
 					opts.Cursor, err = source.Traces(ctx, traceID, opts, func(cursor int64, batch *coltracepb.ExportTraceServiceRequest) error {
-						return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Spans: batch, Cursor: cursor})
+						return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Spans: batch, Cursor: cursor})
 					})
 				case enginetel.ArchiveLogs:
 					opts.Cursor, err = source.Logs(ctx, traceID, opts, func(cursor int64, batch *collogspb.ExportLogsServiceRequest) error {
-						return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Logs: batch, Cursor: cursor})
+						return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Logs: batch, Cursor: cursor})
 					})
 				case enginetel.ArchiveMetrics:
 					opts.Cursor, err = source.Metrics(ctx, traceID, opts, func(cursor int64, batch *colmetricspb.ExportMetricsServiceRequest) error {
-						return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Metrics: batch, Cursor: cursor})
+						return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Metrics: batch, Cursor: cursor})
 					})
 				}
 				if err == nil || ctx.Err() != nil || !errors.Is(err, archive.ErrTransient) {
@@ -207,9 +207,9 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 				}
 			}
 			if err == nil {
-				err = importer.CompleteRemainder(ctx, cut, signal, opts.Cursor)
+				err = importer.CompleteRemainder(ctx, signal, opts.Cursor)
 			} else if ctx.Err() == nil {
-				err = errors.Join(err, importer.AbandonRemainder(ctx, cut, signal))
+				err = errors.Join(err, importer.AbandonRemainder(ctx, signal))
 			}
 			if err != nil {
 				mu.Lock()
