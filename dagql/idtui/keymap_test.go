@@ -58,14 +58,14 @@ func TestKeymapBarCanHide(t *testing.T) {
 }
 
 // TestRenderKeymapLinesAlignsDescriptions: the keymap bubble lists one key
-// per line, descriptions lined up past the widest key, and leaves out
-// disabled keys like the bar does.
+// per line when two columns don't fit, descriptions lined up past the widest
+// key, and leaves out disabled keys like the bar does.
 func TestRenderKeymapLinesAlignsDescriptions(t *testing.T) {
 	lines := RenderKeymapLines(lipgloss.NewStyle(), []key.Binding{
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
 		key.NewBinding(key.WithKeys("ctrl+h"), key.WithHelp("ctrl+h", "toggle hud")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "go to error"), key.WithDisabled()),
-	}, "", time.Time{})
+	}, "", time.Time{}, 0)
 	var plain []string
 	for _, line := range lines {
 		plain = append(plain, ansi.Strip(line))
@@ -73,5 +73,44 @@ func TestRenderKeymapLinesAlignsDescriptions(t *testing.T) {
 	want := []string{"esc     nav mode", "ctrl+h  toggle hud"}
 	if strings.Join(plain, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("keymap lines = %q, want %q", plain, want)
+	}
+}
+
+// TestRenderKeymapLinesTwoColumns: given room, the keymap bubble fills a left
+// column top to bottom and continues in a right one, each column aligning its
+// own keys; a label too long for two columns falls back to one.
+func TestRenderKeymapLinesTwoColumns(t *testing.T) {
+	keys := []key.Binding{
+		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
+		key.NewBinding(key.WithKeys("ctrl+h"), key.WithHelp("ctrl+h", "toggle hud")),
+		key.NewBinding(key.WithKeys("!"), key.WithHelp("!", "run shell")),
+		key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("ctrl+t", "context")),
+		key.NewBinding(key.WithKeys("ctrl+?"), key.WithHelp("ctrl+?", "toggle keymap")),
+	}
+	render := func(keys []key.Binding, width int) []string {
+		var plain []string
+		for _, line := range RenderKeymapLines(lipgloss.NewStyle(), keys, "", time.Time{}, width) {
+			plain = append(plain, ansi.Strip(line))
+		}
+		return plain
+	}
+	want := []string{
+		"esc     nav mode     ctrl+t  context",
+		"ctrl+h  toggle hud   ctrl+?  toggle keymap",
+		"!       run shell",
+	}
+	got := render(keys, 46)
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("two-column keymap =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	for _, line := range got {
+		if w := ansi.StringWidth(line); w > 46 {
+			t.Fatalf("two-column line is %d wide, past 46: %q", w, line)
+		}
+	}
+
+	long := append(keys, key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "a description much too long to share")))
+	if got := render(long, 46); len(got) != len(long) {
+		t.Fatalf("a label too long for two columns must fall back to one:\n%s", strings.Join(got, "\n"))
 	}
 }

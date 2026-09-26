@@ -322,6 +322,8 @@ type frontendPretty struct {
 	notificationContainer *tuist.Container
 	notificationOverlay   *tuist.OverlayHandle
 	notificationsHidden   bool
+	// hudWidth is the HUD overlay's current width (see syncHUDWidth).
+	hudWidth int
 	// keymapBubble lists every available key in the HUD while shown (see
 	// toggleKeymap). It is pinned first so taller bubbles can't push it off.
 	keymapBubble *NotificationBubble
@@ -1160,12 +1162,55 @@ func (fe *frontendPretty) ensureHUD() {
 		return
 	}
 	fe.notificationContainer = &tuist.Container{}
-	fe.notificationOverlay = fe.tui.ShowOverlay(fe.notificationContainer, &tuist.OverlayOptions{
-		Width:  tuist.SizeAbs(notificationWidth(fe.window.Width)),
+	fe.hudWidth = fe.desiredHUDWidth()
+	fe.notificationOverlay = fe.tui.ShowOverlay(fe.notificationContainer, fe.hudOptions())
+	fe.notificationOverlay.SetHidden(fe.notificationsHidden)
+}
+
+// keymapHUDMaxWidth caps how far the HUD widens for the keymap bubble: enough
+// for its two columns in any mode.
+const keymapHUDMaxWidth = 64
+
+// desiredHUDWidth sizes the HUD to the window. The keymap bubble widens it
+// to fit the keymap's two columns (up to half the window, or
+// keymapHUDMaxWidth).
+func (fe *frontendPretty) desiredHUDWidth() int {
+	width := notificationWidth(fe.window.Width)
+	if fe.keymapBubble != nil {
+		limit := max(width, min(keymapHUDMaxWidth, fe.window.Width/2))
+		width = max(width, fe.keymapBubbleWidth(limit))
+	}
+	return width
+}
+
+// keymapBubbleWidth is the width the keymap bubble needs within limit:
+// its widest line plus the borders and padding either side.
+func (fe *frontendPretty) keymapBubbleWidth(limit int) int {
+	const chrome = 4 // "│ " + " │"
+	width := 0
+	for _, line := range fe.keymapBubbleLines(limit - chrome) {
+		width = max(width, ansi.StringWidth(line))
+	}
+	return width + chrome
+}
+
+func (fe *frontendPretty) hudOptions() *tuist.OverlayOptions {
+	return &tuist.OverlayOptions{
+		Width:  tuist.SizeAbs(fe.hudWidth),
 		Anchor: tuist.AnchorTopRight,
 		Margin: tuist.OverlayMargin{Right: 1},
-	})
-	fe.notificationOverlay.SetHidden(fe.notificationsHidden)
+	}
+}
+
+// syncHUDWidth resizes the HUD after the window or its bubbles change.
+func (fe *frontendPretty) syncHUDWidth() {
+	if fe.notificationOverlay == nil {
+		return
+	}
+	if width := fe.desiredHUDWidth(); width != fe.hudWidth {
+		fe.hudWidth = width
+		fe.notificationOverlay.SetOptions(fe.hudOptions())
+	}
 }
 
 // toggleNotifications hides the HUD's bubbles without discarding their
@@ -1185,6 +1230,7 @@ func (fe *frontendPretty) toggleKeymap() {
 	if fe.keymapBubble != nil && !fe.notificationsHidden {
 		fe.notificationContainer.RemoveChild(fe.keymapBubble)
 		fe.keymapBubble = nil
+		fe.syncHUDWidth()
 		return
 	}
 	if fe.keymapBubble == nil {
@@ -1196,15 +1242,22 @@ func (fe *frontendPretty) toggleKeymap() {
 		fe.notificationContainer.Children = slices.Insert(
 			fe.notificationContainer.Children, 0, tuist.Component(fe.keymapBubble))
 		fe.notificationContainer.Update()
+		fe.syncHUDWidth()
 	}
 	if fe.notificationsHidden {
 		fe.toggleNotifications()
 	}
 }
 
-// keymapBubbleBody lists the keys for the current focus, one per line, along
-// with the HUD's own keys wherever the focused view leaves them out.
-func (fe *frontendPretty) keymapBubbleBody(int) string {
+// keymapBubbleBody lists the keys for the current focus, in two columns when
+// they fit.
+func (fe *frontendPretty) keymapBubbleBody(width int) string {
+	return strings.Join(fe.keymapBubbleLines(width), "\n")
+}
+
+// keymapBubbleLines renders the keys for the current focus, along with the
+// HUD's own keys wherever the focused view leaves them out.
+func (fe *frontendPretty) keymapBubbleLines(width int) []string {
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
 	keys := fe.keys(out)
 	for _, hudKey := range fe.hudKeys() {
@@ -1214,7 +1267,7 @@ func (fe *frontendPretty) keymapBubbleBody(int) string {
 			keys = append(keys, hudKey)
 		}
 	}
-	return strings.Join(RenderKeymapLines(KeymapStyle, keys, fe.pressedKey, fe.pressedKeyAt), "\n")
+	return RenderKeymapLines(KeymapStyle, keys, fe.pressedKey, fe.pressedKeyAt, width)
 }
 
 // Keys toggling the keymap bubble. Terminals disagree on ctrl+?: with the
@@ -1267,14 +1320,15 @@ func (fe *frontendPretty) handleHUDKey(_ tuist.Context, event uv.Event) bool {
 }
 
 // refreshKeymap re-renders everything listing the current keys: the keymap
-// bar and the keymap bubble. (The shell's hint is fixed; only a key press
-// re-renders it, to light the key up.)
+// bar and the keymap bubble, resizing the HUD to fit the latter. (The shell's
+// hint is fixed; only a key press re-renders it, to light the key up.)
 func (fe *frontendPretty) refreshKeymap() {
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
 	}
 	if fe.keymapBubble != nil {
 		fe.keymapBubble.Update()
+		fe.syncHUDWidth()
 	}
 }
 
@@ -7311,6 +7365,9 @@ func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	fe.logs.SetWidth(fe.contentWidth)
 	if old != msg {
 		fe.updateTestViews()
+	}
+	if old.Width != msg.Width {
+		fe.syncHUDWidth()
 	}
 	if fe.textInput != nil {
 		fe.textInput.Update()
