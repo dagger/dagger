@@ -4298,7 +4298,7 @@ func (s *workspaceSchema) services(
 	}
 
 	ignoreServices, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
-		return e.Up.Skip
+		return e.Start.Skip
 	})
 	if err != nil {
 		return nil, err

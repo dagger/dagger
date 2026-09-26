@@ -62,13 +62,20 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 		}
 	}
 
-	if v, ok := docPragmas["up"]; ok {
+	// +up is the deprecated spelling of +start.
+	upPragma := "start"
+	v, ok := docPragmas[upPragma]
+	if !ok {
+		upPragma = "up"
+		v, ok = docPragmas[upPragma]
+	}
+	if ok {
 		if v == nil {
 			spec.isUp = true
 		} else {
 			spec.isUp, ok = v.(bool)
 			if !ok {
-				return nil, fmt.Errorf("up pragma %q, must be a valid boolean", v)
+				return nil, fmt.Errorf("%s pragma %q, must be a valid boolean", upPragma, v)
 			}
 		}
 	}

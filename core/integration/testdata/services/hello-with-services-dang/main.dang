@@ -2,7 +2,7 @@ type HelloWithServicesDang {
   """
   Returns a web server service
   """
-  @up
+  @start
   pub web: Service! {
     container
       .from("nginx:alpine")
@@ -30,7 +30,7 @@ type Infra {
   """
   Returns a postgres database service
   """
-  @up
+  @start
   pub database: Service! {
     container
       .from("postgres:alpine")

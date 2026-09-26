@@ -312,7 +312,7 @@ type SpanSnapshot struct {
 	ServiceName string `json:",omitempty"`
 
 	// ServiceURLs marks a service-readiness marker span: the local URLs at
-	// which a just-started service is reachable (`dagger up`'s `ready <url>`
+	// which a just-started service is reachable (`dagger start`'s `ready <url>`
 	// span). Also stamped on the service's display span itself, so its
 	// collapsed row can show where to point a browser (see idtui's
 	// renderServiceURLs).

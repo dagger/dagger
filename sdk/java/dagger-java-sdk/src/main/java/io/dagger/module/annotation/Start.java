@@ -8,9 +8,9 @@ import java.lang.annotation.Target;
 /**
  * Annotation to mark a function as a service for {@code dagger start}.
  *
- * @deprecated Use {@link Start} instead.
+ * <p>Functions annotated with {@code @Start} will be discovered by {@code dagger start} and their
+ * returned Service will be started and tunneled to the host.
  */
-@Deprecated
 @Target({ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
-public @interface Up {}
+public @interface Start {}

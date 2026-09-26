@@ -607,12 +607,12 @@ Dagger has three first-class function types, each marked by stacking a decorator
 |---|---|---|---|
 | `@check` | `str` (or any value; non-zero exit fails) | `dagger check` | Validate something (lint, test). |
 | `@generate` | `dagger.Changeset` | `dagger generate` | Produce a changeset of edits to the source. |
-| `@up` | `dagger.Service` | `dagger up` | Start a long-running service. |
+| `@start` | `dagger.Service` | `dagger start` | Start a long-running service. |
 
 All three decorators are exported from `dagger.mod` and re-exported from `dagger`, so you can import them directly:
 
 ```python
-from dagger import check, generate, up
+from dagger import check, generate, start
 ```
 
 A **check** validates something and fails the run on a non-zero exit. Combine `@function` with `@check`:
@@ -697,17 +697,17 @@ class MyModule:
 A `@generate` function is your own generator. `dagger generate` runs these functions and the registered SDK scopes that regenerate the Python client in `sdk/`. See [Regenerate bindings](#regenerate-bindings).
 :::
 
-A **service** returns a `dagger.Service` and is started by `dagger up`. Combine `@function` with `@up`:
+A **service** returns a `dagger.Service` and is run by `dagger start`. Combine `@function` with `@start`:
 
 ```python
 import dagger
-from dagger import dag, function, object_type, up
+from dagger import dag, function, object_type, start
 
 
 @object_type
 class MyModule:
     @function
-    @up
+    @start
     def database(self) -> dagger.Service:
         """Returns a postgres database service"""
         return (
@@ -718,13 +718,13 @@ class MyModule:
         )
 ```
 
-`dagger up` starts every `@up` service and exposes its ports. A plain `@function` returning `dagger.Service` can still be bound into other containers with `with_service_binding`, but only `@up` functions are started by `dagger up`. See [Services](#services).
+`dagger start` runs every `@start` service and exposes its ports. A plain `@function` returning `dagger.Service` can still be bound into other containers with `with_service_binding`, but only `@start` functions are run by `dagger start`. See [Services](#services).
 
 See [Generating code](../../using/generating.mdx).
 
 ### Directives
 
-The `Name`, `Deprecated`, and `Doc` annotations used above are the Python expression of Dagger's directives. They are applied via `typing.Annotated` (except `Doc`, which can be a plain annotation). The `@check`, `@generate`, and `@up` decorators mark function behavior.
+The `Name`, `Deprecated`, and `Doc` annotations used above are the Python expression of Dagger's directives. They are applied via `typing.Annotated` (except `Doc`, which can be a plain annotation). The `@check`, `@generate`, and `@start` decorators mark function behavior.
 
 ### Ignoring inputs
 

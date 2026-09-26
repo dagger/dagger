@@ -132,9 +132,9 @@ func TestServiceRootFilterUsesTraceUI(t *testing.T) {
 	base := []dagui.SpanSnapshot{
 		// the CLI root; still running (an ended root would cancel the
 		// running service on import)
-		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger up web", StartTime: start},
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger start web", StartTime: start},
 		// the CLI's `services` zoom span: passthrough, set primary --
-		// exactly what internal/cmd/dagger/up.go's runServices creates
+		// exactly what internal/cmd/dagger/start.go's runServices creates
 		{ID: servicesID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "services", Passthrough: true, StartTime: at(1)},
 		// setup machinery the service rows must not drown in
 		{ID: loadID, TraceID: prettyTestTraceID(), ParentID: servicesID, Name: "Workspace.services", StartTime: at(1)},

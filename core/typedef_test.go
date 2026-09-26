@@ -92,6 +92,12 @@ func TestTypeDefConversions(t *testing.T) {
 	}
 }
 
+func TestServiceFunctionDirectiveIsStart(t *testing.T) {
+	directives := (&Function{}).WithUp().Directives()
+	require.Len(t, directives, 1)
+	require.Equal(t, "start", directives[0].Name)
+}
+
 func TestFunctionCallReturnValueStoresDecodedJSON(t *testing.T) {
 	fnCall := newFunctionCall(FunctionCall{Name: "fn"})
 

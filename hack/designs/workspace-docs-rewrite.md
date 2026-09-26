@@ -116,7 +116,7 @@ Day-to-day usage organized by verbs — the actual things you do. Pure operation
 
 - **Checking your code** — `dagger check`. Local, cloud (`--cloud`), automated (Cloud Checks). Filtering, selecting.
 - **Generating code** — `dagger generate`. Changesets, review.
-- **Running dev services** — `dagger up`. Service discovery, parallel startup.
+- **Running dev services** — `dagger start`. Service discovery, parallel startup.
 
 "Shipping your code" was originally planned as a fourth verb (`dagger ship`) but the page was killed; the command isn't shipping yet and a coming-soon stub with no content wasn't earning its spot in the sidebar. Revisit when `dagger ship` lands.
 

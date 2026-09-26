@@ -1,0 +1,14 @@
+kind: Breaking
+body: |
+  `dagger up` is now `dagger start`, with the same flags and arguments.
+
+  `dagger up` no longer runs services. It fails and prints the equivalent
+  `dagger start` command.
+
+  In `dagger.toml`, `modules.<name>.up.skip` is now
+  `modules.<name>.start.skip`. `up.skip` is still read when `start.skip` is
+  not set.
+time: 2026-09-24T14:12:48Z
+custom:
+  Author: eunomie
+  PR: "14328"

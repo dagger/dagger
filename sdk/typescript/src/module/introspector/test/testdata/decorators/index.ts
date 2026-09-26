@@ -14,6 +14,7 @@ import {
   func,
   generate,
   object,
+  start,
   up,
 } from "../../../../decorators.js"
 
@@ -24,6 +25,11 @@ const DEFAULT_PATH = "/src"
 const DEFAULT_ADDRESS = "alpine:3.21"
 const ALIAS = "renamedReference"
 const CACHE = "session"
+
+// Its name starts with "start", but it is not the Dagger @start marker.
+function startTimer(): MethodDecorator {
+  return () => {}
+}
 
 @object()
 export class Decorators {
@@ -140,7 +146,7 @@ export class Decorators {
     return "cached"
   }
 
-  // --- @check / @generate / @up / @agent markers (combined with @func) ---
+  // --- @check / @generate / @start / @up / @agent markers (combined with @func) ---
 
   @func()
   @check()
@@ -153,9 +159,21 @@ export class Decorators {
   }
 
   @func()
+  @start()
+  startSomething(): Service {
+    throw new Error("not implemented")
+  }
+
+  @func()
   @up()
   upSomething(): Service {
     throw new Error("not implemented")
+  }
+
+  @func()
+  @startTimer()
+  timed(): string {
+    return "timed"
   }
 
   @func()

@@ -909,13 +909,13 @@ Bumping the engine version usually means the generated client bindings should ch
 
 ## Checks, generators, services, directives, and ignore patterns
 
-A module worth reusing provides at least one of the three first-class function types, a check, a generator, or a service, so that the platform verbs (`dagger check`, `dagger generate`, `dagger up`) have something to run. These work the same in Java as in any SDK; see the [SDKs overview](./index.mdx) for the full treatment. In Java, you mark each one with an annotation next to `@Function`. Both annotations are required:
+A module worth reusing provides at least one of the three first-class function types, a check, a generator, or a service, so that the platform verbs (`dagger check`, `dagger generate`, `dagger start`) have something to run. These work the same in Java as in any SDK; see the [SDKs overview](./index.mdx) for the full treatment. In Java, you mark each one with an annotation next to `@Function`. Both annotations are required:
 
 | Annotation | Return type | Run by | Purpose |
 |---|---|---|---|
 | `@Check` | `void` (or `Container`) | `dagger check` | validate the project (test/lint/scan) |
 | `@Generate` | `Changeset` | `dagger generate` | produce a diff to apply to the workspace |
-| `@Up` | `Service` | `dagger up` | start a long-running service |
+| `@Start` | `Service` | `dagger start` | start a long-running service |
 
 The parts specific to Java follow.
 
@@ -934,7 +934,7 @@ Java modules use annotations from `io.dagger.module.annotation` to add Dagger me
 | `@Ignore({...})` | a `Directory` parameter | patterns to leave out when loading the directory |
 | `@Check` | a `@Function` method | mark the function as a [check](#checks) |
 | `@Generate` | a `@Function` method | mark the function as a [generator](#generators) |
-| `@Up` | a `@Function` method | mark the function as a [service](#up-services) |
+| `@Start` | a `@Function` method | mark the function as a [service](#up-services) |
 
 ### Ignore patterns {#ignore-patterns}
 
@@ -1020,18 +1020,18 @@ See [Generating code](../../using/generating.mdx).
 
 ### Services {#up-services}
 
-Annotate a function with `@Up` (in addition to `@Function`) to make it a service. It returns a `Service`. `dagger up` discovers and starts every service the module exposes and opens their ports on the host.
+Annotate a function with `@Start` (in addition to `@Function`) to make it a service. It returns a `Service`. `dagger start` discovers and starts every service the module exposes and opens their ports on the host.
 
 ```java
 /** Run the web server. */
 @Function
-@Up
+@Start
 public Service web() {
   return dag().container().from("nginx:alpine").withExposedPort(80).asService();
 }
 ```
 
-Like checks, `@Up` services can live on custom object types so you can group related services, for example an `Infra` object with a `database` service, which `dagger up -l` lists as `infra:database`. This is the same `Service` type described under [Services](#services) above. The `@Up` annotation is what makes a service function runnable directly with `dagger up`.
+Like checks, `@Start` services can live on custom object types so you can group related services, for example an `Infra` object with a `database` service, which `dagger start -l` lists as `infra:database`. This is the same `Service` type described under [Services](#services) above. The `@Start` annotation is what makes a service function runnable directly with `dagger start`.
 
 ## Testing Java modules
 

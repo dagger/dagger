@@ -5,7 +5,7 @@ import "github.com/spf13/cobra"
 var apiCmd = &cobra.Command{
 	Use:   "api",
 	Short: "Interact with the Dagger API (advanced)",
-	Long: `Every Dagger command — check, up, generate, even install — ultimately
+	Long: `Every Dagger command — check, start, generate, even install — ultimately
 runs against a GraphQL API served by the Dagger engine, combining
 Dagger's core types with schema extensions loaded from modules. The
 "api" group surfaces direct access for scripting and advanced

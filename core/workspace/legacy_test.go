@@ -223,10 +223,10 @@ func TestWorkspaceConfigMigratesToolchainSkipFields(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, []string{"flaky-check"}, entry.Check.Skip)
 	require.Equal(t, []string{"generate-other-files", "other-generators:*"}, entry.Generate.Skip)
-	require.Equal(t, []string{"redis", "infra:database"}, entry.Up.Skip)
+	require.Equal(t, []string{"redis", "infra:database"}, entry.Start.Skip)
 
 	out := SerializeConfig(cfg)
-	require.Contains(t, string(out), `up.skip = ["redis", "infra:database"]`)
+	require.Contains(t, string(out), `start.skip = ["redis", "infra:database"]`)
 	require.Contains(t, string(out), `generate.skip = ["generate-other-files", "other-generators:*"]`)
 	require.Contains(t, string(out), `check.skip = ["flaky-check"]`)
 
@@ -234,7 +234,7 @@ func TestWorkspaceConfigMigratesToolchainSkipFields(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"flaky-check"}, roundTrip.Modules["hello"].Check.Skip)
 	require.Equal(t, []string{"generate-other-files", "other-generators:*"}, roundTrip.Modules["hello"].Generate.Skip)
-	require.Equal(t, []string{"redis", "infra:database"}, roundTrip.Modules["hello"].Up.Skip)
+	require.Equal(t, []string{"redis", "infra:database"}, roundTrip.Modules["hello"].Start.Skip)
 }
 
 func TestMustMigrateToWorkspaceConfig(t *testing.T) {

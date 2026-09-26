@@ -12,7 +12,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// Up represents a service function decorated with +up
+// Up represents a service function decorated with +start
 type Up struct {
 	Node         *ModTreeNode  `json:"node"`
 	PortMappings []PortForward `json:"portMappings,omitempty"`
@@ -69,7 +69,7 @@ func (ug *UpGroup) List() []*Up {
 // beneath its own display span (see ModTreeNode.PrepareUp) — evaluating
 // there matters beyond ordering: the evaluation's API spans are what the
 // service's log stream is routed to (dagui routes a service's stdio to the
-// span that created its value), so this is what makes `dagger up` show each
+// span that created its value), so this is what makes `dagger start` show each
 // service's logs under its own row rather than under a separate preflight
 // subtree. Nothing starts until every service has evaluated and the group's
 // host ports are collision-free. Phase 2 then starts them all in parallel,

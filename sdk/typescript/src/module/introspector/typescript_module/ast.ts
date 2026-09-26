@@ -287,18 +287,23 @@ export class AST {
     return this.checker.getSymbolAtLocation(node)
   }
 
+  private findDecorator(
+    node: ts.HasDecorators,
+    daggerDecorator: DaggerDecorators,
+  ): ts.Decorator | undefined {
+    return ts.getDecorators(node)?.find((d) => {
+      const callee = ts.isCallExpression(d.expression)
+        ? d.expression.expression
+        : d.expression
+      return callee.getText() === daggerDecorator
+    })
+  }
+
   public isNodeDecoratedWith(
     node: ts.HasDecorators,
     daggerDecorator: DaggerDecorators,
   ): boolean {
-    const decorators = ts.getDecorators(node)
-    if (!decorators) {
-      return false
-    }
-
-    const decorator = decorators.find((d) =>
-      d.expression.getText().startsWith(daggerDecorator),
-    )
+    const decorator = this.findDecorator(node, daggerDecorator)
     if (!decorator) {
       return false
     }
@@ -318,14 +323,7 @@ export class AST {
     type: "string" | "object",
     position = 0,
   ): T | undefined {
-    const decorators = ts.getDecorators(node)
-    if (!decorators) {
-      return undefined
-    }
-
-    const decorator = decorators.find((d) =>
-      d.expression.getText().startsWith(daggerDecorator),
-    )
+    const decorator = this.findDecorator(node, daggerDecorator)
     if (!decorator) {
       return undefined
     }

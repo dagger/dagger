@@ -255,6 +255,15 @@
             "name": "Changeset"
           }
         },
+        "startSomething": {
+          "name": "startSomething",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Service"
+          }
+        },
         "upSomething": {
           "name": "upSomething",
           "description": "",
@@ -262,6 +271,14 @@
           "returnType": {
             "kind": "OBJECT_KIND",
             "name": "Service"
+          }
+        },
+        "timed": {
+          "name": "timed",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
           }
         },
         "agentSomething": {

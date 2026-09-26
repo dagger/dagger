@@ -6443,7 +6443,7 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 	}
 }
 
-// Returns the function with a flag indicating it returns a service for dagger up.
+// Returns the function with a flag indicating it returns a service for dagger start.
 func (r *Function) WithUp() *Function {
 	q := r.query.Select("withUp")
 

@@ -1363,7 +1363,7 @@ func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 	// to claim parked lines. The record's own span is the service's
 	// long-lived exec span: attach the stream there, keeping it beneath the
 	// service instance — and, via log roll-up, in whatever row displays it,
-	// e.g. `dagger up`'s per-service display span — instead of parking it
+	// e.g. `dagger start`'s per-service display span — instead of parking it
 	// forever. (On a cold trace a record can win a race against the creator
 	// span's arrival and land here too; it stays in the same subtree.)
 	if span, ok := db.Spans.Map[fallback]; ok && span.Service {

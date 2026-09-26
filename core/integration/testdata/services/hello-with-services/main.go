@@ -11,7 +11,7 @@ import (
 type HelloWithServices struct{}
 
 // Returns a web server service
-// +up
+// +start
 func (m *HelloWithServices) Web() *dagger.Service {
 	return dag.Container().
 		From("nginx:alpine").
@@ -52,7 +52,7 @@ func (m *HelloWithServices) Infra() *Infra {
 
 type Infra struct{}
 
-// +up
+// +start
 func (i *Infra) Database() *dagger.Service {
 	return dag.Container().
 		From("postgres:alpine").

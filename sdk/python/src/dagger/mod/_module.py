@@ -14,7 +14,7 @@ import cattrs
 import cattrs.gen
 from cattrs.preconf import is_primitive_enum
 from cattrs.preconf.json import JsonConverter
-from typing_extensions import dataclass_transform, overload
+from typing_extensions import dataclass_transform, deprecated, overload
 
 import dagger
 from dagger import dag
@@ -686,17 +686,54 @@ class Module:
 
         return wrapper(func) if func else wrapper
 
-    def up(
+    def start(
         self,
         func: Func[P, R] | None = None,
     ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
-        """Mark a function as a service for ``dagger up``."""
+        """Mark a function as a service for ``dagger start``.
+
+        Services are functions that return a :py:class:`dagger.Service` and
+        can be called without arguments. This decorator can be combined with
+        :py:meth:`function`.
+
+        Example usage::
+
+            @object_type
+            class MyModule:
+                @function
+                @start
+                def web(self) -> dagger.Service:
+                    return (
+                        dag.container()
+                        .from_("nginx:alpine")
+                        .with_exposed_port(80)
+                        .as_service()
+                    )
+
+        Parameters
+        ----------
+        func:
+            The function to mark as a service. Should be an instance method in
+            a class decorated with :py:meth:`object_type`.
+        """
 
         def wrapper(fn: Func[P, R]) -> Func[P, R]:
             setattr(fn, UP_DEF_KEY, True)
             return fn
 
         return wrapper(func) if func else wrapper
+
+    @deprecated("Use 'start' instead.")
+    def up(
+        self,
+        func: Func[P, R] | None = None,
+    ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
+        """Mark a function as a service for ``dagger start``.
+
+        .. deprecated::
+            Use :py:meth:`start` instead.
+        """
+        return self.start(func)
 
     def agent(
         self,

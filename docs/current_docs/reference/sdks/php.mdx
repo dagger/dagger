@@ -820,7 +820,7 @@ Bumping the engine version usually means the generated bindings change too, so f
 
 ## Checks, directives, and ignore patterns {#checks-directives-and-ignore-patterns}
 
-A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. That gives the platform verbs (`dagger check`, `dagger generate`, `dagger up`) something to run. See the [SDKs overview](./index.mdx) for the full treatment.
+A useful, reusable module provides at least one of the three first-class function types: a check, a generator, or a service. That gives the platform verbs (`dagger check`, `dagger generate`, `dagger start`) something to run. See the [SDKs overview](./index.mdx) for the full treatment.
 
 The PHP SDK currently implements checks only:
 
@@ -828,7 +828,7 @@ The PHP SDK currently implements checks only:
 |---|---|---|---|
 | `#[Check]` | `void` or `Container` | `dagger check` | validate the project (test/lint/scan) |
 
-There is no PHP attribute for generators (`dagger generate`) or `up` services (`dagger up`) yet. A PHP function can still return a `Changeset` or a `Service`, and you can call it explicitly with `dagger api call`, but those verbs will not discover it. If a module's main job is to generate code or start services, write it with the [Go](./go.mdx), [Python](./python.mdx), [TypeScript](./typescript.mdx), or [Dang](./dang.mdx) SDK instead.
+There is no PHP attribute for generators (`dagger generate`) or services (`dagger start`) yet. A PHP function can still return a `Changeset` or a `Service`, and you can call it explicitly with `dagger api call`, but those verbs will not discover it. If a module's main job is to generate code or start services, write it with the [Go](./go.mdx), [Python](./python.mdx), [TypeScript](./typescript.mdx), or [Dang](./dang.mdx) SDK instead.
 
 ### Attributes
 

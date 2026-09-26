@@ -1,6 +1,6 @@
 ---
 name: adding-pragmas
-description: Add or change a Dagger module pragma/directive/decorator — the `@check`, `@generate`, `@up`, `@agent`, `@defaultPath`, `@ignorePatterns` family that authors write as `// +check` (Go), `@check()` (TypeScript), `@check` (Python), or `@check` (Dang). Use when adding a new marker, wiring an existing one into another SDK, or debugging why a marker set in module source doesn't reach the engine.
+description: Add or change a Dagger module pragma/directive/decorator — the `@check`, `@generate`, `@start`, `@agent`, `@defaultPath`, `@ignorePatterns` family that authors write as `// +check` (Go), `@check()` (TypeScript), `@check` (Python), or `@check` (Dang). Use when adding a new marker, wiring an existing one into another SDK, or debugging why a marker set in module source doesn't reach the engine.
 ---
 
 # Adding a module pragma
@@ -100,7 +100,7 @@ single `LLM!` base.
 `cmd/codegen/generator/go/templates/module_funcs.go`, three edits:
 
 ```go
-// ~line 76, alongside the check/generate/up blocks
+// ~line 76, alongside the check/generate/start blocks
 if v, ok := docPragmas["agent"]; ok {
     if v == nil {
         spec.isAgent = true

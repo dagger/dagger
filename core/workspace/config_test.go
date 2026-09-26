@@ -156,6 +156,45 @@ greeting = "hola"
 	require.Empty(t, cfg.Env["local"].Modules)
 }
 
+func TestParseConfigReadsUpSkipAsStartSkip(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`[modules.legacy]
+source = "./legacy"
+up.skip = ["redis"]
+
+[modules.cleared]
+source = "./cleared"
+up.skip = ["redis"]
+start.skip = []
+
+[modules.both]
+source = "./both"
+up.skip = ["redis"]
+start.skip = ["db"]
+`)
+	cfg, err := ParseConfig(data)
+	require.NoError(t, err)
+	require.Equal(t, []string{"redis"}, cfg.Modules["legacy"].Start.Skip)
+	require.Empty(t, cfg.Modules["cleared"].Start.Skip)
+	require.Equal(t, []string{"db"}, cfg.Modules["both"].Start.Skip)
+
+	updated, err := UpdateConfigBytes(data, cfg)
+	require.NoError(t, err)
+	require.Equal(t, string(data), string(updated))
+
+	warnings, err := ConfigWarnings(data, "dagger.toml")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		"dagger.toml:3:1: field modules.legacy.up is deprecated; use modules.legacy.start instead",
+		"dagger.toml:7:1: field modules.cleared.up is ignored because modules.cleared.start.skip is set",
+		"dagger.toml:12:1: field modules.both.up is ignored because modules.both.start.skip is set",
+	}, warnings)
+
+	_, err = WriteConfigValue(data, "modules.legacy.up.skip", "redis")
+	require.ErrorContains(t, err, `unknown config key "modules.legacy.up.skip"`)
+}
+
 func TestSerializeConfig(t *testing.T) {
 	t.Parallel()
 
@@ -674,7 +713,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.check.skip", "flaky-check")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.up.skip", "redis, infra:database")
+		data, err = WriteConfigValue(data, "modules.greeter.start.skip", "redis, infra:database")
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "sdks.go.module", "greeter")
 		require.NoError(t, err)
@@ -683,7 +722,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"generate-other-files", "other-generators:*"}, cfg.Modules["greeter"].Generate.Skip)
 		require.Equal(t, []string{"flaky-check"}, cfg.Modules["greeter"].Check.Skip)
-		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["greeter"].Up.Skip)
+		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["greeter"].Start.Skip)
 		require.Equal(t, SDKEntry{Module: "greeter"}, cfg.SDKs["go"])
 	})
 
@@ -718,7 +757,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.EqualError(t, err, "cannot set \"modules.greeter\" directly; specify a field like modules.greeter.settings")
 
 		_, err = WriteConfigValue(nil, "modules.greeter.unknown", "value")
-		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: check, entrypoint, generate, legacy-default-path, pin, settings, source, up")
+		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: check, entrypoint, generate, legacy-default-path, pin, settings, source, start")
 
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")

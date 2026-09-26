@@ -9610,7 +9610,7 @@ export class Function_ extends BaseClient {
   }
 
   /**
-   * Returns the function with a flag indicating it returns a service for dagger up.
+   * Returns the function with a flag indicating it returns a service for dagger start.
    */
   withUp = (): Function_ => {
     const ctx = this._ctx.select("withUp")

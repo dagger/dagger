@@ -149,8 +149,17 @@ var moduleDirectives = []dagql.DirectiveSpec{
 		},
 	},
 	{
+		Name:        "start",
+		Description: dagql.FormatDescription(`Indicates that this function returns a service for dagger start.`),
+		Args:        dagql.NewInputSpecs(), // none
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	},
+	// Modules written before @start keep using @up, so it stays declared.
+	{
 		Name:        "up",
-		Description: dagql.FormatDescription(`Indicates that this function returns a service for dagger up.`),
+		Description: dagql.FormatDescription(`DEPRECATED: Use @start instead.`, `Indicates that this function returns a service for dagger start.`),
 		Args:        dagql.NewInputSpecs(), // none
 		Locations: []dagql.DirectiveLocation{
 			dagql.DirectiveLocationFieldDefinition,
@@ -473,7 +482,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Returns the function with a flag indicating it's a generator.`),
 
 		dagql.Func("withUp", s.functionWithUp).
-			Doc(`Returns the function with a flag indicating it returns a service for dagger up.`),
+			Doc(`Returns the function with a flag indicating it returns a service for dagger start.`),
 
 		dagql.Func("withAgent", s.functionWithAgent).
 			Experimental("Agent APIs are likely to change.").

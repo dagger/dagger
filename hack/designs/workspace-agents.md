@@ -108,7 +108,7 @@ dagger agent                                    # prompt with all of them compos
   name). It must return `LLM!`, may take auto-injected `Workspace!` args, and
   must not declare any other required arg — validated at module load
   (`core/module.go`).
-- **Discovery** mirrors `@check`/`@generate`/`@up` end to end: an `IsAgent`
+- **Discovery** mirrors `@check`/`@generate`/`@start` end to end: an `IsAgent`
   marker on `Function`, directive registration, SDK wiring, and rollup across
   the current module + installed deps via the mod tree
   (`core/modtree.go`; `Workspace.agents`, `core/schema/agents.go`).

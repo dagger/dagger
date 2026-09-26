@@ -160,14 +160,14 @@ const (
 
 	// ServiceNameAttr carries a human-readable name for a service span, for
 	// display alongside ServiceAttr (the engine stamps the service's network
-	// hostname). Also used standalone by `dagger up`'s per-service display
+	// hostname). Also used standalone by `dagger start`'s per-service display
 	// spans (core/modtree.go). Defined here because the canonical constant
 	// would live in the external github.com/dagger/otel-go package, which we
 	// cannot modify. (string)
 	ServiceNameAttr = "dagger.io/service.name"
 
 	// ServiceURLsAttr marks a service-readiness marker span, carrying the
-	// local URLs at which a just-started service is reachable. `dagger up`
+	// local URLs at which a just-started service is reachable. `dagger start`
 	// stamps it on the `ready <url>` span it starts beneath a service's
 	// display span once the health check passes (core/modtree.go); the TUI
 	// uses it to surface readiness alongside the service when a run leads

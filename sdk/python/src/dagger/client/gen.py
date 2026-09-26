@@ -7920,7 +7920,7 @@ class Function(Type):
 
     def with_up(self) -> Self:
         """Returns the function with a flag indicating it returns a service for
-        dagger up.
+        dagger start.
         """
         _args: list[Arg] = []
         _ctx = self._select("withUp", _args)
