@@ -650,6 +650,15 @@ Use configurable TTL/quota retention. The old PR's seven-day/10-GiB defaults are
 starting point to reassess, not correctness requirements. Active-reader leases and
 clear expired/evicted errors are requirements.
 
+Archive titles are derived by the engine from the trace, not set by clients. The
+CLI publishes the session title as a span-name log record
+(`dagger.io/log.role=span.name`), regenerated after a reset or branch. The
+telemetry store's archive index keeps the latest such record per trace as logs
+arrive; the engine copies the archive's own trace title into its manifest at
+registration and whenever a new one arrives (so active listings and archives
+recovered after a crash show it), and again at the seal. Titles are sanitized to
+one bounded printable line; untitled archives list as `Agent session <start>`.
+
 ### 8.2 Verified close boundary
 
 A successfully closed archive requires this ordering:
