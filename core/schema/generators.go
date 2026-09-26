@@ -138,6 +138,20 @@ func (s generatorsSchema) groupChangesAtRoot(ctx context.Context, group *core.Ge
 	if err != nil {
 		return merged, err
 	}
+	if len(results) == 1 {
+		// There is nothing to merge. A round-trip through Git would discard
+		// permission bits other than executable and lose empty directories.
+		// Keep the snapshots, but retain the merge's root .git exclusion and
+		// post-generation validation of skipped modules.
+		merged, err = singleGeneratorChanges(ctx, results[0])
+		if err != nil {
+			return merged, err
+		}
+		if err := group.VerifySkippedModules(ctx, results); err != nil {
+			return merged, err
+		}
+		return merged, nil
+	}
 	ids := make(dagql.ArrayInput[dagql.ID[*core.Changeset]], 0, len(results))
 	for _, result := range results {
 		id, err := result.ID()
@@ -163,6 +177,34 @@ func (s generatorsSchema) groupChangesAtRoot(ctx context.Context, group *core.Ge
 		return merged, err
 	}
 	return merged, nil
+}
+
+func singleGeneratorChanges(ctx context.Context, changes dagql.ObjectResult[*core.Changeset]) (dagql.ObjectResult[*core.Changeset], error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	var before, after dagql.ObjectResult[*core.Directory]
+	withoutGit := dagql.Selector{
+		Field: "withoutDirectory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(".git")}},
+	}
+	if err := dag.Select(ctx, changes.Self().Before, &before, withoutGit); err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	if err := dag.Select(ctx, changes.Self().After, &after, withoutGit); err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	var filtered dagql.ObjectResult[*core.Changeset]
+	err = dag.Select(ctx, after, &filtered, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	})
+	return filtered, err
 }
 
 func (s generatorsSchema) workspace(ctx context.Context, parent dagql.ObjectResult[*core.GeneratorGroup], args generatorsGroupChangesArgs) (dagql.ObjectResult[*core.Workspace], error) {
