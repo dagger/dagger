@@ -438,11 +438,15 @@ func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("agent evaluated") 
 	} {
 		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
 			path := "deferred/" + tc.field
-			out, err := base.With(daggerExec(tc.command, "-l", "--collections", path)).CombinedOutput(ctx)
+			// The hint goes to stderr; read the streams apart so it cannot split a row.
+			listed := base.With(daggerExec(tc.command, "-l", "--collections", path))
+			out, err := listed.Stdout(ctx)
+			require.NoError(t, err)
+			hint, err := listed.Stderr(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, "MODULE")
 			require.Regexp(t, `collections +\* +`+tc.field, out)
-			require.Equal(t, 1, strings.Count(out, "# Use --all to expand collections and list each item."))
+			require.Equal(t, 1, strings.Count(hint, "# Use --all to expand collections and list each item."))
 			if tc.command == "check" {
 				require.Contains(t, out, "Verify this item.")
 			}
