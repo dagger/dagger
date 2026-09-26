@@ -10,6 +10,7 @@ namespace Dagger;
 
 enum ArtifactDimensionKind: string
 {
+    case COLLECTION = 'COLLECTION';
     case MODULE = 'MODULE';
     case TYPE = 'TYPE';
 }

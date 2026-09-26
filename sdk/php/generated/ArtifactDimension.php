@@ -29,7 +29,16 @@ class ArtifactDimension extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * Stable identifier: type:TypeName for an artifact type, or module.
+     * The collection type, or null for a static dimension.
+     */
+    public function collectionType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('collectionType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'collectionType');
+    }
+
+    /**
+     * Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
      */
     public function identifier(): string
     {
@@ -56,11 +65,29 @@ class ArtifactDimension extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * The artifact type name, or empty for the module dimension.
+     * The collection item or artifact type name, or empty for the module dimension.
      */
     public function itemType(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('itemType');
         return (string)$this->queryLeaf($leafQueryBuilder, 'itemType');
+    }
+
+    /**
+     * The collection key argument name, or name for a static dimension.
+     */
+    public function keyName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('keyName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'keyName');
+    }
+
+    /**
+     * The collection key argument description, or empty for a static dimension.
+     */
+    public function keyDescription(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('keyDescription');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'keyDescription');
     }
 }

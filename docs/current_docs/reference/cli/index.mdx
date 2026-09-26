@@ -28,7 +28,7 @@ dagger [options] [subcommand | file...]
 * [dagger generate](#dagger-generate)	 - Generate derived files for your project — code, SDKs, types, docs, etc.
 * [dagger init](#dagger-init)	 - Initialize a workspace and show the next commands
 * [dagger install](#dagger-install)	 - Install a module into your workspace
-* [dagger list](#dagger-list)	 - List artifacts
+* [dagger list](#dagger-list)	 - List artifacts or collection items
 * [dagger llm](#dagger-llm)	 - Manage LLM configuration
 * [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
@@ -53,6 +53,7 @@ dagger agent [FILTERS] [OPTIONS]
 ```
       --absolute                  Show absolute links (alias: --abs)
       --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
+  -a, --all                       Expand collections and list each item
   -f, --format FORMAT             Output FORMAT: table, link, or cli (requires --list) (default "table")
   -l, --list                      List available agents
       --module NAME               Select artifacts from module NAME
@@ -332,6 +333,7 @@ dagger check [--failfast] [FILTERS] [OPTIONS]
 
 ```
       --absolute             Show absolute links (alias: --abs)
+  -a, --all                  Expand collections and list each item
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
       --failfast             Cancel remaining checks on first failure
   -f, --format FORMAT        Output FORMAT: table, link, or cli (requires --list) (default "table")
@@ -1163,6 +1165,7 @@ dagger generate [FILTERS] [OPTIONS]
 
 ```
       --absolute        Show absolute links (alias: --abs)
+  -a, --all             Expand collections and list each item
   -f, --format FORMAT   Output FORMAT: table, link, or cli (requires --list) (default "table")
   -l, --list            List available generators
       --module NAME     Select artifacts from module NAME
@@ -1308,19 +1311,20 @@ SELECTION
 
 DIMENSIONS
   Query parameters select dimension keys:
-    'dag://?module=go&check=test'
+    'dag://go/modules/test?go-module=./app&go-module=./lib'
 
   Select a module with --module=go, or --go when available.
   If --go conflicts with another flag, use --by-go.
   The equivalent link is 'dag://?module=go'. Module names come from the
-  workspace configuration.
+  workspace configuration. A module filter does not load collection keys.
 
   Type flags match path suffixes. For example, --check=stale selects all
   matching checks. Use --check=/go/generate/stale to match a complete path.
   Use 'dagger check --help' to see available filters.
 
   Repeated keys in one dimension select alternatives. Different dimensions
-  must all match. Named flags, such as --module=go, apply to all links.
+  must all match. Named flags, such as --go-module=./app, apply to all links.
+  Use 'dagger list --help' to find collection commands that list available keys.
 
 
 ### Options inherited from parent commands
@@ -1335,20 +1339,21 @@ DIMENSIONS
 
 ## dagger list
 
-List artifacts
+List artifacts or collection items
 
 ### Synopsis
 
-List artifacts by type.
+List artifacts by type or collection. Use -a to expand collections.
 
 ```
-dagger list [TYPE]
+dagger list [TYPE | COLLECTION]
 ```
 
 ### Options
 
 ```
       --absolute        Show absolute links (alias: --abs)
+  -a, --all             Expand collections and list each item
   -f, --format FORMAT   Output FORMAT: table, link, or cli (default "table")
       --module NAME     Select artifacts from module NAME
   -t, --type TYPE       Select artifacts of this TYPE (repeat to select more)
@@ -2414,6 +2419,7 @@ dagger shell [FILTERS] [OPTIONS]
 
 ```
       --absolute             Show absolute links (alias: --abs)
+  -a, --all                  Expand collections and list each item
   -c, --command command      Run a shell command and return its exit code
       --copy [PATH=]SOURCE   Copy a directory into the container: [PATH=]SOURCE (repeatable)
   -f, --format FORMAT        Output FORMAT: table, link, or cli (requires --list) (default "table")
@@ -2498,6 +2504,7 @@ dagger up [FILTERS] [OPTIONS]
 
 ```
       --absolute        Show absolute links (alias: --abs)
+  -a, --all             Expand collections and list each item
   -f, --format FORMAT   Output FORMAT: table, link, or cli (requires --list) (default "table")
   -l, --list            List available services
       --module NAME     Select artifacts from module NAME
