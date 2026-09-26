@@ -20,9 +20,9 @@ import (
 // archiveRestoreSource keeps source selection separate from graph restoration.
 // A future Cloud source must supply the same verified finality and fixed cut.
 type archiveRestoreSource interface {
-	AcquireGeneration(context.Context, string, string) (func(), error)
-	AcquireUnsealed(context.Context, string, string) (archive.UnsealedArchive, error)
-	Bootstrap(context.Context, string, string, func(archive.BootstrapHeader, archive.BootstrapBatch) error) (archive.BootstrapResult, error)
+	Acquire(context.Context, string) (func(), error)
+	AcquireUnsealed(context.Context, string) (archive.UnsealedArchive, error)
+	Bootstrap(context.Context, string, func(archive.BootstrapHeader, archive.BootstrapBatch) error) (archive.BootstrapResult, error)
 	Traces(context.Context, string, archive.StreamOptions, func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error)
 	Logs(context.Context, string, archive.StreamOptions, func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error)
 	Metrics(context.Context, string, archive.StreamOptions, func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error)
@@ -109,7 +109,7 @@ func archiveCut(header archive.BootstrapHeader) (enginetel.ArchiveCut, error) {
 		return enginetel.ArchiveCut{}, fmt.Errorf("invalid archive seal time: %w", err)
 	}
 	return enginetel.ArchiveCut{
-		Generation: header.Generation, SealAt: seal,
+		SealAt:    seal,
 		HighWater: enginetel.ArchiveHighWater{Spans: header.HighWater.Spans, Logs: header.HighWater.Logs, Metrics: header.HighWater.Metrics},
 	}, nil
 }
@@ -121,7 +121,7 @@ func (e *archiveAcquireError) Unwrap() error { return e.error }
 // restoreArchive keeps the reader lease from before bootstrap through remainder
 // completion. The returned cleanup cancels and joins background import on exit.
 func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, target restoreTarget, req traceRestore) (cleanup func(), rerr error) {
-	release, err := source.AcquireGeneration(ctx, req.traceID, req.generation)
+	release, err := source.Acquire(ctx, req.traceID)
 	if err != nil {
 		return nil, &archiveAcquireError{archiveRestoreError(req.traceID, err)}
 	}
@@ -133,7 +133,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 
 	var importer *enginetel.ArchiveTraceImporter
 	var cut enginetel.ArchiveCut
-	result, err := source.Bootstrap(ctx, req.traceID, req.generation, func(header archive.BootstrapHeader, batch archive.BootstrapBatch) error {
+	result, err := source.Bootstrap(ctx, req.traceID, func(header archive.BootstrapHeader, batch archive.BootstrapBatch) error {
 		if importer == nil {
 			var err error
 			cut, err = archiveCut(header)
@@ -175,10 +175,6 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 }
 
 func archiveRestoreError(traceID string, err error) error {
-	var requestErr *archive.RequestError
-	if errors.As(err, &requestErr) && requestErr.Failure == archive.FailureAmbiguous {
-		return fmt.Errorf("restore engine archive %s: %w; list its sessions and generations with a bare dagger agent -r, then select --source-session <session> --generation <generation>", traceID, err)
-	}
 	if archive.IsCleanMiss(err) {
 		return fmt.Errorf("trace %s has no retained engine archive: %w", traceID, err)
 	}
@@ -209,7 +205,7 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 	var resultErr error
 	for _, signal := range []enginetel.ArchiveSignal{enginetel.ArchiveSpans, enginetel.ArchiveLogs, enginetel.ArchiveMetrics} {
 		wg.Go(func() {
-			opts := archive.StreamOptions{Generation: cut.Generation}
+			var opts archive.StreamOptions
 			switch signal {
 			case enginetel.ArchiveSpans:
 				opts.HighWater = cut.HighWater.Spans

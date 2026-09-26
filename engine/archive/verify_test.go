@@ -73,12 +73,12 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 			req := &collogpb.ExportLogsServiceRequest{ResourceLogs: []*logpb.ResourceLogs{{Resource: &resourcepb.Resource{}, ScopeLogs: []*logpb.ScopeLogs{{LogRecords: logs}}}}}
 			payload, err := proto.Marshal(req)
 			require.NoError(t, err)
-			data, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session", TraceID: traceID, Generation: "gen", SealAt: time.Now().UTC().Format(time.RFC3339Nano), Completion: Witness(want)}, []BootstrapSignal{{Kind: BootstrapFrameLogs, Payload: payload, Records: int64(len(logs))}})
+			data, _, err := BuildBootstrap(BootstrapHeader{TraceID: traceID, SealAt: time.Now().UTC().Format(time.RFC3339Nano), Completion: Witness(want)}, []BootstrapSignal{{Kind: BootstrapFrameLogs, Payload: payload, Records: int64(len(logs))}})
 			require.NoError(t, err)
-			client, closeServer := bootstrapTestClient(t, "gen", data)
+			client, closeServer := bootstrapTestClient(t, data)
 			defer closeServer()
 			callbacks := 0
-			_, err = client.Bootstrap(t.Context(), traceID, "gen", func(BootstrapHeader, BootstrapBatch) error { callbacks++; return nil })
+			_, err = client.Bootstrap(t.Context(), traceID, func(BootstrapHeader, BootstrapBatch) error { callbacks++; return nil })
 			if tc == "valid" || tc == "capture failure" {
 				require.NoError(t, err)
 				require.Equal(t, 1, callbacks)
@@ -92,12 +92,12 @@ func TestBootstrapRawValidationPrecedesAllCallbacks(t *testing.T) {
 }
 
 func TestBootstrapTruncationNeverAppliesPartialSignals(t *testing.T) {
-	data, _, err := BuildBootstrap(BootstrapHeader{SourceSession: "session", TraceID: testTraceA, Generation: "gen", SealAt: time.Now().UTC().Format(time.RFC3339Nano)}, []BootstrapSignal{{Kind: BootstrapFrameLogs}})
+	data, _, err := BuildBootstrap(BootstrapHeader{TraceID: testTraceA, SealAt: time.Now().UTC().Format(time.RFC3339Nano)}, []BootstrapSignal{{Kind: BootstrapFrameLogs}})
 	require.NoError(t, err)
-	client, closeServer := bootstrapTestClient(t, "gen", data[:len(data)-1])
+	client, closeServer := bootstrapTestClient(t, data[:len(data)-1])
 	defer closeServer()
 	callbacks := 0
-	_, err = client.Bootstrap(context.Background(), testTraceA, "gen", func(BootstrapHeader, BootstrapBatch) error { callbacks++; return nil })
+	_, err = client.Bootstrap(context.Background(), testTraceA, func(BootstrapHeader, BootstrapBatch) error { callbacks++; return nil })
 	require.ErrorIs(t, err, ErrTransient)
 	require.Zero(t, callbacks)
 	require.False(t, IsCleanMiss(err))

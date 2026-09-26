@@ -8,11 +8,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
@@ -151,21 +153,10 @@ func TestCloudRestoreSourceDecisions(t *testing.T) {
 		require.NoError(t, err)
 		cleanup()
 	})
-	t.Run("explicit generation", func(t *testing.T) {
-		req := restoreRequest()
-		req.generation = "exact"
-		req.source = &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
-		req.cloudSource = cloudRestoreFunc(func(context.Context, string, cloud.TraceImportSink) error {
-			t.Fatal("must not select a different generation")
-			return nil
-		})
-		_, err := restoreTraceSources(t.Context(), newRestoreTestFrontend(), newFakeRestoreTarget(), req)
-		require.ErrorContains(t, err, "omit --generation")
-	})
 }
 
 func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
-	for _, kind := range []string{"missing trace", "fetch failure", "corrupt payload", "corrupt identity", "missing payload", "missing parent", "missing subscriber", "equivocation", "ambiguous source", "wrong source"} {
+	for _, kind := range []string{"missing trace", "fetch failure", "corrupt payload", "corrupt identity", "missing payload", "missing parent", "missing subscriber", "equivocation"} {
 		t.Run(kind, func(t *testing.T) {
 			chief, worker, edge, records := cloudControlFixture(t)
 			req := restoreRequest()
@@ -182,8 +173,6 @@ func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
 				worker.Parent = "absent"
 			case "missing subscriber":
 				edge.Subscriber = "absent"
-			case "wrong source":
-				req.sourceSession = "absent"
 			}
 			records = append(records, chief.Record(), worker.Record(), edge.Record())
 			switch kind {
@@ -191,9 +180,6 @@ func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
 				records = nil
 			case "equivocation":
 				chief.State = "PAUSED"
-				records = append(records, chief.Record())
-			case "ambiguous source":
-				chief.Session = "other"
 				records = append(records, chief.Record())
 			}
 			req.source = &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
@@ -289,7 +275,7 @@ func TestUnsealedArchiveRestoresLatestRecordedState(t *testing.T) {
 			records = append(records, chief.Record(), worker.Record(), edge.Record())
 			source := &restoreTestArchive{
 				acquireErr:   &archive.RequestError{Kind: archive.ErrorState, Failure: archive.FailureState, State: state},
-				unsealed:     &archive.UnsealedArchive{Generation: "unsealed-gen", Cut: archive.HighWater{Logs: 1}},
+				unsealed:     &archive.UnsealedArchive{Cut: archive.HighWater{Logs: 1}},
 				unsealedLogs: controlLogs(records...),
 			}
 			req := restoreRequest()
@@ -366,13 +352,13 @@ func TestUnsealedArchiveFallsBackToCloud(t *testing.T) {
 
 func TestCloudRestoreSourceSelectionAndRemoval(t *testing.T) {
 	chief, worker, edge, records := cloudControlFixture(t)
+	// An older namespace sharing the trace, e.g. a nested session.
 	other := chief
-	other.Session = "other"
+	other.Session, other.Activity = "other", time.Unix(1, 0)
 	edge.Revision++
 	edge.States = nil
 	records = append(records, chief.Record(), worker.Record(), edge.Record(), other.Record())
 	req := restoreRequest()
-	req.sourceSession = chief.Session
 	req.source = &restoreTestArchive{acquireErr: archive.ErrCleanMiss}
 	req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
 		return sink.ImportLogs(ctx, controlLogs(records...))
@@ -381,5 +367,23 @@ func TestCloudRestoreSourceSelectionAndRemoval(t *testing.T) {
 	cleanup, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, target, req)
 	require.NoError(t, err)
 	cleanup()
+	require.Contains(t, target.calls, "rehydrate:worker", "the most recently active namespace is restored")
 	require.NotContains(t, strings.Join(target.calls, "\n"), "subscribe:")
+}
+
+// TestCloudRestorePicksMostRecentNamespace: a trace carrying several
+// namespaces restores the one with the most recent activity.
+func TestCloudRestorePicksMostRecentNamespace(t *testing.T) {
+	chief, worker, edge, records := cloudControlFixture(t)
+	newer := chief
+	newer.Session, newer.Activity = "nested", chief.Activity.Add(time.Hour)
+	records = append(records, chief.Record(), worker.Record(), edge.Record(), newer.Record())
+	fe := cloudTestFrontend{newRestoreTestFrontend()}
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Logs: fe.LogExporter()})
+	require.NoError(t, importer.ImportLogs(t.Context(), controlLogs(records...)))
+	plan, edges, err := observedRestorePlan(fe, restoreRequest(), nil)
+	require.NoError(t, err)
+	require.Len(t, plan.plan, 1)
+	require.Equal(t, newer.Key, plan.plan[0].Source)
+	require.Empty(t, edges)
 }

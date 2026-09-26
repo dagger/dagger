@@ -22,9 +22,8 @@ import (
 )
 
 const (
-	archivePath             = "/v1/telemetry/archives"
-	archiveGenerationHeader = "X-Dagger-Archive-Generation"
-	maxErrorResponseSize    = 64 << 10
+	archivePath          = "/v1/telemetry/archives"
+	maxErrorResponseSize = 64 << 10
 )
 
 // AgentBootstrapResource names the agent-restore bootstrap within an archive.
@@ -42,10 +41,9 @@ type HTTPDoer interface {
 
 // Client reads telemetry archives through a connected engine's HTTP transport.
 type Client struct {
-	http          HTTPDoer
-	baseURL       *url.URL
-	stallTimeout  time.Duration
-	sourceSession string
+	http         HTTPDoer
+	baseURL      *url.URL
+	stallTimeout time.Duration
 }
 
 // NewClient creates an archive client for the connected engine transport.
@@ -66,14 +64,6 @@ func NewClientWithURL(httpClient HTTPDoer, baseURL string) (*Client, error) {
 		return nil, errors.New("archive base URL must include scheme and host")
 	}
 	return &Client{http: httpClient, baseURL: parsed}, nil
-}
-
-// WithSourceSession selects one source namespace when a trace was propagated
-// through multiple independent sessions. It never falls back to a sibling.
-func (c *Client) WithSourceSession(source string) *Client {
-	clone := *c
-	clone.sourceSession = source
-	return &clone
 }
 
 // WithStallTimeout returns a shallow clone whose finite bootstrap and signal
@@ -157,13 +147,8 @@ type ListOptions struct {
 // requests. Release it when import finishes or the caller exits. Cancellation
 // also releases the server lease; it never keeps a detached background reader.
 func (c *Client) Acquire(ctx context.Context, traceID string) (func(), error) {
-	return c.AcquireGeneration(ctx, traceID, "")
-}
-
-// AcquireGeneration binds the reader lifetime to exactly the listed archive.
-func (c *Client) AcquireGeneration(ctx context.Context, traceID, generation string) (func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), nil, nil, "application/octet-stream", generation, 0) //nolint:bodyclose // The returned release function owns the streaming lease body.
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), nil, "application/octet-stream", 0) //nolint:bodyclose // The returned release function owns the streaming lease body.
 	if err != nil {
 		cancel()
 		return nil, err
@@ -173,28 +158,22 @@ func (c *Client) AcquireGeneration(ctx context.Context, traceID, generation stri
 		cancel()
 		return nil, err
 	}
-	if _, err := responseGeneration(resp, generation); err != nil {
-		resp.Body.Close()
-		cancel()
-		return nil, corrupt(err)
-	}
 	return func() { cancel(); _ = resp.Body.Close() }, nil
 }
 
 // UnsealedArchive is a leased archive whose session ended without a seal. It
 // has no bootstrap; stream it with StreamOptions.Unsealed at Cut.
 type UnsealedArchive struct {
-	Generation string
-	Cut        HighWater
-	Release    func()
+	Cut     HighWater
+	Release func()
 }
 
 // AcquireUnsealed leases an interrupted or incomplete archive for a
 // best-effort read of what it recorded. It fails with an ErrState request error
 // for any other state, including a sealed (closed) archive.
-func (c *Client) AcquireUnsealed(ctx context.Context, traceID, generation string) (UnsealedArchive, error) {
+func (c *Client) AcquireUnsealed(ctx context.Context, traceID string) (UnsealedArchive, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), url.Values{"unsealed": {"1"}}, nil, "application/octet-stream", generation, 0)
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, "lease"), url.Values{"unsealed": {"1"}}, "application/octet-stream", 0)
 	if err != nil {
 		cancel()
 		return UnsealedArchive{}, err
@@ -207,15 +186,11 @@ func (c *Client) AcquireUnsealed(ctx context.Context, traceID, generation string
 	if err := expectStatus(resp, http.StatusOK); err != nil {
 		return fail(err)
 	}
-	gen, err := responseGeneration(resp, generation)
-	if err != nil {
-		return fail(corrupt(err))
-	}
 	cut, err := ParseHighWater(resp.Header.Get(UnsealedHighWaterHeader))
 	if err != nil {
 		return fail(corrupt(err))
 	}
-	return UnsealedArchive{Generation: gen, Cut: cut, Release: func() { cancel(); _ = resp.Body.Close() }}, nil
+	return UnsealedArchive{Cut: cut, Release: func() { cancel(); _ = resp.Body.Close() }}, nil
 }
 
 // List returns one page of archives.
@@ -227,7 +202,7 @@ func (c *Client) List(ctx context.Context, opts ListOptions) (Page, error) {
 	if opts.Limit != 0 {
 		query.Set("limit", strconv.Itoa(opts.Limit))
 	}
-	resp, err := c.do(ctx, http.MethodGet, archivePath, query, nil, "application/json", "", 0)
+	resp, err := c.do(ctx, http.MethodGet, archivePath, query, "application/json", 0)
 	if err != nil {
 		return Page{}, err
 	}
@@ -295,11 +270,8 @@ func (e *consumerError) Unwrap() error { return e.err }
 // cut, terminal checksum/counts, producer witness and recipe closure) before
 // invoking consume. Consumers may then apply the verified batches and wait for
 // their frontend barrier, without loading unrelated historical telemetry.
-// expectedGeneration may be empty when the caller has only a trace ID; the
-// generation returned by the engine is still required and checked against the
-// bootstrap header.
-func (c *Client) Bootstrap(ctx context.Context, traceID, expectedGeneration string, consume func(BootstrapHeader, BootstrapBatch) error) (BootstrapResult, error) {
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, AgentBootstrapResource), nil, nil, BootstrapContentType, expectedGeneration, 0)
+func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(BootstrapHeader, BootstrapBatch) error) (BootstrapResult, error) {
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, AgentBootstrapResource), nil, BootstrapContentType, 0)
 	if err != nil {
 		return BootstrapResult{}, err
 	}
@@ -310,20 +282,13 @@ func (c *Client) Bootstrap(ctx context.Context, traceID, expectedGeneration stri
 	if err := expectContentType(resp, BootstrapContentType); err != nil {
 		return BootstrapResult{}, corrupt(err)
 	}
-	generation, err := responseGeneration(resp, expectedGeneration)
-	if err != nil {
-		return BootstrapResult{}, corrupt(err)
-	}
 
 	streamBody := c.streamBody(resp.Body)
 	var streamHeader BootstrapHeader
 	var batches []BootstrapBatch
 	var traceRecords, logRecords int64
 	header, terminal, err := DecodeBootstrap(streamBody, func(header BootstrapHeader) error {
-		if c.sourceSession != "" && header.SourceSession != c.sourceSession {
-			return errors.New("bootstrap source session differs from selector")
-		}
-		if err := validateBootstrapHeader(header, traceID, generation); err != nil {
+		if err := validateBootstrapHeader(header, traceID); err != nil {
 			return err
 		}
 		streamHeader = header
@@ -376,15 +341,14 @@ func (c *Client) Bootstrap(ctx context.Context, traceID, expectedGeneration stri
 	return result, nil
 }
 
-// StreamOptions fixes one finite signal read to a generation and high-water
-// cursor. Cursor is the last batch successfully acknowledged by the caller.
-// Unsealed reads an interrupted or incomplete archive at the cut returned by
-// AcquireUnsealed; its log stream then includes agent control records.
+// StreamOptions fixes one finite signal read to a high-water cursor. Cursor is
+// the last batch successfully acknowledged by the caller. Unsealed reads an
+// interrupted or incomplete archive at the cut returned by AcquireUnsealed; its
+// log stream then includes agent control records.
 type StreamOptions struct {
-	Generation string
-	Cursor     int64
-	HighWater  int64
-	Unsealed   bool
+	Cursor    int64
+	HighWater int64
+	Unsealed  bool
 }
 
 // Traces reads a finite framed trace stream. It returns the last safe resume
@@ -433,9 +397,6 @@ func (c *Client) Metrics(ctx context.Context, traceID string, opts StreamOptions
 
 func (c *Client) stream(ctx context.Context, traceID, signal string, opts StreamOptions, consume func(int64, []byte) error) (int64, error) {
 	cursor := opts.Cursor
-	if opts.Generation == "" {
-		return cursor, errors.New("archive stream generation is required")
-	}
 	if cursor < 0 || opts.HighWater < 0 || cursor > opts.HighWater {
 		return cursor, fmt.Errorf("invalid archive stream cursors: cursor=%d high-water=%d", cursor, opts.HighWater)
 	}
@@ -443,7 +404,7 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 	if opts.Unsealed {
 		query.Set("unsealed", "1")
 	}
-	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, signal), query, nil, enginetel.LiveContentType, opts.Generation, cursor)
+	resp, err := c.do(ctx, http.MethodGet, archiveResourcePath(traceID, signal), query, enginetel.LiveContentType, cursor)
 	if err != nil {
 		return cursor, err
 	}
@@ -452,9 +413,6 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 		return cursor, err
 	}
 	if err := expectContentType(resp, enginetel.LiveContentType); err != nil {
-		return cursor, corrupt(err)
-	}
-	if _, err := responseGeneration(resp, opts.Generation); err != nil {
 		return cursor, corrupt(err)
 	}
 
@@ -540,31 +498,19 @@ func (c *Client) streamBody(body io.ReadCloser) io.ReadCloser {
 	return &idleReadCloser{body: body, timeout: c.stallTimeout}
 }
 
-func (c *Client) do(ctx context.Context, method, path string, query url.Values, body io.Reader, accept, generation string, cursor int64) (*http.Response, error) {
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, accept string, cursor int64) (*http.Response, error) {
 	if c == nil || c.http == nil || c.baseURL == nil {
 		return nil, transient(errors.New("archive HTTP client is not configured"))
-	}
-	if c.sourceSession != "" {
-		if query == nil {
-			query = make(url.Values)
-		}
-		query.Set("source_session", c.sourceSession)
 	}
 	target := *c.baseURL
 	target.Path = strings.TrimRight(target.Path, "/") + path
 	target.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, method, target.String(), body)
+	req, err := http.NewRequestWithContext(ctx, method, target.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("create archive request: %w", err)
 	}
 	if accept != "" {
 		req.Header.Set("Accept", accept)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if generation != "" {
-		req.Header.Set(archiveGenerationHeader, generation)
 	}
 	if cursor > 0 {
 		req.Header.Set(enginetel.LiveCursorHeader, strconv.FormatInt(cursor, 10))
@@ -623,15 +569,9 @@ func expectContentType(resp *http.Response, want string) error {
 	return nil
 }
 
-func validateBootstrapHeader(header BootstrapHeader, traceID, generation string) error {
-	if header.SourceSession == "" {
-		return errors.New("bootstrap source session is missing")
-	}
+func validateBootstrapHeader(header BootstrapHeader, traceID string) error {
 	if header.TraceID != traceID {
 		return fmt.Errorf("bootstrap trace ID %q does not match requested trace %q", header.TraceID, traceID)
-	}
-	if header.Generation != generation {
-		return fmt.Errorf("bootstrap generation %q does not match response generation %q", header.Generation, generation)
 	}
 	if header.HighWater.Spans < 0 || header.HighWater.Logs < 0 || header.HighWater.Metrics < 0 {
 		return errors.New("bootstrap contains a negative high-water cursor")
@@ -640,17 +580,6 @@ func validateBootstrapHeader(header BootstrapHeader, traceID, generation string)
 		return fmt.Errorf("invalid bootstrap seal timestamp %q: %w", header.SealAt, err)
 	}
 	return nil
-}
-
-func responseGeneration(resp *http.Response, expected string) (string, error) {
-	generation := resp.Header.Get(archiveGenerationHeader)
-	if generation == "" {
-		return "", errors.New("archive response is missing its generation")
-	}
-	if expected != "" && generation != expected {
-		return "", fmt.Errorf("archive response generation is %q, want %q", generation, expected)
-	}
-	return generation, nil
 }
 
 func corrupt(err error) error {

@@ -717,14 +717,14 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 	defer release()
 	db := restoringDB(t)
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
-	result, err := client.Bootstrap(targetCtx, traceID, manifest.Generation, func(_ archive.BootstrapHeader, batch archive.BootstrapBatch) error {
+	result, err := client.Bootstrap(targetCtx, traceID, func(_ archive.BootstrapHeader, batch archive.BootstrapBatch) error {
 		if batch.Traces != nil {
 			return importer.ImportSpans(targetCtx, batch.Traces)
 		}
 		return importer.ImportLogs(targetCtx, batch.Logs)
 	})
 	require.NoError(t, err)
-	require.Equal(t, manifest.Generation, result.Header.Generation)
+	require.Equal(t, traceID, result.Header.TraceID)
 	plan := db.RestorePlan()
 	require.Len(t, plan, 1)
 	require.Equal(t, "archive-worker", plan[0].Name)
@@ -802,13 +802,13 @@ func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context
 	_, err = client.Acquire(targetCtx, traceID)
 	require.ErrorIs(t, err, archive.ErrState, "an unsealed archive has no verified bootstrap")
 
-	unsealed, err := client.AcquireUnsealed(targetCtx, traceID, manifest.Generation)
+	unsealed, err := client.AcquireUnsealed(targetCtx, traceID)
 	require.NoError(t, err)
 	defer unsealed.Release()
 	db := restoringDB(t)
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
 	opts := func(high int64) archive.StreamOptions {
-		return archive.StreamOptions{Generation: unsealed.Generation, HighWater: high, Unsealed: true}
+		return archive.StreamOptions{HighWater: high, Unsealed: true}
 	}
 	_, err = client.Traces(targetCtx, traceID, opts(unsealed.Cut.Spans), func(_ int64, batch *coltracepb.ExportTraceServiceRequest) error {
 		return importer.ImportSpans(targetCtx, batch)
@@ -947,14 +947,14 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	if cloudOnly {
 		cmd.Env = append(cmd.Env, "DAGGER_CLOUD_URL="+cloudURL, "DAGGER_CLOUD_TOKEN=restore-test-token")
 	} else {
-		// Discovery and exact selection must also ignore the broken destination.
+		// Discovery must also ignore the broken destination.
 		// The listing is metadata-only and must not initialize an interactive LLM.
 		// Client close flushes telemetry, but archive sealing finishes during
 		// asynchronous session removal. Wait for discovery to show a final cut;
 		// command errors and terminal failure states must not be retried away.
 		var listing []byte
 		var listErr error
-		var generation, state string
+		var state string
 		require.Eventually(t, func() bool {
 			listCmd := exec.CommandContext(ctx, bin, "agent", "-r")
 			listCmd.Dir, listCmd.Env = destination, slices.Clone(cmd.Env)
@@ -964,8 +964,8 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 			}
 			for _, line := range strings.Split(string(listing), "\n") {
 				fields := strings.Fields(line)
-				if len(fields) >= 4 && fields[0] == traceID && fields[1] == node.Control.Session {
-					generation, state = fields[2], fields[3]
+				if len(fields) >= 2 && fields[0] == traceID {
+					state = fields[1]
 					return state != string(archive.StateActive) && state != string(archive.StateFinalizing)
 				}
 			}
@@ -973,8 +973,6 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 		}, time.Minute, 100*time.Millisecond, "archive discovery never reached a final state")
 		require.NoError(t, listErr)
 		require.Equal(t, string(archive.StateClosed), state, "archive listing: %s", listing)
-		require.NotEmpty(t, generation, "archive not discoverable: %s", listing)
-		cmd.Args = append(cmd.Args, "--source-session", node.Control.Session, "--generation", generation)
 	}
 	cmd.Env = append(cmd.Env, "DAGGER_TUI_CONSOLE="+address, "DAGGER_PROGRESS=tty", "XDG_STATE_HOME="+state)
 	logFile, err := os.CreateTemp(t.TempDir(), "cli-output")

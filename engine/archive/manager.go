@@ -20,7 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const ManifestVersion = 3
+const ManifestVersion = 4
 
 const (
 	DefaultTTL   = 7 * 24 * time.Hour
@@ -75,11 +75,11 @@ type Bootstrap struct {
 	SHA256  string `json:"sha256"`
 }
 
+// Manifest describes one archive. An archive is identified by its trace ID
+// alone: the first session to register a trace owns its archive.
 type Manifest struct {
 	Version        int        `json:"version"`
-	Generation     string     `json:"generation"`
 	TraceID        string     `json:"traceID"`
-	SourceSession  string     `json:"sourceSession"`
 	MainClientID   string     `json:"mainClientID"`
 	BoundarySpanID string     `json:"boundarySpanID"`
 	State          State      `json:"state"`
@@ -97,12 +97,11 @@ type Manifest struct {
 type FailureKind string
 
 const (
-	FailureAmbiguous FailureKind = "ambiguous"
-	FailureNotFound  FailureKind = "not_found"
-	FailureEvicted   FailureKind = "evicted"
-	FailureState     FailureKind = "state"
-	FailureCorrupt   FailureKind = "corrupt"
-	FailureIO        FailureKind = "io"
+	FailureNotFound FailureKind = "not_found"
+	FailureEvicted  FailureKind = "evicted"
+	FailureState    FailureKind = "state"
+	FailureCorrupt  FailureKind = "corrupt"
+	FailureIO       FailureKind = "io"
 )
 
 type Failure struct {
@@ -183,53 +182,17 @@ func NewManager(cfg Config) (*Manager, error) {
 	return m, nil
 }
 
-func archiveKey(traceID, sourceSession string) string {
-	sum := sha256.Sum256([]byte(sourceSession))
-	return traceID + "." + hex.EncodeToString(sum[:])
-}
-
-func manifestKey(m Manifest) string { return archiveKey(m.TraceID, m.SourceSession) }
-
-// findLocked never resolves a shared trace by arrival order. A generation or
-// source selector is exact; a missing generation cannot select another archive.
-func (m *Manager) findLocked(traceID, generation, source string) (string, *entry, error) {
-	var candidates []string
-	var found *entry
-	var key string
-	for k, ent := range m.entries {
-		if ent.deleting || ent.manifest.TraceID != traceID {
-			continue
-		}
-		if source != "" && ent.manifest.SourceSession != source {
-			continue
-		}
-		if generation != "" && ent.manifest.Generation != generation {
-			continue
-		}
-		candidates = append(candidates, fmt.Sprintf("source_session=%q generation=%q", ent.manifest.SourceSession, ent.manifest.Generation))
-		key, found = k, ent
+func (m *Manager) findLocked(traceID string) (*entry, error) {
+	if ent, ok := m.entries[traceID]; ok && !ent.deleting {
+		return ent, nil
 	}
-	if len(candidates) > 1 {
-		sort.Strings(candidates)
-		return "", nil, &Failure{Kind: FailureAmbiguous, Err: fmt.Errorf("trace %s has multiple source sessions; select source_session or generation: %s", traceID, strings.Join(candidates, "; "))}
+	if err := m.corrupt[traceID]; err != nil {
+		return nil, &Failure{Kind: FailureCorrupt, Err: err}
 	}
-	for k, err := range m.corrupt {
-		if (source != "" && k == archiveKey(traceID, source)) || (generation == "" && source == "" && (k == traceID || strings.HasPrefix(k, traceID+"."))) {
-			return "", nil, &Failure{Kind: FailureCorrupt, Err: err}
-		}
+	if _, ok := m.evicted[traceID]; ok {
+		return nil, &Failure{Kind: FailureEvicted}
 	}
-	if found != nil {
-		return key, found, nil
-	}
-	if generation != "" {
-		return "", nil, &Failure{Kind: FailureCorrupt, Err: errors.New("requested archive generation is unavailable for this source")}
-	}
-	for k := range m.evicted {
-		if (source != "" && k == archiveKey(traceID, source)) || (source == "" && strings.HasPrefix(k, traceID+".")) {
-			return "", nil, &Failure{Kind: FailureEvicted}
-		}
-	}
-	return "", nil, &Failure{Kind: FailureNotFound}
+	return nil, &Failure{Kind: FailureNotFound}
 }
 
 func (m *Manager) load() error {
@@ -253,8 +216,8 @@ func (m *Manager) load() error {
 			m.corrupt[traceID] = fmt.Errorf("decode archive manifest %s: %w", file.Name(), err)
 			continue
 		}
-		if manifestKey(manifest) != traceID {
-			m.corrupt[traceID] = errors.New("archive manifest filename and trace identity differ")
+		if manifest.TraceID != traceID {
+			m.corrupt[traceID] = errors.New("archive manifest filename and trace ID differ")
 			continue
 		}
 		if err := validateManifest(manifest); err != nil {
@@ -281,13 +244,13 @@ func validateManifest(manifest Manifest) error {
 	if _, err := trace.TraceIDFromHex(manifest.TraceID); err != nil {
 		return fmt.Errorf("trace ID: %w", err)
 	}
-	if manifest.Generation == "" || manifest.SourceSession == "" || manifest.MainClientID == "" || manifest.BoundarySpanID == "" {
+	if manifest.MainClientID == "" || manifest.BoundarySpanID == "" {
 		return errors.New("missing immutable identity")
 	}
 	if filepath.Base(manifest.MainClientID) != manifest.MainClientID || manifest.MainClientID == "." || manifest.MainClientID == ".." {
 		return errors.New("invalid archive store identity")
 	}
-	if manifest.Bootstrap.File != "" && manifest.Bootstrap.File != manifestKey(manifest)+".bootstrap" {
+	if manifest.Bootstrap.File != "" && manifest.Bootstrap.File != manifest.TraceID+".bootstrap" {
 		return errors.New("invalid bootstrap filename")
 	}
 	if manifest.HighWater.Spans < 0 || manifest.HighWater.Logs < 0 || manifest.HighWater.Metrics < 0 || manifest.SizeBytes < 0 {
@@ -312,20 +275,15 @@ func randomHex(bytes int) (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
+// Register creates the active archive for a trace. The first session to
+// register a trace owns its archive; a later registration for the same trace
+// (e.g. a nested session that inherited TRACEPARENT) fails.
 func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
-	return m.RegisterSession(traceID, mainClientID, mainClientID)
-}
-
-func (m *Manager) RegisterSession(traceID, sourceSession, mainClientID string) (Manifest, error) {
 	if _, err := trace.TraceIDFromHex(traceID); err != nil {
 		return Manifest{}, fmt.Errorf("invalid canonical trace ID: %w", err)
 	}
 	if mainClientID == "" {
 		return Manifest{}, errors.New("main client ID is required")
-	}
-	generation, err := randomHex(16)
-	if err != nil {
-		return Manifest{}, err
 	}
 	boundary, err := randomHex(8)
 	if err != nil {
@@ -333,7 +291,7 @@ func (m *Manager) RegisterSession(traceID, sourceSession, mainClientID string) (
 	}
 	now := m.now().UTC()
 	manifest := Manifest{
-		Version: ManifestVersion, Generation: generation, TraceID: traceID, SourceSession: sourceSession,
+		Version: ManifestVersion, TraceID: traceID,
 		MainClientID: mainClientID, BoundarySpanID: boundary, State: StateActive,
 		StartedAt: now, ExpiresAt: now.Add(m.ttl),
 	}
@@ -342,35 +300,27 @@ func (m *Manager) RegisterSession(traceID, sourceSession, mainClientID string) (
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := manifestKey(manifest)
-	for _, entries := range []map[string]*entry{m.entries, m.pending} {
-		for _, old := range entries {
-			if old.manifest.MainClientID == mainClientID && old.manifest.SourceSession != sourceSession {
-				return Manifest{}, errors.New("archive telemetry store is already bound to another source session")
-			}
-		}
+	if _, exists := m.entries[traceID]; exists {
+		return Manifest{}, fmt.Errorf("archive for trace %s is already registered", traceID)
 	}
-	if _, exists := m.entries[key]; exists {
-		return Manifest{}, fmt.Errorf("archive trace %s source session %s already registered", traceID, sourceSession)
+	if _, deleting := m.pending[traceID]; deleting {
+		return Manifest{}, fmt.Errorf("archive for trace %s is pending deletion", traceID)
 	}
-	if _, deleting := m.pending[key]; deleting {
-		return Manifest{}, fmt.Errorf("archive trace %s source session %s is pending deletion", traceID, sourceSession)
-	}
-	if err := m.corrupt[key]; err != nil {
+	if err := m.corrupt[traceID]; err != nil {
 		return Manifest{}, &Failure{Kind: FailureCorrupt, Err: err}
 	}
 	if err := m.writeManifest(manifest); err != nil {
 		return Manifest{}, err
 	}
-	m.entries[key] = &entry{manifest: manifest}
-	delete(m.evicted, key)
+	m.entries[traceID] = &entry{manifest: manifest}
+	delete(m.evicted, traceID)
 	return manifest, nil
 }
 
-func (m *Manager) BeginFinalizing(traceID, generation string) error {
+func (m *Manager) BeginFinalizing(traceID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ent, err := m.mutable(traceID, generation, StateActive)
+	ent, err := m.mutable(traceID, StateActive)
 	if err != nil {
 		return err
 	}
@@ -391,10 +341,10 @@ type FinalizeInput struct {
 	BootstrapRecords int64
 }
 
-func (m *Manager) Finalize(traceID, generation string, in FinalizeInput) (Manifest, error) {
+func (m *Manager) Finalize(traceID string, in FinalizeInput) (Manifest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ent, err := m.mutable(traceID, generation, StateFinalizing)
+	ent, err := m.mutable(traceID, StateFinalizing)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -407,14 +357,14 @@ func (m *Manager) Finalize(traceID, generation string, in FinalizeInput) (Manife
 	if err != nil {
 		return Manifest{}, fmt.Errorf("verify archive bootstrap: %w", err)
 	}
-	if header.SourceSession != ent.manifest.SourceSession || header.Generation != generation || header.TraceID != traceID || header.HighWater != in.HighWater || header.SealAt != sealAt.Format(time.RFC3339Nano) {
+	if header.TraceID != traceID || header.HighWater != in.HighWater || header.SealAt != sealAt.Format(time.RFC3339Nano) {
 		return Manifest{}, errors.New("bootstrap fixed cut does not match archive finalization")
 	}
 	records := terminal.TraceRecords + terminal.LogRecords
 	if in.BootstrapRecords != 0 && in.BootstrapRecords != records {
 		return Manifest{}, fmt.Errorf("bootstrap record count is %d, want %d", in.BootstrapRecords, records)
 	}
-	sidecar := manifestKey(ent.manifest) + ".bootstrap"
+	sidecar := traceID + ".bootstrap"
 	digest := sha256.Sum256(in.BootstrapBytes)
 	if err := atomicWrite(filepath.Join(m.root, sidecar), in.BootstrapBytes, 0o600); err != nil {
 		return Manifest{}, fmt.Errorf("write archive bootstrap: %w", err)
@@ -444,10 +394,10 @@ func (m *Manager) Finalize(traceID, generation string, in FinalizeInput) (Manife
 	return ent.manifest, nil
 }
 
-func (m *Manager) MarkIncomplete(traceID, generation string, cause error) error {
+func (m *Manager) MarkIncomplete(traceID string, cause error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, ent, err := m.findLocked(traceID, generation, "")
+	ent, err := m.findLocked(traceID)
 	if err != nil {
 		return err
 	}
@@ -462,11 +412,11 @@ func (m *Manager) MarkIncomplete(traceID, generation string, cause error) error 
 // archive's trace. It is persisted immediately, so an archive recovered after
 // an engine crash keeps it, and the sealed manifest inherits it. The title is
 // sanitized first; an unchanged or empty title writes nothing.
-func (m *Manager) SetTitle(traceID, generation, title string) error {
+func (m *Manager) SetTitle(traceID, title string) error {
 	title = SanitizeTitle(title)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ent, err := m.mutable(traceID, generation, StateActive)
+	ent, err := m.mutable(traceID, StateActive)
 	if err != nil {
 		return err
 	}
@@ -520,22 +470,8 @@ func SanitizeTitle(title string) string {
 	return strings.TrimSpace(string(runes)) + "…"
 }
 
-func (m *Manager) Discard(traceID, generation string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	key, ent, err := m.findLocked(traceID, generation, "")
-	if err != nil {
-		return err
-	}
-	delete(m.entries, key)
-	if ent.manifest.Bootstrap.File != "" {
-		_ = os.Remove(filepath.Join(m.root, ent.manifest.Bootstrap.File))
-	}
-	return removeAndSync(filepath.Join(m.root, key+".json"))
-}
-
-func (m *Manager) mutable(traceID, generation string, want State) (*entry, error) {
-	_, ent, err := m.findLocked(traceID, generation, "")
+func (m *Manager) mutable(traceID string, want State) (*entry, error) {
+	ent, err := m.findLocked(traceID)
 	if err != nil {
 		return nil, err
 	}
@@ -559,13 +495,9 @@ func (l *Lease) BootstrapPath() string {
 func (l *Lease) Release() { l.once.Do(func() { l.manager.release(l.entry) }) }
 
 func (m *Manager) Acquire(traceID string) (*Lease, error) {
-	return m.AcquireSource(traceID, "", "")
-}
-
-func (m *Manager) AcquireSource(traceID, generation, sourceSession string) (*Lease, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, ent, err := m.findLocked(traceID, generation, sourceSession)
+	ent, err := m.findLocked(traceID)
 	if err != nil {
 		return nil, err
 	}
@@ -580,10 +512,10 @@ func (m *Manager) AcquireSource(traceID, generation, sourceSession string) (*Lea
 // (incomplete). Such an archive has no bootstrap, completion witness or fixed
 // cut. Its session is gone, so nothing writes to it anymore, and readers may
 // stream what it recorded for a best-effort restore.
-func (m *Manager) AcquireUnsealed(traceID, generation, sourceSession string) (*Lease, error) {
+func (m *Manager) AcquireUnsealed(traceID string) (*Lease, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, ent, err := m.findLocked(traceID, generation, sourceSession)
+	ent, err := m.findLocked(traceID)
 	if err != nil {
 		return nil, err
 	}
@@ -625,8 +557,8 @@ func (m *Manager) List(after, excludeTraceID string, limit int) Page {
 	}
 	m.mu.RLock()
 	all := make([]Manifest, 0, len(m.entries))
-	for key, ent := range m.entries {
-		if !ent.deleting && ent.manifest.TraceID != excludeTraceID && ent.manifest.Generation != excludeTraceID && key > after {
+	for traceID, ent := range m.entries {
+		if !ent.deleting && traceID != excludeTraceID && traceID > after {
 			manifest := ent.manifest
 			if manifest.Title == "" {
 				manifest.Title = "Agent session " + manifest.StartedAt.Format(time.RFC3339)
@@ -635,23 +567,19 @@ func (m *Manager) List(after, excludeTraceID string, limit int) Page {
 		}
 	}
 	m.mu.RUnlock()
-	sort.Slice(all, func(i, j int) bool { return manifestKey(all[i]) < manifestKey(all[j]) })
+	sort.Slice(all, func(i, j int) bool { return all[i].TraceID < all[j].TraceID })
 	page := Page{Archives: all}
 	if len(page.Archives) > limit {
 		page.Archives = page.Archives[:limit]
-		page.Next = manifestKey(page.Archives[len(page.Archives)-1])
+		page.Next = page.Archives[len(page.Archives)-1].TraceID
 	}
 	return page
 }
 
 func (m *Manager) Manifest(traceID string) (Manifest, error) {
-	return m.ManifestSource(traceID, "", "")
-}
-
-func (m *Manager) ManifestSource(traceID, generation, sourceSession string) (Manifest, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	_, ent, err := m.findLocked(traceID, generation, sourceSession)
+	ent, err := m.findLocked(traceID)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -672,7 +600,7 @@ func (m *Manager) KeepSet() map[string]bool {
 
 func (m *Manager) markDeletingLocked(ent *entry) {
 	ent.deleting = true
-	key := manifestKey(ent.manifest)
+	key := ent.manifest.TraceID
 	delete(m.entries, key)
 	m.pending[key] = ent
 	m.evicted[key] = struct{}{}
@@ -739,7 +667,7 @@ func (m *Manager) deleteEntry(ent *entry) (rerr error) {
 		m.mu.Lock()
 		ent.removing = false
 		if complete {
-			delete(m.pending, manifestKey(ent.manifest))
+			delete(m.pending, ent.manifest.TraceID)
 		}
 		m.mu.Unlock()
 	}()
@@ -758,7 +686,7 @@ func (m *Manager) deleteEntry(ent *entry) (rerr error) {
 			result = errors.Join(result, err)
 		}
 	}
-	result = errors.Join(result, removeAndSync(filepath.Join(m.root, manifestKey(ent.manifest)+".json")))
+	result = errors.Join(result, removeAndSync(filepath.Join(m.root, ent.manifest.TraceID+".json")))
 	complete = result == nil
 	return result
 }
@@ -768,7 +696,7 @@ func (m *Manager) writeManifest(manifest Manifest) error {
 	if err != nil {
 		return err
 	}
-	return atomicWrite(filepath.Join(m.root, manifestKey(manifest)+".json"), data, 0o600)
+	return atomicWrite(filepath.Join(m.root, manifest.TraceID+".json"), data, 0o600)
 }
 
 func atomicWrite(path string, data []byte, mode os.FileMode) (rerr error) {

@@ -66,9 +66,7 @@ model turn. Pending messages not committed to a conversation are not recovered.
 Restore is best-effort: an agent the trace does not carry enough to restore is
 skipped, along with its subscriptions, and a warning names it and why.
 
-Run -r with no trace ID to list retained engine archives without restoring. Use
---source-session when a trace belongs to multiple source sessions. Add --generation
-to pin an exact engine archive cut; explicit generations never fall back to Cloud.
+Run -r with no trace ID to list retained engine archives without restoring.
 
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
@@ -85,11 +83,9 @@ dagger agent [options] [name...]
 ### Options
 
 ```
-      --agent string            With -r, focus this restored agent (runtime handle or name) instead of the top-level one
-      --generation string       With -r and --source-session, select the exact archive generation
-  -l, --list                    List available agents
-  -r, --resume trace[=list]     Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, list retained engine archives
-      --source-session string   With -r, select the source session in an engine archive or Cloud trace
+      --agent string          With -r, focus this restored agent (runtime handle or name) instead of the top-level one
+  -l, --list                  List available agents
+  -r, --resume trace[=list]   Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, list retained engine archives
 ```
 
 ### Options inherited from parent commands

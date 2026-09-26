@@ -22,9 +22,8 @@ type ArchiveHighWater struct {
 // ArchiveCut identifies one immutable version of a telemetry archive. The
 // bootstrap and all three remainder streams must present this same cut.
 type ArchiveCut struct {
-	Generation string
-	HighWater  ArchiveHighWater
-	SealAt     time.Time
+	HighWater ArchiveHighWater
+	SealAt    time.Time
 }
 
 // ArchiveSignal identifies one independently streamed OTLP signal.
@@ -90,9 +89,6 @@ type ArchiveTraceImporter struct {
 }
 
 func NewArchiveTraceImporter(sinks TraceImportSinks, cut ArchiveCut) (*ArchiveTraceImporter, error) {
-	if cut.Generation == "" {
-		return nil, errors.New("archive import generation is empty")
-	}
 	if cut.SealAt.IsZero() {
 		return nil, errors.New("archive import seal time is zero")
 	}
@@ -249,13 +245,12 @@ func (imp *ArchiveTraceImporter) AbandonRemainder(ctx context.Context, cut Archi
 }
 
 func (imp *ArchiveTraceImporter) checkCut(got ArchiveCut) error {
-	if imp.cut.Generation != got.Generation ||
-		imp.cut.HighWater != got.HighWater ||
+	if imp.cut.HighWater != got.HighWater ||
 		!imp.cut.SealAt.Equal(got.SealAt) {
-		return fmt.Errorf("%w: got generation %q high-water %+v seal %s; want generation %q high-water %+v seal %s",
+		return fmt.Errorf("%w: got high-water %+v seal %s; want high-water %+v seal %s",
 			ErrArchiveCutMismatch,
-			got.Generation, got.HighWater, got.SealAt,
-			imp.cut.Generation, imp.cut.HighWater, imp.cut.SealAt)
+			got.HighWater, got.SealAt,
+			imp.cut.HighWater, imp.cut.SealAt)
 	}
 	return nil
 }

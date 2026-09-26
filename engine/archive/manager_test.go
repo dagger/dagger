@@ -68,7 +68,7 @@ func TestManagerStartupMarksInterrupted(t *testing.T) {
 	}
 }
 
-func TestManagerFinalizationMetadataAndGeneration(t *testing.T) {
+func TestManagerFinalizationMetadata(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	manager, err := NewManager(Config{Root: root, TTL: time.Hour, Now: func() time.Time { return now }})
@@ -79,19 +79,19 @@ func TestManagerFinalizationMetadataAndGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.SetTitle(testTraceA, manifest.Generation, "investigate cache"); err != nil {
+	if err := manager.SetTitle(testTraceA, "investigate cache"); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.BeginFinalizing(testTraceA, manifest.Generation); err != nil {
+	if err := manager.BeginFinalizing(testTraceA); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.SetTitle(testTraceA, manifest.Generation, "too late"); err == nil {
+	if err := manager.SetTitle(testTraceA, "too late"); err == nil {
 		t.Fatal("title update during finalization succeeded")
 	}
 	now = now.Add(time.Minute)
 	cut := HighWater{Spans: 3, Logs: 4, Metrics: 5}
 	sidecar := testBootstrap(t, manifest, cut, now, 2)
-	closed, err := manager.Finalize(testTraceA, manifest.Generation, FinalizeInput{
+	closed, err := manager.Finalize(testTraceA, FinalizeInput{
 		HighWater: cut, SealAt: now,
 		StoreSizeBytes: 10, BootstrapBytes: sidecar, BootstrapRecords: 2,
 	})
@@ -109,8 +109,8 @@ func TestManagerFinalizationMetadataAndGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lease.Release()
-	if lease.Manifest().Generation != manifest.Generation {
-		t.Fatal("generation changed")
+	if lease.Manifest().TraceID != testTraceA {
+		t.Fatal("trace changed")
 	}
 	if _, err := os.Stat(lease.BootstrapPath()); err != nil {
 		t.Fatal(err)
@@ -136,10 +136,10 @@ func TestManagerQuotaLeaseAndExpiry(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := manager.BeginFinalizing(traceID, registered.Generation); err != nil {
+		if err := manager.BeginFinalizing(traceID); err != nil {
 			t.Fatal(err)
 		}
-		closed, err := manager.Finalize(traceID, registered.Generation, FinalizeInput{
+		closed, err := manager.Finalize(traceID, FinalizeInput{
 			SealAt: now, StoreSizeBytes: 15, BootstrapBytes: testBootstrap(t, registered, HighWater{}, now, 0),
 		})
 		if err != nil {
@@ -214,10 +214,10 @@ func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.BeginFinalizing(testTraceA, manifest.Generation); err != nil {
+	if err := manager.BeginFinalizing(testTraceA); err != nil {
 		t.Fatal(err)
 	}
-	_, err = manager.Finalize(testTraceA, manifest.Generation, FinalizeInput{
+	_, err = manager.Finalize(testTraceA, FinalizeInput{
 		SealAt: now, BootstrapBytes: testBootstrap(t, manifest, HighWater{}, now, 0),
 	})
 	if err != nil {
@@ -231,7 +231,7 @@ func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
 	if removeAttempts != 1 {
 		t.Fatalf("remove attempts = %d, want 1", removeAttempts)
 	}
-	if _, err := os.Stat(filepath.Join(root, manifestKey(manifest)+".json")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, testTraceA+".json")); err != nil {
 		t.Fatalf("pending manifest removed before store: %v", err)
 	}
 	if _, err := manager.Acquire(testTraceA); err == nil {
@@ -245,7 +245,7 @@ func TestManagerRetriesPendingStoreDeletion(t *testing.T) {
 	if removeAttempts != 2 {
 		t.Fatalf("remove attempts = %d, want 2", removeAttempts)
 	}
-	for _, name := range []string{manifestKey(manifest) + ".json", manifestKey(manifest) + ".bootstrap"} {
+	for _, name := range []string{testTraceA + ".json", testTraceA + ".bootstrap"} {
 		if _, err := os.Stat(filepath.Join(root, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("%s remains after retry: %v", name, err)
 		}
@@ -259,8 +259,8 @@ func testBootstrap(t *testing.T, manifest Manifest, cut HighWater, sealAt time.T
 		signals = []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: []byte("otlp"), Records: records}}
 	}
 	data, _, err := BuildBootstrap(BootstrapHeader{
-		Generation: manifest.Generation, TraceID: manifest.TraceID, SourceSession: manifest.SourceSession,
-		SealAt: sealAt.UTC().Format(time.RFC3339Nano), HighWater: cut,
+		TraceID: manifest.TraceID,
+		SealAt:  sealAt.UTC().Format(time.RFC3339Nano), HighWater: cut,
 	}, signals)
 	if err != nil {
 		t.Fatal(err)
@@ -268,75 +268,40 @@ func testBootstrap(t *testing.T, manifest Manifest, cut HighWater, sealAt time.T
 	return data
 }
 
-func TestManagerSameTraceIndependentSourceSessions(t *testing.T) {
+func TestManagerFirstRegistrationOwnsTrace(t *testing.T) {
 	root := t.TempDir()
 	manager, err := NewManager(Config{Root: root})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var manifests []Manifest
-	for _, source := range []string{"one", "two"} {
-		m, err := manager.RegisterSession(testTraceA, source, "client-"+source)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := manager.SetTitle(testTraceA, m.Generation, source); err != nil {
-			t.Fatal(err)
-		}
-		if err := manager.BeginFinalizing(testTraceA, m.Generation); err != nil {
-			t.Fatal(err)
-		}
-		seal := time.Now().UTC()
-		m, err = manager.Finalize(testTraceA, m.Generation, FinalizeInput{SealAt: seal, BootstrapBytes: testBootstrap(t, m, HighWater{}, seal, 0)})
-		if err != nil {
-			t.Fatal(err)
-		}
-		manifests = append(manifests, m)
-	}
-	manager, err = NewManager(Config{Root: root})
+	first, err := manager.Register(testTraceA, "client-one")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.Acquire(testTraceA); err == nil {
-		t.Fatal("ambiguous trace selected an arbitrary source")
-	} else {
-		var failure *Failure
-		if !errors.As(err, &failure) || failure.Kind != FailureAmbiguous {
-			t.Fatalf("ambiguity: %v", err)
-		}
+	if _, err := manager.Register(testTraceA, "client-two"); err == nil {
+		t.Fatal("second registration for the same trace succeeded")
 	}
-	first := manager.List("", "", 1)
-	second := manager.List(first.Next, "", 1)
-	if len(first.Archives) != 1 || len(second.Archives) != 1 || first.Next == "" || first.Archives[0].SourceSession == second.Archives[0].SourceSession {
-		t.Fatalf("pagination lost a source: %+v %+v", first, second)
-	}
-	for _, m := range manifests {
-		lease, err := manager.AcquireSource(testTraceA, m.Generation, m.SourceSession)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if lease.Manifest().Title != m.SourceSession {
-			t.Fatal("source metadata mixed")
-		}
-		lease.Release()
-	}
-	if _, err := manager.AcquireSource(testTraceA, manifests[0].Generation, manifests[1].SourceSession); err == nil {
-		t.Fatal("mismatched selector fell back")
-	}
-	if _, err := manager.RegisterSession(testTraceB, "other", manifests[0].MainClientID); err == nil {
-		t.Fatal("reused source DB accepted")
-	}
-	if page := manager.List("", manifests[0].Generation, 10); len(page.Archives) != 1 || page.Archives[0].Generation != manifests[1].Generation {
-		t.Fatalf("generation exclusion hid sibling source: %+v", page)
-	}
-	if err := manager.Discard(testTraceA, manifests[0].Generation); err != nil {
-		t.Fatal(err)
-	}
-	lease, err := manager.AcquireSource(testTraceA, manifests[1].Generation, "")
+	manifest, err := manager.Manifest(testTraceA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	lease.Release()
+	if manifest.MainClientID != first.MainClientID {
+		t.Fatalf("archive owner = %q, want %q", manifest.MainClientID, first.MainClientID)
+	}
+	if _, err := os.Stat(filepath.Join(root, testTraceA+".json")); err != nil {
+		t.Fatalf("manifest is not keyed by trace ID: %v", err)
+	}
+	if _, err := manager.Register(testTraceB, "client-three"); err != nil {
+		t.Fatal(err)
+	}
+	firstPage := manager.List("", "", 1)
+	secondPage := manager.List(firstPage.Next, "", 1)
+	if len(firstPage.Archives) != 1 || len(secondPage.Archives) != 1 || firstPage.Next != testTraceA || secondPage.Archives[0].TraceID != testTraceB {
+		t.Fatalf("pagination: %+v %+v", firstPage, secondPage)
+	}
+	if page := manager.List("", testTraceA, 10); len(page.Archives) != 1 || page.Archives[0].TraceID != testTraceB {
+		t.Fatalf("exclusion: %+v", page)
+	}
 }
 
 func TestManagerTitleSurvivesInterruptionAndSeal(t *testing.T) {
@@ -345,14 +310,13 @@ func TestManagerTitleSurvivesInterruptionAndSeal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	crashed, err := manager.Register(testTraceA, "crashed")
-	if err != nil {
+	if _, err := manager.Register(testTraceA, "crashed"); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.SetTitle(testTraceA, crashed.Generation, "first title"); err != nil {
+	if err := manager.SetTitle(testTraceA, "first title"); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.SetTitle(testTraceA, crashed.Generation, "  \n"); err != nil {
+	if err := manager.SetTitle(testTraceA, "  \n"); err != nil {
 		t.Fatal(err)
 	}
 	if page := manager.List("", "", 10); len(page.Archives) != 1 || page.Archives[0].Title != "first title" {
@@ -374,14 +338,14 @@ func TestManagerTitleSurvivesInterruptionAndSeal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := restarted.SetTitle(testTraceB, sealed.Generation, "final\x1b[31m title"); err != nil {
+	if err := restarted.SetTitle(testTraceB, "final\x1b[31m title"); err != nil {
 		t.Fatal(err)
 	}
-	if err := restarted.BeginFinalizing(testTraceB, sealed.Generation); err != nil {
+	if err := restarted.BeginFinalizing(testTraceB); err != nil {
 		t.Fatal(err)
 	}
 	seal := time.Now().UTC()
-	closed, err := restarted.Finalize(testTraceB, sealed.Generation, FinalizeInput{
+	closed, err := restarted.Finalize(testTraceB, FinalizeInput{
 		SealAt: seal, BootstrapBytes: testBootstrap(t, sealed, HighWater{}, seal, 0),
 	})
 	if err != nil {
@@ -418,7 +382,7 @@ func TestSanitizeTitle(t *testing.T) {
 }
 
 func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {
-	header := BootstrapHeader{Generation: "generation", TraceID: testTraceA, SealAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	header := BootstrapHeader{TraceID: testTraceA, SealAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	data, records, err := BuildBootstrap(header, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: []byte("otlp"), Records: 7}})
 	if err != nil {
 		t.Fatal(err)
@@ -430,7 +394,7 @@ func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decodedHeader.Generation != header.Generation || terminal.TraceRecords != 7 {
+	if decodedHeader.TraceID != header.TraceID || terminal.TraceRecords != 7 {
 		t.Fatalf("unexpected decode: %+v %+v", decodedHeader, terminal)
 	}
 	if _, _, err := VerifyBootstrap(bytes.NewReader(data[:len(data)-1])); err == nil {
