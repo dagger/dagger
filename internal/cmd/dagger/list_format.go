@@ -79,8 +79,16 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 	described, absolute := false, false
 	for _, item := range items {
 		for _, key := range item.DimensionKeys {
+			if item.CollectionItem && item.OmitTypeKey && strings.HasPrefix(key.Dimension, "type:") {
+				continue
+			}
 			if !slices.Contains(dimensions, key.Dimension) {
 				dimensions = append(dimensions, key.Dimension)
+			}
+		}
+		for _, id := range item.Presence {
+			if !slices.Contains(dimensions, id) {
+				dimensions = append(dimensions, id)
 			}
 		}
 		described = described || firstDescriptionLine(item.Description) != ""
@@ -90,6 +98,22 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 		}
 		absolute = absolute || addr.Absolute
 	}
+	// Collection dimensions precede the target type dimension.
+	slices.SortStableFunc(dimensions, func(a, b string) int {
+		if a == artifact.ModuleDimension && b != a {
+			return -1
+		}
+		if b == artifact.ModuleDimension && a != b {
+			return 1
+		}
+		if strings.HasPrefix(a, "type:") == strings.HasPrefix(b, "type:") {
+			return 0
+		}
+		if strings.HasPrefix(a, "type:") {
+			return 1
+		}
+		return -1
+	})
 	header := []string{}
 	if absolute {
 		header = append(header, "WORKSPACE")
@@ -139,6 +163,9 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 
 func artifactDimensionCell(item listedArtifact, dimension string) string {
 	var values []string
+	if slices.Contains(item.Presence, dimension) {
+		values = append(values, "*")
+	}
 	for _, key := range item.DimensionKeys {
 		if key.Dimension != dimension {
 			continue
@@ -185,7 +212,7 @@ func artifactCLIArguments(item listedArtifact, names map[string]string, options 
 			if strings.HasPrefix(key.Dimension, "type:") != typeKeys {
 				continue
 			}
-			if typeKeys && item.OmitCLITypeKey {
+			if typeKeys && (item.OmitCLITypeKey || item.CollectionItem && item.OmitTypeKey) {
 				continue
 			}
 			if key.Dimension == artifact.ModuleDimension && item.ModuleFlag != "" {
@@ -209,6 +236,15 @@ func artifactCLIArguments(item listedArtifact, names map[string]string, options 
 				return "", err
 			}
 			args = append(args, "--"+name+"="+quoted)
+		}
+		if !typeKeys {
+			for _, id := range item.Presence {
+				name := item.PresenceNames[id]
+				if name == "" {
+					return "", fmt.Errorf("no collection flag for %q", id)
+				}
+				args = append(args, "--"+name)
+			}
 		}
 	}
 
