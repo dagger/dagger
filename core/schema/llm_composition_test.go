@@ -113,7 +113,7 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			var decoded call.ID
 			require.NoError(t, decoded.Decode(encoded))
-			require.Equal(t, []string{test.want}, compositionRecipeToolOwners(t, &decoded))
+			require.Equal(t, []string{test.want}, compositionRecipeOwners(t, &decoded, "withTools"))
 			require.Equal(t, []string{test.want}, compositionRecipeOwners(t, &decoded, "withSkills"))
 
 			var removed dagql.ObjectResult[*core.LLM]
@@ -330,11 +330,6 @@ func TestLLMCommittedLeafRestore(t *testing.T) {
 	require.Equal(t, committed.Self().Messages, restored.Self().Messages)
 	require.Equal(t, "recorded answer", restored.Self().Messages[1].TextContent())
 	require.Equal(t, "recorded result", restored.Self().Messages[2].ToolResultContent())
-}
-
-func compositionRecipeToolOwners(t *testing.T, recipe *call.ID) []string {
-	t.Helper()
-	return compositionRecipeOwners(t, recipe, "withTools")
 }
 
 func compositionRecipeOwners(t *testing.T, recipe *call.ID, field string) []string {
