@@ -305,6 +305,9 @@ type AgentRuntimes struct {
 	closeMu     sync.Mutex
 	closing     bool
 	incarnation string
+	// controlTorn records, under closeMu, why teardown closed the publishers
+	// without a fixed cut. No later expectation witness can be trusted.
+	controlTorn error
 
 	// The waits-for graph (hack/designs/agent-messaging.md §4.5): one edge
 	// per blocking wait issued FROM an agent's turn, waiter runtime handle →
@@ -1082,6 +1085,9 @@ func (ars *AgentRuntimes) MessageResponse(ctx context.Context, msg *AgentMessage
 // the session ended it rather than a caller: a client restoring the trace
 // restores such an agent in the state it held before teardown, instead of
 // reading a clean exit as a session-wide dismissal.
+//
+// Leases and control publishers are released even when a loop outlives ctx:
+// the error reports the stuck loop, but teardown never stays half-done.
 func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
 	_, err := ars.closeControl(ctx, cause)
 	return err

@@ -23,13 +23,17 @@ type agentControlPublisher struct {
 	pending *agentcontrol.Agent
 	edges   map[string]agentcontrol.Subscription
 	wake    chan struct{}
-	stop    chan chan struct{}
-	flush   chan chan struct{}
-	done    chan struct{}
+	// quit is closed exactly once to stop the publisher. Signaling never
+	// depends on the caller's context, so an expired teardown context still
+	// stops the goroutine; only waiting for its final drain is bounded.
+	quit     chan struct{}
+	quitOnce sync.Once
+	flush    chan chan struct{}
+	done     chan struct{}
 }
 
 func newAgentControlPublisher(ctx context.Context) *agentControlPublisher {
-	p := &agentControlPublisher{ctx: agentTelemetryContext(ctx), edges: map[string]agentcontrol.Subscription{}, wake: make(chan struct{}, 1), stop: make(chan chan struct{}), flush: make(chan chan struct{}), done: make(chan struct{})}
+	p := &agentControlPublisher{ctx: agentTelemetryContext(ctx), edges: map[string]agentcontrol.Subscription{}, wake: make(chan struct{}, 1), quit: make(chan struct{}), flush: make(chan chan struct{}), done: make(chan struct{})}
 	go p.run()
 	return p
 }
@@ -91,28 +95,28 @@ func (p *agentControlPublisher) run() {
 		case ack := <-p.flush:
 			p.drain()
 			close(ack)
-		case ack := <-p.stop:
+		case <-p.quit:
 			p.drain()
-			close(ack)
 			return
 		}
 	}
 }
 
+// close stops the publisher after a final drain and waits, bounded by ctx, for
+// it to exit. The stop is signaled even when ctx is already done. Work
+// enqueued afterwards is dropped: nothing blocks on a closed publisher.
 func (p *agentControlPublisher) close(ctx context.Context) error {
 	if p == nil {
 		return nil
 	}
-	ack := make(chan struct{})
+	p.quitOnce.Do(func() { close(p.quit) })
 	select {
-	case p.stop <- ack:
 	case <-p.done:
 		return nil
-	case <-ctx.Done():
-		return context.Cause(ctx)
+	default:
 	}
 	select {
-	case <-ack:
+	case <-p.done:
 		return nil
 	case <-ctx.Done():
 		return context.Cause(ctx)
@@ -172,9 +176,25 @@ func (rt *AgentRuntime) associateConversationLocked(ctx context.Context) {
 // Success is not a persistence acknowledgment: providers must still drain and
 // archives must verify the selected recipe closure.
 func (ars *AgentRuntimes) CloseControl(ctx context.Context) (map[string]agentcontrol.Expectation, error) {
-	return ars.closeControl(ctx, nil)
+	out, err := ars.closeControl(ctx, nil)
+	if err == nil && out == nil {
+		// An earlier teardown closed the publishers before producers were
+		// quiescent: its revisions were never fixed, so none can be witnessed.
+		err = fmt.Errorf("agent control closed without a fixed cut: %w", ars.controlTorn)
+	}
+	return out, err
 }
 
+// closeControl stops every producer and then tears down every publisher and
+// lease, whatever happened on the way. It returns the expectation witness only
+// when every producer reached quiescence, now or in an earlier call; a nil map
+// means there is no fixed cut. The error reports this call's own failures.
+//
+// Failures never leave teardown half-done: a held tombstone lease blocks the
+// session's client-scope drain indefinitely, and a live publisher goroutine
+// outlives the session. A producer still winding down after its publisher
+// closed only drops its late records; the missing witness already marks the
+// archive incomplete.
 func (ars *AgentRuntimes) closeControl(ctx context.Context, cause error) (map[string]agentcontrol.Expectation, error) {
 	ars.closeMu.Lock()
 	defer ars.closeMu.Unlock()
@@ -185,7 +205,7 @@ func (ars *AgentRuntimes) closeControl(ctx context.Context, cause error) (map[st
 		entries = append(entries, rt)
 	}
 	ars.mu.Unlock()
-	var errs error
+	var stopErrs error
 	// Freeze every endpoint before stopping any: teardown notifications must
 	// not enqueue new work and change another agent's pre-teardown state.
 	for _, rt := range entries {
@@ -198,37 +218,44 @@ func (ars *AgentRuntimes) closeControl(ctx context.Context, cause error) (map[st
 	}
 	for _, rt := range entries {
 		if err := rt.Stop(ctx, true, cause, AgentStopSession); err != nil {
-			errs = errors.Join(errs, err)
+			stopErrs = errors.Join(stopErrs, err)
 		}
 	}
-	if errs != nil {
-		// A producer still winding down may advance its committed tip. Keep
-		// publishers alive; no fixed cut exists yet.
-		return nil, errs
+	var out map[string]agentcontrol.Expectation
+	switch {
+	case stopErrs != nil:
+		// A producer still winding down may advance its committed tip: no
+		// fixed cut exists, now or later, once its publisher closes below.
+		if ars.controlTorn == nil {
+			ars.controlTorn = stopErrs
+		}
+	case ars.controlTorn == nil:
+		out = map[string]agentcontrol.Expectation{}
+		for _, rt := range entries {
+			rt.mu.Lock()
+			if !rt.controlClosed {
+				rt.publishControlLocked()
+			}
+			rt.controlClosed = true
+			expect := out[rt.controlOrigin]
+			if expect.Agents == nil {
+				expect.Agents = map[agentcontrol.Key]int64{}
+				expect.Subscriptions = map[agentcontrol.EdgeKey]int64{}
+			}
+			expect.Agents[agentcontrol.Key{Namespace: rt.controlNamespace, Handle: rt.key}] = rt.controlRevision
+			for subscriber, revision := range rt.subscriptionRevisions {
+				expect.Subscriptions[agentcontrol.EdgeKey{Namespace: rt.controlNamespace, Watched: rt.key, Subscriber: subscriber}] = revision
+			}
+			out[rt.controlOrigin] = expect
+			rt.mu.Unlock()
+		}
 	}
-	out := map[string]agentcontrol.Expectation{}
+	errs := stopErrs
 	for _, rt := range entries {
-		rt.mu.Lock()
-		if !rt.controlClosed {
-			rt.publishControlLocked()
-		}
-		rt.controlClosed = true
-		expect := out[rt.controlOrigin]
-		if expect.Agents == nil {
-			expect.Agents = map[agentcontrol.Key]int64{}
-			expect.Subscriptions = map[agentcontrol.EdgeKey]int64{}
-		}
-		expect.Agents[agentcontrol.Key{Namespace: rt.controlNamespace, Handle: rt.key}] = rt.controlRevision
-		for subscriber, revision := range rt.subscriptionRevisions {
-			expect.Subscriptions[agentcontrol.EdgeKey{Namespace: rt.controlNamespace, Watched: rt.key, Subscriber: subscriber}] = revision
-		}
-		out[rt.controlOrigin] = expect
-		rt.mu.Unlock()
 		if err := rt.control.close(ctx); err != nil {
 			errs = errors.Join(errs, fmt.Errorf("finalize agent %q: %w", rt.name, err))
-		} else {
-			rt.clientScopeLease.Release()
 		}
+		rt.clientScopeLease.Release()
 	}
 	return out, errs
 }
