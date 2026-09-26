@@ -16,9 +16,13 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // The client half of roster focus (hack/designs/async-agents.md §5.1): who a
@@ -374,7 +378,6 @@ func rosterTraceFor(names ...string) (map[string]*callpbv1.Call, []dagui.SpanSna
 				// The identity the loop span publishes, including the digest
 				// of the call that produced the agent value.
 				AgentCallDigest: digest,
-				AgentState:      "IDLE",
 			},
 			dagui.SpanSnapshot{
 				ID:         prettyTestSpanID(byte(2*i + 2)),
@@ -386,6 +389,56 @@ func rosterTraceFor(names ...string) (map[string]*callpbv1.Call, []dagui.SpanSna
 		)
 	}
 	return calls, snapshots
+}
+
+// publishAgentControl feeds an agent's next control revision through the DB's
+// log ingestion, the way the engine publishes one on every lifecycle change
+// and commit. The revision continues from whatever the DB already holds for
+// the agent; a first revision starts IDLE in the agent's newest loop span's
+// trace, carrying the identity its spans stamp.
+func publishAgentControl(t *testing.T, db *dagui.DB, handle string, revise func(*agentcontrol.Agent)) {
+	t.Helper()
+	var a agentcontrol.Agent
+	for _, node := range db.Agents() {
+		if node.ID != handle {
+			continue
+		}
+		if node.Control != nil {
+			a = *node.Control
+		} else {
+			traceID := prettyTestTraceID()
+			if span := node.Span(); span != nil {
+				traceID = span.TraceID
+			}
+			a = agentcontrol.Agent{
+				Key: agentcontrol.Key{
+					Namespace: agentcontrol.Namespace{Session: "session", Trace: traceID.String(), Incarnation: "incarnation"},
+					Handle:    handle,
+				},
+				Name: node.Name, CallDigest: node.CallDigest, State: "IDLE", Digest: "xxh3:" + handle + "-seed",
+			}
+		}
+	}
+	require.NotEmpty(t, a.Handle, "no agent %q on the roster", handle)
+	a.Revision++
+	a.Activity = time.Unix(a.Revision, 0).UTC()
+	revise(&a)
+	ingestAgentControl(t, db, a)
+}
+
+// ingestAgentControl feeds one control revision through the DB's log
+// ingestion, the way records arrive from the engine.
+func ingestAgentControl(t *testing.T, db *dagui.DB, a agentcontrol.Agent) {
+	t.Helper()
+	rec := a.Record()
+	var attrs []otellog.KeyValue
+	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+		attrs = append(attrs, kv)
+		return true
+	})
+	db.IngestLogs([]sdklog.Record{frontendTestLogRecord(trace.SpanID{}, otellog.StringValue(""), attrs...)})
+	_, _, err := db.AgentControl()
+	require.NoError(t, err, "fixture: control record rejected")
 }
 
 // TestFocusKeyRetargetsAndKeepsDrafts covers the switcher: a numbered jump

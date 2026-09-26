@@ -198,18 +198,12 @@ func (f *fakeCloud) authHeaders() []string {
 }
 
 // cannedCloud serves the capture slice 4 drives the importer with: the crashed
-// session's spans, its agent-state records, and its token metrics.
+// session's spans, its agent control records, and its token metrics.
 func cannedCloud(withWorker bool) *fakeCloud {
-	states := []cannedStateRecord{{span: foreignLoopSpanID, state: "RUNNING"}}
-	if withWorker {
-		states = append(states, cannedStateRecord{
-			span: foreignWorkerSpanID, state: "RUNNING", emptyBody: true,
-		})
-	}
 	return &fakeCloud{
 		traceID: fetchTraceIDHex,
 		traces:  []*coltracepb.ExportTraceServiceRequest{foreignSessionTrace(withWorker)},
-		logs:    []*collogspb.ExportLogsServiceRequest{cannedAgentStateLogs(foreignTraceIDByte, states...)},
+		logs:    []*collogspb.ExportLogsServiceRequest{foreignAgentControlLogs(withWorker, "RUNNING")},
 		metrics: []*colmetricspb.ExportMetricsServiceRequest{cannedTokenMetrics(foreignLoopSpanID)},
 	}
 }
@@ -308,11 +302,11 @@ func TestFetchStreamsTheWholeTraceIntoTheLiveDB(t *testing.T) {
 	require.NotNil(t, db.Spans.Map[prettyTestSpanID(liveTurnSpanID)],
 		"the fetch disturbed the live session's spans")
 
-	// Logs: the agent-state records are attribute-only, and one of them
+	// Logs: the agent control records are attribute-only, and one of them
 	// arrives with no body at all — the shape §12 flags as unverified and
 	// §13.4's stopgap guards keep from panicking.
 	scout := importedAgent(t, db, "scout")
-	require.Equal(t, "RUNNING", scout.State, "the state records did not survive the fetch")
+	require.Equal(t, "RUNNING", scout.State, "the control records did not survive the fetch")
 
 	// Metrics: attributed to the imported loop span, so the resumed session's
 	// token totals continue rather than restarting at zero.

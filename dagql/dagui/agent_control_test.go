@@ -43,10 +43,9 @@ func TestCanonicalDormantRosterAndHistoryIsolation(t *testing.T) {
 	db.ingestLogs([]sdklog.Record{controlRecord(current.Record())}, true)
 	a.Revision, a.State, a.Failure = 11, "RUNNING", ""
 	db.ingestLogs([]sdklog.Record{controlRecord(a.Record())}, true)
-	legacy := agentLoopSnapshot(2, "worker", "obsolete name", SpanID{})
-	legacy.TraceID = TraceID{TraceID: trace.TraceID{2}}
-	db.ImportSnapshots([]SpanSnapshot{legacy})
-	db.ingestLogs([]sdklog.Record{newTestAgentStateRecord(legacy.ID, "RUNNING", "", ""), newTestAgentSnapshotRecord(legacy.ID, "xxh3:obsolete")}, true)
+	historical := agentLoopSnapshot(2, "worker", "obsolete name", SpanID{})
+	historical.TraceID = TraceID{TraceID: trace.TraceID{2}}
+	db.ImportSnapshots([]SpanSnapshot{historical})
 	nodes = db.Agents()
 	require.Equal(t, "PAUSED", nodes[0].State)
 	require.Equal(t, "xxh3:current", nodes[0].SnapshotDigest)

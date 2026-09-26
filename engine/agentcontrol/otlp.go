@@ -66,7 +66,7 @@ func (s Subscription) Record() log.Record {
 }
 
 // IsRecord recognizes even unsupported/malformed control versions so they
-// cannot leak into ordinary logs or be mistaken for the legacy split protocol.
+// cannot leak into ordinary logs.
 func IsRecord(rec sdklog.Record) bool {
 	found := false
 	rec.WalkAttributes(func(kv log.KeyValue) bool {
