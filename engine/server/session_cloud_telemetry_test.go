@@ -36,6 +36,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -760,14 +761,16 @@ func TestCallPayloadReachesCloudOnce(t *testing.T) {
 }
 
 // cloudLogTestExporter records what reaches it. Until open is closed its
-// exports wait; while failPayloads is positive, an export carrying a call
-// payload fails and decrements it.
+// exports wait; failPayloads and failControls count transient export failures
+// for the corresponding protected records.
 type cloudLogTestExporter struct {
 	open chan struct{}
 
 	mu           sync.Mutex
 	failPayloads int
+	failControls int
 	payloads     []string
+	controls     []sdklog.Record
 	others       int
 }
 
@@ -788,18 +791,28 @@ func (e *cloudLogTestExporter) Export(ctx context.Context, records []sdklog.Reco
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var digests []string
+	var controls []sdklog.Record
+	var others int
 	for _, rec := range records {
 		if digest, payload, err := classifyCallPayloadRecord(rec); err == nil && payload {
 			digests = append(digests, digest)
+		} else if agentcontrol.IsRecord(rec) {
+			controls = append(controls, rec.Clone())
 		} else {
-			e.others++
+			others++
 		}
 	}
 	if len(digests) > 0 && e.failPayloads > 0 {
 		e.failPayloads--
 		return fmt.Errorf("cloud unavailable")
 	}
+	if len(controls) > 0 && e.failControls > 0 {
+		e.failControls--
+		return fmt.Errorf("cloud unavailable")
+	}
 	e.payloads = append(e.payloads, digests...)
+	e.controls = append(e.controls, controls...)
+	e.others += others
 	return nil
 }
 
@@ -837,6 +850,65 @@ func cloudOtherRecord(i int) otellog.Record {
 	return rec
 }
 
+// Agent revisions and subscriptions must reach Cloud on both flush and
+// shutdown, including retries. Payload deduplication must not suppress revisions
+// that reference the same conversation digest.
+func TestCloudLogPipelineExportsControls(t *testing.T) {
+	for _, shutdown := range []bool{false, true} {
+		for _, failures := range []int{0, 2} {
+			t.Run(fmt.Sprintf("shutdown=%t/failures=%d", shutdown, failures), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					exporter := newCloudLogTestExporter(false)
+					exporter.failControls = failures
+					pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
+					defer pipeline.Shutdown(t.Context())
+					logger := cloudTestLogger(pipeline)
+					ctx := trace.ContextWithSpanContext(t.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+						TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1},
+					}))
+					agent := archiveAgent()
+					agent.Activity = agent.Activity.UTC()
+					edge := agentcontrol.Subscription{
+						EdgeKey:  agentcontrol.EdgeKey{Namespace: agent.Namespace, Watched: agent.Handle, Subscriber: "chief"},
+						Revision: 1, States: []string{"IDLE", "FAILED"},
+					}
+					logger.Emit(ctx, agent.Record())
+					logger.Emit(ctx, edge.Record())
+					newer := agent
+					newer.Revision++
+					logger.Emit(ctx, newer.Record())
+					logger.Emit(ctx, cloudPayloadRecordValue(agent.Digest))
+					logger.Emit(ctx, cloudOtherRecord(0))
+
+					if shutdown {
+						require.NoError(t, pipeline.Shutdown(ctx))
+					} else {
+						require.NoError(t, pipeline.ForceFlush(ctx))
+					}
+					exporter.mu.Lock()
+					defer exporter.mu.Unlock()
+					require.Zero(t, exporter.failControls)
+					require.Len(t, exporter.controls, 3)
+					gotAgent, _, err := agentcontrol.Decode(exporter.controls[0])
+					require.NoError(t, err)
+					require.Equal(t, agent, *gotAgent)
+					_, gotEdge, err := agentcontrol.Decode(exporter.controls[1])
+					require.NoError(t, err)
+					require.Equal(t, edge, *gotEdge)
+					gotNewer, _, err := agentcontrol.Decode(exporter.controls[2])
+					require.NoError(t, err)
+					require.Equal(t, newer, *gotNewer)
+					for _, rec := range exporter.controls {
+						require.Equal(t, archiveTestTrace, rec.TraceID().String())
+					}
+					require.Equal(t, []string{agent.Digest}, exporter.payloads)
+					require.Equal(t, 1, exporter.others)
+				})
+			})
+		}
+	}
+}
+
 // A call payload reaches Cloud through a burst of other records larger than
 // the batch processor's queue, which drops its oldest record when full, and a
 // repeated payload is sent once.
@@ -857,6 +929,8 @@ func TestCloudLogPipelineKeepsPayloadsThroughBurst(t *testing.T) {
 		logger.Emit(ctx, cloudOtherRecord(i))
 	}
 	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:first"))
+	agent := archiveAgent()
+	logger.Emit(ctx, agent.Record())
 	for i := range burst {
 		logger.Emit(ctx, cloudOtherRecord(lead+i))
 	}
@@ -869,6 +943,9 @@ func TestCloudLogPipelineKeepsPayloadsThroughBurst(t *testing.T) {
 	payloads, others := exporter.received()
 	require.Less(t, others, lead+burst, "the burst overflowed the batch queue")
 	require.ElementsMatch(t, []string{"xxh3:first", "xxh3:second"}, payloads, "each payload arrives once")
+	exporter.mu.Lock()
+	defer exporter.mu.Unlock()
+	require.Len(t, exporter.controls, 1, "control records survive ordinary queue overflow")
 }
 
 // A call payload whose export fails is retried until Cloud takes it, once.
@@ -899,6 +976,7 @@ type concurrencyLogExporter struct {
 	open             chan struct{}
 	inFlight         atomic.Int32
 	payloadsInFlight atomic.Int32
+	controlsInFlight atomic.Int32
 	maxSeen          atomic.Int32
 	exports          atomic.Int32
 }
@@ -910,6 +988,9 @@ func (e *concurrencyLogExporter) Export(ctx context.Context, records []sdklog.Re
 		if _, payload, _ := classifyCallPayloadRecord(records[0]); payload {
 			e.payloadsInFlight.Add(1)
 			defer e.payloadsInFlight.Add(-1)
+		} else if agentcontrol.IsRecord(records[0]) {
+			e.controlsInFlight.Add(1)
+			defer e.controlsInFlight.Add(-1)
 		}
 	}
 	e.exports.Add(1)
@@ -948,6 +1029,10 @@ func TestCloudLogPipelineSerializesExports(t *testing.T) {
 		wg.Go(func() {
 			for i := range 300 {
 				logger.Emit(ctx, cloudPayloadRecordValue(fmt.Sprintf("xxh3:%d-%d", g, i)))
+				agent := archiveAgent()
+				agent.Handle = fmt.Sprintf("worker-%d", g)
+				agent.Revision = int64(i + 1)
+				logger.Emit(ctx, agent.Record())
 				logger.Emit(ctx, cloudOtherRecord(g*1000+i))
 			}
 		})
@@ -959,29 +1044,42 @@ func TestCloudLogPipelineSerializesExports(t *testing.T) {
 	require.Equal(t, int32(1), exporter.maxSeen.Load(), "one export at a time")
 }
 
-// With a payload export holding the exporter and another record waiting its
-// turn, the pipeline's shutdown still ends within its bound, and no payload
-// export outlives it. (The SDK batch processor's own export, run on the SDK's
-// export timeout, can outlive a shutdown that ran out of time, as before.)
+// With either protected path holding the exporter and the other paths waiting
+// their turn, shutdown ends within its bound and no protected export outlives
+// it. (The SDK batch processor's own export, run on the SDK's export timeout,
+// can outlive a shutdown that ran out of time, as before.)
 func TestCloudLogPipelineShutdownIsBounded(t *testing.T) {
-	t.Parallel()
-	exporter := &concurrencyLogExporter{open: make(chan struct{})}
-	defer close(exporter.open)
-	pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
-	logger := cloudTestLogger(pipeline)
-	logger.Emit(t.Context(), cloudPayloadRecordValue("xxh3:held"))
-	require.Eventually(t, func() bool { return exporter.payloadsInFlight.Load() > 0 },
-		5*time.Second, time.Millisecond, "a payload export holds the exporter")
-	logger.Emit(t.Context(), cloudOtherRecord(0))
+	for _, controlFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("controlFirst=%t", controlFirst), func(t *testing.T) {
+			t.Parallel()
+			exporter := &concurrencyLogExporter{open: make(chan struct{})}
+			defer close(exporter.open)
+			pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
+			logger := cloudTestLogger(pipeline)
+			payload, control := cloudPayloadRecordValue("xxh3:held"), archiveAgent().Record()
+			first, second := payload, control
+			inFlight := &exporter.payloadsInFlight
+			if controlFirst {
+				first, second = control, payload
+				inFlight = &exporter.controlsInFlight
+			}
+			logger.Emit(t.Context(), first)
+			require.Eventually(t, func() bool { return inFlight.Load() > 0 },
+				5*time.Second, time.Millisecond, "a protected export holds the exporter")
+			logger.Emit(t.Context(), second)
+			logger.Emit(t.Context(), cloudOtherRecord(0))
 
-	const bound = 300 * time.Millisecond
-	ctx, cancel := context.WithTimeout(t.Context(), bound)
-	defer cancel()
-	start := time.Now()
-	_ = pipeline.Shutdown(ctx)
-	require.Less(t, time.Since(start), bound+time.Second)
-	require.Zero(t, exporter.payloadsInFlight.Load(), "no payload export outlives the shutdown")
-	require.Equal(t, int32(1), exporter.maxSeen.Load(), "one export at a time")
+			const bound = 300 * time.Millisecond
+			ctx, cancel := context.WithTimeout(t.Context(), bound)
+			defer cancel()
+			start := time.Now()
+			_ = pipeline.Shutdown(ctx)
+			require.Less(t, time.Since(start), bound+time.Second)
+			require.Zero(t, exporter.payloadsInFlight.Load(), "no payload export outlives the shutdown")
+			require.Zero(t, exporter.controlsInFlight.Load(), "no control export outlives the shutdown")
+			require.Equal(t, int32(1), exporter.maxSeen.Load(), "one export at a time")
+		})
+	}
 }
 
 func histogramMetrics(counts []uint64, bounds []float64) *metricdata.ResourceMetrics {
