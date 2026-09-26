@@ -43,6 +43,18 @@ type PromptFrame struct {
 	// isFocused reports whether a component owns the keyboard (see
 	// SetFocusSource).
 	isFocused func(tuist.Component) bool
+	// tab reports the columns of the focused agent tab on the line beneath
+	// the card (see SetTabSource).
+	tab func(width int) (start, end int, ok bool)
+}
+
+// SetTabSource sets how the frame finds the focused agent's tab on the line
+// beneath it, normally the status line's FocusedTab. The card's bottom edge
+// opens over those columns so the tab reads as hanging off the card. It is
+// read at render time; whoever moves the tab re-renders the frame.
+func (p *PromptFrame) SetTabSource(tab func(width int) (start, end int, ok bool)) {
+	p.tab = tab
+	p.Update()
 }
 
 // SetFocusSource sets how the frame asks whether its input is focused,
@@ -179,17 +191,30 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 	// The padding rows double as the card's edges: a thin rule along the top
 	// of the first and the bottom of the last draws a soft border hugging the
 	// fill, without adding rows.
-	edge := func(glyph string) string {
+	edge := func(rule string) string {
 		if p.profile == termenv.Ascii || p.background == nil || p.border == nil {
 			return shade("")
 		}
-		return restyleCells(strings.Repeat(glyph, width), func(style *cellbuf.Style) {
+		return restyleCells(rule, func(style *cellbuf.Style) {
 			style.Fg = p.border
 			style.Bg = p.background
 		})
 	}
+	// The bottom edge opens above the focused agent's tab, whose own side
+	// edges continue the border down around it, so the tab joins the card.
+	bottom := strings.Repeat(promptBottomEdge, width)
+	if p.tab != nil {
+		if start, end, ok := p.tab(width); ok {
+			start, end = max(start, 0), min(end, width)
+			if start < end {
+				bottom = strings.Repeat(promptBottomEdge, start) +
+					strings.Repeat(" ", end-start) +
+					strings.Repeat(promptBottomEdge, width-end)
+			}
+		}
+	}
 	ctx.Line("") // separate the draft from the transcript without extending its fill
-	ctx.Line(edge(promptTopEdge))
+	ctx.Line(edge(strings.Repeat(promptTopEdge, width)))
 	gutter := strings.Repeat(" ", indent)
 	focused := p.isFocused != nil && p.isFocused(p.input)
 	for i, line := range lines {
@@ -201,7 +226,7 @@ func (p *PromptFrame) Render(ctx tuist.Context) {
 		}
 		ctx.Line(shade(prefix + line))
 	}
-	ctx.Line(edge(promptBottomEdge))
+	ctx.Line(edge(bottom))
 
 	if result.Cursor != nil {
 		ctx.SetCursor(result.Cursor.Row+2, min(result.Cursor.Col+indent, max(0, width-1)))

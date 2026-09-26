@@ -1179,6 +1179,9 @@ func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
 		fe.statusLineData = data
 		if fe.statusLine != nil {
 			fe.statusLine.SetData(data)
+			if fe.promptFrame != nil {
+				fe.promptFrame.Update() // the context meter can shift a truncated roster's tab
+			}
 			fe.Update()
 		}
 	})
@@ -1258,14 +1261,14 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
 	fe.agentRoster = NewAgentRoster(fe.profile, fe.agentRosterEntries)
-	// The focused agent's tab takes the prompt card's shade, so it reads as
-	// part of the prompt addressing that agent -- only while the card itself
-	// is shaded (prompt mode), not beneath a bare shell input.
-	fe.agentRoster.SetBackgroundSource(func() color.Color {
+	// The focused agent's tab takes the prompt card's shade and border, so it
+	// reads as part of the prompt addressing that agent -- only while the card
+	// itself is shaded (prompt mode), not beneath a bare shell input.
+	fe.agentRoster.SetTabColorSource(func() (color.Color, color.Color) {
 		if fe.promptFrame == nil || !fe.promptFrame.enabled {
-			return nil
+			return nil, nil
 		}
-		return fe.promptBackground.cell
+		return fe.promptBackground.cell, fe.promptBackground.border
 	})
 	fe.statusLine = &StatusLine{
 		profile:   fe.profile,
@@ -1279,6 +1282,14 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.promptFrame.SetBorder(fe.promptBackground.border)
 	fe.promptFrame.SetKeyHandler(fe.handlePromptFrameKey)
 	fe.promptFrame.SetFocusSource(fe.tui.IsFocused)
+	// The status line sits directly beneath the card, so the card's bottom
+	// edge can open over the focused agent's tab.
+	fe.promptFrame.SetTabSource(func(width int) (int, int, bool) {
+		if fe.statusLine == nil {
+			return 0, 0, false
+		}
+		return fe.statusLine.FocusedTab(width)
+	})
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.promptFrame)
@@ -4859,6 +4870,9 @@ func (fe *frontendPretty) updateAgentRoster() {
 	fe.agentRosterState = fingerprint.String()
 	if fe.statusLine != nil {
 		fe.statusLine.Update()
+	}
+	if fe.promptFrame != nil {
+		fe.promptFrame.Update() // its bottom edge opens over the focused tab
 	}
 }
 
