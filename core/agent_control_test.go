@@ -3,10 +3,12 @@ package core
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/stretchr/testify/require"
 )
@@ -162,18 +164,18 @@ func TestCloseControlWaitsForProducersAndPreservesCause(t *testing.T) {
 	loopCtx, cancel := context.WithCancelCause(context.Background())
 	rt.cancel = cancel
 	rt.testTransition(func() { rt.paused = true })
-	closing, timeout := context.WithTimeout(t.Context(), 5*time.Millisecond)
-	defer timeout()
+	unwound := make(chan struct{})
+	go func() {
+		defer close(unwound)
+		<-loopCtx.Done()
+		time.Sleep(10 * time.Millisecond)
+		rt.testTransition(func() { rt.done = true }) // the loop's completed unwind
+	}()
 	cause := errors.New("session transport closed")
-	require.Error(t, registry.KillAll(closing, cause))
+	require.NoError(t, registry.KillAll(t.Context(), cause))
+	<-unwound
 	require.ErrorIs(t, context.Cause(loopCtx), cause, "finalization retains teardown's original cancellation cause")
-	require.False(t, rt.controlClosed, "failed stop cannot fix an archive cut or close its publisher")
-	select {
-	case <-rt.control.done:
-		t.Fatal("control publisher closed before producer quiescence")
-	default:
-	}
-	rt.testTransition(func() { rt.done = true }) // simulate loop's completed unwind
+	require.True(t, rt.controlClosed)
 	expect, err := registry.CloseControl(t.Context())
 	require.NoError(t, err)
 	lastRevision := rt.controlRevision
@@ -196,4 +198,68 @@ func TestCloseControlWaitsForProducersAndPreservesCause(t *testing.T) {
 	state, err := idx.Agents()[0].RestoreState()
 	require.NoError(t, err)
 	require.Equal(t, "PAUSED", state, "capture pre-teardown facts before cancellation rewrites them")
+}
+
+// A producer that outlives teardown's deadline costs the archive its fixed
+// cut, never the session its leases or publisher goroutines: a held tombstone
+// lease blocks the client-scope drain forever.
+func TestCloseControlFailureStillReleases(t *testing.T) {
+	var released atomic.Int32
+	request := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "request", nil,
+		func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			if kind != engine.ClientLeaseAgentTombstone {
+				return engine.NewClientLifecycleLease(kind, owner, nil, nil), nil
+			}
+			return engine.NewClientLifecycleLease(kind, owner, func() { released.Add(1) }, nil), nil
+		})
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{ClientID: "client", SessionID: "session"}, request)
+	require.NoError(t, err)
+	_, recCtx := stateRecorderCtx(t)
+	base, err := engine.ContextWithClientScope(recCtx, scope)
+	require.NoError(t, err)
+	registry := NewAgentRuntimes()
+	start := func(id string, unwind <-chan struct{}) *AgentRuntime {
+		ctx := testAgentContext(t, base, id, id)
+		agent, ok := AgentFromContext(ctx)
+		require.True(t, ok)
+		rt, err := registry.Create(ctx, agent, AgentStateIdle, "", false, "")
+		require.NoError(t, err)
+		loopCtx, cancel := context.WithCancelCause(context.Background())
+		rt.mu.Lock()
+		rt.started, rt.cancel = true, cancel
+		rt.mu.Unlock()
+		go func() {
+			<-loopCtx.Done()
+			<-unwind
+			rt.testTransition(func() { rt.done = true })
+		}()
+		return rt
+	}
+	prompt := make(chan struct{})
+	close(prompt)
+	stubborn := make(chan struct{})
+	polite := start("polite", prompt)
+	slow := start("stubborn", stubborn)
+
+	short, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	out, err := registry.CloseControl(short)
+	require.Error(t, err)
+	require.Nil(t, out, "no fixed cut while a producer is still winding down")
+	require.Error(t, registry.KillAll(short, errors.New("session closed")), "kill still reports the stuck producer")
+	require.EqualValues(t, 2, released.Load(), "every tombstone lease is released")
+	for _, rt := range []*AgentRuntime{polite, slow} {
+		select {
+		case <-rt.control.done:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("publisher for %q leaked", rt.name)
+		}
+		require.False(t, rt.controlClosed, "a failed teardown fixes no cut")
+	}
+
+	close(stubborn)
+	require.NoError(t, registry.KillAll(t.Context(), nil), "the producer has since unwound")
+	_, err = registry.CloseControl(t.Context())
+	require.Error(t, err, "publishers closed before quiescence: no later witness is trustworthy")
+	require.EqualValues(t, 2, released.Load())
 }
