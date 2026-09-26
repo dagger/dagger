@@ -4373,11 +4373,10 @@ func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
 			name = "agent"
 		}
 		entries = append(entries, AgentRosterEntry{
-			ID:        agent.ID,
-			Name:      name,
-			State:     agent.State,
-			WaitingOn: agent.WaitingOn,
-			Focused:   agent.ID != "" && agent.ID == focused,
+			ID:      agent.ID,
+			Name:    name,
+			State:   agent.State,
+			Focused: agent.ID != "" && agent.ID == focused,
 			// An agent whose loop span carries no call digest was never
 			// addressable, and one whose handle failed to rebuild has been
 			// proven not to be. Either way the entry is watch-only, and says

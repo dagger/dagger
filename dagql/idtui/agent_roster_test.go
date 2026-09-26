@@ -61,7 +61,7 @@ func TestAgentRosterRendersEveryAgent(t *testing.T) {
 		{Name: "chief", State: "RUNNING"},
 		{Name: "scout", State: "IDLE"},
 		{Name: "docs", State: "PAUSED"},
-		{Name: "tests", State: "WAITING_INPUT", WaitingOn: "ok to delete testdata/legacy?"},
+		{Name: "tests", State: "WAITING_INPUT"},
 		{Name: "bench", State: "FAILED"},
 		{Name: "archive", State: "STOPPED"},
 	})

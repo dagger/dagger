@@ -20,8 +20,6 @@ type AgentRosterEntry struct {
 	Name string
 	// State is the lifecycle state the engine last published.
 	State string
-	// WaitingOn is what the agent is parked on when State is WAITING_INPUT.
-	WaitingOn string
 	// Focused marks the entry the prompt currently addresses.
 	Focused bool
 	// ReadOnly marks an agent this client cannot address: the engine never

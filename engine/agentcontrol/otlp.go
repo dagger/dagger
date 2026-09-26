@@ -45,7 +45,6 @@ func (a Agent) Record() log.Record {
 		log.String(telemetryattrs.AgentCallDigestAttr, a.CallDigest),
 		log.String(telemetryattrs.AgentSnapshotDigestAttr, a.Digest),
 		log.String(telemetryattrs.AgentStateAttr, a.State),
-		log.String(telemetryattrs.AgentWaitingOnAttr, a.WaitingOn),
 		log.String(telemetryattrs.AgentStopReasonAttr, a.StopReason),
 		log.String(ParentAttr, a.Parent), log.String(CaptureErrorAttr, a.CaptureError),
 		log.String(PreTeardownAttr, a.PreTeardownState), log.String(FailureAttr, a.Failure),
@@ -118,8 +117,8 @@ func Decode(rec sdklog.Record) (*Agent, *Subscription, error) {
 		a := Agent{Key: Key{ns, handle}, Revision: revision,
 			Name: str(telemetryattrs.AgentNameAttr), CallDigest: str(telemetryattrs.AgentCallDigestAttr),
 			Digest: str(telemetryattrs.AgentSnapshotDigestAttr), State: str(telemetryattrs.AgentStateAttr),
-			WaitingOn: str(telemetryattrs.AgentWaitingOnAttr), StopReason: str(telemetryattrs.AgentStopReasonAttr),
-			Parent: str(ParentAttr), CaptureError: str(CaptureErrorAttr), PreTeardownState: str(PreTeardownAttr),
+			StopReason: str(telemetryattrs.AgentStopReasonAttr), Parent: str(ParentAttr),
+			CaptureError: str(CaptureErrorAttr), PreTeardownState: str(PreTeardownAttr),
 			Failure: str(FailureAttr), Activity: time.Unix(0, integer(ActivityAttr)).UTC(),
 		}
 		if decodeErr != nil {
