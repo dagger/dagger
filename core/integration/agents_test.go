@@ -68,11 +68,10 @@ func (AgentsSuite) TestListAcrossModules(ctx context.Context, t *testctx.T) {
 	// godoc's base argument is named `llm`, not `base`; it must still be
 	// discovered, since the base is matched by type rather than name.
 	require.Contains(t, out, "dag+expertise://godoc/agent")
-	out, err = modGen.With(daggerExec("list", "expertise", "-f=table")).Stdout(ctx)
+	out, err = modGen.With(daggerExec("list", "expertise", "-f=link")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "EXPERTISE")
-	require.Contains(t, out, "editor/agent")
-	require.Contains(t, out, "godoc/agent")
+	require.Contains(t, out, "dag+expertise://editor/agent")
+	require.Contains(t, out, "dag+expertise://godoc/agent")
 }
 
 // TestSDKAgents covers the @agent marker in the SDKs that carry their own

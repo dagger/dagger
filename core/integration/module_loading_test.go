@@ -237,7 +237,7 @@ source = "shared"
 settings.version = "1.97"
 `)
 
-		out, err := hostDaggerExecRaw(ctx, t, workdir, "check", "-l")
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "check", "-l", "-f=link")
 		require.NoError(t, err)
 		require.Contains(t, string(out), "rust/version-check")
 		require.Contains(t, string(out), "msrv/version-check")

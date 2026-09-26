@@ -165,7 +165,7 @@ func TestLLMCompositionOwnerBindingsAndReplay(t *testing.T) {
 				base.WithToolsOwner(first, srv.Schema(), nil, tc.candidate, 0))
 			_, err := preserveRecomposedTools(ctx, srv, previous, candidate)
 			if tc.conflict {
-				require.ErrorContains(t, err, "owned by another middleware")
+				require.ErrorContains(t, err, "owned by other expertise")
 			} else {
 				require.NoError(t, err)
 			}

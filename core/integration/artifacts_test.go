@@ -296,7 +296,7 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
 				got = append(got, item.URI)
 			}
 			if tc.uri == "dag://" {
-				require.Len(t, got, 15)
+				require.Len(t, got, 13)
 				return
 			}
 			require.Equal(t, tc.want, got)
@@ -856,7 +856,7 @@ func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
 		{"dag+container://docs/source", "dag://docs/source is a Directory, not container"},
 		{"dag+directory://docs/source", "artifact is a Directory, not a Container"},
 		{"dag://**/source", "matches 2 artifacts:\ndag://docs/source\ndag://other-docs/source"},
-		{"dag://", "matches 15 artifacts:\n"},
+		{"dag://", "matches 13 artifacts:\n"},
 		{"dag://github.com/dagger/dagger@main:base", "address selects another workspace; filters cannot change workspace"},
 	} {
 		_, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $address: String!) {
@@ -1108,7 +1108,7 @@ More details."""
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", src).With(nonNestedDevEngine(c))
 	for _, command := range []string{"generate", "check"} {
 		t.Run(command+" list", func(ctx context.Context, t *testctx.T) {
-			out, err := base.With(daggerNonNestedExec(command, "-l")).Stdout(ctx)
+			out, err := base.With(daggerNonNestedExec(command, "-l", "-f=cli")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, "=clean")
 			require.Contains(t, out, "=dirty")

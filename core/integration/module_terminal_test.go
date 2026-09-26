@@ -57,7 +57,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-default")
 		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
-		out, err := hostDaggerExecRaw(ctx, t, modDir, "shell", "-l")
+		out, err := hostDaggerExecRaw(ctx, t, modDir, "shell", "-l", "-f=link")
 		require.NoError(t, err)
 		require.Contains(t, string(out), "dag+container://ctr")
 		require.NotContains(t, string(out), "dag+container://test/ctr")
@@ -501,7 +501,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-directory")
 		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
-		out, err := hostDaggerExecRaw(ctx, t, modDir, "sh", "-l")
+		out, err := hostDaggerExecRaw(ctx, t, modDir, "sh", "-l", "-f=link")
 		require.NoError(t, err)
 		require.Equal(t, "dag+directory://dir", string(bytes.TrimSpace(out)))
 

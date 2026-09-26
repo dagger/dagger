@@ -260,11 +260,11 @@ func (ClientSuite) TestTelemetrySplitPublishesOnce(ctx context.Context, t *testc
 			cloud := newTelemetrySplitCloud(t, c)
 			engine, err := devEngineContainerAsService(telemetrySplitEngine(c, telemetrySplitEngineBase(c, tc.releasedEngine), cloud)).Start(ctx)
 			require.NoError(t, err)
+
 			cli := devCLI
 			if tc.releasedCLI {
 				cli = releasedCLI
 			}
-
 			marker := identity.NewID()
 			// The exec prints "<marker>-out", which appears nowhere else.
 			query := fmt.Sprintf(`{ container { from(address: %q) { withExec(args: ["sh", "-c", "echo $0-out", %q]) { exitCode } } } }`, alpineImage, marker)
@@ -410,25 +410,18 @@ func (m *HelloWithChecks) SplitCheck(ctx context.Context) error {
 }
 
 // TestTelemetrySplitScaleOut runs a check scaled out from a new parent
-// engine to a remote engine, for each pairing of an old or new client with
-// an old or new remote. The remote publishes its own session only when the
-// parent's session publishes and the remote confirms; a parent that
-// publishes publishes an unconfirmed remote's stream itself; a client that
-// forwards forwards everything. The check's output reaches Cloud once.
+// engine to a new remote engine. The remote publishes its own session, and
+// the check's output reaches Cloud once. Released clients and engines are
+// not covered: they run checks through Workspace.checks, which this engine
+// no longer has.
 func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	devCLI := daggerCliFile(t, c)
-	releasedCLI := c.Container().From(telemetrySplitReleasedEngine).File("/usr/local/bin/dagger")
+	cli := daggerCliFile(t, c)
 
 	for _, tc := range []struct {
-		name           string
-		releasedCLI    bool
-		releasedRemote bool
+		name string
 	}{
 		{name: "new client, new remote"},
-		{name: "new client, old remote", releasedRemote: true},
-		{name: "old client, new remote", releasedCLI: true},
-		{name: "old client, old remote", releasedCLI: true, releasedRemote: true},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			const remoteHost = "remote-tls"
@@ -443,7 +436,7 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 				return ctr.WithEnvVariable("FAKE_CLOUD_ENGINE_SPEC", string(spec))
 			})
 
-			remote := devEngineContainerAsService(telemetrySplitEngine(c, telemetrySplitEngineBase(c, tc.releasedRemote), fakeCloud))
+			remote := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), fakeCloud))
 			// Terminates the parent engine's TLS for the remote engine, as
 			// Dagger Cloud's engine endpoint does.
 			tlsProxy := c.Container().From(alpineImage).
@@ -460,10 +453,6 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 				WithEnvVariable("SSL_CERT_DIR", "/etc/ssl/certs:/tls/certs")).Start(ctx)
 			require.NoError(t, err)
 
-			cli := devCLI
-			if tc.releasedCLI {
-				cli = releasedCLI
-			}
 			marker := identity.NewID()
 			_, err = telemetrySplitClient(ctx, t, c, cli, parent, fakeCloud).
 				WithExec([]string{"apk", "add", "git"}).
@@ -495,16 +484,8 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 			output := got.output(t, marker+"-out")
 			require.False(t, parentInstances[output.Instance], "the check ran on the remote engine")
 
-			switch {
-			case tc.releasedCLI:
-				require.True(t, cliLogWriters[output.Writer], "the client forwards everything")
-			case tc.releasedRemote:
-				require.False(t, cliLogWriters[output.Writer])
-				require.True(t, parentLogWriters[output.Writer], "the parent publishes an unconfirmed remote's stream")
-			default:
-				require.False(t, cliLogWriters[output.Writer])
-				require.False(t, parentLogWriters[output.Writer], "the remote publishes its own session")
-			}
+			require.False(t, cliLogWriters[output.Writer])
+			require.False(t, parentLogWriters[output.Writer], "the remote publishes its own session")
 		})
 	}
 }

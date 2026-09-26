@@ -115,4 +115,3 @@ func TestArtifactProjectionFlagNames(t *testing.T) {
 		require.Equal(t, "go-test", artifactDimensionFlagNames(cmd, defs)[defs[1].Identifier].Key)
 	}
 }
-
