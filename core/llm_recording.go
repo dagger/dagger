@@ -147,19 +147,6 @@ func recordingDiffMessage(msg *LLMMessage) *LLMMessage {
 }
 
 func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
-	if len(history) > 0 && history[0].Role == LLMMessageRoleSystem {
-		// HACK: drop the synthesized default system prompt, which recordings
-		// never contain (they hold only the history exported via messages) —
-		// but only when the leading system message is not the recording's OWN
-		// leading system message. A conversation composed with an explicit
-		// system prompt and no synthesized default (async-agents.md item 15:
-		// a staff worker's seed) would otherwise lose its real prompt to this
-		// trim and diverge at index 0 forever.
-		if len(c.messages) == 0 || c.messages[0].Role != LLMMessageRoleSystem ||
-			scrub.Stabilize(c.messages[0].TextContent()) != scrub.Stabilize(history[0].TextContent()) {
-			history = history[1:]
-		}
-	}
 	if len(history) >= len(c.messages) {
 		return nil, fmt.Errorf("no more messages")
 	}

@@ -12624,14 +12624,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Disable the default system prompt
-   */
-  withoutDefaultSystemPrompt = (): LLM => {
-    const ctx = this._ctx.select("withoutDefaultSystemPrompt")
-    return new LLM(ctx)
-  }
-
-  /**
    * Clear the message history, keeping only the system prompts.
    */
   withoutMessageHistory = (): LLM => {
@@ -12640,7 +12632,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Clear the user-added system prompts, keeping only the default system prompt.
+   * Clear all system prompts.
    */
   withoutSystemPrompts = (): LLM => {
     const ctx = this._ctx.select("withoutSystemPrompts")

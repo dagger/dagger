@@ -11357,7 +11357,7 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Clear the user-added system prompts, keeping only the default system prompt.
+    /// Clear all system prompts.
     pub fn without_system_prompts(&self) -> Llm {
         let query = self.selection.select("withoutSystemPrompts");
         Llm {
@@ -11757,15 +11757,6 @@ impl Llm {
         if let Some(version) = opts.version {
             query = query.arg("version", version);
         }
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Disable the default system prompt
-    pub fn without_default_system_prompt(&self) -> Llm {
-        let query = self.selection.select("withoutDefaultSystemPrompt");
         Llm {
             proc: self.proc.clone(),
             selection: query,

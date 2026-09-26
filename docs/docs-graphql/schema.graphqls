@@ -4303,9 +4303,7 @@ type LLM implements Node & Syncer {
   """Clear the message history, keeping only the system prompts."""
   withoutMessageHistory: LLM!
 
-  """
-  Clear the user-added system prompts, keeping only the default system prompt.
-  """
+  """Clear all system prompts."""
   withoutSystemPrompts: LLM!
 
   """The text of the model's most recent reply."""
@@ -4473,9 +4471,6 @@ type LLM implements Node & Syncer {
     """
     version: Int = 0
   ): LLM!
-
-  """Disable the default system prompt"""
-  withoutDefaultSystemPrompt: LLM!
 
   """Add an external MCP server to the LLM"""
   withMCPServer(

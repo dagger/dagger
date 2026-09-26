@@ -55,7 +55,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("withoutMessageHistory", s.withoutMessageHistory).
 			Doc("Clear the message history, keeping only the system prompts."),
 		dagql.Func("withoutSystemPrompts", s.withoutSystemPrompts).
-			Doc("Clear the user-added system prompts, keeping only the default system prompt."),
+			Doc("Clear all system prompts."),
 		dagql.Func("lastReply", s.lastReply).
 			Doc("The text of the model's most recent reply."),
 		dagql.Func("withWorkspace", s.withWorkspace).
@@ -168,8 +168,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("except").Doc("Method names to exclude from the toolset (e.g. constructors, entrypoints)."),
 				dagql.Arg("version").Doc("Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply."),
 			),
-		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
-			Doc("Disable the default system prompt"),
 		dagql.Func("withMCPServer", s.withMCPServer).
 			Doc("Add an external MCP server to the LLM").
 			Args(
@@ -602,10 +600,6 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 		return nil, fmt.Errorf("bind object to its defining type: %w", err)
 	}
 	return llm.WithToolsOwner(obj, definingServer.Schema(), args.Except, owner, args.Version), nil
-}
-
-func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm.WithoutDefaultSystemPrompt(), nil
 }
 
 func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struct {
