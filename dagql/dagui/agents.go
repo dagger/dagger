@@ -6,10 +6,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/agentcontrol"
-	"github.com/dagger/dagger/engine/telemetryattrs"
-	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 // The client half of the agent directory (hack/designs/async-agents.md §3.3).
@@ -18,15 +14,16 @@ import (
 // message an agent whose ID you hold — so a client discovers the agents in a
 // session by folding the trace it already ingests, rather than by querying
 // for them. The engine publishes each runtime as a long-lived loop span
-// carrying its identity, plus state records over the log stream; everything
-// below is the consumer of that contract.
+// carrying its identity, plus revisioned control records (engine/agentcontrol)
+// over the log stream; everything below is the consumer of that contract.
 
 // AgentNode is one agent instance in the session's roster: the loop span (or
 // spans) the engine published for it, the identity carried on them, and the
-// lifecycle state folded from its state records.
+// lifecycle state of its selected control revision.
 type AgentNode struct {
-	// Control is the selected complete revision. Spans supply history and
-	// display context only when this authoritative projection exists.
+	// Control is the selected complete revision, and the only source of the
+	// lifecycle fields below. Nil for an agent seen only through its loop
+	// spans, which is displayable but not restorable.
 	Control *agentcontrol.Agent
 
 	// ID is the agent's spawn-minted runtime handle — the grouping key. It is
@@ -46,19 +43,15 @@ type AgentNode struct {
 	// Spans are the agent's loop spans, oldest first. The last is current.
 	Spans []*Span
 
-	// State is the agent's lifecycle state as of the most recent state
-	// record, and WaitingOn what it is parked on when that state is
-	// WAITING_INPUT.
+	// State is the agent's lifecycle state, and WaitingOn what it is parked
+	// on when that state is WAITING_INPUT.
 	State     string
 	WaitingOn string
 
 	// StopReason says what ended a STOPPED agent: EXPLICIT for a stop
 	// somebody asked for, SESSION for the one session teardown performs on
 	// every surviving runtime. The projection is STOPPED either way, so this
-	// is the only thing telling a dismissal apart from a clean exit — a
-	// distinction a client restoring the trace cannot guess (restore both and
-	// every dismissal is reversed; restore neither and a clean exit restores
-	// nothing). Empty on a trace from an engine that predates it.
+	// is the only thing telling a dismissal apart from a clean exit.
 	StopReason string
 
 	// SnapshotDigest is the portable recipe digest of the agent's last committed
@@ -67,12 +60,8 @@ type AgentNode struct {
 	// from it.
 	SnapshotDigest string
 
-	// PreTeardownState is the last state the agent published that was not a
-	// session-teardown stop, and it is what a restore puts back when State is
-	// a teardown STOPPED: session close stops every surviving runtime, so the
-	// trace's last word on a cleanly closed session's agents says nothing
-	// about what the user wanted. Empty when the agent never published
-	// anything else.
+	// PreTeardownState is the state held before a session-teardown stop, and
+	// what a restore puts back when State is a teardown STOPPED.
 	PreTeardownState string
 }
 
@@ -147,31 +136,10 @@ func (db *DB) buildAgents() []*AgentNode {
 		sort.SliceStable(node.Spans, func(i, j int) bool {
 			return node.Spans[i].Before(node.Spans[j])
 		})
-		// State is latest-wins across the agent's loop spans, and the newest
-		// span holds the newest records by construction. The snapshot digest
-		// follows the same rule for the same reason: a resume-retry relaunch
-		// re-publishes the conversation it picks back up, so the newest span
-		// always carries an anchor.
-		if span := node.Span(); span != nil {
-			node.State = span.AgentState
-			node.WaitingOn = span.AgentWaitingOn
-			node.StopReason = span.AgentStopReason
-			node.SnapshotDigest = span.AgentSnapshotDigest
-		}
-		// The pre-teardown state is the exception: it is the newest one that
-		// EXISTS, not the newest span's. A relaunched loop whose only record
-		// is the teardown stop would otherwise erase what the previous loop
-		// left behind.
-		for i := len(node.Spans) - 1; i >= 0; i-- {
-			if state := node.Spans[i].AgentPreTeardownState; state != "" {
-				node.PreTeardownState = state
-				break
-			}
-		}
 	}
 
-	// Fold canonical controls after diagnostic spans. Imported span/state
-	// history must never become a competing authority for a revised agent.
+	// Lifecycle comes only from control revisions: select one per handle,
+	// preferring the live session's incarnation over imported ones.
 	selected := map[string]agentcontrol.Agent{}
 	live := db.liveTraceID().String()
 	for _, projection := range db.agentControl.Agents() {
@@ -214,8 +182,8 @@ func (db *DB) buildAgents() []*AgentNode {
 // AgentRestore is one entry of a restore plan: what a resuming client needs
 // to re-hydrate one agent instance from a trace it has ingested.
 type AgentRestore struct {
-	// Source identifies the control revision's ordering domain. Zero for
-	// historical split-protocol entries, which do not establish finality.
+	// Source identifies the control revision's ordering domain. Zero for an
+	// agent with no control record, which is never restorable.
 	Source agentcontrol.Key
 	// ID is the agent's spawn-minted runtime handle — the identity it is
 	// restored UNDER, which is what makes the restored agent the same agent
@@ -232,8 +200,8 @@ type AgentRestore struct {
 	// session that published the trace.
 	State string
 
-	// Error is the loop error a FAILED agent carries, taken from its loop
-	// span's status. Empty for every other state.
+	// Error is the loop error a FAILED agent carries, from its control
+	// record. Empty for every other state.
 	Error string
 
 	// SnapshotDigest is the portable recipe digest of the agent's last committed
@@ -241,27 +209,20 @@ type AgentRestore struct {
 	// (DB.CallIDForDigest) and re-hydrates the instance through.
 	SnapshotDigest string
 
-	// ParentAgentID is the runtime handle of the agent whose loop span encloses
-	// this one — a worker's chief. Empty for a top-level agent, which is the
-	// fact focus selection is made of (§3.1c).
+	// ParentAgentID is the runtime handle of the agent that spawned this one
+	// — a worker's chief. Empty for a top-level agent, which is the fact
+	// focus selection is made of (§3.1c).
 	ParentAgentID string
 
-	// LastActivity is when this agent was last seen doing anything: the
-	// newest end time across its loop spans, or their newest start when one
-	// never ended. It exists for the other half of §3.1c's focus rule —
-	// several top-level agents means focusing the most recently ACTIVE one,
-	// which roster order cannot answer, since that orders by when each agent
-	// first appeared. The two routinely disagree: a session's own
-	// conversation is the first agent to appear and usually the last to
-	// speak.
+	// LastActivity is when this agent was last seen doing anything. It
+	// exists for the other half of §3.1c's focus rule — several top-level
+	// agents means focusing the most recently ACTIVE one, which roster order
+	// cannot answer, since that orders by when each agent first appeared.
 	LastActivity time.Time
 
-	// Err says why this entry cannot be restored, when the trace does not
-	// carry enough to restore it: a STOPPED record with no reason, or no
-	// snapshot digest at all. Both are refusals rather than guesses (§3.2,
-	// §4.4) — guessing a stop reason either loses a whole session or
-	// resurrects every dismissal, and guessing an anchor restores an
-	// amnesiac twin under the agent's own ID.
+	// Err says why this entry cannot be restored: the trace has no control
+	// record for it, or its record carries a capture failure or incomplete
+	// lifecycle facts. These are refusals rather than guesses (§3.2, §4.4).
 	//
 	// The entry is still reported, carrying every fact that did resolve, so
 	// a caller can name the agent in its failure and a best-effort restore
@@ -276,29 +237,14 @@ func (entry AgentRestore) Restorable() bool {
 	return entry.Err == nil
 }
 
-// The lifecycle state tokens as they ride the wire (core.AgentState). dagui
-// consumes telemetry, not the engine's Go types, so they are spelled out
-// here.
-const (
-	agentStateIdle         = "IDLE"
-	agentStateRunning      = "RUNNING"
-	agentStateWaitingInput = "WAITING_INPUT"
-	agentStatePaused       = "PAUSED"
-	agentStateStopped      = "STOPPED"
-	agentStateFailed       = "FAILED"
-
-	agentStopExplicit = "EXPLICIT"
-	agentStopSession  = "SESSION"
-)
-
 // RestorePlan projects the trace's agents into what a resuming client needs
 // to re-hydrate them, in roster order.
 //
 // Deliberately a projection, not a query: async-agents §3.3 renounced
 // Query.agents because telemetry is the directory, and resume keeps that
 // property — an agent whose spans a client cannot see stays unreachable to
-// it. The §3.1 state mapping lives here, in one place, so it is testable
-// without an engine and cannot drift between callers.
+// it. The §3.1 state mapping is agentcontrol.Agent.RestoreState, shared with
+// archive verification so it cannot drift between callers.
 //
 // Agents this session already holds are left out: an agent with a loop or
 // identity span in the LIVE trace has a runtime entry here already, whether
@@ -353,232 +299,18 @@ func (node *AgentNode) publishedIn(traceID TraceID) bool {
 }
 
 func (node *AgentNode) restoreEntry() AgentRestore {
-	if a := node.Control; a != nil {
-		state, err := a.RestoreState()
-		failure := ""
-		if state == agentStateFailed {
-			failure = a.Failure
-		}
-		return AgentRestore{Source: a.Key, ID: a.Handle, Name: a.Name, State: state, Error: failure,
-			SnapshotDigest: a.Digest, ParentAgentID: a.Parent, LastActivity: a.Activity, Err: err}
+	a := node.Control
+	if a == nil {
+		return AgentRestore{ID: node.ID, Name: node.Name,
+			Err: fmt.Errorf("agent %q (%s) has no control record: "+
+				"this trace predates agent control records, so it carries nothing to restore it from",
+				node.Name, node.ID)}
 	}
-	entry := AgentRestore{
-		ID:             node.ID,
-		Name:           node.Name,
-		SnapshotDigest: node.SnapshotDigest,
-		ParentAgentID:  node.parentAgentID(),
-		LastActivity:   node.lastActivity(),
+	state, err := a.RestoreState()
+	failure := ""
+	if state == "FAILED" {
+		failure = a.Failure
 	}
-	state, err := node.restoreState()
-	if err != nil {
-		entry.Err = err
-		return entry
-	}
-	entry.State = state
-	if state == agentStateFailed {
-		entry.Error = node.loopError()
-	}
-	if entry.SnapshotDigest == "" {
-		entry.Err = fmt.Errorf("agent %q (%s) published no snapshot digest: "+
-			"this trace predates %s, so there is no conversation to restore it from",
-			node.Name, node.ID, telemetryattrs.AgentSnapshotDigestAttr)
-	}
-	return entry
-}
-
-// restoreState applies design §3.1's table to the agent's last state record.
-func (node *AgentNode) restoreState() (string, error) {
-	if node.State != agentStateStopped {
-		// Everything that is not a stop restores from the record itself; a
-		// missing record reads as a crash, which restores like RUNNING.
-		return node.restorableState(node.State)
-	}
-	switch node.StopReason {
-	case agentStopExplicit:
-		// A stop somebody asked for is terminal on purpose (async-agents
-		// §3.5): it restores as a sealed tombstone, whose snapshot stays
-		// readable so a dismissed worker's WIP is still harvestable.
-		return agentStateStopped, nil
-	case agentStopSession:
-		// Session close stops every surviving runtime, so this record says
-		// nothing about what the user wanted. What they left behind is the
-		// state held before the teardown.
-		return node.restorableState(node.PreTeardownState)
-	default:
-		return "", fmt.Errorf("agent %q (%s) published a STOPPED record with no %s: "+
-			"this trace predates it, so a dismissal cannot be told from the stop session teardown performs",
-			node.Name, node.ID, telemetryattrs.AgentStopReasonAttr)
-	}
-}
-
-// restorableState maps a published state onto one the agent can be restored
-// into.
-//
-// RUNNING, WAITING_INPUT and absence all become IDLE, and that is the one
-// deliberate deviation from "exactly as it was": the loop died with its
-// session, so a roster redisplaying it as running — or as parked on a
-// question nothing will answer — would be lying (async-agents §3.4). What
-// survives is the last committed step; the interrupted turn's input is still
-// on the snapshot and re-steps when the agent is next prompted. Nothing
-// auto-continues.
-func (node *AgentNode) restorableState(state string) (string, error) {
-	switch state {
-	case "", agentStateIdle, agentStateRunning, agentStateWaitingInput:
-		return agentStateIdle, nil
-	case agentStatePaused, agentStateFailed:
-		return state, nil
-	case agentStateStopped:
-		// Only reachable as a pre-teardown state, and only an explicit stop
-		// is ever recorded as one — a session stop is exactly what that
-		// field skips.
-		return agentStateStopped, nil
-	default:
-		// A token from an engine newer than this client. Refuse it for the
-		// same reason the two above are refused: every reading is a guess,
-		// and the wrong one either resurrects or buries an agent.
-		return "", fmt.Errorf("agent %q (%s) published state %q, which this client cannot restore",
-			node.Name, node.ID, state)
-	}
-}
-
-// loopError is the error a failed loop reported, from the newest loop span
-// carrying one: the loop's own status description (core/agent.go sets it from
-// loopErr), which is where a FAILED agent's error survives in the trace.
-func (node *AgentNode) loopError() string {
-	for i := len(node.Spans) - 1; i >= 0; i-- {
-		span := node.Spans[i]
-		if span.Status.Code == codes.Error && span.Status.Description != "" {
-			return span.Status.Description
-		}
-	}
-	return ""
-}
-
-// parentAgentID finds the agent enclosing this one, by walking each loop
-// span's ancestry for another agent's loop span. A worker's loop is started
-// under its chief's tool-call span, so nesting is readable from the DB
-// (§3.1c) — and it is read from the OLDEST loop span first, because that is
-// the one born under the chief; a resume-retry relaunch can happen anywhere.
-func (node *AgentNode) parentAgentID() string {
-	for _, span := range node.Spans {
-		for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
-			if parent.Agent && parent.AgentID != "" && parent.AgentID != node.ID {
-				return parent.AgentID
-			}
-		}
-	}
-	return ""
-}
-
-// lastActivity is the newest timestamp any of the agent's loop spans carries.
-//
-// A span that never ended contributes its START time, not "now": an imported
-// trace's unfinished spans are sealed to one shared bound at import
-// (design §5.1.2), so ends alone would tie every agent of a crashed session
-// together and lose the ordering entirely. Falling back to the start breaks
-// that tie by when each loop last (re)launched, which is the best the trace
-// can say about a session nothing recorded the end of.
-func (node *AgentNode) lastActivity() time.Time {
-	var newest time.Time
-	for _, span := range node.Spans {
-		for _, at := range []time.Time{span.StartTime, span.EndTime} {
-			if at.After(newest) {
-				newest = at
-			}
-		}
-	}
-	return newest
-}
-
-// ingestAgentState folds an agent-state log record (one carrying
-// telemetryattrs.AgentStateAttr) into the target span. It reports whether the
-// record was agent state; such records are consumed entirely and must not be
-// treated as log text — they are data about the agent, not output from it.
-//
-// Latest record wins, including for WaitingOn and StopReason: the engine emits
-// both as an explicit empty string on every record they do not apply to, so a
-// question that has since been answered — or the reason of a stop a resume
-// retried past — is cleared rather than left standing.
-//
-// The one thing kept from the record HISTORY is the state before a
-// session-teardown stop, because the projection a restore needs cannot be
-// computed from the latest record alone: teardown stops every surviving
-// runtime, so its record overwrites the state the user actually left the
-// agent in (see AgentNode.PreTeardownState).
-func (db *DB) ingestAgentState(record sdklog.Record) bool {
-	var state, waitingOn, stopReason string
-	var reserved, validState bool
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
-		switch kv.Key {
-		case telemetryattrs.AgentStateAttr:
-			reserved = true
-			state, validState = LogValueString(kv.Value)
-		case telemetryattrs.AgentWaitingOnAttr:
-			if value, ok := LogValueString(kv.Value); ok {
-				waitingOn = value
-			}
-		case telemetryattrs.AgentStopReasonAttr:
-			if value, ok := LogValueString(kv.Value); ok {
-				stopReason = value
-			}
-		}
-		return true
-	})
-	if !reserved {
-		return false
-	}
-	if !validState {
-		return true
-	}
-
-	spanID := SpanID{SpanID: record.SpanID()}
-	if !spanID.IsValid() {
-		return true
-	}
-	span := db.initSpan(spanID)
-	if state != agentStateStopped || stopReason != agentStopSession {
-		span.AgentPreTeardownState = state
-	}
-	span.AgentState = state
-	span.AgentWaitingOn = waitingOn
-	span.AgentStopReason = stopReason
-	// The roster is derived from spans, so a state change is a DB mutation
-	// like any other; without this the memoized Agents() would go stale.
-	db.mutations++
-	return true
-}
-
-// ingestAgentSnapshot folds an agent-snapshot log record (one carrying
-// telemetryattrs.AgentSnapshotDigestAttr) into the target span, reporting
-// whether the record was one. Like state records these are consumed as data
-// and never rendered as log text.
-//
-// They are a separate channel from state because they are triggered by a
-// different thing: the engine emits one on every commit of the agent's
-// conversation, where state records are edge-triggered on the projected state
-// and most commits do not move it. Latest record wins — this is the tip.
-func (db *DB) ingestAgentSnapshot(record sdklog.Record) bool {
-	var digest string
-	var reserved, validDigest bool
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
-		if kv.Key == telemetryattrs.AgentSnapshotDigestAttr {
-			reserved = true
-			digest, validDigest = LogValueString(kv.Value)
-		}
-		return true
-	})
-	if !reserved {
-		return false
-	}
-	if !validDigest {
-		return true
-	}
-
-	spanID := SpanID{SpanID: record.SpanID()}
-	if !spanID.IsValid() {
-		return true
-	}
-	db.initSpan(spanID).AgentSnapshotDigest = digest
-	db.mutations++
-	return true
+	return AgentRestore{Source: a.Key, ID: a.Handle, Name: a.Name, State: state, Error: failure,
+		SnapshotDigest: a.Digest, ParentAgentID: a.Parent, LastActivity: a.Activity, Err: err}
 }

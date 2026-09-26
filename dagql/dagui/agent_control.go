@@ -22,8 +22,8 @@ func (db *DB) ingestAgentControl(record sdklog.Record) bool {
 	}
 	changed, err := db.agentControl.ApplyRecord(record)
 	if err != nil {
-		// A malformed or equivocal version is not a legacy state/snapshot row.
-		// Keep it away from both text rendering and the compatibility adapter.
+		// A malformed or equivocal version is still control data: keep it
+		// out of text rendering and surface it through AgentControl.
 		db.agentControlErr = errors.Join(db.agentControlErr, err)
 	}
 	if changed || err != nil {

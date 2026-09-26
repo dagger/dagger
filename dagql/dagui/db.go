@@ -567,14 +567,7 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 			continue
 		}
 		if db.ingestAgentControl(log) {
-			continue
-		}
-		if db.ingestAgentState(log) {
 			// agent lifecycle state, not log text
-			continue
-		}
-		if db.ingestAgentSnapshot(log) {
-			// agent resume anchor, not log text
 			continue
 		}
 		if db.ingestCallPayload(log) {

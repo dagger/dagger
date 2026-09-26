@@ -330,30 +330,6 @@ type SpanSnapshot struct {
 	AgentName       string `json:",omitempty"`
 	AgentCallDigest string `json:",omitempty"`
 
-	// AgentState is the agent's lifecycle state as of the most recent state
-	// record folded into this span, and AgentWaitingOn what it is parked on
-	// when that state is WAITING_INPUT. AgentStopReason says who ended a
-	// STOPPED one — a caller (EXPLICIT) or session teardown (SESSION) — which
-	// is the only thing distinguishing a dismissal from a clean exit.
-	// AgentSnapshotDigest is the portable recipe digest of the agent's last
-	// conversation, the anchor a client re-hydrates the instance from.
-	//
-	// AgentPreTeardownState is the one piece of record HISTORY kept here: the
-	// last state that was not a session-teardown stop. Session close stops
-	// every surviving runtime, so latest-wins alone loses the state the user
-	// actually left the agent in — which is what a restore has to put back
-	// (DB.RestorePlan).
-	//
-	// Unlike the fields above these arrive on log records rather than span
-	// attributes, because they change over the span's life and a live span's
-	// attributes are frozen at start (see the dagger.io/agent.* block in
-	// engine/telemetryattrs).
-	AgentState            string `json:",omitempty"`
-	AgentWaitingOn        string `json:",omitempty"`
-	AgentStopReason       string `json:",omitempty"`
-	AgentSnapshotDigest   string `json:",omitempty"`
-	AgentPreTeardownState string `json:",omitempty"`
-
 	// AgentRewindFrom and AgentRewindTo mark a rewind marker: a message span
 	// the engine emits beneath the loop span when an agent's conversation is
 	// replaced by one of its own ancestors (inline prompt editing). From is
