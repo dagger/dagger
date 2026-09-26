@@ -1,6 +1,7 @@
 package secretprovider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
@@ -19,5 +20,19 @@ func cmdProvider(ctx context.Context, cmd string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to run secret command %q: %w", cmd, err)
 	}
-	return stdoutBytes, nil
+	return trimCommandOutput(stdoutBytes), nil
+}
+
+// Strip a final LF or CRLF only from single-line output. Preserve multiline
+// secrets verbatim, since formats such as private keys may need the final newline.
+func trimCommandOutput(output []byte) []byte {
+	if !bytes.HasSuffix(output, []byte("\n")) {
+		return output
+	}
+	line := bytes.TrimSuffix(output, []byte("\n"))
+	line = bytes.TrimSuffix(line, []byte("\r"))
+	if bytes.ContainsAny(line, "\r\n") {
+		return output
+	}
+	return line
 }
