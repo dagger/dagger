@@ -244,7 +244,7 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 			return
 		}
 
-		spans := telemetry.SpansFromPB(req.ResourceSpans)
+		spans := enginetel.SpansFromPB(req.ResourceSpans)
 		forwarder := telemetry.SpanForwarder{Processors: telemetry.SpanProcessors}
 		if exportErr := forwarder.ExportSpans(r.Context(), spans); exportErr != nil {
 			http.Error(w, exportErr.Error(), http.StatusInternalServerError)

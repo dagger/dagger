@@ -7,8 +7,6 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"golang.org/x/sync/errgroup"
-
-	telemetry "github.com/dagger/otel-go"
 )
 
 func ReexportMetricsFromPB(ctx context.Context, exps []sdkmetric.Exporter, req *colmetricspb.ExportMetricsServiceRequest) error {
@@ -19,7 +17,7 @@ func ReexportMetricsFromPB(ctx context.Context, exps []sdkmetric.Exporter, req *
 		var eg errgroup.Group
 		for _, exp := range exps {
 			eg.Go(func() error {
-				resourceMetrics, err := telemetry.ResourceMetricsFromPB(reqResourceMetrics)
+				resourceMetrics, err := ResourceMetricsFromPB(reqResourceMetrics)
 				if err != nil {
 					return fmt.Errorf("failed to unmarshal resource metrics: %w", err)
 				}

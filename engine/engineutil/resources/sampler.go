@@ -2,7 +2,9 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -27,7 +29,8 @@ type Sampler struct {
 	memoryCurrent *memoryCurrentSampler
 	memoryPeak    *memoryPeakSampler
 
-	netNS *netNSSampler
+	netNS     *netNSSampler
+	available metric.Int64Gauge
 }
 
 func NewSampler(
@@ -41,6 +44,12 @@ func NewSampler(
 		commonAttrs: commonAttrs,
 	}
 	var err error
+	s.available, err = meter.Int64Gauge("dagger.resource.sample.available",
+		metric.WithUnit("1"),
+		metric.WithDescription("1 when a resource source was sampled; 0 when it was unavailable or invalid."))
+	if err != nil {
+		return nil, err
+	}
 
 	s.ioStat, err = newIOStatSampler(s.cgroupPath, meter, s.commonAttrs)
 	if err != nil {
@@ -83,33 +92,34 @@ func NewSampler(
 func (s *Sampler) Sample(ctx context.Context) error {
 	var eg errgroup.Group
 
-	eg.Go(func() error {
-		return s.ioStat.sample(ctx)
-	})
-
-	eg.Go(func() error {
-		return s.ioPressure.sample(ctx)
-	})
-
-	eg.Go(func() error {
-		return s.cpuStat.sample(ctx)
-	})
-
-	eg.Go(func() error {
-		return s.cpuPressure.sample(ctx)
-	})
-
-	eg.Go(func() error {
-		return s.memoryCurrent.sample(ctx)
-	})
-
-	eg.Go(func() error {
-		return s.memoryPeak.sample(ctx)
-	})
-
-	eg.Go(func() error {
-		return s.netNS.sample(ctx)
-	})
+	for _, source := range []struct {
+		name   string
+		sample func(context.Context) error
+	}{
+		{ioStatFile, s.ioStat.sample},
+		{ioPressureFile, s.ioPressure.sample},
+		{cpuStatFile, s.cpuStat.sample},
+		{cpuPressureFile, s.cpuPressure.sample},
+		{memoryCurrentFile, s.memoryCurrent.sample},
+		{memoryPeakFile, s.memoryPeak.sample},
+		{"network", s.netNS.sample},
+	} {
+		eg.Go(func() error {
+			err := source.sample(ctx)
+			available := int64(1)
+			if err != nil {
+				available = 0
+			}
+			s.available.Record(ctx, available,
+				metric.WithAttributeSet(s.commonAttrs), metric.WithAttributes(attribute.String("source", source.name)))
+			// A cgroup may not exist yet at startup, or the network provider
+			// may not support measurements. Export absence, not a false zero.
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, errNetworkUnavailable) {
+				return nil
+			}
+			return err
+		})
+	}
 
 	return eg.Wait()
 }

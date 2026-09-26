@@ -2,10 +2,12 @@ package resources
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
+
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -44,10 +46,8 @@ func newMemoryCurrentSampler(cgroupPath string, meter metric.Meter, commonAttrs 
 func (s *memoryCurrentSampler) sample(ctx context.Context) error {
 	sample := newInt64GaugeSample(s.memoryCurrent, s.commonAttrs)
 	bs, err := os.ReadFile(s.memoryCurrentFilePath)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return nil
-	case err != nil:
+	ctx = enginetel.WithObservationTime(ctx, time.Now())
+	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", s.memoryCurrentFilePath, err)
 	}
 
@@ -89,10 +89,8 @@ func newMemoryPeakSampler(cgroupPath string, meter metric.Meter, commonAttrs att
 func (s *memoryPeakSampler) sample(ctx context.Context) error {
 	sample := newInt64GaugeSample(s.memoryPeak, s.commonAttrs)
 	bs, err := os.ReadFile(s.memoryPeakFilePath)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return nil
-	case err != nil:
+	ctx = enginetel.WithObservationTime(ctx, time.Now())
+	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", s.memoryPeakFilePath, err)
 	}
 

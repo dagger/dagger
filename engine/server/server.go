@@ -62,6 +62,8 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 )
 
 type Server struct {
@@ -69,7 +71,9 @@ type Server struct {
 	engineName string
 	// engineInstanceID names this engine process: a random ID created once at
 	// startup. It names the engine in the dagql cache's facts.
-	engineInstanceID string
+	engineInstanceID  string
+	otlpDestination   *enginetel.OTLPDestination
+	telemetryIdentity []*commonpb.KeyValue
 	// cacheFacts receives the dagql cache's facts and cacheFactExport sends
 	// them; both nil when the engine emits none. The alive loop reports
 	// liveness between start and stop. cacheFactShutdownBudget bounds the
@@ -215,6 +219,8 @@ type NewServerOpts struct {
 	// CacheFactExport, when set, makes the dagql cache emit its bookkeeping
 	// facts as OTel log records through its logger.
 	CacheFactExport CacheFactExport
+	// OTLPDestination is engine-owned and independent of session Cloud export.
+	OTLPDestination *enginetel.OTLPDestination
 }
 
 const (
@@ -233,6 +239,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv := &Server{
 		engineName:       opts.Name,
 		engineInstanceID: cmp.Or(opts.EngineInstanceID, uuid.NewString()),
+		otlpDestination:  opts.OTLPDestination,
 
 		rootDir: bkcfg.Root,
 
@@ -260,6 +267,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
 	var err error
+	srv.telemetryIdentity, err = enginetel.ProvisionedIdentity(ctx, srv.engineInstanceID)
+	if err != nil {
+		return nil, fmt.Errorf("configure telemetry identity: %w", err)
+	}
 	if err := srv.configureLocalCacheGC(cfg.GC, ociCfg.GCConfig); err != nil {
 		return nil, err
 	}

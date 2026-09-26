@@ -525,7 +525,7 @@ func (q *cloudMetricQueue) Export(_ context.Context, metrics *metricdata.Resourc
 	if metrics == nil || len(metrics.ScopeMetrics) == 0 {
 		return nil
 	}
-	converted, err := telemetry.ResourceMetricsToPB(metrics)
+	converted, err := enginetel.ResourceMetricsToPB(metrics)
 	if err != nil {
 		slog.Warn("session metrics not published to Cloud", "session", q.bound.sessionID, "error", err)
 		return nil
@@ -611,7 +611,7 @@ func (q *cloudMetricQueue) run() {
 		next := q.queue[0]
 		q.queue = q.queue[1:]
 		q.mu.Unlock()
-		metrics, err := telemetry.ResourceMetricsFromPB(next)
+		metrics, err := enginetel.ResourceMetricsFromPB(next)
 		if err != nil {
 			continue
 		}
@@ -648,6 +648,17 @@ func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params
 	params.EngineTrace = parent.spanExporter
 	params.EngineLogs = parent.logExporter
 	params.EngineMetrics = []sdkmetric.Exporter{parent.metricExporter}
+	// Preserve the remote producer's resource identity. These streams do not
+	// pass through the local SDK resource-enrichment path.
+	if exporter := sess.otlpDestination.SpanExporter(); exporter != nil {
+		params.EngineTrace = enginetel.MultiSpanExporter{exporter, params.EngineTrace}
+	}
+	if exporter := sess.otlpDestination.LogExporter(); exporter != nil {
+		params.EngineLogs = enginetel.MultiLogExporter{exporter, params.EngineLogs}
+	}
+	if exporter := sess.otlpDestination.MetricExporter(); exporter != nil {
+		params.EngineMetrics = append(params.EngineMetrics, exporter)
+	}
 	if !sess.publishesToCloud() {
 		return
 	}
@@ -659,17 +670,15 @@ func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params
 	params.EngineLogsWithoutCloud = params.EngineLogs
 	params.EngineMetricsWithoutCloud = params.EngineMetrics
 	params.EngineTrace = enginetel.MultiSpanExporter{
-		parent.spanExporter,
+		params.EngineTrace,
 		sessionCloudSpanForwarder{telemetry.SpanForwarder{Processors: []sdktrace.SpanProcessor{sess.cloudSpanProcessor}}},
 	}
 	params.EngineLogs = enginetel.MultiLogExporter{
-		parent.logExporter,
+		params.EngineLogs,
 		sessionCloudLogForwarder{telemetry.LogForwarder{Processors: []sdklog.Processor{sess.cloudLogProcessor}}},
 	}
-	params.EngineMetrics = []sdkmetric.Exporter{
-		parent.metricExporter,
-		enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics},
-	}
+	params.EngineMetrics = append(params.EngineMetrics,
+		enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics})
 }
 
 // Telemetry a process in one of the session's containers posts to the
@@ -688,6 +697,10 @@ func (sess *daggerSession) postedSpanExporter(origin string) sdktrace.SpanExport
 			sessionCloudSpanForwarder{telemetry.SpanForwarder{Processors: []sdktrace.SpanProcessor{sess.cloudSpanProcessor}}},
 		}
 	}
+	if exporter := sess.otlpDestination.SpanExporter(); exporter != nil {
+		// Capture before client routing can fail or fan out to ancestors.
+		next = enginetel.MultiSpanExporter{exporter, next}
+	}
 	return originSpanExporter{origin: origin, next: next}
 }
 
@@ -699,14 +712,21 @@ func (sess *daggerSession) postedLogExporter(origin string) sdklog.Exporter {
 			sessionCloudLogForwarder{telemetry.LogForwarder{Processors: []sdklog.Processor{sess.cloudLogProcessor}}},
 		}
 	}
+	if exporter := sess.otlpDestination.LogExporter(); exporter != nil {
+		next = enginetel.MultiLogExporter{exporter, next}
+	}
 	return originLogExporter{origin: origin, next: next}
 }
 
 func (sess *daggerSession) postedMetricExporters(client sdkmetric.Exporter) []sdkmetric.Exporter {
-	if !sess.publishesToCloud() {
-		return []sdkmetric.Exporter{client}
+	exporters := []sdkmetric.Exporter{client}
+	if sess.publishesToCloud() {
+		exporters = append(exporters, enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics})
 	}
-	return []sdkmetric.Exporter{client, enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics}}
+	if exporter := sess.otlpDestination.MetricExporter(); exporter != nil {
+		exporters = append(exporters, exporter)
+	}
+	return exporters
 }
 
 // cloudPayloadOnce passes each call payload to the session's Cloud log
