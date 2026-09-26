@@ -1,0 +1,6 @@
+kind: Fixed
+body: Dang module invocations no longer occasionally stall 5 seconds at the end, waiting on a pooled API connection that never carried a request. It showed up most on `dagger generate`.
+time: 2026-09-16T19:59:29-07:00
+custom:
+    Author: grouville
+    PR: "14180"
