@@ -10,6 +10,15 @@ import { registry } from "./registry.js"
  */
 export const object = registry.object
 
+/** Declare a collection object. */
+export const collection = registry.collection
+/** Select the stored keys field. */
+export const keys = registry.keys
+/** Select the item lookup method. */
+export const get = registry.get
+/** Select the field that receives the collection delta. */
+export const delta = registry.delta
+
 /**
  * The definition of @func decorator that should be on top of any
  * class' method that must be exposed to the Dagger API.
