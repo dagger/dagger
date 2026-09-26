@@ -1174,6 +1174,12 @@ func pruneTargetBytes(policy CachePrunePolicy, usedBytes int64) (int64, bool) {
 	if !thresholdTriggered && !thresholdConfigured && (policy.All || len(policy.Filters) > 0) {
 		return math.MaxInt64, false
 	}
+	// ReservedSpace is a floor on retained usage: reclaiming must never take
+	// usage below it, even when the disk is under MinFreeSpace for reasons
+	// unrelated to this cache (matching buildkit's calculateKeepBytes).
+	if policy.ReservedSpace > 0 {
+		target = min(target, max(0, usedBytes-policy.ReservedSpace))
+	}
 
 	return target, thresholdTriggered
 }
