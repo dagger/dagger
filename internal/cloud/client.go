@@ -128,6 +128,7 @@ type SerializableCertificate struct {
 }
 
 type EngineRequest struct {
+	SingleTenant         bool     `json:"single_tenant,omitempty"`
 	Module               string   `json:"module,omitempty"`
 	Function             string   ` json:"function,omitempty"`
 	ExecCmd              []string `json:"exec_cmd,omitempty"`
