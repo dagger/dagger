@@ -146,7 +146,7 @@ func artifactFlagGroup(flag *pflag.Flag) (string, string) {
 	case "load-module":
 		group, usage = "Workspace options", "Use a one-off `module`"
 	case "engine":
-		group, usage = "Execution options", "Select an `engine` (or set DAGGER_ENGINE)"
+		group, usage = "Execution options", "Select an `engine` (or set DAGGER_ENGINE; run 'dagger help engine' for details)"
 	case "allow-llm":
 		group, usage = "Execution options", "Allow `module` to access LLM APIs; use 'all' for all modules"
 	case "shell-on-error":
