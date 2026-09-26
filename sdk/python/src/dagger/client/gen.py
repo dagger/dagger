@@ -65,7 +65,7 @@ class AgentState(Enum):
     """Runtime released; snapshot remains readable."""
 
     WAITING_INPUT = "WAITING_INPUT"
-    """Blocked on input from the user (derived; see waitingOn)."""
+    """Blocked on input from the user."""
 
 
 class CacheSharingMode(Enum):
@@ -1014,6 +1014,12 @@ class Agent(Type):
         Events never relaunch a stopped subscriber, and an already-reached
         state fires immediately at subscribe time, so a fast agent settling
         before the subscription lands is not missed.
+
+        A restored agent that nothing has sent to, started, or resumed yet is
+        the exception: its state was reached in the session it was restored
+        from, so subscribing to it announces nothing until it next
+        transitions. This is how a restore reinstalls recorded subscriptions
+        without waking their subscribers.
 
         Idempotent per subscriber; re-subscribing replaces the state set.
 
@@ -11093,20 +11099,6 @@ class LLM(Type):
         _ctx = self._select("contextWindow", _args)
         return await _ctx.execute(int | None)
 
-    async def emit_history(self) -> Self:
-        """Re-emit telemetry spans for the full message history, so a loaded
-        conversation displays in the TUI.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        return await self._ctx.execute_sync(self, "emitHistory", _args)
-
     def fork(self, label: str) -> Self:
         """Fork the conversation, so that otherwise-identical follow-ups evaluate
         independently instead of deduplicating to a single cached result.
@@ -11247,37 +11239,6 @@ class LLM(Type):
         _ctx = self._select("model", _args)
         return await _ctx.execute(str)
 
-    async def portable_id(self) -> str:
-        """A portable, self-contained ID for the conversation that node() can
-        resolve in any session. Unlike id, which may return an engine-local
-        runtime handle valid only within the current session, this returns the
-        recipe form suitable for persisting and later restoring the
-        conversation. The recipe is flattened: bindings superseded during the
-        session (workspace overlays recorded by each mutating tool call, and
-        re-bound toolsets) are dropped, while the current workspace binding —
-        including any pending, un-exported edits — is preserved.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("portableID", _args)
-        return await _ctx.execute(str)
-
     async def provider(self) -> str:
         """The provider serving the model, e.g. "anthropic", "openai", "google",
         or "local".
@@ -11337,6 +11298,7 @@ class LLM(Type):
         name: str | None = None,
         handle: str | None = None,
         state: AgentState | None = AgentState.IDLE,
+        parent_handle: str | None = None,
         error: str | None = "",
     ) -> Agent:
         """Spawn the conversation as an agent: a startable, addressable
@@ -11382,6 +11344,11 @@ class LLM(Type):
             restored loop died with the session that published it — restore
             such an agent as IDLE, its interrupted turn's input still pending
             on the conversation.
+        parent_handle:
+            Recorded parent handle when restoring an agent. Lineage does not
+            install a notification subscription. Requires a supplied handle.
+            The parent must already be restored in this session and cannot be
+            the agent itself or its descendant.
         error:
             The loop error to create the agent with, for state FAILED. Refused
             with any other state.
@@ -11397,6 +11364,7 @@ class LLM(Type):
             Arg("name", name, None),
             Arg("handle", handle, None),
             Arg("state", state, AgentState.IDLE),
+            Arg("parentHandle", parent_handle, None),
             Arg("error", error, ""),
         ]
         return await self._ctx.execute_sync(self, "spawn", _args, Agent)
@@ -14865,6 +14833,41 @@ class Query(Root):
         ]
         _ctx = self._select("setSecret", _args)
         return Secret(_ctx)
+
+    async def set_session_title(self, title: str) -> Void | None:
+        """Name the current session.
+
+        The title renames the session wherever its telemetry is shown (the
+        calling client's primary span, e.g. the CLI's command span) and labels
+        its engine archive, as listed by dagger agent --resume. The latest
+        title wins. Only the session's main client may set it.
+
+        .. caution::
+            Experimental: Session APIs are likely to change.
+
+        Parameters
+        ----------
+        title:
+            The title, sanitized to a single printable line.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("title", title),
+        ]
+        _ctx = self._select("setSessionTitle", _args)
+        await _ctx.execute()
 
     def source_map(
         self,

@@ -21,7 +21,7 @@ enum AgentState: string
     /** A model request or tool evaluation is in flight. */
     case RUNNING = 'RUNNING';
 
-    /** Blocked on input from the user (derived; see waitingOn). */
+    /** Blocked on input from the user. */
     case WAITING_INPUT = 'WAITING_INPUT';
 
     /** Mailbox accepting but not draining, until resume. */

@@ -41,6 +41,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -1173,7 +1174,7 @@ func (fe *frontendPretty) toggleNotifications() {
 func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
 	fe.dispatch(func() {
 		// Remember the latest data even when the status line isn't up yet: on
-		// resume, LoadSession pushes the restored conversation's stats before the
+		// resume, the restored conversation's stats are pushed before the
 		// shell (and its status line) is created, so startShell seeds the new
 		// status line from here rather than dropping the update.
 		fe.statusLineData = data
@@ -1701,8 +1702,8 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 		WithKeyMap(frontendFormKeyMap()).
 		WithWidth(fe.window.Width).
 		WithShowHelp(false)
-	// Cap the form at half the screen so a tall field (e.g. the .resume session
-	// picker's long Select) stays scrollable instead of dominating the terminal.
+	// Cap the form at half the screen so a tall field (e.g. a long Select)
+	// stays scrollable instead of dominating the terminal.
 	// A form that already fits keeps its natural height: forcing the cap would
 	// pad compact confirmations with blank rows.
 	if h := fe.window.Height; h > 0 {
@@ -2887,12 +2888,12 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		if fe.commandView != nil {
 			fe.commandView.Update()
 		}
-		// Agent state rides the log stream (design §9), so a state change
-		// arrives here rather than on a span.
+		// Agent state rides control records on the log stream, so a state
+		// change arrives here rather than on a span.
 		fe.updateAgentRoster()
-		// So do conversation commits: a snapshot record marks a step
-		// boundary, which is the cue to refresh the focused conversation's
-		// UI surfaces.
+		// So do conversation commits: a control revision with a new
+		// snapshot digest marks a step boundary, which is the cue to refresh
+		// the focused conversation's UI surfaces.
 		fe.notifyAgentSteps()
 		fe.Update()
 	})
@@ -4372,11 +4373,10 @@ func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
 			name = "agent"
 		}
 		entries = append(entries, AgentRosterEntry{
-			ID:        agent.ID,
-			Name:      name,
-			State:     agent.State,
-			WaitingOn: agent.WaitingOn,
-			Focused:   agent.ID != "" && agent.ID == focused,
+			ID:      agent.ID,
+			Name:    name,
+			State:   agent.State,
+			Focused: agent.ID != "" && agent.ID == focused,
 			// An agent whose loop span carries no call digest was never
 			// addressable, and one whose handle failed to rebuild has been
 			// proven not to be. Either way the entry is watch-only, and says
@@ -4997,14 +4997,18 @@ func (fe *frontendPretty) promoteConversationLocked() {
 	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
 		host = primary
 	}
-	if host == nil || !fe.db.HasConversationForSpan(host) {
-		return
-	}
-	if host.LLMRole != "" {
+	if host == nil || host.LLMRole != "" {
 		// The host is itself a message: there is no setup noise above it to hide.
 		return
 	}
+	// Gate on what would actually be promoted, not on the host's own subtree:
+	// a restored session's transcript hangs off the IMPORTED root, so until
+	// this session says something the host's subtree holds no message and the
+	// restored scrollback would stay hidden behind the setup rows.
 	scope, nodes := fe.conversationToPromote()
+	if len(nodes) == 0 {
+		return
+	}
 	// Withdraw the previous scope before wiring the new one: promotion only
 	// adds, so a switch that skipped this would reveal both agents' transcripts
 	// at once (see DB.DemoteConversationNodesFrom).
@@ -6832,11 +6836,38 @@ func encodedIDForCallDigest(db *dagui.DB, digest string) (string, error) {
 	return id.Encode()
 }
 
+// WaitForEventLoop is an application barrier, rather than an exporter flush. The
+// marker uses the same ordered dispatch queue as spans, logs, and metrics; when
+// it runs their DB mutations are visible to subsequent restore-plan reads.
+func (fe *frontendPretty) WaitForEventLoop(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	done := make(chan struct{})
+	fe.dispatch(func() { close(done) })
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (fe *frontendPretty) AgentControl() (agents []agentcontrol.Agent, subscriptions []agentcontrol.Subscription, err error) {
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		agents, subscriptions, err = fe.db.AgentControl()
+	})
+	<-done
+	return
+}
+
 // AgentRestorePlan projects the imported trace's agents into a restore plan
 // (AgentRestorer, design §5.1's "Reading the DB back").
 //
 // It runs on the event loop and blocks for the result, like every other DB
-// read a run-goroutine caller makes: `dagger agent --trace` calls this
+// read a run-goroutine caller makes: `dagger agent -r` calls this
 // immediately after a fetch whose exports are still being dispatched onto
 // this same goroutine, and RestorePlan walks every span in the DB.
 func (fe *frontendPretty) AgentRestorePlan() []dagui.AgentRestore {
@@ -7052,7 +7083,12 @@ func (fe *frontendPretty) quitAction(interruptErr error) {
 		fe.quitting = true
 		fe.doQuit()
 	} else {
-		slog.Warn("canceling... (press again to exit immediately)")
+		// Ctrl+D on an empty prompt is an ordinary exit, not an interrupt:
+		// tearing the session down is the expected outcome, so don't warn
+		// about it. A second press still exits immediately.
+		if !errors.Is(interruptErr, ErrShellExited) {
+			slog.Warn("canceling... (press again to exit immediately)")
+		}
 		fe.interrupted = true
 		fe.interrupt(interruptErr)
 	}

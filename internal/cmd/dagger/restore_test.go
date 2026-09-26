@@ -1,13 +1,17 @@
 package daggercmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	stdslog "log/slog"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,6 +67,11 @@ func (f *fakeRestoreTarget) Rehydrate(_ context.Context, entry dagui.AgentRestor
 	}
 	f.rehydrat[entry.ID] = snapshotID
 	return "handle:" + entry.ID, nil
+}
+
+func (f *fakeRestoreTarget) Subscribe(_ context.Context, watched, subscriber string, states []string) error {
+	f.calls = append(f.calls, fmt.Sprintf("subscribe:%s:%s:%v", watched, subscriber, states))
+	return nil
 }
 
 func (f *fakeRestoreTarget) Adopt(_ context.Context, entry dagui.AgentRestore, agentID string) error {
@@ -217,57 +226,113 @@ func TestRestoreFocusOverride(t *testing.T) {
 	})
 }
 
-// TestRestoreFailsOnAnUnrestorableAgent is §5.3.3, and the reason it fails
-// LOUDLY: a worker the trace cannot restore is exactly the hole the chief's
-// next tool dispatch falls into, and with §4.2 that dispatch is an error
-// arriving minutes later with none of this context. The refusal names the
-// agent and its anchor, and nothing is created before it happens.
-func TestRestoreFailsOnAnUnrestorableAgent(t *testing.T) {
-	t.Run("the projection refused it", func(t *testing.T) {
-		src, dst := chiefAndWorkers(), newFakeRestoreTarget()
-		src.plan[1].Err = errors.New(`agent "scout" (agent-scout) published a STOPPED record with no reason`)
-		err := executeRestorePlan(context.Background(), src, dst, restoreRequest())
-		require.ErrorContains(t, err, "agent-scout")
-		require.ErrorContains(t, err, "--partial")
-		require.Empty(t, dst.calls, "a refused restore must not create anything")
-	})
-
-	t.Run("the anchor does not rebuild", func(t *testing.T) {
-		src, dst := chiefAndWorkers(), newFakeRestoreTarget()
-		delete(src.anchors, "xxh3:scout")
-		err := executeRestorePlan(context.Background(), src, dst, restoreRequest())
-		require.ErrorContains(t, err, "agent-scout")
-		require.ErrorContains(t, err, "never reached this client")
-		require.Empty(t, dst.calls, "a refused restore must not create anything")
-	})
+// captureRestoreWarnings collects what a best-effort restore logs about the
+// agents and subscriptions it skipped.
+func captureRestoreWarnings(t *testing.T) *bytes.Buffer {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(stdslog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
 }
 
-// TestRestorePartialSkipsExactlyTheUnrestorableOnes: --partial is the opt-in
-// to best-effort, and it skips precisely the entries that were refused —
-// which is what a plan that refused wholesale could not express.
-func TestRestorePartialSkipsExactlyTheUnrestorableOnes(t *testing.T) {
+// TestRestoreSkipsAnUnrestorableAgent: restore is best-effort. An agent the
+// trace does not carry enough to restore is skipped rather than costing the
+// rest of the session, and the warning names it and says why — the skipped
+// worker is the hole a later tool dispatch falls into, so the reason must be
+// on record before that happens.
+func TestRestoreSkipsAnUnrestorableAgent(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		breakPlan func(*fakeRestorePlan)
+		reason    string
+	}{
+		{"the projection refused it", func(src *fakeRestorePlan) {
+			src.plan[1].Err = errors.New("published a STOPPED record with no reason")
+		}, "published a STOPPED record with no reason"},
+		{"the anchor does not rebuild", func(src *fakeRestorePlan) {
+			delete(src.anchors, "xxh3:scout")
+		}, "never reached this client"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			warnings := captureRestoreWarnings(t)
+			src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+			tc.breakPlan(src)
+			require.NoError(t, executeRestorePlan(context.Background(), src, dst, restoreRequest()))
+			require.Equal(t, []string{
+				"rehydrate:agent-chief", "rehydrate:agent-tests",
+				"adopt:agent-chief", "adopt:agent-tests", "focus:agent-chief",
+			}, dst.calls)
+			require.Contains(t, warnings.String(), "agent not restored")
+			require.Contains(t, warnings.String(), "scout (agent-scout)")
+			require.Contains(t, warnings.String(), tc.reason)
+		})
+	}
+}
+
+// TestRestoreSkipsExactlyTheUnrestorableOnes: best-effort skips precisely
+// the entries that were refused and restores the rest.
+func TestRestoreSkipsExactlyTheUnrestorableOnes(t *testing.T) {
 	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
 	delete(src.anchors, "xxh3:scout")
 	src.plan[2].Err = errors.New("published no snapshot digest")
 
-	req := restoreRequest()
-	req.partial = true
-	require.NoError(t, executeRestorePlan(context.Background(), src, dst, req))
+	require.NoError(t, executeRestorePlan(context.Background(), src, dst, restoreRequest()))
 
 	require.Equal(t, []string{"rehydrate:agent-chief", "adopt:agent-chief", "focus:agent-chief"},
-		dst.calls, "--partial must skip the refused entries and restore the rest")
+		dst.calls, "restore must skip the refused entries and restore the rest")
 }
 
-// TestRestoreFailsWhenNothingCanBeRestored: --partial degrades a restore, it
-// does not turn one into an empty session that looks like it worked.
+// TestRestoreDropsEdgesToSkippedAgents: a recorded subscription is
+// reinstalled only when both of its endpoints were restored.
+func TestRestoreDropsEdgesToSkippedAgents(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	ns := agentcontrol.Namespace{Session: "source", Trace: restoreRequest().traceID, Incarnation: "generation"}
+	for i := range src.plan {
+		src.plan[i].Source = agentcontrol.Key{Namespace: ns, Handle: src.plan[i].ID}
+	}
+	delete(src.anchors, "xxh3:scout")
+	edges := []agentcontrol.Subscription{
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-scout", Subscriber: "agent-chief"}, Revision: 1, States: []string{"IDLE"}},
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-tests", Subscriber: "agent-chief"}, Revision: 1, States: []string{"IDLE"}},
+	}
+	require.NoError(t, executeRestoreGraph(t.Context(), src, dst, restoreRequest(), edges))
+	require.Equal(t, []string{
+		"rehydrate:agent-chief", "rehydrate:agent-tests",
+		"subscribe:handle:agent-tests:handle:agent-chief:[IDLE]",
+		"adopt:agent-chief", "adopt:agent-tests", "focus:agent-chief",
+	}, dst.calls)
+	require.Contains(t, warnings.String(), "dropped subscription to an agent that was not restored")
+	require.Contains(t, warnings.String(), "watched=agent-scout")
+}
+
+// TestRestoreSkipsARefusedRehydration: best-effort extends to an agent the
+// engine refuses, not just one whose anchor did not resolve.
+func TestRestoreSkipsARefusedRehydration(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	dst.failOn = "agent-chief"
+	require.NoError(t, executeRestorePlan(t.Context(), src, dst, restoreRequest()))
+	require.NotContains(t, dst.calls, "adopt:agent-chief")
+	require.Contains(t, dst.calls, "adopt:agent-scout")
+	require.Contains(t, dst.calls, "adopt:agent-tests")
+	// With the chief gone, both workers are restored top-level; focus goes to
+	// the most recently active of them.
+	require.Equal(t, "agent-tests", dst.focused)
+	require.Contains(t, warnings.String(), "interactive (agent-chief)")
+	require.Contains(t, warnings.String(), "already has a runtime entry")
+}
+
+// TestRestoreFailsWhenNothingCanBeRestored: best-effort degrades a restore,
+// it does not turn one into an empty session that looks like it worked.
 func TestRestoreFailsWhenNothingCanBeRestored(t *testing.T) {
 	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
 	src.anchors = nil
 
-	req := restoreRequest()
-	req.partial = true
-	err := executeRestorePlan(context.Background(), src, dst, req)
+	err := executeRestorePlan(context.Background(), src, dst, restoreRequest())
 	require.ErrorContains(t, err, "no agent in trace")
+	require.ErrorContains(t, err, "scout (agent-scout)", "the failure must list what was skipped and why")
 	require.Empty(t, dst.calls)
 }
 
@@ -281,36 +346,195 @@ func TestRestoreFailsOnAnEmptyPlan(t *testing.T) {
 	require.Empty(t, dst.calls)
 }
 
-// TestRestoreStopsOnARefusedRehydration: rehydrate refuses an instance that
-// already has a runtime entry (§4.1's existence check), and that refusal means
-// the projection was wrong — not that the rest of the plan should be attempted
-// against a half-restored session.
-func TestRestoreStopsOnARefusedRehydration(t *testing.T) {
+func TestRestoreInstallsGraphBeforeAttachment(t *testing.T) {
 	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
-	dst.failOn = "agent-scout"
-
-	err := executeRestorePlan(context.Background(), src, dst, restoreRequest())
-	require.ErrorContains(t, err, `re-hydrate agent "scout" (agent-scout)`)
-	require.ErrorContains(t, err, "already has a runtime entry")
-	require.NotContains(t, dst.calls, "adopt:agent-chief",
-		"a failed re-hydration must not leave conversations attached to a half-restored session")
+	// Archive order need not be parent-first.
+	src.plan[0], src.plan[2] = src.plan[2], src.plan[0]
+	ns := agentcontrol.Namespace{Session: "source", Trace: restoreRequest().traceID, Incarnation: "generation"}
+	for i := range src.plan {
+		src.plan[i].Source = agentcontrol.Key{Namespace: ns, Handle: src.plan[i].ID}
+	}
+	edges := []agentcontrol.Subscription{
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-scout", Subscriber: "agent-chief"}, Revision: 2, States: []string{"IDLE", "FAILED"}},
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-tests", Subscriber: "agent-scout"}, Revision: 1, States: []string{"PAUSED"}},
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-tests", Subscriber: "agent-chief"}, Revision: 3},
+	}
+	require.NoError(t, executeRestoreGraph(t.Context(), src, dst, restoreRequest(), edges))
+	require.Equal(t, []string{
+		"rehydrate:agent-chief", "rehydrate:agent-tests", "rehydrate:agent-scout",
+		"subscribe:handle:agent-scout:handle:agent-chief:[IDLE FAILED]",
+		"subscribe:handle:agent-tests:handle:agent-scout:[PAUSED]",
+		"adopt:agent-chief", "adopt:agent-tests", "adopt:agent-scout", "focus:agent-chief",
+	}, dst.calls)
 }
 
-// TestAgentTraceFlagConflicts is §5.4's surface. Both refusals are about two
-// things claiming to say what the session is: a saved session and a trace are
-// two stores for one conversation, and a restored session's composition comes
-// from the trace rather than from the workspace.
+func TestRestoreRejectsInvalidGraphBeforeCreation(t *testing.T) {
+	for _, mode := range []string{"cycle", "duplicate"} {
+		t.Run(mode, func(t *testing.T) {
+			src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+			switch mode {
+			case "cycle":
+				src.plan[0].ParentAgentID = "agent-scout"
+			case "duplicate":
+				src.plan = append(src.plan, src.plan[0])
+			}
+			require.Error(t, executeRestoreGraph(t.Context(), src, dst, restoreRequest(), nil))
+			require.Empty(t, dst.calls)
+		})
+	}
+}
+
+// parentRecordingTarget also records the parent each agent was spawned under.
+type parentRecordingTarget struct {
+	*fakeRestoreTarget
+	parents map[string]string
+}
+
+func (f *parentRecordingTarget) Rehydrate(ctx context.Context, entry dagui.AgentRestore, snapshotID string) (string, error) {
+	f.parents[entry.ID] = entry.ParentAgentID
+	return f.fakeRestoreTarget.Rehydrate(ctx, entry, snapshotID)
+}
+
+// TestRestoreDetachesAgentsWhoseParentWasNotRestored: a parent absent from
+// the trace, or skipped, costs neither the restore nor its workers. They are
+// restored top-level: naming a parent outside the new session's roster would
+// leave its archive unable to seal.
+func TestRestoreDetachesAgentsWhoseParentWasNotRestored(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		breakPlan func(*fakeRestorePlan, *fakeRestoreTarget)
+		calls     []string
+	}{
+		{"parent outside the roster", func(src *fakeRestorePlan, _ *fakeRestoreTarget) {
+			src.plan = src.plan[1:]
+		}, []string{
+			"rehydrate:agent-scout", "rehydrate:agent-tests",
+			"adopt:agent-scout", "adopt:agent-tests", "focus:agent-tests",
+		}},
+		{"parent anchor does not rebuild", func(src *fakeRestorePlan, _ *fakeRestoreTarget) {
+			delete(src.anchors, "xxh3:chief")
+		}, []string{
+			"rehydrate:agent-scout", "rehydrate:agent-tests",
+			"adopt:agent-scout", "adopt:agent-tests", "focus:agent-tests",
+		}},
+		{"parent refused by the engine", func(_ *fakeRestorePlan, dst *fakeRestoreTarget) {
+			dst.failOn = "agent-chief"
+		}, []string{
+			"rehydrate:agent-chief", "rehydrate:agent-scout", "rehydrate:agent-tests",
+			"adopt:agent-scout", "adopt:agent-tests", "focus:agent-tests",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			warnings := captureRestoreWarnings(t)
+			src := chiefAndWorkers()
+			dst := &parentRecordingTarget{fakeRestoreTarget: newFakeRestoreTarget(), parents: map[string]string{}}
+			tc.breakPlan(src, dst.fakeRestoreTarget)
+			require.NoError(t, executeRestorePlan(t.Context(), src, dst, restoreRequest()))
+			require.Equal(t, tc.calls, dst.calls)
+			require.Equal(t, "", dst.parents["agent-scout"])
+			require.Equal(t, "", dst.parents["agent-tests"])
+			require.Contains(t, warnings.String(), "restoring agent without its parent")
+			require.Contains(t, warnings.String(), "scout (agent-scout)")
+			require.Contains(t, warnings.String(), "parent=agent-chief")
+		})
+	}
+
+	t.Run("restored parent is kept", func(t *testing.T) {
+		src := chiefAndWorkers()
+		dst := &parentRecordingTarget{fakeRestoreTarget: newFakeRestoreTarget(), parents: map[string]string{}}
+		require.NoError(t, executeRestorePlan(t.Context(), src, dst, restoreRequest()))
+		require.Equal(t, map[string]string{"agent-chief": "", "agent-scout": "agent-chief", "agent-tests": "agent-chief"}, dst.parents)
+	})
+}
+
+// TestRestoreDropsEdgesOutsideTheRoster: a subscription naming an agent the
+// trace never carried is dropped with a warning, like one to a skipped agent.
+func TestRestoreDropsEdgesOutsideTheRoster(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	ns := agentcontrol.Namespace{Session: "source", Trace: restoreRequest().traceID, Incarnation: "generation"}
+	for i := range src.plan {
+		src.plan[i].Source = agentcontrol.Key{Namespace: ns, Handle: src.plan[i].ID}
+	}
+	edges := []agentcontrol.Subscription{
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-chief", Subscriber: "missing"}, Revision: 1, States: []string{"IDLE"}},
+		{EdgeKey: agentcontrol.EdgeKey{Namespace: ns, Watched: "agent-tests", Subscriber: "agent-chief"}, Revision: 1, States: []string{"IDLE"}},
+	}
+	require.NoError(t, executeRestoreGraph(t.Context(), src, dst, restoreRequest(), edges))
+	require.Equal(t, []string{
+		"rehydrate:agent-chief", "rehydrate:agent-scout", "rehydrate:agent-tests",
+		"subscribe:handle:agent-tests:handle:agent-chief:[IDLE]",
+		"adopt:agent-chief", "adopt:agent-scout", "adopt:agent-tests", "focus:agent-chief",
+	}, dst.calls)
+	require.Contains(t, warnings.String(), "dropped subscription to an agent that was not restored")
+	require.Contains(t, warnings.String(), "subscriber=missing")
+}
+
+// TestAgentTraceFlagConflicts is §5.4's surface: a restored session's
+// composition comes from the trace rather than from the workspace.
 func TestAgentTraceFlagConflicts(t *testing.T) {
 	const traceID = "2f123ba77bf7bd2d4db2f70ed20613e8"
 
-	require.NoError(t, validateAgentTraceFlags(traceID, false, nil))
-	require.NoError(t, validateAgentTraceFlags("", true, []string{"editor"}),
-		"the flags only conflict WITH --trace")
+	require.NoError(t, validateAgentTraceFlags(traceID, nil))
+	require.NoError(t, validateAgentTraceFlags("", []string{"editor"}))
 
-	err := validateAgentTraceFlags(traceID, true, nil)
-	require.ErrorContains(t, err, "-r/--resume")
-
-	err = validateAgentTraceFlags(traceID, false, []string{"editor", "dagger-go"})
+	err := validateAgentTraceFlags(traceID, []string{"editor", "dagger-go"})
 	require.ErrorContains(t, err, "editor, dagger-go")
 	require.ErrorContains(t, err, "come from the trace")
+}
+
+// TestResumeFlagResolution covers -r/--resume and its deprecated --trace
+// alias: a bare -r lists archives, and a trace ID restores whichever way it
+// is spelled.
+func TestResumeFlagResolution(t *testing.T) {
+	const traceID = "2f123ba77bf7bd2d4db2f70ed20613e8"
+	for _, tc := range []struct {
+		name      string
+		resume    agentResumeFlag
+		resumeSet bool
+		alias     string
+		aliasSet  bool
+		args      []string
+		wantTrace string
+		wantList  bool
+		wantArgs  []string
+		wantErr   string
+	}{
+		{name: "compose", args: []string{"editor"}, wantArgs: []string{"editor"}},
+		{name: "bare -r lists", resume: agentResumeList, resumeSet: true, wantList: true},
+		{name: "-r=<id>", resume: traceID, resumeSet: true, wantTrace: traceID},
+		{name: "-r <id>", resume: agentResumeList, resumeSet: true, args: []string{traceID}, wantTrace: traceID},
+		{name: "bare -r with agent names still lists", resume: agentResumeList, resumeSet: true, args: []string{"editor"}, wantList: true, wantArgs: []string{"editor"}},
+		{name: "--trace alias", alias: traceID, aliasSet: true, wantTrace: traceID},
+		{name: "both", resume: traceID, resumeSet: true, alias: traceID, aliasSet: true, wantErr: "deprecated alias"},
+		{name: "empty -r=", resume: "", resumeSet: true, wantErr: "requires a trace ID"},
+		{name: "empty --trace", alias: "", aliasSet: true, wantErr: "requires a trace ID"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			traceID, list, args, err := resolveResumeFlags(tc.resume, tc.resumeSet, tc.alias, tc.aliasSet, tc.args)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantTrace, traceID)
+			require.Equal(t, tc.wantList, list)
+			require.Equal(t, tc.wantArgs, args)
+		})
+	}
+}
+
+// TestTraceFlagIsDeprecated: --trace still works but warns on use and is
+// hidden from help; -r/--resume is the documented flag.
+func TestTraceFlagIsDeprecated(t *testing.T) {
+	flag := agentCmd.Flags().Lookup("trace")
+	require.NotNil(t, flag)
+	require.NotEmpty(t, flag.Deprecated)
+	require.Contains(t, flag.Deprecated, "-r/--resume")
+	resume := agentCmd.Flags().Lookup("resume")
+	require.NotNil(t, resume)
+	require.Equal(t, "r", resume.Shorthand)
+	require.False(t, resume.Hidden)
+	require.Equal(t, string(agentResumeList), resume.NoOptDefVal)
+	require.Nil(t, agentCmd.Flags().Lookup("list-archives"), "a bare -r replaces --list-archives")
 }

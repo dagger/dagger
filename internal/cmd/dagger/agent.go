@@ -2,25 +2,31 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 )
 
 var agentListMode bool
-var agentResume agentSessionFlag
+var agentResume agentResumeFlag
 var agentTrace string
 var agentFocus string
-var agentPartial bool
 
 var agentCmd = &cobra.Command{
 	Use:   "agent [options] [name...]",
@@ -31,22 +37,29 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
-With --trace, a past session is restored from the trace it published to Dagger
-Cloud: every agent it ran comes back under the same identity, with the
-conversation and lifecycle state it had, and the old session's whole progress
-view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
-agents are still running FORKS them — the restored instances are new runtimes
-in this session, not a hand-off of the live ones. And messages that were
-enqueued but never consumed are not in the trace at all, so they are not
-restored; anything a turn actually consumed is part of its conversation and is.
+With -r <trace-id>, restore agents, committed conversations, Workspaces, tools,
+lifecycle state, and notification subscriptions from a past session's trace. No
+destination agent modules are composed. A retained engine archive provides a
+verified bootstrap before background history loading. If no local archive is
+retained, the CLI transparently fetches the trace from Dagger Cloud and validates
+its observed canonical records and recipe closure. Cloud restore waits for the
+whole trace and cannot prove that later records or entirely absent agents were not
+lost; it does not invent an archive finality seal.
+
+Restore forks new inert runtimes; it does not hand off a live session or start a
+model turn. Pending messages not committed to a conversation are not recovered.
+
+Restore is best-effort: an agent the trace does not carry enough to restore is
+skipped, along with its subscriptions, and a warning names it and why.
+
+Run -r with no trace ID to list retained engine archives without restoring.
 
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                 # Resume a saved session (interactive picker)
-  dagger agent -r=<session>       # Resume a specific saved session
-  dagger agent --trace <id>       # Restore a past session from its Dagger Cloud trace
+  dagger agent -r                 # List retained engine archives
+  dagger agent -r <trace-id>      # Restore agents from a past session's trace
 `,
 	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
@@ -56,27 +69,47 @@ Examples:
 		showFinalProgressKey: "true",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resume := cmd.Flags().Changed("resume")
+		traceID, listArchives, args, err := resolveResumeFlags(
+			agentResume, cmd.Flags().Changed("resume"),
+			agentTrace, cmd.Flags().Changed("trace"),
+			args)
+		if err != nil {
+			return err
+		}
 		// Refuse the combinations that have no meaning before any engine work
 		// happens (hack/designs/resume-from-trace.md §5.4).
-		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
+		if err := validateAgentTraceFlags(traceID, args); err != nil {
+			return err
+		}
+		if err := validateArchiveFlags(traceID, agentFocus, listArchives, agentListMode, args); err != nil {
 			return err
 		}
 		// The prompt is about to use the LLM, so renew an expired subscription
 		// login up front. The on-demand refresher hook exports the renewed
 		// token on the engine's first credential lookup.
-		if err := llmconfig.RefreshOAuthTokensIfNeeded(cmd.Context()); err != nil {
-			slog.Warn("failed to refresh LLM OAuth tokens", "error", err)
+		if !listArchives && !agentListMode {
+			if err := llmconfig.RefreshOAuthTokensIfNeeded(cmd.Context()); err != nil {
+				slog.Warn("failed to refresh LLM OAuth tokens", "error", err)
+			}
 		}
-		return withEngine(
+		// Set once the prompt exits with agents behind it and an engine archive
+		// or Cloud can serve the trace; read after the TUI has torn down.
+		// Atomic because a second Ctrl+D exits the frontend without waiting
+		// for the run to return.
+		var resumeTrace atomic.Pointer[string]
+		err = withEngine(
 			cmd.Context(),
 			client.Params{
 				// A trace carries the workspace and module recipes needed to restore
 				// its agents. Loading modules from the destination checkout would
 				// both be unnecessary and make cold restore depend on that checkout.
-				LoadWorkspaceModules: agentTrace == "" || agentListMode,
+				LoadWorkspaceModules: !listArchives && traceID == "",
 			},
 			func(ctx context.Context, engineClient *client.Client) error {
+				source := archive.NewClient(client.EngineConn(engineClient))
+				if listArchives {
+					return listAgentArchives(ctx, source, cmd.OutOrStdout())
+				}
 				dag := engineClient.Dagger()
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
@@ -85,85 +118,177 @@ Examples:
 				// a stable baseline when possible, then open the prompt. A module
 				// function returning LLM already lands in prompt mode today.
 				//
-				// Trace restore deliberately starts from an unbound base instead:
-				// the restored recipes carry their own frozen workspaces and must not
-				// read or load modules from the destination checkout.
+				// Trace restore initializes only inert client plumbing. Its archived
+				// anchors, not a destination base LLM, own the provider and workspace.
 				var llmID string
 				var err error
-				if agentTrace != "" {
-					llmID, err = freshAgentBase(ctx, dag)
-				} else {
+				if traceID == "" {
 					llmID, err = composeAgents(ctx, dag, args)
 				}
 				if err != nil {
 					return err
 				}
-				// -r/--resume optionally restores a saved session before the
-				// prompt starts: a session id resumes it directly, the picker
-				// keyword (what a bare -r resolves to) opens the interactive
-				// picker. --trace restores a past session from its published
-				// trace instead.
-				sessionID := agentResume.SessionID()
 				restore := traceRestore{
-					traceID: agentTrace,
+					source:  source,
+					traceID: traceID,
 					agent:   agentFocus,
-					partial: agentPartial,
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
-					sessionID:            sessionID,
-					resume:               resume,
 					restore:              restore,
 					generateSessionTitle: true,
+					exitedResumable: func(traceID string) {
+						if resumeServable(ctx, source, traceID, cloudTraceConfigured) {
+							resumeTrace.Store(&traceID)
+						}
+					},
 				})
 			},
 		)
+		if resumed := resumeTrace.Load(); resumed != nil {
+			printResumeHint(cmd.ErrOrStderr(), *resumed)
+		}
+		return err
 	},
 }
 
-// agentSessionFlag is the -r/--resume flag value: a saved session id, or the
-// reserved word "picker" to open the interactive session picker. Implementing
-// pflag.Value (rather than using a plain string flag) keeps the help text
-// readable — `--resume session[=picker]` — since pflag renders a custom type's
-// NoOptDefVal unquoted after the Type() name. Saved session ids are UUIDs, so
-// the keyword can't shadow a real session.
-type agentSessionFlag string
+// archiveLookup is the slice of the archive client resumeServable needs.
+type archiveLookup interface {
+	Unsealed(context.Context, string) (archive.UnsealedArchive, error)
+}
 
-// agentSessionPicker is the reserved --resume value naming the interactive
-// session picker; it's also what a bare -r resolves to (via NoOptDefVal).
-const agentSessionPicker agentSessionFlag = "picker"
+// resumeServable reports whether `dagger agent --resume traceID` has a source
+// to restore from, so the exit hint is not printed when nothing can serve it.
+// The connected engine is asked first: a manifest in any state (the live
+// session's archive is still active) means it retains the trace. Otherwise the
+// run must be publishing to Dagger Cloud, the same condition that yields a
+// Cloud trace URL.
+func resumeServable(ctx context.Context, source archiveLookup, traceID string, cloudConfigured func(context.Context) bool) bool {
+	// The prompt may have exited through a cancellation; a bounded lookup on
+	// the still-connected engine must not delay exit.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_, err := source.Unsealed(ctx, traceID)
+	var requestErr *archive.RequestError
+	if err == nil || (errors.As(err, &requestErr) && requestErr.Kind == archive.ErrorState) {
+		return true
+	}
+	return cloudConfigured(ctx)
+}
 
-func (f *agentSessionFlag) String() string { return string(*f) }
+// cloudTraceConfigured reports whether this run publishes its trace to Dagger
+// Cloud, i.e. whether the CLI has a Cloud trace URL for it.
+func cloudTraceConfigured(ctx context.Context) bool {
+	_, _, ok := enginetel.URLForTrace(ctx)
+	return ok
+}
 
-func (f *agentSessionFlag) Set(value string) error {
-	*f = agentSessionFlag(value)
+// printResumeHint tells the user how to come back to the session they just
+// left, spelling out --resume since -r alone is easy to forget.
+func printResumeHint(w io.Writer, traceID string) {
+	out := termenv.NewOutput(w)
+	fmt.Fprintln(w, out.String("To resume this session, run:").Bold())
+	fmt.Fprintf(w, "  dagger agent --resume %s\n", traceID)
+}
+
+// agentResumeFlag is the -r/--resume value: the trace to restore, or the
+// reserved word "list" that a bare -r resolves to (via NoOptDefVal). A custom
+// pflag.Value keeps the help readable — `--resume trace[=list]` — since pflag
+// renders a custom type's NoOptDefVal unquoted after its Type() name. Trace IDs
+// are hex, so the keyword cannot shadow one.
+type agentResumeFlag string
+
+const agentResumeList agentResumeFlag = "list"
+
+func (f *agentResumeFlag) String() string { return string(*f) }
+
+func (f *agentResumeFlag) Set(value string) error {
+	*f = agentResumeFlag(value)
 	return nil
 }
 
-func (f *agentSessionFlag) Type() string { return "session" }
+func (f *agentResumeFlag) Type() string { return "trace" }
 
-// SessionID resolves the flag to the session to resume: empty for the
-// interactive picker, otherwise the session id itself.
-func (f agentSessionFlag) SessionID() string {
-	if f == agentSessionPicker {
-		return ""
+// resolveResumeFlags folds -r/--resume and its deprecated --trace alias into
+// the trace to restore, or a request to list archives, returning the
+// remaining positional arguments.
+func resolveResumeFlags(resume agentResumeFlag, resumeSet bool, traceAlias string, traceAliasSet bool, args []string) (traceID string, listArchives bool, rest []string, err error) {
+	switch {
+	case resumeSet && traceAliasSet:
+		return "", false, nil, errors.New("--trace is a deprecated alias of -r/--resume; pass only -r")
+	case traceAliasSet:
+		if traceAlias == "" {
+			return "", false, nil, errors.New("--trace requires a trace ID")
+		}
+		return traceAlias, false, args, nil
+	case !resumeSet:
+		return "", false, args, nil
+	case resume == "":
+		return "", false, nil, errors.New("-r/--resume requires a trace ID, or no value to list archives")
+	case resume != agentResumeList:
+		return string(resume), false, args, nil
 	}
-	return string(f)
+	// A bare -r takes no value, so `-r <id>` parses the ID as a positional
+	// argument. Agent names are never trace IDs, so accept that spelling too.
+	if len(args) == 1 {
+		if _, err := trace.TraceIDFromHex(args[0]); err == nil {
+			return args[0], false, nil, nil
+		}
+	}
+	return "", true, args, nil
 }
 
 func init() {
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
-	agentCmd.Flags().VarP(&agentResume, "resume", "r", "Resume a saved session (interactive picker if no id given)")
-	// A bare -r (no value) resolves to the picker keyword, opening the
-	// interactive picker; -r=<id> resumes that session directly. (NoOptDefVal
-	// flags require '=' to attach a value — a space-separated one would be
-	// parsed as a positional agent name.)
-	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentSessionPicker)
-	agentCmd.Flags().StringVar(&agentTrace, "trace", "",
-		"Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback")
+	agentCmd.Flags().VarP(&agentResume, "resume", "r",
+		"Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, list retained engine archives")
+	// A bare -r resolves to the list keyword; -r <trace-id> and -r=<trace-id>
+	// both restore (resolveResumeFlags recognizes the space-separated form).
+	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentResumeList)
+	agentCmd.Flags().StringVar(&agentTrace, "trace", "", "Restore agents from a past session's trace")
+	_ = agentCmd.Flags().MarkDeprecated("trace", "use -r/--resume <trace-id> instead")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
-		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
-	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
-		"With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not")
+		"With -r, focus this restored agent (runtime handle or name) instead of the top-level one")
+}
+
+func validateArchiveFlags(traceID, focus string, listArchives, listAgents bool, args []string) error {
+	if listArchives {
+		if listAgents || len(args) != 0 || focus != "" {
+			return fmt.Errorf("-r without a trace ID lists archives; do not combine it with agent names, --list, or --agent")
+		}
+		return nil
+	}
+	if traceID != "" && listAgents {
+		return fmt.Errorf("-r/--resume cannot be combined with --list")
+	}
+	if traceID == "" && focus != "" {
+		return fmt.Errorf("--agent requires -r/--resume <trace-id>")
+	}
+	return nil
+}
+
+type agentArchiveLister interface {
+	ListAll(context.Context, archive.ListOptions) ([]archive.Manifest, error)
+}
+
+// Listing only reads archive metadata: no bootstrap, module composition,
+// provider lookup, or runtime restoration are needed.
+func listAgentArchives(ctx context.Context, source agentArchiveLister, out io.Writer) error {
+	manifests, err := source.ListAll(ctx, archive.ListOptions{})
+	if err != nil {
+		return err
+	}
+	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "TRACE\tSTATE\tSTARTED\tTITLE"); err != nil {
+		return err
+	}
+	for _, m := range manifests {
+		// Quoting prevents user-provided titles from injecting terminal controls
+		// or breaking a metadata row into multiple lines.
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%q\n", m.TraceID, m.State, m.StartedAt.UTC().Format(time.RFC3339), m.Title); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
 }
 
 // agentIncludeVars maps the positional agent names to the `include` variable of
@@ -173,27 +298,6 @@ func agentIncludeVars(include []string) map[string]any {
 		return map[string]any{"include": nil}
 	}
 	return map[string]any{"include": include}
-}
-
-const freshAgentBaseQuery = `query AgentBase {
-  llm {
-    id
-  }
-}`
-
-func freshAgentBase(ctx context.Context, dag *dagger.Client) (string, error) {
-	var res struct {
-		LLM struct {
-			ID string
-		}
-	}
-	if err := dag.Do(ctx, &dagger.Request{
-		Query:  freshAgentBaseQuery,
-		OpName: "AgentBase",
-	}, &dagger.Response{Data: &res}); err != nil {
-		return "", err
-	}
-	return res.LLM.ID, nil
 }
 
 const composeAgentsQuery = `query ComposeAgents($include: [String!], $workspace: ID!) {
@@ -240,7 +344,10 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 }
 
 // Attempt the effectful capture once before binding or composing tools. Capture
-// is best effort: startup and reload can use the live workspace if it fails.
+// is best effort: startup and reload fall back to the live workspace (with a
+// warning) when git capture refuses, e.g. a dirty submodule, an oversized or
+// special untracked file, or a cancelled untracked-files prompt. A recipe built
+// on the live workspace is not portable, so a trace resume may not reproduce it.
 func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
 	workspace := dag.CurrentWorkspace()
 	id, err := workspace.Snapshot().ID(ctx)

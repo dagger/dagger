@@ -9,6 +9,7 @@ import (
 
 	otelgo "github.com/dagger/otel-go"
 
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"go.opentelemetry.io/otel"
@@ -59,6 +60,12 @@ const (
 // once the worker has stopped, so the caller may shut the exporter down.
 type CallPayloadBatchProcessor struct {
 	exporter sdklog.Exporter
+	accept   func(sdklog.Record) bool
+	// terminalErr accumulates every loss (dropped batches, records emitted
+	// after shutdown) for Shutdown, so the session-end seal learns of it even
+	// when the loss happened long before. ForceFlush deliberately reports only
+	// its own pass: a single in-session drop must not fail every later flush.
+	terminalErr error
 
 	// ctx ends the worker's own exports (the coalesced and retried ones);
 	// Shutdown cancels it when its own context ends.
@@ -82,8 +89,21 @@ type callPayloadBatchRequest struct {
 }
 
 func NewCallPayloadBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchProcessor {
+	return newProtectedBatchProcessor(exporter, IsCallPayloadRecord)
+}
+
+// NewControlBatchProcessor protects revisioned agent and subscription records
+// from the ordinary bounded queue. Capture success is not a delivery receipt:
+// ForceFlush returns the persistence failures of its own pass, and Shutdown
+// returns every terminal persistence failure of the processor's lifetime.
+func NewControlBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchProcessor {
+	return newProtectedBatchProcessor(exporter, agentcontrol.IsRecord)
+}
+
+func newProtectedBatchProcessor(exporter sdklog.Exporter, accept func(sdklog.Record) bool) *CallPayloadBatchProcessor {
 	ctx, cancel := context.WithCancel(context.Background())
 	processor := &CallPayloadBatchProcessor{
+		accept:   accept,
 		exporter: exporter,
 		ctx:      ctx,
 		cancel:   cancel,
@@ -98,15 +118,17 @@ func NewCallPayloadBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchPro
 }
 
 func (processor *CallPayloadBatchProcessor) OnEmit(_ context.Context, record *sdklog.Record) error {
-	if record == nil || !IsCallPayloadRecord(*record) {
+	if record == nil || !processor.accept(*record) {
 		return nil
 	}
 
 	cloned := record.Clone()
 	processor.mu.Lock()
 	if processor.stopped {
+		processor.terminalErr = errors.Join(processor.terminalErr, errors.New("protected record emitted after shutdown"))
+		err := processor.terminalErr
 		processor.mu.Unlock()
-		return nil
+		return err
 	}
 	wake := len(processor.queue) == 0
 	processor.queue = append(processor.queue, cloned)
@@ -130,7 +152,12 @@ func (processor *CallPayloadBatchProcessor) ForceFlush(ctx context.Context) erro
 	stopped := processor.stopped
 	processor.mu.Unlock()
 	if stopped {
-		return nil
+		select {
+		case <-processor.done:
+			return processor.deliveryError()
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
 	}
 
 	request := callPayloadBatchRequest{ctx: ctx, done: make(chan error, 1)}
@@ -139,7 +166,7 @@ func (processor *CallPayloadBatchProcessor) ForceFlush(ctx context.Context) erro
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-processor.done:
-		return nil
+		return processor.deliveryError()
 	}
 	select {
 	case err := <-request.done:
@@ -147,7 +174,7 @@ func (processor *CallPayloadBatchProcessor) ForceFlush(ctx context.Context) erro
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-processor.done:
-		return nil
+		return processor.deliveryError()
 	}
 }
 
@@ -157,7 +184,7 @@ func (processor *CallPayloadBatchProcessor) Shutdown(ctx context.Context) error 
 		processor.mu.Unlock()
 		select {
 		case <-processor.done:
-			return nil
+			return processor.deliveryError()
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -169,6 +196,10 @@ func (processor *CallPayloadBatchProcessor) Shutdown(ctx context.Context) error 
 	processor.shutdown <- request
 	select {
 	case err := <-request.done:
+		// The worker returns right after reporting, but its deferred cleanup
+		// (and close(done)) still runs after the send. Wait for it, so
+		// Shutdown keeps its promise that the worker has stopped.
+		<-processor.done
 		return err
 	case <-ctx.Done():
 		// Out of time: end the export in flight and wait for the worker, so
@@ -200,6 +231,7 @@ func (processor *CallPayloadBatchProcessor) run() {
 		}
 		timerC = nil
 	}
+	defer disarm()
 	// export runs exportPass over the queue. A failed batch arms its retry
 	// backoff. Records that arrived during a pass are coalesced like a fresh
 	// burst — the delay is re-armed rather than draining them at once, so a
@@ -208,19 +240,35 @@ func (processor *CallPayloadBatchProcessor) run() {
 	// passes continue until the queue is observed empty.
 	export := func(ctx context.Context, drain bool) error {
 		disarm()
+		// Only this call's outcome: drops from earlier passes stay in
+		// terminalErr for Shutdown rather than failing every later flush.
 		var errs error
 		for {
-			retryIn, more, err := processor.exportPass(ctx)
-			errs = errors.Join(errs, err)
+			retryIn, more, dropped, failed := processor.exportPass(ctx)
+			errs = errors.Join(errs, dropped)
+			err := errors.Join(errs, failed)
 			switch {
 			case retryIn > 0:
+				if drain {
+					timer := time.NewTimer(retryIn)
+					select {
+					case <-timer.C:
+						continue
+					case <-ctx.Done():
+						stopTimer(timer)
+						// Only this drain was canceled. The failed batch is
+						// still queued, so resume its background retries.
+						arm(retryIn)
+						return errors.Join(err, context.Cause(ctx))
+					}
+				}
 				arm(retryIn)
-				return errs
+				return err
 			case !more:
-				return errs
+				return err
 			case !drain:
 				arm(CallPayloadExportDelay)
-				return errs
+				return err
 			}
 		}
 	}
@@ -244,7 +292,15 @@ func (processor *CallPayloadBatchProcessor) run() {
 			stop()
 		case request := <-processor.shutdown:
 			disarm()
-			request.done <- processor.drain(request.ctx)
+			// Every loss of the processor's lifetime (drops during the drain
+			// included) is already in terminalErr; add what the drain left
+			// undelivered, and keep the result terminal for later calls.
+			interrupted := processor.drain(request.ctx)
+			processor.mu.Lock()
+			processor.terminalErr = errors.Join(processor.terminalErr, interrupted)
+			err := processor.terminalErr
+			processor.mu.Unlock()
+			request.done <- err
 			return
 		}
 	}
@@ -262,42 +318,44 @@ func (processor *CallPayloadBatchProcessor) withWorker(ctx context.Context) (con
 
 // drain exports everything queued for Shutdown, retrying a failed batch
 // after its backoff for as long as ctx allows; a batch that spends
-// CallPayloadMaxExportAttempts is dropped as usual. It reports the drops,
-// and the last failure when ctx ends first, not failures a retry repaired.
+// CallPayloadMaxExportAttempts is dropped as usual, which exportPass records
+// in terminalErr. It reports what ctx cut short: the last failure still
+// queued for retry, and ctx's error — not failures a retry repaired.
 func (processor *CallPayloadBatchProcessor) drain(ctx context.Context) error {
 	defer processor.cancel()
-	var dropped, retrying error
+	var retrying error
 	for {
 		if err := ctx.Err(); err != nil {
-			return errors.Join(dropped, retrying, err)
+			return errors.Join(retrying, err)
 		}
-		retryIn, more, err := processor.exportPass(ctx)
+		retryIn, more, _, failed := processor.exportPass(ctx)
 		if retryIn > 0 {
-			retrying = err
+			retrying = failed
 			retry := time.NewTimer(retryIn)
 			select {
 			case <-retry.C:
 				continue
 			case <-ctx.Done():
 				stopTimer(retry)
-				return errors.Join(dropped, retrying, ctx.Err())
+				return errors.Join(retrying, ctx.Err())
 			}
 		}
 		retrying = nil
-		dropped = errors.Join(dropped, err)
 		if !more {
-			return dropped
+			return nil
 		}
 	}
 }
 
 // exportPass takes everything currently queued and exports it in bounded
 // batches, in order. On a failed export the unexported tail (failed batch
-// first) goes back to the head of the queue and retryIn says how long to back
-// off before trying again; 0 means the pass completed, with any batch that
-// exceeded its attempts given up on. more reports whether records arrived
-// while the pass ran and are now queued.
-func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (retryIn time.Duration, more bool, err error) {
+// first) goes back to the head of the queue, retryIn says how long to back
+// off before trying again, and failed is that export's error; 0 means the pass
+// completed, with any batch that exceeded its attempts given up on. dropped
+// reports this pass's give-ups (each also accumulated into terminalErr for
+// Shutdown). more reports whether records arrived while the pass ran and are
+// now queued.
+func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (retryIn time.Duration, more bool, dropped, failed error) {
 	processor.mu.Lock()
 	queued := processor.queue
 	processor.queue = nil
@@ -320,7 +378,7 @@ func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (ret
 			processor.queue = append(queued, processor.queue...)
 			processor.failures = failures
 			processor.mu.Unlock()
-			return callPayloadRetryDelay(failures), false, errors.Join(err, exportErr)
+			return callPayloadRetryDelay(failures), false, dropped, exportErr
 		}
 		// Give up on this batch alone; the rest of the queue gets a fresh
 		// start. This can leave a client's closure permanently partial
@@ -331,7 +389,11 @@ func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (ret
 			"attempts", failures,
 			"digests", digests,
 			"err", exportErr)
-		err = errors.Join(err, fmt.Errorf("dropping %d call payload records after %d failed exports: %w", batchSize, failures, exportErr))
+		dropErr := fmt.Errorf("dropping %d protected records after %d failed exports: %w", batchSize, failures, exportErr)
+		processor.mu.Lock()
+		processor.terminalErr = errors.Join(processor.terminalErr, dropErr)
+		processor.mu.Unlock()
+		dropped = errors.Join(dropped, dropErr)
 		failures = 0
 		clear(batch)
 		queued = queued[batchSize:]
@@ -340,7 +402,13 @@ func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (ret
 	processor.failures = 0
 	more = len(processor.queue) > 0
 	processor.mu.Unlock()
-	return 0, more, err
+	return 0, more, dropped, nil
+}
+
+func (processor *CallPayloadBatchProcessor) deliveryError() error {
+	processor.mu.Lock()
+	defer processor.mu.Unlock()
+	return processor.terminalErr
 }
 
 func callPayloadRetryDelay(failures int) time.Duration {
@@ -369,11 +437,10 @@ func callPayloadDigests(records []sdklog.Record) []string {
 	return digests
 }
 
-// WithoutCallPayloads wraps a log processor so call payload records never
-// reach it. Payloads have their own lossless transport
-// (CallPayloadBatchProcessor); letting them into the ordinary bounded queue as
-// well would clone and export every payload twice and, worse, let a recipe
-// burst evict exec output from that queue.
+// WithoutCallPayloads wraps an ordinary log processor so neither call payloads
+// nor revisioned agent controls reach its bounded queue. Both have their own
+// protected transport; ordinary processing would duplicate them and allow a
+// recipe burst to evict exec output.
 func WithoutCallPayloads(next sdklog.Processor) sdklog.Processor {
 	return withoutCallPayloadsProcessor{next: next}
 }
@@ -383,7 +450,7 @@ type withoutCallPayloadsProcessor struct {
 }
 
 func (p withoutCallPayloadsProcessor) OnEmit(ctx context.Context, record *sdklog.Record) error {
-	if record != nil && IsCallPayloadRecord(*record) {
+	if record != nil && (IsCallPayloadRecord(*record) || agentcontrol.IsRecord(*record)) {
 		return nil
 	}
 	return p.next.OnEmit(ctx, record)

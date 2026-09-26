@@ -260,6 +260,11 @@ type Agent implements Node {
   immediately at subscribe time, so a fast agent settling before the
   subscription lands is not missed.
 
+  A restored agent that nothing has sent to, started, or resumed yet is the
+  exception: its state was reached in the session it was restored from, so
+  subscribing to it announces nothing until it next transitions. This is how a
+  restore reinstalls recorded subscriptions without waking their subscribers.
+
   Idempotent per subscriber; re-subscribing replaces the state set.
   """
   notify(
@@ -468,7 +473,7 @@ enum AgentState {
   """A model request or tool evaluation is in flight."""
   RUNNING
 
-  """Blocked on input from the user (derived; see waitingOn)."""
+  """Blocked on input from the user."""
   WAITING_INPUT
 
   """Mailbox accepting but not draining, until resume."""
@@ -4511,23 +4516,6 @@ type LLM implements Node & Syncer {
   sync: ID! @expectedType(name: "LLM")
 
   """
-  A portable, self-contained ID for the conversation that node() can resolve in
-  any session. Unlike id, which may return an engine-local runtime handle valid
-  only within the current session, this returns the recipe form suitable for
-  persisting and later restoring the conversation. The recipe is flattened:
-  bindings superseded during the session (workspace overlays recorded by each
-  mutating tool call, and re-bound toolsets) are dropped, while the current
-  workspace binding — including any pending, un-exported edits — is
-  preserved.
-  """
-  portableID: ID!
-
-  """
-  Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-  """
-  emitHistory: ID! @expectedType(name: "LLM")
-
-  """
   Send the queued prompt and step the model against the available tools, until
   it ends its turn: a reply with no tool calls and nothing left queued.
   """
@@ -4599,6 +4587,14 @@ type LLM implements Node & Syncer {
     IDLE, its interrupted turn's input still pending on the conversation.
     """
     state: AgentState = IDLE
+
+    """
+    Recorded parent handle when restoring an agent. Lineage does not install a
+    notification subscription. Requires a supplied handle. The parent must
+    already be restored in this session and cannot be the agent itself or its
+    descendant.
+    """
+    parentHandle: String
 
     """
     The loop error to create the agent with, for state FAILED. Refused with any other state.
@@ -5486,6 +5482,19 @@ type Query implements Node {
 
   """The current UTC time in RFC3339 format. Never cached."""
   currentTimestamp: String!
+
+  """
+  Name the current session.
+
+  The title renames the session wherever its telemetry is shown (the calling
+  client's primary span, e.g. the CLI's command span) and labels its engine
+  archive, as listed by dagger agent --resume. The latest title wins. Only the
+  session's main client may set it.
+  """
+  setSessionTitle(
+    """The title, sanitized to a single printable line."""
+    title: String!
+  ): Void @experimental(reason: "Session APIs are likely to change.")
 
   """Creates an empty directory."""
   directory: Directory!

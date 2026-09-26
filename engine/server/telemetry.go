@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -32,6 +34,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -271,7 +274,10 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	// missing or unknown origin never resolves on retry, and failing the whole
 	// batch would have the payload processor retry it for seconds and then
 	// drop its routable siblings too — with their producer claims still held,
-	// so no later walk could re-emit them either.
+	// so no later walk could re-emit them either. The same holds for a
+	// malformed control record: failing its batch would drop other agents'
+	// revisions with it. Only store writes, which can succeed on retry, fail
+	// the batch.
 	routed := make([]routedLogRecord, 0, len(records))
 	for _, rec := range records {
 		digest, payload, err := classifyCallPayloadRecord(rec)
@@ -279,15 +285,49 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			slog.Warn("dropping malformed call payload record", "err", err)
 			continue
 		}
+		control := agentcontrol.IsRecord(rec)
 		origin := logOriginClientID(rec)
 		if origin == "" {
-			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "digest", digest)
+			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "control", control, "digest", digest)
 			continue
 		}
 		route, err := exp.sess.telemetryRouteOriginClientID(origin)
 		if err != nil {
-			slog.Warn("dropping unroutable log record", "origin", origin, "payload", payload, "digest", digest, "err", err)
+			slog.Warn("dropping unroutable log record", "origin", origin, "payload", payload, "control", control, "digest", digest, "err", err)
 			continue
+		}
+		if control {
+			a, edge, err := agentcontrol.Decode(rec)
+			if err != nil {
+				slog.Warn("dropping malformed control record", "origin", origin, "err", err)
+				continue
+			}
+			var ns agentcontrol.Namespace
+			var projection any
+			if a != nil {
+				ns, projection = a.Namespace, a
+			} else {
+				ns, projection = edge.Namespace, edge
+			}
+			if ns.Session != exp.sess.sessionID || ns.Trace != rec.TraceID().String() {
+				slog.Warn("dropping control record outside its emission session/trace",
+					"origin", origin,
+					"session", ns.Session, "trace", ns.Trace,
+					"emissionSession", exp.sess.sessionID, "emissionTrace", rec.TraceID().String())
+				continue
+			}
+			if err := exp.sess.ensureArchive(ns.Trace); err != nil {
+				// Archive availability is not authority to suppress the live roster.
+				// The registration failure is retained separately for finalization.
+				slog.Warn("register agent archive", "err", err)
+			}
+			encoded, err := json.Marshal(projection)
+			if err != nil {
+				slog.Warn("dropping unencodable control record", "origin", origin, "err", err)
+				continue
+			}
+			digest = fmt.Sprintf("control:%x", sha256.Sum256(encoded))
+			payload = true // reuse post-persistence per-target settlement, in a disjoint key space
 		}
 		if !payload {
 			digest = ""
@@ -327,6 +367,7 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	}
 	return eg.Wait()
 }
+
 func (sessionLogExporter) ForceFlush(context.Context) error { return nil }
 func (sessionLogExporter) Shutdown(context.Context) error   { return nil }
 
@@ -804,8 +845,29 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	appendStart := time.Now()
 	stats, appendErr := db.AppendLogs(inserts)
+	if appendErr == nil && hasControlRecord(logs) {
+		// Agent control rows must reach the file before the engine can be
+		// killed, or an unsealed archive has no roster to restore from. A
+		// write is enough for that; fsync is left to the session-end seal.
+		//
+		// Only control rows (rare, agent sessions only) pay for this: every
+		// call emits payloads, and flushing for them would drain the
+		// in-memory tail on nearly every batch, pushing live readers onto
+		// file scans. Payloads spill with the ordinary tail, and any already
+		// appended ahead of a control row are written by its flush too.
+		appendErr = db.FlushLogs(ctx)
+	}
 	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
 	return appendErr
+}
+
+func hasControlRecord(logs []sdklog.Record) bool {
+	for _, rec := range logs {
+		if agentcontrol.IsRecord(rec) {
+			return true
+		}
+	}
+	return false
 }
 
 func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }

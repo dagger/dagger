@@ -30,7 +30,7 @@ import (
 
 // Fetching a published trace back OUT of Dagger Cloud as OTLP
 // (hack/designs/resume-from-trace.md §5.1) — the transport half of
-// `dagger agent --trace <id>`.
+// `dagger agent -r <trace-id>`.
 //
 // Three endpoints, each a binary OTLP stream (the otlpstream framing —
 // dagger.io#5226, which replaced the SSE-of-protojson protocol §5.1 and the
@@ -125,7 +125,7 @@ type otlpAuthState struct {
 // defaultStallTimeout bounds how long a fetch waits on a silent stream.
 //
 // It exists because the observable failure mode without it is the worst one
-// the CLI has: `dagger agent --trace` runs the fetch before the interactive
+// the CLI has: `dagger agent -r` runs the fetch before the interactive
 // loop starts, so a connection Cloud's edge drops without a FIN or RST —
 // measured on a real agent trace, whose logs stream reproducibly died with an
 // h2 INTERNAL_ERROR — leaves the command wedged on "restoring trace" forever,
@@ -702,7 +702,7 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 			c.stats.addEvent(kind, len(frame.Payload))
 
 			// A payload this client cannot decode is a LOST FACT — an agent's
-			// state record, a call payload, a whole subtree — and §12 settled
+			// control record, a call payload, a whole subtree — and §12 settled
 			// that a trace which cannot be rebuilt fails the restore instead
 			// of degrading. So an error here aborts the stream; the reference
 			// client warns and carries on, which is right for a view and

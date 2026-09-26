@@ -161,7 +161,7 @@ export enum AgentState {
   Stopped = "STOPPED",
 
   /**
-   * Blocked on input from the user (derived; see waitingOn).
+   * Blocked on input from the user.
    */
   WaitingInput = "WAITING_INPUT",
 }
@@ -2442,6 +2442,11 @@ export type LLMSpawnOpts = {
   state?: AgentState
 
   /**
+   * Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle. The parent must already be restored in this session and cannot be the agent itself or its descendant.
+   */
+  parentHandle?: string
+
+  /**
    * The loop error to create the agent with, for state FAILED. Refused with any other state.
    */
   error?: string
@@ -4555,6 +4560,8 @@ export class Agent extends BaseClient {
    * This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
    *
    * Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+   *
+   * A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
    *
    * Idempotent per subscriber; re-subscribing replaces the state set.
    * @param subscriber The agent to deliver event messages to. You must hold its handle: subscriptions are capability-based like everything else.
@@ -12119,11 +12126,9 @@ export class LLM extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _contextTokens?: number = undefined
   private readonly _contextWindow?: number = undefined
-  private readonly _emitHistory?: ID = undefined
   private readonly _hasPending?: boolean = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
-  private readonly _portableID?: ID = undefined
   private readonly _provider?: string = undefined
   private readonly _reasoningEffort?: string = undefined
   private readonly _spawn?: ID = undefined
@@ -12139,11 +12144,9 @@ export class LLM extends BaseClient {
     _id?: ID,
     _contextTokens?: number,
     _contextWindow?: number,
-    _emitHistory?: ID,
     _hasPending?: boolean,
     _lastReply?: string,
     _model?: string,
-    _portableID?: ID,
     _provider?: string,
     _reasoningEffort?: string,
     _spawn?: ID,
@@ -12156,11 +12159,9 @@ export class LLM extends BaseClient {
     this._id = _id
     this._contextTokens = _contextTokens
     this._contextWindow = _contextWindow
-    this._emitHistory = _emitHistory
     this._hasPending = _hasPending
     this._lastReply = _lastReply
     this._model = _model
-    this._portableID = _portableID
     this._provider = _provider
     this._reasoningEffort = _reasoningEffort
     this._spawn = _spawn
@@ -12225,17 +12226,6 @@ export class LLM extends BaseClient {
     const response: Awaited<number> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-   */
-  emitHistory = async (): Promise<LLM> => {
-    const ctx = this._ctx.select("emitHistory")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return new LLM(ctx.copy().selectNode(response, "LLM"))
   }
 
   /**
@@ -12320,21 +12310,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-   */
-  portableID = async (): Promise<ID> => {
-    if (this._portableID) {
-      return this._portableID
-    }
-
-    const ctx = this._ctx.select("portableID")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
    * The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
    */
   provider = async (): Promise<string> => {
@@ -12394,6 +12369,7 @@ export class LLM extends BaseClient {
    * @param opts.state The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
    *
    * RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.
+   * @param opts.parentHandle Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle. The parent must already be restored in this session and cannot be the agent itself or its descendant.
    * @param opts.error The loop error to create the agent with, for state FAILED. Refused with any other state.
    * @experimental
    */
@@ -14828,6 +14804,7 @@ export class Client extends BaseClient {
   private readonly _currentTimestamp?: string = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _serveModule?: Void = undefined
+  private readonly _setSessionTitle?: Void = undefined
   private readonly _version?: string = undefined
 
   /**
@@ -14839,6 +14816,7 @@ export class Client extends BaseClient {
     _currentTimestamp?: string,
     _defaultPlatform?: Platform,
     _serveModule?: Void,
+    _setSessionTitle?: Void,
     _version?: string,
   ) {
     super(ctx)
@@ -14847,6 +14825,7 @@ export class Client extends BaseClient {
     this._currentTimestamp = _currentTimestamp
     this._defaultPlatform = _defaultPlatform
     this._serveModule = _serveModule
+    this._setSessionTitle = _setSessionTitle
     this._version = _version
   }
 
@@ -15255,6 +15234,19 @@ export class Client extends BaseClient {
   setSecret = (name: string, plaintext: string): Secret => {
     const ctx = this._ctx.select("setSecret", { name, plaintext })
     return new Secret(ctx)
+  }
+
+  /**
+   * Name the current session.
+   *
+   * The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+   * @param title The title, sanitized to a single printable line.
+   * @experimental
+   */
+  setSessionTitle = async (title: string): Promise<void> => {
+    const ctx = this._ctx.select("setSessionTitle", { title })
+
+    await ctx.execute()
   }
 
   /**

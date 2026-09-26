@@ -744,16 +744,17 @@ func (p *cloudPayloadOnce) OnEmit(ctx context.Context, rec *sdklog.Record) error
 	return p.Processor.OnEmit(ctx, rec)
 }
 
-// cloudLogPipeline carries the session's records to Cloud. Call payloads take
-// the lossless, retrying payload path the client routing uses
-// (enginetel.CallPayloadBatchProcessor); every other record takes the batch
-// processor, whose queue drops its oldest record when full. A payload lost
-// there would never reach Cloud: cloudPayloadOnce suppresses every later copy.
-// Both share the Cloud exporter through serialLogExporter, since an exporter
-// must not export concurrently; the batch processor's Shutdown shuts it down,
-// so the payload path stops first.
+// cloudLogPipeline carries the session's records to Cloud. Call payloads and
+// agent controls take separate protected, retrying paths, as in client routing.
+// Every other record takes the batch processor, whose queue drops its oldest
+// record when full. A payload lost there would never reach Cloud:
+// cloudPayloadOnce suppresses every later copy. All three paths share the Cloud
+// exporter through serialLogExporter, since an exporter must not export
+// concurrently. The batch processor's Shutdown shuts it down, so both protected
+// paths stop first.
 type cloudLogPipeline struct {
 	payloads *enginetel.CallPayloadBatchProcessor
+	controls *enginetel.CallPayloadBatchProcessor
 	records  *sdklog.BatchProcessor
 	others   sdklog.Processor
 }
@@ -763,30 +764,31 @@ func newCloudLogPipeline(exporter sdklog.Exporter) *cloudLogPipeline {
 	records := sdklog.NewBatchProcessor(exporter, sdklog.WithExportInterval(telemetry.NearlyImmediate))
 	return &cloudLogPipeline{
 		payloads: enginetel.NewCallPayloadBatchProcessor(exporter),
+		controls: enginetel.NewControlBatchProcessor(exporter),
 		records:  records,
 		others:   enginetel.WithoutCallPayloads(records),
 	}
 }
 
 func (p *cloudLogPipeline) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	// Each side keeps only its own records.
-	return errors.Join(p.payloads.OnEmit(ctx, rec), p.others.OnEmit(ctx, rec))
+	// Each path keeps only its own records.
+	return errors.Join(p.payloads.OnEmit(ctx, rec), p.controls.OnEmit(ctx, rec), p.others.OnEmit(ctx, rec))
 }
 
 func (p *cloudLogPipeline) Enabled(context.Context, sdklog.EnabledParameters) bool {
 	return true
 }
 
-// ForceFlush flushes both paths at once, within ctx.
+// ForceFlush flushes all paths at once, within ctx.
 func (p *cloudLogPipeline) ForceFlush(ctx context.Context) error {
-	return bothWithin(ctx, p.payloads.ForceFlush, p.records.ForceFlush)
+	return allWithin(ctx, p.payloads.ForceFlush, p.controls.ForceFlush, p.records.ForceFlush)
 }
 
-// Shutdown stops the payload path while flushing the other records, both
+// Shutdown stops both protected paths while flushing ordinary records, all
 // within ctx, then shuts the batch processor and with it the exporter down.
-// The payload path's Shutdown returns only once its worker has stopped.
+// Each protected path's Shutdown waits until its worker has stopped.
 func (p *cloudLogPipeline) Shutdown(ctx context.Context) error {
-	err := bothWithin(ctx, p.payloads.Shutdown, p.records.ForceFlush)
+	err := allWithin(ctx, p.payloads.Shutdown, p.controls.Shutdown, p.records.ForceFlush)
 	return errors.Join(err, p.records.Shutdown(ctx))
 }
 
@@ -825,11 +827,14 @@ func (e *serialLogExporter) ForceFlush(ctx context.Context) error {
 	return e.next.ForceFlush(ctx)
 }
 
-func bothWithin(ctx context.Context, a, b func(context.Context) error) error {
-	errB := make(chan error, 1)
-	go func() { errB <- b(ctx) }()
-	errA := a(ctx)
-	return errors.Join(errA, <-errB)
+func allWithin(ctx context.Context, funcs ...func(context.Context) error) error {
+	errs := make([]error, len(funcs))
+	var wg sync.WaitGroup
+	for i, fn := range funcs {
+		wg.Go(func() { errs[i] = fn(ctx) })
+	}
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
 // sessionCloudSpanForwarder and sessionCloudLogForwarder feed the session's

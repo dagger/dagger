@@ -87,7 +87,7 @@ func AroundFunc(
 		}
 		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
 			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
-				recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall, false)
+				recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
 				return ctx, dagql.NoopDone
 			}
 		}
@@ -100,21 +100,6 @@ func AroundFunc(
 
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.DagDigestAttr, callDigest.String()),
-	}
-	callPayloadOnSpan := false
-
-	// Also carry this frame's payload on the span itself. Newer clients rebuild
-	// IDs from the call-payload log records published below, but older CLIs
-	// only read DagCallAttr and, without it, fall back to walking creator
-	// spans -- which self-reference for object results and recurse forever.
-	// Keep the legacy attribute until those CLIs are out of circulation.
-	if callPB, err := req.ResultCall.CallPB(ctx); err != nil {
-		slog.WarnContext(ctx, "failed to build call payload", "field", spanName, "err", err)
-	} else if callAttr, err := callPB.Encode(); err != nil {
-		slog.WarnContext(ctx, "failed to encode call", "field", spanName, "err", err)
-	} else {
-		attrs = append(attrs, attribute.String(telemetry.DagCallAttr, callAttr))
-		callPayloadOnSpan = true
 	}
 
 	// if inside a module call, add call trace metadata. this is useful
@@ -170,12 +155,9 @@ func AroundFunc(
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 	initCacheEvidence(span, req)
 
-	// Fill any gaps in this call's recipe closure over the log channel. A
-	// recording span already carries its own frame for legacy consumers, so
-	// claim that payload before the closure walk and emit logs only for frames
-	// that have not crossed this delivery domain by either transport.
-	recordCallPayloadsForSpan(ctx, payloadKeys, callDigest.String(), req.ResultCall,
-		callPayloadOnSpan && span.IsRecording())
+	// Every frame crosses the protected payload log lane; spans carry only
+	// the digest.
+	recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
 		slog.InfoContext(ctx, "end call",

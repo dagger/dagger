@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
@@ -22,6 +23,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -185,8 +187,12 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.EngineTrace = telemetry.SpanForwarder{
 		Processors: telemetry.SpanProcessors,
 	}
+	// The engine names the session (Query.setSessionTitle) with a span-name
+	// record on our primary span; apply it to the live span too, so the span
+	// we export carries the title like the frontend shows it.
+	namer := primarySpanNamer{span: trace.SpanFromContext(ctx)}
 	params.EngineLogs = telemetry.LogForwarder{
-		Processors: telemetry.LogProcessors,
+		Processors: append(slices.Clone(telemetry.LogProcessors), namer),
 	}
 	params.EngineMetrics = telemetry.MetricExporters
 	if cloud := cliCloudTelemetry; cloud.configured() {
@@ -199,7 +205,7 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 			Processors: withoutIndex(telemetry.SpanProcessors, cloud.spans),
 		}
 		params.EngineLogsWithoutCloud = telemetry.LogForwarder{
-			Processors: withoutIndex(telemetry.LogProcessors, cloud.logs),
+			Processors: append(withoutIndex(telemetry.LogProcessors, cloud.logs), namer),
 		}
 		params.EngineMetricsWithoutCloud = withoutIndex(telemetry.MetricExporters, cloud.metrics)
 	}
@@ -225,6 +231,35 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.CloudAuth = ca
 
 	return params, nil
+}
+
+// primarySpanNamer applies span-name records the engine publishes for the
+// CLI's own primary span (Query.setSessionTitle) to that live span, so the
+// span this process exports ends up with the title too. Everything else about
+// the rename -- frontend, Cloud, archive -- follows from the record itself.
+type primarySpanNamer struct {
+	span trace.Span
+}
+
+var _ sdklog.Processor = primarySpanNamer{}
+
+func (n primarySpanNamer) OnEmit(_ context.Context, rec *sdklog.Record) error {
+	if rec == nil || n.span == nil || !n.span.IsRecording() {
+		return nil
+	}
+	if rec.SpanID() != n.span.SpanContext().SpanID() || !dagui.IsSpanNameRecord(*rec) {
+		return nil
+	}
+	if name, ok := dagui.LogBodyString(*rec); ok && name != "" {
+		n.span.SetName(name)
+	}
+	return nil
+}
+
+func (primarySpanNamer) Shutdown(context.Context) error   { return nil }
+func (primarySpanNamer) ForceFlush(context.Context) error { return nil }
+func (primarySpanNamer) Enabled(context.Context, sdklog.EnabledParameters) bool {
+	return true
 }
 
 // selectedEngine returns the engine selector, or "" when nothing selects an

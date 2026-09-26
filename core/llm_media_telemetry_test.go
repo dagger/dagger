@@ -38,7 +38,7 @@ func TestMediaTelemetryOrdering(t *testing.T) {
 		{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "ZG9j"},
 		{Kind: LLMContentText, Text: "after"},
 	}
-	for _, mode := range []string{"user", "live tool", "history tool"} {
+	for _, mode := range []string{"user", "live tool"} {
 		t.Run(mode, func(t *testing.T) {
 			_, ctx := recordingTestRecorder(t)
 			recorder := &mediaLogRecorder{}
@@ -53,12 +53,6 @@ func TestMediaTelemetryOrdering(t *testing.T) {
 					return result, nil
 				}}}, &LLMToolCall{Name: "media", CallID: "call"})
 				require.False(t, got.Errored)
-			case "history tool":
-				llm := &LLM{Messages: []*LLMMessage{
-					{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{Kind: LLMContentToolCall, CallID: "call", ToolName: "media", Arguments: JSON("{}")}}},
-					{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{result}},
-				}}
-				llm.EmitHistory(ctx)
 			}
 
 			recorder.mu.Lock()

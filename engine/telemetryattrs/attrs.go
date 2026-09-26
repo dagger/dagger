@@ -245,17 +245,13 @@ const CallPayloadDigestAttr = "dagger.io/dag.call.digest"
 //     that same frozen snapshot, so an attribute written later would never
 //     reach a client.
 //
-//   - MUTABLE state (AgentStateAttr, AgentWaitingOnAttr, AgentStopReasonAttr,
-//     AgentSnapshotDigestAttr) rides LOG RECORDS attributed to the loop span,
-//     exactly like streaming progress above and for exactly the same reason.
-//     Each transition emits a fresh record; latest record wins. State records
-//     are emitted only when the PROJECTED state changes, not on every internal
-//     fact change; snapshot records are emitted on every commit, which is why
-//     they are a record of their own rather than a field on the state record.
+//   - MUTABLE state (AgentStateAttr, AgentStopReasonAttr,
+//     AgentSnapshotDigestAttr) rides revisioned agent control LOG RECORDS
+//     (engine/agentcontrol), each a complete projection of the agent rather
+//     than a delta. The highest revision in a namespace wins.
 //
-// A record carrying AgentStateAttr or AgentSnapshotDigestAttr is agent data,
-// not log text: consumers fold it into the agent's roster entry and must not
-// render it as output.
+// A control record is agent data, not log text: consumers fold it into the
+// agent's roster entry and must not render it as output.
 const (
 	// AgentAttr marks the long-lived loop span of a started agent runtime.
 	// The span exists iff the loop actually started, runs exactly as long as
@@ -282,44 +278,30 @@ const (
 	// roster entry rather than fail. (string)
 	AgentCallDigestAttr = "dagger.io/agent.call.digest"
 
-	// AgentStateAttr carries the agent's projected lifecycle state at the
-	// moment the record was emitted: one of the AgentState enum tokens
-	// ("IDLE", "RUNNING", "WAITING_INPUT", "PAUSED", "STOPPED", "FAILED").
-	// Emitted on a log record attributed to the loop span. (string)
+	// AgentStateAttr carries the agent's projected lifecycle state: one of
+	// the AgentState enum tokens ("IDLE", "RUNNING", "WAITING_INPUT",
+	// "PAUSED", "STOPPED", "FAILED"). (string)
 	AgentStateAttr = "dagger.io/agent.state"
 
-	// AgentWaitingOnAttr carries what the agent is blocked on when its state
-	// is WAITING_INPUT — the parked question's text. Absent otherwise, and an
-	// empty value clears a previously reported one. (string)
-	AgentWaitingOnAttr = "dagger.io/agent.waiting_on"
-
 	// AgentStopReasonAttr distinguishes a stop somebody asked for from a stop
-	// the session's teardown performed: "EXPLICIT" | "SESSION". It rides the
-	// terminal state record, and is empty on every other one.
+	// the session's teardown performed: "EXPLICIT" | "SESSION". Empty unless
+	// the state is STOPPED.
 	//
 	// Without it every agent in a cleanly closed session looks dismissed:
 	// session close kills every runtime (AgentRuntimes.KillAll), so a
-	// deliberately stopped worker and a merely torn-down one publish
-	// identical STOPPED records — and a client restoring that trace must
-	// either resurrect the dismissals or restore nothing at all. A STOPPED
-	// record with no reason is a trace from an engine that predates this, and
-	// consumers are expected to refuse it rather than guess. (string)
+	// deliberately stopped worker and a merely torn-down one both project
+	// STOPPED — and a client restoring that trace must either resurrect the
+	// dismissals or restore nothing at all. (string)
 	AgentStopReasonAttr = "dagger.io/agent.stop.reason"
 
-	// AgentSnapshotDigestAttr carries the portable recipe digest of the agent's
-	// last committed conversation, emitted on every commit (each step, each
-	// drained message, and once at loop start for the seed). Latest record wins.
+	// AgentSnapshotDigestAttr carries the recipe digest of the agent's last
+	// committed LLM call, updated on every commit (each step, each drained
+	// message, and once at loop start for the seed).
 	//
 	// This is the resume anchor: a client rebuilds the conversation's ID from
-	// the call-payload log records above (or legacy dagger.io/dag.call span
-	// attributes) and re-hydrates the instance from it. It is deliberately a
-	// PORTABLE recipe: a post-evaluation result handle dies with its session,
-	// while the raw recipe retains superseded bindings whose stale operations
-	// must not be replayed in a later one.
-	//
-	// It cannot ride the state record: state records are edge-triggered on
-	// the projected state, and most commits do not change the state while
-	// every commit changes the snapshot. (string)
+	// the call-payload log records above and re-hydrates the instance from it;
+	// archive finalization verifies the anchor's recipe closure was delivered.
+	// (string)
 	AgentSnapshotDigestAttr = "dagger.io/agent.snapshot.digest"
 
 	// AgentRewindFromDigestAttr and AgentRewindToDigestAttr mark a REWIND
@@ -329,15 +311,15 @@ const (
 	// digest of the conversation being abandoned, To the recipe digest of the
 	// one adopted — the LLM state just before the edited prompt.
 	//
-	// They are recipe digests rather than portable ones, unlike
-	// AgentSnapshotDigestAttr, because their consumer is the transcript, not
-	// resume: every message span carries the recipe digest of the LLM call
-	// it belongs to (LLMCallDigestAttr), so a client walks the call payloads
-	// from From back to To and marks every message on that stretch as no
-	// longer part of the conversation. Without this the trace renders a
-	// linear transcript while the model's history has forked. A reseed that
-	// is not a rewind (compaction, a workspace rebind, a model change) emits
-	// no marker: nothing the transcript shows was abandoned. (string)
+	// Like AgentSnapshotDigestAttr they are recipe digests, but their consumer
+	// is the transcript, not resume: every message span carries the recipe
+	// digest of the LLM call it belongs to (LLMCallDigestAttr), so a client
+	// walks the call payloads from From back to To and marks every message on
+	// that stretch as no longer part of the conversation. Without this the
+	// trace renders a linear transcript while the model's history has forked.
+	// A reseed that is not a rewind (compaction, a workspace rebind, a model
+	// change) emits no marker: nothing the transcript shows was abandoned.
+	// (string)
 	AgentRewindFromDigestAttr = "dagger.io/agent.rewind.from"
 	AgentRewindToDigestAttr   = "dagger.io/agent.rewind.to"
 )

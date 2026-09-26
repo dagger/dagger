@@ -612,6 +612,8 @@ type AgentNotifyOpts struct {
 //
 // Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
 //
+// A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
+//
 // Idempotent per subscriber; re-subscribing replaces the state set.
 //
 // Experimental: Agent APIs are likely to change.
@@ -11167,12 +11169,10 @@ type LLM struct {
 
 	contextTokens   *int
 	contextWindow   *int
-	emitHistory     *ID
 	hasPending      *bool
 	id              *ID
 	lastReply       *string
 	model           *string
-	portableID      *ID
 	provider        *string
 	reasoningEffort *string
 	spawn           *ID
@@ -11234,19 +11234,6 @@ func (r *LLM) ContextWindow(ctx context.Context) (int, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-func (r *LLM) EmitHistory(ctx context.Context) (*LLM, error) {
-	q := r.query.Select("emitHistory")
-
-	var id ID
-	if err := q.Bind(&id).Execute(ctx); err != nil {
-		return nil, err
-	}
-	return &LLM{
-		query: selectNode(q.Root(), id, "LLM"),
-	}, nil
 }
 
 // Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
@@ -11398,19 +11385,6 @@ func (r *LLM) Model(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-func (r *LLM) PortableID(ctx context.Context) (ID, error) {
-	if r.portableID != nil {
-		return *r.portableID, nil
-	}
-	q := r.query.Select("portableID")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
 func (r *LLM) Provider(ctx context.Context) (string, error) {
 	if r.provider != nil {
@@ -11482,6 +11456,8 @@ type LLMSpawnOpts struct {
 	//
 	// Default: IDLE
 	State AgentState
+	// Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle. The parent must already be restored in this session and cannot be the agent itself or its descendant.
+	ParentHandle string
 	// The loop error to create the agent with, for state FAILED. Refused with any other state.
 	Error string
 }
@@ -11509,6 +11485,10 @@ func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
 		// `state` optional argument
 		if !querybuilder.IsZeroValue(opts[i].State) {
 			q = q.Arg("state", opts[i].State)
+		}
+		// `parentHandle` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ParentHandle) {
+			q = q.Arg("parentHandle", opts[i].ParentHandle)
 		}
 		// `error` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Error) {
@@ -14485,6 +14465,7 @@ type Query struct {
 	defaultPlatform  *Platform
 	id               *ID
 	serveModule      *Void
+	setSessionTitle  *Void
 	version          *string
 }
 
@@ -15175,6 +15156,18 @@ func (r *Query) SetSecret(name string, plaintext string) *Secret {
 	return &Secret{
 		query: q,
 	}
+}
+
+// Name the current session.
+//
+// The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+//
+// Experimental: Session APIs are likely to change.
+func (r *Query) SetSessionTitle(ctx context.Context, title string) error {
+	q := r.query.Select("setSessionTitle")
+	q = q.Arg("title", title)
+
+	return q.Execute(ctx)
 }
 
 // Creates source map metadata.
@@ -20584,7 +20577,7 @@ const (
 	// A model request or tool evaluation is in flight.
 	AgentStateRunning AgentState = "RUNNING"
 
-	// Blocked on input from the user (derived; see waitingOn).
+	// Blocked on input from the user.
 	AgentStateWaitingInput AgentState = "WAITING_INPUT"
 
 	// Mailbox accepting but not draining, until resume.

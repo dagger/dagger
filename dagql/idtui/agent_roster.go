@@ -20,8 +20,6 @@ type AgentRosterEntry struct {
 	Name string
 	// State is the lifecycle state the engine last published.
 	State string
-	// WaitingOn is what the agent is parked on when State is WAITING_INPUT.
-	WaitingOn string
 	// Focused marks the entry the prompt currently addresses.
 	Focused bool
 	// ReadOnly marks an agent this client cannot address: the engine never
@@ -209,7 +207,7 @@ func agentStateDisplay(state string) (label string, labelColor termenv.Color) {
 	case "IDLE":
 		return DotEmpty, termenv.ANSIBrightBlack
 	default:
-		// No state record seen yet: the agent is published but its runtime
+		// No control record seen yet: the agent is published but its runtime
 		// has not reported in. Render it as present-but-unknown rather than
 		// guessing a state.
 		return "", termenv.ANSIBrightBlack

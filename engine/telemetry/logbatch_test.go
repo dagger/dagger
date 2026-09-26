@@ -5,6 +5,7 @@ import (
 	"errors"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -431,6 +432,41 @@ func testCallPayloadBatchProcessorRetriesFailedBatchInOrder(t *testing.T) {
 	require.NoError(t, proc.Shutdown(ctx))
 }
 
+// Canceling a flush must not cancel the processor's background retry schedule.
+func TestCallPayloadBatchProcessorRetriesAfterCanceledFlush(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		exp := &flakyLogExporter{failures: 2}
+		proc := NewCallPayloadBatchProcessor(exp)
+		provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+		defer func() { require.NoError(t, proc.Shutdown(t.Context())) }()
+		logger := provider.Logger("test.core")
+		logger.Emit(t.Context(), payloadRecordWithBody("first"))
+		time.Sleep(CallPayloadExportDelay)
+		synctest.Wait()
+		attempts, _, _ := exp.stats()
+		require.Equal(t, 1, attempts)
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+		defer cancel()
+		require.ErrorIs(t, proc.ForceFlush(ctx), context.DeadlineExceeded)
+		synctest.Wait()
+		// The exporter recovers now. A new record must also eventually land,
+		// even though it joins the nonempty queue left by the canceled flush.
+		logger.Emit(t.Context(), payloadRecordWithBody("second"))
+		time.Sleep(CallPayloadExportDelay)
+		synctest.Wait()
+		attempts, _, _ = exp.stats()
+		require.Equal(t, 2, attempts, "cancellation must retain the retry backoff")
+		time.Sleep(callPayloadRetryDelay(2))
+		synctest.Wait()
+		attempts, bodies, _ := exp.stats()
+		require.Equal(t, 3, attempts)
+		require.Equal(t, []string{"first", "second"}, bodies)
+	})
+}
+
 // A batch that never lands must eventually be dropped rather than wedge the
 // queue. The drop is reported with the records' digests: the session exporter
 // released their delivery claims, but only a walk that reaches them through a
@@ -444,25 +480,26 @@ func TestCallPayloadBatchProcessorDropsBatchAfterMaxAttempts(t *testing.T) {
 	logger := provider.Logger("test.core")
 	logger.Emit(t.Context(), payloadRecordWithBody("doomed"))
 
-	// Each explicit flush is one attempt, without waiting out the backoff.
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	// A drain retries to completion and reports the drop it caused.
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	var err error
-	for range CallPayloadMaxExportAttempts {
-		err = proc.ForceFlush(ctx)
-		require.Error(t, err)
-	}
-	require.ErrorContains(t, err, "dropping 1 call payload records")
+	err := proc.ForceFlush(ctx)
+	require.ErrorContains(t, err, "dropping 1 protected records")
 	attempts, bodies, _ := exp.stats()
 	require.Equal(t, CallPayloadMaxExportAttempts, attempts)
 	require.Empty(t, bodies)
 
-	// The queue is clear: a later record exports on the first try.
+	// The queue is clear: a later record exports on the first try, and that
+	// flush reports only its own pass — an earlier drop must not fail every
+	// later in-session flush.
 	logger.Emit(t.Context(), payloadRecordWithBody("repaired"))
 	require.NoError(t, proc.ForceFlush(ctx))
 	_, bodies, _ = exp.stats()
 	require.Equal(t, []string{"repaired"}, bodies)
-	require.NoError(t, proc.Shutdown(ctx))
+	// Shutdown still reports the loss, exactly once, for the session seal.
+	err = proc.Shutdown(ctx)
+	require.ErrorContains(t, err, "dropping 1 protected records")
+	require.Equal(t, 1, strings.Count(err.Error(), "dropping"))
 }
 
 // captureLogExporter keeps every record it is handed.

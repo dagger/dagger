@@ -23,7 +23,7 @@ defmodule Dagger.AgentState do
   def running(), do: :RUNNING
 
   @doc """
-  Blocked on input from the user (derived; see waitingOn).
+  Blocked on input from the user.
   """
   @spec waiting_input() :: :WAITING_INPUT
   def waiting_input(), do: :WAITING_INPUT

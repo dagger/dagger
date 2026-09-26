@@ -26,7 +26,7 @@ import (
 )
 
 // The fetch (hack/designs/resume-from-trace.md §5.1, build order slice 5):
-// `dagger agent --trace <id>` streaming a past session's whole trace out of
+// `dagger agent -r <trace-id>` streaming a past session's whole trace out of
 // Dagger Cloud and into the live frontend's DB.
 //
 // The fake server below is built to the wire shape Cloud actually deploys —
@@ -41,7 +41,7 @@ import (
 // The payload is the canned capture trace_import_test.go already drives slice
 // 4 with, served over the wire instead of handed to the importer directly: the
 // same crashed session, with its never-ended spans and its attribute-only,
-// empty-bodied state records.
+// empty-bodied control records.
 
 // fetchTraceIDHex is the source trace's ID as it appears in the URL — derived
 // from the capture rather than spelled out, so the two cannot drift.
@@ -198,18 +198,12 @@ func (f *fakeCloud) authHeaders() []string {
 }
 
 // cannedCloud serves the capture slice 4 drives the importer with: the crashed
-// session's spans, its agent-state records, and its token metrics.
+// session's spans, its agent control records, and its token metrics.
 func cannedCloud(withWorker bool) *fakeCloud {
-	states := []cannedStateRecord{{span: foreignLoopSpanID, state: "RUNNING"}}
-	if withWorker {
-		states = append(states, cannedStateRecord{
-			span: foreignWorkerSpanID, state: "RUNNING", emptyBody: true,
-		})
-	}
 	return &fakeCloud{
 		traceID: fetchTraceIDHex,
 		traces:  []*coltracepb.ExportTraceServiceRequest{foreignSessionTrace(withWorker)},
-		logs:    []*collogspb.ExportLogsServiceRequest{cannedAgentStateLogs(foreignTraceIDByte, states...)},
+		logs:    []*collogspb.ExportLogsServiceRequest{foreignAgentControlLogs(withWorker, "RUNNING")},
 		metrics: []*colmetricspb.ExportMetricsServiceRequest{cannedTokenMetrics(foreignLoopSpanID)},
 	}
 }
@@ -308,11 +302,11 @@ func TestFetchStreamsTheWholeTraceIntoTheLiveDB(t *testing.T) {
 	require.NotNil(t, db.Spans.Map[prettyTestSpanID(liveTurnSpanID)],
 		"the fetch disturbed the live session's spans")
 
-	// Logs: the agent-state records are attribute-only, and one of them
+	// Logs: the agent control records are attribute-only, and one of them
 	// arrives with no body at all — the shape §12 flags as unverified and
 	// §13.4's stopgap guards keep from panicking.
 	scout := importedAgent(t, db, "scout")
-	require.Equal(t, "RUNNING", scout.State, "the state records did not survive the fetch")
+	require.Equal(t, "RUNNING", scout.State, "the control records did not survive the fetch")
 
 	// Metrics: attributed to the imported loop span, so the resumed session's
 	// token totals continue rather than restarting at zero.
@@ -415,10 +409,10 @@ func TestFetchFailsOnATruncatedStream(t *testing.T) {
 }
 
 // TestFetchFailsOnAnUndecodablePayload: a payload this client cannot decode is
-// a lost fact — an agent's state record, a call payload, a whole subtree — and
-// §12 settled that a trace which cannot be rebuilt fails the restore rather
-// than degrading. The reference client warns and carries on, which is right
-// for a view and wrong for a restore.
+// a lost fact — an agent's control record, a call payload, a whole subtree —
+// and §12 settled that a trace which cannot be rebuilt fails the restore
+// rather than degrading. The reference client warns and carries on, which is
+// right for a view and wrong for a restore.
 func TestFetchFailsOnAnUndecodablePayload(t *testing.T) {
 	srv := cannedCloud(false)
 	srv.garbage = map[string]bool{"logs": true}

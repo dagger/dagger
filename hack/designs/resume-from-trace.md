@@ -1,5 +1,17 @@
 # Resume from trace
 
+> Historical design. [Trace-native agent resume](trace-native-agent-resume.md)
+> supersedes conflicting requirements below, including whole-history-before-prompt
+> startup, destination-checkout dependence, omission of notification subscriptions,
+> and continued local JSON persistence. This document is retained because existing
+> code references its sections; its implementation-status notes are historical.
+>
+> The current runtime publishes coherent lifecycle revisions with the actual
+> committed LLM leaf from `RecipeDigest`, not separate span-owned snapshot/state
+> records. Consumers reconstruct from ordinary protected call-payload logs,
+> including recording-span roots; legacy span copies alone do not satisfy archive
+> or Cloud closure verification. No agent-specific recipe flattening/capture remains.
+
 `dagger agent --trace <TRACE_ID>` — restore everything a past session did,
 from the trace it published: its agents, their conversations, and the whole
 TUI view of the run, into the session in front of you.

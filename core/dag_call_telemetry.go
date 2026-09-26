@@ -14,7 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-// Call payloads over the log channel fill the gaps left by span attributes.
+// Call payloads over the protected log channel provide durable recipe data.
 //
 // This file is the producer half of the CallPayloadContentType contract
 // (engine/telemetryattrs), modelled on the agent-state producer next door for
@@ -26,9 +26,9 @@ import (
 // flattens them to a bare digest), and array members that are only ever
 // sub-selected.
 //
-// Calls that do get a recording span carry dagger.io/dag.call there. Both
-// transports claim digests from the same delivery-domain store, so the closure
-// walk below publishes logs only for frames a span did not already deliver.
+// Spans carry only the call's digest (dagger.io/dag.digest); the payload log
+// lane is the sole carrier of call data, including for calls that do get a
+// span.
 //
 // The claim store is scoped per target — the client and its ancestors,
 // exactly the per-client DBs telemetry fans out to — NOT to the session. A
@@ -42,50 +42,25 @@ import (
 // recordCallPayloads publishes the missing frames in the transitive closure of
 // a call's ID over the log channel — through receivers, modules, arguments (ID
 // literals inside lists and objects included) and implicit inputs — minus
-// digests already claimed by a span or log in the client's delivery domain.
-//
-// rootOnSpan means the root payload rides a recording span: the caller marks
-// it delivered and the walk skips its log while still visiting the closure.
-// Otherwise, including when presentation-span deduplication suppresses the
-// call, this function claims the root itself and emits it as a log. A root
-// already claimed short-circuits the whole walk: reachability is transitive,
-// so the claim's own walk already covered every frame this one would.
+// digests already claimed by a payload log in the client's delivery domain.
+// A root already claimed short-circuits the whole walk: reachability is
+// transitive, so the claim's own walk already covered every frame this one would.
 //
 // Everything here is best-effort. A payload that cannot be built or encoded is
 // dropped rather than failing the call; the consequence is a client that
 // cannot rebuild that one chain, which is exactly the status quo. Such a
 // frame stays claimed on purpose: a recipe that cannot be rebuilt fails the
 // same way on every walk, and releasing it would only repeat that work.
-func recordCallPayloadsForSpan(
-	ctx context.Context,
-	store dagql.CallPayloadSeenKeyStore,
-	callDigest string,
-	frame *dagql.ResultCall,
-	rootOnSpan bool,
-) {
-	if store == nil || frame == nil {
-		return
-	}
-	if rootOnSpan {
-		if !store.ClaimCallPayload(callDigest) {
-			return
-		}
-		store.CallPayloadDelivered(callDigest)
-	}
-	recordCallPayloads(ctx, store, callDigest, frame, rootOnSpan)
-}
-
 func recordCallPayloads(
 	ctx context.Context,
 	store dagql.CallPayloadSeenKeyStore,
 	callDigest string,
 	frame *dagql.ResultCall,
-	rootOnSpan bool,
 ) {
 	if store == nil || frame == nil {
 		return
 	}
-	if !rootOnSpan && !store.ClaimCallPayload(callDigest) {
+	if !store.ClaimCallPayload(callDigest) {
 		// Someone already claimed this call's payload, and whoever did also
 		// walked its closure — reachability is transitive, so that walk
 		// covered everything this one would.
@@ -115,15 +90,9 @@ func recordCallPayloads(
 
 	logger := telemetry.Logger(ctx, InstrumentationLibrary)
 	emit := func(dgst string, callPB *callpbv1.Call) {
-		if dgst == callDigest {
-			// The root was claimed before rebuilding. When its payload rode the
-			// span, only its closure needs the log fallback.
-			if rootOnSpan {
-				return
-			}
-		} else {
-			// Claim every other frame before encoding so concurrent and repeated
-			// closure walks skip payloads already claimed by either transport.
+		if dgst != callDigest {
+			// The root was claimed before rebuilding. Claim every other frame
+			// before encoding so concurrent walks emit each payload only once.
 			if !store.ClaimCallPayload(dgst) {
 				return
 			}

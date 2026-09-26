@@ -1,11 +1,13 @@
 package server
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
@@ -29,6 +31,51 @@ func (sess *daggerSession) callPayloadMissingTargets(digest string, targets []st
 		}
 	}
 	return missing
+}
+
+func TestArchiveRegistrationFailureDoesNotDropControl(t *testing.T) {
+	srv, _, _, _ := archiveFixture(t) //nolint:dogsled // This test creates its own session and control records.
+	other := &daggerSession{sessionID: "other-session", mainClientCallerID: "other", clientRecords: map[string]*clientRecord{}}
+	other.telemetryPubSub = NewPubSub(srv)
+	other.archiveRegisterErr = fmt.Errorf("injected archive registration failure")
+	other.clientRecords["other"] = &clientRecord{daggerSession: other, clientID: "other"}
+	a := archiveAgent()
+	a.Session = other.sessionID
+	rec := controlTestRecord(t, a.Record())
+	rec.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "other"))
+	exp := sessionLogExporter{sess: other, ps: other.telemetryPubSub}
+	require.NoError(t, exp.Export(t.Context(), []sdklog.Record{rec}))
+	db, err := srv.clientDBs.Open(t.Context(), "other")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "archive registration must not gate live persistence")
+}
+
+func TestReportedSpanDoesNotSuppressDurablePayload(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	body, digest := serverCallPayload(t, "lookup", "span-reported")
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
+	require.True(t, store.ClaimCallPayload(digest))
+	store.CallPayloadDelivered(digest)
+	require.False(t, store.ClaimCallPayload(digest), "avoid duplicate ordinary span walks")
+	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(digest, store.targets))
+	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	exporter := sessionLogExporter{sess: sess, ps: NewPubSub(srv)}
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{record}))
+	require.Empty(t, sess.callPayloadMissingTargets(digest, store.targets))
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
 }
 
 func TestSessionLogExporterRetriesPayloadAfterStoreFailure(t *testing.T) {
@@ -133,6 +180,77 @@ func TestSessionLogExporterSkipsUnroutableRecords(t *testing.T) {
 	rows, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
+}
+
+// A control record that can never persist (malformed, outside its emission
+// session/trace, or unroutable) is skipped on its own: failing the batch
+// would have the control processor retry and then drop the valid revisions
+// batched with it.
+func TestSessionLogExporterSkipsInvalidControlRecords(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	sess := &daggerSession{sessionID: "session", clientRecords: map[string]*clientRecord{}}
+	sess.telemetryPubSub = NewPubSub(srv)
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	exporter := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
+	withOrigin := func(rec sdklog.Record, origin string) sdklog.Record {
+		rec.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, origin))
+		return rec
+	}
+
+	valid := withOrigin(controlTestRecord(t, archiveAgent().Record()), "client")
+	var bad otellog.Record
+	bad.SetBody(otellog.StringValue(""))
+	bad.AddAttributes(otellog.Int(agentcontrol.VersionAttr, agentcontrol.Version+1))
+	malformed := withOrigin(controlTestRecord(t, bad), "client")
+	stranger := archiveAgent()
+	stranger.Session = "another-session"
+	stranger.Handle = "stranger"
+	foreign := withOrigin(controlTestRecord(t, stranger.Record()), "client")
+	originless := controlTestRecord(t, archiveAgent().Record())
+	unroutable := withOrigin(controlTestRecord(t, archiveAgent().Record()), "nobody")
+
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{malformed, foreign, valid, originless, unroutable}),
+		"invalid control records are skipped rather than failing the batch")
+
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "only the valid control record persists")
+}
+
+// Call payloads ride almost every log batch, so they must not force the
+// in-memory tail to the file (that would push live readers onto file scans);
+// only rare agent control rows, which a killed engine's unsealed archive
+// restores from, pay for a flush.
+func TestClientLogsFlushesOnlyForControlRecords(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := NewPubSub(&Server{clientDBs: dbs})
+	// Hold a reference so the exporter's Close does not spill the tail.
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	tailRows := func() int {
+		stats, err := db.AppendLogs(nil)
+		require.NoError(t, err)
+		return stats.SpillLagRows
+	}
+
+	body, _ := serverCallPayload(t, "lookup", "hot-path")
+	payload := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	require.NoError(t, ps.Logs("client").Export(t.Context(), []sdklog.Record{payload}))
+	require.Equal(t, 1, tailRows(), "a payload-only batch must stay in the in-memory tail")
+
+	control := controlTestRecord(t, archiveAgent().Record())
+	require.NoError(t, ps.Logs("client").Export(t.Context(), []sdklog.Record{control}))
+	require.Zero(t, tailRows(), "a control batch must write the tail to the file")
+
+	rows, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
 }
 
 // A payload the producer claimed but whose write failed must be claimable

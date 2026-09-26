@@ -194,6 +194,10 @@ type Server interface {
 	// Flush telemetry for all clients in the current session.
 	FlushSessionTelemetry(ctx context.Context) error
 
+	// Name the current session: its trace and, for agent sessions, its engine
+	// archive. Only the session's main client may set it.
+	SetSessionTitle(ctx context.Context, title string) error
+
 	// SessionScopedContext returns a context that lives for the remainder of
 	// the current client's session: it is detached from the given context's
 	// cancellation and is canceled when the session begins closing. Use it

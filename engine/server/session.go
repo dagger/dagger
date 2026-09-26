@@ -14,6 +14,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -52,6 +53,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/dagger/dagger/engine/archive"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -64,7 +67,14 @@ import (
 
 type daggerSession struct {
 	sessionID          string
-	mainClientCallerID string
+	archiveMu          sync.Mutex
+	archiveManifest    *archive.Manifest
+	archiveExpected    agentcontrol.Expectation
+	archiveCloseErr    error
+	archiveRegisterErr error
+	// archivePendingTitle is a title published before the archive existed.
+	archivePendingTitle pendingArchiveTitle
+	mainClientCallerID  string
 
 	// wcprofEnabled means this session opted into wall-clock profiling
 	// (ClientMetadata.Profile); work for all its clients (including nested
@@ -870,6 +880,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		// the ordinary 250ms batch processor carries everything else.
 		sdklog.WithProcessor(telemetryOriginLogProcessor{sessionID: sess.sessionID}),
 		sdklog.WithProcessor(enginetel.NewCallPayloadBatchProcessor(logExporter)),
+		sdklog.WithProcessor(enginetel.NewControlBatchProcessor(logExporter)),
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
 	spanProcessors, logProcessors := 4, 3
@@ -1046,10 +1057,19 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	slog.Debug("stopped services")
 
+	// Errors that make the archive's final cut untrustworthy; see
+	// finalizeSessionArchive. Other teardown errors do not affect sealing.
+	var archiveErrs error
+
 	if sess.agents != nil {
+		closeErr := sess.closeArchiveControl(ctx)
+		errs = errors.Join(errs, closeErr)
+		archiveErrs = errors.Join(archiveErrs, closeErr)
 		if err := sess.agents.KillAll(ctx, errors.New("session closed")); err != nil {
 			slog.Warn("error stopping agents", "error", err)
-			errs = errors.Join(errs, fmt.Errorf("stop session agents: %w", err))
+			killErr := fmt.Errorf("stop session agents: %w", err)
+			errs = errors.Join(errs, killErr)
+			archiveErrs = errors.Join(archiveErrs, killErr)
 		}
 	}
 
@@ -1142,7 +1162,10 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	defer cancelTelemetry()
 	srv.stampSessionComplete(telemetryCtx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
-	errs = errors.Join(errs, sess.shutdownTelemetry(telemetryCtx))
+	telemetryErr := sess.shutdownTelemetry(telemetryCtx)
+	errs = errors.Join(errs, telemetryErr)
+	archiveErrs = errors.Join(archiveErrs, telemetryErr)
+	errs = errors.Join(errs, srv.finalizeSessionArchive(telemetryCtx, sess, archiveErrs))
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
@@ -2261,6 +2284,14 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		"trace":         trace.SpanContextFromContext(ctx).TraceID().String(),
 		"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
 	}).Debug("handling http request")
+
+	if r.URL.Path == "/v1/telemetry/archives" || strings.HasPrefix(r.URL.Path, "/v1/telemetry/archives/") {
+		record, err := srv.archiveRequestRecord(clientMetadata.ClientID, clientMetadata.SessionID, clientMetadata.ClientSecretToken)
+		if err != nil {
+			return httpErr(err, http.StatusUnauthorized)
+		}
+		return srv.serveArchiveHTTP(w, r.WithContext(ctx), record)
+	}
 
 	mux := http.NewServeMux()
 	switch r.URL.Path {
@@ -3580,7 +3611,17 @@ func (s *callPayloadDeliveryStore) ClaimCallPayload(digest string) bool {
 }
 
 func (s *callPayloadDeliveryStore) CallPayloadDelivered(digest string) {
-	s.session.settleCallPayload(digest, s.targets, true)
+	// The span producer reports capture/publication, not a DB persistence
+	// receipt. A bounded span queue can still lose this copy. Explicit payload
+	// log records must remain eligible for durable delivery.
+	s.session.callPayloadMu.Lock()
+	defer s.session.callPayloadMu.Unlock()
+	states := s.session.callPayloadStates(digest, true)
+	for _, target := range s.targets {
+		if states[target] == callPayloadUnclaimed || states[target] == callPayloadClaimed {
+			states[target] = callPayloadSpanReported
+		}
+	}
 }
 
 // callPayloadState is one (digest, target) pair's position in the payload
@@ -3602,7 +3643,10 @@ const (
 	callPayloadClaimed
 	// callPayloadWriting: the log exporter owns the target while it writes.
 	callPayloadWriting
-	// callPayloadDelivered: the target's DB holds the payload (or its span).
+	// callPayloadSpanReported: a producer included a best-effort span copy;
+	// a protected log export is still required for persistence acknowledgment.
+	callPayloadSpanReported
+	// callPayloadDelivered: the target's log DB has appended the payload.
 	callPayloadDelivered
 )
 
@@ -3655,7 +3699,7 @@ func (sess *daggerSession) takeCallPayloadForWrite(digest string, targets []stri
 	taken := make([]string, 0, len(targets))
 	for _, target := range targets {
 		switch states[target] {
-		case callPayloadUnclaimed, callPayloadClaimed:
+		case callPayloadUnclaimed, callPayloadClaimed, callPayloadSpanReported:
 			states[target] = callPayloadWriting
 			taken = append(taken, target)
 		case callPayloadWriting, callPayloadDelivered:
@@ -3669,8 +3713,8 @@ func (sess *daggerSession) takeCallPayloadForWrite(digest string, targets []stri
 // marks each target done for good. Otherwise the targets are released so the
 // record's retry can deliver them — or, once the payload processor gives up
 // on it, a later closure walk, though only one that reaches the record via a
-// root not yet delivered to that target; a target a span delivered in the
-// meantime keeps that state.
+// root not yet delivered to that target. A reported span is not a durable
+// receipt and cannot override a failed log write.
 func (sess *daggerSession) settleCallPayload(digest string, targets []string, delivered bool) {
 	if digest == "" || len(targets) == 0 {
 		return

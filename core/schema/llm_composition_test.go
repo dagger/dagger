@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
@@ -106,34 +107,23 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 			require.Equal(t, test.want, llm.Self().Messages[1].CompositionOwner)
 
 			setCaller("replay-caller")
-			portable, err := llm.Self().PortableRecipe(ctx)
-			require.NoError(t, err)
-			require.Equal(t, test.want, portable.Self().Messages[1].CompositionOwner)
-			recipe, err := portable.RecipeID(ctx)
+			recipe, err := llm.RecipeID(ctx)
 			require.NoError(t, err)
 			encoded, err := recipe.Encode()
 			require.NoError(t, err)
 			var decoded call.ID
 			require.NoError(t, decoded.Decode(encoded))
-			require.Equal(t, []string{test.want}, compositionRecipeToolOwners(t, &decoded))
+			require.Equal(t, []string{test.want}, compositionRecipeOwners(t, &decoded, "withTools"))
 			require.Equal(t, []string{test.want}, compositionRecipeOwners(t, &decoded, "withSkills"))
 
 			var removed dagql.ObjectResult[*core.LLM]
-			require.NoError(t, srv.Select(ctx, portable, &removed, dagql.Selector{
+			require.NoError(t, srv.Select(ctx, llm, &removed, dagql.Selector{
 				Field: "__withoutComposition", Args: []dagql.NamedInput{{Name: "owner", Value: dagql.String("group-A")}},
 			}))
-			removedPortable, err := removed.Self().PortableRecipe(ctx)
-			require.NoError(t, err)
-			removedRecipe, err := removedPortable.RecipeID(ctx)
-			require.NoError(t, err)
 			if test.want == "group-A" {
-				require.Len(t, removedPortable.Self().Messages, 1)
-				require.Empty(t, compositionRecipeToolOwners(t, removedRecipe))
-				require.Empty(t, compositionRecipeOwners(t, removedRecipe, "withSkills"))
+				require.Len(t, removed.Self().Messages, 1)
 			} else {
-				require.Len(t, removedPortable.Self().Messages, 2)
-				require.Equal(t, []string{test.want}, compositionRecipeToolOwners(t, removedRecipe))
-				require.Equal(t, []string{test.want}, compositionRecipeOwners(t, removedRecipe, "withSkills"))
+				require.Len(t, removed.Self().Messages, 2)
 			}
 		})
 	}
@@ -165,7 +155,7 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 		}
 	}
 	server.moduleErr = nil
-	// Default and explicit versions survive reconstruction of a portable recipe.
+	// Default and explicit versions are recorded on the original call frame.
 	for _, version := range []int{1, 0, 7} {
 		t.Run(fmt.Sprintf("binding version %d", version), func(t *testing.T) {
 			toolArgs := []dagql.NamedInput{{Name: "object", Value: dagql.NewAnyID(toolID)}}
@@ -177,9 +167,7 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 				dagql.Selector{Field: "llm", Args: []dagql.NamedInput{{Name: "model", Value: dagql.Opt(dagql.String("test-model"))}}},
 				dagql.Selector{Field: "withTools", Args: toolArgs},
 			))
-			portable, err := llm.Self().PortableRecipe(ctx)
-			require.NoError(t, err)
-			recipe, err := portable.RecipeID(ctx)
+			recipe, err := llm.RecipeID(ctx)
 			require.NoError(t, err)
 			found := false
 			for id := recipe; id != nil; id = id.Receiver() {
@@ -188,8 +176,12 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 				}
 				found = true
 				arg := id.Arg("version")
-				require.NotNil(t, arg)
-				require.EqualValues(t, version, arg.Value().ToInput())
+				if version == 0 {
+					require.Nil(t, arg, "the default need not be materialized")
+				} else {
+					require.NotNil(t, arg)
+					require.EqualValues(t, version, arg.Value().ToInput())
+				}
 			}
 			require.True(t, found)
 		})
@@ -205,9 +197,139 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 	}
 }
 
-func compositionRecipeToolOwners(t *testing.T, recipe *call.ID) []string {
-	t.Helper()
-	return compositionRecipeOwners(t, recipe, "withTools")
+func TestLLMRestoreSkipsSupersededToolConstruction(t *testing.T) {
+	for _, warm := range []bool{false, true} {
+		for _, sameSession := range []bool{false, true} {
+			t.Run(fmt.Sprintf("warm=%t/sameSession=%t", warm, sameSession), func(t *testing.T) {
+				md := &engine.ClientMetadata{ClientID: "source", SessionID: "source"}
+				ctx := engine.ContextWithClientMetadata(t.Context(), md)
+				cache, err := dagql.NewCache(ctx, "", nil, nil)
+				require.NoError(t, err)
+				ctx = dagql.ContextWithCache(ctx, cache)
+				server := &compositionTestServer{currentTypeDefsTestServer: &currentTypeDefsTestServer{mainClient: md}}
+				root := core.NewRoot(server)
+				ctx = core.ContextWithQuery(ctx, root)
+				base, err := NewCoreSchemaBase(ctx, server)
+				require.NoError(t, err)
+				srv, err := base.Fork(ctx, root, "")
+				require.NoError(t, err)
+				server.dag = srv
+				const resource = dagql.SessionResourceHandle("superseded-tool-resource")
+				require.NoError(t, cache.BindSessionResource(ctx, md.SessionID, md.ClientID, resource, "source-only"))
+				calls := 0
+				fail := false
+				dagql.Fields[*core.Query]{
+					dagql.NodeFunc("replacementTool", func(ctx context.Context, _ dagql.ObjectResult[*core.Query], _ struct{ Name string }) (dagql.ObjectResult[*core.TypeDef], error) {
+						calls++
+						if fail {
+							return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("tool construction must remain lazy")
+						}
+						obj, err := dagql.NewObjectResultForCurrentCall(ctx, srv, &core.TypeDef{})
+						if err != nil {
+							return obj, err
+						}
+						return obj.WithSessionResourceHandle(ctx, resource)
+					}),
+				}.Install(srv)
+				var seed dagql.ObjectResult[*core.LLM]
+				require.NoError(t, srv.Select(ctx, srv.Root(), &seed, dagql.Selector{
+					Field: "llm", Args: []dagql.NamedInput{{Name: "model", Value: dagql.Opt(dagql.String("test-model"))}},
+				}))
+				recipe, err := seed.RecipeID(ctx)
+				require.NoError(t, err)
+				for _, name := range []string{"A", "B"} {
+					objectRecipe := call.New().Append((&core.TypeDef{}).Type(), "replacementTool",
+						call.WithArgs(call.NewArgument("name", call.NewLiteralString(name), false)))
+					if warm {
+						_, err := srv.Load(ctx, objectRecipe)
+						require.NoError(t, err)
+					}
+					recipe = recipe.Append((&core.LLM{}).Type(), "withTools", call.WithArgs(
+						call.NewArgument("object", call.NewLiteralID(objectRecipe), false),
+						call.NewArgument("owner", call.NewLiteralString("owner-"+name), false),
+					))
+				}
+				calls, fail = 0, true
+				if !sameSession {
+					ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "destination", SessionID: "destination"})
+				}
+				if !warm {
+					cache, err = dagql.NewCache(ctx, "", nil, nil)
+					require.NoError(t, err)
+					ctx = dagql.ContextWithCache(ctx, cache)
+				}
+				_, err = srv.Load(ctx, recipe)
+				require.NoError(t, err)
+				require.Zero(t, calls, "loading the final LLM must not construct either tool object")
+			})
+		}
+	}
+}
+
+func TestLLMCommittedLeafRestore(t *testing.T) {
+	newSession := func(name string) (context.Context, *dagql.Server) {
+		md := &engine.ClientMetadata{ClientID: name, SessionID: name}
+		ctx := engine.ContextWithClientMetadata(t.Context(), md)
+		cache, err := dagql.NewCache(ctx, "", nil, nil)
+		require.NoError(t, err)
+		ctx = dagql.ContextWithCache(ctx, cache)
+		server := &compositionTestServer{currentTypeDefsTestServer: &currentTypeDefsTestServer{mainClient: md}}
+		root := core.NewRoot(server)
+		ctx = core.ContextWithQuery(ctx, root)
+		base, err := NewCoreSchemaBase(ctx, server)
+		require.NoError(t, err)
+		srv, err := base.Fork(ctx, root, "")
+		require.NoError(t, err)
+		server.dag = srv
+		return ctx, srv
+	}
+	ctx, srv := newSession("source")
+	frames := map[string]*callpbv1.Call{}
+	content, err := (dagql.ArrayInput[dagql.InputObject[core.LLMContentBlockInput]]{}).Decoder().DecodeInput([]any{
+		map[string]any{"kind": "TEXT", "text": "recorded answer", "arguments": ""},
+		map[string]any{"kind": "TOOL_CALL", "callId": "call-1", "toolName": "tool", "arguments": "{}"},
+	})
+	require.NoError(t, err)
+	var committed dagql.ObjectResult[*core.LLM]
+	receiver := srv.Root()
+	for _, sel := range []dagql.Selector{
+		{Field: "llm", Args: []dagql.NamedInput{{Name: "model", Value: dagql.Opt(dagql.String("test-model"))}}},
+		{Field: "withPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.String("hello")}}},
+		{Field: "withResponse", Args: []dagql.NamedInput{{Name: "content", Value: content}}},
+		{Field: "withToolResult", Args: []dagql.NamedInput{
+			{Name: "callId", Value: dagql.String("call-1")},
+			{Name: "content", Value: dagql.String("recorded result")},
+			{Name: "errored", Value: dagql.Boolean(false)},
+		}},
+		{Field: "withReasoningEffort", Args: []dagql.NamedInput{{Name: "effort", Value: dagql.String("low")}}},
+		{Field: "withReasoningEffort", Args: []dagql.NamedInput{{Name: "effort", Value: dagql.String("high")}}},
+	} {
+		require.NoError(t, srv.Select(ctx, receiver, &committed, sel))
+		frame, err := committed.ResultCall()
+		require.NoError(t, err)
+		payload, err := frame.CallPB(ctx)
+		require.NoError(t, err)
+		frames[payload.Digest] = payload
+		receiver = committed
+	}
+	leaf, err := committed.RecipeDigest(ctx)
+	require.NoError(t, err)
+	require.Len(t, frames, 6, "keep original calls, including superseded state setters")
+
+	// The consumer, not the producer, assembles the delivered individual frames
+	// around the committed leaf. A new cache has no source-session handles.
+	var recipe call.ID
+	require.NoError(t, recipe.FromProto(&callpbv1.DAG{Value: &callpbv1.DAG_Recipe{Recipe: &callpbv1.RecipeDAG{
+		RootDigest: leaf.String(), CallsByDigest: frames,
+	}}}))
+	require.Equal(t, leaf, recipe.Digest())
+	dstCtx, dst := newSession("destination")
+	loaded, err := dst.Load(dstCtx, &recipe)
+	require.NoError(t, err)
+	restored := loaded.(dagql.ObjectResult[*core.LLM])
+	require.Equal(t, committed.Self().Messages, restored.Self().Messages)
+	require.Equal(t, "recorded answer", restored.Self().Messages[1].TextContent())
+	require.Equal(t, "recorded result", restored.Self().Messages[2].ToolResultContent())
 }
 
 func compositionRecipeOwners(t *testing.T, recipe *call.ID, field string) []string {

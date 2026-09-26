@@ -15,12 +15,13 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/tuist"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 )
 
-// The seam `dagger agent --trace` reads the restore plan through
+// The seam `dagger agent -r` reads the restore plan through
 // (hack/designs/resume-from-trace.md §5.1, "Reading the DB back"): the
 // projection and the anchor rebuild are reads OF the frontend's DB, which the
 // frontend owns single-threaded, so the CLI cannot reach for the DB directly.
@@ -54,9 +55,9 @@ func cannedSnapshotChain() (root *callpbv1.Call, frames []*callpbv1.Call) {
 }
 
 const (
-	// cannedAnchorDigest is the imported chief's resume anchor: the digest
-	// its dagger.io/agent.snapshot.digest record names, and the key its call
-	// payload arrives under.
+	// cannedAnchorDigest is the imported chief's resume anchor: the snapshot
+	// digest its control record names, and the key its call payload arrives
+	// under.
 	cannedAnchorDigest = "xxh3:snapshot"
 	cannedAnchorPrompt = "find the leak"
 	// cannedMissingDigest names a conversation whose payload never reached
@@ -64,43 +65,25 @@ const (
 	cannedMissingDigest = "xxh3:neverpublished"
 )
 
-// cannedRestoreLogs is the rest of the capture's log channel: the resume
-// anchor each agent published, and the call payloads that make the chief's
-// anchor rebuildable. Both are attribute-only records, like every fact resume
-// rides on.
-func cannedRestoreLogs(traceID byte, withWorker bool) *collogspb.ExportLogsServiceRequest {
-	record := func(span byte, attrs ...*commonpb.KeyValue) *logspb.LogRecord {
-		return &logspb.LogRecord{
-			TimeUnixNano: uint64(time.Unix(foreignTurnEnd, 0).UnixNano()),
-			TraceId:      cannedTraceID(traceID),
-			SpanId:       cannedSpanID(span),
-			Body:         &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: ""}},
-			Attributes:   attrs,
-		}
-	}
-	anchor := func(span byte, digest string) *logspb.LogRecord {
-		return record(span, cannedStringAttr(telemetryattrs.AgentSnapshotDigestAttr, digest))
-	}
-
-	records := []*logspb.LogRecord{anchor(foreignLoopSpanID, cannedAnchorDigest)}
-	if withWorker {
-		// The worker's anchor names a conversation whose payload never
-		// arrived, so the two halves of §5.3.3 are both reachable from one
-		// capture.
-		records = append(records, anchor(foreignWorkerSpanID, cannedMissingDigest))
-	}
-
+// cannedRestoreLogs is the call payloads that make the chief's anchor
+// rebuildable, as the capture's log channel carries them.
+func cannedRestoreLogs() *collogspb.ExportLogsServiceRequest {
 	_, frames := cannedSnapshotChain()
+	records := make([]*logspb.LogRecord, 0, len(frames))
 	for _, frame := range frames {
 		payload, err := (proto.MarshalOptions{Deterministic: true}).Marshal(frame)
 		if err != nil {
 			panic(err)
 		}
-		rec := record(foreignTurnSpanID,
-			cannedStringAttr(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
-		)
-		rec.Body = &commonpb.AnyValue{Value: &commonpb.AnyValue_BytesValue{BytesValue: payload}}
-		records = append(records, rec)
+		records = append(records, &logspb.LogRecord{
+			TimeUnixNano: uint64(time.Unix(foreignTurnEnd, 0).UnixNano()),
+			TraceId:      cannedTraceID(foreignTraceIDByte),
+			SpanId:       cannedSpanID(foreignTurnSpanID),
+			Body:         &commonpb.AnyValue{Value: &commonpb.AnyValue_BytesValue{BytesValue: payload}},
+			Attributes: []*commonpb.KeyValue{
+				cannedStringAttr(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			},
+		})
 	}
 
 	return &collogspb.ExportLogsServiceRequest{
@@ -112,7 +95,7 @@ func cannedRestoreLogs(traceID byte, withWorker bool) *collogspb.ExportLogsServi
 
 // restorableFrontend is what the CLI holds when the restore runs: a frontend
 // whose DB has just had a RESTORABLE source trace imported into it — the
-// slice-4 capture plus the anchors and payloads a plan is made of.
+// slice-4 capture plus the control records and payloads a plan is made of.
 //
 // A report-mode frontend, because that is the mode whose dispatch runs
 // inline: a headless TUI only QUEUES dispatched work until something steps
@@ -140,15 +123,48 @@ func restorableFrontend(t *testing.T, withWorker bool) *frontendPretty {
 		Metrics: db.MetricExporter(),
 	})
 	require.NoError(t, imp.ImportSpans(ctx, foreignSessionTrace(withWorker)))
-	states := []cannedStateRecord{{span: foreignLoopSpanID, state: "IDLE"}}
-	if withWorker {
-		states = append(states, cannedStateRecord{span: foreignWorkerSpanID, state: "IDLE"})
-	}
-	require.NoError(t, imp.ImportLogs(ctx, cannedAgentStateLogs(foreignTraceIDByte, states...)))
-	require.NoError(t, imp.ImportLogs(ctx, cannedRestoreLogs(foreignTraceIDByte, withWorker)))
+	require.NoError(t, imp.ImportLogs(ctx, foreignAgentControlLogs(withWorker, "IDLE")))
+	require.NoError(t, imp.ImportLogs(ctx, cannedRestoreLogs()))
 	require.NoError(t, imp.Seal(ctx))
 
 	return NewASCIIReporterWithDB(io.Discard, db)
+}
+
+func TestImportBarrierWaitsForApplication(t *testing.T) {
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(80, 24))
+	imp := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Logs: fe.LogExporter()})
+	require.NoError(t, imp.ImportLogs(t.Context(), cannedRestoreLogs()))
+	require.Empty(t, fe.db.Calls, "export only queued the payloads")
+
+	// With the event loop blocked, enqueue success cannot satisfy the barrier.
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, fe.WaitForEventLoop(ctx), context.DeadlineExceeded)
+	require.Empty(t, fe.db.Calls)
+	// The cancelled caller must not leave a callback blocking the UI.
+	fe.tui.Step()
+	require.Contains(t, fe.db.Calls, cannedAnchorDigest)
+
+	done := make(chan error, 1)
+	go func() { done <- fe.WaitForEventLoop(t.Context()) }()
+	require.Eventually(t, func() bool {
+		fe.tui.Step()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+}
+
+func TestImportBarrierReportMode(t *testing.T) {
+	fe := restorableFrontend(t, false)
+	require.NoError(t, fe.WaitForEventLoop(t.Context()))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, fe.WaitForEventLoop(ctx), context.Canceled)
 }
 
 // TestAgentRestorePlanReadsTheFrontendsDB: the plan the CLI acts on is the
@@ -177,7 +193,7 @@ func TestAgentRestorePlanReadsTheFrontendsDB(t *testing.T) {
 
 	scout := byID[importScoutAgentID]
 	require.Equal(t, importChiefAgentID, scout.ParentAgentID,
-		"the worker's loop is nested under its chief's, which is what focus reads")
+		"the worker's control record names its chief, which is what focus reads")
 }
 
 // TestEncodedIDForCallDigestRebuildsAnAnchor is the other half of the seam:

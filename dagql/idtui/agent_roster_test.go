@@ -61,7 +61,7 @@ func TestAgentRosterRendersEveryAgent(t *testing.T) {
 		{Name: "chief", State: "RUNNING"},
 		{Name: "scout", State: "IDLE"},
 		{Name: "docs", State: "PAUSED"},
-		{Name: "tests", State: "WAITING_INPUT", WaitingOn: "ok to delete testdata/legacy?"},
+		{Name: "tests", State: "WAITING_INPUT"},
 		{Name: "bench", State: "FAILED"},
 		{Name: "archive", State: "STOPPED"},
 	})
@@ -188,7 +188,7 @@ func TestAgentRosterNumbersOnlyJumpableEntries(t *testing.T) {
 }
 
 // TestAgentRosterUnknownStateIsQuiet covers the window between an agent's loop
-// span appearing and its first state record arriving: the agent is known to
+// span appearing and its first control record arriving: the agent is known to
 // exist but its state is not, and the strip must not invent one.
 func TestAgentRosterUnknownStateIsQuiet(t *testing.T) {
 	line := strings.TrimSpace(renderRoster(t, 80, []AgentRosterEntry{

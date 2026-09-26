@@ -211,6 +211,10 @@ type Client struct {
 	hostname       string
 	stableClientID string
 
+	// primarySpan is the span Connect was called under (e.g. the CLI's
+	// command span): the span this client's session is presented as.
+	primarySpan trace.SpanContext
+
 	nestedSessionPort int
 
 	labels enginetel.Labels
@@ -277,6 +281,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		// infer that this is not a main client caller, server ID is never set for those currently
 		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
 	}
+
+	// The caller's span, not the connect span below, is what the session is
+	// presented as (the CLI's command span for `dagger agent`, `dagger
+	// session`, ...).
+	c.primarySpan = trace.SpanContextFromContext(ctx)
 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
 	connectCtx, span := Tracer(ctx).Start(ctx, "connect", connectSpanOpts...)
@@ -1466,9 +1475,12 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	proxyReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{
-			Scheme: "http",
-			Host:   "dagger",
-			Path:   r.URL.Path,
+			Scheme:     "http",
+			Host:       "dagger",
+			Path:       r.URL.Path,
+			RawPath:    r.URL.RawPath,
+			RawQuery:   r.URL.RawQuery,
+			ForceQuery: r.URL.ForceQuery,
 		},
 		Header: r.Header,
 		Body:   r.Body,
@@ -1773,6 +1785,10 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
 		Profile:                        c.Profile,
+	}
+	if c.primarySpan.IsValid() {
+		md.PrimaryTraceID = c.primarySpan.TraceID().String()
+		md.PrimarySpanID = c.primarySpan.SpanID().String()
 	}
 	if c.EngineCloudTelemetry && c.CloudAuth != nil {
 		md.CloudTelemetryPublisher = engine.CloudTelemetryPublisherEngine

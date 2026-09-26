@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
@@ -79,10 +80,8 @@ func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record 
 		otellog.Bool(telemetryattrs.LogRoleAttr, true))
 	malformedProgress := frontendTestLogRecord(spanID, otellog.StringValue("malformed progress\n"),
 		otellog.Bool(telemetryattrs.ProgressItemAttr, true))
-	malformedAgentState := frontendTestLogRecord(spanID, otellog.StringValue("malformed agent state\n"),
-		otellog.Int64(telemetryattrs.AgentStateAttr, 1))
-	malformedAgentSnapshot := frontendTestLogRecord(spanID, otellog.StringValue("malformed agent snapshot\n"),
-		otellog.Bool(telemetryattrs.AgentSnapshotDigestAttr, true))
+	malformedAgentControl := frontendTestLogRecord(spanID, otellog.StringValue("malformed agent control\n"),
+		otellog.String(agentcontrol.VersionAttr, "not an int"))
 	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"),
 		otellog.Bool(telemetry.ContentTypeAttr, true),
 		otellog.String(telemetry.LogsVerboseAttr, "not bool"),
@@ -100,8 +99,7 @@ func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record 
 		unreservedBytes,
 		malformedRole,
 		malformedProgress,
-		malformedAgentState,
-		malformedAgentSnapshot,
+		malformedAgentControl,
 		after,
 		eof,
 	}

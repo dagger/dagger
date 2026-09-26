@@ -798,6 +798,7 @@ impl Agent {
     /// Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
     /// This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
     /// Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+    /// A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
     /// Idempotent per subscriber; re-subscribing replaces the state set.
     ///
     /// # Arguments
@@ -827,6 +828,7 @@ impl Agent {
     /// Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
     /// This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
     /// Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+    /// A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
     /// Idempotent per subscriber; re-subscribing replaces the state set.
     ///
     /// # Arguments
@@ -11277,6 +11279,9 @@ pub struct LlmSpawnOpts<'a> {
     /// Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
+    /// Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle. The parent must already be restored in this session and cannot be the agent itself or its descendant.
+    #[builder(setter(into, strip_option), default)]
+    pub parent_handle: Option<&'a str>,
     /// The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
     /// RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.
     #[builder(setter(into, strip_option), default)]
@@ -11845,25 +11850,6 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         })
     }
-    /// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-    pub async fn portable_id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("portableID");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-    pub async fn emit_history(&self) -> Result<Llm, DaggerError> {
-        let query = self.selection.select("emitHistory");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
-        Ok(Llm {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("LLM"),
-            graphql_client: self.graphql_client.clone(),
-        })
-    }
     /// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
     ///
     /// # Arguments
@@ -11964,6 +11950,9 @@ impl Llm {
         }
         if let Some(state) = opts.state {
             query = query.arg("state", state);
+        }
+        if let Some(parent_handle) = opts.parent_handle {
+            query = query.arg("parentHandle", parent_handle);
         }
         if let Some(error) = opts.error {
             query = query.arg("error", error);
@@ -14146,6 +14135,17 @@ impl Query {
     /// The current UTC time in RFC3339 format. Never cached.
     pub async fn current_timestamp(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("currentTimestamp");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Name the current session.
+    /// The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+    ///
+    /// # Arguments
+    ///
+    /// * `title` - The title, sanitized to a single printable line.
+    pub async fn set_session_title(&self, title: impl Into<String>) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("setSessionTitle");
+        query = query.arg("title", title.into());
         query.execute(self.graphql_client.clone()).await
     }
     /// Creates an empty directory.

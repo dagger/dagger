@@ -51,22 +51,29 @@ Each installed module that exposes an @agent function contributes its toolset an
 system prompt. With no arguments, every installed agent is composed, in
 alphabetical order. Name one or more agents to compose only those.
 
-With --trace, a past session is restored from the trace it published to Dagger
-Cloud: every agent it ran comes back under the same identity, with the
-conversation and lifecycle state it had, and the old session's whole progress
-view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
-agents are still running FORKS them — the restored instances are new runtimes
-in this session, not a hand-off of the live ones. And messages that were
-enqueued but never consumed are not in the trace at all, so they are not
-restored; anything a turn actually consumed is part of its conversation and is.
+With -r &lt;trace-id&gt;, restore agents, committed conversations, Workspaces, tools,
+lifecycle state, and notification subscriptions from a past session's trace. No
+destination agent modules are composed. A retained engine archive provides a
+verified bootstrap before background history loading. If no local archive is
+retained, the CLI transparently fetches the trace from Dagger Cloud and validates
+its observed canonical records and recipe closure. Cloud restore waits for the
+whole trace and cannot prove that later records or entirely absent agents were not
+lost; it does not invent an archive finality seal.
+
+Restore forks new inert runtimes; it does not hand off a live session or start a
+model turn. Pending messages not committed to a conversation are not recovered.
+
+Restore is best-effort: an agent the trace does not carry enough to restore is
+skipped, along with its subscriptions, and a warning names it and why.
+
+Run -r with no trace ID to list retained engine archives without restoring.
 
 Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                 # Resume a saved session (interactive picker)
-  dagger agent -r=&lt;session&gt;       # Resume a specific saved session
-  dagger agent --trace &lt;id&gt;       # Restore a past session from its Dagger Cloud trace
+  dagger agent -r                 # List retained engine archives
+  dagger agent -r &lt;trace-id&gt;      # Restore agents from a past session's trace
 
 
 ```
@@ -76,11 +83,9 @@ dagger agent [options] [name...]
 ### Options
 
 ```
-      --agent string              With --trace, focus this restored agent (runtime handle or name) instead of the top-level one
-  -l, --list                      List available agents
-      --partial                   With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not
-  -r, --resume session[=picker]   Resume a saved session (interactive picker if no id given)
-      --trace string              Restore a past session from its Dagger Cloud trace: its agents, their conversations, and its scrollback
+      --agent string          With -r, focus this restored agent (runtime handle or name) instead of the top-level one
+  -l, --list                  List available agents
+  -r, --resume trace[=list]   Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, list retained engine archives
 ```
 
 ### Options inherited from parent commands

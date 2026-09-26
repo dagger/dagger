@@ -6,11 +6,17 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,6 +28,114 @@ func (c agentTestConn) Host() string { return "agent-test" }
 func (c agentTestConn) Close() error { return nil }
 func (c agentTestConn) Do(req *http.Request) (*http.Response, error) {
 	return c.do(req)
+}
+
+func TestResumeServable(t *testing.T) {
+	const traceID = "0123456789abcdef0123456789abcdef"
+	archiveReply := func(status int, body string) *archive.Client {
+		return archive.NewClient(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+			require.Equal(t, "/v1/telemetry/archives/"+traceID, req.URL.Path)
+			return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+		}})
+	}
+	for _, tc := range []struct {
+		name   string
+		source *archive.Client
+		cloud  bool
+		want   bool
+	}{
+		{name: "live archive", source: archiveReply(http.StatusConflict, `{"error":"state","state":"active"}`), want: true},
+		{name: "sealed archive", source: archiveReply(http.StatusConflict, `{"error":"state","state":"closed"}`), want: true},
+		{name: "unsealed archive", source: archiveReply(http.StatusOK, `{"traceID":"`+traceID+`","state":"interrupted"}`), want: true},
+		{name: "no archive, no cloud", source: archiveReply(http.StatusNotFound, `{"error":"not_found"}`)},
+		{name: "no archive, cloud", source: archiveReply(http.StatusNotFound, `{"error":"not_found"}`), cloud: true, want: true},
+		{name: "archive unavailable, no cloud", source: archiveReply(http.StatusServiceUnavailable, `{"error":"io"}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resumeServable(t.Context(), tc.source, traceID, func(context.Context) bool { return tc.cloud })
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRestoreSessionInitializationNeedsNoProvider(t *testing.T) {
+	// A nil engine client makes any destination LLM/workspace query a failure.
+	// Restoring client plumbing must not evaluate either before bootstrap.
+	h := newShellCallHandler(nil, &idtui.FrontendMock{})
+	h.llmModel = "destination-provider-does-not-exist"
+	s, err := h.initLLMSession(t.Context(), nil, true)
+	require.NoError(t, err)
+	require.NotNil(t, s.Target())
+	require.Nil(t, s.Target().llm)
+	require.Nil(t, s.Target().initialLLM)
+	require.Nil(t, s.Target().lastSynced())
+	require.Empty(t, s.Target().model)
+	require.Nil(t, s.Target().runtime())
+}
+
+func TestTracedResetDoesNotRebindExportBaseline(t *testing.T) {
+	var queries []string
+	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+		var query dagger.Request
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
+		queries = append(queries, query.Query)
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"data":{"node":{"withoutMessageHistory":{"withModel":{"id":"reset"}}}}}`))}, nil
+	}}))
+	require.NoError(t, err)
+	defer dag.Close()
+
+	a := &sessionAgent{
+		session:     &LLMSession{dag: dag, plumbingCtx: t.Context()},
+		tracedReset: dagger.Ref[*dagger.LLM](dag, dagger.ID("traced-snapshot")).WithoutMessageHistory(),
+		model:       "test-model",
+	}
+	// An export is allowed to move comparison bookkeeping, never the reset seed.
+	a.setLastSynced(dagger.Ref[*dagger.Workspace](dag, dagger.ID("exported-baseline")))
+	_, err = a.resetLLM().ID(t.Context())
+	require.NoError(t, err)
+	require.Len(t, queries, 1)
+	require.Contains(t, queries[0], "traced-snapshot")
+	require.Contains(t, queries[0], "withoutMessageHistory")
+	require.Contains(t, queries[0], "test-model")
+	require.NotContains(t, queries[0], "withWorkspace")
+	require.NotContains(t, queries[0], "currentWorkspace")
+	require.NotContains(t, queries[0], "exported-baseline")
+}
+func (DaggerCMDSuite) TestTracePromptIgnoresBrokenDestinationModule(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	// A real module lookup at this path must fail. Trace startup should use only
+	// core client facilities, without even attempting to parse this definition.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dagger.json"), []byte("not valid JSON"), 0600))
+	dag, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer dag.Close()
+	h := newInteractivePromptHandler(dag, interactivePromptModeOpts{restore: restoreRequest()})
+	h.moduleURL = dir
+	require.NoError(t, h.Initialize(ctx))
+	ordinary := newInteractivePromptHandler(dag, interactivePromptModeOpts{})
+	ordinary.moduleURL = dir
+	ordinary.noModule = false
+	require.Error(t, ordinary.Initialize(ctx), "control: loading the destination definition must fail")
+}
+
+func (DaggerCMDSuite) TestTraceRestoreRuntimeQueries(ctx context.Context, t *testctx.T) {
+	dag, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer dag.Close()
+	id, err := dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithSystemPrompt("traced configuration").ID(ctx)
+	require.NoError(t, err)
+	target := &sessionRestore{dag: dag}
+	chief, err := target.Rehydrate(ctx, dagui.AgentRestore{ID: "cli-restore-chief", Name: "chief", State: "IDLE"}, string(id))
+	require.NoError(t, err)
+	worker, err := target.Rehydrate(ctx, dagui.AgentRestore{ID: "cli-restore-worker", Name: "worker", ParentAgentID: "cli-restore-chief", State: "FAILED", Error: "original failure"}, string(id))
+	require.NoError(t, err)
+	require.NoError(t, target.Subscribe(ctx, worker, chief, []string{"FAILED", "IDLE"}))
+	chiefState, err := dagger.Ref[*dagger.Agent](dag, dagger.ID(chief)).State(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.AgentStateIdle, chiefState, "notify on an inert restored agent must not wake a subscriber")
+	workerError, err := dagger.Ref[*dagger.Agent](dag, dagger.ID(worker)).Error(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "original failure", workerError)
 }
 
 func TestComposeAgentsSnapshotFallback(t *testing.T) {

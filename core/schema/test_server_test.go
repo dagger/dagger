@@ -163,6 +163,10 @@ func (s *currentTypeDefsTestServer) FlushSessionTelemetry(context.Context) error
 	return nil
 }
 
+func (s *currentTypeDefsTestServer) SetSessionTitle(context.Context, string) error {
+	return nil
+}
+
 func (s *currentTypeDefsTestServer) SessionScopedContext(ctx context.Context) (context.Context, error) {
 	return context.WithoutCancel(ctx), nil
 }
