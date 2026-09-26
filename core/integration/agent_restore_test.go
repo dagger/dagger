@@ -14,9 +14,9 @@ package core
 // recording expects, so "a send continues the conversation rather than opening
 // an empty one" is decided by the model, not by the test.
 //
-// It needs its own CLI session (to point telemetry at the sink) and a second
-// one to restore into, so it skips when nested, like the other trace tests in
-// agent_runtime_test.go.
+// The Cloud-fetch tests start their source session with sink.clientOpts, which
+// an inherited (nested) session ignores, so they skip when nested. The rest use
+// connectWithTrace, which starts its own CLI session either way.
 
 import (
 	"context"
@@ -174,6 +174,21 @@ func fetchAndPlan(ctx context.Context, t *testctx.T, client *cloud.OTLPClient, d
 		Metrics: db.MetricExporter(),
 	})))
 	return db.RestorePlan()
+}
+
+// importCapture replays a source session's captured exports into a fresh
+// restoring DB through the real importer, without a fetch.
+func importCapture(ctx context.Context, t *testctx.T, traces []*coltracepb.ExportTraceServiceRequest, logs []*collogspb.ExportLogsServiceRequest) *dagui.DB {
+	t.Helper()
+	db := restoringDB(t)
+	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
+	for _, batch := range traces {
+		require.NoError(t, importer.ImportSpans(ctx, batch))
+	}
+	for _, batch := range logs {
+		require.NoError(t, importer.ImportLogs(ctx, batch))
+	}
+	return db
 }
 
 // restoreAgent executes one plan entry the way the CLI does: rebuild the
@@ -473,14 +488,7 @@ func (AgentRestoreSuite) TestRestoreDormantLifecycleGraph(ctx context.Context, t
 	wantStates := map[string]string{"dormant": "IDLE", "paused": "PAUSED", "failed": "FAILED", "dismissed": "STOPPED"}
 	for range 2 {
 		traces, logs := sink.capture()
-		db := restoringDB(t)
-		importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
-		for _, batch := range traces {
-			require.NoError(t, importer.ImportSpans(ctx, batch))
-		}
-		for _, batch := range logs {
-			require.NoError(t, importer.ImportLogs(ctx, batch))
-		}
+		db := importCapture(ctx, t, traces, logs)
 		plan := db.RestorePlan()
 		require.Len(t, plan, len(wantStates))
 		target, targetSink := connectWithTrace(ctx, t)
@@ -526,14 +534,7 @@ func (AgentRestoreSuite) TestRestoreWorkspaceAfterSourceDisappears(ctx context.C
 	require.NoError(t, os.WriteFile(filepath.Join(destinationDir, "pending.txt"), []byte("not the pending edit"), 0o644))
 	target, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: destinationDir})
 	traces, logs := sink.capture()
-	db := restoringDB(t)
-	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
-	for _, batch := range traces {
-		require.NoError(t, importer.ImportSpans(ctx, batch))
-	}
-	for _, batch := range logs {
-		require.NoError(t, importer.ImportLogs(ctx, batch))
-	}
+	db := importCapture(ctx, t, traces, logs)
 	plan := db.RestorePlan()
 	require.Len(t, plan, 1)
 	h := restoreAgent(ctx, t, target, db, plan[0])
@@ -578,14 +579,7 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 	sink.awaitRestorable(t, 4)
 	require.NoError(t, source.Close())
 	traces, logs := sink.capture()
-	db := restoringDB(t)
-	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter()})
-	for _, batch := range traces {
-		require.NoError(t, importer.ImportSpans(ctx, batch))
-	}
-	for _, batch := range logs {
-		require.NoError(t, importer.ImportLogs(ctx, batch))
-	}
+	db := importCapture(ctx, t, traces, logs)
 	plan := planByName(t, db.RestorePlan())
 	require.Len(t, plan, 4)
 	require.Equal(t, plan["chief"].ID, plan["worker"].ParentAgentID)
