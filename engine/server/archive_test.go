@@ -417,9 +417,42 @@ func TestControlPersistenceRetriesOnlyFailedTargets(t *testing.T) {
 		require.Len(t, rows, 1)
 		require.NoError(t, db.Close())
 	}
+	// A forwarded malformed control record is dropped on its own; it neither
+	// fails the batch nor persists.
 	foreign := rec.Clone()
 	foreign.SetAttributes(logapi.String(agentcontrol.VersionAttr, "unsupported"))
-	require.Error(t, originLogExporter{origin: "child", next: exp}.Export(t.Context(), []sdklog.Record{foreign}))
+	require.NoError(t, originLogExporter{origin: "child", next: exp}.Export(t.Context(), []sdklog.Record{foreign}))
+	db, err := srv.clientDBs.Open(t.Context(), "child")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+}
+
+// TestForwardedBatchWithControlRecordKeepsLogs: telemetry forwarded without an
+// emission context (cloud scale-out streams, nested CLI re-posts) goes through
+// originLogExporter. A control record in such a batch must not cost the
+// ordinary log lines batched with it.
+func TestForwardedBatchWithControlRecordKeepsLogs(t *testing.T) {
+	srv := &Server{clientDBs: clientdb.NewDBs(t.TempDir())}
+	sess := &daggerSession{sessionID: "session", mainClientCallerID: "main", clientRecords: map[string]*clientRecord{}}
+	sess.telemetryPubSub = NewPubSub(srv)
+	sess.clientRecords["main"] = &clientRecord{daggerSession: sess, clientID: "main"}
+	exp := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
+
+	batch := []sdklog.Record{
+		scopedLogRecord(t, "test", logapi.StringValue("build output"), logapi.String(telemetryattrs.LogRoleAttr, "stdout")),
+		controlTestRecord(t, archiveAgent().Record()),
+	}
+	require.NoError(t, (originLogExporter{origin: "main", next: exp}).Export(t.Context(), batch))
+
+	db, err := srv.clientDBs.Open(t.Context(), "main")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.NotEmpty(t, rows, "the ordinary log record forwarded alongside a control record was dropped")
 }
 
 // TestArchiveSharedTraceBelongsToFirstSession: an archive is keyed by trace ID
