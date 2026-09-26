@@ -78,7 +78,7 @@ func TestAroundFuncContentPreferredDigest(t *testing.T) {
 			require.Equal(t, recipe.String(), attrs[telemetry.DagDigestAttr].AsString())
 			require.Equal(t, attribute.STRING, attrs[telemetryattrs.DagContentPreferredDigestAttr].Type())
 			require.Equal(t, expected.String(), attrs[telemetryattrs.DagContentPreferredDigestAttr].AsString())
-			require.Contains(t, attrs, telemetry.DagCallAttr)
+			require.NotContains(t, attrs, telemetry.DagCallAttr)
 		})
 	}
 }
