@@ -122,9 +122,9 @@ func (sink *agentTraceSink) logsHandler(w http.ResponseWriter, r *http.Request) 
 
 // connectWithTrace creates a source session whose agent control records and
 // payloads are observable by tests. The resulting recipes come from committed
-// agent telemetry, never from an engine-local LLM handle or a public portable-ID
-// API. It explicitly starts the from-source CLI even when the test process is
-// nested, without changing the process-global session environment.
+// agent telemetry, never from an engine-local LLM handle. It explicitly starts
+// the from-source CLI even when the test process is nested, without changing
+// the process-global session environment.
 func connectWithTrace(ctx context.Context, t *testctx.T, configs ...engineconn.Config) (*dagger.Client, *agentTraceSink) {
 	t.Helper()
 	require.LessOrEqual(t, len(configs), 1)

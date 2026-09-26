@@ -54,7 +54,7 @@ type AgentNode struct {
 	// is the only thing telling a dismissal apart from a clean exit.
 	StopReason string
 
-	// SnapshotDigest is the portable recipe digest of the agent's last committed
+	// SnapshotDigest is the recipe digest of the agent's last committed
 	// conversation — the resume anchor. A client rebuilds that conversation's
 	// ID from the call payloads it has ingested and re-hydrates the instance
 	// from it.
@@ -204,7 +204,7 @@ type AgentRestore struct {
 	// record. Empty for every other state.
 	Error string
 
-	// SnapshotDigest is the portable recipe digest of the agent's last committed
+	// SnapshotDigest is the recipe digest of the agent's last committed
 	// conversation: the anchor the client rebuilds an ID from
 	// (DB.CallIDForDigest) and re-hydrates the instance through.
 	SnapshotDigest string

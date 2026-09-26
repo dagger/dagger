@@ -298,16 +298,14 @@ const (
 	// dismissals or restore nothing at all. (string)
 	AgentStopReasonAttr = "dagger.io/agent.stop.reason"
 
-	// AgentSnapshotDigestAttr carries the portable recipe digest of the agent's
-	// last committed conversation, updated on every commit (each step, each
-	// drained message, and once at loop start for the seed).
+	// AgentSnapshotDigestAttr carries the recipe digest of the agent's last
+	// committed LLM call, updated on every commit (each step, each drained
+	// message, and once at loop start for the seed).
 	//
 	// This is the resume anchor: a client rebuilds the conversation's ID from
-	// the call-payload log records above (or legacy dagger.io/dag.call span
-	// attributes) and re-hydrates the instance from it. It is deliberately a
-	// PORTABLE recipe: a post-evaluation result handle dies with its session,
-	// while the raw recipe retains superseded bindings whose stale operations
-	// must not be replayed in a later one. (string)
+	// the call-payload log records above and re-hydrates the instance from it;
+	// archive finalization verifies the anchor's recipe closure was delivered.
+	// (string)
 	AgentSnapshotDigestAttr = "dagger.io/agent.snapshot.digest"
 
 	// AgentRewindFromDigestAttr and AgentRewindToDigestAttr mark a REWIND
@@ -317,15 +315,15 @@ const (
 	// digest of the conversation being abandoned, To the recipe digest of the
 	// one adopted — the LLM state just before the edited prompt.
 	//
-	// They are recipe digests rather than portable ones, unlike
-	// AgentSnapshotDigestAttr, because their consumer is the transcript, not
-	// resume: every message span carries the recipe digest of the LLM call
-	// it belongs to (LLMCallDigestAttr), so a client walks the call payloads
-	// from From back to To and marks every message on that stretch as no
-	// longer part of the conversation. Without this the trace renders a
-	// linear transcript while the model's history has forked. A reseed that
-	// is not a rewind (compaction, a workspace rebind, a model change) emits
-	// no marker: nothing the transcript shows was abandoned. (string)
+	// Like AgentSnapshotDigestAttr they are recipe digests, but their consumer
+	// is the transcript, not resume: every message span carries the recipe
+	// digest of the LLM call it belongs to (LLMCallDigestAttr), so a client
+	// walks the call payloads from From back to To and marks every message on
+	// that stretch as no longer part of the conversation. Without this the
+	// trace renders a linear transcript while the model's history has forked.
+	// A reseed that is not a rewind (compaction, a workspace rebind, a model
+	// change) emits no marker: nothing the transcript shows was abandoned.
+	// (string)
 	AgentRewindFromDigestAttr = "dagger.io/agent.rewind.from"
 	AgentRewindToDigestAttr   = "dagger.io/agent.rewind.to"
 )
