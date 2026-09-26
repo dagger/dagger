@@ -41,7 +41,7 @@ import (
 // The payload is the canned capture trace_import_test.go already drives slice
 // 4 with, served over the wire instead of handed to the importer directly: the
 // same crashed session, with its never-ended spans and its attribute-only,
-// empty-bodied state records.
+// empty-bodied control records.
 
 // fetchTraceIDHex is the source trace's ID as it appears in the URL — derived
 // from the capture rather than spelled out, so the two cannot drift.
@@ -409,10 +409,10 @@ func TestFetchFailsOnATruncatedStream(t *testing.T) {
 }
 
 // TestFetchFailsOnAnUndecodablePayload: a payload this client cannot decode is
-// a lost fact — an agent's state record, a call payload, a whole subtree — and
-// §12 settled that a trace which cannot be rebuilt fails the restore rather
-// than degrading. The reference client warns and carries on, which is right
-// for a view and wrong for a restore.
+// a lost fact — an agent's control record, a call payload, a whole subtree —
+// and §12 settled that a trace which cannot be rebuilt fails the restore
+// rather than degrading. The reference client warns and carries on, which is
+// right for a view and wrong for a restore.
 func TestFetchFailsOnAnUndecodablePayload(t *testing.T) {
 	srv := cannedCloud(false)
 	srv.garbage = map[string]bool{"logs": true}

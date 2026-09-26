@@ -188,7 +188,7 @@ func TestAgentRosterNumbersOnlyJumpableEntries(t *testing.T) {
 }
 
 // TestAgentRosterUnknownStateIsQuiet covers the window between an agent's loop
-// span appearing and its first state record arriving: the agent is known to
+// span appearing and its first control record arriving: the agent is known to
 // exist but its state is not, and the strip must not invent one.
 func TestAgentRosterUnknownStateIsQuiet(t *testing.T) {
 	line := strings.TrimSpace(renderRoster(t, 80, []AgentRosterEntry{

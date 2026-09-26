@@ -384,7 +384,7 @@ func TestImportSealsTheForeignTracesUnfinishedSpans(t *testing.T) {
 	// The pathology stated in terms of the roster: the source trace's last
 	// word on the worker is RUNNING, and it is not.
 	scout := importedAgent(t, db, "scout")
-	require.Equal(t, "RUNNING", scout.State, "fixture: the capture's last state record")
+	require.Equal(t, "RUNNING", scout.State, "fixture: the capture's last control record")
 	require.False(t, scout.Live(), "an agent whose session died must not report as live")
 
 	// ...while the agent this session re-hydrated is live, because its NEW

@@ -23,7 +23,7 @@ import (
 // agent_control.go publishes the complete revisioned mutable projection.
 // There is no separate state or snapshot log authority.
 
-// AgentInstrumentationScope names the logger emitting agent state records.
+// AgentInstrumentationScope names the logger emitting agent control records.
 const AgentInstrumentationScope = "dagger.io/agent"
 
 // agentSpanAttrs builds the identity attributes stamped on an agent's loop
@@ -111,9 +111,9 @@ const agentRewindMessage = "Conversation rewound: the messages above it are no l
 // replaced by its ancestor `to`, so everything the transcript shows between
 // the two is no longer in the model's history.
 //
-// It is a span rather than a state record because it is an EVENT with a place
-// in the transcript — the row at which the conversation forked — and its facts
-// are known at start and never change, which is all a span attribute can
+// It is a span rather than a control record because it is an EVENT with a
+// place in the transcript — the row at which the conversation forked — and its
+// facts are known at start and never change, which is all a span attribute can
 // express. Emitted as an engine lifecycle event (EVENT origin) rather than an
 // assistant message so a renderer that predates the marker collapses it to a
 // one-liner instead of showing it as something the model said.

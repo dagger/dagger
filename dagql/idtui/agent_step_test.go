@@ -14,12 +14,13 @@ import (
 )
 
 // The per-step UI refresh contract (hack/designs/async-agents.md §5.1
-// follow-up): the engine publishes a conversation-snapshot record on every
-// commit, and the frontend folds those into step notifications for the shell
-// handler -- which is what lets the status line and changes preview track a
-// working agent step by step instead of going a whole turn stale. The
-// interject hint rides the same signal: a mid-turn submit is absorbed at the
-// next step boundary, so the boundary is also when the hint retires.
+// follow-up): the engine publishes a control revision with a new snapshot
+// digest on every commit, and the frontend folds those into step
+// notifications for the shell handler -- which is what lets the status line
+// and changes preview track a working agent step by step instead of going a
+// whole turn stale. The interject hint rides the same signal: a mid-turn
+// submit is absorbed at the next step boundary, so the boundary is also when
+// the hint retires.
 
 // stepShellHandler is focusShellHandler plus the per-step notification probe.
 type stepShellHandler struct {

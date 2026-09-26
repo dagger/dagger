@@ -2246,7 +2246,7 @@ func (rt *AgentRuntime) publishRewindLocked(ctx context.Context, next dagql.Obje
 // from then on.
 //
 // reason records who ended it (a caller, or session teardown) and rides the
-// terminal state record: the projection is STOPPED either way, and only the
+// terminal control record: the projection is STOPPED either way, and only the
 // reason lets a client restoring the trace tell a dismissal from a teardown.
 func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error, reason AgentStopReason) error {
 	if !kill && rt.ars != nil {

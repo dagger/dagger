@@ -2888,12 +2888,12 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		if fe.commandView != nil {
 			fe.commandView.Update()
 		}
-		// Agent state rides the log stream (design §9), so a state change
-		// arrives here rather than on a span.
+		// Agent state rides control records on the log stream, so a state
+		// change arrives here rather than on a span.
 		fe.updateAgentRoster()
-		// So do conversation commits: a snapshot record marks a step
-		// boundary, which is the cue to refresh the focused conversation's
-		// UI surfaces.
+		// So do conversation commits: a control revision with a new
+		// snapshot digest marks a step boundary, which is the cue to refresh
+		// the focused conversation's UI surfaces.
 		fe.notifyAgentSteps()
 		fe.Update()
 	})

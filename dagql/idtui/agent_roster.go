@@ -207,7 +207,7 @@ func agentStateDisplay(state string) (label string, labelColor termenv.Color) {
 	case "IDLE":
 		return DotEmpty, termenv.ANSIBrightBlack
 	default:
-		// No state record seen yet: the agent is published but its runtime
+		// No control record seen yet: the agent is published but its runtime
 		// has not reported in. Render it as present-but-unknown rather than
 		// guessing a state.
 		return "", termenv.ANSIBrightBlack

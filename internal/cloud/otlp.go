@@ -702,7 +702,7 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 			c.stats.addEvent(kind, len(frame.Payload))
 
 			// A payload this client cannot decode is a LOST FACT — an agent's
-			// state record, a call payload, a whole subtree — and §12 settled
+			// control record, a call payload, a whole subtree — and §12 settled
 			// that a trace which cannot be rebuilt fails the restore instead
 			// of degrading. So an error here aborts the stream; the reference
 			// client warns and carries on, which is right for a view and
