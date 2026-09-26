@@ -96,7 +96,7 @@ func TestArchiveImportWaitsForApplication(t *testing.T) {
 	require.NoError(t, err)
 	done := make(chan error, 1)
 	go func() {
-		done <- imp.ImportAndWait(t.Context(), archiveImportCut(), ArchiveImportBatch{Logs: archiveImportLogs()})
+		done <- imp.ImportAndWait(t.Context(), ArchiveImportBatch{Logs: archiveImportLogs()})
 	}()
 	<-entered
 	require.True(t, waited.Load())
@@ -116,32 +116,29 @@ func TestArchiveImportCursorRetriesOnlyBarrier(t *testing.T) {
 	imp, err := NewArchiveTraceImporter(TraceImportSinks{Logs: logs, Metrics: metrics, Barrier: archiveBarrierFunc(func(context.Context) error { return barrierErr })}, archiveImportCut())
 	require.NoError(t, err)
 	batch := ArchiveImportBatch{Cursor: 3, Logs: archiveImportLogs()}
-	require.ErrorIs(t, imp.ImportAndWait(t.Context(), archiveImportCut(), batch), barrierErr)
+	require.ErrorIs(t, imp.ImportAndWait(t.Context(), batch), barrierErr)
 	require.Equal(t, 1, logs.exports)
 	barrierErr = nil
-	require.NoError(t, imp.ImportAndWait(t.Context(), archiveImportCut(), batch))
+	require.NoError(t, imp.ImportAndWait(t.Context(), batch))
 	require.Equal(t, 1, logs.exports, "successful enqueue is not repeated after barrier failure")
 	logs.fail = true
 	batch.Cursor = 4
-	require.ErrorContains(t, imp.ImportAndWait(t.Context(), archiveImportCut(), batch), "enqueue failed")
+	require.ErrorContains(t, imp.ImportAndWait(t.Context(), batch), "enqueue failed")
 	logs.fail = false
-	require.NoError(t, imp.ImportAndWait(t.Context(), archiveImportCut(), batch))
+	require.NoError(t, imp.ImportAndWait(t.Context(), batch))
 	require.Equal(t, 2, logs.exports)
 	// A reconnect replay does not duplicate log messages.
 	batch.Cursor = 3
-	require.NoError(t, imp.ImportAndWait(t.Context(), archiveImportCut(), batch))
+	require.NoError(t, imp.ImportAndWait(t.Context(), batch))
 	require.Equal(t, 2, logs.exports)
 	metricBatch := ArchiveImportBatch{Cursor: 3, Metrics: &colmetricpb.ExportMetricsServiceRequest{ResourceMetrics: []*metricpb.ResourceMetrics{{Resource: &resourcepb.Resource{}, ScopeMetrics: []*metricpb.ScopeMetrics{{Metrics: []*metricpb.Metric{{Name: "history", Data: &metricpb.Metric_Gauge{Gauge: &metricpb.Gauge{DataPoints: []*metricpb.NumberDataPoint{{Value: &metricpb.NumberDataPoint_AsInt{AsInt: 1}}}}}}}}}}}}}
-	require.NoError(t, imp.ImportAndWait(t.Context(), archiveImportCut(), metricBatch))
+	require.NoError(t, imp.ImportAndWait(t.Context(), metricBatch))
 	require.Equal(t, 1, metrics.exports, "signal cursors are independent")
-	require.NoError(t, imp.ImportAndWait(t.Context(), archiveImportCut(), metricBatch))
+	require.NoError(t, imp.ImportAndWait(t.Context(), metricBatch))
 	require.Equal(t, 1, metrics.exports)
-	require.NoError(t, imp.ImportAndWait(t.Context(), archiveImportCut(), ArchiveImportBatch{Cursor: 8, Logs: &collogpb.ExportLogsServiceRequest{}}))
+	require.NoError(t, imp.ImportAndWait(t.Context(), ArchiveImportBatch{Cursor: 8, Logs: &collogpb.ExportLogsServiceRequest{}}))
 	require.EqualValues(t, 8, imp.enqueued[ArchiveLogs], "empty data frame advances its cursor")
-	wrong := archiveImportCut()
-	wrong.SealAt = wrong.SealAt.Add(time.Second)
-	require.ErrorIs(t, imp.ImportAndWait(t.Context(), wrong, batch), ErrArchiveCutMismatch)
-	require.Error(t, imp.ImportAndWait(t.Context(), archiveImportCut(), ArchiveImportBatch{Cursor: 11, Logs: archiveImportLogs()}))
+	require.Error(t, imp.ImportAndWait(t.Context(), ArchiveImportBatch{Cursor: 11, Logs: archiveImportLogs()}))
 }
 
 func TestArchiveSealRetriesFailedExporter(t *testing.T) {
@@ -150,13 +147,13 @@ func TestArchiveSealRetriesFailedExporter(t *testing.T) {
 	imp, err := NewArchiveTraceImporter(TraceImportSinks{Spans: spans, Barrier: archiveBarrierFunc(func(context.Context) error { return nil })}, cut)
 	require.NoError(t, err)
 	req := &coltracepb.ExportTraceServiceRequest{ResourceSpans: []*tracepb.ResourceSpans{{Resource: &resourcepb.Resource{}, ScopeSpans: []*tracepb.ScopeSpans{{Spans: []*tracepb.Span{{TraceId: []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, SpanId: []byte{1, 0, 0, 0, 0, 0, 0, 0}, Name: "unfinished", StartTimeUnixNano: uint64(time.Unix(10, 0).UnixNano())}}}}}}}
-	require.NoError(t, imp.ImportAndWait(t.Context(), cut, ArchiveImportBatch{Cursor: 4, Spans: req}))
+	require.NoError(t, imp.ImportAndWait(t.Context(), ArchiveImportBatch{Cursor: 4, Spans: req}))
 	spans.fail = true
-	require.Error(t, imp.CompleteRemainder(t.Context(), cut, ArchiveSpans, cut.HighWater.Spans))
+	require.Error(t, imp.CompleteRemainder(t.Context(), ArchiveSpans, cut.HighWater.Spans))
 	require.Len(t, imp.trace.unfinished, 1)
 	spans.fail = false
-	require.NoError(t, imp.CompleteRemainder(t.Context(), cut, ArchiveSpans, cut.HighWater.Spans))
+	require.NoError(t, imp.CompleteRemainder(t.Context(), ArchiveSpans, cut.HighWater.Spans))
 	require.Empty(t, imp.trace.unfinished)
 	require.Equal(t, cut.SealAt, spans.last[0].EndTime())
-	require.ErrorIs(t, imp.ImportAndWait(t.Context(), cut, ArchiveImportBatch{Cursor: 5, Spans: req}), ErrArchiveSignalClosed)
+	require.ErrorIs(t, imp.ImportAndWait(t.Context(), ArchiveImportBatch{Cursor: 5, Spans: req}), ErrArchiveSignalClosed)
 }

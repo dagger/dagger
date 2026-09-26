@@ -424,7 +424,7 @@ func TestArchiveHistoryRedeliveryIsIdempotent(t *testing.T) {
 		Spans: fe.SpanExporter(), Logs: fe.LogExporter(), Metrics: fe.MetricExporter(), Barrier: fe,
 	}, cut)
 	require.NoError(t, err)
-	require.NoError(t, importer.ImportAndWait(t.Context(), cut, enginetel.ArchiveImportBatch{Logs: source.logs}))
+	require.NoError(t, importer.ImportAndWait(t.Context(), enginetel.ArchiveImportBatch{Logs: source.logs}))
 	before, beforeEdges, err := appliedArchivePlan(fe, source.header.Completion)
 	require.NoError(t, err)
 	calls := map[string]*callpbv1.Call{}

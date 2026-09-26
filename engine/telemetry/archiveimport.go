@@ -36,7 +36,6 @@ const (
 )
 
 var (
-	ErrArchiveCutMismatch   = errors.New("archive import cut mismatch")
 	ErrArchiveSignalClosed  = errors.New("archive import signal is closed")
 	ErrArchiveSpanAbandoned = errors.New("archive span import was permanently abandoned")
 )
@@ -112,13 +111,10 @@ func NewArchiveTraceImporter(sinks TraceImportSinks, cut ArchiveCut) (*ArchiveTr
 // applied it. Success is the caller's acknowledgment that its archive cursor
 // may advance. Completing bootstrap requires no special call and never seals;
 // the same importer remains open for remainder batches.
-func (imp *ArchiveTraceImporter) ImportAndWait(ctx context.Context, cut ArchiveCut, batch ArchiveImportBatch) error {
+func (imp *ArchiveTraceImporter) ImportAndWait(ctx context.Context, batch ArchiveImportBatch) error {
 	imp.mu.Lock()
 	defer imp.mu.Unlock()
 
-	if err := imp.checkCut(cut); err != nil {
-		return err
-	}
 	signal, err := batch.signal()
 	if err != nil {
 		return err
@@ -157,27 +153,20 @@ func (imp *ArchiveTraceImporter) ImportAndWait(ctx context.Context, cut ArchiveC
 	return imp.barrier.WaitForEventLoop(ctx)
 }
 
-// Wait is an event-loop barrier with fixed-cut validation. It is useful for a
-// terminal bootstrap frame that carries no records. It deliberately does not
-// seal unfinished spans.
-func (imp *ArchiveTraceImporter) Wait(ctx context.Context, cut ArchiveCut) error {
+// Wait is an event-loop barrier. It is useful for a terminal bootstrap frame
+// that carries no records. It deliberately does not seal unfinished spans.
+func (imp *ArchiveTraceImporter) Wait(ctx context.Context) error {
 	imp.mu.Lock()
 	defer imp.mu.Unlock()
-	if err := imp.checkCut(cut); err != nil {
-		return err
-	}
 	return imp.barrier.WaitForEventLoop(ctx)
 }
 
 // CompleteRemainder records a bounded signal's terminal cursor. Spans seal at
 // the manifest timestamp only when their remainder reaches its exact high-water
 // mark. Log and metric completion cannot delay span sealing.
-func (imp *ArchiveTraceImporter) CompleteRemainder(ctx context.Context, cut ArchiveCut, signal ArchiveSignal, cursor int64) error {
+func (imp *ArchiveTraceImporter) CompleteRemainder(ctx context.Context, signal ArchiveSignal, cursor int64) error {
 	imp.mu.Lock()
 	defer imp.mu.Unlock()
-	if err := imp.checkCut(cut); err != nil {
-		return err
-	}
 	if err := validateArchiveSignal(signal); err != nil {
 		return err
 	}
@@ -211,12 +200,9 @@ func (imp *ArchiveTraceImporter) CompleteRemainder(ctx context.Context, cut Arch
 // exhausted. Abandoning spans seals the unfinished set at the manifest time and
 // irrevocably rejects later span batches. Other signals have no bearing on the
 // span seal.
-func (imp *ArchiveTraceImporter) AbandonRemainder(ctx context.Context, cut ArchiveCut, signal ArchiveSignal) error {
+func (imp *ArchiveTraceImporter) AbandonRemainder(ctx context.Context, signal ArchiveSignal) error {
 	imp.mu.Lock()
 	defer imp.mu.Unlock()
-	if err := imp.checkCut(cut); err != nil {
-		return err
-	}
 	if err := validateArchiveSignal(signal); err != nil {
 		return err
 	}
@@ -242,17 +228,6 @@ func (imp *ArchiveTraceImporter) AbandonRemainder(ctx context.Context, cut Archi
 		}
 	}
 	return imp.barrier.WaitForEventLoop(ctx)
-}
-
-func (imp *ArchiveTraceImporter) checkCut(got ArchiveCut) error {
-	if imp.cut.HighWater != got.HighWater ||
-		!imp.cut.SealAt.Equal(got.SealAt) {
-		return fmt.Errorf("%w: got high-water %+v seal %s; want high-water %+v seal %s",
-			ErrArchiveCutMismatch,
-			got.HighWater, got.SealAt,
-			imp.cut.HighWater, imp.cut.SealAt)
-	}
-	return nil
 }
 
 func (imp *ArchiveTraceImporter) highWater(signal ArchiveSignal) int64 {
