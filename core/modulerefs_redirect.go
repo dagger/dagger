@@ -20,6 +20,12 @@ const (
 	// for a redirect that points at the real module source.
 	daggerGetQueryParam = "dagger-get"
 
+	// daggerVersionQueryParam carries the requested version in the probe. A
+	// host that rewrites versions returns the selected version in the same
+	// param of the Location. A host that passes the query through unchanged
+	// returns the requested version, which is an identity rewrite.
+	daggerVersionQueryParam = "dagger-version"
+
 	// daggerGetProbeTimeout bounds the redirect probe so a slow or hanging host
 	// cannot block module resolution.
 	daggerGetProbeTimeout = 5 * time.Second
@@ -33,6 +39,16 @@ var daggerGetClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
+}
+
+// daggerGetResult is the outcome of a redirect probe.
+type daggerGetResult struct {
+	// SourceURL is the redirect destination without the probe params, or the
+	// probed source URL when no redirect applies.
+	SourceURL string
+	// Version is the version that the host selected with dagger-version. It is
+	// empty when the host did not select one.
+	Version string
 }
 
 type vanityURLLookupLockKey struct{}
@@ -72,15 +88,15 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 		}
 	}
 
-	lockInputs := []any{sourceURL}
+	lockedURL := ""
 	if lock != nil {
-		if resolvedURL, ok := lock.GetLookup(
-			workspace.CoreLockNamespace,
-			workspace.LockOperationVanityURL,
-			lockInputs,
-		); ok {
-			return sourceURLWithVersion(resolvedURL, version), nil
+		resolved, urlOnly, ok := lookupVanityLock(lock, sourceURL, version)
+		if ok {
+			return resolved, nil
 		}
+		// The URL can be locked while this version is not: probe for the
+		// version only, and keep the locked URL.
+		lockedURL = urlOnly
 		if !lockOverridden && queryErr == nil {
 			_, lockWritable, err := query.CurrentWorkspaceLock(ctx, true)
 			if err != nil {
@@ -97,7 +113,12 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 	cache, cacheErr := dagql.EngineCache(ctx)
 	clientMetadata, mdErr := engine.ClientMetadataFromContext(ctx)
 	if cacheErr != nil || mdErr != nil {
-		return refString, nil //nolint:nilerr // deliberate: no session infrastructure means no probe, keep parsing network-free
+		// No session infrastructure means no probe: keep parsing network-free.
+		// A locked URL still applies, with the caller's version unchanged.
+		if lockedURL != "" {
+			return sourceURLWithVersion(lockedURL, version), nil
+		}
+		return refString, nil
 	}
 
 	res, err := cache.GetOrInitArbitrary(
@@ -106,38 +127,118 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 		// Scope the cached value to the session: GetOrInitArbitrary looks entries
 		// up by call key alone (the session ID only tracks ownership), so the
 		// session ID must be part of the key to keep results session-private.
-		"module-dagger-get-redirect:"+clientMetadata.SessionID+":"+sourceURL,
+		// The host can rewrite each version differently, so the version is part
+		// of the key too.
+		"module-dagger-get-redirect:"+clientMetadata.SessionID+":"+sourceURL+"@"+version,
 		func(ctx context.Context) (any, error) {
-			return daggerGetProbe(ctx, sourceURL), nil
+			return daggerGetProbeVersion(ctx, sourceURL, version), nil
 		},
 	)
-	var resolvedRef string
+	var result daggerGetResult
 	if err != nil {
 		slog.Debug("dagger-get redirect cache error; probing directly", "ref", refString, "error", err)
-		resolvedRef = daggerGetProbe(ctx, sourceURL)
-	} else if resolved, ok := res.Value().(string); ok && resolved != "" {
-		resolvedRef = resolved
+		result = daggerGetProbeVersion(ctx, sourceURL, version)
+	} else if cached, ok := res.Value().(daggerGetResult); ok && cached.SourceURL != "" {
+		result = cached
 	} else {
-		resolvedRef = sourceURL
+		result = daggerGetResult{SourceURL: sourceURL}
 	}
 
-	if resolvedRef == sourceURL {
+	if lockedURL == "" && result.SourceURL == sourceURL && result.Version == "" {
 		return refString, nil
 	}
-	if setLookup == nil {
-		return sourceURLWithVersion(resolvedRef, version), nil
+	resolvedURL := result.SourceURL
+	if lockedURL != "" {
+		resolvedURL = lockedURL
 	}
-	// Store the destination before applying the caller's version. A version in
-	// the redirect is its default and must survive later lookups and refreshes.
+	resolvedVersion := result.Version
+	if resolvedVersion == "" {
+		resolvedVersion = version
+	}
+	if setLookup == nil {
+		return sourceURLWithVersion(resolvedURL, resolvedVersion), nil
+	}
+	if lockedURL == "" {
+		if err := storeVanityURLLock(setLookup, sourceURL, result.SourceURL); err != nil {
+			return "", err
+		}
+	}
+	if err := storeVanityVersionLock(setLookup, sourceURL, version, resolvedVersion); err != nil {
+		return "", err
+	}
+	return sourceURLWithVersion(resolvedURL, resolvedVersion), nil
+}
+
+// lookupVanityLock resolves a ref from the lockfile alone. ok reports a full
+// resolution. If only the URL is locked and the version still needs a probe,
+// lockedURL is that URL.
+func lookupVanityLock(lock *workspace.Lock, sourceURL, version string) (resolved, lockedURL string, ok bool) {
+	resolvedURL, urlLocked := lock.GetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityURL,
+		[]any{sourceURL},
+	)
+	resolvedVersion, versionLocked := lock.GetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityVersion,
+		[]any{sourceURL, version},
+	)
+	if !urlLocked {
+		resolvedURL = sourceURL
+	}
+	// A ref without a version has a version entry only if the host supplied
+	// a default. Its absence does not require a new probe.
+	if versionLocked || (urlLocked && version == "") {
+		if resolvedVersion == "" {
+			resolvedVersion = version
+		}
+		return sourceURLWithVersion(resolvedURL, resolvedVersion), "", true
+	}
+	if urlLocked {
+		return "", resolvedURL, false
+	}
+	return "", "", false
+}
+
+// storeVanityURLLock stores the destination before the caller's version is
+// applied. A version in the redirect is its default and must survive later
+// lookups and refreshes.
+func storeVanityURLLock(
+	setLookup func(string, string, []any, string) error,
+	sourceURL, resolvedURL string,
+) error {
+	if resolvedURL == sourceURL {
+		return nil
+	}
 	if err := setLookup(
 		workspace.CoreLockNamespace,
 		workspace.LockOperationVanityURL,
-		lockInputs,
-		resolvedRef,
+		[]any{sourceURL},
+		resolvedURL,
 	); err != nil {
-		return "", fmt.Errorf("set vanity-url lock entry: %w", err)
+		return fmt.Errorf("set vanity-url lock entry: %w", err)
 	}
-	return sourceURLWithVersion(resolvedRef, version), nil
+	return nil
+}
+
+// storeVanityVersionLock stores the version even if the host did not change
+// it, so that a later load does not probe again.
+func storeVanityVersionLock(
+	setLookup func(string, string, []any, string) error,
+	sourceURL, version, resolvedVersion string,
+) error {
+	if resolvedVersion == "" {
+		return nil
+	}
+	if err := setLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityVersion,
+		[]any{sourceURL, version},
+		resolvedVersion,
+	); err != nil {
+		return fmt.Errorf("set vanity-version lock entry: %w", err)
+	}
+	return nil
 }
 
 func splitSourceURLVersion(refString string) (string, string, error) {
@@ -210,57 +311,72 @@ func daggerGetEligible(refString string) bool {
 	}
 }
 
-// daggerGetProbe performs the actual single-hop redirect probe and returns the
+// daggerGetProbe probes a ref that can carry a version. It returns the
 // resolved ref, or the original ref on any non-redirect outcome.
 func daggerGetProbe(ctx context.Context, refString string) string {
-	// Module refs spell versions with "@" (and historically "#"); normalize so
-	// url.Parse doesn't treat a version as a URL fragment.
-	normalized := strings.Replace(refString, "#", "@", 1)
-	if !strings.HasPrefix(normalized, gitref.SchemeHTTPS.Prefix()) {
-		normalized = gitref.SchemeHTTPS.Prefix() + normalized
-	}
-
-	u, err := url.Parse(normalized)
+	sourceURL, version, err := splitSourceURLVersion(refString)
 	if err != nil {
 		return refString
 	}
+	result := daggerGetProbeVersion(ctx, sourceURL, version)
+	if result.SourceURL == sourceURL && result.Version == "" {
+		return refString
+	}
+	if result.Version != "" {
+		version = result.Version
+	}
+	return sourceURLWithVersion(result.SourceURL, version)
+}
 
-	// Strip a path-level "@version"; userinfo "@" stays in u.User, not u.Path.
-	version := ""
-	if i := strings.Index(u.Path, "@"); i >= 0 {
-		version = u.Path[i+1:]
-		u.Path = u.Path[:i]
+// daggerGetProbeVersion performs the actual single-hop redirect probe for a
+// source URL and a requested version. On any non-redirect outcome the result
+// has the original source URL and no version.
+func daggerGetProbeVersion(ctx context.Context, sourceURL, version string) daggerGetResult {
+	noRedirect := daggerGetResult{SourceURL: sourceURL}
+
+	normalized := sourceURL
+	if !strings.HasPrefix(normalized, gitref.SchemeHTTPS.Prefix()) {
+		normalized = gitref.SchemeHTTPS.Prefix() + normalized
+	}
+	u, err := url.Parse(normalized)
+	if err != nil {
+		return noRedirect
 	}
 
 	probe := *u
-	probe.RawQuery = daggerGetQueryParam + "=1"
+	probeQuery := url.Values{}
+	probeQuery.Set(daggerGetQueryParam, "1")
+	// Always send the param, even when empty: it tells the host that this
+	// engine removes dagger-version from the Location.
+	probeQuery.Set(daggerVersionQueryParam, version)
+	probe.RawQuery = probeQuery.Encode()
 	probe.Fragment = ""
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probe.String(), nil)
 	if err != nil {
-		return refString
+		return noRedirect
 	}
 	resp, err := daggerGetClient.Do(req)
 	if err != nil {
 		slog.Debug("dagger-get probe failed; using original ref", "url", probe.String(), "error", err)
-		return refString
+		return noRedirect
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusMultipleChoices || resp.StatusCode >= http.StatusBadRequest {
 		// Not a 3xx: no redirect configured for this ref.
-		return refString
+		return noRedirect
 	}
 
 	loc := resp.Header.Get("Location")
 	if loc == "" {
-		return refString
+		return noRedirect
 	}
 	locURL, err := url.Parse(loc)
 	if err != nil || locURL.Scheme != "https" || locURL.Host == "" {
 		slog.Debug("dagger-get redirect ignored: Location is not an absolute https URL",
-			"ref", refString, "location", loc)
-		return refString
+			"ref", sourceURL, "location", loc)
+		return noRedirect
 	}
 
 	// Hosts also emit incidental 3xx responses that are not dagger-get
@@ -269,32 +385,40 @@ func daggerGetProbe(ctx context.Context, refString string) string {
 	// canonicalization. Require the Location to echo the dagger-get marker as
 	// proof of intent: a host opting in preserves the query (standard
 	// path+query passthrough redirects do), while auth-wall redirects drop it.
-	if locURL.Query().Get(daggerGetQueryParam) != "1" {
+	q := locURL.Query()
+	if q.Get(daggerGetQueryParam) != "1" {
 		slog.Debug("dagger-get redirect ignored: Location does not echo the dagger-get marker",
-			"ref", refString, "location", loc)
-		return refString
+			"ref", sourceURL, "location", loc)
+		return noRedirect
 	}
+
+	// A passthrough host echoes the requested version. Only a different value
+	// is a rewrite.
+	hostVersion := q.Get(daggerVersionQueryParam)
+	if hostVersion == version {
+		hostVersion = ""
+	}
+
+	// Drop only the probe params the server may have echoed back.
+	q.Del(daggerGetQueryParam)
+	q.Del(daggerVersionQueryParam)
+	locURL.RawQuery = q.Encode()
 
 	// Canonicalization redirects (e.g. GitHub 301s "repo.git" -> "repo",
 	// "www." -> apex, trailing-slash and case fixups) echo the query string,
 	// so they pass the marker check above. Treating them as redirects would
 	// silently rewrite the user's ref and change the module's clone
 	// ref/identity. Only honor redirects that point somewhere genuinely
-	// different.
+	// different. A version rewrite still applies.
 	if canonicalRepoKey(u) == canonicalRepoKey(locURL) {
 		slog.Debug("dagger-get redirect ignored: same-repo canonicalization",
-			"ref", refString, "location", loc)
-		return refString
+			"ref", sourceURL, "location", loc)
+		return daggerGetResult{SourceURL: sourceURL, Version: hostVersion}
 	}
 
-	// Drop only the dagger-get param the server may have echoed back.
-	q := locURL.Query()
-	q.Del(daggerGetQueryParam)
-	locURL.RawQuery = q.Encode()
-
-	resolved := sourceURLWithVersion(locURL.String(), version)
-	slog.Debug("dagger-get redirect resolved", "from", refString, "to", resolved)
-	return resolved
+	result := daggerGetResult{SourceURL: locURL.String(), Version: hostVersion}
+	slog.Debug("dagger-get redirect resolved", "from", sourceURL, "version", version, "to", result)
+	return result
 }
 
 // canonicalRepoKey reduces a URL to a host+path key that is stable across the
