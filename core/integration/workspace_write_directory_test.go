@@ -386,3 +386,73 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryDoesNotPinHostContent(ctx contex
 		require.NotContains(t, modified, "target/keep.txt")
 	})
 }
+
+// TestWorkspaceOverlayAtGitignoredPathPreservedUnderGitignoreRead verifies that
+// an overlay edit made at a gitignored path (via withNewFile / withDirectory)
+// is retained when reading the workspace with gitignore: true, even if the
+// host already holds a byte-identical copy of that ignored file (dagger/dagger#14053).
+func (WorkspaceSuite) TestWorkspaceOverlayAtGitignoredPathPreservedUnderGitignoreRead(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("build/\n*.ignored\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "build"), 0o755))
+	cssPath := filepath.Join(workdir, "build", "style.css")
+	require.NoError(t, os.WriteFile(cssPath, []byte("body { color: red; }\n"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	ws := c.CurrentWorkspace()
+
+	t.Run("withNewFile byte-identical to host ignored file", func(ctx context.Context, t *testctx.T) {
+		written := ws.WithNewFile("build/style.css", "body { color: red; }\n")
+		entries, err := written.Directory("/", dagger.WorkspaceDirectoryOpts{Gitignore: true}).Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "build/")
+
+		content, err := written.File("build/style.css").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "body { color: red; }\n", content)
+
+		buildEntries, err := written.Directory("build", dagger.WorkspaceDirectoryOpts{Gitignore: true}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"style.css"}, buildEntries)
+	})
+
+	t.Run("withDirectory byte-identical to host ignored file", func(ctx context.Context, t *testctx.T) {
+		cssDir := c.Directory().WithNewFile("style.css", "body { color: red; }\n")
+		written := ws.WithDirectory("build", cssDir)
+
+		buildEntries, err := written.Directory("build", dagger.WorkspaceDirectoryOpts{Gitignore: true}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"style.css"}, buildEntries)
+	})
+}
+
+func (WorkspaceSuite) TestWorkspaceGitignoreReadDoesNotExposeSeededFiles(ctx context.Context, t *testctx.T) {
+	for _, target := range []string{"build", "/"} {
+		t.Run(target, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("build/\n.env\n"), 0o644))
+			require.NoError(t, os.MkdirAll(filepath.Join(workdir, "build"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "build", "private.txt"), []byte("host only"), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, ".env"), []byte("SECRET=host-only"), 0o644))
+
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			written := c.CurrentWorkspace().WithDirectory(target, c.Directory().WithNewFile("generated.txt", "generated"))
+			filtered := written.Directory("/", dagger.WorkspaceDirectoryOpts{Gitignore: true})
+			paths, err := filtered.Glob(ctx, "**")
+			require.NoError(t, err)
+			t.Logf("filtered paths: %v", paths)
+			require.NotContains(t, paths, "build/private.txt")
+			require.NotContains(t, paths, ".env")
+			generated := "generated.txt"
+			if target != "/" {
+				generated = target + "/" + generated
+			}
+			contents, err := filtered.File(generated).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "generated", contents)
+		})
+	}
+}
+
