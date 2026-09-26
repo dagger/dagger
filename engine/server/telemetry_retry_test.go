@@ -221,6 +221,38 @@ func TestSessionLogExporterSkipsInvalidControlRecords(t *testing.T) {
 	require.Len(t, rows, 1, "only the valid control record persists")
 }
 
+// Call payloads ride almost every log batch, so they must not force the
+// in-memory tail to the file (that would push live readers onto file scans);
+// only rare agent control rows, which a killed engine's unsealed archive
+// restores from, pay for a flush.
+func TestClientLogsFlushesOnlyForControlRecords(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := NewPubSub(&Server{clientDBs: dbs})
+	// Hold a reference so the exporter's Close does not spill the tail.
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	tailRows := func() int {
+		stats, err := db.AppendLogs(nil)
+		require.NoError(t, err)
+		return stats.SpillLagRows
+	}
+
+	body, _ := serverCallPayload(t, "lookup", "hot-path")
+	payload := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	require.NoError(t, ps.Logs("client").Export(t.Context(), []sdklog.Record{payload}))
+	require.Equal(t, 1, tailRows(), "a payload-only batch must stay in the in-memory tail")
+
+	control := controlTestRecord(t, archiveAgent().Record())
+	require.NoError(t, ps.Logs("client").Export(t.Context(), []sdklog.Record{control}))
+	require.Zero(t, tailRows(), "a control batch must write the tail to the file")
+
+	rows, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+}
+
 // A payload the producer claimed but whose write failed must be claimable
 // again, so that once the payload processor gives up on the record a later
 // closure walk can repair the gap.
