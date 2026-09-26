@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -41,9 +40,8 @@ type HTTPDoer interface {
 
 // Client reads telemetry archives through a connected engine's HTTP transport.
 type Client struct {
-	http         HTTPDoer
-	baseURL      *url.URL
-	stallTimeout time.Duration
+	http    HTTPDoer
+	baseURL *url.URL
 }
 
 // NewClient creates an archive client for the connected engine transport.
@@ -66,18 +64,6 @@ func NewClientWithURL(httpClient HTTPDoer, baseURL string) (*Client, error) {
 	return &Client{http: httpClient, baseURL: parsed}, nil
 }
 
-// WithStallTimeout returns a shallow clone whose finite bootstrap and signal
-// streams fail if any individual response-body read makes no progress for the
-// configured duration. Every successful read starts a fresh idle period.
-func (c *Client) WithStallTimeout(timeout time.Duration) *Client {
-	if c == nil {
-		return nil
-	}
-	clone := *c
-	clone.stallTimeout = timeout
-	return &clone
-}
-
 // ErrorKind groups archive failures by the recovery decision a caller should
 // make.
 type ErrorKind string
@@ -90,11 +76,10 @@ const (
 )
 
 var (
-	ErrCleanMiss     = errors.New("engine archive clean miss")
-	ErrState         = errors.New("engine archive state failure")
-	ErrCorrupt       = errors.New("engine archive corruption")
-	ErrTransient     = errors.New("engine archive transient failure")
-	ErrStreamStalled = errors.New("engine archive stream stalled")
+	ErrCleanMiss = errors.New("engine archive clean miss")
+	ErrState     = errors.New("engine archive state failure")
+	ErrCorrupt   = errors.New("engine archive corruption")
+	ErrTransient = errors.New("engine archive transient failure")
 )
 
 // RequestError is a typed archive transport or protocol failure.
@@ -227,11 +212,9 @@ func (c *Client) ListAll(ctx context.Context, opts ListOptions) ([]Manifest, err
 	}
 }
 
-// BootstrapBatch is one decoded OTLP batch from a bootstrap response. Exactly
-// one field is non-nil.
+// BootstrapBatch is one decoded OTLP logs batch from a bootstrap response.
 type BootstrapBatch struct {
-	Traces *coltracepb.ExportTraceServiceRequest
-	Logs   *collogspb.ExportLogsServiceRequest
+	Logs *collogspb.ExportLogsServiceRequest
 }
 
 // BootstrapResult is the immutable cut described by a bootstrap.
@@ -260,30 +243,19 @@ func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(Boo
 	}
 
 	var batches []BootstrapBatch
-	header, terminal, err := DecodeBootstrap(c.streamBody(resp.Body), func(header BootstrapHeader) error {
+	header, terminal, err := DecodeBootstrap(resp.Body, func(header BootstrapHeader) error {
 		return validateBootstrapHeader(header, traceID)
-	}, func(kind BootstrapFrameKind, payload []byte) error {
-		var batch BootstrapBatch
-		switch kind {
-		case BootstrapFrameTraces:
-			batch.Traces = &coltracepb.ExportTraceServiceRequest{}
-			if err := proto.Unmarshal(payload, batch.Traces); err != nil {
-				return fmt.Errorf("decode bootstrap traces: %w", err)
-			}
-		case BootstrapFrameLogs:
-			batch.Logs = &collogspb.ExportLogsServiceRequest{}
-			if err := proto.Unmarshal(payload, batch.Logs); err != nil {
-				return fmt.Errorf("decode bootstrap logs: %w", err)
-			}
-		default:
-			return fmt.Errorf("unexpected bootstrap signal frame %d", kind)
+	}, func(payload []byte) error {
+		logs := &collogspb.ExportLogsServiceRequest{}
+		if err := proto.Unmarshal(payload, logs); err != nil {
+			return fmt.Errorf("decode bootstrap logs: %w", err)
 		}
-		batches = append(batches, batch)
+		batches = append(batches, BootstrapBatch{Logs: logs})
 		return nil
 	})
 	result := BootstrapResult{Header: header, Terminal: terminal}
 	if err != nil {
-		if errors.Is(err, ErrBootstrapIncomplete) || errors.Is(err, ErrStreamStalled) {
+		if errors.Is(err, ErrBootstrapIncomplete) {
 			return result, transient(err)
 		}
 		return result, corrupt(fmt.Errorf("decode archive bootstrap: %w", err))
@@ -373,9 +345,8 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 		return cursor, corrupt(err)
 	}
 
-	streamBody := c.streamBody(resp.Body)
 	for {
-		kind, next, payload, err := enginetel.ReadLiveFrame(streamBody)
+		kind, next, payload, err := enginetel.ReadLiveFrame(resp.Body)
 		if err != nil {
 			if errors.Is(err, enginetel.ErrInvalidLiveFrame) || errors.Is(err, enginetel.ErrLiveStream) {
 				return cursor, corrupt(err)
@@ -395,7 +366,7 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 			if next < cursor {
 				return cursor, corrupt(fmt.Errorf("archive %s terminal cursor regressed from %d to %d", signal, cursor, next))
 			}
-			trailing, readErr := io.ReadAll(io.LimitReader(streamBody, 1))
+			trailing, readErr := io.ReadAll(io.LimitReader(resp.Body, 1))
 			if readErr != nil {
 				return cursor, transient(fmt.Errorf("finish archive %s stream: %w", signal, readErr))
 			}
@@ -412,47 +383,6 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 		}
 		cursor = next
 	}
-}
-
-type idleReadCloser struct {
-	body    io.ReadCloser
-	timeout time.Duration
-	stalled atomic.Bool
-}
-
-func (r *idleReadCloser) Read(p []byte) (int, error) {
-	if r.timeout <= 0 {
-		return r.body.Read(p)
-	}
-	if r.stalled.Load() {
-		return 0, ErrStreamStalled
-	}
-	watchdogDone := make(chan struct{})
-	watchdog := time.AfterFunc(r.timeout, func() {
-		defer close(watchdogDone)
-		r.stalled.Store(true)
-		_ = r.body.Close()
-	})
-	// Read synchronously: returning while another goroutine still owns p would
-	// let the caller reuse the buffer and race the timed-out read. The watchdog
-	// only closes the body, which unblocks this call.
-	n, err := r.body.Read(p)
-	if !watchdog.Stop() {
-		<-watchdogDone
-	}
-	if r.stalled.Load() {
-		return n, ErrStreamStalled
-	}
-	return n, err
-}
-
-func (r *idleReadCloser) Close() error { return r.body.Close() }
-
-func (c *Client) streamBody(body io.ReadCloser) io.ReadCloser {
-	if c == nil || c.stallTimeout <= 0 {
-		return body
-	}
-	return &idleReadCloser{body: body, timeout: c.stallTimeout}
 }
 
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, accept string, cursor int64) (*http.Response, error) {

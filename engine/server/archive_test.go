@@ -191,8 +191,7 @@ func TestArchiveBootstrapSplitsLargeRecipeClosure(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, int64(count+2), records)
 			var frames int
-			_, terminal, err := archive.DecodeBootstrap(bytes.NewReader(data), nil, func(kind archive.BootstrapFrameKind, payload []byte) error {
-				require.Equal(t, archive.BootstrapFrameLogs, kind)
+			_, terminal, err := archive.DecodeBootstrap(bytes.NewReader(data), nil, func(payload []byte) error {
 				require.LessOrEqual(t, len(payload), maxPayloadSize)
 				var logs collogspb.ExportLogsServiceRequest
 				require.NoError(t, proto.Unmarshal(payload, &logs))

@@ -130,7 +130,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 				return err
 			}
 		}
-		return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Spans: batch.Traces, Logs: batch.Logs})
+		return importer.ImportAndWait(ctx, cut, enginetel.ArchiveImportBatch{Logs: batch.Logs})
 	})
 	if err != nil {
 		err = archiveRestoreError(req.traceID, err)

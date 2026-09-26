@@ -1,8 +1,6 @@
 package archive
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,20 +53,19 @@ type Bootstrap struct {
 // Manifest describes one archive. An archive is identified by its trace ID
 // alone: the first session to register a trace owns its archive.
 type Manifest struct {
-	Version        int        `json:"version"`
-	TraceID        string     `json:"traceID"`
-	MainClientID   string     `json:"mainClientID"`
-	BoundarySpanID string     `json:"boundarySpanID"`
-	State          State      `json:"state"`
-	Title          string     `json:"title,omitempty"`
-	StartedAt      time.Time  `json:"startedAt"`
-	ClosedAt       *time.Time `json:"closedAt,omitempty"`
-	ExpiresAt      time.Time  `json:"expiresAt"`
-	SealAt         *time.Time `json:"sealAt,omitempty"`
-	SizeBytes      int64      `json:"sizeBytes"`
-	Bootstrap      Bootstrap  `json:"bootstrap,omitempty"`
-	HighWater      HighWater  `json:"highWater"`
-	Failure        string     `json:"failure,omitempty"`
+	Version      int        `json:"version"`
+	TraceID      string     `json:"traceID"`
+	MainClientID string     `json:"mainClientID"`
+	State        State      `json:"state"`
+	Title        string     `json:"title,omitempty"`
+	StartedAt    time.Time  `json:"startedAt"`
+	ClosedAt     *time.Time `json:"closedAt,omitempty"`
+	ExpiresAt    time.Time  `json:"expiresAt"`
+	SealAt       *time.Time `json:"sealAt,omitempty"`
+	SizeBytes    int64      `json:"sizeBytes"`
+	Bootstrap    Bootstrap  `json:"bootstrap,omitempty"`
+	HighWater    HighWater  `json:"highWater"`
+	Failure      string     `json:"failure,omitempty"`
 }
 
 type FailureKind string
@@ -207,8 +204,8 @@ func validateManifest(manifest Manifest) error {
 	if _, err := trace.TraceIDFromHex(manifest.TraceID); err != nil {
 		return fmt.Errorf("trace ID: %w", err)
 	}
-	if manifest.MainClientID == "" || manifest.BoundarySpanID == "" {
-		return errors.New("missing immutable identity")
+	if manifest.MainClientID == "" {
+		return errors.New("missing main client ID")
 	}
 	if filepath.Base(manifest.MainClientID) != manifest.MainClientID || manifest.MainClientID == "." || manifest.MainClientID == ".." {
 		return errors.New("invalid archive store identity")
@@ -230,14 +227,6 @@ func validateManifest(manifest Manifest) error {
 	return nil
 }
 
-func randomHex(bytes int) (string, error) {
-	buf := make([]byte, bytes)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
-}
-
 // Register creates the active archive for a trace. The first session to
 // register a trace owns its archive; a later registration for the same trace
 // (e.g. a nested session that inherited TRACEPARENT) fails.
@@ -248,15 +237,10 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 	if mainClientID == "" {
 		return Manifest{}, errors.New("main client ID is required")
 	}
-	boundary, err := randomHex(8)
-	if err != nil {
-		return Manifest{}, err
-	}
 	now := m.now().UTC()
 	manifest := Manifest{
-		Version: ManifestVersion, TraceID: traceID,
-		MainClientID: mainClientID, BoundarySpanID: boundary, State: StateActive,
-		StartedAt: now, ExpiresAt: now.Add(m.ttl),
+		Version: ManifestVersion, TraceID: traceID, MainClientID: mainClientID,
+		State: StateActive, StartedAt: now, ExpiresAt: now.Add(m.ttl),
 	}
 	if err := validateManifest(manifest); err != nil {
 		return Manifest{}, err
@@ -324,15 +308,7 @@ func (m *Manager) Finalize(traceID string, in FinalizeInput) (Manifest, error) {
 	ent.SealAt = &sealAt
 	ent.HighWater = in.HighWater
 	ent.Bootstrap = Bootstrap{File: sidecar, Records: in.BootstrapRecords}
-	baseSize := in.StoreSizeBytes + int64(len(in.BootstrapBytes))
-	ent.SizeBytes = baseSize
-	for range 2 {
-		manifestBytes, err := json.Marshal(*ent)
-		if err != nil {
-			return Manifest{}, err
-		}
-		ent.SizeBytes = baseSize + int64(len(manifestBytes))
-	}
+	ent.SizeBytes = in.StoreSizeBytes + int64(len(in.BootstrapBytes))
 	ent.Failure = ""
 	if err := m.writeManifest(*ent); err != nil {
 		ent.State = StateIncomplete

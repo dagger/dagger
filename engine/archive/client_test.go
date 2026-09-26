@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
-	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -100,49 +98,40 @@ func TestClientTypedErrors(t *testing.T) {
 
 func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 	traceID := strings.Repeat("a", 32)
-	traces := &coltracepb.ExportTraceServiceRequest{ResourceSpans: []*otlptracev1.ResourceSpans{{
-		Resource: &otlpresourcev1.Resource{},
-		ScopeSpans: []*otlptracev1.ScopeSpans{{Spans: []*otlptracev1.Span{{
-			TraceId: bytes.Repeat([]byte{0xaa}, 16), SpanId: bytes.Repeat([]byte{0xbb}, 8), Name: "agent",
-		}}}},
-	}}}
-	logs := &collogspb.ExportLogsServiceRequest{}
-	tracePayload, _ := proto.Marshal(traces)
+	logs := &collogspb.ExportLogsServiceRequest{ResourceLogs: []*otlplogsv1.ResourceLogs{{}}}
 	logPayload, _ := proto.Marshal(logs)
 	sealAt := time.Now().UTC().Format(time.RFC3339Nano)
 	data, _, err := BuildBootstrap(BootstrapHeader{
 		TraceID: traceID, SealAt: sealAt,
 		HighWater: HighWater{Spans: 5, Logs: 7, Metrics: 9},
 	}, []BootstrapSignal{
-		{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 1},
-		{Kind: BootstrapFrameLogs, Payload: logPayload, Records: 0},
+		{Payload: logPayload, Records: 1},
+		{Payload: logPayload, Records: 1},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var kinds []BootstrapFrameKind
+	batches := 0
 	client, closeServer := bootstrapTestClient(t, data)
 	defer closeServer()
 	result, err := client.Bootstrap(context.Background(), traceID, func(header BootstrapHeader, batch BootstrapBatch) error {
 		if header.TraceID != traceID || header.SealAt != sealAt {
 			t.Fatalf("consumer received unvalidated header: %+v", header)
 		}
-		if batch.Traces != nil {
-			kinds = append(kinds, BootstrapFrameTraces)
+		if len(batch.Logs.GetResourceLogs()) != 1 {
+			t.Fatalf("logs batch = %+v", batch.Logs)
 		}
-		if batch.Logs != nil {
-			kinds = append(kinds, BootstrapFrameLogs)
-		}
+		batches++
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(kinds, []BootstrapFrameKind{BootstrapFrameTraces, BootstrapFrameLogs}) {
-		t.Fatalf("bootstrap kinds = %v", kinds)
+	if batches != 2 {
+		t.Fatalf("bootstrap batches = %d", batches)
 	}
-	if result.Header.TraceID != traceID || result.Header.HighWater.Metrics != 9 || result.Terminal.TraceRecords != 1 || result.Terminal.LogRecords != 0 {
+	if result.Header.TraceID != traceID || result.Header.HighWater.Metrics != 9 || result.Terminal.LogRecords != 2 {
 		t.Fatalf("unexpected bootstrap result: %+v", result)
 	}
 
@@ -159,7 +148,7 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 		wrongTrace := strings.Repeat("b", 32)
 		invalid, _, err := BuildBootstrap(BootstrapHeader{
 			TraceID: wrongTrace, SealAt: sealAt,
-		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 1}})
+		}, []BootstrapSignal{{Payload: logPayload, Records: 1}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -305,51 +294,6 @@ func TestClientStreamEnforcesCursorAndTerminal(t *testing.T) {
 			t.Fatalf("cursor=%d err=%v", cursor, err)
 		}
 	})
-}
-
-func TestClientBootstrapIdleTimeout(t *testing.T) {
-	body := &blockingReadCloser{closed: make(chan struct{})}
-	doer := httpDoerFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header: http.Header{
-				"Content-Type": []string{BootstrapContentType},
-			},
-			Body: body,
-		}, nil
-	})
-	client, err := NewClientWithURL(doer, "http://dagger")
-	if err != nil {
-		t.Fatal(err)
-	}
-	started := time.Now()
-	_, err = client.WithStallTimeout(20*time.Millisecond).Bootstrap(
-		context.Background(), strings.Repeat("a", 32), nil)
-	if !errors.Is(err, ErrStreamStalled) || !errors.Is(err, ErrTransient) {
-		t.Fatalf("error = %v, want stalled transient", err)
-	}
-	if elapsed := time.Since(started); elapsed > time.Second {
-		t.Fatalf("idle timeout took %s", elapsed)
-	}
-}
-
-type httpDoerFunc func(*http.Request) (*http.Response, error)
-
-func (f httpDoerFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
-
-type blockingReadCloser struct {
-	closed chan struct{}
-	once   sync.Once
-}
-
-func (b *blockingReadCloser) Read([]byte) (int, error) {
-	<-b.closed
-	return 0, errors.New("body closed")
-}
-
-func (b *blockingReadCloser) Close() error {
-	b.once.Do(func() { close(b.closed) })
-	return nil
 }
 
 func testArchiveClient(t *testing.T, server *httptest.Server) *Client {

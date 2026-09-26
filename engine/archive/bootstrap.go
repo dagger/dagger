@@ -25,7 +25,6 @@ type BootstrapFrameKind byte
 
 const (
 	BootstrapFrameHeader   BootstrapFrameKind = 1
-	BootstrapFrameTraces   BootstrapFrameKind = 2
 	BootstrapFrameLogs     BootstrapFrameKind = 3
 	BootstrapFrameTerminal BootstrapFrameKind = 4
 )
@@ -38,16 +37,15 @@ type BootstrapHeader struct {
 	Completion Completion `json:"completion"`
 }
 
+// BootstrapSignal is one encoded OTLP logs batch of Records log records.
 type BootstrapSignal struct {
-	Kind    BootstrapFrameKind
 	Payload []byte
 	Records int64
 }
 
 type BootstrapTerminal struct {
-	TraceRecords int64  `json:"traceRecords"`
-	LogRecords   int64  `json:"logRecords"`
-	SHA256       string `json:"sha256"`
+	LogRecords int64  `json:"logRecords"`
+	SHA256     string `json:"sha256"`
 }
 
 func BuildBootstrap(header BootstrapHeader, signals []BootstrapSignal) ([]byte, int64, error) {
@@ -59,28 +57,17 @@ func BuildBootstrap(header BootstrapHeader, signals []BootstrapSignal) ([]byte, 
 	var output byteWriter
 	hash := sha256.New()
 	writeHashed := func(kind BootstrapFrameKind, payload []byte) error {
-		if err := WriteBootstrapFrame(io.MultiWriter(&output, hash), kind, payload); err != nil {
-			return err
-		}
-		return nil
+		return WriteBootstrapFrame(io.MultiWriter(&output, hash), kind, payload)
 	}
 	if err := writeHashed(BootstrapFrameHeader, headerPayload); err != nil {
 		return nil, 0, err
 	}
 	var terminal BootstrapTerminal
 	for _, signal := range signals {
-		if signal.Kind != BootstrapFrameTraces && signal.Kind != BootstrapFrameLogs {
-			return nil, 0, fmt.Errorf("invalid bootstrap signal frame kind %d", signal.Kind)
-		}
-		if err := writeHashed(signal.Kind, signal.Payload); err != nil {
+		if err := writeHashed(BootstrapFrameLogs, signal.Payload); err != nil {
 			return nil, 0, err
 		}
-		switch signal.Kind {
-		case BootstrapFrameTraces:
-			terminal.TraceRecords += signal.Records
-		case BootstrapFrameLogs:
-			terminal.LogRecords += signal.Records
-		}
+		terminal.LogRecords += signal.Records
 	}
 	terminal.SHA256 = hex.EncodeToString(hash.Sum(nil))
 	payload, err := json.Marshal(terminal)
@@ -90,7 +77,7 @@ func BuildBootstrap(header BootstrapHeader, signals []BootstrapSignal) ([]byte, 
 	if err := WriteBootstrapFrame(&output, BootstrapFrameTerminal, payload); err != nil {
 		return nil, 0, err
 	}
-	return output, terminal.TraceRecords + terminal.LogRecords, nil
+	return output, terminal.LogRecords, nil
 }
 
 type byteWriter []byte
@@ -125,7 +112,9 @@ func ReadBootstrapFrame(r io.Reader) (BootstrapFrameKind, []byte, error) {
 		return 0, nil, errors.New("invalid bootstrap frame magic")
 	}
 	kind := BootstrapFrameKind(header[4])
-	if kind < BootstrapFrameHeader || kind > BootstrapFrameTerminal {
+	switch kind {
+	case BootstrapFrameHeader, BootstrapFrameLogs, BootstrapFrameTerminal:
+	default:
 		return 0, nil, fmt.Errorf("invalid bootstrap frame kind %d", kind)
 	}
 	size := binary.BigEndian.Uint32(header[5:])
@@ -141,9 +130,9 @@ func ReadBootstrapFrame(r io.Reader) (BootstrapFrameKind, []byte, error) {
 
 // DecodeBootstrap requires a header first and a terminal last, rejects trailing
 // bytes, verifies the terminal checksum, calls onHeader before reading any
-// signal frame, and calls consume for each signal frame. EOF before the terminal
-// is an interruption, never a successful finite response.
-func DecodeBootstrap(r io.Reader, onHeader func(BootstrapHeader) error, consume func(BootstrapFrameKind, []byte) error) (BootstrapHeader, BootstrapTerminal, error) {
+// logs frame, and calls consume with each logs frame's payload. EOF before the
+// terminal is an interruption, never a successful finite response.
+func DecodeBootstrap(r io.Reader, onHeader func(BootstrapHeader) error, consume func([]byte) error) (BootstrapHeader, BootstrapTerminal, error) {
 	var header BootstrapHeader
 	var terminal BootstrapTerminal
 	hash := sha256.New()
@@ -197,7 +186,7 @@ func DecodeBootstrap(r io.Reader, onHeader func(BootstrapHeader) error, consume 
 			return header, terminal, errors.New("duplicate bootstrap header")
 		}
 		if consume != nil {
-			if err := consume(kind, payload); err != nil {
+			if err := consume(payload); err != nil {
 				return header, terminal, err
 			}
 		}
