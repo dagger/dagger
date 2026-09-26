@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -20,7 +21,11 @@ type artifactValueResult struct {
 		ID   dagger.ID
 		Type string `json:"__typename"`
 	}
-	Error *struct{ Message string }
+	Error *struct {
+		Message string
+		// Values are the error extensions, such as an exec error's output.
+		Values []struct{ Name, Value string }
+	}
 }
 
 func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts, failFast bool) ([]artifactValueResult, error) {
@@ -34,7 +39,7 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *dagge
 	err = dag.Do(ctx, &dagger.Request{
 		Query: `query ArtifactValues($id: ID!, $failFast: Boolean!) {
    selection: node(id: $id) { ... on Artifacts { values(failFast: $failFast) {
-    artifact { uri } error { message } value { id __typename }
+    artifact { uri } error { message values { name value } } value { id __typename }
    } } }
   }`,
 		Variables: map[string]any{"id": id, "failFast": failFast},
@@ -48,6 +53,35 @@ func artifactResultErrors(results []artifactValueResult) error {
 		if result.Error != nil {
 			failures = append(failures, fmt.Errorf("%s: %s", result.Artifact.URI, result.Error.Message))
 		}
+	}
+	return errors.Join(failures...)
+}
+
+// artifactResultErrorsWithOutput also shows the command and output of a
+// failed exec. Use it where the frontend does not show the exec's own logs,
+// such as a generator's deferred work.
+func artifactResultErrorsWithOutput(results []artifactValueResult) error {
+	var failures []error
+	for _, result := range results {
+		if result.Error == nil {
+			continue
+		}
+		msg := result.Artifact.URI + ": " + result.Error.Message
+		values := map[string]json.RawMessage{}
+		for _, value := range result.Error.Values {
+			values[value.Name] = json.RawMessage(value.Value)
+		}
+		var cmd []string
+		if err := json.Unmarshal(values["cmd"], &cmd); err == nil && len(cmd) > 0 {
+			msg += "\nCommand: " + strings.Join(cmd, " ")
+		}
+		for _, stream := range []string{"stdout", "stderr"} {
+			var output string
+			if err := json.Unmarshal(values[stream], &output); err == nil && strings.TrimSpace(output) != "" {
+				msg += "\n" + strings.ToUpper(stream[:1]) + stream[1:] + ":\n" + strings.TrimRight(output, "\n")
+			}
+		}
+		failures = append(failures, errors.New(msg))
 	}
 	return errors.Join(failures...)
 }
