@@ -160,6 +160,9 @@ func (ms *mockServer) SetCurrentWorkspaceLookup(_ context.Context, namespace, op
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
+func (ms *mockServer) ModuleParentHostClientMetadata(context.Context) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
 func (ms *mockServer) DefaultDeps(context.Context) (*SchemaBuilder, error) { return nil, nil }
 func (ms *mockServer) Cache(context.Context) (*dagql.Cache, error)         { return nil, nil }
 func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
