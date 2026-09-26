@@ -3636,7 +3636,7 @@ const (
 	// callPayloadSpanReported: a producer included a best-effort span copy;
 	// a protected log export is still required for persistence acknowledgment.
 	callPayloadSpanReported
-	// callPayloadDelivered: the target's log DB has fsynced the payload.
+	// callPayloadDelivered: the target's log DB has appended the payload.
 	callPayloadDelivered
 )
 

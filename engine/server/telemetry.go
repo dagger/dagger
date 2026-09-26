@@ -867,14 +867,6 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	appendStart := time.Now()
 	stats, appendErr := db.AppendLogs(inserts)
-	if appendErr == nil {
-		for _, rec := range logs {
-			if agentcontrol.IsRecord(rec) || enginetel.IsCallPayloadRecord(rec) {
-				appendErr = db.CheckpointLogs(ctx)
-				break
-			}
-		}
-	}
 	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
 	return appendErr
 }
