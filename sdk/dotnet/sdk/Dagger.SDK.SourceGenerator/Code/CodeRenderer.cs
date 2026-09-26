@@ -403,9 +403,15 @@ public class CodeRenderer : ICodeRenderer
 
         if (arg.DefaultValue != null)
         {
-            // C# cannot express a list as a default parameter value. Leave the
-            // argument unset, so the engine applies its own default.
-            if (arg.Type.IsList())
+            // C# cannot express a list or custom scalar as a default parameter
+            // value. Leave the argument unset, so the engine applies its default.
+            if (
+                arg.Type.IsList()
+                || (
+                    arg.Type.IsScalar()
+                    && arg.Type.GetType_().Name is not ("String" or "Boolean" or "Int" or "Float")
+                )
+            )
             {
                 return $"{nullableType} {arg.GetVarName()} = null";
             }
@@ -593,14 +599,15 @@ public class CodeRenderer : ICodeRenderer
             return "";
         }
 
-        var builder = new StringBuilder("var arguments = ImmutableList<Argument>.Empty;");
+        // GraphQL reserves the __ prefix, so it cannot collide with an argument.
+        var builder = new StringBuilder("var __arguments = ImmutableList<Argument>.Empty;");
         builder.Append('\n');
 
         var requiredArgs = field.RequiredArgs();
         if (requiredArgs.Any())
         {
             builder
-                .Append("arguments = arguments.")
+                .Append("__arguments = __arguments.")
                 .Append(
                     string.Join(
                         ".",
@@ -625,7 +632,7 @@ public class CodeRenderer : ICodeRenderer
                         return sb.Append($"""if ({varName} is {GetArgTypeName(arg)} {varName}_)""")
                             .Append("{\n")
                             .Append(
-                                $$"""    arguments = arguments.Add(new Argument("{{arg.Name}}", {{RenderArgumentValue(arg, addVarSuffix: true)}}));"""
+                                $$"""    __arguments = __arguments.Add(new Argument("{{arg.Name}}", {{RenderArgumentValue(arg, addVarSuffix: true)}}));"""
                             )
                             .Append("}\n");
                     }
@@ -738,7 +745,7 @@ public class CodeRenderer : ICodeRenderer
         builder.Append($"\"{field.Name}\"");
         if (field.Args.Length > 0)
         {
-            builder.Append(", arguments");
+            builder.Append(", __arguments");
         }
 
         builder.Append(')');

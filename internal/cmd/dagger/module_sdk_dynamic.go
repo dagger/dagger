@@ -153,7 +153,7 @@ func registerModuleSDKCommands(ctx context.Context, selectedSDK string) error {
 		return err
 	}
 	if cfg == nil && isObviouslyRemoteWorkspaceRef(workspaceRef) {
-		return withEngineSilent(ctx, client.Params{
+		return withEngineMetadata(ctx, "Load SDK options", client.Params{
 			SkipWorkspaceModules:           true,
 			SuppressCompatWorkspaceWarning: true,
 		}, func(ctx context.Context, ec *client.Client) error {
@@ -167,7 +167,7 @@ func registerModuleSDKCommands(ctx context.Context, selectedSDK string) error {
 	if cfg == nil || selectedSDK == "" {
 		return registerModuleSDKCommandsFromConfig(ctx, cfg, cfgPath, nil, "")
 	}
-	return withEngineSilent(ctx, client.Params{
+	return withEngineMetadata(ctx, "Load SDK options", client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -21,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/mod/semver"
 )
 
@@ -54,6 +54,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFunc("resolve", s.resolve).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Resolve an address in this workspace.",
+				"A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.",
+				"A value without the dag:// scheme keeps its external meaning, such as a container image reference.",
+				"The Address retains this workspace across module calls and ID reloads.").
+			Args(dagql.Arg("value").Doc("A DAG address, or an external reference.")),
 		dagql.NodeFunc("withInitialized", s.withInitialized).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
@@ -134,7 +141,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(dagql.Arg("name").Doc("Environment name, or empty to clear the selection.")),
 		dagql.Func("__workspaceModule", s.workspaceModule).
 			View(AfterVersion("v1.0.0-0")),
-		dagql.Func("__workspaceSDK", s.workspaceSDK).
+		dagql.NodeFunc("__workspaceSDK", s.workspaceSDK).
 			View(AfterVersion("v1.0.0-0")),
 		dagql.Func("path", s.legacyPath).
 			View(BeforeVersion("v1.0.0-0")).
@@ -484,6 +491,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"If key points to a table, returns flattened dotted-key output.").
 			Args(
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
+				dagql.Arg("effective").Doc("Include the selected environment, user overrides, and legacy workspace settings."),
 			),
 		dagql.Func("entrypoint", s.entrypoint).
 			View(AfterVersion("v1.0.0-0")).
@@ -523,41 +531,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Current location within the workspace root.",
 				`The workspace root is returned as "/".`,
 				"Relative paths in workspace APIs resolve from here."),
-		dagql.NodeFunc("checks", s.checks).
-			Doc("Return all checks from modules loaded in the workspace.").
-			Args(
-				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
-				dagql.Arg("skip").Doc("Skip checks matching the specified patterns").
-					View(AfterVersion("v1.0.0-0")),
-				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks").
-					View(AfterVersion("v0.21.0")),
-				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions").
-					View(AfterVersion("v0.21.4")),
-			),
-		dagql.NodeFunc("generators", s.generators).
-			Doc("Return all generators from modules loaded in the workspace.").
-			Args(
-				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
-			),
-		dagql.NodeFunc("services", s.services).
-			Doc("Return all services from modules loaded in the workspace.").
-			Args(
-				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
-			),
-		dagql.NodeFunc("terminals", s.terminals).
+		dagql.NodeFunc("artifacts", s.artifacts).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return all terminal targets from modules loaded in the workspace.").
-			Args(
-				dagql.Arg("include").Doc("Only include terminal targets matching the specified patterns"),
-			),
-		dagql.NodeFunc("agents", s.agents).
-			Experimental("Agent APIs are likely to change.").
-			View(AfterVersion("v1.0.0-0")).
-			Doc("Return all agent middlewares from modules loaded in the workspace.").
-			Args(
-				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
-				dagql.Arg("exclude").Doc("Exclude agents matching the specified patterns"),
-			),
+			Doc("Discover static object artifacts from workspace modules without evaluating their values.").
+			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.")),
 		migrateField,
 	}.Install(srv)
 
@@ -598,7 +575,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("List the functions of this module's main object, in GraphQL field form."),
 	}.Install(srv)
 	dagql.Fields[*core.WorkspaceModuleSetting]{}.Install(srv)
-	dagql.Fields[*core.WorkspaceSDK]{}.Install(srv)
+	sdkGenerate := dagql.Func("generate", s.sdkGenerate).Doc("Generate the modules and clients managed by this SDK.")
+	sdkGenerate.Spec.Directives = append(sdkGenerate.Spec.Directives, &ast.Directive{Name: "generate"})
+	dagql.Fields[*core.WorkspaceSDK]{sdkGenerate}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
 }
@@ -3924,598 +3903,88 @@ func isWorkspaceBasename(name string) bool {
 	return !strings.Contains(name, "\\")
 }
 
-func (s *workspaceSchema) checks(
-	ctx context.Context,
-	parentResult dagql.ObjectResult[*core.Workspace],
-	args struct {
-		Include      dagql.Optional[dagql.ArrayInput[dagql.String]]
-		Skip         dagql.Optional[dagql.ArrayInput[dagql.String]]
-		NoGenerate   dagql.Optional[dagql.Boolean]
-		OnlyGenerate dagql.Optional[dagql.Boolean]
-	},
-) (*core.CheckGroup, error) {
-	parent := parentResult.Self()
-
-	include := workspaceIncludePatterns(args.Include)
-	skip := workspaceIncludePatterns(args.Skip)
-
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-	noGenerate := args.NoGenerate.GetOr(false).Bool()
-	onlyGenerate := args.OnlyGenerate.GetOr(false).Bool()
-
-	cfg, err := workspaceConfigWithCompatFallback(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-	// Apply the workspace default only when no generate flag was passed.
-	if !args.NoGenerate.Valid && !args.OnlyGenerate.Valid && cfg.CheckGenerated != nil && !*cfg.CheckGenerated {
-		noGenerate = true
-	}
-
-	// Best-effort: a module that can't load becomes a failing check below
-	// rather than aborting the modules that can. check stays a gate -- the run
-	// still fails -- but a broken module no longer costs the whole report.
-	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadBestEffort)
-	if err != nil {
-		return nil, err
-	}
-	entrypoints, err := workspaceEntrypointNames(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-
-	ignoreChecks := workspaceConfigSkipPatternsFromConfig(cfg, func(e workspace.ModuleEntry) []string {
-		return e.Check.Skip
-	})
-
-	// declaredChecks keeps every module check, whatever the patterns select: a
-	// derived check yields to an explicit one even when only the derived check
-	// was asked for by name.
-	var allChecks, declaredChecks []*core.Check
-	for _, mod := range mods {
-		checkGroup, err := core.NewCheckGroup(ctx, mod, noGenerate, onlyGenerate)
-		if err != nil {
-			return nil, fmt.Errorf("checks from module %q: %w", mod.Self().Name(), err)
-		}
-		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Self().Name(), entrypoints[mod.Self().Name()])
-		declaredChecks = append(declaredChecks, checkGroup.Checks...)
-		filtered, err := filterChecksByInclude(ctx, checkGroup.Checks, include)
-		if err != nil {
-			return nil, err
-		}
-		// Apply caller-requested skip patterns.
-		if len(skip) > 0 {
-			filtered, err = filterChecksByExclude(ctx, filtered, skip, false)
-			if err != nil {
-				return nil, err
-			}
-		}
-		// Apply ignoreChecks exclusion for this toolchain's checks.
-		if exclude := ignoreChecks[mod.Self().Name()]; len(exclude) > 0 {
-			filtered, err = filterChecksByExclude(ctx, filtered, exclude, true)
-			if err != nil {
-				return nil, err
-			}
-		}
-		allChecks = append(allChecks, filtered...)
-	}
-
-	// loadWorkspaceConfigForOverlay hard-errors on a legacy compat workspace, so
-	// an unmigrated workspace must not reach it, and one without SDKs has
-	// nothing to derive anyway.
-	if !noGenerate && parent.ConfigFile != "" && len(cfg.SDKs) > 0 {
-		staged, err := s.loadWorkspaceConfigForOverlay(ctx, parent, workspaceConfigMustExist, false)
-		if err != nil {
-			return nil, err
-		}
-		derived, err := s.syntheticSDKGeneratorChecks(ctx, staged, include, skip, entrypoints, ignoreChecks, declaredChecks)
-		if err != nil {
-			return nil, err
-		}
-		allChecks = append(allChecks, derived...)
-	}
-
-	// Every check that resolved leads, derived ones included; the modules that
-	// did not resolve follow. They are reported whatever include/skip patterns
-	// are in play: the checks those patterns would have matched are precisely
-	// what failed to enumerate.
-	for _, failure := range loadFailures {
-		allChecks = append(allChecks, core.NewModuleLoadFailureCheck(failure))
-	}
-
-	return &core.CheckGroup{Checks: allChecks, BoundWorkspace: parentResult}, nil
-}
-
-// syntheticSDKGeneratorChecks derives one check per configured SDK from the
-// engine-injected generators `dagger generate` already lists, so a workspace
-// keeps the generate-derived check it had when its SDK declared its own
-// +generate function.
-func (s *workspaceSchema) syntheticSDKGeneratorChecks(
-	ctx context.Context,
-	staged *stagedWorkspaceConfig,
-	include []string,
-	skip []string,
-	entrypoints map[string]bool,
-	ignoreChecks map[string][]string,
-	existing []*core.Check,
-) ([]*core.Check, error) {
-	// The include patterns are applied to the checks below, not here: a pattern
-	// naming the check selects nothing when it is tried against the generator,
-	// whose path is one leaf shorter.
-	generators, err := s.syntheticSDKGenerators(ctx, staged, nil, entrypoints)
-	if err != nil {
-		return nil, err
-	}
-
-	// An explicit +check at the same name wins, as it does for a function
-	// annotated with both +check and +generate. The dedup is keyed on the
-	// generator's own name, not the check's, so an explicit +check of that name
-	// still wins even though the two no longer collide.
-	taken := make(map[string]struct{}, len(existing))
-	for _, check := range existing {
-		taken[check.Node.CommandName()] = struct{}{}
-	}
-
-	derived := make([]*core.Check, 0, len(generators))
-	for _, generator := range generators {
-		if _, exists := taken[generator.Node.CommandName()]; exists {
-			continue
-		}
-		// The generator is namespaced under its SDK's provider module, and an
-		// SDK names exactly one installed module, so that module's configured
-		// check skips apply to this check alone.
-		check := &core.Check{Node: generator.Node, Synthetic: generator.Synthetic, IsGenerate: true}
-		filtered, err := filterChecksByExclude(ctx, []*core.Check{check}, ignoreChecks[generator.Node.Path()[0]], true)
-		if err != nil {
-			return nil, err
-		}
-		derived = append(derived, filtered...)
-	}
-
-	derived, err = filterChecksByInclude(ctx, derived, include)
-	if err != nil {
-		return nil, err
-	}
-	return filterChecksByExclude(ctx, derived, skip, false)
-}
-
-// filterChecksByInclude and filterChecksByExclude are the one place checks are
-// matched against patterns, for the workspace and the module API alike. The
-// matching itself is the generic one; a check only differs in answering to
-// every node Check.MatchNodes lists.
-func filterChecksByInclude(ctx context.Context, checks []*core.Check, include []string) ([]*core.Check, error) {
-	return filterNodesByInclude(ctx, checks, include, (*core.Check).MatchNodes, (*core.Check).Name, "check")
-}
-
-func filterChecksByExclude(ctx context.Context, checks []*core.Check, exclude []string, moduleLocal bool) ([]*core.Check, error) {
-	return filterNodesByExclude(ctx, checks, exclude, moduleLocal, (*core.Check).MatchNodes, (*core.Check).Name, "check")
-}
-
-type workspaceGeneratorModule struct {
-	mod          dagql.ObjectResult[*core.Module]
-	name         string
-	group        *core.GeneratorGroup
-	sourceDigest string
-	isWrapper    bool
-}
-
-func selectVisibleGeneratorModules(entries []workspaceGeneratorModule) []workspaceGeneratorModule {
-	// If a wrapper module exposes generators from a blueprint/toolchain, hide the
-	// raw source module's generator namespace and keep the user-facing wrapper.
-	hasWrapperBySource := make(map[string]bool, len(entries))
-	for _, entry := range entries {
-		if entry.isWrapper {
-			hasWrapperBySource[entry.sourceDigest] = true
-		} else if _, ok := hasWrapperBySource[entry.sourceDigest]; !ok {
-			hasWrapperBySource[entry.sourceDigest] = false
-		}
-	}
-
-	visible := make([]workspaceGeneratorModule, 0, len(entries))
-	for _, entry := range entries {
-		if hasWrapperBySource[entry.sourceDigest] && !entry.isWrapper {
-			continue
-		}
-		visible = append(visible, entry)
-	}
-	return visible
-}
-
-func (s *workspaceSchema) generators(
-	ctx context.Context,
-	parentResult dagql.ObjectResult[*core.Workspace],
-	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-	},
-) (*core.GeneratorGroup, error) {
-	parent := parentResult.Self()
-
-	include := workspaceIncludePatterns(args.Include)
-
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-	var staged *stagedWorkspaceConfig
-	sdkProviderModules := map[string]bool{}
-	if parent.ConfigFile != "" {
-		staged, err = s.loadWorkspaceConfigForOverlay(ctx, parent, workspaceConfigMustExist, false)
-		if err != nil {
-			return nil, err
-		}
-		for _, sdk := range staged.Config.SDKs {
-			sdkProviderModules[sdk.Module] = true
-		}
-	}
-
-	// Best-effort: generate is often what repairs a module that can't load —
-	// e.g. a dagger-module.toml module whose committed generated files don't
-	// exist yet gets them from its SDK's generator. A module that fails to load
-	// is skipped with a warning instead of failing the whole run, and its
-	// failure message is carried on loadFailures so the CLI can honor
-	// --require-load.
-	mods, loadFailures, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadRepairing)
-	if err != nil {
-		return nil, err
-	}
-	entrypoints, err := workspaceEntrypointNames(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-
-	ignoreGenerators, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
-		return e.Generate.Skip
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	moduleGenerators := make([]workspaceGeneratorModule, 0, len(mods))
-	for _, mod := range mods {
-		if sdkProviderModules[mod.Self().Name()] {
-			continue
-		}
-		generatorGroup, err := core.NewGeneratorGroup(ctx, mod, nil)
-		if err != nil {
-			return nil, fmt.Errorf("generators from module %q: %w", mod.Self().Name(), err)
-		}
-		if len(generatorGroup.Generators) == 0 {
-			continue
-		}
-
-		source := mod.Self().GetSource()
-		if source == nil {
-			return nil, fmt.Errorf("generators from module %q: no module source available", mod.Self().Name())
-		}
-		sourceDigest, err := source.SourceImplementationDigest(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("generators from module %q: source implementation digest: %w", mod.Self().Name(), err)
-		}
-
-		isWrapper := false
-		contextSource := mod.Self().GetContextSource()
-		if contextSource != nil {
-			contextDigest, err := contextSource.SourceImplementationDigest(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("generators from module %q: context source implementation digest: %w", mod.Self().Name(), err)
-			}
-			isWrapper = sourceDigest != contextDigest
-		}
-
-		moduleGenerators = append(moduleGenerators, workspaceGeneratorModule{
-			mod:          mod,
-			name:         mod.Self().Name(),
-			group:        generatorGroup,
-			sourceDigest: sourceDigest.String(),
-			isWrapper:    isWrapper,
-		})
-	}
-
-	rawIgnoreGeneratorsBySource := make(map[string][]string, len(moduleGenerators))
-	for _, entry := range moduleGenerators {
-		if entry.isWrapper {
-			continue
-		}
-		if exclude := ignoreGenerators[entry.name]; len(exclude) > 0 {
-			rawIgnoreGeneratorsBySource[entry.sourceDigest] = append(rawIgnoreGeneratorsBySource[entry.sourceDigest], exclude...)
-		}
-	}
-
-	moduleGenerators = selectVisibleGeneratorModules(moduleGenerators)
-
-	var allGenerators []*core.Generator
-	for _, entry := range moduleGenerators {
-		reparentWorkspaceTreeRoot(entry.group.Node, entry.name, entrypoints[entry.name])
-		filtered, err := filterGeneratorsByInclude(
-			ctx,
-			entry.group.Generators,
-			include,
-		)
-		if err != nil {
-			return nil, err
-		}
-		exclude := ignoreGenerators[entry.name]
-		if entry.isWrapper {
-			// Keep ignore behavior attached to the raw toolchain alias even when the
-			// workspace view hides that alias behind a wrapper module.
-			exclude = append(exclude, rawIgnoreGeneratorsBySource[entry.sourceDigest]...)
-		}
-		if len(exclude) > 0 {
-			filtered, err = filterNodesByExclude(
-				ctx,
-				filtered,
-				exclude,
-				true,
-				singleNode(func(generator *core.Generator) *core.ModTreeNode { return generator.Node }),
-				func(generator *core.Generator) string { return generator.Name() },
-				"generator",
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-		allGenerators = append(allGenerators, filtered...)
-	}
-
-	if staged != nil {
-		syntheticGenerators, err := s.syntheticSDKGenerators(ctx, staged, include, entrypoints)
-		if err != nil {
-			return nil, err
-		}
-		allGenerators = append(allGenerators, syntheticGenerators...)
-	}
-
-	return &core.GeneratorGroup{
-		Generators:     allGenerators,
-		LoadFailures:   loadFailures,
-		BoundWorkspace: parentResult,
-	}, nil
-}
-
-func (s *workspaceSchema) services(
-	ctx context.Context,
-	parentResult dagql.ObjectResult[*core.Workspace],
-	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-	},
-) (*core.UpGroup, error) {
-	parent := parentResult.Self()
-
-	include := workspaceIncludePatterns(args.Include)
-
-	ctx, err := s.withWorkspaceClientContext(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-
-	// up is strict: a module that can't load is a failure, by design.
-	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadStrict)
-	if err != nil {
-		return nil, err
-	}
-
-	ignoreServices, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
-		return e.Up.Skip
-	})
-	if err != nil {
-		return nil, err
-	}
-	entrypoints, err := workspaceEntrypointNames(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-
-	var allUps []*core.Up
-	for _, mod := range mods {
-		upGroup, err := core.NewUpGroup(ctx, mod, nil)
-		if err != nil {
-			return nil, fmt.Errorf("services from module %q: %w", mod.Self().Name(), err)
-		}
-		reparentWorkspaceTreeRoot(upGroup.Node, mod.Self().Name(), entrypoints[mod.Self().Name()])
-		filtered, err := filterNodesByInclude(
-			ctx,
-			upGroup.Ups,
-			include,
-			singleNode(func(up *core.Up) *core.ModTreeNode { return up.Node }),
-			func(up *core.Up) string { return up.Name() },
-			"service",
-		)
-		if err != nil {
-			return nil, err
-		}
-		if exclude := ignoreServices[mod.Self().Name()]; len(exclude) > 0 {
-			filtered, err = filterNodesByExclude(
-				ctx,
-				filtered,
-				exclude,
-				true,
-				singleNode(func(up *core.Up) *core.ModTreeNode { return up.Node }),
-				func(up *core.Up) string { return up.Name() },
-				"service",
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-		allUps = append(allUps, filtered...)
-	}
-
-	// Resolve port mappings from the workspace config's top-level [ports.<host>]
-	// declarations.
-	wsCfg, err := workspaceConfigWithCompatFallback(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-	for hostStr, pm := range wsCfg.Ports {
-		host, err := strconv.Atoi(hostStr)
-		if err != nil {
-			return nil, fmt.Errorf("workspace port key %q: %w", hostStr, err)
-		}
-		for _, up := range allUps {
-			if up.Name() != pm.BackendService && up.Node.PathString() != pm.BackendService {
-				continue
-			}
-			up.PortMappings = append(up.PortMappings, core.PortForward{
-				Frontend: &host,
-				Backend:  pm.BackendPort,
-				Protocol: core.NetworkProtocolTCP,
-			})
-		}
-	}
-
-	return &core.UpGroup{Ups: allUps, BoundWorkspace: parentResult}, nil
-}
-
-func (s *workspaceSchema) terminals(
-	ctx context.Context,
-	parentResult dagql.ObjectResult[*core.Workspace],
-	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-	},
-) (*core.TerminalGroup, error) {
-	allTerminals, err := collectWorkspaceModuleTargets(
-		ctx,
-		s,
-		parentResult,
-		workspaceIncludePatterns(args.Include),
-		nil,
-		"terminal targets",
-		"terminal target",
-		terminalTargetsFromModule,
-		func(terminal *core.TerminalTarget) *core.ModTreeNode { return terminal.Node },
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &core.TerminalGroup{Terminals: allTerminals, BoundWorkspace: parentResult}, nil
-}
-
-func (s *workspaceSchema) agents(
-	ctx context.Context,
-	parentResult dagql.ObjectResult[*core.Workspace],
-	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-		Exclude dagql.Optional[dagql.ArrayInput[dagql.String]]
-	},
-) (*core.AgentMiddlewareGroup, error) {
-	allAgents, err := collectWorkspaceModuleTargets(
-		ctx,
-		s,
-		parentResult,
-		workspaceIncludePatterns(args.Include),
-		workspaceIncludePatterns(args.Exclude),
-		"agents",
-		"agent",
-		agentTargetsFromModule,
-		func(agent *core.AgentMiddleware) *core.ModTreeNode { return agent.Node },
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &core.AgentMiddlewareGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
-}
-
-// workspaceTargetModules returns the workspace's primary modules as they
-// should be seen when composing targets (agents, terminals) from them.
 func (s *workspaceSchema) workspaceTargetModules(
 	ctx context.Context,
 	parentResult dagql.ObjectResult[*core.Workspace],
 	include []string,
-) ([]dagql.ObjectResult[*core.Module], error) {
-	mods, _, err := s.workspacePrimaryModules(ctx, parentResult, include, core.ModuleLoadStrict)
+	mode core.ModuleLoadMode,
+) ([]dagql.ObjectResult[*core.Module], []core.ModuleLoadFailure, error) {
+	removed, err := workspaceRemovedModuleNames(ctx, parentResult.Self())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	var mods []dagql.ObjectResult[*core.Module]
+	var failures []core.ModuleLoadFailure
+	if len(removed) > 0 {
+		// Config edits reload remaining native entries through the overlay.
+		// Legacy defaultPath entries still need the session loader; narrow its
+		// input so removed modules are not loaded before they can be filtered.
+		cfg, configErr := workspaceEffectiveConfig(ctx, parentResult.Self())
+		if configErr != nil {
+			return nil, nil, configErr
+		}
+		names := make([]string, 0, len(cfg.Modules))
+		for name := range cfg.Modules {
+			names = append(names, name)
+		}
+		wanted := overlayIncludedModuleNames(names, include)
+		var legacy []string
+		for name, entry := range cfg.Modules {
+			if !entry.LegacyDefaultPath {
+				continue
+			}
+			if wanted != nil {
+				if _, selected := wanted[canonicalOverlayModuleName(name)]; !selected {
+					continue
+				}
+			}
+			legacy = append(legacy, name)
+		}
+		sort.Strings(legacy)
+		if len(legacy) > 0 {
+			var err error
+			failures, err = ensureWorkspaceModulesLoaded(ctx, legacy, mode)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		mods, err = currentWorkspacePrimaryModules(ctx)
+	} else {
+		mods, failures, err = s.workspacePrimaryModules(ctx, parentResult, include, mode)
+	}
+	if err != nil {
+		return nil, nil, err
 	}
 	if parentResult.Self().IsValueWorkspace() {
-		return mods, nil
+		return mods, failures, nil
 	}
 
 	// The served modules above are the workspace as it was on disk when the
 	// session started. Re-resolve whatever the workspace's pending overlay
 	// touches, so an agent recomposing itself (install/reload) sees its own
 	// staged edits to module source and to dagger.toml.
-	overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
-	if err != nil {
-		return nil, err
-	}
-	return mergeOverlayModules(mods, overlayMods), nil
-}
-
-// collectWorkspaceModuleTargets composes one kind of target (agents, terminal
-// targets) from every primary module in the workspace, as seen through its
-// pending overlay, keeping only those matching the include patterns and not
-// matching the exclude patterns.
-func collectWorkspaceModuleTargets[T any](
-	ctx context.Context,
-	s *workspaceSchema,
-	parentResult dagql.ObjectResult[*core.Workspace],
-	include []string,
-	exclude []string,
-	groupLabel string,
-	targetLabel string,
-	collect func(context.Context, dagql.ObjectResult[*core.Module]) (*core.ModTreeNode, []T, error),
-	node func(T) *core.ModTreeNode,
-) ([]T, error) {
-	ctx, err := s.withWorkspaceClientContext(ctx, parentResult.Self())
-	if err != nil {
-		return nil, err
-	}
-
-	mods, err := s.workspaceTargetModules(ctx, parentResult, include)
-	if err != nil {
-		return nil, err
-	}
-	entrypoints, err := workspaceEntrypointNames(ctx, parentResult.Self())
-	if err != nil {
-		return nil, err
-	}
-
-	name := func(target T) string { return node(target).PathString() }
-	var all []T
-	for _, mod := range mods {
-		root, targets, err := collect(ctx, mod)
-		if err != nil {
-			return nil, fmt.Errorf("%s from module %q: %w", groupLabel, mod.Self().Name(), err)
-		}
-		reparentWorkspaceTreeRoot(root, mod.Self().Name(), entrypoints[mod.Self().Name()])
-		filtered, err := filterNodesByInclude(ctx, targets, include, singleNode(node), name, targetLabel)
-		if err != nil {
-			return nil, err
-		}
-		filtered, err = filterNodesByExclude(ctx, filtered, exclude, false, singleNode(node), name, targetLabel)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, filtered...)
-	}
-	return all, nil
-}
-
-func terminalTargetsFromModule(
-	ctx context.Context,
-	mod dagql.ObjectResult[*core.Module],
-) (*core.ModTreeNode, []*core.TerminalTarget, error) {
-	group, err := core.NewTerminalGroup(ctx, mod, nil)
+	overlayMods, overlayFailures, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parentResult, include, mode)
 	if err != nil {
 		return nil, nil, err
 	}
-	return group.Node, group.Terminals, nil
-}
-
-func agentTargetsFromModule(
-	ctx context.Context,
-	mod dagql.ObjectResult[*core.Module],
-) (*core.ModTreeNode, []*core.AgentMiddleware, error) {
-	group, err := core.NewAgentMiddlewareGroup(ctx, mod, nil)
-	if err != nil {
-		return nil, nil, err
+	if removed == nil {
+		removed = map[string]bool{}
 	}
-	return group.Node, group.Agents, nil
+	for _, failure := range overlayFailures {
+		removed[canonicalOverlayModuleName(failure.Name)] = true
+	}
+	// An overlay's load result replaces the original session's result.
+	failures = slices.DeleteFunc(failures, func(failure core.ModuleLoadFailure) bool {
+		name := canonicalOverlayModuleName(failure.Name)
+		return removed[name] || slices.ContainsFunc(overlayMods, func(mod overlayModule) bool {
+			return canonicalOverlayModuleName(mod.name) == name
+		})
+	})
+	failures = append(failures, overlayFailures...)
+	merged := mergeOverlayModules(mods, overlayMods)
+	return slices.DeleteFunc(merged, func(mod dagql.ObjectResult[*core.Module]) bool {
+		return removed[canonicalOverlayModuleName(mod.Self().Name())]
+	}), failures, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
@@ -4527,45 +3996,6 @@ func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.S
 		patterns = append(patterns, pattern.String())
 	}
 	return patterns
-}
-
-func filterGeneratorsByInclude(
-	ctx context.Context,
-	generators []*core.Generator,
-	include []string,
-) ([]*core.Generator, error) {
-	if len(include) == 0 {
-		return generators, nil
-	}
-
-	filtered := make([]*core.Generator, 0, len(generators))
-	for _, generator := range generators {
-		match, err := matchWorkspaceInclude(ctx, generator.Node, include)
-		if err != nil {
-			return nil, fmt.Errorf("generator %q include match: %w", generator.Name(), err)
-		}
-		if match {
-			filtered = append(filtered, generator)
-		}
-	}
-	return filtered, nil
-}
-
-// matchSingleModuleInclude tries a match without the first element in the path,
-// so that "foo" can match "my-module:foo"
-func matchSingleModuleInclude(
-	ctx context.Context,
-	node *core.ModTreeNode,
-	include []string,
-) (bool, error) {
-	if node == nil {
-		return false, nil
-	}
-	path := node.Path()
-	if len(path) < 2 {
-		return false, nil
-	}
-	return matchWorkspaceIncludePath(ctx, path[1:], include)
 }
 
 func matchWorkspaceIncludePath(
@@ -4585,9 +4015,8 @@ func matchWorkspaceIncludePath(
 		} else if match {
 			return true, nil
 		}
-		patternAsPath := core.NewModTreePath(pattern)
-		if patternAsPath.Contains(ctx, path) {
-			return true, nil
+		if match, err := path.Glob(ctx, pattern+":**"); err != nil || match {
+			return match, err
 		}
 	}
 	return false, nil
@@ -4652,63 +4081,55 @@ func workspaceConfigWithCompatFallback(
 	return &workspace.Config{}, nil
 }
 
-// workspaceConfigSkipPatterns reads per-module skip patterns from the served
-// workspace config shape, keyed by module name. In legacy compat workspaces,
-// there is no dagger.toml yet, so use the shared compat projection that
-// migration also persists.
-func workspaceConfigSkipPatterns(
-	ctx context.Context,
-	ws *core.Workspace,
-	getter func(workspace.ModuleEntry) []string,
-) (map[string][]string, error) {
+// workspaceEffectiveConfig applies user and environment settings consistently
+// for workspace discovery and address resolution.
+func workspaceEffectiveConfig(ctx context.Context, ws *core.Workspace) (*workspace.Config, error) {
 	cfg, err := workspaceConfigWithCompatFallback(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
-	return workspaceConfigSkipPatternsFromConfig(cfg, getter), nil
+	cfg, err = workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+	if err != nil {
+		return nil, err
+	}
+	if env, ok := selectedWorkspaceEnv(ctx, ws); ok {
+		return workspace.ApplyEnvOverlay(cfg, env)
+	}
+	return cfg, nil
 }
 
-// workspaceConfigSkipPatternsFromConfig derives per-module skip patterns from an
-// already-loaded workspace config.
-func workspaceConfigSkipPatternsFromConfig(
-	cfg *workspace.Config,
-	getter func(workspace.ModuleEntry) []string,
-) map[string][]string {
-	result := make(map[string][]string)
-	for name, entry := range cfg.Modules {
-		if patterns := getter(entry); len(patterns) > 0 {
-			result[name] = patterns
+// workspaceRemovedModuleNames distinguishes removed config entries from
+// explicit -m extras, which remain available despite being absent from config.
+func workspaceRemovedModuleNames(ctx context.Context, ws *core.Workspace) (map[string]bool, error) {
+	if ws.IsValueWorkspace() || ws.ConfigFile == "" || !ws.OverlayPathTouched(ws.ConfigFile) {
+		return nil, nil
+	}
+	current, err := workspaceEffectiveConfig(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	base := ws.Clone()
+	base.SetSource(ws.BaseSource())
+	original, err := workspaceEffectiveConfig(ctx, base)
+	if errors.Is(err, os.ErrNotExist) {
+		// The overlay created the config, so it removed no original entries.
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	present := map[string]bool{}
+	for name := range current.Modules {
+		present[canonicalOverlayModuleName(name)] = true
+	}
+	removed := map[string]bool{}
+	for name := range original.Modules {
+		name = canonicalOverlayModuleName(name)
+		if !present[name] {
+			removed[name] = true
 		}
 	}
-	return result
-}
-
-// filterNodesByExclude uses command names and qualified paths. Module-local
-// patterns are also accepted for skips configured on an individual module.
-func filterNodesByExclude[T any](
-	ctx context.Context,
-	items []T,
-	exclude []string,
-	moduleLocal bool,
-	nodesOf func(T) []*core.ModTreeNode,
-	nameOf func(T) string,
-	itemKind string,
-) ([]T, error) {
-	if len(exclude) == 0 {
-		return items, nil
-	}
-
-	filtered := make([]T, 0, len(items))
-	for _, item := range items {
-		match, err := matchAnyNode(ctx, nodesOf(item), exclude, moduleLocal)
-		if err != nil {
-			return nil, fmt.Errorf("%s %q exclude match: %w", itemKind, nameOf(item), err)
-		}
-		if !match {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered, nil
+	return removed, nil
 }
 
 func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string, entrypoint bool) {
@@ -4731,58 +4152,10 @@ func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include 
 	if err != nil || match {
 		return match, err
 	}
+	if match, err := matchWorkspaceIncludePath(ctx, node.Path(), include); err != nil || match {
+		return match, err
+	}
 	return matchWorkspaceIncludePath(ctx, node.CommandPath(), include)
-}
-
-// matchAnyNode reports whether a pattern selects any of the nodes a target
-// answers to. Most targets answer to their one node; a check also answers to
-// the aliases Check.MatchNodes lists. moduleLocal also accepts a pattern
-// relative to the module.
-func matchAnyNode(ctx context.Context, nodes []*core.ModTreeNode, patterns []string, moduleLocal bool) (bool, error) {
-	for _, node := range nodes {
-		match, err := matchWorkspaceInclude(ctx, node, patterns)
-		if err != nil || match {
-			return match, err
-		}
-		if !moduleLocal {
-			continue
-		}
-		match, err = matchSingleModuleInclude(ctx, node, patterns)
-		if err != nil || match {
-			return match, err
-		}
-	}
-	return false, nil
-}
-
-// singleNode adapts a target that answers to exactly one node.
-func singleNode[T any](nodeOf func(T) *core.ModTreeNode) func(T) []*core.ModTreeNode {
-	return func(item T) []*core.ModTreeNode { return []*core.ModTreeNode{nodeOf(item)} }
-}
-
-func filterNodesByInclude[T any](
-	ctx context.Context,
-	items []T,
-	include []string,
-	nodesOf func(T) []*core.ModTreeNode,
-	nameOf func(T) string,
-	itemKind string,
-) ([]T, error) {
-	if len(include) == 0 {
-		return items, nil
-	}
-
-	filtered := make([]T, 0, len(items))
-	for _, item := range items {
-		match, err := matchAnyNode(ctx, nodesOf(item), include, false)
-		if err != nil {
-			return nil, fmt.Errorf("%s %q include match: %w", itemKind, nameOf(item), err)
-		}
-		if match {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered, nil
 }
 
 // withWorkspaceClientContext stamps the workspace owner's immutable client
@@ -4816,19 +4189,14 @@ func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *
 // withWorkspaceClientContext stamps owner metadata for host/resource routing;
 // the caller's ClientScope remains the only runtime execution authority.
 func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
-	if ws.IsValueWorkspace() {
-		return ctx, nil
-	}
-	if ws.ClientID == "" {
-		return nil, fmt.Errorf("workspace has no client ID")
-	}
-	query, err := core.CurrentQuery(ctx)
+	return core.WorkspaceClientContext(ctx, ws)
+}
+
+func (*workspaceSchema) resolve(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct{ Value dagql.String }) (*core.Address, error) {
+	addr, err := newAddress(args.Value.String())
 	if err != nil {
-		return nil, fmt.Errorf("get current query: %w", err)
+		return nil, err
 	}
-	clientMetadata, err := query.SpecificClientMetadata(ctx, ws.ClientID)
-	if err != nil {
-		return ctx, fmt.Errorf("get client metadata: %w", err)
-	}
-	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
+	addr.BoundWorkspace = parent
+	return addr, nil
 }

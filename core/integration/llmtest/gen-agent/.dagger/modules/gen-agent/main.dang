@@ -40,7 +40,7 @@ type GenAgent {
   auto-injected argument, mirroring a real coding agent's generate tool.
   """
   generate(workspace: Workspace!): Changeset {
-    workspace.generators(include: ["gen-agent"]).run.changes
+    workspace.artifacts(include: ["gen-agent"]).filterTypes(["Generator"]).one.value.{{... on Generator!}}.changeset
   }
 
   """

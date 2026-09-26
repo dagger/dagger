@@ -53,7 +53,8 @@ import (
 var ErrMountNotExist = errors.New("mount does not exist")
 
 type DefaultTerminalCmdOpts struct {
-	Args []string
+	Args  []string
+	Batch []string `json:",omitempty"`
 
 	// Provide dagger access to the executed command
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`

@@ -8,6 +8,9 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * One deferred check. Reading pass, error, or sync runs it.
+ */
 class Check extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
@@ -20,88 +23,25 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return the command name of the check. Entrypoint targets omit the module prefix.
+     * Run the check and retain its result.
      */
-    public function name(): string
+    public function sync(): Check
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
-    }
-
-    /**
-     * The description of the check
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
-     * The path of the check within its module
-     */
-    public function path(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
-    }
-
-    /**
-     * The original module in which the check has been defined
-     */
-    public function originalModule(): Module
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded
-     */
-    public function checkType(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('checkType');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'checkType');
-    }
-
-    /**
-     * An emoji representing the result of the check
-     */
-    public function resultEmoji(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('resultEmoji');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'resultEmoji');
-    }
-
-    /**
-     * Execute the check
-     */
-    public function run(): Check
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Whether the check completed
+     * Run the check and return whether it passes.
      */
-    public function completed(): bool
+    public function pass(): bool
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('completed');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'completed');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pass');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'pass');
     }
 
     /**
-     * Whether the check passed
-     */
-    public function passed(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('passed');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'passed');
-    }
-
-    /**
-     * If the check failed, this is the error
+     * Run the check and return its failure, if any.
      */
     public function error(): ?Error
     {
@@ -112,5 +52,28 @@ class Check extends Client\AbstractObject implements Client\IdAble, Node
             return null;
         }
         return $this->client->loadObjectFromId(\Dagger\Error::class, new \Dagger\Id((string)$id), 'Error');
+    }
+
+    /**
+     * The assertion that is false when this check fails.
+     */
+    public function assertion(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('assertion');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'assertion');
+    }
+
+    /**
+     * An optional report produced by the check.
+     */
+    public function report(): ?Directory
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('report');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Directory::class, new \Dagger\Id((string)$id), 'Directory');
     }
 }

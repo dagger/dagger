@@ -30,7 +30,7 @@ import (
 var workspaceCmd = &cobra.Command{
 	Use:     "workspace",
 	Aliases: []string{"ws"},
-	Short:   "Inspect or configure your workspace (cwd, remotes, config, etc.)",
+	Short:   "Inspect workspace files and config",
 	Long: `Inspect or configure your workspace.
 
 A workspace is a project configured to use Dagger — a directory holding
@@ -1091,10 +1091,8 @@ func withEngineSilent(ctx context.Context, params client.Params, fn runClientCal
 	oldSkip := skipSharedTelemetryExporters
 	Frontend = idtui.NewPlain(io.Discard)
 	opts.Silent = true
-	// This is an internal plumbing session (e.g. the pre-command dynamic SDK-init
-	// registration). Keep it out of the process-wide OTLP exporter singletons so
-	// it doesn't shut them down for the real command that follows in the same
-	// process. See engineTelemetryConfig.
+	// Completion and other internal sessions must not shut down the shared
+	// exporters needed by command execution. See engineTelemetryConfig.
 	skipSharedTelemetryExporters = true
 	defer func() {
 		Frontend = oldFrontend

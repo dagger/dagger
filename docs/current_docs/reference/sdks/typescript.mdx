@@ -812,7 +812,7 @@ dagger -m ./.dagger/modules/my-module api call build --src=.
 dagger check
 
 # Run generators and confirm there's no drift
-dagger check --generate
+dagger check --generated=true
 ```
 
 For richer behavioral tests, write a separate test module (in TypeScript or any
@@ -839,7 +839,7 @@ jobs:
 ```
 
 If your module keeps generated `sdk/` files in git, also gate on drift by
-running `dagger check --generate`.
+running `dagger check --generated=true`.
 
 ## IDE and package-manager setup
 
@@ -896,7 +896,7 @@ committed so consumers don't have to regenerate before using your module.
 Recommended release checklist:
 
 1. `dagger check` passes.
-2. `dagger check --generate` produces no drift.
+2. `dagger check --generated=true` produces no drift.
 3. `engineVersion` in `dagger-module.toml` matches the engine you support.
 4. Tag and push: `git tag vX.Y.Z && git push --tags`.
 

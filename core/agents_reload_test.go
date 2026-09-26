@@ -62,3 +62,24 @@ func TestToolStateIdentity(t *testing.T) {
 		require.NoError(t, sameToolStateIdentity(old, next))
 	})
 }
+
+func TestExpertiseConversion(t *testing.T) {
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	installModuleObjectTestModuleClass(srv)
+	mod := newTypeDefDetachedResult(t, srv, "agent-module", &Module{NameField: "agent"})
+	artifact := &Artifact{Path: []string{"agent", "configure"}, TypeName: "Expertise", Directives: []string{"agent"},
+		Node: &ModTreeNode{Name: "configure", OriginalModule: mod}}
+	agent, err := NewExpertise(artifact)
+	require.NoError(t, err)
+	require.Equal(t, "agent", agent.OriginalModule().Name())
+	// References keep their own metadata wrappers, independent of the selection.
+	agent.Artifact.Node.Name = "changed"
+	require.Equal(t, "configure", artifact.Node.Name)
+	for _, invalid := range []*Artifact{
+		{Path: []string{"unmarked"}, TypeName: "LLM", Node: artifact.Node},
+		{Path: []string{"wrong-type"}, TypeName: "Container", Directives: []string{"agent"}, Node: artifact.Node},
+	} {
+		_, err := NewExpertise(invalid)
+		require.ErrorContains(t, err, "not a source of expertise")
+	}
+}

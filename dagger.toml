@@ -335,3 +335,9 @@ is-module = true
 [modules.dagger-dev]
 source = ".dagger/modules/dagger-dev"
 entrypoint = true
+
+[modules.typescript-sdk]
+source = "github.com/dagger/typescript-sdk@pull/64/head"
+
+[sdks.typescript]
+module = "typescript-sdk"

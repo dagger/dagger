@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"sort"
 
 	"dagger/hello-with-checks/internal/dagger"
 )
@@ -45,24 +44,6 @@ func (m *HelloWithChecks) PassingContainer() *dagger.Container {
 // +check
 func (m *HelloWithChecks) FailingContainer() *dagger.Container {
 	return dag.Container().From(m.BaseImage).WithExec([]string{"sh", "-c", "exit 1"})
-}
-
-// Returns the names of all checks visible from the current workspace.
-func (m *HelloWithChecks) WorkspaceChecks(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
-	checks, err := ws.Checks().List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(checks))
-	for _, check := range checks {
-		name, err := check.Name(ctx)
-		if err != nil {
-			return nil, err
-		}
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names, nil
 }
 
 func (m *HelloWithChecks) Test() *Test {

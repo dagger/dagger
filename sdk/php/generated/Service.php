@@ -54,9 +54,12 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
     /**
      * Retrieves the list of ports provided by the service.
      */
-    public function ports(): array
+    public function ports(?bool $declared = false): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ports');
+        if (null !== $declared) {
+        $leafQueryBuilder->setArgument('declared', $declared);
+        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'ports');
     }
 

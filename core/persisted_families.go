@@ -37,9 +37,10 @@ var persistedObjectFamilies = []dagql.PersistedObjectFamily{
 	{Name: "core.WorkspaceGit", Typed: (*WorkspaceGit)(nil), Visitor: persistedWorkspaceGitVisitor, BackgroundDecode: true},
 	{Name: "core.WorkspaceModule", Typed: (*WorkspaceModule)(nil), Visitor: dagql.PersistedNoReferences{}, BackgroundDecode: true},
 	{Name: "core.WorkspaceModuleSetting", Typed: (*WorkspaceModuleSetting)(nil), Visitor: dagql.PersistedNoReferences{}, BackgroundDecode: true},
-	{Name: "core.WorkspaceSDK", Typed: (*WorkspaceSDK)(nil), Visitor: dagql.PersistedNoReferences{}, BackgroundDecode: true},
-	{Name: "core.Generator", Typed: (*Generator)(nil), Visitor: persistedGeneratorVisitor},
-	{Name: "core.GeneratorGroup", Typed: (*GeneratorGroup)(nil), Visitor: persistedGeneratorGroupVisitor},
+	{Name: "core.WorkspaceSDK", Typed: (*WorkspaceSDK)(nil), Visitor: persistedWorkspaceSDKVisitor, BackgroundDecode: true},
+	{Name: "core.Artifact", Typed: (*Artifact)(nil), Visitor: persistedArtifactsVisitor},
+	{Name: "core.Artifacts", Typed: (*Artifacts)(nil), Visitor: persistedArtifactsVisitor},
+	{Name: "core.Expertise", Typed: (*Expertise)(nil), Visitor: persistedArtifactsVisitor},
 
 	// Immutable outputs.
 	{Name: "core.GitRepository", Typed: (*GitRepository)(nil), Visitor: persistedGitRepositoryVisitor, BackgroundDecode: true},
@@ -66,7 +67,7 @@ var persistedObjectFamilies = []dagql.PersistedObjectFamily{
 	{Name: "core.EnumMemberTypeDef", Typed: (*EnumMemberTypeDef)(nil), Visitor: persistedEnumMemberTypeDefVisitor, BackgroundDecode: true},
 
 	// Data and reflection.
-	{Name: "core.Address", Typed: (*Address)(nil), Visitor: dagql.PersistedNoReferences{}},
+	{Name: "core.Address", Typed: (*Address)(nil), Visitor: persistedAddressVisitor},
 	{Name: "core.Host", Typed: (*Host)(nil), Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.EnvFile", Typed: (*EnvFile)(nil), Visitor: dagql.PersistedNoReferences{}, BackgroundDecode: true},
 	{Name: "core.JSONValue", Typed: (*JSONValue)(nil), Visitor: dagql.PersistedNoReferences{}},

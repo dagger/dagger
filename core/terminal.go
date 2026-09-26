@@ -122,13 +122,13 @@ type TerminalArgs struct {
 	ExecTerminalArgs
 
 	// Provide dagger access to the executed command
-	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
+	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean]
 
 	// Disable access to the Dagger API from the terminal command.
 	DisableDaggerInDagger bool `default:"false"`
 
 	// Grant the process all root capabilities
-	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
+	InsecureRootCapabilities dagql.Optional[dagql.Boolean]
 }
 
 // WithTerminalDefaults fills the unset args from the container's default

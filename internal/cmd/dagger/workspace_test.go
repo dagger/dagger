@@ -416,7 +416,8 @@ func renderHelp(t *testing.T, cmd *cobra.Command) string {
 		cmd.SetErr(oldErr)
 	})
 
-	require.NoError(t, cmd.Help())
+	// Test help formatting without the workspace discovery hook.
+	rootCmd.HelpFunc()(cmd, nil)
 	return out.String()
 }
 
