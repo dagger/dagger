@@ -533,9 +533,12 @@ func (c *Client) GetGitConfig(ctx context.Context, checkoutPath ...string) ([]*g
 // checkoutStateMethod and packCheckoutMethod are the RPCs' fully qualified
 // names, used to detect clients too old to know about them.
 const (
-	checkoutStateMethod   = "/dagger.git.Git/CheckoutState"
-	packCheckoutMethod    = "/dagger.git.Git/PackCheckout"
-	packUncommittedMethod = "/dagger.git.Git/PackUncommitted"
+	checkoutStateMethod          = "/dagger.git.Git/CheckoutState"
+	packCheckoutMethod           = "/dagger.git.Git/PackCheckout"
+	packUncommittedMethod        = "/dagger.git.Git/PackUncommitted"
+	workspaceSnapshotStateMethod = "/dagger.git.Git/SnapshotState"
+	workspaceSnapshotMethod      = "/dagger.git.Git/Snapshot"
+	workspaceUploadPackMethod    = "/dagger.git.Git/SnapshotUploadPack"
 )
 
 // ErrGitPackUnsupported reports that the client cannot pack a checkout with
@@ -552,6 +555,43 @@ var ErrGitCheckoutStateChanged = errors.New("git checkout state changed")
 // ErrGitUncommittedUnsupported reports that the client cannot provide a packed
 // working-tree delta. Callers may fall back to syncing the checkout directory.
 var ErrGitUncommittedUnsupported = errors.New("client cannot pack git worktrees")
+
+// ErrWorkspaceSnapshotUnsupported reports that the client cannot encode and
+// serve a Git workspace snapshot. Callers should retain the filesync fallback.
+var ErrWorkspaceSnapshotUnsupported = errors.New("client cannot serve Git workspace snapshots")
+
+func (c *Client) WorkspaceSnapshotState(ctx context.Context, checkoutPath string) (string, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(workspaceSnapshotStateMethod) {
+		return "", ErrWorkspaceSnapshotUnsupported
+	}
+	response, err := git.NewGitClient(caller.Conn()).SnapshotState(ctx, &git.SnapshotRequest{CheckoutPath: checkoutPath})
+	if err != nil {
+		return "", fmt.Errorf("failed to query workspace snapshot state: %w", err)
+	}
+	switch result := response.Result.(type) {
+	case *git.CheckoutStateResponse_StateDigest:
+		return result.StateDigest, nil
+	case *git.CheckoutStateResponse_Error:
+		switch result.Error.Type {
+		case git.NOT_A_REPO:
+			return "", fmt.Errorf("%s: %w", result.Error.Message, gitutil.ErrGitNoRepo)
+		case git.NOT_FOUND, git.SNAPSHOT_UNSUPPORTED:
+			return "", fmt.Errorf("%s: %w", result.Error.Message, ErrWorkspaceSnapshotUnsupported)
+		default:
+			return "", errors.New(result.Error.Message)
+		}
+	default:
+		return "", fmt.Errorf("unexpected response type")
+	}
+}
 
 // GitCheckoutState asks the client for a digest of a local checkout's current
 // git state (HEAD, symbolic HEAD, branch and tag refs), resolved by the
@@ -717,6 +757,209 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 		}
 	}
 	return pack, nil
+}
+
+// WorkspaceSnapshotPack is a synthetic commit containing a checkout's current
+// worktree. New clients serve it with UploadPack; BundlePath is the backward-
+// compatible transport. The caller must call Close.
+type WorkspaceSnapshotPack struct {
+	CommitSHA    string
+	ObjectFormat string
+	RemoteURL    string
+	BaseSHA      string
+	BaseRef      string
+	BundlePath   string
+	UploadPack   io.ReadWriteCloser
+}
+
+func (pack *WorkspaceSnapshotPack) Close() error {
+	if pack == nil {
+		return nil
+	}
+	var errs []error
+	if pack.UploadPack != nil {
+		errs = append(errs, pack.UploadPack.Close())
+		pack.UploadPack = nil
+	}
+	if pack.BundlePath != "" {
+		errs = append(errs, os.Remove(pack.BundlePath))
+		pack.BundlePath = ""
+	}
+	return errors.Join(errs...)
+}
+
+// PackWorkspaceSnapshot asks the client to encode a Git checkout's current
+// worktree as a synthetic commit. It uses a negotiated upload-pack stream when
+// requested and supported, and otherwise receives a precomputed bundle.
+func (c *Client) PackWorkspaceSnapshot(ctx context.Context, checkoutPath string, useUploadPack bool) (_ *WorkspaceSnapshotPack, rerr error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if useUploadPack && caller.Supports(workspaceUploadPackMethod) {
+		return openWorkspaceSnapshotUploadPack(ctx, caller.Conn(), checkoutPath)
+	}
+	if !caller.Supports(workspaceSnapshotMethod) {
+		return nil, ErrWorkspaceSnapshotUnsupported
+	}
+	stream, err := git.NewGitClient(caller.Conn()).Snapshot(ctx, &git.SnapshotRequest{CheckoutPath: checkoutPath})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open workspace snapshot stream: %w", err)
+	}
+
+	var pack *WorkspaceSnapshotPack
+	var spool *gitPackSpool
+	defer func() {
+		if rerr != nil && spool != nil {
+			_ = spool.remove()
+		}
+	}()
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to receive workspace snapshot: %w", err)
+		}
+		switch msg := resp.Msg.(type) {
+		case *git.SnapshotResponse_Metadata:
+			if pack != nil {
+				return nil, fmt.Errorf("received more than one workspace snapshot metadata message")
+			}
+			if errInfo := msg.Metadata.GetError(); errInfo != nil {
+				switch errInfo.Type {
+				case git.NOT_A_REPO:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
+				case git.NOT_FOUND, git.SNAPSHOT_UNSUPPORTED:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrWorkspaceSnapshotUnsupported)
+				default:
+					return nil, errors.New(errInfo.Message)
+				}
+			}
+			pack = &WorkspaceSnapshotPack{
+				CommitSHA: msg.Metadata.CommitSha, ObjectFormat: msg.Metadata.ObjectFormat,
+				RemoteURL: msg.Metadata.RemoteUrl, BaseSHA: msg.Metadata.BaseSha, BaseRef: msg.Metadata.BaseRef,
+			}
+		case *git.SnapshotResponse_Chunk:
+			if pack == nil {
+				return nil, fmt.Errorf("received workspace snapshot data before metadata")
+			}
+			if spool == nil {
+				spool, err = newGitPackSpool("dagger-workspace-snapshot-*", git.MaxGitPackBytes)
+				if err != nil {
+					return nil, fmt.Errorf("create workspace snapshot spool: %w", err)
+				}
+			}
+			if err := spool.write(msg.Chunk); err != nil {
+				return nil, fmt.Errorf("receive workspace snapshot: %w", err)
+			}
+		}
+	}
+	if pack == nil || pack.CommitSHA == "" || spool == nil || spool.size == 0 {
+		return nil, fmt.Errorf("incomplete workspace snapshot bundle")
+	}
+	if (pack.RemoteURL == "") != (pack.BaseSHA == "") {
+		return nil, fmt.Errorf("workspace snapshot base requires both remote URL and SHA")
+	}
+	pack.BundlePath, err = spool.finish()
+	if err != nil {
+		return nil, fmt.Errorf("finish workspace snapshot spool: %w", err)
+	}
+	return pack, nil
+}
+
+type workspaceSnapshotUploadPack struct {
+	stream git.Git_SnapshotUploadPackClient
+	buf    []byte
+	sendMu sync.Mutex
+	closed bool
+}
+
+func openWorkspaceSnapshotUploadPack(ctx context.Context, conn *grpc.ClientConn, checkoutPath string) (*WorkspaceSnapshotPack, error) {
+	stream, err := git.NewGitClient(conn).SnapshotUploadPack(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("open workspace upload-pack stream: %w", err)
+	}
+	closeStream := func() { _ = stream.CloseSend() }
+	if err := stream.Send(&git.SnapshotUploadPackRequest{Msg: &git.SnapshotUploadPackRequest_Open{Open: &git.SnapshotRequest{CheckoutPath: checkoutPath}}}); err != nil {
+		closeStream()
+		return nil, fmt.Errorf("open workspace upload-pack: %w", err)
+	}
+	resp, err := stream.Recv()
+	if err != nil {
+		closeStream()
+		return nil, fmt.Errorf("receive workspace upload-pack metadata: %w", err)
+	}
+	meta := resp.GetMetadata()
+	if meta == nil {
+		closeStream()
+		return nil, errors.New("workspace upload-pack did not send metadata first")
+	}
+	if errInfo := meta.GetError(); errInfo != nil {
+		closeStream()
+		switch errInfo.Type {
+		case git.NOT_A_REPO:
+			return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
+		case git.NOT_FOUND, git.SNAPSHOT_UNSUPPORTED:
+			return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrWorkspaceSnapshotUnsupported)
+		default:
+			return nil, errors.New(errInfo.Message)
+		}
+	}
+	if meta.CommitSha == "" || (meta.RemoteUrl == "") != (meta.BaseSha == "") {
+		closeStream()
+		return nil, errors.New("invalid workspace upload-pack metadata")
+	}
+	return &WorkspaceSnapshotPack{
+		CommitSHA: meta.CommitSha, ObjectFormat: meta.ObjectFormat,
+		RemoteURL: meta.RemoteUrl, BaseSHA: meta.BaseSha, BaseRef: meta.BaseRef,
+		UploadPack: &workspaceSnapshotUploadPack{stream: stream},
+	}, nil
+}
+
+func (s *workspaceSnapshotUploadPack) Read(p []byte) (int, error) {
+	for len(s.buf) == 0 {
+		resp, err := s.stream.Recv()
+		if err != nil {
+			return 0, err
+		}
+		chunk := resp.GetChunk()
+		if len(chunk) == 0 {
+			return 0, errors.New("unexpected metadata in workspace upload-pack stream")
+		}
+		s.buf = chunk
+	}
+	n := copy(p, s.buf)
+	s.buf = s.buf[n:]
+	return n, nil
+}
+
+func (s *workspaceSnapshotUploadPack) Write(p []byte) (int, error) {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	if s.closed {
+		return 0, net.ErrClosed
+	}
+	chunk := append([]byte(nil), p...)
+	if err := s.stream.Send(&git.SnapshotUploadPackRequest{Msg: &git.SnapshotUploadPackRequest_Chunk{Chunk: chunk}}); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (s *workspaceSnapshotUploadPack) Close() error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	return s.stream.CloseSend()
 }
 
 // GitUncommittedPack is a checkout's git-visible working-tree delta relative to

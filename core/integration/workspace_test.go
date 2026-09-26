@@ -389,8 +389,8 @@ func (WorkspaceSuite) TestWorkspaceWorktreePlainParity(ctx context.Context, t *t
 	_, ok = worktree.CurrentWorkspace.Git.Uncommitted.find("added.txt")
 	require.True(t, ok, "expected added.txt in worktree diffStats")
 
-	// Tree-level asymmetry: the worktree's .git pointer FILE is dropped from
-	// the workspace tree, while a plain clone's .git DIRECTORY is left as-is.
+	// Workspace snapshots are worktree snapshots: repository metadata is sent
+	// separately and never appears in either tree layout.
 	hasGit := func(entries []string) bool {
 		for _, e := range entries {
 			if e == ".git" || e == ".git/" {
@@ -401,8 +401,8 @@ func (WorkspaceSuite) TestWorkspaceWorktreePlainParity(ctx context.Context, t *t
 	}
 	require.False(t, hasGit(worktree.CurrentWorkspace.Directory.Entries),
 		"worktree .git pointer file should be dropped from the workspace tree")
-	require.True(t, hasGit(clone.CurrentWorkspace.Directory.Entries),
-		"plain clone .git directory should still be listed in the workspace tree")
+	require.False(t, hasGit(clone.CurrentWorkspace.Directory.Entries),
+		"plain clone .git directory should be omitted from the workspace snapshot")
 }
 
 // TestEntrypointWithFieldHidden verifies that the synthetic `with` field

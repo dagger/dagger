@@ -29,6 +29,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 type hostSchema struct{}
@@ -137,6 +138,14 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Absolute host path of the client checkout to reconstruct a .git directory for.`),
 				dagql.Arg("stateDigest").Doc(`Digest of the checkout's current ref state. It keys the cache to the checkout, so the reconstruction is reused until the checkout's refs move.`),
+			),
+		dagql.NodeFunc("__workspaceSnapshot", s.workspaceSnapshot).
+			IsPersistable().
+			Doc(`(Internal-only) Snapshot a client git checkout through a synthetic git bundle.`).
+			Args(
+				dagql.Arg("path").Doc(`Absolute host path of the workspace checkout.`),
+				dagql.Arg("cacheKey").Doc(`Opaque workspace read epoch used to cache the snapshot.`),
+				dagql.Arg("useUploadPack").Doc(`Negotiate missing objects with upload-pack instead of sending a precomputed bundle.`),
 			),
 	}.Install(srv)
 }
@@ -920,6 +929,53 @@ func hostCheckoutOriginURL(ctx context.Context, bk *engineutil.Client, path stri
 		}
 	}
 	return originURL
+}
+
+type hostWorkspaceSnapshotArgs struct {
+	Path          string
+	CacheKey      string
+	UseUploadPack bool `default:"true"`
+}
+
+func (s *hostSchema) workspaceSnapshot(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostWorkspaceSnapshotArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get engine client: %w", err)
+	}
+	// CacheKey is intentionally consumed only by the dagql call identity.
+	pack, err := bk.PackWorkspaceSnapshot(ctx, args.Path, args.UseUploadPack)
+	if err != nil {
+		return inst, err
+	}
+	defer func() { _ = pack.Close() }()
+	var remoteRepo *core.RemoteGitRepository
+	if pack.BaseSHA != "" {
+		remote, err := gitutil.ParseURL(pack.RemoteURL)
+		if err != nil {
+			return inst, fmt.Errorf("parse workspace snapshot remote %q: %w", pack.RemoteURL, err)
+		}
+		var mirror dagql.ObjectResult[*core.RemoteGitMirror]
+		if err := srv.Select(ctx, srv.Root(), &mirror, dagql.Selector{
+			Field: "_remoteGitMirror",
+			Args:  []dagql.NamedInput{{Name: "remoteURL", Value: dagql.String(remote.Remote())}},
+		}); err != nil {
+			return inst, fmt.Errorf("select workspace snapshot Git mirror: %w", err)
+		}
+		remoteRepo = &core.RemoteGitRepository{URL: remote, Platform: query.Platform(), Mirror: mirror}
+	}
+	dir, err := core.MaterializeWorkspaceSnapshotPack(ctx, pack, remoteRepo)
+	if err != nil {
+		return inst, fmt.Errorf("failed to materialize workspace snapshot for %q: %w", args.Path, err)
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 type hostServiceArgs struct {

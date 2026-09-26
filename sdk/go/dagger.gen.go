@@ -17964,6 +17964,10 @@ type WorkspaceDirectoryOpts struct {
 	Include []string
 	// Apply .gitignore filter rules inside the directory.
 	Gitignore bool
+	// Workspace snapshot transport: "auto" detects Git and otherwise falls back to filesync; "git-bundle" requires a Git bundle; "filesync" always uses traditional filesync.
+	//
+	// Default: "auto"
+	SnapshotMode string
 }
 
 // Returns a Directory from the workspace.
@@ -17983,6 +17987,10 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 		// `gitignore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
 			q = q.Arg("gitignore", opts[i].Gitignore)
+		}
+		// `snapshotMode` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SnapshotMode) {
+			q = q.Arg("snapshotMode", opts[i].SnapshotMode)
 		}
 	}
 	q = q.Arg("path", path)
