@@ -22,7 +22,7 @@ import (
 )
 
 // Importing a foreign trace beside the live one
-// (hack/designs/resume-from-trace.md §5.1). `dagger agent --trace` streams a
+// (hack/designs/resume-from-trace.md §5.1). `dagger agent -r` streams a
 // past session's whole trace into the LIVE frontend's own exporters, so one DB
 // holds both sessions: the old run's TUI, plus a live prompt. Everything below
 // is driven by a canned OTLP capture — no Cloud, no engine — through the same

@@ -25,7 +25,7 @@ import (
 // Importing a FOREIGN trace — one this process did not publish — into a live
 // client's telemetry sinks (hack/designs/resume-from-trace.md §5.1).
 //
-// `dagger agent --trace <id>` streams a past session's whole trace into the
+// `dagger agent -r <trace-id>` streams a past session's whole trace into the
 // LIVE frontend's own exporters, rather than into a private DB: one DB then
 // holds both sessions, which is what makes a restored session "the old
 // session's TUI plus a live prompt" — an agent's old and new loop spans merge

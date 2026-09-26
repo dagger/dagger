@@ -657,7 +657,7 @@ func (fe *frontendPretty) SetLLMToolsProvider(fn LLMToolsProvider) {
 }
 
 // Agent extraction is deliberately request-driven and console-only. Discovery
-// uses the same roster as --trace restoration; transcripts come from committed
+// uses the same roster as -r restoration; transcripts come from committed
 // checkpoints or runtime snapshots, never log buffers or rendered rows.
 // No observers, buffers, or callbacks are installed on the production path.
 type consoleAgent struct {

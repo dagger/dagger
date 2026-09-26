@@ -6867,7 +6867,7 @@ func (fe *frontendPretty) AgentControl() (agents []agentcontrol.Agent, subscript
 // (AgentRestorer, design §5.1's "Reading the DB back").
 //
 // It runs on the event loop and blocks for the result, like every other DB
-// read a run-goroutine caller makes: `dagger agent --trace` calls this
+// read a run-goroutine caller makes: `dagger agent -r` calls this
 // immediately after a fetch whose exports are still being dispatched onto
 // this same goroutine, and RestorePlan walks every span in the DB.
 func (fe *frontendPretty) AgentRestorePlan() []dagui.AgentRestore {
