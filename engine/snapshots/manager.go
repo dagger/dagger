@@ -97,6 +97,7 @@ type SnapshotManager interface {
 	LoadPersistentMetadata(rows PersistentMetadataRows) error
 	PersistentMetadataRows() PersistentMetadataRows
 	DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error
+	PruneStaleRecords(ctx context.Context) (int, error)
 	Close() error
 }
 
