@@ -10,8 +10,9 @@ type artifactDimensionKind string
 
 var artifactDimensionKinds = dagql.NewEnum[artifactDimensionKind]()
 var (
-	moduleDimension = artifactDimensionKinds.Register("MODULE")
-	typeDimension   = artifactDimensionKinds.Register("TYPE")
+	collectionDimension = artifactDimensionKinds.Register("COLLECTION")
+	moduleDimension     = artifactDimensionKinds.Register("MODULE")
+	typeDimension       = artifactDimensionKinds.Register("TYPE")
 )
 
 func (artifactDimensionKind) Type() *ast.Type {

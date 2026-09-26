@@ -39,6 +39,17 @@ func (s *moduleSchema) typeDefAsObject(
 	typeDef *core.TypeDef,
 	_ struct{},
 ) (dagql.Nullable[dagql.ObjectResult[*core.ObjectTypeDef]], error) {
+	if typeDef.AsObject.Valid && typeDef.AsObject.Value.Self().Collection != nil && typeDef.AsObject.Value.Self().Collection.Enabled {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return dagql.Null[dagql.ObjectResult[*core.ObjectTypeDef]](), err
+		}
+		var projected dagql.ObjectResult[*core.ObjectTypeDef]
+		if err := dag.Select(ctx, typeDef.AsObject.Value, &projected, dagql.Selector{Field: "__collectionProjection"}); err != nil {
+			return dagql.Null[dagql.ObjectResult[*core.ObjectTypeDef]](), err
+		}
+		return dagql.NonNull(projected), nil
+	}
 	return typeDef.AsObject, nil
 }
 

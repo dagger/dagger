@@ -646,6 +646,9 @@ func visitPersistedModuleObjectValue(w *persistedRefWalker, val *persistedModule
 }
 
 var persistedModuleObjectVisitor = persistedStructVisitor("", func(p *persistedModuleObjectPayload, w *persistedRefWalker) error {
+	if err := w.child("collectionBase", &p.CollectionBase); err != nil {
+		return err
+	}
 	for _, name := range slices.Sorted(maps.Keys(p.Fields)) {
 		field := p.Fields[name]
 		if err := visitPersistedModuleObjectValue(w.at("fields").at(name), &field); err != nil {
@@ -739,4 +742,10 @@ var persistedEnumTypeDefVisitor = persistedStructVisitor("", func(p *persistedEn
 
 var persistedEnumMemberTypeDefVisitor = persistedStructVisitor("", func(p *persistedEnumMemberTypeDef, w *persistedRefWalker) error {
 	return w.child("sourceMapResultID", &p.SourceMapResultID)
+})
+
+var persistedCollectionTypeDefVisitor = persistedStructVisitor("", func(p *uint64, w *persistedRefWalker) error {
+	changed, err := dagql.VisitPersistedRow(w.visit, dagql.PersistedRefChild, w.path, p)
+	w.note(changed)
+	return err
 })

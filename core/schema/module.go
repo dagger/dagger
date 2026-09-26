@@ -45,6 +45,30 @@ var _ SchemaResolvers = &moduleSchema{}
 
 var moduleDirectives = []dagql.DirectiveSpec{
 	{
+		Name:        "collection",
+		Description: dagql.FormatDescription("A dynamic collection with stored keys and an item lookup function."),
+		Locations:   []dagql.DirectiveLocation{dagql.DirectiveLocationObject},
+		ViewFilter:  AfterVersion("v1.0.0-0"),
+	},
+	{
+		Name:        "keys",
+		Description: dagql.FormatDescription("The stored keys field of a collection."),
+		Locations:   []dagql.DirectiveLocation{dagql.DirectiveLocationFieldDefinition},
+		ViewFilter:  AfterVersion("v1.0.0-0"),
+	},
+	{
+		Name:        "get",
+		Description: dagql.FormatDescription("The item lookup function of a collection."),
+		Locations:   []dagql.DirectiveLocation{dagql.DirectiveLocationFieldDefinition},
+		ViewFilter:  AfterVersion("v1.0.0-0"),
+	},
+	{
+		Name:        "delta",
+		Description: dagql.FormatDescription("Receives changes from the original collection."),
+		Locations:   []dagql.DirectiveLocation{dagql.DirectiveLocationFieldDefinition},
+		ViewFilter:  AfterVersion("v1.0.0-0"),
+	},
+	{
 		Name:        "sourceMap",
 		Description: dagql.FormatDescription(`Indicates the source information for where a given field is defined.`),
 		Args: dagql.NewInputSpecs(
@@ -187,6 +211,8 @@ var moduleDirectives = []dagql.DirectiveSpec{
 }
 
 func (s *moduleSchema) Install(dag *dagql.Server) {
+	installCollectionSchema(s, dag)
+
 	for _, directive := range moduleDirectives {
 		dag.InstallDirective(directive)
 	}

@@ -54,6 +54,8 @@ var persistedObjectFamilies = []dagql.PersistedObjectFamily{
 	{Name: "core.SearchSubmatch", Typed: (*SearchSubmatch)(nil), Visitor: dagql.PersistedNoReferences{}},
 
 	// Definitions.
+	{Name: "core.CollectionTypeDef", Typed: (*CollectionTypeDef)(nil), Visitor: persistedCollectionTypeDefVisitor, BackgroundDecode: true},
+	{Name: "core.CollectionDelta", Typed: (*CollectionDelta)(nil), Visitor: dagql.PersistedNoReferences{}, BackgroundDecode: true},
 	{Name: "core.Function", Typed: (*Function)(nil), Visitor: persistedFunctionVisitor, BackgroundDecode: true},
 	{Name: "core.FunctionArg", Typed: (*FunctionArg)(nil), Visitor: persistedFunctionArgVisitor, BackgroundDecode: true},
 	{Name: "core.TypeDef", Typed: (*TypeDef)(nil), Visitor: persistedTypeDefVisitor, BackgroundDecode: true},
