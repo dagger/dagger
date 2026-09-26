@@ -65,7 +65,7 @@ class AgentState(Enum):
     """Runtime released; snapshot remains readable."""
 
     WAITING_INPUT = "WAITING_INPUT"
-    """Blocked on input from the user (derived; see waitingOn)."""
+    """Blocked on input from the user."""
 
 
 class CacheSharingMode(Enum):

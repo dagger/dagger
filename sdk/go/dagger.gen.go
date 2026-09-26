@@ -20564,7 +20564,7 @@ const (
 	// A model request or tool evaluation is in flight.
 	AgentStateRunning AgentState = "RUNNING"
 
-	// Blocked on input from the user (derived; see waitingOn).
+	// Blocked on input from the user.
 	AgentStateWaitingInput AgentState = "WAITING_INPUT"
 
 	// Mailbox accepting but not draining, until resume.
