@@ -107,8 +107,9 @@ type LLM struct {
 	// explicitly disables reasoning; empty defers to the provider config.
 	reasoningEffort string
 
-	endpoint    *LLMEndpoint
-	endpointMtx *sync.Mutex
+	endpoint          *LLMEndpoint
+	endpointSessionID string
+	endpointMtx       *sync.Mutex
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
@@ -1879,7 +1880,15 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	llm.endpointMtx.Lock()
 	defer llm.endpointMtx.Unlock()
 
-	if llm.endpoint != nil {
+	// Cached/restored conversations and their clones can be used by another
+	// session. Credentials and local tunnels belong to the session that routed
+	// them, so only reuse the memo within that execution session. In particular,
+	// never let a warm credential cache hide a cross-session endpoint reuse.
+	var sessionID string
+	if scope, ok := engine.ClientScopeFromContext(ctx); ok {
+		sessionID = scope.SessionID()
+	}
+	if llm.endpoint != nil && llm.endpointSessionID == sessionID {
 		return llm.endpoint, nil
 	}
 
@@ -1942,6 +1951,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	}
 
 	llm.endpoint = endpoint
+	llm.endpointSessionID = sessionID
 
 	return llm.endpoint, nil
 }
