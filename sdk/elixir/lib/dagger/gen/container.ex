@@ -592,6 +592,22 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Return the configured shell command. Defaults to ["sh"].
+  """
+  @spec shell(t(), [{:batch, boolean() | nil}]) :: Dagger.Command.t()
+  def shell(%__MODULE__{} = container, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("shell")
+      |> QB.maybe_put_arg("batch", optional_args[:batch])
+
+    %Dagger.Command{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Return file status
   """
   @spec stat(t(), String.t(), [{:do_not_follow_symlinks, boolean() | nil}]) ::
@@ -781,6 +797,9 @@ defmodule Dagger.Container do
     }
   end
 
+  @deprecated """
+  Use withShell.
+  """
   @doc """
   Set the default command to invoke for the container's terminal API.
   """
@@ -1303,6 +1322,34 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Execute a script with the configured batch shell and return the modified container.
+  """
+  @spec with_run(t(), String.t(), [
+          {:shell, [String.t()]},
+          {:disable_dagger_in_dagger, boolean() | nil},
+          {:experimental_privileged_nesting, boolean() | nil},
+          {:insecure_root_capabilities, boolean() | nil}
+        ]) :: Dagger.Container.t()
+  def with_run(%__MODULE__{} = container, command, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withRun")
+      |> QB.put_arg("command", command)
+      |> QB.maybe_put_arg("shell", optional_args[:shell])
+      |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
+      |> QB.maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
+      |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Set a new environment variable, using a secret value
   """
   @spec with_secret_variable(t(), String.t(), Dagger.Secret.t()) :: Dagger.Container.t()
@@ -1335,6 +1382,34 @@ defmodule Dagger.Container do
       |> QB.select("withServiceBinding")
       |> QB.put_arg("alias", alias)
       |> QB.put_arg("service", Dagger.ID.id!(service))
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Set the shell used by terminal() and withRun().
+  """
+  @spec with_shell(t(), [String.t()], [
+          {:batch, [String.t()]},
+          {:disable_dagger_in_dagger, boolean() | nil},
+          {:experimental_privileged_nesting, boolean() | nil},
+          {:insecure_root_capabilities, boolean() | nil}
+        ]) :: Dagger.Container.t()
+  def with_shell(%__MODULE__{} = container, interactive, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withShell")
+      |> QB.put_arg("interactive", interactive)
+      |> QB.maybe_put_arg("batch", optional_args[:batch])
+      |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
+      |> QB.maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
+      |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
 
     %Dagger.Container{
       query_builder: query_builder,

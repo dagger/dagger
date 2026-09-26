@@ -45,76 +45,74 @@ source = "other"
 	config, err := base.File("dagger.toml").Contents(ctx)
 	require.NoError(t, err)
 
-	for _, test := range []struct{ command, target string }{
-		{"check", "verify"},
-		{"generate", "files"},
-		{"shell", "dev"},
-		{"up", "web"},
+	for _, test := range []struct{ command, target, typ string }{
+		{"check", "verify", "check"},
+		{"generate", "files", "generator"},
+		{"shell", "dev", "container"},
+		{"up", "web", "service"},
 	} {
 		t.Run(test.command, func(ctx context.Context, t *testctx.T) {
 			for _, selection := range []struct {
 				args []string
 				want []string
 			}{
-				{want: []string{test.target, "other:" + test.target}},
+				{want: []string{test.target, "other/" + test.target}},
 				{args: []string{test.target}, want: []string{test.target}},
 				{args: []string{"app:" + test.target}, want: []string{test.target}},
-				{args: []string{"other:" + test.target}, want: []string{"other:" + test.target}},
-				{args: []string{"*:" + test.target}, want: []string{test.target, "other:" + test.target}},
+				{args: []string{"other:" + test.target}, want: []string{"other/" + test.target}},
+				{args: []string{"*:" + test.target}, want: []string{test.target, "other/" + test.target}},
 			} {
-				args := append([]string{test.command, "-l"}, selection.args...)
+				args := append([]string{test.command, "-l", "-f=link"}, selection.args...)
 				if test.command == "check" {
-					args = append(args, "--no-generate")
+					args = append(args, "--generated=false")
 				}
 				out, err := base.With(daggerNonNestedExec(args...)).Stdout(ctx)
 				require.NoError(t, err, strings.Join(args, " "))
-				var names []string
-				for line := range strings.SplitSeq(out, "\n") {
-					fields := strings.Fields(line)
-					if len(fields) > 0 && !strings.HasPrefix(fields[0], "#") {
-						names = append(names, fields[0])
-					}
+				var want []string
+				for _, target := range selection.want {
+					want = append(want, "dag+"+test.typ+"://"+target)
 				}
-				require.ElementsMatch(t, selection.want, names, strings.Join(args, " "))
+				require.ElementsMatch(t, want, strings.Fields(out), strings.Join(args, " "))
 			}
 
 			ordinary := base.WithNewFile("dagger.toml", strings.Replace(config, "entrypoint = true", "entrypoint = false", 1))
-			out, err := ordinary.With(daggerNonNestedExec(test.command, "-l", test.target)).Stdout(ctx)
+			out, err := ordinary.With(daggerNonNestedExec(test.command, "-l", "-f=link", test.target)).Stdout(ctx)
 			require.NoError(t, err)
 			require.NotContains(t, out, test.target)
 
-			out, err = ordinary.With(daggerNonNestedExec("-m", "./app", test.command, "-l", test.target)).Stdout(ctx)
+			out, err = ordinary.WithEnvVariable("DAGGER_MODULE", "./app").
+				With(daggerNonNestedExec(test.command, "-l", "-f=link", test.target)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, test.target)
-			require.NotContains(t, out, "app:"+test.target)
-			require.NotContains(t, out, "other:"+test.target)
+			require.NotContains(t, out, "dag+"+test.typ+"://app/"+test.target)
+			require.NotContains(t, out, "dag+"+test.typ+"://other/"+test.target)
 		})
 	}
 
 	t.Run("caller skip only excludes the entrypoint", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerNonNestedExec("check", "-l", "--no-generate", "--skip=verify")).Stdout(ctx)
+		out, err := base.With(daggerNonNestedExec("check", "-l", "-f=link", "--generated=false", "--skip=verify")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "other:verify", strings.TrimSpace(out))
+		require.Equal(t, "dag+check://other/verify\n", out)
 	})
 
 	t.Run("module settings keep local skip names", func(ctx context.Context, t *testctx.T) {
 		out, err := base.WithNewFile("dagger.toml", config+"\ncheck.skip = [\"verify\"]\n").
-			With(daggerNonNestedExec("check", "-l", "--no-generate")).Stdout(ctx)
+			With(daggerNonNestedExec("check", "-l", "-f=link", "--generated=false")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "verify", strings.TrimSpace(out))
+		require.Equal(t, "dag+check://verify\n", out)
 	})
 
 	t.Run("value workspace uses its own entrypoint", func(ctx context.Context, t *testctx.T) {
 		ws := base.Directory("/work").AsWorkspace()
-		checks, err := ws.Checks(dagger.WorkspaceChecksOpts{Include: []string{"verify"}, NoGenerate: true}).List(ctx)
+		checks, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
 		require.NoError(t, err)
 		require.Len(t, checks, 1)
-		name, err := checks[0].Name(ctx)
+		name, err := checks[0].URI(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "verify", name)
+		require.Equal(t, "dag://verify", name)
 
 		changed := ws.WithNewFile("dagger.toml", strings.Replace(config, "entrypoint = true", "entrypoint = false", 1))
-		checks, err = changed.Checks(dagger.WorkspaceChecksOpts{Include: []string{"verify"}, NoGenerate: true}).List(ctx)
+		checks, err = changed.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
 		require.NoError(t, err)
 		require.Empty(t, checks)
 	})
@@ -124,7 +122,7 @@ source = "other"
 		out, err := generated.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "files")
-		require.NotContains(t, out, "app:files")
+		require.NotContains(t, out, "app/files")
 		exists, err := generated.Exists(ctx, "app.txt")
 		require.NoError(t, err)
 		require.True(t, exists)
@@ -134,9 +132,9 @@ source = "other"
 	})
 
 	t.Run("run the entrypoint check only", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerNonNestedExec("check", "verify", "--no-generate")).CombinedOutput(ctx)
+		out, err := base.With(daggerNonNestedExec("check", "verify", "--generated=false")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.NotContains(t, out, "app:verify")
-		require.NotContains(t, out, "other:verify")
+		require.NotContains(t, out, "app/verify")
+		require.NotContains(t, out, "other/verify")
 	})
 }

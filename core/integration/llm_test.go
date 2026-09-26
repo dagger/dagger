@@ -275,7 +275,7 @@ func (LLMSuite) TestGeneratorSeesOverlayEdits(ctx context.Context, t *testctx.T)
 
 	srcPath, err := filepath.Abs("./llmtest/gen-agent/")
 	require.NoError(t, err)
-	// The generator is discovered via Workspace.generators, so the fixture
+	// The generator is discovered via Workspace.artifacts, so the fixture
 	// must be a detected workspace: a git root with the dagger.toml the
 	// fixture ships. goGitBase already `git init`s /work; copy the fixture in
 	// (WithDirectory, so the repo's .git survives) and commit it so detection

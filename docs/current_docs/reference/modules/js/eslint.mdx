@@ -18,7 +18,7 @@ dagger module install dagger.io/js/eslint
 
 ```bash
 dagger check             # run every check in the workspace
-dagger check eslint:lint # run ESLint against the workspace source
+dagger check dag://eslint/lint # run ESLint against the workspace source
 ```
 
 `eslint:lint` installs dependencies and runs `eslint .` over the whole workspace using the project's own ESLint configuration, so the result matches what developers see locally and fails on lint errors.

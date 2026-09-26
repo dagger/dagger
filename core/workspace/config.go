@@ -353,6 +353,16 @@ func EnvNames(cfg *Config) []string {
 	return names
 }
 
+// HasEnv reports whether the named environment is defined in cfg. It is the
+// check to make before ApplyEnvOverlay when an undefined env is tolerable.
+func HasEnv(cfg *Config, envName string) bool {
+	if cfg == nil {
+		return false
+	}
+	_, ok := cfg.Env[envName]
+	return ok
+}
+
 // EnsureEnv makes sure the named environment exists.
 // It returns true when the config was changed.
 func EnsureEnv(cfg *Config, envName string) bool {

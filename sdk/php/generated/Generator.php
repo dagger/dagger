@@ -8,6 +8,9 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * A generation function and its staleness check. Reading changeset runs the function.
+ */
 class Generator extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
@@ -20,79 +23,29 @@ class Generator extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return the command name of the generator. Entrypoint targets omit the module prefix.
+     * Run the generator and return its changes.
      */
-    public function name(): string
+    public function changeset(): Changeset
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
-    }
-
-    /**
-     * The path of the generator within its module
-     */
-    public function path(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'path');
-    }
-
-    /**
-     * Return the description of the generator
-     */
-    public function description(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    /**
-     * The module that defined the generator, or null for an engine-defined generator
-     */
-    public function originalModule(): ?Module
-    {
-        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('originalModule');
-        $objectQueryBuilder->selectField('id');
-        $id = $this->queryLeaf($objectQueryBuilder, 'id');
-        if ($id === null) {
-            return null;
-        }
-        return $this->client->loadObjectFromId(\Dagger\Module::class, new \Dagger\Id((string)$id), 'Module');
-    }
-
-    /**
-     * The generated changeset from the last run
-     */
-    public function changes(): Changeset
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changeset');
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Execute the generator
+     * Run the generator and retain its result.
      */
-    public function run(): Generator
+    public function sync(): Generator
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Whether changeset from the last generator run is empty or not
+     * A check that passes when this generator would produce no changes.
      */
-    public function isEmpty(): bool
+    public function stale(): Check
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isEmpty');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'isEmpty');
-    }
-
-    /**
-     * Whether the generator complete
-     */
-    public function completed(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('completed');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'completed');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stale');
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

@@ -16,43 +16,31 @@ defmodule Dagger.Module do
   @type t() :: %__MODULE__{}
 
   @doc """
-  Return the check defined by the module with the given name. Must match to exactly one check.
-
-  > #### Experimental {: .warning}
-  >
-  > "This API is highly experimental and may be removed or replaced entirely."
+  The source used to resolve contextual files and directories, when different from source.
   """
-  @spec check(t(), String.t()) :: Dagger.Check.t()
-  def check(%__MODULE__{} = module, name) do
+  @spec context_source(t()) :: {:ok, Dagger.ModuleSource.t() | nil} | {:error, term()}
+  def context_source(%__MODULE__{} = module) do
     query_builder =
-      module.query_builder |> QB.select("check") |> QB.put_arg("name", name)
+      module.query_builder |> QB.select("contextSource") |> QB.select("id")
 
-    %Dagger.Check{
-      query_builder: query_builder,
-      client: module.client
-    }
-  end
+    case Client.execute(module.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
 
-  @doc """
-  Return all checks defined by the module
+      {:ok, id} ->
+        {:ok,
+         %Dagger.ModuleSource{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ModuleSource"),
+           client: module.client
+         }}
 
-  > #### Experimental {: .warning}
-  >
-  > "This API is highly experimental and may be removed or replaced entirely."
-  """
-  @spec checks(t(), [{:include, [String.t()]}, {:no_generate, boolean() | nil}]) ::
-          Dagger.CheckGroup.t()
-  def checks(%__MODULE__{} = module, optional_args \\ []) do
-    query_builder =
-      module.query_builder
-      |> QB.select("checks")
-      |> QB.maybe_put_arg("include", optional_args[:include])
-      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
-
-    %Dagger.CheckGroup{
-      query_builder: query_builder,
-      client: module.client
-    }
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -121,44 +109,6 @@ defmodule Dagger.Module do
       module.query_builder |> QB.select("generatedContextDirectory")
 
     %Dagger.Directory{
-      query_builder: query_builder,
-      client: module.client
-    }
-  end
-
-  @doc """
-  Return the generator defined by the module with the given name. Must match to exactly one generator.
-
-  > #### Experimental {: .warning}
-  >
-  > "This API is highly experimental and may be removed or replaced entirely."
-  """
-  @spec generator(t(), String.t()) :: Dagger.Generator.t()
-  def generator(%__MODULE__{} = module, name) do
-    query_builder =
-      module.query_builder |> QB.select("generator") |> QB.put_arg("name", name)
-
-    %Dagger.Generator{
-      query_builder: query_builder,
-      client: module.client
-    }
-  end
-
-  @doc """
-  Return all generators defined by the module
-
-  > #### Experimental {: .warning}
-  >
-  > "This API is highly experimental and may be removed or replaced entirely."
-  """
-  @spec generators(t(), [{:include, [String.t()]}]) :: Dagger.GeneratorGroup.t()
-  def generators(%__MODULE__{} = module, optional_args \\ []) do
-    query_builder =
-      module.query_builder
-      |> QB.select("generators")
-      |> QB.maybe_put_arg("include", optional_args[:include])
-
-    %Dagger.GeneratorGroup{
       query_builder: query_builder,
       client: module.client
     }
@@ -324,26 +274,6 @@ defmodule Dagger.Module do
       {:ok, _} -> :ok
       error -> error
     end
-  end
-
-  @doc """
-  Return all services defined by the module
-
-  > #### Experimental {: .warning}
-  >
-  > "This API is highly experimental and may be removed or replaced entirely."
-  """
-  @spec services(t(), [{:include, [String.t()]}]) :: Dagger.UpGroup.t()
-  def services(%__MODULE__{} = module, optional_args \\ []) do
-    query_builder =
-      module.query_builder
-      |> QB.select("services")
-      |> QB.maybe_put_arg("include", optional_args[:include])
-
-    %Dagger.UpGroup{
-      query_builder: query_builder,
-      client: module.client
-    }
   end
 
   @doc """

@@ -2632,7 +2632,9 @@ func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *clien
 func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, client *clientRuntime, r *http.Request, postLoad func()) error {
 	var filter func([]pendingModule) []pendingModule
 	scopeApplied := false
-	if client.hasPendingWorkspaceModules() {
+	if !client.autoLoadWorkspaceModules() {
+		filter = func([]pendingModule) []pendingModule { return nil }
+	} else if client.hasPendingWorkspaceModules() {
 		if ok, rootFields, err := dagql.PeekRootFields(r); err == nil && ok {
 			filter = func(mods []pendingModule) []pendingModule {
 				// runs under client.modulesMu, which also guards
@@ -2679,6 +2681,11 @@ func (client *clientRuntime) hasPendingWorkspaceModules() bool {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
 	return len(client.pendingModules) > 0
+}
+
+func (client *clientRuntime) autoLoadWorkspaceModules() bool {
+	md := client.clientMetadata
+	return client.pendingWorkspaceLoad && md != nil && md.LoadWorkspaceModules && !md.SkipWorkspaceModules
 }
 
 func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *clientRuntime) (rerr error) {
@@ -3830,8 +3837,20 @@ func (srv *Server) CloudEngineClient(
 
 	// TODO: cloud support for "run on yourself", return (nil, false, nil) in that case
 
+	runnerHost := engine.DefaultCloudRunnerHost
+	// Integration tests connect two copies of the dev engine.
+	if testHost := os.Getenv("_DAGGER_TESTS_CLOUD_RUNNER_HOST"); testHost != "" {
+		runnerHost = testHost
+	}
+
 	params := engineclient.Params{
-		RunnerHost: engine.DefaultCloudRunnerHost,
+		RunnerHost:     runnerHost,
+		Workspace:      parentClient.clientMetadata.Workspace,
+		WorkspaceEnv:   parentClient.clientMetadata.WorkspaceEnv,
+		UserConfigPath: parentClient.clientMetadata.UserConfigPath,
+		ExtraModules:   parentClient.clientMetadata.ExtraModules,
+		// Artifact queries load their own selected modules.
+		SkipWorkspaceModules: true,
 
 		Module:   module,
 		Function: function,

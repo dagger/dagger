@@ -39,6 +39,20 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+  """
+  @spec compose(t(), [String.t()]) :: Dagger.LLM.t()
+  def compose(%__MODULE__{} = llm, expertise) do
+    query_builder =
+      llm.query_builder |> QB.select("compose") |> QB.put_arg("expertise", expertise)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
   """
   @spec context_tokens(t()) :: {:ok, integer()} | {:error, term()}
@@ -211,6 +225,24 @@ defmodule Dagger.LLM do
       llm.query_builder |> QB.select("reasoningEffort")
 
     Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
+  Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
+
+  Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+
+  A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
+  """
+  @spec recompose(t(), [String.t()]) :: Dagger.LLM.t()
+  def recompose(%__MODULE__{} = llm, expertise) do
+    query_builder =
+      llm.query_builder |> QB.select("recompose") |> QB.put_arg("expertise", expertise)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
   end
 
   @doc """

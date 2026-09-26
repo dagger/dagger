@@ -41,6 +41,7 @@ type DaggerDev {
   smoke(ws: Workspace!): Void @check {
     playground(ws)
       .withWorkdir("/smoke")
+      .withExec(["git", "init"])
       .withNewFile("dagger.toml", """
         [modules.hello]
         source = ".dagger/modules/hello"

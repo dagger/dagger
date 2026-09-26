@@ -879,7 +879,7 @@ dagger generate
 `dagger generate` discovers and runs every generator in the workspace. For modules registered under the Java SDK, that includes regenerating the vendored SDK and entrypoint. Generation runs Maven in containers Dagger controls. It builds the SDK against the engine's current schema, vendors the result under `sdk/`, and compiles your module once with the annotation processor enabled to produce `Entrypoint.java`. It never touches your local Maven installation.
 
 :::note
-Editing a function's body needs no regeneration. Changing the *shape* of your module does, and not only when dependencies change: a new `@Function`, a renamed argument, a new `@Object`. If you forget, the module still builds but the new function is not registered. `dagger check --generate` catches this drift.
+Editing a function's body needs no regeneration. Changing the *shape* of your module does, and not only when dependencies change: a new `@Function`, a renamed argument, a new `@Object`. If you forget, the module still builds but the new function is not registered. `dagger check --generated=true` catches this drift.
 :::
 
 Apply and commit the resulting changeset. This keeps the generated client in sync with the functions and dependencies available to your module.
@@ -1086,7 +1086,7 @@ dagger api call build
 dagger check
 
 # Run generators and confirm there's no drift
-dagger check --generate
+dagger check --generated=true
 ```
 
 ### In CI
@@ -1126,7 +1126,7 @@ Recommended release checklist:
 2. **Commit the generated files.** Run `dagger generate`, review the changes, and commit `sdk/` and `src/generated/` with your module.
 3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
 
-Before publishing, run `dagger check --generate` to confirm that the committed files are up to date.
+Before publishing, run `dagger check --generated=true` to confirm that the committed files are up to date.
 
 Consumers can install your module into a workspace with:
 

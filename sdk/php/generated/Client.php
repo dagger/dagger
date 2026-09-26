@@ -510,7 +510,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * initialize an address to load directories, containers, secrets or other object types.
+     * Resolve external references only.
      */
     public function address(string $value): Address
     {
@@ -540,6 +540,12 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         return new \Dagger\Client($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    public function sourceDir(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDir');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     public function codegen(ModuleSource $modSource, File $introspectionJson): GeneratedCode
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
@@ -562,11 +568,5 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('modSource', $modSource);
         $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function sourceDir(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDir');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

@@ -263,3 +263,20 @@ type neverExistsFS struct {
 func (fs neverExistsFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	return "", nil, os.ErrNotExist
 }
+
+func TestParseRefStringSkipsMissingPathStat(t *testing.T) {
+	parsed, err := ParseRefString(t.Context(), missingRefFS{t}, "github.com/dagger/dagger", "")
+	require.NoError(t, err)
+	require.Equal(t, ModuleSourceKindGit, parsed.Kind)
+}
+
+type missingRefFS struct{ t *testing.T }
+
+func (fs missingRefFS) Exists(context.Context, string) (string, bool, error) {
+	return "", false, nil
+}
+
+func (fs missingRefFS) Stat(context.Context, string) (string, *Stat, error) {
+	fs.t.Fatal("a missing path must not produce a failed stat call")
+	return "", nil, os.ErrNotExist
+}

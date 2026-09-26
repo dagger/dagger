@@ -1029,6 +1029,10 @@ func (fe *frontendPretty) dispatch(fn func()) {
 	}
 }
 
+// StdTerminal owns a process-lifetime stdin reader. Successive frontends must
+// share it so a completed session cannot consume the next session's input.
+var processTerminal = tuist.NewStdTerminal()
+
 func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	if addr := os.Getenv("DAGGER_TUI_CONSOLE"); addr != "" {
 		// Console mode: drive the TUI headlessly over HTTP (frontend_console.go)
@@ -1039,7 +1043,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		fe.consoleTerm = term
 		return fe
 	}
-	return newWithTerminal(w, db, tuist.NewStdTerminal())
+	return newWithTerminal(w, db, processTerminal)
 }
 
 // NewASCIIReporterWithDB returns a report-only pretty frontend backed by db

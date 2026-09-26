@@ -8,10 +8,36 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
+
+func TestPrintSyncedObjectIDs(t *testing.T) {
+	check := testObjectTypeDef("Check", "", "")
+	id, err := call.NewEngineResultID(42, call.NewType(&ast.Type{NamedType: "Check", NonNull: true})).Encode()
+	require.NoError(t, err)
+	var expected bytes.Buffer
+	require.NoError(t, printEncodedID(&expected, id))
+	for _, tc := range []struct {
+		name     string
+		typ      *modTypeDef
+		response any
+		want     string
+	}{
+		{"single", check, map[string]any{"id": map[string]any{"id": id}}, expected.String()},
+		{"list", &modTypeDef{Kind: dagger.TypeDefKindListKind, AsList: &modList{ElementTypeDef: check}},
+			[]any{map[string]any{"id": map[string]any{"id": id}}}, "- " + expected.String()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			require.NoError(t, printID(&out, tc.response, tc.typ))
+			require.Equal(t, tc.want, out.String())
+		})
+	}
+}
 
 func TestFindSiblingEntrypoint(t *testing.T) {
 	defaultType := testObjectTypeDef("DaggerDev", "dagger-dev", "default module")

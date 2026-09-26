@@ -120,7 +120,7 @@ class Function(Generic[P, R]):
 
     @property
     def agent(self) -> bool:
-        """Indicates whether the function is configured as an agent middleware."""
+        """Indicates whether the function is configured as a source of expertise."""
         # Check both the metadata and the attribute to support either decorator order
         return self.meta.agent or getattr(self.wrapped, AGENT_DEF_KEY, False)
 

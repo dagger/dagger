@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -10,93 +9,44 @@ import (
 
 type checksSchema struct{}
 
-var _ SchemaResolvers = &checksSchema{}
-
 func (s checksSchema) Install(srv *dagql.Server) {
-	dagql.Fields[*core.CheckGroup]{
-		dagql.Func("list", s.list).
-			Doc("Return a list of individual checks and their details"),
-
-		dagql.Func("run", s.run).
-			Doc("Execute all selected checks").
-			Args(
-				dagql.Arg("failFast").Doc("If true, stop running checks as soon as any check fails."),
-			),
-
-		dagql.Func("report", s.report).
-			Doc("Generate a markdown report"),
-	}.Install(srv)
-
-	// Check methods
+	srv.InstallObject(dagql.NewClass[*core.Check](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.Check]{
-		dagql.Func("name", s.name).
-			Doc("Return the command name of the check. Entrypoint targets omit the module prefix."),
-		dagql.Func("description", s.description).
-			Doc("The description of the check"),
-		dagql.Func("path", s.path).
-			Doc("The path of the check within its module"),
-		dagql.Func("originalModule", s.originalModule).
-			Doc("The original module in which the check has been defined"),
-		dagql.Func("checkType", s.checkType).
-			View(AfterVersion("v0.21.0")).
-			Doc("The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded"),
-
-		dagql.Func("resultEmoji", s.resultEmoji).
-			Doc("An emoji representing the result of the check"),
-		dagql.Func("run", s.runSingleCheck).
-			Doc("Execute the check"),
+		dagql.FuncWithDynamicInputs("sync", s.sync, s.cachePolicy).Doc("Run the check and retain its result."),
+		dagql.NodeFunc("pass", s.pass).DoNotCache("Read the current check result.").Doc("Run the check and return whether it passes."),
+		dagql.NodeFunc("error", s.error).DoNotCache("Read the current check result.").Doc("Run the check and return its failure, if any."),
 	}.Install(srv)
 }
-
-func (s checksSchema) name(_ context.Context, parent *core.Check, args struct{}) (string, error) {
-	return parent.Name(), nil
+func (s checksSchema) cachePolicy(_ context.Context, check dagql.ObjectResult[*core.Check], _ struct{}, req *dagql.CallRequest) error {
+	req.TTL = check.Self().CacheTTL
+	req.DoNotCache = check.Self().Completed || check.Self().RemoteArtifact != nil || check.Self().Generator.Self() != nil
+	return nil
 }
-
-func (s checksSchema) description(_ context.Context, parent *core.Check, args struct{}) (string, error) {
-	return parent.Description(), nil
+func (s checksSchema) sync(ctx context.Context, check *core.Check, _ struct{}) (*core.Check, error) {
+	return check.Run(ctx)
 }
-
-func (s checksSchema) path(_ context.Context, parent *core.Check, args struct{}) ([]string, error) {
-	return parent.Path(), nil
-}
-
-func (s checksSchema) originalModule(_ context.Context, parent *core.Check, args struct{}) (*core.Module, error) {
-	module := parent.OriginalModule()
-	if module != nil {
-		return module, nil
+func (s checksSchema) result(ctx context.Context, check dagql.ObjectResult[*core.Check]) (*core.Check, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
 	}
-	// Module! cannot resolve to nothing, so report which kind of module-less
-	// check this is. A check standing in for a module that could not be loaded
-	// answers with why it could not: that module is the failure.
-	if parent.LoadFailure != nil {
-		return nil, fmt.Errorf("check %q stands in for a workspace module that could not be loaded: %s",
-			parent.Name(), parent.LoadFailure.Message)
+	var result dagql.ObjectResult[*core.Check]
+	if err := srv.Select(ctx, check, &result, dagql.Selector{Field: "sync"}); err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("check %q is engine-injected and has no original module", parent.Name())
+	return result.Self(), nil
 }
-
-func (s checksSchema) checkType(_ context.Context, parent *core.Check, args struct{}) (string, error) {
-	return parent.CheckType(), nil
+func (s checksSchema) pass(ctx context.Context, check dagql.ObjectResult[*core.Check], _ struct{}) (bool, error) {
+	result, err := s.result(ctx, check)
+	if err != nil {
+		return false, err
+	}
+	return result.Passed, nil
 }
-
-func (s checksSchema) resultEmoji(_ context.Context, parent *core.Check, args struct{}) (string, error) {
-	return parent.ResultEmoji(), nil
-}
-
-func (s checksSchema) list(_ context.Context, parent *core.CheckGroup, args struct{}) ([]*core.Check, error) {
-	return parent.List(), nil
-}
-
-func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args struct {
-	FailFast dagql.Optional[dagql.Boolean]
-}) (*core.CheckGroup, error) {
-	return parent.Run(ctx, args.FailFast.GetOr(false).Bool(), runSyntheticSDKGeneratorAsCheck)
-}
-
-func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args struct{}) (dagql.ObjectResult[*core.File], error) {
-	return parent.Report(ctx)
-}
-
-func (s checksSchema) runSingleCheck(ctx context.Context, parent *core.Check, args struct{}) (*core.Check, error) {
-	return parent.Run(ctx, runSyntheticSDKGeneratorAsCheck)
+func (s checksSchema) error(ctx context.Context, check dagql.ObjectResult[*core.Check], _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Error]], error) {
+	result, err := s.result(ctx, check)
+	if err != nil {
+		return dagql.Null[dagql.ObjectResult[*core.Error]](), err
+	}
+	return result.Error, nil
 }

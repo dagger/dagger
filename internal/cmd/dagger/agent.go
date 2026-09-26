@@ -2,18 +2,13 @@ package daggercmd
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
-	"github.com/juju/ansiterm/tabwriter"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
-	telemetry "github.com/dagger/otel-go"
 )
 
 var agentListMode bool
@@ -23,32 +18,9 @@ var agentFocus string
 var agentPartial bool
 
 var agentCmd = &cobra.Command{
-	Use:   "agent [options] [name...]",
+	Use:   "agent [FILTERS] [OPTIONS]",
 	Short: "Compose your installed agent modules and drop into an interactive prompt.",
-	Long: `Compose your installed agent modules — their tools and system prompts — onto a base LLM, and drop into the interactive prompt with them all live.
-
-Each installed module that exposes an @agent function contributes its toolset and
-system prompt. With no arguments, every installed agent is composed, in
-alphabetical order. Name one or more agents to compose only those.
-
-With --trace, a past session is restored from the trace it published to Dagger
-Cloud: every agent it ran comes back under the same identity, with the
-conversation and lifecycle state it had, and the old session's whole progress
-view is scrolled back beside your prompt. Two caveats. Restoring a trace whose
-agents are still running FORKS them — the restored instances are new runtimes
-in this session, not a hand-off of the live ones. And messages that were
-enqueued but never consumed are not in the trace at all, so they are not
-restored; anything a turn actually consumed is part of its conversation and is.
-
-Examples:
-  dagger agent                    # Compose all installed agents and start the prompt
-  dagger agent -l                 # List all available agents
-  dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
-  dagger agent -r                 # Resume a saved session (interactive picker)
-  dagger agent -r=<session>       # Resume a specific saved session
-  dagger agent --trace <id>       # Restore a past session from its Dagger Cloud trace
-`,
-	Args: cobra.ArbitraryArgs,
+	Args:  cobra.ArbitraryArgs,
 	Annotations: map[string]string{
 		// Drop into the same interactive prompt mode as `dagger shell`, so keep
 		// completed conversation items in scrollback rather than GC'ing them
@@ -68,14 +40,12 @@ Examples:
 		if err := llmconfig.RefreshOAuthTokensIfNeeded(cmd.Context()); err != nil {
 			slog.Warn("failed to refresh LLM OAuth tokens", "error", err)
 		}
+		params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, args)
+		if err != nil {
+			return err
+		}
 		return withEngine(
-			cmd.Context(),
-			client.Params{
-				// A trace carries the workspace and module recipes needed to restore
-				// its agents. Loading modules from the destination checkout would
-				// both be unnecessary and make cold restore depend on that checkout.
-				LoadWorkspaceModules: agentTrace == "" || agentListMode,
-			},
+			cmd.Context(), params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
 				if agentListMode {
@@ -93,7 +63,7 @@ Examples:
 				if agentTrace != "" {
 					llmID, err = freshAgentBase(ctx, dag)
 				} else {
-					llmID, err = composeAgents(ctx, dag, args)
+					llmID, err = composeAgents(ctx, dag, args, cmd)
 				}
 				if err != nil {
 					return err
@@ -151,6 +121,7 @@ func (f agentSessionFlag) SessionID() string {
 }
 
 func init() {
+	registerCommandArtifactFlags(agentCmd)
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
 	agentCmd.Flags().VarP(&agentResume, "resume", "r", "Resume a saved session (interactive picker if no id given)")
 	// A bare -r (no value) resolves to the picker keyword, opening the
@@ -164,15 +135,6 @@ func init() {
 		"With --trace, focus this restored agent (runtime handle or name) instead of the top-level one")
 	agentCmd.Flags().BoolVar(&agentPartial, "partial", false,
 		"With --trace, restore what the trace carries enough to restore instead of failing on the first agent it does not")
-}
-
-// agentIncludeVars maps the positional agent names to the `include` variable of
-// the workspace agents query (null when none are named — compose everything).
-func agentIncludeVars(include []string) map[string]any {
-	if len(include) == 0 {
-		return map[string]any{"include": nil}
-	}
-	return map[string]any{"include": include}
 }
 
 const freshAgentBaseQuery = `query AgentBase {
@@ -196,47 +158,26 @@ func freshAgentBase(ctx context.Context, dag *dagger.Client) (string, error) {
 	return res.LLM.ID, nil
 }
 
-const composeAgentsQuery = `query ComposeAgents($include: [String!], $workspace: ID!) {
-  workspace: node(id: $workspace) { ... on Workspace {
-    agents(include: $include) {
-      compose {
-        id
-      }
-    }
-  } }
-}`
-
-func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (string, error) {
+func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) (string, error) {
 	workspace, err := snapshotWorkspace(ctx, dag)
 	if err != nil {
 		return "", err
 	}
-	id, err := workspace.ID(ctx)
+	all, err := commandArtifactsWithFlags(ctx, dag, workspace, cmd, include, true)
 	if err != nil {
 		return "", err
 	}
-	vars := agentIncludeVars(include)
-	vars["workspace"] = id
-	var res struct {
-		Workspace struct {
-			Agents struct {
-				Compose struct {
-					ID string
-				}
-			}
-		}
-	}
-	err = dag.Do(ctx, &dagger.Request{
-		Query:     composeAgentsQuery,
-		OpName:    "ComposeAgents",
-		Variables: vars,
-	}, &dagger.Response{
-		Data: &res,
-	})
+	selection := all.FilterTypes([]string{"Expertise"})
+	expertise, err := selection.AsExpertise(ctx)
 	if err != nil {
 		return "", err
 	}
-	return res.Workspace.Agents.Compose.ID, nil
+	refs := make([]*dagger.Expertise, len(expertise))
+	for i := range expertise {
+		refs[i] = &expertise[i]
+	}
+	id, err := dag.LLM().WithWorkspace(workspace).Compose(refs).ID(ctx)
+	return string(id), err
 }
 
 // Attempt the effectful capture once before binding or composing tools. Capture
@@ -254,56 +195,10 @@ func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspa
 	return dagger.Ref[*dagger.Workspace](dag, id), nil
 }
 
-const listAgentsQuery = `query ListAgents($include: [String!]) {
-  workspace: currentWorkspace {
-    agents(include: $include) {
-      list {
-        name
-        description
-      }
-    }
-  }
-}`
-
-// listAgents renders 'dagger agent -l': the name and description of each
-// composable agent. The module-loading work is encapsulated under a single span
-// so list mode stays quiet, matching 'dagger up -l' / 'dagger checks -l'.
 func listAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) error {
-	ctx, span := Tracer().Start(ctx, "fetch agent information", telemetry.Encapsulate())
-	defer span.End()
-
-	var res struct {
-		Workspace struct {
-			Agents struct {
-				List []struct {
-					Name        string
-					Description string
-				}
-			}
-		}
-	}
-	err := dag.Do(ctx, &dagger.Request{
-		Query:     listAgentsQuery,
-		OpName:    "ListAgents",
-		Variables: agentIncludeVars(include),
-	}, &dagger.Response{
-		Data: &res,
-	})
+	all, err := commandArtifactsWithFlags(ctx, dag, dag.CurrentWorkspace(), cmd, include, true)
 	if err != nil {
 		return err
 	}
-
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	fmt.Fprintf(tw, "%s\t%s\n",
-		termenv.String("Name").Bold(),
-		termenv.String("Description").Bold(),
-	)
-	for _, agent := range res.Workspace.Agents.List {
-		firstLine := agent.Description
-		if idx := strings.Index(firstLine, "\n"); idx != -1 {
-			firstLine = firstLine[:idx]
-		}
-		fmt.Fprintf(tw, "%s\t%s\n", cliName(agent.Name), firstLine)
-	}
-	return tw.Flush()
+	return listArtifactSelection(ctx, dag, all.FilterTypes([]string{"Expertise"}), cmd)
 }

@@ -7,6 +7,18 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
+type ModuleLoadFailure struct {
+	// Name is the module's workspace name (what the skipped-module span is
+	// called).
+	Name string `json:"name"`
+	// Dir is the module's workspace-root-relative directory, or "" when it
+	// has none (a git source).
+	Dir string `json:"dir,omitempty"`
+	// Message is the described load error (see the engine's
+	// describeLoadFailure).
+	Message string `json:"message"`
+}
+
 // ModuleLoadMode is how an operation wants a workspace module it cannot load
 // to be handled.
 type ModuleLoadMode int
@@ -38,7 +50,7 @@ func (mode ModuleLoadMode) BestEffort() bool {
 //   - A module missing its generated files can't load until they're generated.
 //     The SDK's advice is to run `dagger generate`, which is useless to echo
 //     back at `dagger generate` itself — under ModuleLoadRepairing the message
-//     says the module is skipped until generation instead. Every other mode
+//     keeps only the missing-file reason. Every other mode
 //     keeps the advice, which is exactly the fix its user needs.
 //   - An exec failure (typically the SDK runtime's build, e.g. `go build`
 //     rejecting the module source, or its constructor crashing) carries the
@@ -54,7 +66,7 @@ func DescribeLoadFailure(err error, mode ModuleLoadMode) string {
 
 	var missing *MissingGeneratedFileError
 	if mode == ModuleLoadRepairing && errors.As(err, &missing) {
-		msg = strings.Replace(msg, missing.Error(), missing.Reason()+" (skipped until it is generated)", 1)
+		msg = strings.Replace(msg, missing.Error(), missing.Reason(), 1)
 	}
 
 	var execErr *ExecError

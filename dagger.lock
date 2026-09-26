@@ -35,6 +35,7 @@
 ["","git-sha",["github.com/dagger/python","refs/heads/main"],"36036d0e4cd87c470c177d2c0ed2b1253d0adf4e"]
 ["","git-sha",["github.com/dagger/sdk-helpers","refs/tags/v1.0.4"],"6c883f657933ecb06ae86d56d9cd1f8785346bb1"]
 ["","git-sha",["github.com/dagger/shellcheck","refs/heads/main"],"756497171e9185db48dc7961649f466b4003cfa9"]
+["","git-sha",["github.com/dagger/typescript-sdk","pull/64/head"],"c611cb6fe355cfcf676eec43682f5281250fc201"]
 ["","git-sha",["github.com/eunomie/empty","HEAD"],"8de4cdfd244137aa83243a283d079cc630e3268a"]
 ["","git-sha",["github.com/eunomie/ws-test","HEAD"],"42501096f5759d18410eb629ec6b4c08a7888a0e"]
 ["","git-sha",["github.com/gogo/googleapis","refs/tags/v1.4.1"],"1f0e43f50bc0606e385ffae1bc80b5b231dcd042"]

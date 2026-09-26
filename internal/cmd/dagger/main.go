@@ -186,6 +186,8 @@ func init() {
 	apiCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
+	listCmd.GroupID = "toolbox"
+	listCmd.SetHelpFunc(listHelp)
 
 	versionRoot := versionCmd()
 	versionRoot.GroupID = "utility"
@@ -205,6 +207,7 @@ func init() {
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
+		listCmd,
 		moduleCmd,
 		sdkCmd,
 		installAliasCmd,
@@ -260,6 +263,9 @@ var rootCmd = &cobra.Command{
 	DisableFlagsInUseLine: true,
 	Args:                  cobra.ArbitraryArgs,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateArtifactListFlags(cmd); err != nil {
+			return err
+		}
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
 		cmd.SilenceUsage = true
@@ -945,6 +951,11 @@ const (
 )
 
 func commandShowsFinalProgress(cmd *cobra.Command) bool {
+	if cmd.CommandPath() == "dagger up" || cmd.CommandPath() == "dagger agent" {
+		if list, _ := cmd.Flags().GetBool("list"); list {
+			return false
+		}
+	}
 	for c := cmd; c != nil; c = c.Parent() {
 		if c.Annotations[showFinalProgressKey] == "true" {
 			return true
@@ -981,6 +992,19 @@ func applyCommandProgressDefaults(cmd *cobra.Command) {
 	opts.Verbosity = verbosity
 }
 
+func configureProgressOptions() {
+	opts.Silent = silent
+	opts.Debug = debugFlag
+	opts.RevealNoisySpans = reveal
+	opts.ExpandCompleted = expandCompleted
+	opts.OpenWeb = web
+	opts.NoExit = noExit
+	opts.DotOutputFilePath = dotOutputFilePath
+	opts.DotFocusField = dotFocusField
+	opts.DotShowInternal = dotShowInternal
+	opts.UsingCloudEngine = strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix)
+}
+
 // canOpenShellOnError reports whether the CLI can hand the terminal to a shell
 // in a failed container: only the pretty TUI can run one, and it needs a
 // terminal to read keys from. The check runs before the command, so a
@@ -988,6 +1012,59 @@ func applyCommandProgressDefaults(cmd *cobra.Command) {
 // frontend -- fails fast instead of hanging in a shell it cannot exit.
 func canOpenShellOnError(progress string, stdinIsTTY bool) bool {
 	return progress == "tty" && stdinIsTTY
+}
+
+// resolveProgressFrontend settles the progress mode and builds the matching
+// frontend. It reads and writes the progress and hasTTY globals, which the rest
+// of the CLI also consults.
+func resolveProgressFrontend() error {
+	if progress == "auto" {
+		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
+			progress = env
+		} else if def := commandProgressDefault(os.Args[1:]); def != "" {
+			// The command declares its own default (e.g. `dagger session`
+			// keeps plain progress for its SDK consumers). Checked before
+			// RunningInAgent: an agent-driven SDK program needs the stream
+			// just as much.
+			progress = def
+		} else if idtui.RunningInAgent() {
+			// An AI agent consumes the output as text; the report frontend's
+			// single final render suits it better than the live TUI.
+			progress = "report"
+		} else if hasTTY {
+			progress = "tty"
+		} else {
+			progress = "report"
+		}
+	}
+	if silent {
+		// if silent, don't even bother with the pretty frontend
+		progress = "plain"
+	}
+	// DAGGER_TUI_CONSOLE=<addr> serves the pretty TUI over HTTP (headless), so
+	// force it regardless of progress mode / tty (it doesn't need one).
+	if os.Getenv("DAGGER_TUI_CONSOLE") != "" {
+		progress = "tty"
+		hasTTY = true
+	}
+	switch progress {
+	case "plain":
+		Frontend = idtui.NewPlain(stderr)
+	case "tty":
+		if !hasTTY {
+			return fmt.Errorf("no tty available for progress %q", progress)
+		}
+		Frontend = idtui.NewPretty(stderr)
+	case "dots":
+		Frontend = idtui.NewDots(stderr)
+	case "logs":
+		Frontend = idtui.NewLogs(stderr)
+	case "report":
+		Frontend = idtui.NewReporter(stderr)
+	default:
+		return fmt.Errorf("unknown progress type %q", progress)
+	}
+	return nil
 }
 
 func Main() {
@@ -1027,8 +1104,10 @@ func Main() {
 		exitWithCode(1)
 	}
 	if err := prepareModuleSDKCommands(ctx, rootCmd, commandArgs, invocationDir, registerModuleSDKCommands); err != nil {
-		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-		exitWithCode(1)
+		exitWithCode(commandErrorStatus(err))
+	}
+	if err := prepareArtifactCommands(ctx, rootCmd, commandArgs, os.Args[1:]); err != nil {
+		exitWithCode(commandErrorStatus(err))
 	}
 	// A trailing inherited --x-release is known only after SDK discovery.
 	if err := execXRelease(ctx); err != nil {
@@ -1036,62 +1115,9 @@ func Main() {
 		exitWithCode(1)
 	}
 	replayGlobalFlags(rootCmd)
-	opts.Silent = silent                   // show no progress
-	opts.Debug = debugFlag                 // show everything
-	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
-	opts.ExpandCompleted = expandCompleted // leave things expanded as they complete
-	opts.OpenWeb = web
-	opts.NoExit = noExit
-	opts.DotOutputFilePath = dotOutputFilePath
-	opts.DotFocusField = dotFocusField
-	opts.DotShowInternal = dotShowInternal
-	opts.UsingCloudEngine = strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix)
-	if progress == "auto" {
-		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
-			progress = env
-		} else if def := commandProgressDefault(os.Args[1:]); def != "" {
-			// The command declares its own default (e.g. `dagger session`
-			// keeps plain progress for its SDK consumers). Checked before
-			// RunningInAgent: an agent-driven SDK program needs the stream
-			// just as much.
-			progress = def
-		} else if idtui.RunningInAgent() {
-			// An AI agent consumes the output as text; the report frontend's
-			// single final render suits it better than the live TUI.
-			progress = "report"
-		} else if hasTTY {
-			progress = "tty"
-		} else {
-			progress = "report"
-		}
-	}
-	if silent {
-		// if silent, don't even bother with the pretty frontend
-		progress = "plain"
-	}
-	// DAGGER_TUI_CONSOLE=<addr> serves the pretty TUI over HTTP (headless), so
-	// force it regardless of progress mode / tty (it doesn't need one).
-	if os.Getenv("DAGGER_TUI_CONSOLE") != "" {
-		progress = "tty"
-		hasTTY = true
-	}
-	switch progress {
-	case "plain":
-		Frontend = idtui.NewPlain(stderr)
-	case "tty":
-		if !hasTTY {
-			fmt.Fprintf(stderr, "no tty available for progress %q\n", progress)
-			exitWithCode(1)
-		}
-		Frontend = idtui.NewPretty(stderr)
-	case "dots":
-		Frontend = idtui.NewDots(stderr)
-	case "logs":
-		Frontend = idtui.NewLogs(stderr)
-	case "report":
-		Frontend = idtui.NewReporter(stderr)
-	default:
-		fmt.Fprintf(stderr, "unknown progress type %q\n", progress)
+	configureProgressOptions()
+	if err := resolveProgressFrontend(); err != nil {
+		fmt.Fprintf(stderr, "%s\n", err)
 		exitWithCode(1)
 	}
 
@@ -1113,27 +1139,30 @@ func Main() {
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		var exit idtui.ExitError
-		switch {
-		case errors.As(err, &exit):
-			exitWithCode(exit.Code())
-		case errors.Is(err, idtui.ErrShellExited):
-			exitWithCode(0)
-		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
-			exitWithCode(2)
-		default:
-			// Strip [traceparent:...] error-origin markers — they are span
-			// attribution plumbing for the TUI, not part of the message.
-			msg := strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(err.Error(), ""))
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), msg)
-			var es interp.ExitStatus
-			if errors.As(err, &es) {
-				exitWithCode(int(es))
-			}
-			exitWithCode(1)
-		}
+		exitWithCode(commandErrorStatus(err))
 	}
 	stop()
+}
+
+func commandErrorStatus(err error) int {
+	var exit idtui.ExitError
+	switch {
+	case errors.As(err, &exit):
+		return exit.Code()
+	case errors.Is(err, idtui.ErrShellExited):
+		return 0
+	case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
+		return 2
+	default:
+		// Error-origin markers are for span attribution, not terminal output.
+		msg := strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(err.Error(), ""))
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), msg)
+		var es interp.ExitStatus
+		if errors.As(err, &es) {
+			return int(es)
+		}
+		return 1
+	}
 }
 
 // RootCommand returns the fully-assembled CLI command tree, ready for
@@ -1226,7 +1255,15 @@ func getViewWidth() int {
 // flagUsagesWrapped returns the usage string for all flags in the given FlagSet
 // wrapped to the width of the terminal.
 func flagUsagesWrapped(flags *pflag.FlagSet) string {
-	return flags.FlagUsagesWrapped(getViewWidth())
+	usage := flags.FlagUsagesWrapped(getViewWidth())
+	flags.VisitAll(func(flag *pflag.Flag) {
+		if len(flag.Annotations[artifactDimensionFlag]) > 0 {
+			name, _ := pflag.UnquoteUsage(flag)
+			// Uppercase the placeholder without changing the argument name in prose.
+			usage = strings.Replace(usage, "--"+flag.Name+" "+name+" ", "--"+flag.Name+" "+strings.ToUpper(name)+" ", 1)
+		}
+	})
+	return usage
 }
 
 const visibleAliasesAnnotation = "help:visibleAliases"
