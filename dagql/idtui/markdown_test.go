@@ -132,10 +132,10 @@ func TestMarkdownTableNested(t *testing.T) {
 	}
 }
 
-// TestMarkdownInlineCodeIsMagenta: inline code is common in agent replies, so
-// it is set off by color alone -- the terminal's magenta, with no background
-// block behind it.
-func TestMarkdownInlineCodeIsMagenta(t *testing.T) {
+// TestMarkdownInlineCodeIsBrightBlue: inline code is common in agent replies,
+// so it is set off by color alone -- the terminal's bright blue, with no
+// background block behind it.
+func TestMarkdownInlineCodeIsBrightBlue(t *testing.T) {
 	got, err := renderMarkdown("use `foo` here", 40, MarkdownStyle, nil)
 	require.NoError(t, err)
 	line := strings.Split(trimMarkdownPadding(got), "\n")[0]
@@ -145,7 +145,7 @@ func TestMarkdownInlineCodeIsMagenta(t *testing.T) {
 	cellbuf.SetContent(buf, line)
 	for x := col; x < col+len("foo"); x++ {
 		cell := buf.Cell(x, 0)
-		require.Equal(t, ansi.Magenta, cell.Style.Fg, "code cell %d foreground: %q", x, line)
+		require.Equal(t, ansi.BrightBlue, cell.Style.Fg, "code cell %d foreground: %q", x, line)
 		require.Nil(t, cell.Style.Bg, "code cell %d has a background: %q", x, line)
 	}
 }
