@@ -35,6 +35,9 @@ func (s agentsSchema) Install(srv *dagql.Server) {
 				dagql.Arg("base").Doc("The existing conversation whose tool state should be preserved."),
 			),
 		dagql.Func("compose", s.compose).
+			// With no explicit base, compose creates a session-scoped LLM.
+			// Its own cache alias must not share that LLM across sessions.
+			WithInput(dagql.PerSessionInput).
 			Experimental("Agent APIs are likely to change.").
 			Doc("Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.").
 			Args(

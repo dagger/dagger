@@ -148,6 +148,102 @@ func TestLLMCredentialReloadAfterRoutingCall(t *testing.T) {
 	}
 }
 
+func TestComposedLLMCredentialIsolatedAcrossSessions(t *testing.T) {
+	for _, withResource := range []bool{false, true} {
+		t.Run(fmt.Sprintf("resourceDependency=%t", withResource), func(t *testing.T) {
+			cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+
+			var previous *core.LLM
+			for _, session := range []string{"first", "second"} {
+				t.Run(session, func(t *testing.T) {
+					md := &engine.ClientMetadata{SessionID: session, ClientID: session + "-client"}
+					var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+					newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
+						return engine.NewClientLifecycleLease(kind, owner, nil, func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+							return newLease(kind, owner), nil
+						})
+					}
+					lease := newLease(engine.ClientLeaseRequest, "llm-auth-test")
+					t.Cleanup(lease.Release)
+					scope, err := engine.NewClientScope(md, lease)
+					require.NoError(t, err)
+					ctx, err := engine.ContextWithClientScope(t.Context(), scope)
+					require.NoError(t, err)
+					ctx = dagql.ContextWithCache(ctx, cache)
+					env := &llmAuthSecrets{vars: map[string]string{
+						"env://ANTHROPIC_AUTH_TOKEN": "token-" + session,
+						"env://ANTHROPIC_MODEL":      "claude-sonnet-4-5",
+					}}
+					srv := &llmAuthSchemaServer{
+						currentTypeDefsTestServer: &currentTypeDefsTestServer{mainClient: md},
+						parent:                    md,
+						attachables:               map[string]*grpc.ClientConn{md.ClientID: newLLMAuthAttachable(t, env)},
+					}
+					root := core.NewRoot(srv)
+					ctx = core.ContextWithQuery(ctx, root)
+					base, err := NewCoreSchemaBase(ctx, srv)
+					require.NoError(t, err)
+					dag, err := base.Fork(ctx, root, "")
+					require.NoError(t, err)
+					srv.dag = dag
+					srv.deps = core.NewSchemaBuilder(root, nil)
+					dagql.Fields[*core.Query]{
+						dagql.Func("authTestAgents", func(context.Context, *core.Query, struct{}) (*core.AgentMiddlewareGroup, error) {
+							return &core.AgentMiddlewareGroup{}, nil
+						}),
+					}.Install(dag)
+
+					// Compose without a base on a session-independent group. Its
+					// default llm() re-selects the same pinned model and provider in
+					// both sessions, but must not alias their live endpoint objects.
+					var llm dagql.ObjectResult[*core.LLM]
+					require.NoError(t, dag.Select(ctx, dag.Root(), &llm,
+						dagql.Selector{Field: "authTestAgents"}, dagql.Selector{Field: "compose"}))
+					if withResource && previous != nil {
+						// The miss produced a genuinely fresh LLM. A later load must
+						// not canonicalize it to the previous session's endpoint.
+						require.NotSame(t, previous, llm.Self())
+					}
+					var model string
+					require.NoError(t, dag.Select(ctx, llm, &model, dagql.Selector{Field: "model"}))
+					require.Equal(t, "claude-sonnet-4-5", model)
+					llmID, err := llm.ID()
+					require.NoError(t, err)
+					llm, err = dagql.NewID[*core.LLM](llmID).Load(ctx, dag)
+					require.NoError(t, err)
+					if previous != nil && previous == llm.Self() {
+						t.Error("compose reused an LLM from the previous session")
+					}
+					ep, err := llm.Self().Endpoint(ctx)
+					require.NoError(t, err)
+					// Force resolution instead of letting the short credential TTL
+					// temporarily hide a wrongly reused endpoint's session binding.
+					ep.AuthTokenSource.Invalidate()
+					cred, err := ep.AuthTokenSource.Credential(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "token-"+session, cred.Token)
+					previous = llm.Self()
+					if withResource {
+						// Model a middleware result retaining a secret. On the next
+						// session's compose lookup this handle is unavailable, forcing
+						// execution rather than a direct cache hit. Default routing
+						// loads the same model secret and makes the old result eligible
+						// again before compose publishes its returned-result alias.
+						var secret dagql.ObjectResult[*core.Secret]
+						require.NoError(t, dag.Select(ctx, dag.Root(), &secret, dagql.Selector{
+							Field: "secret",
+							Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString("env://ANTHROPIC_MODEL")}},
+						}))
+						require.NoError(t, cache.AddExplicitDependency(ctx, llm, secret, "test compose resource dependency"))
+					}
+				})
+			}
+		})
+	}
+}
+
 type llmAuthSchemaServer struct {
 	*currentTypeDefsTestServer
 	parent      *engine.ClientMetadata
