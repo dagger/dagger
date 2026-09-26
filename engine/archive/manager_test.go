@@ -5,8 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -77,14 +79,14 @@ func TestManagerFinalizationMetadataAndGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.UpdateTitle(testTraceA, manifest.Generation, "investigate cache"); err != nil {
+	if err := manager.SetTitle(testTraceA, manifest.Generation, "investigate cache"); err != nil {
 		t.Fatal(err)
 	}
 	if err := manager.BeginFinalizing(testTraceA, manifest.Generation); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.UpdateTitle(testTraceA, manifest.Generation, "too late"); err == nil {
-		t.Fatal("metadata update during finalization succeeded")
+	if err := manager.SetTitle(testTraceA, manifest.Generation, "too late"); err == nil {
+		t.Fatal("title update during finalization succeeded")
 	}
 	now = now.Add(time.Minute)
 	cut := HighWater{Spans: 3, Logs: 4, Metrics: 5}
@@ -278,7 +280,7 @@ func TestManagerSameTraceIndependentSourceSessions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := manager.UpdateTitle(testTraceA, m.Generation, source); err != nil {
+		if err := manager.SetTitle(testTraceA, m.Generation, source); err != nil {
 			t.Fatal(err)
 		}
 		if err := manager.BeginFinalizing(testTraceA, m.Generation); err != nil {
@@ -335,6 +337,84 @@ func TestManagerSameTraceIndependentSourceSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	lease.Release()
+}
+
+func TestManagerTitleSurvivesInterruptionAndFinalizeOverrides(t *testing.T) {
+	root := t.TempDir()
+	manager, err := NewManager(Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	crashed, err := manager.Register(testTraceA, "crashed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.SetTitle(testTraceA, crashed.Generation, "first title"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.SetTitle(testTraceA, crashed.Generation, "  \n"); err != nil {
+		t.Fatal(err)
+	}
+	if page := manager.List("", "", 10); len(page.Archives) != 1 || page.Archives[0].Title != "first title" {
+		t.Fatalf("active listing lost the title: %+v", page)
+	}
+	restarted, err := NewManager(Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := restarted.Manifest(testTraceA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.State != StateInterrupted || recovered.Title != "first title" {
+		t.Fatalf("recovered = %+v", recovered)
+	}
+
+	sealed, err := restarted.Register(testTraceB, "sealed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.SetTitle(testTraceB, sealed.Generation, "early"); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.BeginFinalizing(testTraceB, sealed.Generation); err != nil {
+		t.Fatal(err)
+	}
+	seal := time.Now().UTC()
+	closed, err := restarted.Finalize(testTraceB, sealed.Generation, FinalizeInput{
+		SealAt: seal, BootstrapBytes: testBootstrap(t, sealed, HighWater{}, seal, 0), Title: "final\x1b[31m title",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.Title != "final [31m title" {
+		t.Fatalf("closed title = %q", closed.Title)
+	}
+}
+
+func TestSanitizeTitle(t *testing.T) {
+	long := strings.Repeat("word ", 100)
+	for _, test := range []struct{ in, want string }{
+		{"  plain title ", "plain title"},
+		{"line one\nline\ttwo\r\n", "line one line two"},
+		{"esc\x1b[2Jape\x07", "esc [2Jape"},
+		{"bidi\u202eevil\u200b", "bidievil"},
+		{"bad\xffutf8", "badutf8"},
+		{"\n\t ", ""},
+		{strings.Repeat("\n", 1000), ""},
+	} {
+		if got := SanitizeTitle(test.in); got != test.want {
+			t.Errorf("SanitizeTitle(%q) = %q, want %q", test.in, got, test.want)
+		}
+	}
+	got := SanitizeTitle(long)
+	if n := utf8.RuneCountInString(got); n > MaxTitleRunes || !strings.HasSuffix(got, "…") {
+		t.Fatalf("long title = %q (%d runes)", got, n)
+	}
+	huge := SanitizeTitle(strings.Repeat("é", 1<<20))
+	if n := utf8.RuneCountInString(huge); n != MaxTitleRunes || !strings.HasSuffix(huge, "…") {
+		t.Fatalf("huge title has %d runes", n)
+	}
 }
 
 func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -79,7 +79,46 @@ func (sess *daggerSession) ensureArchive(traceID string) (rerr error) {
 		return err
 	}
 	sess.archiveManifest = &manifest
+	// The title may have been recorded before the first control record.
+	sess.syncArchiveTitleLocked(context.Background(), manifest)
 	return nil
+}
+
+// syncArchiveTitle persists the latest session title recorded in the archive's
+// own trace into its active manifest, so listings show it while the session
+// runs and an archive recovered after an engine crash keeps it. The title
+// comes from the main client's telemetry store index, where span-name records
+// are classified as they arrive.
+func (sess *daggerSession) syncArchiveTitle(ctx context.Context) {
+	sess.archiveMu.Lock()
+	defer sess.archiveMu.Unlock()
+	if sess.archiveManifest == nil {
+		return
+	}
+	sess.syncArchiveTitleLocked(ctx, *sess.archiveManifest)
+}
+
+// syncArchiveTitleLocked requires archiveMu, which serializes reading the index
+// and writing the manifest, so an older title can never overwrite a newer one.
+func (sess *daggerSession) syncArchiveTitleLocked(ctx context.Context, manifest archive.Manifest) {
+	srv := sess.telemetryPubSub.srv
+	if srv.archives == nil || srv.clientDBs == nil {
+		return
+	}
+	db, err := srv.clientDBs.Open(ctx, manifest.MainClientID)
+	if err != nil {
+		slog.Debug("open archive store for title", "err", err)
+		return
+	}
+	title := db.Title(manifest.TraceID)
+	_ = db.Close()
+	if title == "" {
+		return
+	}
+	// Titles are advisory. A finalizing archive takes its title from the cut.
+	if err := srv.archives.SetTitle(manifest.TraceID, manifest.Generation, title); err != nil {
+		slog.Debug("record archive title", "err", err)
+	}
 }
 
 // The producer witness is independent of received control rows. Only origins
@@ -169,6 +208,7 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 	}
 	_, err = srv.archives.Finalize(manifest.TraceID, manifest.Generation, archive.FinalizeInput{
 		HighWater: header.HighWater, SealAt: seal, StoreSizeBytes: size, BootstrapBytes: data, BootstrapRecords: records,
+		Title: db.Title(manifest.TraceID),
 	})
 	return err
 }
@@ -308,32 +348,6 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		return httpErr(errors.New("unknown archive endpoint"), http.StatusNotFound)
 	}
 	traceID, resource := parts[0], parts[1]
-	if resource == "metadata" {
-		if r.Method != http.MethodPost {
-			return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
-		}
-		source := r.URL.Query().Get("source_session")
-		generation := r.Header.Get("X-Dagger-Archive-Generation")
-		if source == "" && generation == "" {
-			source = record.daggerSession.sessionID
-		}
-		m, err := srv.archives.ManifestSource(traceID, generation, source)
-		if err != nil {
-			return writeArchiveFailure(w, err)
-		}
-		if m.MainClientID != record.clientID {
-			return httpErr(errors.New("archive is not owned by client"), http.StatusForbidden)
-		}
-		var update archive.MetadataUpdate
-		if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&update); err != nil {
-			return httpErr(err, http.StatusBadRequest)
-		}
-		if err := srv.archives.UpdateTitle(traceID, m.Generation, update.Title); err != nil {
-			return writeArchiveFailure(w, err)
-		}
-		w.WriteHeader(http.StatusNoContent)
-		return nil
-	}
 	if r.Method != http.MethodGet {
 		return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
 	}
