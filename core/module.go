@@ -2042,6 +2042,13 @@ func (mod *Module) Patch(ctx context.Context) error {
 				continue
 			}
 
+			// An optional enum argument defaults to null, which names no
+			// member and so has nothing to patch. Decoding it would yield
+			// the empty string and fail the lookup below.
+			if bytes.Equal(bytes.TrimSpace(argSelf.DefaultValue.Bytes()), []byte("null")) {
+				continue
+			}
+
 			var val string
 			dec := json.NewDecoder(bytes.NewReader(argSelf.DefaultValue.Bytes()))
 			dec.UseNumber()
