@@ -3221,8 +3221,12 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	return binds
 }
 
+// keymapSnug reports whether the keymap hugs the status line directly above
+// it. Search inputs are inserted between the two, so they need the keymap's
+// separating line; prompt forms mount above the draft and leave the status
+// line in place, so they don't.
 func (fe *frontendPretty) keymapSnug() bool {
-	return fe.statusLine != nil && fe.activeForm == nil && fe.searchInput == nil && fe.logSearchInput == nil
+	return fe.statusLine != nil && fe.searchInput == nil && fe.logSearchInput == nil
 }
 
 func (fe *frontendPretty) keymapHeight() int {

@@ -260,6 +260,40 @@ func TestPushConfirmationSpacing(t *testing.T) {
 	}
 }
 
+// TestPushConfirmationKeepsKeymapSnug: a form mounts above the draft, leaving
+// the status line directly above the keymap, so swapping the keymap to the
+// form's controls must not open a blank row between the two.
+func TestPushConfirmationKeepsKeymapSnug(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	t.Setenv("NO_COLOR", "1")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(100, 30))
+	fe.setupTUI()
+	fe.startShell(t.Context(), &imagePromptHandler{mode: true})
+	defer fe.stopShell()
+	const model = "test-model"
+	fe.statusLine.SetData(StatusLineData{Model: model})
+	cancel := mountBoolPrompt(t, fe, "", "Allow push?")
+	defer cancel()
+	for range 5 {
+		fe.tui.Step()
+		time.Sleep(10 * time.Millisecond)
+	}
+	lines := strings.Split(ansi.Strip(strings.Join(fe.tui.Step(), "\n")), "\n")
+	frame := strings.Join(lines, "\n")
+	statusAt := -1
+	for i, line := range lines {
+		if strings.Contains(line, model) {
+			statusAt = i
+		}
+	}
+	if statusAt < 0 || statusAt+1 >= len(lines) {
+		t.Fatalf("status line missing or last:\n%s", frame)
+	}
+	if !strings.Contains(lines[statusAt+1], "enter submit") {
+		t.Fatalf("form keymap must sit directly under the status line:\n%s", frame)
+	}
+}
+
 func TestPushConfirmationHighlightsForcePush(t *testing.T) {
 	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.ANSI)
