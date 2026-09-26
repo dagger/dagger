@@ -276,6 +276,7 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	// drop its routable siblings too — with their producer claims still held,
 	// so no later walk could re-emit them either.
 	routed := make([]routedLogRecord, 0, len(records))
+	var title *pendingArchiveTitle // the batch's latest main-client title
 	for _, rec := range records {
 		digest, payload, err := classifyCallPayloadRecord(rec)
 		if err != nil {
@@ -328,14 +329,16 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		if !payload {
 			digest = ""
 		}
+		if origin == exp.sess.mainClientCallerID && isSpanNameRecord(rec) && rec.Body().Kind() == log.KindString {
+			// Only the main client names the session; see setArchiveTitle.
+			title = &pendingArchiveTitle{traceID: rec.TraceID().String(), title: rec.Body().AsString()}
+		}
 		routed = append(routed, routedLogRecord{rec: withoutLogOrigin(rec), route: route, digest: digest})
 	}
 
 	byTarget := map[string][]sdklog.Record{}
 	payloadsByTarget := map[string][]string{}
-	titled := false
 	for _, r := range routed {
-		titled = titled || isSpanNameRecord(r.rec)
 		route := r.route
 		if r.digest != "" {
 			// Taking is also the in-batch dedupe: a second copy of the same
@@ -364,10 +367,9 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		})
 	}
 	err := eg.Wait()
-	if titled {
-		// Even after a partial failure: the title may have reached the main
-		// client's store, and syncing is idempotent.
-		exp.sess.syncArchiveTitle(ctx)
+	if title != nil {
+		// Titles are advisory and independent of the store writes above.
+		exp.sess.setArchiveTitle(title.traceID, title.title)
 	}
 	return err
 }

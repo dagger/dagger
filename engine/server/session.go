@@ -72,7 +72,9 @@ type daggerSession struct {
 	archiveExpected    agentcontrol.Expectation
 	archiveCloseErr    error
 	archiveRegisterErr error
-	mainClientCallerID string
+	// archivePendingTitle is a title published before the archive existed.
+	archivePendingTitle pendingArchiveTitle
+	mainClientCallerID  string
 
 	// wcprofEnabled means this session opted into wall-clock profiling
 	// (ClientMetadata.Profile); work for all its clients (including nested

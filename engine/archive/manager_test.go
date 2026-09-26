@@ -339,7 +339,7 @@ func TestManagerSameTraceIndependentSourceSessions(t *testing.T) {
 	lease.Release()
 }
 
-func TestManagerTitleSurvivesInterruptionAndFinalizeOverrides(t *testing.T) {
+func TestManagerTitleSurvivesInterruptionAndSeal(t *testing.T) {
 	root := t.TempDir()
 	manager, err := NewManager(Config{Root: root})
 	if err != nil {
@@ -374,7 +374,7 @@ func TestManagerTitleSurvivesInterruptionAndFinalizeOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := restarted.SetTitle(testTraceB, sealed.Generation, "early"); err != nil {
+	if err := restarted.SetTitle(testTraceB, sealed.Generation, "final\x1b[31m title"); err != nil {
 		t.Fatal(err)
 	}
 	if err := restarted.BeginFinalizing(testTraceB, sealed.Generation); err != nil {
@@ -382,7 +382,7 @@ func TestManagerTitleSurvivesInterruptionAndFinalizeOverrides(t *testing.T) {
 	}
 	seal := time.Now().UTC()
 	closed, err := restarted.Finalize(testTraceB, sealed.Generation, FinalizeInput{
-		SealAt: seal, BootstrapBytes: testBootstrap(t, sealed, HighWater{}, seal, 0), Title: "final\x1b[31m title",
+		SealAt: seal, BootstrapBytes: testBootstrap(t, sealed, HighWater{}, seal, 0),
 	})
 	if err != nil {
 		t.Fatal(err)
