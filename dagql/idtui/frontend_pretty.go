@@ -1174,7 +1174,7 @@ func (fe *frontendPretty) toggleNotifications() {
 func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
 	fe.dispatch(func() {
 		// Remember the latest data even when the status line isn't up yet: on
-		// resume, LoadSession pushes the restored conversation's stats before the
+		// resume, the restored conversation's stats are pushed before the
 		// shell (and its status line) is created, so startShell seeds the new
 		// status line from here rather than dropping the update.
 		fe.statusLineData = data

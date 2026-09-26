@@ -85,7 +85,7 @@ type LLMSession struct {
 
 	// primaryCtx carries the interactive command's root span. The generated
 	// title is emitted and applied there, while the model call that derives it
-	// stays beneath plumbingCtx. Title generation is attempted once per save
+	// stays beneath plumbingCtx. Title generation is attempted once per title
 	// identity; resetTitle starts a fresh identity after branch/resume.
 	primaryCtx      context.Context
 	title           string

@@ -216,7 +216,7 @@ type sessionAgent struct {
 	// lastSyncedWorkspace is the immutable save/reload boundary in this
 	// conversation's own history, not a mirror of the live checkout. Export
 	// advances it without rebinding the LLM; reload captures the host instead.
-	// Reset/clear/session persistence reuse it. UI refreshes run asynchronously,
+	// Reset/clear reuse it. UI refreshes run asynchronously,
 	// so every access is guarded by lastSyncedWorkspaceL.
 	lastSyncedWorkspace  *dagger.Workspace
 	lastSyncedWorkspaceL sync.RWMutex
@@ -879,7 +879,8 @@ func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptIn
 	// In --debug, surface how much this turn grew the context.
 	a.reportContextUsage(ctx, a.llm)
 
-	// Auto-save so the session is preserved even across interrupted turns.
+	// Run post-turn presentation work (title generation), even across
+	// interrupted turns.
 	a.session.stepped(a)
 
 	return responseErr

@@ -800,7 +800,7 @@ func (s *llmSchema) llm(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		// No model requested: resolve the configured default and re-call this
 		// field with it pinned, the way Container.from re-calls itself with
 		// the digested ref. The recorded ID then names the model the
-		// conversation actually runs against, so a saved session resumes on
+		// conversation actually runs against, so a restored one resumes on
 		// its own model rather than whatever default the resuming
 		// environment happens to configure.
 		defModel, defProvider, routeErr := parent.Self().DefaultLLMRoute(ctx, provider)

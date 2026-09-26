@@ -1150,8 +1150,8 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	normalized, err := normalizeChangesetToPatch(ctx, srv, changes)
 	if err != nil {
 		// Fall back to the raw changeset: normalization is a durability
-		// upgrade for saved sessions, not a correctness requirement for the
-		// live one.
+		// upgrade for restored conversations, not a correctness requirement
+		// for the live one.
 		slog.Warn("failed to normalize changeset to patch form", "error", err)
 		normalized = changes
 	}
@@ -1187,7 +1187,7 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 //
 // A tool-built changeset's After is an operation chain (e.g.
 // File.withReplaced) rooted at live workspace reads. Reapplying those
-// operations when a saved session is loaded fails once the files have moved
+// operations when a conversation is restored fails once the files have moved
 // on (the search text is gone), or silently re-applies them when it hasn't.
 // Capturing the patch now — while the content the operations ran against is
 // known — makes the recorded overlay pure data, and its restoration a tolerant
