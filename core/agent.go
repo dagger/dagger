@@ -550,7 +550,10 @@ func (ars *AgentRuntimes) Require(ctx context.Context, agent dagql.ObjectResult[
 // publishes its identity immediately (§4.5), since nothing else will until a
 // loop starts, and a restored agent that is never prompted would otherwise
 // be invisible to the roster.
-func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr string, restored bool, parentHandles ...string) (*AgentRuntime, error) {
+//
+// parentHandle is the recorded parent a restore supplies; empty derives the
+// parent from the calling agent, if any.
+func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr string, restored bool, parentHandle string) (*AgentRuntime, error) {
 	key, err := agentKey(agent)
 	if err != nil {
 		return nil, err
@@ -592,8 +595,8 @@ func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*
 	if caller, ok := CallerAgent(ctx); ok && caller.Self().Handle != key {
 		rt.parentHandle = caller.Self().Handle
 	}
-	if len(parentHandles) > 0 {
-		rt.parentHandle = parentHandles[0]
+	if parentHandle != "" {
+		rt.parentHandle = parentHandle
 	}
 	if digest, err := agent.RecipeDigest(ctx); err == nil {
 		rt.controlCallDigest = digest.String()

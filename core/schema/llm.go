@@ -732,14 +732,14 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 	if err != nil {
 		return res, err
 	}
-	var parentHandles []string
+	var parentHandle string
 	if args.ParentHandle.Valid {
 		if !restored {
 			return res, fmt.Errorf("parentHandle is only valid when restoring with a handle")
 		}
-		parentHandles = []string{args.ParentHandle.Value.String()}
+		parentHandle = args.ParentHandle.Value.String()
 	}
-	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored, parentHandles...); err != nil {
+	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored, parentHandle); err != nil {
 		return res, err
 	}
 	pinnedID, err := pinned.ID()

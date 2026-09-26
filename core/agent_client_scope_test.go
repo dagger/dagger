@@ -47,7 +47,7 @@ func TestAgentClientScopeLifetime(t *testing.T) {
 	require.True(t, ok)
 	registry := NewAgentRuntimes()
 	t.Cleanup(func() { require.NoError(t, registry.KillAll(context.Background(), nil)) })
-	rt, err := registry.Create(ctx, agent, AgentStateIdle, "", false)
+	rt, err := registry.Create(ctx, agent, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, held(engine.ClientLeaseAgentTombstone))
 	// Park before starting so this unit test needs no model or engine query.
@@ -109,7 +109,7 @@ func TestAgentCreateLeaseOutsideRegistryLock(t *testing.T) {
 	results := make(chan error, 2)
 	for range 2 {
 		go func() {
-			_, err := registry.Create(ctx, agent, AgentStateIdle, "", false)
+			_, err := registry.Create(ctx, agent, AgentStateIdle, "", false, "")
 			results <- err
 		}()
 	}
