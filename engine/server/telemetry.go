@@ -274,7 +274,10 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	// missing or unknown origin never resolves on retry, and failing the whole
 	// batch would have the payload processor retry it for seconds and then
 	// drop its routable siblings too — with their producer claims still held,
-	// so no later walk could re-emit them either.
+	// so no later walk could re-emit them either. The same holds for a
+	// malformed control record: failing its batch would drop other agents'
+	// revisions with it. Only store writes, which can succeed on retry, fail
+	// the batch.
 	routed := make([]routedLogRecord, 0, len(records))
 	var title *pendingArchiveTitle // the batch's latest main-client title
 	for _, rec := range records {
@@ -283,26 +286,22 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			slog.Warn("dropping malformed call payload record", "err", err)
 			continue
 		}
+		control := agentcontrol.IsRecord(rec)
 		origin := logOriginClientID(rec)
 		if origin == "" {
-			if agentcontrol.IsRecord(rec) {
-				return fmt.Errorf("protected control missing origin client")
-			}
-			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "digest", digest)
+			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "control", control, "digest", digest)
 			continue
 		}
 		route, err := exp.sess.telemetryRouteOriginClientID(origin)
 		if err != nil {
-			if agentcontrol.IsRecord(rec) {
-				return fmt.Errorf("protected control route: %w", err)
-			}
-			slog.Warn("dropping unroutable log record", "origin", origin, "payload", payload, "digest", digest, "err", err)
+			slog.Warn("dropping unroutable log record", "origin", origin, "payload", payload, "control", control, "digest", digest, "err", err)
 			continue
 		}
-		if agentcontrol.IsRecord(rec) {
+		if control {
 			a, edge, err := agentcontrol.Decode(rec)
 			if err != nil {
-				return fmt.Errorf("decode protected control: %w", err)
+				slog.Warn("dropping malformed control record", "origin", origin, "err", err)
+				continue
 			}
 			var ns agentcontrol.Namespace
 			var projection any
@@ -312,7 +311,11 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 				ns, projection = edge.Namespace, edge
 			}
 			if ns.Session != exp.sess.sessionID || ns.Trace != rec.TraceID().String() {
-				return fmt.Errorf("control namespace does not match emission session/trace")
+				slog.Warn("dropping control record outside its emission session/trace",
+					"origin", origin,
+					"session", ns.Session, "trace", ns.Trace,
+					"emissionSession", exp.sess.sessionID, "emissionTrace", rec.TraceID().String())
+				continue
 			}
 			if err := exp.sess.ensureArchive(ns.Trace); err != nil {
 				// Archive availability is not authority to suppress the live roster.
@@ -321,7 +324,8 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			}
 			encoded, err := json.Marshal(projection)
 			if err != nil {
-				return err
+				slog.Warn("dropping unencodable control record", "origin", origin, "err", err)
+				continue
 			}
 			digest = fmt.Sprintf("control:%x", sha256.Sum256(encoded))
 			payload = true // reuse post-persistence per-target settlement, in a disjoint key space

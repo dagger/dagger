@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
@@ -179,6 +180,45 @@ func TestSessionLogExporterSkipsUnroutableRecords(t *testing.T) {
 	rows, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
+}
+
+// A control record that can never persist (malformed, outside its emission
+// session/trace, or unroutable) is skipped on its own: failing the batch
+// would have the control processor retry and then drop the valid revisions
+// batched with it.
+func TestSessionLogExporterSkipsInvalidControlRecords(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	sess := &daggerSession{sessionID: "session", clientRecords: map[string]*clientRecord{}}
+	sess.telemetryPubSub = NewPubSub(srv)
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	exporter := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
+	withOrigin := func(rec sdklog.Record, origin string) sdklog.Record {
+		rec.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, origin))
+		return rec
+	}
+
+	valid := withOrigin(controlTestRecord(t, archiveAgent().Record()), "client")
+	var bad otellog.Record
+	bad.SetBody(otellog.StringValue(""))
+	bad.AddAttributes(otellog.Int(agentcontrol.VersionAttr, agentcontrol.Version+1))
+	malformed := withOrigin(controlTestRecord(t, bad), "client")
+	stranger := archiveAgent()
+	stranger.Session = "another-session"
+	stranger.Handle = "stranger"
+	foreign := withOrigin(controlTestRecord(t, stranger.Record()), "client")
+	originless := controlTestRecord(t, archiveAgent().Record())
+	unroutable := withOrigin(controlTestRecord(t, archiveAgent().Record()), "nobody")
+
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{malformed, foreign, valid, originless, unroutable}),
+		"invalid control records are skipped rather than failing the batch")
+
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "only the valid control record persists")
 }
 
 // A payload the producer claimed but whose write failed must be claimable
