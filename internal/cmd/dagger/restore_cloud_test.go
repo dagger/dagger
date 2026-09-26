@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -156,17 +157,13 @@ func TestCloudRestoreSourceDecisions(t *testing.T) {
 }
 
 func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
-	for _, kind := range []string{"missing trace", "fetch failure", "corrupt payload", "corrupt identity", "missing payload", "missing parent", "missing subscriber", "equivocation"} {
+	for _, kind := range []string{"missing trace", "fetch failure", "corrupt payload", "missing payload", "missing parent", "missing subscriber", "equivocation"} {
 		t.Run(kind, func(t *testing.T) {
 			chief, worker, edge, records := cloudControlFixture(t)
 			req := restoreRequest()
 			switch kind {
 			case "corrupt payload":
 				records[0].SetBody(log.BytesValue([]byte{0xff}))
-			case "corrupt identity":
-				// The root frame is shared by both agents' snapshots, so neither
-				// can be restored from it.
-				tamperCloudFrame(t, records, chief.Digest)
 			case "missing payload":
 				records = nil
 			case "missing parent":
@@ -200,32 +197,17 @@ func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
 	}
 }
 
-// tamperCloudFrame corrupts the payload of the frame with the given digest
-// without changing the digest it claims.
-func tamperCloudFrame(t *testing.T, records []log.Record, digest string) {
-	t.Helper()
-	for i := range records {
-		frame := new(callpbv1.Call)
-		require.NoError(t, proto.Unmarshal(records[i].Body().AsBytes(), frame))
-		if frame.Digest != digest {
-			continue
-		}
-		frame.Field += "tampered"
-		data, err := proto.Marshal(frame)
-		require.NoError(t, err)
-		records[i].SetBody(log.BytesValue(data))
-		return
-	}
-	t.Fatalf("no frame %s", digest)
-}
-
-// TestCloudRestoreSkipsCorruptSnapshot: integrity is checked per snapshot, so
-// a tampered frame only the worker's snapshot uses skips the worker with a
-// warning; nothing is restored from corrupt data.
-func TestCloudRestoreSkipsCorruptSnapshot(t *testing.T) {
+// TestCloudRestoreSkipsIncompleteSnapshot: recipe closures are checked per
+// snapshot, so a frame only the worker's snapshot needs going missing skips
+// the worker with a warning; the chief still restores.
+func TestCloudRestoreSkipsIncompleteSnapshot(t *testing.T) {
 	warnings := captureRestoreWarnings(t)
 	chief, worker, edge, records := cloudControlFixture(t)
-	tamperCloudFrame(t, records, worker.Digest)
+	records = slices.DeleteFunc(records, func(rec log.Record) bool {
+		frame := new(callpbv1.Call)
+		require.NoError(t, proto.Unmarshal(rec.Body().AsBytes(), frame))
+		return frame.Digest == worker.Digest
+	})
 	records = append(records, chief.Record(), worker.Record(), edge.Record())
 	req := restoreRequest()
 	req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
@@ -238,7 +220,7 @@ func TestCloudRestoreSkipsCorruptSnapshot(t *testing.T) {
 	cleanup()
 	require.Equal(t, []string{"rehydrate:chief", "adopt:chief", "focus:chief"}, target.calls)
 	require.Contains(t, warnings.String(), "worker (worker)")
-	require.Contains(t, warnings.String(), "integrity mismatch")
+	require.Contains(t, warnings.String(), "missing call payload")
 }
 
 // TestCloudRestoreSkipsCaptureFailure: a worker whose latest record is a

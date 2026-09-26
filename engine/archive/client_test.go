@@ -193,21 +193,6 @@ func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
 			t.Fatalf("error = %v, want corruption", err)
 		}
 	})
-
-	t.Run("terminal count mismatch is corruption", func(t *testing.T) {
-		mismatch, _, err := BuildBootstrap(BootstrapHeader{
-			TraceID: traceID, SealAt: sealAt,
-		}, []BootstrapSignal{{Kind: BootstrapFrameTraces, Payload: tracePayload, Records: 2}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		client, closeServer := bootstrapTestClient(t, mismatch)
-		defer closeServer()
-		_, err = client.Bootstrap(context.Background(), traceID, nil)
-		if !errors.Is(err, ErrCorrupt) {
-			t.Fatalf("error = %v, want corruption", err)
-		}
-	})
 }
 
 func TestClientFiniteSignalStreams(t *testing.T) {

@@ -203,9 +203,3 @@ func DecodeBootstrap(r io.Reader, onHeader func(BootstrapHeader) error, consume 
 		}
 	}
 }
-
-// VerifyBootstrap validates a bootstrap stream without consuming its signal
-// payloads.
-func VerifyBootstrap(r io.Reader) (BootstrapHeader, BootstrapTerminal, error) {
-	return DecodeBootstrap(r, nil, nil)
-}

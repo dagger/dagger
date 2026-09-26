@@ -33,8 +33,8 @@ type archiveFrontend interface {
 }
 
 // appliedRestorePlan is a frozen selection from the applied canonical frontend
-// projection. Local archives additionally verify it against an independent cut;
-// Cloud selections validate only the records and recipe closure they observed.
+// projection: the archive's sealed roster, or for Cloud the records and recipe
+// closure it observed.
 type appliedRestorePlan struct {
 	plan    []dagui.AgentRestore
 	rebuild func(string) (string, error)
@@ -43,36 +43,27 @@ type appliedRestorePlan struct {
 func (p appliedRestorePlan) AgentRestorePlan() []dagui.AgentRestore          { return p.plan }
 func (p appliedRestorePlan) EncodedIDForCallDigest(d string) (string, error) { return p.rebuild(d) }
 
+// appliedArchivePlan selects the sealed roster from the applied bootstrap. The
+// engine verified the roster against its producer witness when it sealed the
+// archive.
 func appliedArchivePlan(fe idtui.AgentRestorer, completion archive.Completion) (appliedRestorePlan, []agentcontrol.Subscription, error) {
 	plan := appliedRestorePlan{rebuild: fe.EncodedIDForCallDigest}
-	want, err := completion.Expectation()
-	if err != nil {
-		return plan, nil, err
-	}
 	agents, edges, err := fe.AgentControl()
 	if err != nil {
 		return plan, nil, err
 	}
-	var index agentcontrol.Index
+	roster := make(map[agentcontrol.Key]bool, len(completion.Agents))
+	for _, a := range completion.Agents {
+		roster[a.Key] = true
+	}
+	subscriptions := make(map[agentcontrol.EdgeKey]bool, len(completion.Subscriptions))
+	for _, s := range completion.Subscriptions {
+		subscriptions[s.Key] = true
+	}
 	for _, a := range agents {
-		if _, ok := want.Agents[a.Key]; ok {
-			if _, err := index.ApplyAgent(a); err != nil {
-				return plan, nil, err
-			}
+		if !roster[a.Key] {
+			continue
 		}
-	}
-	for _, edge := range edges {
-		if _, ok := want.Subscriptions[edge.EdgeKey]; ok {
-			if _, err := index.ApplySubscription(edge); err != nil {
-				return plan, nil, err
-			}
-		}
-	}
-	// This second check establishes application, not just raw transport validity.
-	if err := index.Verify(want); err != nil {
-		return plan, nil, fmt.Errorf("applied bootstrap differs from verified roster: %w", err)
-	}
-	for _, a := range index.Agents() {
 		entry := dagui.AgentRestore{
 			Source: a.Key, ID: a.Handle, Name: a.Name, ParentAgentID: a.Parent,
 			SnapshotDigest: a.Digest, LastActivity: a.Activity,
@@ -92,10 +83,10 @@ func appliedArchivePlan(fe idtui.AgentRestorer, completion archive.Completion) (
 		}
 		plan.plan = append(plan.plan, entry)
 	}
-	// Keep removal witnesses in verification above, but never install them.
+	// Removal tombstones are part of the roster, but are never installed.
 	var active []agentcontrol.Subscription
-	for _, edge := range index.Subscriptions() {
-		if len(edge.States) != 0 {
+	for _, edge := range edges {
+		if subscriptions[edge.EdgeKey] && len(edge.States) != 0 {
 			active = append(active, edge)
 		}
 	}

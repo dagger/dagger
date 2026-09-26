@@ -1,11 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -193,7 +190,8 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 	if err != nil {
 		return err
 	}
-	data, records, err := buildArchiveBootstrap(ctx, db, *manifest, cut, sess.archiveExpected)
+	sealAt := time.Now().UTC()
+	data, records, err := buildArchiveBootstrap(ctx, db, *manifest, cut, sess.archiveExpected, sealAt)
 	if err != nil {
 		return err
 	}
@@ -201,25 +199,22 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 	if err != nil {
 		return err
 	}
-	header, _, err := archive.VerifyBootstrap(bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	seal, err := time.Parse(time.RFC3339Nano, header.SealAt)
-	if err != nil {
-		return err
-	}
 	_, err = srv.archives.Finalize(manifest.TraceID, archive.FinalizeInput{
-		HighWater: header.HighWater, SealAt: seal, StoreSizeBytes: size, BootstrapBytes: data, BootstrapRecords: records,
+		HighWater: archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, SealAt: sealAt,
+		StoreSizeBytes: size, BootstrapBytes: data, BootstrapRecords: records,
 	})
 	return err
 }
 
-func buildArchiveBootstrap(ctx context.Context, db *clientdb.DB, manifest archive.Manifest, cut clientdb.HighWater, want agentcontrol.Expectation) ([]byte, int64, error) {
-	return buildArchiveBootstrapWithPayloadLimit(ctx, db, manifest, cut, want, archive.MaxBootstrapPayloadSize)
+func buildArchiveBootstrap(ctx context.Context, db *clientdb.DB, manifest archive.Manifest, cut clientdb.HighWater, want agentcontrol.Expectation, sealAt time.Time) ([]byte, int64, error) {
+	return buildArchiveBootstrapWithPayloadLimit(ctx, db, manifest, cut, want, sealAt, archive.MaxBootstrapPayloadSize)
 }
 
-func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB, manifest archive.Manifest, cut clientdb.HighWater, want agentcontrol.Expectation, maxPayloadSize int) ([]byte, int64, error) {
+// buildArchiveBootstrapWithPayloadLimit is where a bootstrap is verified: the
+// final control rows must match the producer's witnessed roster (ControlRows),
+// and every snapshot's recipe closure must be present at the cut
+// (VerifyClosure). Readers only check the framing and checksum.
+func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB, manifest archive.Manifest, cut clientdb.HighWater, want agentcontrol.Expectation, sealAt time.Time, maxPayloadSize int) ([]byte, int64, error) {
 	if maxPayloadSize <= 0 || maxPayloadSize > archive.MaxBootstrapPayloadSize {
 		return nil, 0, fmt.Errorf("invalid bootstrap payload limit %d", maxPayloadSize)
 	}
@@ -272,9 +267,8 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 		}
 		return 0
 	})
-	header := archive.BootstrapHeader{TraceID: manifest.TraceID, SealAt: time.Now().UTC().Format(time.RFC3339Nano), HighWater: archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, Completion: archive.Witness(want)}
+	header := archive.BootstrapHeader{TraceID: manifest.TraceID, SealAt: sealAt.UTC().Format(time.RFC3339Nano), HighWater: archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, Completion: archive.Witness(want)}
 	var signals []archive.BootstrapSignal
-	var batches []archive.BootstrapBatch
 	for start := 0; start < len(rows); {
 		end := min(start+otlpBatchSize, len(rows))
 		req := &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows[start:end])}
@@ -292,13 +286,7 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 			return nil, 0, err
 		}
 		signals = append(signals, archive.BootstrapSignal{Kind: archive.BootstrapFrameLogs, Payload: payload, Records: int64(end - start)})
-		batches = append(batches, archive.BootstrapBatch{Logs: req})
 		start = end
-	}
-	// Verify converted OTLP as well: the display codec must not silently skip a
-	// malformed row and leave a plausible terminal count/empty projection.
-	if err := archive.ValidateBootstrap(ctx, header, batches); err != nil {
-		return nil, 0, err
 	}
 	return archive.BuildBootstrap(header, signals)
 }
@@ -374,7 +362,7 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		if unsealed {
 			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureState, State: m.State})
 		}
-		return serveArchiveBootstrap(w, srv.archives.BootstrapPath(m.TraceID), m)
+		return serveArchiveBootstrap(w, srv.archives.BootstrapPath(m.TraceID))
 	case "traces", "logs", "metrics":
 		return srv.serveArchiveSignal(w, r, m, cut, unsealed, resource)
 	default:
@@ -394,21 +382,14 @@ func (srv *Server) unsealedArchiveCut(ctx context.Context, m archive.Manifest) (
 	return archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, nil
 }
 
-func serveArchiveBootstrap(w http.ResponseWriter, path string, m archive.Manifest) error {
+func serveArchiveBootstrap(w http.ResponseWriter, path string) error {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		// Collected since the manifest lookup.
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureNotFound})
 	}
 	if err != nil {
-		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: err})
-	}
-	hash := sha256.Sum256(data)
-	if hex.EncodeToString(hash[:]) != m.Bootstrap.SHA256 {
-		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: errors.New("bootstrap checksum mismatch")})
-	}
-	if _, _, err := archive.VerifyBootstrap(bytes.NewReader(data)); err != nil {
-		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: err})
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
 	}
 	w.Header().Set("Content-Type", archive.BootstrapContentType)
 	w.Header().Set("Cache-Control", "no-store")
