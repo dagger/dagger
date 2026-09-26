@@ -26,10 +26,6 @@ func TestShellNestingCallView(t *testing.T) {
 		{name: "deprecated setter argument ignored", settings: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Opt(dagql.Boolean(false))}}, wantShell: true, wantExecution: true},
 		{name: "deprecated execution argument ignored", overrides: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Opt(dagql.Boolean(false))}}, wantShell: true, wantExecution: true},
 		{name: "old setter shares configuration", setter: "withDefaultTerminalCmd", settings: []dagql.NamedInput{{Name: "disableDaggerInDagger", Value: dagql.Boolean(true)}}},
-		{name: "legacy default", view: "v1.0.0-beta.14"},
-		{name: "legacy opt-in", view: "v1.0.0-beta.14", settings: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Opt(dagql.Boolean(true))}}, wantShell: true, wantExecution: true},
-		{name: "legacy explicit false disables", view: "v1.0.0-beta.14", settings: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Opt(dagql.Boolean(true))}}, overrides: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Opt(dagql.Boolean(false))}}, wantShell: true},
-		{name: "legacy override enables", view: "v1.0.0-beta.14", overrides: []dagql.NamedInput{{Name: "experimentalPrivilegedNesting", Value: dagql.Opt(dagql.Boolean(true))}}, wantExecution: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// A legacy server makes missing child-call views visible: internal
@@ -69,7 +65,7 @@ func TestShellNestingCallView(t *testing.T) {
 }
 
 func TestShellSchemaVersions(t *testing.T) {
-	for _, version := range []string{"v0.21.0", "v1.0.0-beta.14", "v1.0.0-beta.15"} {
+	for _, version := range []string{"v0.21.0", "v1.0.0-beta.15"} {
 		t.Run(version, func(t *testing.T) {
 			_, dag := newNestingTestServer(t, call.View(version))
 			data, err := getSchemaJSON(nil, nil, dag.View, dag)
@@ -89,13 +85,8 @@ func TestShellSchemaVersions(t *testing.T) {
 				if name == "shell" {
 					continue
 				}
-				legacy := schemaArgument(t, field, "experimentalPrivilegedNesting")
-				require.Equal(t, version == "v1.0.0-beta.15", legacy.IsDeprecated)
-				if version == "v1.0.0-beta.14" {
-					for _, arg := range field.Args {
-						require.NotEqual(t, "disableDaggerInDagger", arg.Name)
-					}
-				} else if name == "withRun" {
+				require.True(t, schemaArgument(t, field, "experimentalPrivilegedNesting").IsDeprecated)
+				if name == "withRun" {
 					// Absence inherits the configured shell setting, unlike false.
 					require.Nil(t, schemaArgument(t, field, "disableDaggerInDagger").DefaultValue)
 				}

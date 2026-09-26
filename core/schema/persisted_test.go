@@ -107,6 +107,8 @@ var persistedSchemaExpectedWithoutCodec = []string{
 	"ArtifactResult(*core.ArtifactResult encode=false decode=false family=false)",
 	// Check constructors and projected functions explicitly disable persistence.
 	"Check(*core.Check encode=false decode=false family=false)",
+	// Container.shell is not persistable; it describes a command without running it.
+	"Command(core.Command encode=false decode=false family=false)",
 	// Engine inspection values are hidden from module SDKs
 	// (core.TypesHiddenFromModuleSDKs), so no module-return route exists;
 	// they remain a reachability question, not a permanent exclusion.
@@ -114,6 +116,9 @@ var persistedSchemaExpectedWithoutCodec = []string{
 	"EngineCache(*core.EngineCache encode=false decode=false family=false)",
 	"EngineCacheEntry(*core.EngineCacheEntry encode=false decode=false family=false)",
 	"EngineCacheEntrySet(*core.EngineCacheEntrySet encode=false decode=false family=false)",
+	// Generators, like checks, wrap an unevaluated artifact function and
+	// are never returned from a persistable field.
+	"Generator(*core.Generator encode=false decode=false family=false)",
 	// These conversation values have no persisted representation.
 	"GitPushResult(*core.GitPushResult encode=false decode=false family=false)",
 	"LLM(*core.LLM encode=false decode=false family=false)",
