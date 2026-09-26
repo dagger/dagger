@@ -87,12 +87,6 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 		return inst, err
 	}
 
-	return captureWorkspaceCommit(ctx, srv, frozen, args)
-}
-
-// captureWorkspaceCommit merges and captures both the selected delta and pending
-// remainder against an already approved immutable receiver.
-func captureWorkspaceCommit(ctx context.Context, srv *dagql.Server, frozen dagql.ObjectResult[*core.Workspace], args workspaceWithCommitArgs) (inst dagql.ObjectResult[*core.Workspace], err error) {
 	var changes dagql.ObjectResult[*core.Changeset]
 	if err := srv.Select(ctx, frozen, &changes,
 		dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"},
@@ -105,20 +99,10 @@ func captureWorkspaceCommit(ctx context.Context, srv *dagql.Server, frozen dagql
 	}
 	// An empty uncommitted changeset may have an empty After tree. Apply the
 	// delta to HEAD to recover the complete source tree, excluding mounts.
-	var head dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, frozen, &head,
-		dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"},
-	); err != nil {
-		return inst, err
-	}
-	var headTree dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, head, &headTree,
-		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}},
-	); err != nil {
-		return inst, err
-	}
 	var workingTree dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, headTree, &workingTree,
+	if err := srv.Select(ctx, frozen, &workingTree,
+		dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"},
+		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}},
 		dagql.Selector{Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}}},
 	); err != nil {
 		return inst, err
@@ -149,48 +133,7 @@ func captureWorkspaceCommit(ctx context.Context, srv *dagql.Server, frozen dagql
 	}}); err != nil {
 		return inst, fmt.Errorf("apply commit changes to working tree: %w", err)
 	}
-	// The caller's changes may originate from the live checkout even though
-	// the receiver is now frozen. Preserve the three-way merge semantics, but
-	// capture its resolved delta against frozen HEAD before recording a commit
-	// recipe. Retaining args.Changes would retain both live directory inputs.
-	var headChanges, selected dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, headTree, &headChanges, dagql.Selector{
-		Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
-	}); err != nil {
-		return inst, err
-	}
-	if err := srv.Select(ctx, headChanges, &selected, dagql.Selector{Field: "withChangeset", Args: []dagql.NamedInput{
-		{Name: "changes", Value: args.Changes}, {Name: "onConflict", Value: core.FailOnMergeConflict},
-	}}); err != nil {
-		return inst, fmt.Errorf("apply commit changes: %w", err)
-	}
-	headTreeID, err := headTree.ID()
-	if err != nil {
-		return inst, err
-	}
-	var selectedDelta dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, selected.Self().After, &selectedDelta, dagql.Selector{
-		Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](headTreeID)}},
-	}); err != nil {
-		return inst, err
-	}
-	var pristine dagql.ObjectResult[*core.Workspace]
-	if err := srv.Select(ctx, head, &pristine, dagql.Selector{Field: "asWorkspace"}); err != nil {
-		return inst, err
-	}
-	selectedWorkspace, err := checkpointOverlay(ctx, srv, pristine, selectedDelta)
-	if err != nil {
-		return inst, fmt.Errorf("capture commit changes: %w", err)
-	}
-	var capturedChanges dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, selectedWorkspace, &capturedChanges, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
-		return inst, err
-	}
-	capturedChangesID, err := capturedChanges.ID()
-	if err != nil {
-		return inst, err
-	}
-	commitArgs := gitRefWithCommitArgs{Changes: dagql.NewID[*core.Changeset](capturedChangesID), Message: opts.Message, Date: opts.Date, AuthorName: opts.AuthorName, AuthorEmail: opts.AuthorEmail, Signoff: opts.Signoff}
+	commitArgs := gitRefWithCommitArgs{Changes: args.Changes, Message: opts.Message, Date: opts.Date, AuthorName: opts.AuthorName, AuthorEmail: opts.AuthorEmail, Signoff: opts.Signoff}
 	var committed dagql.ObjectResult[*core.GitRef]
 	if err := srv.Select(ctx, frozen, &committed, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}, dagql.Selector{Field: "withCommit", Args: commitArgs.selectors()}); err != nil {
 		return inst, err
@@ -221,11 +164,14 @@ func captureWorkspaceCommit(ctx context.Context, srv *dagql.Server, frozen dagql
 	}); err != nil {
 		return inst, err
 	}
-	// merged still references the caller's original delta. Capture the pending
-	// remainder too, including when it is empty, instead of retaining that live
-	// dependency through withChanges.
-	overlaid, err := checkpointOverlay(ctx, srv, inst, remaining)
+	remainingID, err := remaining.ID()
 	if err != nil {
+		return inst, err
+	}
+	var overlaid dagql.ObjectResult[*core.Workspace]
+	if err := srv.Select(ctx, inst, &overlaid, dagql.Selector{
+		Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](remainingID)}},
+	}); err != nil {
 		return inst, err
 	}
 	return checkpointWorkspaceMetadataComposition(ctx, srv, overlaid, frozen.Self(), frozen.Self().SelectedEnv())

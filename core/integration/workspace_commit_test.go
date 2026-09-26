@@ -449,34 +449,6 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFilteredDirectoryDeletion(ctx conte
 	require.False(t, exists)
 }
 
-func (WorkspaceSuite) TestWorkspaceWithCommitRestoresWithoutClient(ctx context.Context, t *testctx.T) {
-	c, sink := connectWithTrace(ctx, t)
-	base := checkpointCheckoutBase(ctx, t, c)
-	recipe, err := sink.captureShellRecipe(ctx, t, base, `llm | with-workspace --workspace $(current-workspace | with-commit --changes $(current-workspace | git | uncommitted) --message "frozen commit" --date "2026-09-05T12:00:00Z")`)
-	require.NoError(t, err)
-	// The CLI's owning client and checkout are gone. Restore the recipe from
-	// the outer client, then create another commit using a new client identity.
-	restored := dagger.Ref[*dagger.LLM](c, dagger.ID(strings.TrimSpace(recipe))).Workspace()
-	message, err := restored.Git().Head().TargetCommit().Message(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "frozen commit", strings.TrimSpace(message))
-	contents, err := restored.File("tracked.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "base\ndirty\n", contents)
-	log, err := restored.Git().Head().Log(ctx)
-	require.NoError(t, err)
-	require.Len(t, log, 3)
-	checkout, git := workspaceExportCheckout(ctx, t)
-	git("config", "user.name", "Restoring Author")
-	git("config", "user.email", "restoring@example.com")
-	restoring := connect(ctx, t, dagger.WithWorkdir(checkout))
-	restored = dagger.Ref[*dagger.LLM](restoring, dagger.ID(strings.TrimSpace(recipe))).Workspace()
-	next, err := commitWorkspace(ctx, restoring, restored.WithNewFile("next.txt", "next"), "next commit", nil)
-	require.NoError(t, err)
-	require.Equal(t, "Restoring Author", next.Git.Head.TargetCommit.AuthorName)
-	require.Equal(t, "restoring@example.com", next.Git.Head.TargetCommit.AuthorEmail)
-}
-
 func (WorkspaceSuite) TestWorkspaceWithCommitFileKindsAndMetadata(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().
