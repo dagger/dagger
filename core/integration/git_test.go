@@ -946,7 +946,11 @@ sleep infinity
 			require.NotEmpty(t, id)
 			// A failed client-side remote probe silently falls back to copying
 			// local Git data; that must not mask missing reconstruction auth.
-			require.NotContains(t, workspaceRecipeFields(ctx, t, c, sink, id), "__gitDir")
+			// The query's id is an engine-local handle, so read the recipe off
+			// the trace instead.
+			recipe, err := sink.captureShellRecipe(ctx, t, client, `llm | with-workspace --workspace $(current-workspace | snapshot)`)
+			require.NoError(t, err)
+			require.NotContains(t, workspaceRecipeFields(t, recipe), "__gitDir")
 			require.JSONEq(t, fmt.Sprintf(`{
 				"currentWorkspace": {
 					"snapshot": {

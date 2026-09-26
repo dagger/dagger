@@ -479,8 +479,9 @@ type Runner {
 			}))
 			ws := source.AsWorkspace()
 			base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
-			result := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
-				WithPrompt("run the command").Loop()
+			composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
+			require.NoError(t, err)
+			result := composed.WithPrompt("run the command").Loop()
 			transcript, err := result.Transcript(ctx)
 			require.NoError(t, err)
 			require.Contains(t, transcript, "done")
