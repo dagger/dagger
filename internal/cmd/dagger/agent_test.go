@@ -110,7 +110,7 @@ func (DaggerCMDSuite) TestTraceRestoreRuntimeQueries(ctx context.Context, t *tes
 	require.Equal(t, "original failure", workerError)
 }
 
-func TestSnapshotWorkspaceRequiresCapture(t *testing.T) {
+func TestSnapshotWorkspaceFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		captureErr string
@@ -169,19 +169,19 @@ func TestSnapshotWorkspaceRequiresCapture(t *testing.T) {
 				require.Empty(t, warnings.String())
 				return
 			}
-			if tc.captureErr != "" {
-				require.ErrorContains(t, err, tc.captureErr)
-				require.ErrorContains(t, err, "capture workspace for agent")
-				require.Nil(t, ws)
-				require.Zero(t, liveReads)
-				return
-			}
 			require.NoError(t, err)
 			id, err := ws.ID(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "captured-workspace", string(id))
-			require.Zero(t, liveReads)
-			require.Empty(t, warnings.String())
+			require.Equal(t, wantWorkspace, string(id))
+			if tc.captureErr != "" {
+				require.Equal(t, 1, liveReads)
+				require.Contains(t, warnings.String(), "level=WARN")
+				require.Contains(t, warnings.String(), tc.captureErr)
+				require.Contains(t, warnings.String(), "continuing with the live workspace")
+			} else {
+				require.Zero(t, liveReads)
+				require.Empty(t, warnings.String())
+			}
 		})
 	}
 }
