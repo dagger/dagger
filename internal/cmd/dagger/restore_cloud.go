@@ -250,8 +250,12 @@ func observedRestorePlan(fe archiveFrontend, req traceRestore, calls map[string]
 		if a.Namespace != ns {
 			continue
 		}
-		if err := a.Validate(); err != nil {
-			return plan, nil, err
+		// An invalid record is carried as unrestorable (RestoreEntryFromControl
+		// validates it), so the restore skips exactly that agent with a
+		// warning. Only one with no handle cannot be named or ordered.
+		if a.Handle == "" {
+			slog.Warn("agent not restored", "agent", a.Name, "reason", a.Validate())
+			continue
 		}
 		plan.plan = append(plan.plan, dagui.RestoreEntryFromControl(a))
 	}

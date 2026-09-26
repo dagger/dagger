@@ -157,7 +157,7 @@ func TestCloudRestoreSourceDecisions(t *testing.T) {
 }
 
 func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
-	for _, kind := range []string{"missing trace", "fetch failure", "corrupt payload", "missing payload", "missing parent", "missing subscriber", "equivocation"} {
+	for _, kind := range []string{"missing trace", "fetch failure", "corrupt payload", "missing payload", "equivocation"} {
 		t.Run(kind, func(t *testing.T) {
 			chief, worker, edge, records := cloudControlFixture(t)
 			req := restoreRequest()
@@ -166,10 +166,6 @@ func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
 				records[0].SetBody(log.BytesValue([]byte{0xff}))
 			case "missing payload":
 				records = nil
-			case "missing parent":
-				worker.Parent = "absent"
-			case "missing subscriber":
-				edge.Subscriber = "absent"
 			}
 			records = append(records, chief.Record(), worker.Record(), edge.Record())
 			switch kind {
@@ -242,6 +238,86 @@ func TestCloudRestoreSkipsCaptureFailure(t *testing.T) {
 	require.Equal(t, []string{"rehydrate:chief", "adopt:chief", "focus:chief"}, target.calls)
 	require.Contains(t, warnings.String(), "worker (worker)")
 	require.Contains(t, warnings.String(), "no committed conversation")
+}
+
+// TestCloudRestoreToleratesIncompleteRoster: a Cloud download cannot prove its
+// roster is complete, so a parent or subscriber whose records never arrived
+// costs only what depended on it. The worker is restored top-level, and the
+// edge to the absent subscriber is dropped.
+func TestCloudRestoreToleratesIncompleteRoster(t *testing.T) {
+	for _, kind := range []string{"missing parent", "missing subscriber"} {
+		t.Run(kind, func(t *testing.T) {
+			warnings := captureRestoreWarnings(t)
+			chief, worker, edge, records := cloudControlFixture(t)
+			switch kind {
+			case "missing parent":
+				worker.Parent = "absent"
+			case "missing subscriber":
+				edge.Subscriber = "absent"
+			}
+			records = append(records, chief.Record(), worker.Record(), edge.Record())
+			req := restoreRequest()
+			req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
+			req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
+				return sink.ImportLogs(ctx, controlLogs(records...))
+			})
+			target := &parentRecordingTarget{fakeRestoreTarget: newFakeRestoreTarget(), parents: map[string]string{}}
+			cleanup, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, target, req)
+			require.NoError(t, err)
+			cleanup()
+			require.Contains(t, target.calls, "rehydrate:chief")
+			require.Contains(t, target.calls, "rehydrate:worker")
+			switch kind {
+			case "missing parent":
+				require.Equal(t, "", target.parents["worker"])
+				require.Contains(t, warnings.String(), "restoring agent without its parent")
+				require.Contains(t, warnings.String(), "parent=absent")
+			case "missing subscriber":
+				require.Equal(t, "chief", target.parents["worker"])
+				require.NotContains(t, strings.Join(target.calls, "\n"), "subscribe:")
+				require.Contains(t, warnings.String(), "dropped subscription to an agent that was not restored")
+				require.Contains(t, warnings.String(), "subscriber=absent")
+			}
+		})
+	}
+}
+
+// invalidAgentFrontend reports one extra control record that fails
+// validation, as a producer bug or future record shape might.
+type invalidAgentFrontend struct {
+	cloudTestFrontend
+	extra agentcontrol.Agent
+}
+
+func (f invalidAgentFrontend) AgentControl() ([]agentcontrol.Agent, []agentcontrol.Subscription, error) {
+	agents, edges, err := f.cloudTestFrontend.AgentControl()
+	return append(agents, f.extra), edges, err
+}
+
+// TestCloudRestoreSkipsInvalidAgentRecord: one agent whose record fails
+// validation is skipped with a warning; the rest of the trace restores.
+func TestCloudRestoreSkipsInvalidAgentRecord(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	chief, worker, edge, records := cloudControlFixture(t)
+	ghost := worker
+	ghost.Handle, ghost.Name, ghost.State = "ghost", "ghost", "BOGUS"
+	records = append(records, chief.Record(), worker.Record(), edge.Record())
+	req := restoreRequest()
+	req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
+	req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
+		return sink.ImportLogs(ctx, controlLogs(records...))
+	})
+	target := newFakeRestoreTarget()
+	fe := invalidAgentFrontend{cloudTestFrontend: cloudTestFrontend{newRestoreTestFrontend()}, extra: ghost}
+	cleanup, err := restoreTraceSources(t.Context(), fe, target, req)
+	require.NoError(t, err)
+	cleanup()
+	require.Contains(t, target.calls, "rehydrate:chief")
+	require.Contains(t, target.calls, "rehydrate:worker")
+	require.NotContains(t, target.calls, "rehydrate:ghost")
+	require.Equal(t, "chief", target.focused)
+	require.Contains(t, warnings.String(), "ghost (ghost)")
+	require.Contains(t, warnings.String(), `unknown agent state \"BOGUS\"`)
 }
 
 // TestUnsealedArchiveRestoresLatestRecordedState: a local archive whose engine
