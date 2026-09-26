@@ -58,7 +58,7 @@ func TestCanonicalDormantRosterAndHistoryIsolation(t *testing.T) {
 
 func TestCanonicalCaptureFailuresStayOutOfOutput(t *testing.T) {
 	db := NewDB()
-	a := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "runtime"}, Handle: "local"}, Name: "local", CaptureError: "agent capture depends on originating client via Host.__gitDir"}
+	a := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "runtime"}, Handle: "local"}, Name: "local", CaptureError: "no committed conversation"}
 	for revision := int64(1); revision <= 20; revision++ {
 		a.Revision = revision
 		a.State = "IDLE"
@@ -75,7 +75,7 @@ func TestCanonicalCaptureFailuresStayOutOfOutput(t *testing.T) {
 	_, _, err := db.AgentControl()
 	require.NoError(t, err, "an unavailable capture is valid telemetry")
 	_, err = a.RestoreState()
-	require.ErrorContains(t, err, "Host.__gitDir", "an explicit restore still explains why it cannot proceed")
+	require.ErrorContains(t, err, "no committed conversation", "an explicit restore still explains why it cannot proceed")
 }
 
 func TestCanonicalMalformedRecords(t *testing.T) {
