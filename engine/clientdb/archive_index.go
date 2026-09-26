@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -80,17 +81,33 @@ type archiveLookup struct {
 	agents   map[agentcontrol.Key]int64
 	edges    map[agentcontrol.EdgeKey]int64
 	calls    map[string]map[string]int64 // trace -> digest -> first row
+	titles   map[string]archiveTitle     // trace -> latest session title
 	failures map[string]error
 }
 
+// archiveTitle is the latest span-name record seen for a trace. The session
+// title is published that way (see telemetryattrs.LogRoleSpanName), and a
+// reset or branch republishes it, so the highest row wins.
+type archiveTitle struct {
+	row   int64
+	title string
+}
+
+// maxIndexedTitleBytes bounds the memory one trace's title can hold. Archive
+// titles are sanitized and cut much shorter when they reach a manifest.
+const maxIndexedTitleBytes = 4 << 10
+
 func newArchiveLookup() *archiveLookup {
-	return &archiveLookup{agents: map[agentcontrol.Key]int64{}, edges: map[agentcontrol.EdgeKey]int64{}, calls: map[string]map[string]int64{}, failures: map[string]error{}}
+	return &archiveLookup{agents: map[agentcontrol.Key]int64{}, edges: map[agentcontrol.EdgeKey]int64{}, calls: map[string]map[string]int64{}, titles: map[string]archiveTitle{}, failures: map[string]error{}}
 }
 func (idx *archiveLookup) add(row Log) { idx.addAll([]Log{row}) }
 func (idx *archiveLookup) addAll(rows []Log) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	for _, row := range rows {
+		if bytes.Contains(row.Attributes, []byte(telemetryattrs.LogRoleAttr)) {
+			idx.addTitle(row)
+		}
 		if !bytes.Contains(row.Attributes, []byte(agentcontrol.VersionAttr)) && !bytes.Contains(row.Attributes, []byte(telemetryattrs.CallPayloadContentType)) {
 			continue
 		}
@@ -151,6 +168,49 @@ func (idx *archiveLookup) addAll(rows []Log) {
 			calls[call.Digest] = row.ID
 		}
 	}
+}
+
+// addTitle indexes a span-name record. Titles are advisory: a malformed record
+// is ignored rather than recorded as a restore-critical failure.
+func (idx *archiveLookup) addTitle(row Log) {
+	if !row.TraceID.Valid || row.TraceID.String == "" {
+		return
+	}
+	if cur, ok := idx.titles[row.TraceID.String]; ok && cur.row > row.ID {
+		return
+	}
+	rec, err := DecodeLogRecord(row)
+	if err != nil {
+		return
+	}
+	spanName := false
+	rec.WalkAttributes(func(a log.KeyValue) bool {
+		if a.Key != telemetryattrs.LogRoleAttr {
+			return true
+		}
+		spanName = a.Value.Kind() == log.KindString && a.Value.AsString() == telemetryattrs.LogRoleSpanName
+		return false
+	})
+	if !spanName || rec.Body().Kind() != log.KindString {
+		return
+	}
+	title := rec.Body().AsString()
+	if strings.TrimSpace(title) == "" {
+		return
+	}
+	if len(title) > maxIndexedTitleBytes {
+		title = strings.Clone(title[:maxIndexedTitleBytes])
+	}
+	idx.titles[row.TraceID.String] = archiveTitle{row: row.ID, title: title}
+}
+
+// Title returns the latest session title recorded for a trace, unsanitized,
+// or "" when none was recorded. Only records attributed to traceID count.
+func (s *DB) Title(traceID string) string {
+	idx := s.archiveIdx
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.titles[traceID].title
 }
 
 // ControlRows selects only final received projections. Verification compares

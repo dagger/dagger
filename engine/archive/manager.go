@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/trace"
 )
@@ -387,6 +389,9 @@ type FinalizeInput struct {
 	StoreSizeBytes   int64
 	BootstrapBytes   []byte
 	BootstrapRecords int64
+	// Title is the latest session title recorded in the trace at the cut. It
+	// is sanitized like SetTitle; an empty title keeps the current one.
+	Title string
 }
 
 func (m *Manager) Finalize(traceID, generation string, in FinalizeInput) (Manifest, error) {
@@ -423,6 +428,9 @@ func (m *Manager) Finalize(traceID, generation string, in FinalizeInput) (Manife
 	ent.manifest.SealAt = &sealAt
 	ent.manifest.HighWater = in.HighWater
 	ent.manifest.Bootstrap = Bootstrap{File: sidecar, Records: records, SHA256: hex.EncodeToString(digest[:])}
+	if title := SanitizeTitle(in.Title); title != "" {
+		ent.manifest.Title = title
+	}
 	baseSize := in.StoreSizeBytes + int64(len(in.BootstrapBytes))
 	ent.manifest.SizeBytes = baseSize
 	for range 2 {
@@ -456,12 +464,20 @@ func (m *Manager) MarkIncomplete(traceID, generation string, cause error) error 
 	return m.writeManifest(ent.manifest)
 }
 
-func (m *Manager) UpdateTitle(traceID, generation, title string) error {
+// SetTitle records the latest session title the engine derived from an active
+// archive's trace. It is persisted immediately, so an archive recovered after
+// an engine crash keeps it. The title is sanitized first; an unchanged or
+// empty title writes nothing.
+func (m *Manager) SetTitle(traceID, generation, title string) error {
+	title = SanitizeTitle(title)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ent, err := m.mutable(traceID, generation, StateActive)
 	if err != nil {
 		return err
+	}
+	if title == "" || title == ent.manifest.Title {
+		return nil
 	}
 	next := ent.manifest
 	next.Title = title
@@ -470,6 +486,44 @@ func (m *Manager) UpdateTitle(traceID, generation, title string) error {
 	}
 	ent.manifest = next
 	return nil
+}
+
+// MaxTitleRunes bounds an archive title. Titles come from trace records any
+// session producer can emit, and listings print them to a terminal.
+const MaxTitleRunes = 120
+
+// SanitizeTitle reduces a trace-derived title to one bounded, printable line:
+// control and format characters (including bidi overrides) are dropped or
+// turned into spaces, whitespace runs collapse, and long titles are cut with an
+// ellipsis.
+func SanitizeTitle(title string) string {
+	// Bound the work before normalizing; the rune cut below is authoritative.
+	truncated := false
+	if limit := MaxTitleRunes * utf8.UTFMax; len(title) > limit {
+		title, truncated = title[:limit], true
+	}
+	title = strings.ToValidUTF8(title, "")
+	title = strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsSpace(r), unicode.IsControl(r):
+			return ' '
+		case unicode.Is(unicode.Cf, r):
+			return -1
+		}
+		return r
+	}, title)
+	title = strings.Join(strings.Fields(title), " ")
+	runes := []rune(title)
+	if len(runes) > MaxTitleRunes {
+		truncated = true
+	}
+	if !truncated || title == "" {
+		return title
+	}
+	if len(runes) > MaxTitleRunes-1 {
+		runes = runes[:MaxTitleRunes-1]
+	}
+	return strings.TrimSpace(string(runes)) + "…"
 }
 
 func (m *Manager) Discard(traceID, generation string) error {

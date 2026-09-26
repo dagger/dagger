@@ -25,7 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestClientListAllAndUpdateMetadata(t *testing.T) {
+func TestClientListAll(t *testing.T) {
 	trace1 := strings.Repeat("1", 32)
 	excluded := strings.Repeat("2", 32)
 	trace3 := strings.Repeat("3", 32)
@@ -34,7 +34,6 @@ func TestClientListAllAndUpdateMetadata(t *testing.T) {
 		trace1:   {Archives: []Manifest{{TraceID: excluded}}, Next: excluded},
 		excluded: {Archives: []Manifest{{TraceID: trace3}}},
 	}
-	var metadata MetadataUpdate
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == archivePath:
@@ -43,11 +42,6 @@ func TestClientListAllAndUpdateMetadata(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(pages[r.URL.Query().Get("after")])
-		case r.Method == http.MethodPost && r.URL.Path == archiveResourcePath(trace3, "metadata"):
-			if err := json.NewDecoder(r.Body).Decode(&metadata); err != nil {
-				t.Errorf("decode metadata: %v", err)
-			}
-			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
 		}
@@ -64,12 +58,6 @@ func TestClientListAllAndUpdateMetadata(t *testing.T) {
 	}
 	if got := []string{manifests[0].TraceID, manifests[1].TraceID}; !slices.Equal(got, []string{trace1, trace3}) {
 		t.Fatalf("listed traces = %v", got)
-	}
-	if err := client.UpdateMetadata(context.Background(), trace3, MetadataUpdate{Title: "continued work"}); err != nil {
-		t.Fatal(err)
-	}
-	if metadata.Title != "continued work" {
-		t.Fatalf("metadata title = %q", metadata.Title)
 	}
 }
 
@@ -96,7 +84,7 @@ func TestClientTypedErrors(t *testing.T) {
 			}))
 			defer server.Close()
 			client := testArchiveClient(t, server)
-			err := client.UpdateMetadata(context.Background(), strings.Repeat("1", 32), MetadataUpdate{})
+			_, err := client.List(context.Background(), ListOptions{})
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}

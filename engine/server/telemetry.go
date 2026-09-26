@@ -333,7 +333,9 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 
 	byTarget := map[string][]sdklog.Record{}
 	payloadsByTarget := map[string][]string{}
+	titled := false
 	for _, r := range routed {
+		titled = titled || isSpanNameRecord(r.rec)
 		route := r.route
 		if r.digest != "" {
 			// Taking is also the in-batch dedupe: a second copy of the same
@@ -361,7 +363,27 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			return nil
 		})
 	}
-	return eg.Wait()
+	err := eg.Wait()
+	if titled {
+		// Even after a partial failure: the title may have reached the main
+		// client's store, and syncing is idempotent.
+		exp.sess.syncArchiveTitle(ctx)
+	}
+	return err
+}
+
+// isSpanNameRecord reports whether a record renames its span, which is how a
+// session publishes its title (telemetryattrs.LogRoleSpanName).
+func isSpanNameRecord(rec sdklog.Record) bool {
+	found := false
+	rec.WalkAttributes(func(kv log.KeyValue) bool {
+		if kv.Key != telemetryattrs.LogRoleAttr {
+			return true
+		}
+		found = kv.Value.Kind() == log.KindString && kv.Value.AsString() == telemetryattrs.LogRoleSpanName
+		return false
+	})
+	return found
 }
 func (sessionLogExporter) ForceFlush(context.Context) error { return nil }
 func (sessionLogExporter) Shutdown(context.Context) error   { return nil }

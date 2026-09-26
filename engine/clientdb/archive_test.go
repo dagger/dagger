@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	logapi "go.opentelemetry.io/otel/log"
@@ -84,4 +85,57 @@ func TestArchiveIndexRevisionAndReopening(t *testing.T) {
 	want.Agents[a.Key] = 10
 	_, err = db.ControlRows(t.Context(), traceID, cut.Logs, want)
 	require.Error(t, err, "latest received state is not evidence of producer completeness")
+}
+
+func TestArchiveIndexTracksLatestTitlePerTrace(t *testing.T) {
+	const traceID = "01000000000000000000000000000000"
+	const otherTrace = "02000000000000000000000000000000"
+	root := t.TempDir()
+	db, err := openStore(t.Context(), root, "client", telemetryTailBudget)
+	require.NoError(t, err)
+	row := func(trace string, body logapi.Value, attrs ...logapi.KeyValue) Log {
+		var pbAttrs []*commonpb.KeyValue
+		for _, kv := range attrs {
+			pbAttrs = append(pbAttrs, &commonpb.KeyValue{Key: kv.Key, Value: telemetry.LogValueToPB(kv.Value)})
+		}
+		encoded, err := MarshalProtoJSONs(pbAttrs)
+		require.NoError(t, err)
+		data, err := proto.Marshal(telemetry.LogValueToPB(body))
+		require.NoError(t, err)
+		return Log{TraceID: sql.NullString{String: trace, Valid: true}, Attributes: encoded, Body: data}
+	}
+	spanName := logapi.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName)
+	require.Empty(t, db.Title(traceID))
+	_, err = db.AppendLogs([]Log{
+		row(traceID, logapi.StringValue("first title"), spanName),
+		row(traceID, logapi.StringValue("ordinary output")),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "first title", db.Title(traceID))
+	_, err = db.AppendLogs([]Log{
+		// Another trace's title never becomes this trace's title.
+		row(otherTrace, logapi.StringValue("foreign title"), spanName),
+		// Other roles, non-string bodies and blank titles are ignored.
+		row(traceID, logapi.StringValue("not a title"), logapi.String(telemetryattrs.LogRoleAttr, "other")),
+		row(traceID, logapi.IntValue(3), spanName),
+		row(traceID, logapi.StringValue("  "), spanName),
+		{TraceID: sql.NullString{String: traceID, Valid: true}, Attributes: []byte(telemetryattrs.LogRoleAttr + " malformed"), Body: []byte("x")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "first title", db.Title(traceID))
+	require.Equal(t, "foreign title", db.Title(otherTrace))
+	// A regenerated title supersedes the earlier one.
+	_, err = db.AppendLogs([]Log{row(traceID, logapi.StringValue("regenerated"), spanName)})
+	require.NoError(t, err)
+	require.Equal(t, "regenerated", db.Title(traceID))
+	cut, err := db.Checkpoint(t.Context())
+	require.NoError(t, err)
+	_, err = db.ControlRows(t.Context(), traceID, cut.Logs, agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{}})
+	require.NoError(t, err, "a malformed title record is not a restore-critical failure")
+	require.NoError(t, db.Close())
+
+	reopened, err := openStore(t.Context(), root, "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer reopened.Close()
+	require.Equal(t, "regenerated", reopened.Title(traceID), "the title index is rebuilt on reopen")
 }

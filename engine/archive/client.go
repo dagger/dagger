@@ -1,7 +1,6 @@
 package archive
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,8 +29,8 @@ const (
 
 // AgentBootstrapResource names the agent-restore bootstrap within an archive.
 // It is agent-specific: final agent/subscription control records plus the
-// recipe closure of their snapshots. The lease, metadata and OTLP signal
-// streams alongside it are generic telemetry resources.
+// recipe closure of their snapshots. The lease and OTLP signal streams
+// alongside it are generic telemetry resources.
 const AgentBootstrapResource = "agent-bootstrap"
 
 // HTTPDoer is the transport required by the archive client. engine/client's
@@ -272,25 +271,6 @@ func (c *Client) ListAll(ctx context.Context, opts ListOptions) ([]Manifest, err
 		}
 		opts.After = page.Next
 	}
-}
-
-// MetadataUpdate contains the mutable archive metadata supported by the engine.
-type MetadataUpdate struct {
-	Title string `json:"title"`
-}
-
-// UpdateMetadata updates an active archive owned by the connected client.
-func (c *Client) UpdateMetadata(ctx context.Context, traceID string, update MetadataUpdate) error {
-	body, err := json.Marshal(update)
-	if err != nil {
-		return fmt.Errorf("encode archive metadata: %w", err)
-	}
-	resp, err := c.do(ctx, http.MethodPost, archiveResourcePath(traceID, "metadata"), nil, bytes.NewReader(body), "", "", 0)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return expectStatus(resp, http.StatusNoContent)
 }
 
 // BootstrapBatch is one decoded OTLP batch from a bootstrap response. Exactly

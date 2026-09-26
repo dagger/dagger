@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -625,6 +626,87 @@ func TestArchiveHTTPUnsealedStreamsRecordedControl(t *testing.T) {
 	require.ErrorIs(t, err, archive.ErrState)
 	_, err = c.Bootstrap(t.Context(), archiveTestTrace, unsealed.Generation, nil)
 	require.ErrorIs(t, err, archive.ErrState, "an unsealed archive never serves an agent bootstrap")
+}
+
+// TestArchiveTitleFromTrace: the engine derives an archive's title from the
+// latest span-name record in the archive's own trace, persisting it while the
+// archive is active (so listings and crash recovery see it) and at the seal.
+func TestArchiveTitleFromTrace(t *testing.T) {
+	titleRecord := func(title string, traceID trace.TraceID) sdklog.Record {
+		rec := scopedLogRecord(t, "dagger.io/cli", logapi.StringValue(title), logapi.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+		rec.SetTraceID(traceID)
+		rec.AddAttributes(logapi.String(telemetryattrs.TelemetryOriginClientIDAttr, "main"))
+		return rec
+	}
+	listTitles := func(t *testing.T, srv *Server) map[archive.State]string {
+		t.Helper()
+		// List as another session's client, so this session's archive is not
+		// excluded as the caller's own.
+		other := &daggerSession{sessionID: "other", mainClientCallerID: "other", clientRecords: map[string]*clientRecord{}}
+		other.clientRecords["other"] = &clientRecord{daggerSession: other, clientID: "other"}
+		resp := httptest.NewRecorder()
+		require.NoError(t, srv.serveArchiveHTTP(resp, httptest.NewRequest(http.MethodGet, "/v1/telemetry/archives", nil), other.clientRecords["other"]))
+		require.Equal(t, http.StatusOK, resp.Code)
+		var page archive.Page
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&page))
+		titles := map[archive.State]string{}
+		for _, m := range page.Archives {
+			titles[m.State] = m.Title
+		}
+		return titles
+	}
+
+	t.Run("active and sealed", func(t *testing.T) {
+		srv, sess, _, _ := archiveFixture(t)
+		exp := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
+		require.True(t, strings.HasPrefix(listTitles(t, srv)[archive.StateActive], "Agent session "), "untitled archives fall back to their start time")
+
+		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Investigate cache misses", trace.TraceID{1})}))
+		require.Equal(t, "Investigate cache misses", listTitles(t, srv)[archive.StateActive])
+
+		// Another trace's title never renames this archive.
+		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Foreign", trace.TraceID{2})}))
+		require.Equal(t, "Investigate cache misses", listTitles(t, srv)[archive.StateActive])
+
+		// A reset regenerates the title; the latest wins and is sanitized.
+		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Fix\x1b[2J the\nbuild", trace.TraceID{1})}))
+		require.Equal(t, "Fix [2J the build", listTitles(t, srv)[archive.StateActive])
+
+		require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
+		m, err := srv.archives.Manifest(archiveTestTrace)
+		require.NoError(t, err)
+		require.Equal(t, archive.StateClosed, m.State)
+		require.Equal(t, "Fix [2J the build", m.Title)
+	})
+
+	t.Run("recorded before registration", func(t *testing.T) {
+		root := t.TempDir()
+		dbs := clientdb.NewDBs(filepath.Join(root, "stores"))
+		manager, err := archive.NewManager(archive.Config{Root: filepath.Join(root, "archives"), RemoveStore: dbs.Remove})
+		require.NoError(t, err)
+		srv := &Server{clientDBs: dbs, archives: manager}
+		sess := &daggerSession{sessionID: "session", mainClientCallerID: "main", clientRecords: map[string]*clientRecord{}}
+		sess.telemetryPubSub = NewPubSub(srv)
+		sess.clientRecords["main"] = &clientRecord{daggerSession: sess, clientID: "main"}
+		exp := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
+		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Early title", trace.TraceID{1})}))
+		require.NoError(t, sess.ensureArchive(archiveTestTrace))
+		m, err := manager.Manifest(archiveTestTrace)
+		require.NoError(t, err)
+		require.Equal(t, "Early title", m.Title)
+	})
+
+	t.Run("interrupted", func(t *testing.T) {
+		srv, sess, db, _ := archiveFixture(t)
+		exp := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
+		require.NoError(t, exp.Export(t.Context(), []sdklog.Record{titleRecord("Crashed mid-session", trace.TraceID{1})}))
+		require.NoError(t, db.Close())
+		// Restart: the manager reopens the still-active manifest as interrupted.
+		manager, err := archive.NewManager(archive.Config{Root: filepath.Join(filepath.Dir(srv.clientDBs.Root), "archives"), RemoveStore: srv.clientDBs.Remove})
+		require.NoError(t, err)
+		srv.archives = manager
+		require.Equal(t, "Crashed mid-session", listTitles(t, srv)[archive.StateInterrupted])
+	})
 }
 
 // TestArchiveHTTPUnsealedRefusesSealedAndActive: the unsealed lease is only
