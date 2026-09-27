@@ -78,18 +78,15 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 	if err != nil {
 		return nil, err
 	}
+	remotes := MergeGitRemotes([]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}}, parent.Self().Repo.Self().Remotes)
 	if pack != nil {
-		defer func() { rerr = errors.Join(rerr, pack.Close()) }()
-		child, err = query.SnapshotManager().New(ctx, nil,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
-			bkcache.WithDescription("owned approved host commit closure"))
+		// A rejected donation returns no snapshot: fall through to the remote.
+		child, err = query.importApprovedHostCommitBase(ctx, pack, ref.SHA, remotes)
 		if err != nil {
 			return nil, err
 		}
-		err = MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
-			return importHostCommitPack(ctx, dest, pack.BundlePath, ref.SHA, MergeGitRemotes([]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}}, parent.Self().Repo.Self().Remotes))
-		})
-	} else {
+	}
+	if child == nil {
 		// Only explicit history consumers request depth zero. Ordinary commits
 		// own a single-commit source boundary, even if the mirror is already warm.
 		err = ref.mount(ctx, depth, false, func(_ *gitutil.GitCLI) error {
@@ -106,7 +103,7 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 					return err
 				}
 				return MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
-					return packRemoteCommitBaseDepth(ctx, source, dest, ref.SHA, MergeGitRemotes([]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}}, parent.Self().Repo.Self().Remotes), depth)
+					return packRemoteCommitBaseDepth(ctx, source, dest, ref.SHA, remotes, depth)
 				})
 			}, mountRefAsReadOnly)
 		})

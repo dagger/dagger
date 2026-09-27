@@ -10,6 +10,9 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/engineutil"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/stretchr/testify/require"
@@ -67,23 +70,34 @@ func TestCapturedHostHistoryScope(t *testing.T) {
 	require.False(t, ok, "only pinned remote sources may donate")
 }
 
+// hostHistoryTestPack returns a donated pack of the anchor's closure, as
+// PackCommit produces it, or a bad one: "unrelated" adds objects outside the
+// authorized closure and "truncated" is not a valid pack at all.
+func hostHistoryTestPack(t *testing.T, kind string) (source, pack, anchor string) {
+	t.Helper()
+	source, _, anchor = gitMirrorTestSource(t)
+	prefix := filepath.Join(t.TempDir(), "pack")
+	input := anchor + "\n"
+	if kind == "unrelated" {
+		gitMirrorTestRun(t, source, "checkout", "--orphan", "secret")
+		gitMirrorTestRun(t, source, "-c", "user.name=Dagger", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "private")
+		input += gitMirrorTestRun(t, source, "rev-parse", "HEAD") + "\n"
+	}
+	hash, err := runWorkspaceCommitGitInput(t.Context(), source, nil, strings.NewReader(input), "pack-objects", "--revs", prefix)
+	require.NoError(t, err)
+	pack = prefix + "-" + strings.TrimSpace(hash) + ".pack"
+	if kind == "truncated" {
+		require.NoError(t, os.WriteFile(pack, []byte("PACK"), 0600))
+	}
+	return source, pack, anchor
+}
+
+// The importer rejects every invalid pack; the caller turns a rejection into
+// a remote fallback (see TestApprovedHostCommitBaseFallback).
 func TestImportHostCommitPack(t *testing.T) {
 	for _, kind := range []string{"complete", "unrelated", "truncated", "missing", "cancelled"} {
 		t.Run(kind, func(t *testing.T) {
-			source, _, anchor := gitMirrorTestSource(t)
-			prefix := filepath.Join(t.TempDir(), "pack")
-			input := anchor + "\n"
-			if kind == "unrelated" {
-				gitMirrorTestRun(t, source, "checkout", "--orphan", "secret")
-				gitMirrorTestRun(t, source, "-c", "user.name=Dagger", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "private")
-				input += gitMirrorTestRun(t, source, "rev-parse", "HEAD") + "\n"
-			}
-			hash, err := runWorkspaceCommitGitInput(t.Context(), source, nil, strings.NewReader(input), "pack-objects", "--revs", prefix)
-			require.NoError(t, err)
-			pack := prefix + "-" + strings.TrimSpace(hash) + ".pack"
-			if kind == "truncated" {
-				require.NoError(t, os.WriteFile(pack, []byte("PACK"), 0600))
-			}
+			source, pack, anchor := hostHistoryTestPack(t, kind)
 			if kind == "missing" {
 				anchor = strings.Repeat("f", 40)
 			}
@@ -94,7 +108,7 @@ func TestImportHostCommitPack(t *testing.T) {
 				cancel()
 			}
 			dest := t.TempDir()
-			err = importHostCommitPack(ctx, dest, pack, anchor, []GitRemote{{Name: "origin", URL: "https://example.test/repo.git"}})
+			err := importHostCommitPack(ctx, dest, pack, anchor, []GitRemote{{Name: "origin", URL: "https://example.test/repo.git"}})
 			if kind != "complete" {
 				require.Error(t, err)
 				return
@@ -106,6 +120,84 @@ func TestImportHostCommitPack(t *testing.T) {
 			require.Equal(t, anchor, gitMirrorTestRun(t, dest, "rev-parse", "HEAD"))
 			require.Empty(t, gitMirrorTestRun(t, dest, "for-each-ref"))
 			require.NoFileExists(t, filepath.Join(dest, "objects", "info", "alternates"))
+		})
+	}
+}
+
+type hostHistoryObservedManager struct {
+	bkcache.SnapshotManager
+	refs     []*hostHistoryObservedRef
+	afterNew func()
+}
+
+func (m *hostHistoryObservedManager) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
+	ref, err := m.SnapshotManager.New(ctx, parent, opts...)
+	if err != nil {
+		return nil, err
+	}
+	observed := &hostHistoryObservedRef{MutableRef: ref}
+	m.refs = append(m.refs, observed)
+	if m.afterNew != nil {
+		m.afterNew()
+	}
+	return observed, nil
+}
+
+type hostHistoryObservedRef struct {
+	bkcache.MutableRef
+	releases, commits int
+}
+
+func (r *hostHistoryObservedRef) Release(ctx context.Context) error {
+	r.releases++
+	return r.MutableRef.Release(ctx)
+}
+
+func (r *hostHistoryObservedRef) Commit(ctx context.Context) (bkcache.ImmutableRef, error) {
+	r.commits++
+	return r.MutableRef.Commit(ctx)
+}
+
+// A donation the engine rejects falls back to the remote: no snapshot is
+// returned, the partial import is released uncommitted, and the donated pack
+// is removed. Only the caller's own cancellation is still an error.
+func TestApprovedHostCommitBaseFallback(t *testing.T) {
+	for _, kind := range []string{"complete", "unrelated", "truncated", "cancelled"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx, _, _, _, server := executionFixture(t)
+			observed := &hostHistoryObservedManager{SnapshotManager: server.cacheManager}
+			server.cacheManager = observed
+			query, err := CurrentQuery(ctx)
+			require.NoError(t, err)
+			_, pack, anchor := hostHistoryTestPack(t, kind)
+			if kind == "cancelled" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				defer cancel()
+				observed.afterNew = cancel
+			}
+			donated := &engineutil.GitCheckoutPack{HeadSHA: anchor, ObjectFormat: "sha1", BundlePath: pack}
+			child, err := query.importApprovedHostCommitBase(ctx, donated, anchor, []GitRemote{{Name: "origin", URL: "https://example.test/repo.git"}})
+			require.NoFileExists(t, pack, "the donated pack never outlives the attempt")
+			require.Len(t, observed.refs, 1)
+			ref := observed.refs[0]
+			switch kind {
+			case "complete":
+				require.NoError(t, err)
+				require.Equal(t, bkcache.MutableRef(ref), child)
+				snap, err := child.Commit(ctx)
+				require.NoError(t, err)
+				defer snap.Release(context.Background())
+				require.Equal(t, anchor, gitMirrorTestRun(t, testutil.Root(t, snap), "rev-parse", "HEAD"))
+				return
+			case "cancelled":
+				require.ErrorIs(t, err, context.Canceled)
+			default:
+				require.NoError(t, err, "rejected donations fall back to the remote")
+			}
+			require.Nil(t, child)
+			require.Equal(t, 1, ref.releases, "a rejected import is discarded")
+			require.Zero(t, ref.commits, "nothing from a rejected pack is published")
 		})
 	}
 }

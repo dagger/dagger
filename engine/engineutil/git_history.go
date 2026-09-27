@@ -7,39 +7,51 @@ import (
 	"io"
 
 	"github.com/dagger/dagger/engine/session/git"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
-// ErrGitHistoryUnavailable is an optional donor miss. Protocol errors, invalid
-// packs and cancellation are not misses and must never be hidden by fallback.
+// ErrGitHistoryUnavailable is an optional donor miss: any donor failure other
+// than the caller's own cancellation. Donors are an optimization, so host pack
+// errors and timeouts, size limits, lost transports and protocol violations all
+// fall back to the authorized remote. Nothing from a failed donation is kept.
 var ErrGitHistoryUnavailable = errors.New("host Git history unavailable")
 
 // ReceiveGitCommitPack requires the caller to have authorized this exact host
 // route and captured commit. The returned file is owned, and must be closed.
+// Every failure is an ErrGitHistoryUnavailable miss unless ctx itself is done;
+// the donor's own pack timeout also surfaces as DeadlineExceeded, so only ctx
+// (never the error code) decides that the caller was cancelled.
 func ReceiveGitCommitPack(ctx context.Context, client git.GitClient, req *git.PackCommitRequest) (_ *GitCheckoutPack, rerr error) {
-	stream, err := client.PackCommit(ctx, req)
-	if err != nil {
-		return nil, hostHistoryStreamError(ctx, err)
-	}
-	var pack *GitCheckoutPack
 	var spool *gitPackSpool
 	defer func() {
-		if rerr != nil && spool != nil {
+		if rerr == nil {
+			return
+		}
+		if spool != nil {
 			if cleanupErr := spool.remove(); cleanupErr != nil {
 				// A failed spool cleanup is not an optional donor miss, even if
 				// the transport disappeared while it was being received.
 				rerr = fmt.Errorf("host history cleanup after %s: %w", rerr.Error(), cleanupErr)
+				return
 			}
 		}
+		if ctx.Err() != nil {
+			rerr = context.Cause(ctx)
+			return
+		}
+		rerr = fmt.Errorf("%w: %w", ErrGitHistoryUnavailable, rerr)
 	}()
+	stream, err := client.PackCommit(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	var pack *GitCheckoutPack
 	for {
 		resp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return nil, hostHistoryStreamError(ctx, err)
+			return nil, err
 		}
 		if cause := context.Cause(ctx); cause != nil {
 			return nil, cause
@@ -51,12 +63,7 @@ func ReceiveGitCommitPack(ctx context.Context, client git.GitClient, req *git.Pa
 			}
 			md := msg.Metadata
 			if md.Error != nil {
-				switch md.Error.Type {
-				case git.HISTORY_UNAVAILABLE, git.CHECKOUT_STATE_MISMATCH:
-					return nil, fmt.Errorf("%w: %s", ErrGitHistoryUnavailable, md.Error.Message)
-				default:
-					return nil, fmt.Errorf("host history pack: %s", md.Error.Message)
-				}
+				return nil, fmt.Errorf("host history pack: %s: %s", md.Error.Type, md.Error.Message)
 			}
 			if md.HeadSha != req.CommitSha || md.StateDigest != req.ExpectedStateDigest || md.ObjectFormat != "sha1" || md.HeadRef != "" {
 				return nil, fmt.Errorf("host history metadata does not match captured request")
@@ -90,16 +97,4 @@ func ReceiveGitCommitPack(ctx context.Context, client git.GitClient, req *git.Pa
 		return nil, err
 	}
 	return pack, nil
-}
-
-func hostHistoryStreamError(ctx context.Context, err error) error {
-	if cause := context.Cause(ctx); cause != nil {
-		return cause
-	}
-	switch status.Code(err) {
-	case codes.Unimplemented, codes.Unavailable:
-		return fmt.Errorf("%w: %w", ErrGitHistoryUnavailable, err)
-	default:
-		return err
-	}
 }

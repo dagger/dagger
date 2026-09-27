@@ -8,14 +8,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	gitsession "github.com/dagger/dagger/engine/session/git"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type hostHistoryKey struct {
@@ -95,24 +99,71 @@ func (q *Query) approvedHostCommitPack(ctx context.Context, parent dagql.ObjectR
 	if err != nil || !ok {
 		return nil, err
 	}
+	ctx, span := Tracer(ctx).Start(ctx, "git request approved host commit closure", telemetry.Internal())
+	span.SetAttributes(attribute.Int("git.history.depth", depth))
+	defer telemetry.EndWithCause(span, &rerr)
 	conn, available, err := q.SpecificClientAttachableConn(ctx, donor.owner, SpecificClientAttachableConnOpts{IfAvailable: true})
 	if err != nil {
-		return nil, err
+		return nil, hostHistoryFallback(ctx, err)
 	}
 	if !available {
 		return nil, nil
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "git request approved host commit closure", telemetry.Internal())
-	span.SetAttributes(attribute.Int("git.history.depth", depth))
-	defer telemetry.EndWithCause(span, &rerr)
 	pack, err := engineutil.ReceiveGitCommitPack(ctx, gitsession.NewGitClient(conn), &gitsession.PackCommitRequest{CheckoutPath: donor.path, ExpectedStateDigest: donor.state, CommitSha: parent.Self().Ref.SHA, Depth: int32(depth)})
 	if cause := context.Cause(ctx); cause != nil {
 		return nil, errors.Join(cause, pack.Close())
 	}
-	if errors.Is(err, engineutil.ErrGitHistoryUnavailable) {
-		return nil, nil
+	if err != nil {
+		return nil, hostHistoryFallback(ctx, err)
 	}
-	return pack, err
+	return pack, nil
+}
+
+// hostHistoryFallback turns a failed optional donation into a remote fallback,
+// recording why on the current span. Only the caller's own cancellation is
+// returned: the donor's pack timeout also surfaces as DeadlineExceeded, so the
+// error itself cannot tell the two apart. Any engine-local cleanup must already
+// have succeeded; the remote path always starts from a fresh snapshot.
+func hostHistoryFallback(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("git.history.donor_fallback", err.Error()))
+	span.RecordError(err)
+	return nil
+}
+
+// importApprovedHostCommitBase imports a donated pack into a new private
+// snapshot. A pack the engine rejects is a donor failure: its snapshot is never
+// committed and is released before returning nil, so the caller falls back to
+// the remote without keeping any object from the rejected pack.
+func (q *Query) importApprovedHostCommitBase(ctx context.Context, pack *engineutil.GitCheckoutPack, sha string, remotes []GitRemote) (child bkcache.MutableRef, rerr error) {
+	defer func() {
+		rerr = errors.Join(rerr, pack.Close())
+		if rerr != nil && child != nil {
+			rerr = errors.Join(rerr, child.Release(context.WithoutCancel(ctx)))
+			child = nil
+		}
+	}()
+	child, err := q.SnapshotManager().New(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
+		bkcache.WithDescription("owned approved host commit closure"))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
+		return importHostCommitPack(ctx, dest, pack.BundlePath, sha, remotes)
+	})
+	if err == nil {
+		return child, nil
+	}
+	releaseErr := child.Release(context.WithoutCancel(ctx))
+	child = nil
+	if releaseErr != nil {
+		return nil, errors.Join(err, releaseErr)
+	}
+	return nil, hostHistoryFallback(ctx, err)
 }
 
 // Validate the received pack in an isolated object database before publishing
