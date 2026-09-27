@@ -96,10 +96,10 @@ func TestMCPMediaContent(t *testing.T) {
 
 func TestMediaToolDispatch(t *testing.T) {
 	media := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: base64.StdEncoding.EncodeToString([]byte("image"))}
-	for _, mode := range []string{"sequential", "parallel", "changeset"} {
+	for _, mode := range []string{"sequential", "parallel"} {
 		t.Run(mode, func(t *testing.T) {
-			tool := LLMTool{Name: "image", ReadOnly: mode == "parallel", ReturnsChangeset: mode == "changeset", Call: func(context.Context, any) (any, error) { return media, nil }}
-			msgs := newMCP().CallBatch(t.Context(), []LLMTool{tool}, []*LLMToolCall{{Name: "image", CallID: "call-1"}}, nil)
+			tool := LLMTool{Name: "image", ReadOnly: mode == "parallel", Call: func(context.Context, any) (any, error) { return media, nil }}
+			msgs := newMCP().CallBatch(t.Context(), []LLMTool{tool}, []*LLMToolCall{{Name: "image", CallID: "call-1"}}, nil, nil)
 			require.Len(t, msgs, 1)
 			result := msgs[0].Content[0]
 			require.Equal(t, LLMContentToolResult, result.Kind)
