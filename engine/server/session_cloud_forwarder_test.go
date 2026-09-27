@@ -675,52 +675,42 @@ func TestCloudExportErrorClassification(t *testing.T) {
 	require.False(t, cloudRejectedPermanently(context.DeadlineExceeded))
 }
 
-// A row Cloud permanently rejects is narrowed down to and skipped, and the
-// lane goes on: every other row arrives once, in order.
-func TestCloudForwarderSkipsPermanentlyRejectedRows(t *testing.T) {
+// A request Cloud refuses for good ends forwarding for the session at once,
+// every lane included, even while the session runs: one refused request, not
+// a retry, or a bisection of the batch down to the rows Cloud refuses.
+func TestCloudForwarderStopsWhenRejected(t *testing.T) {
 	t.Parallel()
-	srv := forwardTestStore(t)
-	spans, logs := &forwardTestExporter{}, &forwardTestExporter{}
-	spans.reject = func(name string) error {
-		if name == "span-137" {
-			return errors.New("traces export: failed to send to http://cloud/v1/traces: 413 Request Entity Too Large (body: too large)")
-		}
-		return nil
-	}
-	logs.reject = func(body string) error {
-		if body == "exec output 42" {
-			return errors.New("failed to send logs to http://cloud/v1/logs: 400 Bad Request (body: malformed)")
-		}
-		return nil
-	}
-	f := startForwardTest(t, srv, spans, logs, fastCloudForwardTuning())
-	const n = 300
-	writeForwardTestSpans(t, srv, 0, n)
-	records := make([]otellog.Record, n)
-	for i := range records {
-		records[i] = cloudOtherRecord(i)
-	}
-	writeForwardTestLogs(t, srv, records...)
+	for name, failure := range map[string]error{
+		"400": errors.New("failed to send logs to http://cloud/v1/logs: 400 Bad Request (body: malformed)"),
+		"404": errors.New("failed to send logs to http://cloud/v1/logs: 404 Not Found (body: no such org)"),
+		"413": errors.New("failed to send logs to http://cloud/v1/logs: 413 Request Entity Too Large (body: too large)"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			srv := forwardTestStore(t)
+			spans, logs := &forwardTestExporter{}, &forwardTestExporter{}
+			// Hold the span lane in retries so it outlives the log lane's
+			// refusal: the refusal must end it too.
+			spans.mode.Store(forwardFail)
+			logs.reject = func(string) error { return failure }
+			f := startForwardTest(t, srv, spans, logs, fastCloudForwardTuning())
+			writeForwardTestSpans(t, srv, 0, 10)
+			const n = 300
+			records := make([]otellog.Record, n)
+			for i := range records {
+				records[i] = cloudOtherRecord(i)
+			}
+			writeForwardTestLogs(t, srv, records...)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	defer cancel()
-	require.NoError(t, f.drain(ctx), "the lanes get past the rejected rows")
-	var wantSpans, wantLogs []string
-	for i := range n {
-		if i != 137 {
-			wantSpans = append(wantSpans, fmt.Sprintf("span-%d", i))
-		}
-		if i != 42 {
-			wantLogs = append(wantLogs, fmt.Sprintf("exec output %d", i))
-		}
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			require.NoError(t, f.waitReleased(ctx), "stops without waiting for the session to end")
+			require.ErrorIs(t, context.Cause(f.ctx), errCloudForwardRejected)
+			require.EqualValues(t, 1, logs.attempts.Load(), "one refused request")
+			require.Empty(t, logs.received())
+			require.Empty(t, srv.cloudForwarders.KeepSet(), "the store is released")
+		})
 	}
-	require.Equal(t, wantSpans, spans.received(), "every other span once, in order")
-	require.Equal(t, wantLogs, logs.received(), "every other record once, in order")
-
-	// And they keep going.
-	writeForwardTestSpans(t, srv, n, 10)
-	require.NoError(t, f.drain(ctx))
-	require.Equal(t, append(wantSpans, forwardTestNames("span", n+10)[n:]...), spans.received())
 }
 
 // Transient failures, a retryable status or a 5xx, never skip a row: the

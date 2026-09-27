@@ -34,9 +34,10 @@ import (
 // did before the engine published itself.
 //
 // The store is the buffer: a lane holds one batch at a time and advances its
-// cursor only past rows Cloud took (or refused for good, one row at a time),
-// so a Cloud outage costs the forwarder one batch of memory per signal
-// however long it lasts, and the rows wait on disk.
+// cursor only past rows Cloud took, so a Cloud outage costs the forwarder one
+// batch of memory per signal however long it lasts, and the rows wait on disk.
+// A request Cloud refuses for good (cloudRejectedPermanently) ends forwarding
+// for the session instead: resending would only be refused again.
 //
 // While the session runs the forwarder follows the store's end. The main
 // client's shutdown waits, within the session's Cloud bound, for it to reach
@@ -44,17 +45,16 @@ import (
 // refresh an OAuth token. Once the session's providers have shut down, the
 // store's end is final (finish): the forwarder keeps going in the background,
 // after the session is gone, until it is caught up, the credential can no
-// longer be used, or cloudForwardBackgroundTimeout passes, then releases the
-// exporters and the store. The server keeps the store from collection while
-// it forwards.
+// longer be used, Cloud rejects it, or cloudForwardBackgroundTimeout passes,
+// then releases the exporters and the store. The server keeps the store from
+// collection while it forwards.
 
 const (
 	// cloudForwardBatchRows and cloudForwardMaxPayloadSize bound one export:
 	// a batch whose OTLP request exceeds the size is read again, halved, and
-	// only a single row larger than it is sent alone. A batch Cloud refuses
-	// for what it carries (cloudRejectedPermanently) is halved the same way,
-	// down to the single row it refuses, which is skipped; any other failure
-	// is retried from the same cursor, however long it lasts.
+	// only a single row larger than it is sent alone. A permanent refusal
+	// stops the forwarder; any other failure is retried from the same cursor,
+	// however long it lasts.
 	cloudForwardBatchRows      = otlpBatchSize
 	cloudForwardMaxPayloadSize = 4 << 20
 	// cloudForwardExportTimeout bounds one export attempt, retries of the
@@ -73,6 +73,7 @@ var (
 	errCloudForwardDeadline      = errors.New("cloud telemetry forwarding deadline passed")
 	errCloudForwardEngineStop    = errors.New("engine is shutting down")
 	errCloudForwardTokenUnusable = errors.New("cloud credential can no longer be used")
+	errCloudForwardRejected      = errors.New("cloud rejected session telemetry")
 )
 
 // cloudForwardTuning holds the forwarder's limits; tests shrink them.
@@ -304,19 +305,12 @@ func (f *cloudForwarder) run(lane *cloudForwardLane) {
 					return
 				}
 				if cloudRejectedPermanently(err) {
-					if batch.rows > 1 {
-						// Sending it again would only be refused again:
-						// narrow it down to the rows Cloud refuses.
-						limit = max(1, batch.rows/2)
-						continue
-					}
-					// Cloud refuses this one row for itself, not for
-					// an outage: skip it rather than stall the lane
-					// behind it for the rest of the session.
-					lg.Warn("skipping telemetry Cloud permanently rejects", "row", batch.next, "bytes", batch.size, "error", err)
-					lane.advance(batch.next)
-					limit = f.tuning.batchRows
-					continue
+					// Resending, or narrowing the batch down, would only
+					// multiply requests Cloud refuses: give up on the
+					// session's telemetry, once, for every lane.
+					lg.Warn("Cloud rejected session telemetry; no longer publishing it", "cursor", cursor, "rows", batch.rows, "error", err)
+					f.stop(fmt.Errorf("%w: %w", errCloudForwardRejected, err))
+					return
 				}
 				if !failing {
 					lg.Warn("publishing session telemetry to Cloud failed; retrying", "cursor", cursor, "rows", batch.rows, "error", err)
@@ -324,8 +318,9 @@ func (f *cloudForwarder) run(lane *cloudForwardLane) {
 					lg.Debug("publishing session telemetry to Cloud failed; retrying", "cursor", cursor, "rows", batch.rows, "error", err)
 				}
 				failing = true
-				// A smaller batch gets past a request Cloud refuses for
-				// its size; it is restored after the next success.
+				// A smaller batch gets past an export that times out for
+				// its size on a slow link; it is restored after the next
+				// success.
 				limit = max(1, batch.rows/2)
 				backoff = nextCloudForwardBackoff(backoff, f.tuning)
 				f.wait(lane, backoff)
