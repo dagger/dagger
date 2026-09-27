@@ -40,8 +40,8 @@ func (ref *LocalGitRef) incrementalCheckoutEligible() bool {
 
 // incrementalTree applies only the commit's delta to a COW child of the parent
 // tree. False means the caller must use the full checkout: unsupported inputs,
-// an unusable parent tree, or any other failure (see nativeFallback). Only the
-// caller's cancellation surfaces.
+// a snapshot chain that is already too deep, an unusable parent tree, or any
+// other failure (see nativeFallback). Only the caller's cancellation surfaces.
 func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "materialize incremental git checkout", telemetry.Internal())
 	defer func() {
@@ -98,7 +98,12 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 				rerr = errors.Join(rerr, child.Release(context.WithoutCancel(ctx)))
 			}
 		}()
-		err = MountRef(ctx, child, func(root string, _ *mount.Mount) error {
+		err = MountRef(ctx, child, func(root string, m *mount.Mount) error {
+			// Each incremental tree stacks one more layer on its parent's.
+			// Past the bound, the full checkout starts a fresh snapshot.
+			if err := checkNativeSnapshotDepth(m); err != nil {
+				return err
+			}
 			dest, err := fs.RootPath(root, parentPath)
 			if err != nil {
 				return err

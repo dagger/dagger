@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
@@ -209,6 +210,27 @@ func nativeFallback(ctx context.Context, span trace.Span, attr string, err error
 	return true
 }
 
+// maxNativeSnapshotDepth bounds the lower layers a native fast path stacks a
+// new snapshot on. Each native commit is a COW child of its parent repository
+// snapshot and each incremental checkout a child of its parent tree, so a long
+// session would otherwise approach overlayfs' limit (500 lower layers). The
+// legacy paths start from a fresh snapshot, resetting the chain.
+const maxNativeSnapshotDepth = 64
+
+// checkNativeSnapshotDepth measures the chain from the overlay mount of the
+// new child snapshot. Non-overlay snapshotters have no such limit.
+func checkNativeSnapshotDepth(m *mount.Mount) error {
+	if m == nil {
+		return nil
+	}
+	for _, opt := range m.Options {
+		if lower, ok := strings.CutPrefix(opt, "lowerdir="); ok && strings.Count(lower, ":")+1 > maxNativeSnapshotDepth {
+			return nativeCommitUnsupportedReason("snapshot-depth")
+		}
+	}
+	return nil
+}
+
 // nativeCommitFallback reports whether every leaf of err is an explicit
 // unsupported marker, distinguishing an expected ineligibility from a failure
 // in helpers that classify rather than fail. Mount cleanup joins errors with the
@@ -284,6 +306,9 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 	}
 	var gitSubdir string
 	dir, err := withGitMergeWorkspace(ctx, local.Directory, "GitRef native commit transaction", func(ws *gitMergeWorkspace) error {
+		if err := checkNativeSnapshotDepth(ws.mount); err != nil {
+			return err
+		}
 		gitDir, err := local.nativeGitDir(ctx, ws.workDir)
 		if err != nil {
 			return err

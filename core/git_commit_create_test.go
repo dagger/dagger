@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -91,6 +93,26 @@ func TestNativeFallbackPolicy(t *testing.T) {
 			require.False(t, nativeFallback(ctx, trace.SpanFromContext(ctx), "fallback_reason", err))
 		}
 	}
+}
+
+func TestNativeSnapshotDepthBound(t *testing.T) {
+	overlay := func(depth int) *mount.Mount {
+		lowers := make([]string, depth)
+		for i := range lowers {
+			lowers[i] = fmt.Sprintf("/snapshots/%d/fs", i)
+		}
+		return &mount.Mount{Type: "overlay", Source: "overlay", Options: []string{"index=off", "workdir=/w", "upperdir=/u", "lowerdir=" + strings.Join(lowers, ":")}}
+	}
+	require.NoError(t, checkNativeSnapshotDepth(nil))
+	require.NoError(t, checkNativeSnapshotDepth(&mount.Mount{Type: "bind", Source: "/snapshots/1/fs", Options: []string{"rbind"}}))
+	require.NoError(t, checkNativeSnapshotDepth(overlay(1)))
+	require.NoError(t, checkNativeSnapshotDepth(overlay(maxNativeSnapshotDepth)))
+	// One layer past the bound, the native paths hand over to the legacy paths,
+	// which start from a fresh, unchained snapshot.
+	err := checkNativeSnapshotDepth(overlay(maxNativeSnapshotDepth + 1))
+	require.ErrorIs(t, err, errNativeCommitUnsupported)
+	require.Equal(t, "snapshot-depth", err.Error())
+	require.True(t, nativeFallback(t.Context(), trace.SpanFromContext(t.Context()), "fallback_reason", err))
 }
 
 func TestGitCommitStagePaths(t *testing.T) {

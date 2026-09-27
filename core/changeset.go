@@ -1755,9 +1755,10 @@ func (ch *ChangesetPaths) withoutGitMeta() *ChangesetPaths {
 // gitMergeWorkspace is a mounted scratch copy of the merge base that git
 // branches are built in.
 type gitMergeWorkspace struct {
-	root    string // mounted snapshot root
-	dir     string // base directory selector within root
-	workDir string // absolute path of dir under root; where git runs
+	root    string       // mounted snapshot root
+	dir     string       // base directory selector within root
+	workDir string       // absolute path of dir under root; where git runs
+	mount   *mount.Mount // the snapshot's mount, when mounted from a ref
 }
 
 // applyContent applies a changeset's file-level content to the work tree:
@@ -1924,7 +1925,7 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 	}
 	defer newRef.Release(context.WithoutCancel(ctx))
 
-	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, m *mount.Mount) error {
 		workDir, err := containerdfs.RootPath(root, baseSelector)
 		if err != nil {
 			return err
@@ -1933,6 +1934,7 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 			root:    root,
 			dir:     baseSelector,
 			workDir: workDir,
+			mount:   m,
 		})
 	})
 	if err != nil {
