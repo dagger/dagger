@@ -397,7 +397,7 @@ Trace/span IDs are breadcrumbs, not a replacement for rerunning tests. Some priv
 
 When `engine-dev` supplies `DAGGER_SESSION_PORT`, an SDK connection can use that inherited session instead of the explicitly configured from-source runner. This produced extremely fast semantic-test passes against the wrong target, while private-session trace tests correctly exposed failures.
 
-Relevant workflow/oracle tests now use `runWithPrivateTraceSession` in `core/integration/tracesink_test.go`. It re-execs only the selected test, removes inherited session port/token variables without changing the parallel parent's environment, and retains `_EXPERIMENTAL_DAGGER_RUNNER_HOST` and `_EXPERIMENTAL_DAGGER_CLI_BIN`. Inspect the connected engine version when in doubt.
+`engine-dev` now runs `go test` with `DAGGER_SESSION_PORT`/`DAGGER_SESSION_TOKEN` unset (`withoutOuterSession` in `.dagger/modules/engine-dev`), so SDK tests reach `_EXPERIMENTAL_DAGGER_RUNNER_HOST` without any per-test workaround. Inspect the connected engine version when in doubt.
 
 **Correction to earlier handoff reports:** the `LLM.portableID`/`portable-id` scoped-history and identity-replay failures were not reliable evidence of a PR-baseline defect. Those tests pass against the correctly selected from-source engine. Do not carry forward the earlier "pre-existing schema mismatch" diagnosis.
 

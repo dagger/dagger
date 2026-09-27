@@ -18,9 +18,6 @@ import (
 )
 
 func (WorkspaceSuite) TestWorkspaceRemoteParentHistoryDoesNotFetch(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("file.txt", "base\n"))
@@ -220,9 +217,6 @@ func workspaceRemoteHistoryFetches(sink *agentTraceSink, ancestor string) (shall
 }
 
 func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryOrdinary(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture := newWorkspaceRemoteHistoryFixture(ctx, t, c)
@@ -284,9 +278,6 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryOrdinary(ctx context.Context
 }
 
 func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	for _, demand := range []string{"deep log", "old path", "older comparison", "divergent comparison", "retained checkout", "full bundle"} {
 		t.Run(demand, func(ctx context.Context, t *testctx.T) {
 			sink := newAgentTraceSink(t)
@@ -449,9 +440,6 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 }
 
 func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryUnavailable(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture := newWorkspaceRemoteHistoryFixture(ctx, t, c)
@@ -606,9 +594,6 @@ func (f workspaceHostHistoryFixture) commit(ctx context.Context, t *testctx.T) *
 }
 
 func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryOrdinary(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	fixture := newWorkspaceHostHistoryFixture(ctx, t)
 	fixture.commit(ctx, t)
 	require.NoError(t, fixture.client.Close())
@@ -625,9 +610,6 @@ func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryOrdinary(ctx context.Conte
 }
 
 func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryOffline(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	fixture := newWorkspaceHostHistoryFixture(ctx, t)
 	c := fixture.client
 	head := fixture.commit(ctx, t)
@@ -697,9 +679,6 @@ func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryOffline(ctx context.Contex
 }
 
 func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryFallback(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	for _, scenario := range []string{"missing donor", "replaced donor", "changed HEAD", "shallow donor"} {
 		t.Run(scenario, func(ctx context.Context, t *testctx.T) {
 			fixture := newWorkspaceHostHistoryFixture(ctx, t)

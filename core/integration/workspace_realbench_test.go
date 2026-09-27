@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -44,28 +43,6 @@ func realBenchLog(t *testing.T, value any) {
 	b, err := json.Marshal(value)
 	require.NoError(t, err)
 	t.Logf("REALBENCH %s", b)
-}
-
-// Do not change the parent's environment: other integration tests are parallel.
-func realBenchPrivateSession(t *testing.T) bool {
-	t.Helper()
-	if _, inherited := os.LookupEnv("DAGGER_SESSION_PORT"); !inherited {
-		return false
-	}
-	require.NotEmpty(t, os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"))
-	require.NotEmpty(t, os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN"))
-	bin, err := os.Executable()
-	require.NoError(t, err)
-	cmd := exec.CommandContext(t.Context(), bin, "-test.run=^"+regexp.QuoteMeta(t.Name())+"$", "-test.v", "-test.count=1", "-test.timeout=30m")
-	for _, env := range os.Environ() {
-		if !strings.HasPrefix(env, "DAGGER_SESSION_PORT=") && !strings.HasPrefix(env, "DAGGER_SESSION_TOKEN=") {
-			cmd.Env = append(cmd.Env, env)
-		}
-	}
-	// Stream samples so a failed/timed-out run still leaves reproducible logs.
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	require.NoError(t, cmd.Run())
-	return true
 }
 
 type realBenchTrace struct {
@@ -232,9 +209,6 @@ func realRepositoryPerformance(t *testing.T, controlledOrigin bool) {
 	run := flag.Lookup("test.run")
 	if run == nil || !strings.Contains(run.Value.String(), "TestWorkspaceRealRepositoryPerformance") {
 		t.Skip("opt in with -run '^TestWorkspaceRealRepositoryPerformance$' on a fresh from-source engine")
-	}
-	if realBenchPrivateSession(t) {
-		return
 	}
 	ctx := t.Context()
 	runner, cli := os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"), os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")

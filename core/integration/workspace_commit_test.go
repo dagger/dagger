@@ -280,9 +280,6 @@ git commit -m attributes
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitReconciliationOracle(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
 	fixture, inspector := workspaceReconciliationFixture(c)
 	const text = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
@@ -372,9 +369,6 @@ with open('/work/file.txt', 'w') as f: f.write('selected\n')
 }
 
 func (WorkspaceSuite) TestWorkspaceRemoteFirstNativeCommit(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := workspaceReconciliationFixture(c)
@@ -441,9 +435,6 @@ func (WorkspaceSuite) TestWorkspaceRemoteFirstNativeCommit(ctx context.Context, 
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitNativeReconciliationTrace(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := workspaceReconciliationFixture(c)
@@ -609,9 +600,6 @@ func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Cont
 // build time is outside this test. The fixture has no remote and uses packed
 // objects, so fetch spans describe local copying rather than network traffic.
 func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	const files, fileBytes, iterations = 12000, 8192, 3
 	started := time.Now()
 	checkout := t.TempDir()

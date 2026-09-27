@@ -20,9 +20,6 @@ import (
 // Reftable refs cannot be published by the native loose-ref writer. Exercise
 // the public fallback, not just the backend eligibility predicate.
 func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture := c.Container().From(alpineImage).
@@ -85,9 +82,6 @@ func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) 
 // reconciliation path, not merely equivalent checked-out bytes. The oracle
 // deliberately obscures Git-tree provenance without changing the source tree.
 func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	const date = "2026-09-05T12:00:00Z"
@@ -340,9 +334,6 @@ print('all paths normalized')
 }
 
 func (GitSuite) TestGitRefIncrementalCheckoutOracle(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
 	fixture, inspector := gitIncrementalCheckoutFixture(c)
 	original := workspaceCommitManifest(ctx, t, inspector, fixture)
@@ -451,9 +442,6 @@ func (GitSuite) TestGitRefIncrementalCheckoutOracle(ctx context.Context, t *test
 }
 
 func (GitSuite) TestGitRefIncrementalCheckoutTrace(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := gitIncrementalCheckoutFixture(c)
@@ -526,9 +514,6 @@ func (GitSuite) TestGitRefIncrementalCheckoutTrace(ctx context.Context, t *testc
 // several children of the same parent concurrently. Each step consumes its
 // canonical source before constructing the next changeset, as a workspace does.
 func (GitSuite) TestGitRefNativeCommitHistory(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := gitIncrementalCheckoutFixture(c)
@@ -726,9 +711,6 @@ func requireNativeCommitHistoryTrace(t *testctx.T, sink *agentTraceSink, commits
 }
 
 func (GitSuite) TestGitRefRetainedCheckoutSurvivesSourceScope(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	c := connect(ctx, t)
 	fixture, _ := gitIncrementalCheckoutFixture(c)
 	base := fixture.AsGit().Head()
@@ -773,9 +755,6 @@ git log --format=%H
 }
 
 func (GitSuite) TestGitRefWithCommit(ctx context.Context, t *testctx.T) {
-	if runWithPrivateTraceSession(ctx, t) {
-		return
-	}
 	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
 	const date = "2026-09-05T12:00:00Z"
 	const baseText = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
