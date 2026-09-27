@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -21,6 +23,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 // Cloud export behaviors of the forwarder tests' exporters.
@@ -39,6 +42,9 @@ type forwardTestExporter struct {
 	inFlight    atomic.Int32
 	maxInFlight atomic.Int32
 	shutdowns   atomic.Int32
+	// reject, when set, fails any export carrying a span name or log body
+	// it returns an error for, recording nothing.
+	reject func(name string) error
 
 	mu       sync.Mutex
 	maxBatch int
@@ -80,6 +86,13 @@ func (e *forwardTestExporter) ExportSpans(ctx context.Context, spans []sdktrace.
 	if err := e.enter(ctx, len(spans)); err != nil {
 		return err
 	}
+	if e.reject != nil {
+		for _, span := range spans {
+			if err := e.reject(span.Name()); err != nil {
+				return err
+			}
+		}
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for _, span := range spans {
@@ -92,6 +105,13 @@ func (e *forwardTestExporter) Export(ctx context.Context, records []sdklog.Recor
 	defer e.inFlight.Add(-1)
 	if err := e.enter(ctx, len(records)); err != nil {
 		return err
+	}
+	if e.reject != nil {
+		for _, rec := range records {
+			if err := e.reject(rec.Body().AsString()); err != nil {
+				return err
+			}
+		}
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -600,4 +620,142 @@ func TestCloudForwarderKeepsStoreFromCollection(t *testing.T) {
 	entries, err = os.ReadDir(srv.clientDBs.Root)
 	require.NoError(t, err)
 	require.Empty(t, entries, "a released store is collected")
+}
+
+// The Cloud exporters' own errors classify as the forwarder expects: 4xx
+// statuses other than the credential's, 408 and 429 are permanent
+// rejections; 401 and 403 are the credential's; 408, 429, 5xx and transport
+// failures are transient.
+func TestCloudExportErrorClassification(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		status     int
+		permanent  bool
+		credential bool
+	}{
+		{status: http.StatusBadRequest, permanent: true},
+		{status: http.StatusRequestEntityTooLarge, permanent: true},
+		{status: http.StatusUnprocessableEntity, permanent: true},
+		{status: http.StatusUnauthorized, credential: true},
+		{status: http.StatusForbidden, credential: true},
+		{status: http.StatusRequestTimeout},
+		{status: http.StatusTooManyRequests},
+		{status: http.StatusInternalServerError},
+		{status: http.StatusServiceUnavailable},
+	} {
+		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
+			t.Parallel()
+			cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "refused", tc.status)
+			}))
+			defer cloud.Close()
+			spans, logs, _, err := enginetel.NewCloudExporters(t.Context(), basicCloudAuth("dag_test_token"), nil, cloud.URL)
+			require.NoError(t, err)
+			// Retryable statuses are retried by the exporter until the
+			// export's context ends.
+			ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+			defer cancel()
+			spanErr := spans.ExportSpans(ctx, []sdktrace.ReadOnlySpan{tracetest.SpanStub{
+				Name: "span",
+				SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+					TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, TraceFlags: trace.FlagsSampled,
+				}),
+			}.Snapshot()})
+			logErr := logs.Export(ctx, []sdklog.Record{controlTestRecord(t, cloudOtherRecord(0))})
+			for signal, err := range map[string]error{"spans": spanErr, "logs": logErr} {
+				require.Error(t, err, signal)
+				require.Equal(t, tc.permanent, cloudRejectedPermanently(err), "%s: %v", signal, err)
+				require.Equal(t, tc.credential, cloudCredentialUnusable(err), "%s: %v", signal, err)
+			}
+			require.NoError(t, spans.Shutdown(t.Context()))
+			require.NoError(t, logs.Shutdown(t.Context()))
+		})
+	}
+	require.False(t, cloudRejectedPermanently(errors.New("dial tcp: connection refused")))
+	require.False(t, cloudRejectedPermanently(context.DeadlineExceeded))
+}
+
+// A row Cloud permanently rejects is narrowed down to and skipped, and the
+// lane goes on: every other row arrives once, in order.
+func TestCloudForwarderSkipsPermanentlyRejectedRows(t *testing.T) {
+	t.Parallel()
+	srv := forwardTestStore(t)
+	spans, logs := &forwardTestExporter{}, &forwardTestExporter{}
+	spans.reject = func(name string) error {
+		if name == "span-137" {
+			return errors.New("traces export: failed to send to http://cloud/v1/traces: 413 Request Entity Too Large (body: too large)")
+		}
+		return nil
+	}
+	logs.reject = func(body string) error {
+		if body == "exec output 42" {
+			return errors.New("failed to send logs to http://cloud/v1/logs: 400 Bad Request (body: malformed)")
+		}
+		return nil
+	}
+	f := startForwardTest(t, srv, spans, logs, fastCloudForwardTuning())
+	const n = 300
+	writeForwardTestSpans(t, srv, 0, n)
+	records := make([]otellog.Record, n)
+	for i := range records {
+		records[i] = cloudOtherRecord(i)
+	}
+	writeForwardTestLogs(t, srv, records...)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	require.NoError(t, f.drain(ctx), "the lanes get past the rejected rows")
+	var wantSpans, wantLogs []string
+	for i := range n {
+		if i != 137 {
+			wantSpans = append(wantSpans, fmt.Sprintf("span-%d", i))
+		}
+		if i != 42 {
+			wantLogs = append(wantLogs, fmt.Sprintf("exec output %d", i))
+		}
+	}
+	require.Equal(t, wantSpans, spans.received(), "every other span once, in order")
+	require.Equal(t, wantLogs, logs.received(), "every other record once, in order")
+
+	// And they keep going.
+	writeForwardTestSpans(t, srv, n, 10)
+	require.NoError(t, f.drain(ctx))
+	require.Equal(t, append(wantSpans, forwardTestNames("span", n+10)[n:]...), spans.received())
+}
+
+// Transient failures, a retryable status or a 5xx, never skip a row: the
+// lane retries from its cursor until Cloud takes it.
+func TestCloudForwarderNeverSkipsOnTransientFailures(t *testing.T) {
+	t.Parallel()
+	for name, failure := range map[string]error{
+		"503":     errors.New("traces export: context deadline exceeded: retry-able request failure: body: unavailable"),
+		"500":     errors.New("traces export: failed to send to http://cloud/v1/traces: 500 Internal Server Error (body: oops)"),
+		"408":     errors.New("traces export: failed to send to http://cloud/v1/traces: 408 Request Timeout (body: slow)"),
+		"network": errors.New(`traces export: Post "http://cloud/v1/traces": dial tcp: connection refused`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			srv := forwardTestStore(t)
+			spans, logs := &forwardTestExporter{}, &forwardTestExporter{}
+			var outage atomic.Bool
+			outage.Store(true)
+			spans.reject = func(string) error {
+				if outage.Load() {
+					return failure
+				}
+				return nil
+			}
+			f := startForwardTest(t, srv, spans, logs, fastCloudForwardTuning())
+			writeForwardTestSpans(t, srv, 0, 50)
+			require.Eventually(t, func() bool { return spans.attempts.Load() >= 30 }, 10*time.Second, time.Millisecond)
+			cursor, _ := f.lanes[0].position()
+			require.Zero(t, cursor, "nothing is skipped through a transient failure")
+
+			outage.Store(false)
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			require.NoError(t, f.drain(ctx))
+			require.Equal(t, forwardTestNames("span", 50), spans.received())
+		})
+	}
 }

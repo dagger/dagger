@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,8 +34,9 @@ import (
 // did before the engine published itself.
 //
 // The store is the buffer: a lane holds one batch at a time and advances its
-// cursor only past rows Cloud took, so a Cloud outage costs the forwarder one
-// batch of memory per signal however long it lasts, and the rows wait on disk.
+// cursor only past rows Cloud took (or refused for good, one row at a time),
+// so a Cloud outage costs the forwarder one batch of memory per signal
+// however long it lasts, and the rows wait on disk.
 //
 // While the session runs the forwarder follows the store's end. The main
 // client's shutdown waits, within the session's Cloud bound, for it to reach
@@ -47,7 +51,10 @@ import (
 const (
 	// cloudForwardBatchRows and cloudForwardMaxPayloadSize bound one export:
 	// a batch whose OTLP request exceeds the size is read again, halved, and
-	// only a single row larger than it is sent alone.
+	// only a single row larger than it is sent alone. A batch Cloud refuses
+	// for what it carries (cloudRejectedPermanently) is halved the same way,
+	// down to the single row it refuses, which is skipped; any other failure
+	// is retried from the same cursor, however long it lasts.
 	cloudForwardBatchRows      = otlpBatchSize
 	cloudForwardMaxPayloadSize = 4 << 20
 	// cloudForwardExportTimeout bounds one export attempt, retries of the
@@ -296,6 +303,21 @@ func (f *cloudForwarder) run(lane *cloudForwardLane) {
 					f.stop(fmt.Errorf("%w: %w", errCloudForwardTokenUnusable, err))
 					return
 				}
+				if cloudRejectedPermanently(err) {
+					if batch.rows > 1 {
+						// Sending it again would only be refused again:
+						// narrow it down to the rows Cloud refuses.
+						limit = max(1, batch.rows/2)
+						continue
+					}
+					// Cloud refuses this one row for itself, not for
+					// an outage: skip it rather than stall the lane
+					// behind it for the rest of the session.
+					lg.Warn("skipping telemetry Cloud permanently rejects", "row", batch.next, "bytes", batch.size, "error", err)
+					lane.advance(batch.next)
+					limit = f.tuning.batchRows
+					continue
+				}
 				if !failing {
 					lg.Warn("publishing session telemetry to Cloud failed; retrying", "cursor", cursor, "rows", batch.rows, "error", err)
 				} else {
@@ -464,8 +486,41 @@ func cloudCredentialUnusable(err error) bool {
 	if errors.Is(err, errCloudRefreshSessionClosing) {
 		return true
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "401 Unauthorized") || strings.Contains(msg, "403 Forbidden")
+	status, ok := cloudExportStatus(err)
+	return ok && (status == http.StatusUnauthorized || status == http.StatusForbidden)
+}
+
+// cloudRejectedPermanently reports an export Cloud refused for what it
+// carries, which sending it again would only repeat: a 4xx other than the
+// credential's (401, 403) and the retryable 408 and 429.
+func cloudRejectedPermanently(err error) bool {
+	status, ok := cloudExportStatus(err)
+	if !ok || status < 400 || status >= 500 {
+		return false
+	}
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return false
+	}
+	return true
+}
+
+// cloudExportStatusPattern matches how the OTLP HTTP trace and log exporters
+// report a response they do not retry — "failed to send to <url>: <status>
+// (body: ...)" and "failed to send logs to <url>: <status> (body: ...)" — the
+// only form in which they expose its status code. Responses they retry (429,
+// 502, 503, 504) and transport errors carry no status here.
+var cloudExportStatusPattern = regexp.MustCompile(`failed to send (?:logs )?to \S+: (\d{3})\b`)
+
+// cloudExportStatus returns the HTTP status of a response a Cloud exporter
+// did not retry, when err reports one.
+func cloudExportStatus(err error) (int, bool) {
+	m := cloudExportStatusPattern.FindStringSubmatch(err.Error())
+	if m == nil {
+		return 0, false
+	}
+	status, err := strconv.Atoi(m[1])
+	return status, err == nil
 }
 
 // cloudForwarders tracks the server's active forwarders: their stores are
