@@ -383,7 +383,10 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	}); err != nil {
 		return nil, err
 	}
-	return deps, nil
+	// Share one schema server per module set: without this, every handle
+	// load (node(id:), interface loads) rebuilds a server and reinstalls
+	// every referenced module.
+	return deps.Memoized(), nil
 }
 
 func (q *Query) RequireMainClient(ctx context.Context) error {
