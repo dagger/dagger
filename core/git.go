@@ -579,17 +579,14 @@ func (repo *LocalGitRepository) attachDependencyResults(
 		owned = append(owned, source)
 	}
 	if repo.CheckoutBase != nil {
-		if err := repo.CheckoutBase.validateTree(ctx); err != nil {
-			return nil, err
-		}
 		parent, err := attachLazyInput(attach, repo.CheckoutBase.Parent, "git checkout parent")
 		if err != nil {
 			return nil, err
 		}
 		base := &GitCheckoutBase{Parent: parent, CommitSHA: repo.CheckoutBase.CommitSHA}
 		owned = append(owned, parent)
-		if repo.CheckoutBase.Tree.Self() != nil {
-			tree, err := attachLazyInput(attach, repo.CheckoutBase.Tree, "git checkout parent tree")
+		if provenTree := repo.CheckoutBase.provenTree(ctx); provenTree.Self() != nil {
+			tree, err := attachLazyInput(attach, provenTree, "git checkout parent tree")
 			if err != nil {
 				return nil, err
 			}
@@ -807,16 +804,13 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, enc *dagql
 			payload.Local.HistorySourceResultID = sourceID
 		}
 		if base := backend.CheckoutBase; base != nil {
-			if err := base.validateTree(ctx); err != nil {
-				return dagql.PersistedObjectEncoding{}, err
-			}
 			parentID, err := encodePersistedObjectRef(enc, base.Parent, "git checkout parent")
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
 			payload.Local.CheckoutBase = &persistedGitCheckoutBase{ParentResultID: parentID, CommitSHA: base.CommitSHA}
-			if base.Tree.Self() != nil {
-				treeID, err := encodePersistedObjectRef(enc, base.Tree, "git checkout parent tree")
+			if tree := base.provenTree(ctx); tree.Self() != nil {
+				treeID, err := encodePersistedObjectRef(enc, tree, "git checkout parent tree")
 				if err != nil {
 					return dagql.PersistedObjectEncoding{}, err
 				}
@@ -900,9 +894,7 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 					return nil, err
 				}
 				backend.CheckoutBase.Tree = tree
-				if err := backend.CheckoutBase.validateTree(ctx); err != nil {
-					return nil, err
-				}
+				backend.CheckoutBase.Tree = backend.CheckoutBase.provenTree(ctx)
 			}
 		}
 		if err := backend.validateHistorySource(ctx); err != nil {

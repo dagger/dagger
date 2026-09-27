@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -125,7 +126,7 @@ func TestRemoteGitCheckoutBasePersistence(t *testing.T) {
 		_, err = (&GitRepository{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, childID, frame), data)
 		require.Error(t, err)
 	}
-	for _, badTree := range []uint64{parentID, dirID, otherTreeID, retainedTreeID, 999999} {
+	for _, badTree := range []uint64{parentID, 999999} {
 		var payload persistedGitRepositoryPayload
 		require.NoError(t, json.Unmarshal(encoding.Envelope.ObjectJSON, &payload))
 		payload.Local.CheckoutBase.TreeResultID = badTree
@@ -134,6 +135,67 @@ func TestRemoteGitCheckoutBasePersistence(t *testing.T) {
 		_, err = (&GitRepository{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, childID, frame), data)
 		require.Error(t, err)
 	}
+	// A loadable tree that cannot prove this parent is only an optimization
+	// lost: the repository decodes without it and checks out in full.
+	for _, unproven := range []uint64{dirID, otherTreeID, retainedTreeID} {
+		var payload persistedGitRepositoryPayload
+		require.NoError(t, json.Unmarshal(encoding.Envelope.ObjectJSON, &payload))
+		payload.Local.CheckoutBase.TreeResultID = unproven
+		data, err := json.Marshal(payload)
+		require.NoError(t, err)
+		decoded, err := (&GitRepository{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, childID, frame), data)
+		require.NoError(t, err)
+		local := decoded.(*GitRepository).Backend.(*LocalGitRepository)
+		require.Nil(t, local.CheckoutBase.Tree.Self())
+		require.Equal(t, parentID, persistedRowID(t, cache, local.CheckoutBase.Parent))
+		require.False(t, (&LocalGitRef{Ref: &gitutil.Ref{SHA: sha}, repo: local}).incrementalCheckoutEligible())
+	}
+}
+
+// The engine cache answers tree() on a content-equivalent GitRef with the first
+// writer's result and frame. GitRef content digests cover URL/ref/auth only, so
+// e.g. git(url).ref(sha) and git(url, keepGitDir: true).ref(sha) share a tree
+// whose frame names the other recipe. withCommit on the second must still
+// succeed, dropping only the unprovable pinned tree.
+func TestGitCheckoutBaseContentEquivalentParentTree(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "equivalent-parent-tree")
+	ctx, cache, srv := env.open(t)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+	url, err := gitutil.ParseURL("https://example.com/repo.git")
+	require.NoError(t, err)
+	remote := &RemoteGitRepository{URL: url, Platform: Platform{OS: "linux", Architecture: "amd64"}}
+	repo := env.attach(t, ctx, cache, srv, "remote-repo", &GitRepository{Backend: remote, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	ref := &gitutil.Ref{SHA: strings.Repeat("a", 40)}
+	a := env.attach(t, ctx, cache, srv, "recipe-a", &GitRef{Repo: repo, Ref: ref, Backend: &RemoteGitRef{Ref: ref, repo: remote}}).(dagql.ObjectResult[*GitRef])
+	b := env.attach(t, ctx, cache, srv, "recipe-b", &GitRef{Repo: repo, Ref: ref, Backend: &RemoteGitRef{Ref: ref, repo: remote}}).(dagql.ObjectResult[*GitRef])
+	// Same content digest, as schema.ref assigns for equal URL/ref/auth.
+	same := digest.FromString("gitRef-equivalent")
+	a, err = a.WithContentDigest(ctx, same)
+	require.NoError(t, err)
+	b, err = b.WithContentDigest(ctx, same)
+	require.NoError(t, err)
+	seed := env.directory(t, ctx, cache, srv, "canonical-seed", "canonical-snapshot")
+	dagql.Fields[*GitRef]{dagql.Func("tree", func(context.Context, *GitRef, struct{ DiscardGitDir bool }) (*Directory, error) {
+		return seed.Self(), nil
+	}).IsPersistable()}.Install(srv)
+	sel := dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}
+	var treeA, treeB dagql.ObjectResult[*Directory]
+	require.NoError(t, srv.Select(ctx, a, &treeA, sel))
+	require.NoError(t, srv.Select(ctx, b, &treeB, sel))
+	require.NoError(t, (&GitCheckoutBase{Parent: a, Tree: treeA, CommitSHA: ref.SHA}).validateTree(ctx))
+	require.Error(t, (&GitCheckoutBase{Parent: b, Tree: treeB, CommitSHA: ref.SHA}).validateTree(ctx), "the cache returned recipe A's frame")
+
+	// The value gitRefWithCommitRepository builds for recipe B.
+	sha := strings.Repeat("b", 40)
+	backend := &LocalGitRepository{Directory: seed, HistorySource: b, CheckoutBase: &GitCheckoutBase{Parent: b, Tree: treeB, CommitSHA: sha}}
+	child := env.attach(t, ctx, cache, srv, "child", &GitRepository{Backend: backend, Remote: &gitutil.Remote{}})
+	attached := child.Unwrap().(*GitRepository).Backend.(*LocalGitRepository)
+	require.Nil(t, attached.CheckoutBase.Tree.Self())
+	require.Equal(t, persistedRowID(t, cache, b), persistedRowID(t, cache, attached.CheckoutBase.Parent))
+	require.False(t, (&LocalGitRef{Ref: &gitutil.Ref{SHA: sha}, repo: attached}).incrementalCheckoutEligible(), "remote parents without a proven tree check out in full")
+	var payload persistedGitRepositoryPayload
+	require.NoError(t, json.Unmarshal(persistedEncoding(t, ctx, cache, child).Envelope.ObjectJSON, &payload))
+	require.Zero(t, payload.Local.CheckoutBase.TreeResultID)
 }
 
 func TestGitRepositoryRemotesPersistence(t *testing.T) {

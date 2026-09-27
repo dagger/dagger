@@ -84,6 +84,20 @@ func (base *GitCheckoutBase) validateTree(ctx context.Context) error {
 	return nil
 }
 
+// provenTree returns Tree only when validateTree accepts it. The engine cache
+// may answer tree() on a content-equivalent GitRef (keepGitDir, service hosts
+// and known hosts are outside its content digest) with another recipe's result
+// and frame. Such a tree cannot prove this parent, so it is dropped rather than
+// failing the repository: the parent provenance stays, and only the incremental
+// checkout of a remote parent, which needs the pinned tree, falls back to a
+// full checkout.
+func (base *GitCheckoutBase) provenTree(ctx context.Context) dagql.ObjectResult[*Directory] {
+	if base == nil || base.validateTree(ctx) != nil {
+		return dagql.ObjectResult[*Directory]{}
+	}
+	return base.Tree
+}
+
 var _ GitRepositoryBackend = (*LocalGitRepository)(nil)
 
 type LocalGitRef struct {
