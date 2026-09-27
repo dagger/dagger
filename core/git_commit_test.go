@@ -21,7 +21,7 @@ import (
 // The oracle uses a complete worktree and git commit, not commit-tree. Exact
 // SHA equality covers the tree, parent, dates, identities and message bytes.
 func TestGitNativeCommitMatchesCheckout(t *testing.T) {
-	for _, scenario := range []string{"ordinary", "named commit", "packed", "attributes", "changed attributes", "deleted attributes", "signoff", "ignored", "empty"} {
+	for _, scenario := range []string{"ordinary", "named commit", "packed", "attributes", "changed attributes", "deleted attributes", "signoff", "signoff divider", "ignored", "empty"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := t.Context()
 			source := t.TempDir()
@@ -79,7 +79,7 @@ func TestGitNativeCommitMatchesCheckout(t *testing.T) {
 					require.ErrorIs(t, err, os.ErrNotExist)
 				}
 				switch scenario {
-				case "ordinary", "named commit", "packed", "signoff":
+				case "ordinary", "named commit", "packed", "signoff", "signoff divider":
 					paths.Modified = []string{"edit"}
 					paths.Added = []string{"file-to-dir/child", "dir-to-file", "exec", "link", "a\n:[literal]"}
 					paths.AllRemoved = []string{"remove", "file-to-dir", "dir-to-file/child"}
@@ -116,7 +116,12 @@ func TestGitNativeCommitMatchesCheckout(t *testing.T) {
 				return nil
 			}
 			require.NoError(t, apply(oracle)) // also defines the changeset paths
-			opts := GitCommitOpts{Message: "subject\n\nbody", Date: "2025-01-02T03:04:05Z", AuthorName: "Author", AuthorEmail: "author@example.com", CommitterName: "Committer", CommitterEmail: "committer@example.com", CommitterDate: "2025-01-03T03:04:05Z", Signoff: scenario == "signoff"}
+			opts := GitCommitOpts{Message: "subject\n\nbody", Date: "2025-01-02T03:04:05Z", AuthorName: "Author", AuthorEmail: "author@example.com", CommitterName: "Committer", CommitterEmail: "committer@example.com", CommitterDate: "2025-01-03T03:04:05Z", Signoff: strings.HasPrefix(scenario, "signoff")}
+			if scenario == "signoff divider" {
+				// A markdown rule is message text, not a patch divider: the
+				// trailer still goes at the end, as commit --trailer puts it.
+				opts.Message = "subject\n\nsummary\n\n---\n\nnotes after a rule\n"
+			}
 			env := []string{"GIT_LITERAL_PATHSPECS=1", "GIT_AUTHOR_NAME=" + opts.AuthorName, "GIT_AUTHOR_EMAIL=" + opts.AuthorEmail, "GIT_COMMITTER_NAME=" + opts.CommitterName, "GIT_COMMITTER_EMAIL=" + opts.CommitterEmail, "GIT_AUTHOR_DATE=" + opts.Date, "GIT_COMMITTER_DATE=" + opts.CommitterDate}
 			var oracleErr error
 			if stage := commitStagePaths(paths); len(stage) != 0 {

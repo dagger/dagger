@@ -448,12 +448,14 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	message := opts.Message
 	if opts.Signoff {
 		// Use Git's own trailer parser, matching commit --trailer, including
-		// duplicate handling and whitespace before the trailer block.
+		// duplicate handling and whitespace before the trailer block. commit
+		// --trailer passes --no-divider: a "---" line in the message is text,
+		// not a patch divider to insert the trailer above.
 		messageFile := filepath.Join(scratch, "message")
 		if err := os.WriteFile(messageFile, []byte(message), 0600); err != nil {
 			return err
 		}
-		message, err = run("interpret-trailers", "--trailer", fmt.Sprintf("Signed-off-by: %s <%s>", opts.AuthorName, opts.AuthorEmail), messageFile)
+		message, err = run("interpret-trailers", "--no-divider", "--trailer", fmt.Sprintf("Signed-off-by: %s <%s>", opts.AuthorName, opts.AuthorEmail), messageFile)
 		if err != nil {
 			return err
 		}
