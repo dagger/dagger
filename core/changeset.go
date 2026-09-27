@@ -37,11 +37,44 @@ import (
 )
 
 func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changeset, error) {
-	return &Changeset{
+	ch := &Changeset{
 		Before: before,
 		After:  after,
 		paths:  &changesetPathsMemo{},
-	}, nil
+	}
+	if applied, ok := appliedOntoOwnBaseline(ctx, before, after); ok {
+		ch.sameChangesAs = applied
+	}
+	return ch, nil
+}
+
+// appliedOntoOwnBaseline returns the changeset C when after is
+// base.withChanges(C), and both before and C's own Before are that same base.
+// Applying a changeset onto its own baseline reproduces its After side at
+// every path it changes and leaves every other path as the baseline has it,
+// so diffing the result against the baseline reports exactly C's paths.
+// Recognizing that lets both changesets share one path scan: workspace
+// overlays are built exactly this way, and each scan walks two full trees.
+func appliedOntoOwnBaseline(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changeset, bool) {
+	if after.Self() == nil {
+		return nil, false
+	}
+	lazy, ok := after.Self().Lazy.(*DirectoryWithChangesLazy)
+	if !ok || lazy.Changes.Self() == nil {
+		return nil, false
+	}
+	applied := lazy.Changes.Self()
+	baseDigest, err := lazy.Parent.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, false
+	}
+	for _, dir := range []dagql.ObjectResult[*Directory]{before, applied.Before} {
+		dgst, err := dir.ContentPreferredDigest(ctx)
+		if err != nil || dgst != baseDigest {
+			return nil, false
+		}
+	}
+	return applied, true
 }
 
 // NewEmptyChangeset creates a changeset with no changes (before and after are the same empty directory).
@@ -161,6 +194,9 @@ func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.PersistDecode
 // ComputePaths computes the added, modified, and removed paths using file
 // metadata and git diffs.
 func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
+	if ch.sameChangesAs != nil {
+		return ch.sameChangesAs.ComputePaths(ctx)
+	}
 	memo := ch.paths
 	memo.once.Do(func() {
 		defer memo.done.Store(true)
@@ -207,6 +243,9 @@ func changesetPathCount(paths *ChangesetPaths) int {
 // still computes the full result. The walk's answer is memoized per limit,
 // though, so repeated calls with the same limit only walk once.
 func (ch *Changeset) PathCountExceeds(ctx context.Context, limit int) (bool, error) {
+	if ch.sameChangesAs != nil {
+		return ch.sameChangesAs.PathCountExceeds(ctx, limit)
+	}
 	if ch.paths.done.Load() {
 		paths, err := ch.ComputePaths(ctx)
 		if err != nil {
@@ -433,6 +472,12 @@ type Changeset struct {
 	decoded *changesetJSONEnvelope
 
 	paths *changesetPathsMemo
+	// sameChangesAs is a changeset known to report exactly this one's paths
+	// (see appliedOntoOwnBaseline); path queries delegate to it. Delegating
+	// rather than sharing its memo matters: computing this changeset's paths
+	// directly would evaluate After, which applies sameChangesAs and so needs
+	// its paths first. Asking sameChangesAs never depends on this changeset.
+	sameChangesAs *Changeset
 }
 
 // changesetPathsMemo memoizes ComputePaths. Held by pointer so that copies of
