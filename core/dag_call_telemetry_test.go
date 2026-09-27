@@ -17,6 +17,7 @@ import (
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql"
@@ -136,10 +137,6 @@ func (s *testSeenKeys) ClaimCallPayload(key string) bool {
 	return !seen
 }
 
-func (s *testSeenKeys) CallPayloadDelivered(key string) {
-	s.keys.Store(key, struct{}{})
-}
-
 type alreadySeenTelemetryStore struct{}
 
 func (alreadySeenTelemetryStore) LoadOrStoreTelemetrySeenKey(string) bool { return true }
@@ -239,14 +236,22 @@ func TestAroundFuncRoutesPayloadsBeforeSpanDeduplication(t *testing.T) {
 		"a sibling delivery domain must receive the closure despite session-wide span dedupe")
 }
 
-func TestAroundFuncPersistsPayloadsCarriedBySpans(t *testing.T) {
+func TestAroundFuncLogsOnlyPayloadsMissingFromSpans(t *testing.T) {
 	agent, _, _ := skillsChain()
 	recorder, ctx := payloadRecorderCtx(t)
+	spans := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(spans))
+	ctx, root := tp.Tracer("call-span-test").Start(ctx, "root")
+	t.Cleanup(func() {
+		root.End()
+		require.NoError(t, tp.Shutdown(context.Background()))
+	})
 	rootDigest, err := agent.RecipeDigest(ctx)
 	require.NoError(t, err)
+	payloads := &testSeenKeys{}
 	ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
 		mockServer:   &mockServer{},
-		payloadStore: &testSeenKeys{},
+		payloadStore: payloads,
 		spanStore:    &testSpanSeenKeys{},
 	}})
 	req := &dagql.CallRequest{ResultCall: agent}
@@ -254,13 +259,17 @@ func TestAroundFuncPersistsPayloadsCarriedBySpans(t *testing.T) {
 	var callErr error
 	done(nil, false, &callErr)
 
-	require.Equal(t, 5, recorder.emissionCount(),
-		"archive and Cloud verification need payload logs even for recording spans")
-	require.NotNil(t, recorder.get(rootDigest.String()),
-		"a span copy is not a protected payload delivery")
+	require.Equal(t, 4, recorder.emissionCount(),
+		"the root payload rides its span; only the four unspanned frames need logs")
+	require.Nil(t, recorder.get(rootDigest.String()),
+		"a payload carried by a recording span must not also be logged")
+	require.False(t, payloads.ClaimCallPayload(rootDigest.String()),
+		"the spanned root stays claimed for the span exporter to settle")
+	requireSpanCarriesCall(t, spans.Started(), rootDigest.String(), "agent")
 
-	// A new spanned descendant must publish its own frame without re-emitting
-	// the receiver closure. Re-selecting it must remain idempotent as well.
+	// A new spanned descendant carries its own frame without re-emitting the
+	// receiver closure. Re-selecting it (span deduped, log fallback) must
+	// remain idempotent as well.
 	next := testResultCall("withResponse", &Void{}, agent)
 	nextDigest, err := next.RecipeDigest(ctx)
 	require.NoError(t, err)
@@ -268,8 +277,63 @@ func TestAroundFuncPersistsPayloadsCarriedBySpans(t *testing.T) {
 		_, done := AroundFunc(ctx, &dagql.CallRequest{ResultCall: next})
 		done(nil, false, &callErr)
 	}
-	require.Equal(t, 6, recorder.emissionCount())
-	require.NotNil(t, recorder.get(nextDigest.String()))
+	require.Equal(t, 4, recorder.emissionCount())
+	require.Nil(t, recorder.get(nextDigest.String()))
+	requireSpanCarriesCall(t, spans.Started(), nextDigest.String(), "withResponse")
+}
+
+// A span that does not record is exported nowhere, so its root must fall back
+// to the payload log lane with the rest of its closure.
+func TestAroundFuncLogsRootOfNonRecordingSpan(t *testing.T) {
+	agent, _, _ := skillsChain()
+	recorder, ctx := payloadRecorderCtx(t)
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.NeverSample()))
+	ctx, root := tp.Tracer("unsampled-test").Start(ctx, "root")
+	t.Cleanup(func() {
+		root.End()
+		require.NoError(t, tp.Shutdown(context.Background()))
+	})
+	rootDigest, err := agent.RecipeDigest(ctx)
+	require.NoError(t, err)
+	ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
+		mockServer:   &mockServer{},
+		payloadStore: &testSeenKeys{},
+		spanStore:    &testSpanSeenKeys{},
+	}})
+	_, done := AroundFunc(ctx, &dagql.CallRequest{ResultCall: agent})
+	var callErr error
+	done(nil, false, &callErr)
+	require.Equal(t, 5, recorder.emissionCount())
+	require.NotNil(t, recorder.get(rootDigest.String()))
+}
+
+// requireSpanCarriesCall asserts that one span was started for digest and
+// that its start snapshot already carried the call's frame, as clients need
+// to render the call before it ends.
+func requireSpanCarriesCall(t *testing.T, started []sdktrace.ReadWriteSpan, digest, field string) {
+	t.Helper()
+	var found []*callpbv1.Call
+	for _, span := range started {
+		var spanDigest, encoded string
+		for _, attr := range span.Attributes() {
+			switch string(attr.Key) {
+			case telemetry.DagDigestAttr:
+				spanDigest = attr.Value.AsString()
+			case telemetry.DagCallAttr:
+				encoded = attr.Value.AsString()
+			}
+		}
+		if spanDigest != digest {
+			continue
+		}
+		require.NotEmpty(t, encoded, "call span %s must carry its frame", digest)
+		var call callpbv1.Call
+		require.NoError(t, call.Decode(encoded))
+		found = append(found, &call)
+	}
+	require.Len(t, found, 1, "exactly one span for %s", digest)
+	require.Equal(t, field, found[0].Field)
+	require.Equal(t, digest, found[0].Digest)
 }
 
 func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
@@ -320,8 +384,8 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rec.get(withSkillsDigest.String()))
 
-	// The root uses the same log transport as every transitive frame, even
-	// when it also has a legacy span copy.
+	// Without a recording span of its own, the root takes the same log
+	// transport as every transitive frame.
 	rootCall := rec.get(rootDigest.String())
 	require.NotNil(t, rootCall, "the root frame was not published")
 	require.Equal(t, "agent", rootCall.Field)

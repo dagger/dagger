@@ -1109,14 +1109,14 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	if span.CallDigest != "" && span.CallPayload != "" {
-		// Legacy channel: older engines carry a base64 payload on the span
+		// Span channel: a spanned call carries its base64 payload on the span
 		// itself. Decode eagerly into the same store the log channel fills so
 		// nothing downstream has to know which channel carried a call.
-		var legacy callpbv1.Call
-		if err := legacy.Decode(span.CallPayload); err == nil {
-			db.addCall(span.CallDigest, &legacy)
+		var spanCall callpbv1.Call
+		if err := spanCall.Decode(span.CallPayload); err == nil {
+			db.addCall(span.CallDigest, &spanCall)
 		} else {
-			slog.Warn("failed to decode legacy call payload", "digest", span.CallDigest, "err", err)
+			slog.Warn("failed to decode span call payload", "digest", span.CallDigest, "err", err)
 		}
 	}
 

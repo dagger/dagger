@@ -374,9 +374,9 @@ type SpanSnapshot struct {
 	ResumeOutput string `json:",omitempty"`
 
 	CallDigest string `json:",omitempty"`
-	// CallPayload carries the legacy span-embedded call payload
-	// (dagger.io/dag.call) still written for older consumers; newer engines
-	// deliver calls over the log channel instead.
+	// CallPayload carries the span-embedded call payload (dagger.io/dag.call):
+	// a spanned call's frame rides its own span, while frames without a span
+	// of their own arrive over the call-payload log channel.
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 

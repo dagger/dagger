@@ -101,6 +101,17 @@ func AroundFunc(
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.DagDigestAttr, callDigest.String()),
 	}
+	// Carry this frame's payload on the span itself. This is the primary
+	// carrier of a spanned call's frame: clients render the call from it the
+	// moment the span starts (e.g. --progress=plain prints a span's start line
+	// exactly once), and older CLIs read nothing else. The engine exports call
+	// spans on a protected lane that never drops them on overflow and retries
+	// failed exports, so the span copy is a durable delivery, settled per
+	// target like a payload log.
+	callAttr, callOnSpan := callPayloadAttr(ctx, spanName, req.ResultCall)
+	if callOnSpan {
+		attrs = append(attrs, callAttr)
+	}
 
 	// if inside a module call, add call trace metadata. this is useful
 	// since within a single span, we can correlate the caller's and callee's
@@ -152,12 +163,23 @@ func AroundFunc(
 		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
 	}
 
+	// Claim the root's payload before starting the span: Start hands the
+	// span's live snapshot to the export pipeline, whose exporter settles this
+	// claim once the frame lands. Claiming afterwards could let that export
+	// settle an unclaimed digest first, and the claim's failure would then
+	// skip the closure walk below.
+	rootClaimed := claimCallPayload(payloadKeys, callDigest.String())
+
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 	initCacheEvidence(span, req)
 
-	// Every frame crosses the protected payload log lane; spans carry only
-	// the digest.
-	recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
+	// Fill any gaps in this call's recipe closure over the payload log lane.
+	// A recording span carries its own frame, so its root is not logged; the
+	// walk still visits the closure and logs only frames that have not been
+	// claimed for this delivery domain. A root claimed elsewhere means that
+	// claimant already walked the closure.
+	recordCallPayloadsForSpan(ctx, payloadKeys, callDigest.String(), req.ResultCall,
+		rootClaimed, callOnSpan && span.IsRecording())
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
 		slog.InfoContext(ctx, "end call",
@@ -173,6 +195,23 @@ func AroundFunc(
 		recordCacheEvidence(span, req.CacheEvidence, res)
 		logResult(ctx, res, req.ResultCall)
 	}
+}
+
+// callPayloadAttr encodes frame as the dagger.io/dag.call span attribute. ok is
+// false when the frame cannot be built or encoded; the call then has no frame
+// on its span and its payload falls back to the log lane.
+func callPayloadAttr(ctx context.Context, spanName string, frame *dagql.ResultCall) (attribute.KeyValue, bool) {
+	callPB, err := frame.CallPB(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to build call payload", "field", spanName, "err", err)
+		return attribute.KeyValue{}, false
+	}
+	encoded, err := callPB.Encode()
+	if err != nil {
+		slog.WarnContext(ctx, "failed to encode call", "field", spanName, "err", err)
+		return attribute.KeyValue{}, false
+	}
+	return attribute.String(telemetry.DagCallAttr, encoded), true
 }
 
 // initCacheEvidence arms the request's cache-evidence carrier
