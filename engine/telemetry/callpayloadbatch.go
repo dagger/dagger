@@ -51,41 +51,16 @@ const (
 // exporter batches, rather than ingress, keeps each persistence operation
 // bounded.
 //
-// This is the ONLY transport for payload records (WithoutCallPayloads keeps
-// them out of the ordinary processor), so it owns their retries too: a batch
-// whose export fails goes back to the head of the queue, in order, and is
-// retried with exponential backoff until it lands or
+// This is the ONLY log transport for payload records (WithoutCallPayloads
+// keeps them out of the ordinary processor), so it owns their retries too: a
+// batch whose export fails goes back to the head of the queue, in order, and
+// is retried with exponential backoff until it lands or
 // CallPayloadMaxExportAttempts is spent. Shutdown keeps retrying within its
 // context; when that ends, it cancels the export in flight and returns only
 // once the worker has stopped, so the caller may shut the exporter down.
 type CallPayloadBatchProcessor struct {
-	exporter sdklog.Exporter
-	accept   func(sdklog.Record) bool
-	// terminalErr accumulates every loss (dropped batches, records emitted
-	// after shutdown) for Shutdown, so the session-end seal learns of it even
-	// when the loss happened long before. ForceFlush deliberately reports only
-	// its own pass: a single in-session drop must not fail every later flush.
-	terminalErr error
-
-	// ctx ends the worker's own exports (the coalesced and retried ones);
-	// Shutdown cancels it when its own context ends.
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	mu       sync.Mutex
-	queue    []sdklog.Record
-	failures int // consecutive failed exports of the batch at the queue head
-	stopped  bool
-
-	wake     chan struct{}
-	flush    chan callPayloadBatchRequest
-	shutdown chan callPayloadBatchRequest
-	done     chan struct{}
-}
-
-type callPayloadBatchRequest struct {
-	ctx  context.Context
-	done chan error
+	*protectedBatcher[sdklog.Record]
+	accept func(sdklog.Record) bool
 }
 
 func NewCallPayloadBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchProcessor {
@@ -101,111 +76,180 @@ func NewControlBatchProcessor(exporter sdklog.Exporter) *CallPayloadBatchProcess
 }
 
 func newProtectedBatchProcessor(exporter sdklog.Exporter, accept func(sdklog.Record) bool) *CallPayloadBatchProcessor {
-	ctx, cancel := context.WithCancel(context.Background())
-	processor := &CallPayloadBatchProcessor{
-		accept:   accept,
-		exporter: exporter,
-		ctx:      ctx,
-		cancel:   cancel,
-		queue:    make([]sdklog.Record, 0, LogExportMaxBatchSize),
-		wake:     make(chan struct{}, 1),
-		flush:    make(chan callPayloadBatchRequest),
-		shutdown: make(chan callPayloadBatchRequest, 1),
-		done:     make(chan struct{}),
+	return &CallPayloadBatchProcessor{
+		protectedBatcher: newProtectedBatcher(protectedBatcherConfig[sdklog.Record]{
+			export:    exporter.Export,
+			describe:  callPayloadDigests,
+			batchSize: LogExportMaxBatchSize,
+			kind:      "records",
+		}),
+		accept: accept,
 	}
-	go processor.run()
-	return processor
 }
 
 func (processor *CallPayloadBatchProcessor) OnEmit(_ context.Context, record *sdklog.Record) error {
 	if record == nil || !processor.accept(*record) {
 		return nil
 	}
-
-	cloned := record.Clone()
-	processor.mu.Lock()
-	if processor.stopped {
-		processor.terminalErr = errors.Join(processor.terminalErr, errors.New("protected record emitted after shutdown"))
-		err := processor.terminalErr
-		processor.mu.Unlock()
-		return err
-	}
-	wake := len(processor.queue) == 0
-	processor.queue = append(processor.queue, cloned)
-	processor.mu.Unlock()
-
-	if wake {
-		select {
-		case processor.wake <- struct{}{}:
-		default:
-		}
-	}
-	return nil
+	return processor.enqueue(record.Clone())
 }
 
 func (processor *CallPayloadBatchProcessor) Enabled(context.Context, sdklog.EnabledParameters) bool {
 	return true
 }
 
-func (processor *CallPayloadBatchProcessor) ForceFlush(ctx context.Context) error {
-	processor.mu.Lock()
-	stopped := processor.stopped
-	processor.mu.Unlock()
+// protectedBatcher is the lossless, retrying worker behind every protected
+// telemetry lane: call payload and agent control log records
+// (CallPayloadBatchProcessor) and call spans (CallSpanProcessor). Ingress
+// never blocks and never drops; one worker coalesces a burst for
+// CallPayloadExportDelay, exports it in bounded batches, and retries a failed
+// batch in order with exponential backoff until it lands or
+// CallPayloadMaxExportAttempts is spent.
+type protectedBatcher[T any] struct {
+	export    func(context.Context, []T) error
+	describe  func([]T) []string
+	batchSize int
+	kind      string
+	// terminalErr accumulates every loss (dropped batches, items enqueued
+	// after shutdown) for Shutdown, so the session-end seal learns of it even
+	// when the loss happened long before. ForceFlush deliberately reports only
+	// its own pass: a single in-session drop must not fail every later flush.
+	terminalErr error
+
+	// ctx ends the worker's own exports (the coalesced and retried ones);
+	// Shutdown cancels it when its own context ends.
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	mu       sync.Mutex
+	queue    []T
+	failures int // consecutive failed exports of the batch at the queue head
+	stopped  bool
+
+	wake     chan struct{}
+	flush    chan protectedBatchRequest
+	shutdown chan protectedBatchRequest
+	done     chan struct{}
+}
+
+type protectedBatcherConfig[T any] struct {
+	// export delivers one bounded batch; an error retries it.
+	export func(context.Context, []T) error
+	// describe names a dropped batch's items for diagnostics.
+	describe func([]T) []string
+	// batchSize bounds each export.
+	batchSize int
+	// kind names the items in errors, e.g. "records" or "spans".
+	kind string
+}
+
+type protectedBatchRequest struct {
+	ctx  context.Context
+	done chan error
+}
+
+func newProtectedBatcher[T any](config protectedBatcherConfig[T]) *protectedBatcher[T] {
+	ctx, cancel := context.WithCancel(context.Background())
+	batcher := &protectedBatcher[T]{
+		export:    config.export,
+		describe:  config.describe,
+		batchSize: config.batchSize,
+		kind:      config.kind,
+		ctx:       ctx,
+		cancel:    cancel,
+		queue:     make([]T, 0, config.batchSize),
+		wake:      make(chan struct{}, 1),
+		flush:     make(chan protectedBatchRequest),
+		shutdown:  make(chan protectedBatchRequest, 1),
+		done:      make(chan struct{}),
+	}
+	go batcher.run()
+	return batcher
+}
+
+// enqueue appends an item the caller already owns (a clone or immutable
+// snapshot) and wakes the worker. After Shutdown it records the loss and
+// returns the terminal error instead.
+func (batcher *protectedBatcher[T]) enqueue(item T) error {
+	batcher.mu.Lock()
+	if batcher.stopped {
+		batcher.terminalErr = errors.Join(batcher.terminalErr, fmt.Errorf("protected %s emitted after shutdown", batcher.kind))
+		err := batcher.terminalErr
+		batcher.mu.Unlock()
+		return err
+	}
+	wake := len(batcher.queue) == 0
+	batcher.queue = append(batcher.queue, item)
+	batcher.mu.Unlock()
+
+	if wake {
+		select {
+		case batcher.wake <- struct{}{}:
+		default:
+		}
+	}
+	return nil
+}
+
+func (batcher *protectedBatcher[T]) ForceFlush(ctx context.Context) error {
+	batcher.mu.Lock()
+	stopped := batcher.stopped
+	batcher.mu.Unlock()
 	if stopped {
 		select {
-		case <-processor.done:
-			return processor.deliveryError()
+		case <-batcher.done:
+			return batcher.deliveryError()
 		case <-ctx.Done():
 			return context.Cause(ctx)
 		}
 	}
 
-	request := callPayloadBatchRequest{ctx: ctx, done: make(chan error, 1)}
+	request := protectedBatchRequest{ctx: ctx, done: make(chan error, 1)}
 	select {
-	case processor.flush <- request:
+	case batcher.flush <- request:
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-processor.done:
-		return processor.deliveryError()
+	case <-batcher.done:
+		return batcher.deliveryError()
 	}
 	select {
 	case err := <-request.done:
 		return err
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-processor.done:
-		return processor.deliveryError()
+	case <-batcher.done:
+		return batcher.deliveryError()
 	}
 }
 
-func (processor *CallPayloadBatchProcessor) Shutdown(ctx context.Context) error {
-	processor.mu.Lock()
-	if processor.stopped {
-		processor.mu.Unlock()
+func (batcher *protectedBatcher[T]) Shutdown(ctx context.Context) error {
+	batcher.mu.Lock()
+	if batcher.stopped {
+		batcher.mu.Unlock()
 		select {
-		case <-processor.done:
-			return processor.deliveryError()
+		case <-batcher.done:
+			return batcher.deliveryError()
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
-	processor.stopped = true
-	processor.mu.Unlock()
+	batcher.stopped = true
+	batcher.mu.Unlock()
 
-	request := callPayloadBatchRequest{ctx: ctx, done: make(chan error, 1)}
-	processor.shutdown <- request
+	request := protectedBatchRequest{ctx: ctx, done: make(chan error, 1)}
+	batcher.shutdown <- request
 	select {
 	case err := <-request.done:
 		// The worker returns right after reporting, but its deferred cleanup
 		// (and close(done)) still runs after the send. Wait for it, so
 		// Shutdown keeps its promise that the worker has stopped.
-		<-processor.done
+		<-batcher.done
 		return err
 	case <-ctx.Done():
 		// Out of time: end the export in flight and wait for the worker, so
 		// no export outlives Shutdown.
-		processor.cancel()
-		<-processor.done
+		batcher.cancel()
+		<-batcher.done
 		return ctx.Err()
 	}
 }
@@ -213,8 +257,8 @@ func (processor *CallPayloadBatchProcessor) Shutdown(ctx context.Context) error 
 // run is the single worker. Between exports it sleeps on the wake signal; a
 // wake arms the coalescing delay, a failed export arms the retry backoff
 // instead, and an explicit flush or shutdown exports immediately either way.
-func (processor *CallPayloadBatchProcessor) run() {
-	defer close(processor.done)
+func (batcher *protectedBatcher[T]) run() {
+	defer close(batcher.done)
 	var timer *time.Timer
 	var timerC <-chan time.Time
 	arm := func(delay time.Duration) {
@@ -233,10 +277,10 @@ func (processor *CallPayloadBatchProcessor) run() {
 	}
 	defer disarm()
 	// export runs exportPass over the queue. A failed batch arms its retry
-	// backoff. Records that arrived during a pass are coalesced like a fresh
+	// backoff. Items that arrived during a pass are coalesced like a fresh
 	// burst — the delay is re-armed rather than draining them at once, so a
 	// sustained trickle still exports in closure-sized batches instead of one
-	// Export per handful of records — unless drain is set, in which case
+	// Export per handful of items — unless drain is set, in which case
 	// passes continue until the queue is observed empty.
 	export := func(ctx context.Context, drain bool) error {
 		disarm()
@@ -244,7 +288,7 @@ func (processor *CallPayloadBatchProcessor) run() {
 		// terminalErr for Shutdown rather than failing every later flush.
 		var errs error
 		for {
-			retryIn, more, dropped, failed := processor.exportPass(ctx)
+			retryIn, more, dropped, failed := batcher.exportPass(ctx)
 			errs = errors.Join(errs, dropped)
 			err := errors.Join(errs, failed)
 			switch {
@@ -274,32 +318,32 @@ func (processor *CallPayloadBatchProcessor) run() {
 	}
 	for {
 		select {
-		case <-processor.wake:
+		case <-batcher.wake:
 			if timerC == nil {
 				arm(CallPayloadExportDelay)
 			}
-			// A pending retry backoff keeps its schedule; the new records
+			// A pending retry backoff keeps its schedule; the new items
 			// queue up behind the failed batch and export with it.
 		case <-timerC:
-			if err := export(processor.ctx, false); err != nil {
+			if err := export(batcher.ctx, false); err != nil {
 				otel.Handle(err)
 			}
-		case request := <-processor.flush:
+		case request := <-batcher.flush:
 			// A flush's export ends with the flush, or when Shutdown cancels
 			// the worker, whichever comes first.
-			ctx, stop := processor.withWorker(request.ctx)
+			ctx, stop := batcher.withWorker(request.ctx)
 			request.done <- export(ctx, true)
 			stop()
-		case request := <-processor.shutdown:
+		case request := <-batcher.shutdown:
 			disarm()
-			// Every loss of the processor's lifetime (drops during the drain
+			// Every loss of the batcher's lifetime (drops during the drain
 			// included) is already in terminalErr; add what the drain left
 			// undelivered, and keep the result terminal for later calls.
-			interrupted := processor.drain(request.ctx)
-			processor.mu.Lock()
-			processor.terminalErr = errors.Join(processor.terminalErr, interrupted)
-			err := processor.terminalErr
-			processor.mu.Unlock()
+			interrupted := batcher.drain(request.ctx)
+			batcher.mu.Lock()
+			batcher.terminalErr = errors.Join(batcher.terminalErr, interrupted)
+			err := batcher.terminalErr
+			batcher.mu.Unlock()
 			request.done <- err
 			return
 		}
@@ -307,9 +351,9 @@ func (processor *CallPayloadBatchProcessor) run() {
 }
 
 // withWorker returns ctx, also cancelled when Shutdown cancels the worker.
-func (processor *CallPayloadBatchProcessor) withWorker(ctx context.Context) (context.Context, func()) {
+func (batcher *protectedBatcher[T]) withWorker(ctx context.Context) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(ctx)
-	stopAfter := context.AfterFunc(processor.ctx, cancel)
+	stopAfter := context.AfterFunc(batcher.ctx, cancel)
 	return ctx, func() {
 		stopAfter()
 		cancel()
@@ -321,14 +365,14 @@ func (processor *CallPayloadBatchProcessor) withWorker(ctx context.Context) (con
 // CallPayloadMaxExportAttempts is dropped as usual, which exportPass records
 // in terminalErr. It reports what ctx cut short: the last failure still
 // queued for retry, and ctx's error — not failures a retry repaired.
-func (processor *CallPayloadBatchProcessor) drain(ctx context.Context) error {
-	defer processor.cancel()
+func (batcher *protectedBatcher[T]) drain(ctx context.Context) error {
+	defer batcher.cancel()
 	var retrying error
 	for {
 		if err := ctx.Err(); err != nil {
 			return errors.Join(retrying, err)
 		}
-		retryIn, more, _, failed := processor.exportPass(ctx)
+		retryIn, more, _, failed := batcher.exportPass(ctx)
 		if retryIn > 0 {
 			retrying = failed
 			retry := time.NewTimer(retryIn)
@@ -353,19 +397,19 @@ func (processor *CallPayloadBatchProcessor) drain(ctx context.Context) error {
 // off before trying again, and failed is that export's error; 0 means the pass
 // completed, with any batch that exceeded its attempts given up on. dropped
 // reports this pass's give-ups (each also accumulated into terminalErr for
-// Shutdown). more reports whether records arrived while the pass ran and are
+// Shutdown). more reports whether items arrived while the pass ran and are
 // now queued.
-func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (retryIn time.Duration, more bool, dropped, failed error) {
-	processor.mu.Lock()
-	queued := processor.queue
-	processor.queue = nil
-	failures := processor.failures
-	processor.mu.Unlock()
+func (batcher *protectedBatcher[T]) exportPass(ctx context.Context) (retryIn time.Duration, more bool, dropped, failed error) {
+	batcher.mu.Lock()
+	queued := batcher.queue
+	batcher.queue = nil
+	failures := batcher.failures
+	batcher.mu.Unlock()
 
 	for len(queued) > 0 {
-		batchSize := min(len(queued), LogExportMaxBatchSize)
+		batchSize := min(len(queued), batcher.batchSize)
 		batch := queued[:batchSize]
-		exportErr := processor.exporter.Export(ctx, batch)
+		exportErr := batcher.export(ctx, batch)
 		if exportErr == nil {
 			failures = 0
 			clear(batch)
@@ -374,41 +418,41 @@ func (processor *CallPayloadBatchProcessor) exportPass(ctx context.Context) (ret
 		}
 		failures++
 		if failures < CallPayloadMaxExportAttempts {
-			processor.mu.Lock()
-			processor.queue = append(queued, processor.queue...)
-			processor.failures = failures
-			processor.mu.Unlock()
+			batcher.mu.Lock()
+			batcher.queue = append(queued, batcher.queue...)
+			batcher.failures = failures
+			batcher.mu.Unlock()
 			return callPayloadRetryDelay(failures), false, dropped, exportErr
 		}
 		// Give up on this batch alone; the rest of the queue gets a fresh
 		// start. This can leave a client's closure permanently partial
 		// (see CallPayloadMaxExportAttempts), so name the casualties.
-		digests := callPayloadDigests(batch)
-		slog.Warn("dropping call payload records after repeated export failures",
-			"records", batchSize,
+		slog.Warn("dropping protected telemetry after repeated export failures",
+			"kind", batcher.kind,
+			"count", batchSize,
 			"attempts", failures,
-			"digests", digests,
+			"digests", batcher.describe(batch),
 			"err", exportErr)
-		dropErr := fmt.Errorf("dropping %d protected records after %d failed exports: %w", batchSize, failures, exportErr)
-		processor.mu.Lock()
-		processor.terminalErr = errors.Join(processor.terminalErr, dropErr)
-		processor.mu.Unlock()
+		dropErr := fmt.Errorf("dropping %d protected %s after %d failed exports: %w", batchSize, batcher.kind, failures, exportErr)
+		batcher.mu.Lock()
+		batcher.terminalErr = errors.Join(batcher.terminalErr, dropErr)
+		batcher.mu.Unlock()
 		dropped = errors.Join(dropped, dropErr)
 		failures = 0
 		clear(batch)
 		queued = queued[batchSize:]
 	}
-	processor.mu.Lock()
-	processor.failures = 0
-	more = len(processor.queue) > 0
-	processor.mu.Unlock()
+	batcher.mu.Lock()
+	batcher.failures = 0
+	more = len(batcher.queue) > 0
+	batcher.mu.Unlock()
 	return 0, more, dropped, nil
 }
 
-func (processor *CallPayloadBatchProcessor) deliveryError() error {
-	processor.mu.Lock()
-	defer processor.mu.Unlock()
-	return processor.terminalErr
+func (batcher *protectedBatcher[T]) deliveryError() error {
+	batcher.mu.Lock()
+	defer batcher.mu.Unlock()
+	return batcher.terminalErr
 }
 
 func callPayloadRetryDelay(failures int) time.Duration {
