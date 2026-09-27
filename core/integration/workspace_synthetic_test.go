@@ -261,25 +261,23 @@ source = "./modules/bad"
 		Head().
 		AsWorkspace()
 
-	group := ws.Artifacts()
-	generators, err := group.FilterTypes([]string{"Generator"}).Items(ctx)
+	// Type filters keep load failures, so the broken module is reported
+	// next to the generators that loaded.
+	items, err := ws.Artifacts().FilterTypes([]string{"Generator"}).Items(ctx)
 	require.NoError(t, err)
-	require.Len(t, generators, 1)
-	name, err := generators[0].URI(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "dag://good/generate", name)
-
-	items, err := group.Items(ctx)
-	require.NoError(t, err)
-	var loadFailures []string
+	var generators, loadFailures []string
 	for _, item := range items {
 		message, err := item.LoadError(ctx)
 		require.NoError(t, err)
 		if message != "" {
 			loadFailures = append(loadFailures, message)
+			continue
 		}
+		uri, err := item.URI(ctx)
+		require.NoError(t, err)
+		generators = append(generators, uri)
 	}
-	require.NoError(t, err)
+	require.Equal(t, []string{"dag://good/generate"}, generators)
 	require.Len(t, loadFailures, 1)
 	require.Contains(t, loadFailures[0], `module "bad"`)
 
