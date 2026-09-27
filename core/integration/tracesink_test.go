@@ -44,6 +44,9 @@ type agentTraceSink struct {
 	logExp sdklog.Exporter
 	base   string
 	conn   engineconn.EngineConn
+	// changed is closed and replaced after every ingested export, waking
+	// observers blocked in restorableCapture.
+	changed chan struct{}
 
 	traces []*coltracepb.ExportTraceServiceRequest
 	logs   []*collogspb.ExportLogsServiceRequest
@@ -52,7 +55,7 @@ type agentTraceSink struct {
 func newAgentTraceSink(t testing.TB) *agentTraceSink {
 	t.Helper()
 	db := dagui.NewDB()
-	sink := &agentTraceSink{db: db, logExp: db.LogExporter()}
+	sink := &agentTraceSink{db: db, logExp: db.LogExporter(), changed: make(chan struct{})}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/traces", sink.tracesHandler)
@@ -96,6 +99,7 @@ func (sink *agentTraceSink) tracesHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	sink.notifyLocked()
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -117,6 +121,7 @@ func (sink *agentTraceSink) logsHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	sink.notifyLocked()
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -254,4 +259,103 @@ func (sink *agentTraceSink) capture() ([]*coltracepb.ExportTraceServiceRequest, 
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	return slices.Clone(sink.traces), slices.Clone(sink.logs)
+}
+
+// notifyLocked wakes every observer after either telemetry channel is
+// ingested. Reading the predicate and this channel under mu prevents lost
+// wakeups.
+func (sink *agentTraceSink) notifyLocked() {
+	close(sink.changed)
+	sink.changed = make(chan struct{})
+}
+
+// restorableTraceCapture is a received prefix of the trace that was verified
+// restorable, and that same prefix's export requests.
+type restorableTraceCapture struct {
+	nodes    map[string]*dagui.AgentNode
+	traceIDs map[string]string
+	traces   []*coltracepb.ExportTraceServiceRequest
+	logs     []*collogspb.ExportLogsServiceRequest
+}
+
+// errAgentCaptureFailed is terminal: waiting longer cannot make an agent
+// whose producer reported a capture error restorable.
+var errAgentCaptureFailed = errors.New("agent capture failed")
+
+// restorableCaptureLocked validates the current received prefix and captures
+// that same prefix: the roster size, each agent's required state, and that
+// each agent's CURRENT anchor rebuilds its full recipe closure. Checking and
+// capturing separately would let a newer revision (a turn's final commit, a
+// dismissal) move an anchor to frames still in flight between the two.
+func (sink *agentTraceSink) restorableCaptureLocked(count int, states map[string]string) (restorableTraceCapture, error) {
+	agents := sink.db.Agents()
+	if len(agents) != count {
+		return restorableTraceCapture{}, fmt.Errorf("want %d agents, received %d", count, len(agents))
+	}
+	nodes := make(map[string]*dagui.AgentNode, count)
+	traceIDs := make(map[string]string, count)
+	for _, agent := range agents {
+		if agent.Control != nil && agent.Control.CaptureError != "" {
+			return restorableTraceCapture{}, fmt.Errorf("%w: agent %q: %s", errAgentCaptureFailed, agent.Name, agent.Control.CaptureError)
+		}
+		if agent.Control == nil || agent.CallDigest == "" || agent.SnapshotDigest == "" {
+			return restorableTraceCapture{}, fmt.Errorf("agent %q lacks a control record, call digest or snapshot digest", agent.Name)
+		}
+		if state, ok := states[agent.Name]; ok && agent.State != state {
+			return restorableTraceCapture{}, fmt.Errorf("agent %q state %q, want %q", agent.Name, agent.State, state)
+		}
+		if _, err := sink.db.CallIDForDigest(agent.SnapshotDigest); err != nil {
+			return restorableTraceCapture{}, fmt.Errorf("agent %q anchor %s: %w", agent.Name, agent.SnapshotDigest, err)
+		}
+		nodes[agent.Name] = agent
+		traceIDs[agent.Name] = agent.Control.Trace
+	}
+	for name := range states {
+		if _, ok := nodes[name]; !ok {
+			return restorableTraceCapture{}, fmt.Errorf("required agent %q not in trace", name)
+		}
+	}
+	return restorableTraceCapture{
+		nodes:    nodes,
+		traceIDs: traceIDs,
+		traces:   slices.Clone(sink.traces),
+		logs:     slices.Clone(sink.logs),
+	}, nil
+}
+
+// restorableCapture blocks until the received prefix is restorable, then
+// returns it. It waits on the sink's change notification, not a poll.
+func (sink *agentTraceSink) restorableCapture(ctx context.Context, count int, states map[string]string) (restorableTraceCapture, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return restorableTraceCapture{}, err
+		}
+		sink.mu.Lock()
+		captured, err := sink.restorableCaptureLocked(count, states)
+		changed := sink.changed
+		sink.mu.Unlock()
+		if err == nil {
+			return captured, nil
+		}
+		if errors.Is(err, errAgentCaptureFailed) {
+			return restorableTraceCapture{}, err
+		}
+		select {
+		case <-ctx.Done():
+			return restorableTraceCapture{}, fmt.Errorf("waiting for restorable trace: %w: %w", ctx.Err(), err)
+		case <-changed:
+		}
+	}
+}
+
+// awaitRestorableCapture is restorableCapture bounded to a minute, failing
+// the test if the trace never becomes restorable. states names the lifecycle
+// state an agent's latest record must show; agents it omits may be in any.
+func (sink *agentTraceSink) awaitRestorableCapture(ctx context.Context, t testing.TB, count int, states map[string]string) restorableTraceCapture {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	captured, err := sink.restorableCapture(ctx, count, states)
+	require.NoError(t, err)
+	return captured
 }

@@ -1707,55 +1707,16 @@ func (sink *agentTraceSink) awaitAgent(t *testctx.T, state string) *dagui.AgentN
 // display name. Waiting on the roster alone would race the record that makes
 // the trace restorable at all, and the anchor record and its payload ride
 // different pipelines — the record is a log, while call frames arrive through
-// spans and the payload log lane. A capture taken in between serves a trace
-// whose anchor names a conversation nothing can rebuild (the "never reached
-// this client" restore failure, seen as a CI flake on the worker dismissed
-// right after its turn).
+// spans and the payload log lane.
 //
-// The rebuild check reads each agent's LATEST record on every poll, not the
-// one the roster wait saw first: a newer revision (the turn's final commit,
-// a dismissal) can move an agent's anchor to a conversation whose frames are
-// still in flight. Callers that need an agent's final revision must wait for
-// it (awaitAgentState) BEFORE calling this, so the anchors checked here are
-// the ones a capture taken afterwards will restore.
+// Tests that capture the trace for a restore should use
+// awaitRestorableCapture instead, which captures the same received prefix it
+// verified: checking here and capturing afterwards lets a newer revision move
+// an anchor to frames still in flight (the "never reached this client"
+// restore failure, #14335).
 func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]*dagui.AgentNode {
 	t.Helper()
-	byName := map[string]*dagui.AgentNode{}
-	var captureErr error
-	require.EventuallyWithT(t, func(ct *assert.CollectT) {
-		clear(byName)
-		sink.read(func(db *dagui.DB) {
-			agents := db.Agents()
-			if !assert.Len(ct, agents, count) {
-				return
-			}
-			for _, agent := range agents {
-				if agent.Control != nil && agent.Control.CaptureError != "" {
-					captureErr = fmt.Errorf("agent %q capture failed: %s", agent.Name, agent.Control.CaptureError)
-					return
-				}
-				if !assert.NotEmpty(ct, agent.CallDigest, "agent %q has no call digest", agent.Name) ||
-					!assert.NotEmpty(ct, agent.SnapshotDigest, "agent %q has no resume anchor", agent.Name) {
-					return
-				}
-				byName[agent.Name] = agent
-			}
-		})
-	}, 60*time.Second, 100*time.Millisecond)
-	require.NoError(t, captureErr)
-	require.EventuallyWithT(t, func(ct *assert.CollectT) {
-		sink.read(func(db *dagui.DB) {
-			for _, agent := range db.Agents() {
-				if _, ok := byName[agent.Name]; !ok {
-					continue
-				}
-				byName[agent.Name] = agent
-				_, err := db.CallIDForDigest(agent.SnapshotDigest)
-				assert.NoError(ct, err, "agent %q's anchor does not rebuild yet", agent.Name)
-			}
-		})
-	}, 60*time.Second, 100*time.Millisecond)
-	return byName
+	return sink.awaitRestorableCapture(t.Context(), t, count, nil).nodes
 }
 
 // awaitAgentState blocks until the trace shows the named agent in the given

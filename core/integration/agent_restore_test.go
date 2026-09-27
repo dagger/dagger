@@ -323,23 +323,20 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// the whole session would restore as tombstones or none of it would.
 	require.Equal(t, "STOPPED", tests.mustVerb(ctx, t, "stop"))
 
-	// The source session's trace, as its own client saw it. Two things have
-	// to land before it is worth capturing, and each rides its own export:
-	// the dismissal's STOPPED record (or the plan puts the worker back into
-	// its pre-stop state), and then every anchor's payload closure (or the
-	// plan names conversations nothing can rebuild). The order matters: the
-	// dismissal is the last control record this session publishes, and
-	// control records share one ordered lane, so once it has landed every
-	// agent's latest record is its final one, and awaitRestorable checks the
-	// anchors those final records name. Checked the other way round, a
-	// revision landing in between (the dismissed worker's) could move an
-	// anchor to frames still in flight when the capture is taken.
-	sink.awaitAgentState(t, "tests", "STOPPED")
-	rostered := sink.awaitRestorable(t, 3)
-	require.Contains(t, rostered, "chief")
-	require.NotNil(t, rostered["chief"].Control)
-	sourceTraceID := rostered["chief"].Control.Trace
-	traces, logs := sink.capture()
+	// The source session's trace, as its own client saw it. Before it is
+	// worth capturing, the roster must show every agent in its final state
+	// (the dismissal's STOPPED record, or the plan puts the worker back into
+	// its pre-stop state) and every current anchor must rebuild its full
+	// recipe closure (or the plan names conversations nothing can rebuild).
+	// Both are checked against, and captured from, one received prefix: a
+	// capture taken separately could include a newer anchor whose frames were
+	// still in flight (#14335).
+	captured := sink.awaitRestorableCapture(ctx, t, 3, map[string]string{
+		"chief": "IDLE", "scout": "IDLE", "tests": "STOPPED",
+	})
+	require.Contains(t, captured.traceIDs, "chief")
+	sourceTraceID := captured.traceIDs["chief"]
+	traces, logs := captured.traces, captured.logs
 	require.NotEmpty(t, traces)
 	require.NotEmpty(t, logs)
 
@@ -442,13 +439,12 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 
 	// Wait for the anchor to be rebuildable BEFORE stripping, so the refusal
 	// below is caused by the strip and not by a payload that had simply not
-	// arrived yet.
-	rostered := sink.awaitRestorable(t, 1)
-	// Canonical controls can arrive before diagnostic loop spans.
-	require.Contains(t, rostered, "solo")
-	require.NotNil(t, rostered["solo"].Control)
-	traceID := rostered["solo"].Control.Trace
-	traces, logs := sink.capture()
+	// arrived yet. Canonical controls can arrive before diagnostic loop
+	// spans, so the trace ID comes from the control record.
+	captured := sink.awaitRestorableCapture(ctx, t, 1, nil)
+	require.Contains(t, captured.traceIDs, "solo")
+	traceID := captured.traceIDs["solo"]
+	traces, logs := captured.traces, captured.logs
 
 	// Serve the spans and the agent's own state/anchor records, but no call
 	// payloads on either channel: the anchor still names a conversation, and
