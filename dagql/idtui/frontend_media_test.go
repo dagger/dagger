@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"image"
+	"image/color"
 	"image/png"
 	"io"
 	"strings"
@@ -211,6 +212,7 @@ func TestPrettyMediaKittyConversation(t *testing.T) {
 			fe.logs.Images = images
 			fe.shell = stubShellHandler{}
 			fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+			fe.promptBackground = blendPromptBackground(color.Black, termenv.TrueColor)
 			records, data := frontendMediaRecords(t, userID)
 			require.NoError(t, fe.logs.Export(context.Background(), db.IngestLogs(records)))
 			fe.recalculateViewLocked()
@@ -221,6 +223,26 @@ func TestPrettyMediaKittyConversation(t *testing.T) {
 			require.Contains(t, frame, "\U0010EEEE")
 			require.Contains(t, frame, "\x1b[38;2;", "role styling must preserve the image ID")
 			require.NotContains(t, frame, data, "rendered frames must contain references, not image bytes")
+			if origin != "EVENT" {
+				// The image sits on the message's shade, filled out as wide as
+				// the text around it, rather than punching a hole in the card.
+				shade := "\x1b[" + fe.promptBackground.term.Sequence(true) + "m"
+				var afterWidth int
+				var imageLines []string
+				for _, line := range strings.Split(frame, "\n") {
+					switch {
+					case isKittyImageLine(line):
+						imageLines = append(imageLines, line)
+					case strings.Contains(line, "after image"):
+						afterWidth = ansi.StringWidth(line)
+					}
+				}
+				require.NotEmpty(t, imageLines)
+				for _, line := range imageLines {
+					require.Contains(t, line, shade, "image row must carry the message shade")
+					require.Equal(t, afterWidth, ansi.StringWidth(line), "image row must fill the card: %q", line)
+				}
+			}
 			fe.tui.RenderOnce()
 			require.Contains(t, headless.Output(), "\x1b_G", "the terminal writer must resolve image references")
 			require.Contains(t, headless.Output(), "U=1", "images must use virtual placements")

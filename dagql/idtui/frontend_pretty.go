@@ -8979,8 +8979,16 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 			b.WriteByte('\n')
 		}
 		// Kitty placeholder foreground colors encode image IDs, not prose
-		// styling. Keep those and their upload markers intact.
+		// styling. Keep those and their upload markers intact, though a user
+		// prompt's image still sits on the prompt's shade.
 		if isKittyImageLine(line) {
+			if user && !failed {
+				lineWidth := width
+				if i == 0 {
+					lineWidth = firstWidth
+				}
+				line = shadeKittyImageLine(line, fe.promptBackground.term, lineWidth)
+			}
 			b.WriteString(line)
 			continue
 		}
@@ -9094,9 +9102,9 @@ func (fe *frontendPretty) styleLLMAgentMessageView(out TermOutput, span *dagui.S
 		b.WriteByte('\n')
 		if isKittyImageLine(line) {
 			if i == 0 {
-				b.WriteString(logPrefix)
+				line = logPrefix + line
 			}
-			b.WriteString(line)
+			b.WriteString(shadeKittyImageLine(line, shade, width))
 			continue
 		}
 		// Strip existing SGR so the role styling owns the line, as for user

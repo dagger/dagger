@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
@@ -215,6 +217,27 @@ func (k *kittyImages) isActive() bool {
 // text styling must not strip or replace their foreground color or OSC marker.
 func isKittyImageLine(line string) bool {
 	return strings.ContainsRune(line, kittyPlaceholder)
+}
+
+// shadeKittyImageLine fills an image row with a background, padded out to
+// width, so an image inside a shaded card doesn't punch a hole in it: the
+// terminal draws the image over its placeholder cells' background, which
+// shows through transparent pixels and past the image's right edge. Only the
+// background is set -- the foreground encodes the image ID -- and it is
+// re-applied after any full reset inside the row. A nil bg leaves the row
+// untouched.
+func shadeKittyImageLine(line string, bg termenv.Color, width int) string {
+	if bg == nil {
+		return line
+	}
+	setBg := "\x1b[" + bg.Sequence(true) + "m"
+	line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+setBg)
+	line = strings.ReplaceAll(line, "\x1b[m", "\x1b[m"+setBg)
+	pad := ""
+	if lineWidth := ansi.StringWidth(line); width > lineWidth {
+		pad = strings.Repeat(" ", width-lineWidth)
+	}
+	return setBg + line + pad + "\x1b[49m"
 }
 
 func (k *kittyImages) wrapTerminal(term tuist.Terminal) tuist.Terminal {
