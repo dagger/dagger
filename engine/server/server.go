@@ -83,6 +83,12 @@ type Server struct {
 	// sessionCloudFlushTimeout overrides sessionTelemetryFlushTimeout when
 	// set, for tests.
 	sessionCloudFlushTimeout time.Duration
+	// cloudForwardTuning overrides the Cloud forwarders' limits when set, for
+	// tests.
+	cloudForwardTuning *cloudForwardTuning
+	// cloudForwarders are the sessions' active store-to-Cloud forwarders,
+	// some outliving their sessions; their stores are kept from collection.
+	cloudForwarders cloudForwarders
 	// cloudReach remembers whether this engine reaches the Cloud URLs clients
 	// hand it, so each session need not probe.
 	cloudReach cloudReachability
@@ -953,6 +959,13 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		}
 	}
 
+	// Sessions are gone, and their stores' ends final: forwarders still
+	// publishing to Cloud get one Cloud bound to finish, then stop,
+	// releasing their stores.
+	if stopErr := srv.cloudForwarders.stopAll(ctx, sessionTelemetryFlushTimeout); stopErr != nil {
+		slog.Warn("Cloud telemetry forwarders did not stop in time", "error", stopErr)
+	}
+
 	if srv.clientDBs != nil {
 		err = errors.Join(err, srv.clientDBs.Close())
 	}
@@ -1127,16 +1140,23 @@ func (srv *Server) Locker() *locker.Locker {
 
 func (srv *Server) gcClientDBs() {
 	for range time.NewTicker(time.Minute).C {
-		keep := srv.activeClientIDs()
-		if srv.archives != nil {
-			if _, err := srv.archives.GC(); err != nil {
-				slog.Error("failed to GC archives", "error", err)
-			}
-			maps.Copy(keep, srv.archives.KeepSet())
+		srv.gcClientDBsOnce()
+	}
+}
+
+// gcClientDBsOnce collects the client stores no active session, archive or
+// Cloud forwarder keeps.
+func (srv *Server) gcClientDBsOnce() {
+	keep := srv.activeClientIDs()
+	if srv.archives != nil {
+		if _, err := srv.archives.GC(); err != nil {
+			slog.Error("failed to GC archives", "error", err)
 		}
-		if err := srv.clientDBs.GC(keep); err != nil {
-			slog.Error("failed to GC client DBs", "error", err)
-		}
+		maps.Copy(keep, srv.archives.KeepSet())
+	}
+	maps.Copy(keep, srv.cloudForwarders.KeepSet())
+	if err := srv.clientDBs.GC(keep); err != nil {
+		slog.Error("failed to GC client DBs", "error", err)
 	}
 }
 

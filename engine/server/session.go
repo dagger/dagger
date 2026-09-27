@@ -143,25 +143,20 @@ type daggerSession struct {
 	logExporter    sdklog.Exporter
 	telemetryDebug LifecycleTelemetryCounts
 
-	// Dagger Cloud exporters, set when the main client asked the engine to
-	// publish the session's telemetry. The session's providers own the span
-	// and log exporters; the metric exporter is shared by every client's
-	// periodic reader, so the session shuts it down itself.
-	cloudSpans   sdktrace.SpanExporter
-	cloudLogs    sdklog.Exporter
-	cloudMetrics sdkmetric.Exporter
+	// Dagger Cloud publishing, set up when the main client asked the engine
+	// to publish the session's telemetry. cloudForwarder publishes the spans
+	// and logs from the main client's store and owns their exporters; the
+	// metric exporter is shared by every client's periodic reader, so the
+	// session shuts it down itself.
+	cloudForwarder *cloudForwarder
+	cloudMetrics   sdkmetric.Exporter
 	// cloudBound bounds every flush, shutdown and metric export of the Cloud
-	// exporters; cloudFlushers flush the session's Cloud processors.
+	// exporters; cloudFlushers publish what the session has sent so far.
 	cloudBound    cloudFlushBound
 	cloudFlushers []func(context.Context)
-	// cloudSpanProcessor and cloudLogProcessor carry the session's telemetry
-	// to Cloud; a scale-out engine that does not publish its own stream sends
-	// it through them.
 	// cloudRefresh admits OAuth token refreshes until the main client's
 	// shutdown starts.
-	cloudRefresh       *cloudRefreshGate
-	cloudSpanProcessor sdktrace.SpanProcessor
-	cloudLogProcessor  sdklog.Processor
+	cloudRefresh *cloudRefreshGate
 
 	// informed when a client goes away to prevent hanging on drain
 	telemetryPubSub *PubSub
@@ -721,6 +716,11 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	if sess.loggerProvider != nil {
 		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
 	}
+	if sess.cloudForwarder != nil {
+		// Nothing reaches the store anymore: the forwarder publishes the
+		// rest to Cloud in the background, never holding the teardown.
+		sess.cloudForwarder.finish()
+	}
 	if sess.cloudMetrics != nil {
 		metricDur += timedProviderOp(ctx, &errs, sess.cloudMetrics.Shutdown)
 	}
@@ -900,25 +900,9 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	}
 	// Span: wcprof lazy parent, wcprof count, origin, call spans, live.
 	// Log: origin, call payloads, controls, ordinary.
+	// A session that publishes to Cloud does so from the main client's
+	// store (see cloudForwarder), so Cloud adds no processor here.
 	spanProcessors, logProcessors := 5, 4
-	bound := sess.cloudBound
-	if sess.cloudSpans != nil {
-		// The engine publishes the session's telemetry to Cloud itself: every
-		// span, call spans on their own protected lane, and every record
-		// including call payloads, as the client used to forward them.
-		processor := boundedCloudSpanProcessor{SpanProcessor: newCloudSpanPipeline(sess.cloudSpans), bound: bound}
-		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(processor))
-		sess.cloudSpanProcessor = processor
-		sess.cloudFlushers = append(sess.cloudFlushers, processor.flush)
-		spanProcessors++
-	}
-	if sess.cloudLogs != nil {
-		processor := boundedCloudLogProcessor{Processor: newCloudPayloadOnce(newCloudLogPipeline(sess.cloudLogs)), bound: bound}
-		loggerOpts = append(loggerOpts, sdklog.WithProcessor(processor))
-		sess.cloudLogProcessor = processor
-		sess.cloudFlushers = append(sess.cloudFlushers, processor.flush)
-		logProcessors++
-	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	sess.telemetryDebug = LifecycleTelemetryCounts{

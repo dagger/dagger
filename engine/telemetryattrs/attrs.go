@@ -20,6 +20,12 @@ const (
 	// DB. (string)
 	TelemetryOriginClientIDAttr = "dagger.io/telemetry.origin_client_id"
 
+	// TelemetryCloudPublishedAttr marks a span or log record in a client's
+	// telemetry store that another writer already publishes to Dagger Cloud:
+	// the stream of a scale-out engine that confirmed publishing its own
+	// session. The engine's store-to-Cloud forwarder leaves it out. (bool)
+	TelemetryCloudPublishedAttr = "dagger.io/telemetry.cloud_published"
+
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
 	// Dagger Cloud's /v1/traces stream stamps these on every span it emits

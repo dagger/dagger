@@ -64,13 +64,75 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 		slog.Warn("session telemetry not published to Cloud: cannot configure the Cloud exporters", "session", sess.sessionID, "error", err)
 		return
 	}
-	sess.cloudBound = cloudFlushBound{sessionID: sess.sessionID, timeout: sessionTelemetryFlushTimeout, budget: &cloudShutdownBudget{}}
-	sess.cloudRefresh = &cloudRefreshGate{}
+	bound := cloudFlushBound{sessionID: sess.sessionID, timeout: sessionTelemetryFlushTimeout, budget: &cloudShutdownBudget{}}
 	if srv.sessionCloudFlushTimeout > 0 {
-		sess.cloudBound.timeout = srv.sessionCloudFlushTimeout
+		bound.timeout = srv.sessionCloudFlushTimeout
 	}
-	sess.cloudSpans, sess.cloudLogs = spans, logs
+	forwarder, err := srv.startCloudForwarder(sess.sessionID, sess.mainClientCallerID, spans, logs, bound.timeout)
+	if err != nil {
+		slog.Warn("session telemetry not published to Cloud: cannot read the main client's telemetry store", "session", sess.sessionID, "error", err)
+		ctx, cancel := context.WithTimeout(context.Background(), bound.timeout)
+		defer cancel()
+		_ = errors.Join(spans.Shutdown(ctx), logs.Shutdown(ctx), metrics.Shutdown(ctx))
+		return
+	}
+	sess.cloudBound = bound
+	sess.cloudRefresh = &cloudRefreshGate{}
+	sess.cloudForwarder = forwarder
+	sess.cloudFlushers = append(sess.cloudFlushers, func(ctx context.Context) {
+		sess.drainCloudForwarder(ctx)
+	})
 	sess.cloudMetrics = newCloudMetricQueue(metrics, sess.cloudBound)
+}
+
+// startCloudForwarder starts forwarding the store of the session's main
+// client to Cloud through spans and logs, keeping the store from collection
+// until the forwarder releases it.
+func (srv *Server) startCloudForwarder(sessionID, mainClientID string, spans sdktrace.SpanExporter, logs sdklog.Exporter, shutdownTimeout time.Duration) (*cloudForwarder, error) {
+	if srv.clientDBs == nil {
+		return nil, errors.New("no telemetry stores")
+	}
+	db, err := srv.clientDBs.Open(context.Background(), mainClientID)
+	if err != nil {
+		return nil, err
+	}
+	tuning := defaultCloudForwardTuning()
+	tuning.shutdownTimeout = shutdownTimeout
+	if srv.cloudForwardTuning != nil {
+		tuning = *srv.cloudForwardTuning
+	}
+	var forwarder *cloudForwarder
+	released := make(chan struct{})
+	forwarder = newCloudForwarder(sessionID, mainClientID, db, spans, logs, tuning, func() {
+		<-released
+		srv.cloudForwarders.remove(forwarder)
+	})
+	srv.cloudForwarders.add(forwarder)
+	close(released)
+	return forwarder, nil
+}
+
+// drainCloudForwarder publishes what the session sent so far: the session's
+// providers put what they hold in the store, and the forwarder publishes up to
+// the store's end, within the Cloud bound. Whatever is left is published in
+// the background.
+func (sess *daggerSession) drainCloudForwarder(ctx context.Context) {
+	var errs error
+	if sess.tracerProvider != nil {
+		errs = errors.Join(errs, sess.tracerProvider.ForceFlush(ctx))
+	}
+	if sess.loggerProvider != nil {
+		errs = errors.Join(errs, sess.loggerProvider.ForceFlush(ctx))
+	}
+	if errs != nil {
+		slog.Warn("session telemetry not flushed to the store before publishing to Cloud", "session", sess.sessionID, "error", errs)
+	}
+	sess.cloudBound.bounded(ctx, "drain spans and logs", func(ctx context.Context) error {
+		if err := sess.cloudForwarder.drain(ctx); err != nil {
+			slog.Info("session telemetry still publishing to Cloud after shutdown", "session", sess.sessionID, "error", err)
+		}
+		return nil
+	})
 }
 
 const (
@@ -158,7 +220,7 @@ func (c *cloudReachability) clock() time.Time {
 // before any client can open a telemetry stream, so every stream of the
 // session is confirmed alike and a client's forwarding never flips midway.
 func (sess *daggerSession) publishesToCloud() bool {
-	return sess.cloudSpanProcessor != nil && sess.cloudLogProcessor != nil && sess.cloudMetrics != nil
+	return sess.cloudForwarder != nil && sess.cloudMetrics != nil
 }
 
 var errCloudRefreshSessionClosing = errors.New("refresh cloud token: the main client is shutting down")
@@ -205,6 +267,16 @@ func (g *cloudRefreshGate) stop() {
 	g.mu.Lock()
 	g.closed = true
 	g.mu.Unlock()
+}
+
+// isClosed reports whether refreshes stopped. A nil gate never closes.
+func (g *cloudRefreshGate) isClosed() bool {
+	if g == nil {
+		return false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.closed
 }
 
 func (g *cloudRefreshGate) wait(ctx context.Context) error {
@@ -254,9 +326,16 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 	if credentialsPath == "" {
 		return nil, fmt.Errorf("refresh cloud token: no credentials path")
 	}
+	// Past the main client's shutdown no refresh can reach its credentials
+	// file; saying so plainly lets the Cloud forwarder stop once the token
+	// it holds expires, rather than retry until its deadline.
+	if sess.cloudRefresh.isClosed() {
+		return nil, errCloudRefreshSessionClosing
+	}
 	record, err := srv.clientRecordFromIDs(sess.sessionID, sess.mainClientCallerID)
 	if err != nil {
-		return nil, fmt.Errorf("refresh cloud token: main client: %w", err)
+		// The session is gone, and its main client with it.
+		return nil, fmt.Errorf("%w: %w", errCloudRefreshSessionClosing, err)
 	}
 	md, err := sess.clientMetadataSnapshot(record)
 	if err != nil {
@@ -385,20 +464,18 @@ func (b *cloudShutdownBudget) current() (time.Time, bool) {
 	return b.deadline, !b.deadline.IsZero()
 }
 
-// cloudFlushBound bounds every wait on the session's Cloud exporters: at the
-// earliest of its own timeout, the caller's deadline and the shutdown budget.
-// It logs errors instead of returning them, so a Cloud outage costs telemetry
-// and never the command, and never holds the client's shutdown.
+// cloudFlushBound bounds every wait on Cloud: at the earliest of its own
+// timeout, the caller's deadline and the shutdown budget. It logs errors
+// instead of returning them, so a Cloud outage never fails the command, and
+// never holds the client's shutdown.
 type cloudFlushBound struct {
 	sessionID string
 	timeout   time.Duration
 	budget    *cloudShutdownBudget
 }
 
-// bounded runs op within the bound. With nothing left of it, op is skipped;
-// a release (a shutdown) still runs, with an expired context, so the
-// exporter frees its resources without waiting on Cloud.
-func (b cloudFlushBound) bounded(ctx context.Context, what string, release bool, op func(context.Context) error) {
+// bounded runs op within the bound. With nothing left of it, op is skipped.
+func (b cloudFlushBound) bounded(ctx context.Context, what string, op func(context.Context) error) {
 	deadline := time.Now().Add(b.timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
@@ -408,14 +485,14 @@ func (b cloudFlushBound) bounded(ctx context.Context, what string, release bool,
 			deadline = d
 		}
 	}
-	if !time.Now().Before(deadline) && !release {
-		slog.Warn("session telemetry not fully published to Cloud: no time left", "session", b.sessionID, "op", what)
+	if !time.Now().Before(deadline) {
+		slog.Info("no time left to wait on Cloud", "session", b.sessionID, "op", what)
 		return
 	}
 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
 	defer cancel()
 	if err := op(ctx); err != nil {
-		slog.Warn("session telemetry not fully published to Cloud", "session", b.sessionID, "op", what, "error", err)
+		slog.Warn("waiting on Cloud", "session", b.sessionID, "op", what, "error", err)
 	}
 }
 
@@ -427,43 +504,6 @@ func (sess *daggerSession) startCloudShutdownBudget() func() {
 	}
 	sess.cloudBound.budget.start(sess.cloudBound.timeout)
 	return sess.cloudBound.budget.end
-}
-
-// boundedCloudSpanProcessor and boundedCloudLogProcessor carry the session's
-// telemetry to Cloud. Their ForceFlush returns at once: the processors export
-// on their own, and the session's provider flushes (any client's shutdown,
-// the telemetry APIs) must not wait on Cloud. The main client's shutdown
-// flushes them once, through flushSessionCloudTelemetry, within the budget.
-type boundedCloudSpanProcessor struct {
-	sdktrace.SpanProcessor
-	bound cloudFlushBound
-}
-
-func (boundedCloudSpanProcessor) ForceFlush(context.Context) error { return nil }
-
-func (p boundedCloudSpanProcessor) flush(ctx context.Context) {
-	p.bound.bounded(ctx, "flush spans", false, p.SpanProcessor.ForceFlush)
-}
-
-func (p boundedCloudSpanProcessor) Shutdown(ctx context.Context) error {
-	p.bound.bounded(ctx, "shutdown spans", true, p.SpanProcessor.Shutdown)
-	return nil
-}
-
-type boundedCloudLogProcessor struct {
-	sdklog.Processor
-	bound cloudFlushBound
-}
-
-func (boundedCloudLogProcessor) ForceFlush(context.Context) error { return nil }
-
-func (p boundedCloudLogProcessor) flush(ctx context.Context) {
-	p.bound.bounded(ctx, "flush logs", false, p.Processor.ForceFlush)
-}
-
-func (p boundedCloudLogProcessor) Shutdown(ctx context.Context) error {
-	p.bound.bounded(ctx, "shutdown logs", true, p.Processor.Shutdown)
-	return nil
 }
 
 // cloudMetricQueueSize bounds the metric collections waiting for Cloud; the
@@ -624,10 +664,10 @@ func (q *cloudMetricQueue) run() {
 	}
 }
 
-// flushSessionCloudTelemetry flushes the session's Cloud span and log
-// processors concurrently, within the bound. The main client's shutdown calls
-// it once, before the session's attachables close, because refreshing an
-// OAuth token reads the client's credentials file through them.
+// flushSessionCloudTelemetry publishes what the session has sent so far to
+// Cloud, within the bound. The main client's shutdown calls it once, before
+// the session's attachables close, because refreshing an OAuth token reads
+// the client's credentials file through them.
 func (sess *daggerSession) flushSessionCloudTelemetry(ctx context.Context) {
 	var wg sync.WaitGroup
 	for _, flush := range sess.cloudFlushers {
@@ -639,11 +679,12 @@ func (sess *daggerSession) flushSessionCloudTelemetry(ctx context.Context) {
 // scaleOutTelemetryParams routes a scale-out engine's telemetry stream, which
 // the parent client receives, into the session's client routing. When this
 // session publishes to Cloud, the remote engine is asked to publish its own
-// session with the same credential; on streams the remote does not confirm,
-// the parent publishes them through this session's Cloud processors instead.
-// When this session does not publish, the remote is not asked either, and the
-// stream reaches Cloud once, through the client that forwards this session's
-// telemetry.
+// session with the same credential. A stream the remote does not confirm
+// reaches Cloud like the rest of the session, from the main client's store;
+// a stream it confirms reaches the store marked as published, and the
+// session's forwarder leaves it out. When this session does not publish, the
+// remote is not asked either, and the stream reaches Cloud once, through the
+// client that forwards this session's telemetry.
 func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params *engineclient.Params) {
 	params.EngineTrace = parent.spanExporter
 	params.EngineLogs = parent.logExporter
@@ -655,17 +696,9 @@ func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params
 	params.EngineCloudTelemetry = true
 	params.CloudURL = md.CloudURL
 	params.CloudCredentialsPath = md.CredentialsPath
-	params.EngineTraceWithoutCloud = params.EngineTrace
-	params.EngineLogsWithoutCloud = params.EngineLogs
+	params.EngineTraceWithoutCloud = cloudPublishedSpanExporter{next: parent.spanExporter}
+	params.EngineLogsWithoutCloud = cloudPublishedLogExporter{next: parent.logExporter}
 	params.EngineMetricsWithoutCloud = params.EngineMetrics
-	params.EngineTrace = enginetel.MultiSpanExporter{
-		parent.spanExporter,
-		sessionCloudSpanForwarder{telemetry.SpanForwarder{Processors: []sdktrace.SpanProcessor{sess.cloudSpanProcessor}}},
-	}
-	params.EngineLogs = enginetel.MultiLogExporter{
-		parent.logExporter,
-		sessionCloudLogForwarder{telemetry.LogForwarder{Processors: []sdklog.Processor{sess.cloudLogProcessor}}},
-	}
 	params.EngineMetrics = []sdkmetric.Exporter{
 		parent.metricExporter,
 		enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics},
@@ -674,32 +707,19 @@ func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params
 
 // Telemetry a process in one of the session's containers posts to the
 // engine (an SDK, a nested CLI) reaches the client routing directly, never
-// the session's providers, so the session's Cloud processors do not see it.
-// The posted* exporters stamp the origin once and send the telemetry both to
-// the client routing and, when the session publishes, to Cloud. A scale-out
-// engine's returned stream does not come this way: its own containers post to
-// the remote engine, which publishes them itself when it confirmed.
+// the session's providers. The posted* exporters stamp the origin once; the
+// session's store-to-Cloud forwarder publishes the spans and logs with the
+// rest of the main client's store. Metrics have no store lane to Cloud, so
+// they also go to the session's Cloud metric queue. A scale-out engine's
+// returned stream does not come this way: its own containers post to the
+// remote engine, which publishes them itself when it confirmed.
 
 func (sess *daggerSession) postedSpanExporter(origin string) sdktrace.SpanExporter {
-	next := sess.spanExporter
-	if sess.publishesToCloud() {
-		next = enginetel.MultiSpanExporter{
-			sess.spanExporter,
-			sessionCloudSpanForwarder{telemetry.SpanForwarder{Processors: []sdktrace.SpanProcessor{sess.cloudSpanProcessor}}},
-		}
-	}
-	return originSpanExporter{origin: origin, next: next}
+	return originSpanExporter{origin: origin, next: sess.spanExporter}
 }
 
 func (sess *daggerSession) postedLogExporter(origin string) sdklog.Exporter {
-	next := sess.logExporter
-	if sess.publishesToCloud() {
-		next = enginetel.MultiLogExporter{
-			sess.logExporter,
-			sessionCloudLogForwarder{telemetry.LogForwarder{Processors: []sdklog.Processor{sess.cloudLogProcessor}}},
-		}
-	}
-	return originLogExporter{origin: origin, next: next}
+	return originLogExporter{origin: origin, next: sess.logExporter}
 }
 
 func (sess *daggerSession) postedMetricExporters(client sdkmetric.Exporter) []sdkmetric.Exporter {
@@ -708,218 +728,3 @@ func (sess *daggerSession) postedMetricExporters(client sdkmetric.Exporter) []sd
 	}
 	return []sdkmetric.Exporter{client, enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics}}
 }
-
-// cloudPayloadOnce passes each call payload to the session's Cloud log
-// pipeline once, by digest. The client routing writes a payload at most
-// once per destination; Cloud is one destination, reached by the engine's own
-// emissions, by records posted from the session's containers (a nested CLI
-// re-posts the payloads it received) and by a scale-out engine's stream. A
-// digest is marked when its payload is handed to the pipeline's payload path,
-// which queues every payload and retries a failed export with backoff up to
-// enginetel.CallPayloadMaxExportAttempts times (see cloudLogPipeline), so a
-// later copy would only repeat it.
-type cloudPayloadOnce struct {
-	sdklog.Processor
-
-	mu   sync.Mutex
-	seen map[string]struct{}
-}
-
-func newCloudPayloadOnce(next sdklog.Processor) *cloudPayloadOnce {
-	return &cloudPayloadOnce{Processor: next, seen: map[string]struct{}{}}
-}
-
-func (p *cloudPayloadOnce) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	if rec != nil {
-		if digest, payload, err := classifyCallPayloadRecord(*rec); err == nil && payload && digest != "" {
-			p.mu.Lock()
-			_, sent := p.seen[digest]
-			p.seen[digest] = struct{}{}
-			p.mu.Unlock()
-			if sent {
-				return nil
-			}
-		}
-	}
-	return p.Processor.OnEmit(ctx, rec)
-}
-
-// cloudLogPipeline carries the session's records to Cloud. Call payloads and
-// agent controls take separate protected, retrying paths, as in client routing.
-// Every other record takes the batch processor, whose queue drops its oldest
-// record when full. A payload lost there would never reach Cloud:
-// cloudPayloadOnce suppresses every later copy. All three paths share the Cloud
-// exporter through serialLogExporter, since an exporter must not export
-// concurrently. The batch processor's Shutdown shuts it down, so both protected
-// paths stop first.
-type cloudLogPipeline struct {
-	payloads *enginetel.CallPayloadBatchProcessor
-	controls *enginetel.CallPayloadBatchProcessor
-	records  *sdklog.BatchProcessor
-	others   sdklog.Processor
-}
-
-func newCloudLogPipeline(exporter sdklog.Exporter) *cloudLogPipeline {
-	exporter = newSerialLogExporter(exporter)
-	records := sdklog.NewBatchProcessor(exporter, sdklog.WithExportInterval(telemetry.NearlyImmediate))
-	return &cloudLogPipeline{
-		payloads: enginetel.NewCallPayloadBatchProcessor(exporter),
-		controls: enginetel.NewControlBatchProcessor(exporter),
-		records:  records,
-		others:   enginetel.WithoutCallPayloads(records),
-	}
-}
-
-func (p *cloudLogPipeline) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	// Each path keeps only its own records.
-	return errors.Join(p.payloads.OnEmit(ctx, rec), p.controls.OnEmit(ctx, rec), p.others.OnEmit(ctx, rec))
-}
-
-func (p *cloudLogPipeline) Enabled(context.Context, sdklog.EnabledParameters) bool {
-	return true
-}
-
-// ForceFlush flushes all paths at once, within ctx.
-func (p *cloudLogPipeline) ForceFlush(ctx context.Context) error {
-	return allWithin(ctx, p.payloads.ForceFlush, p.controls.ForceFlush, p.records.ForceFlush)
-}
-
-// Shutdown stops both protected paths while flushing ordinary records, all
-// within ctx, then shuts the batch processor and with it the exporter down.
-// Each protected path's Shutdown waits until its worker has stopped.
-func (p *cloudLogPipeline) Shutdown(ctx context.Context) error {
-	err := allWithin(ctx, p.payloads.Shutdown, p.controls.Shutdown, p.records.ForceFlush)
-	return errors.Join(err, p.records.Shutdown(ctx))
-}
-
-// cloudSpanPipeline carries the session's spans to Cloud. Call spans, the only
-// carriers of their calls' frames, take a protected, retrying path, as in
-// client routing; every other span takes the bounded live processor, whose
-// queue drops on overflow. Both paths share the Cloud exporter through
-// serialSpanExporter, since an exporter must not export concurrently. The
-// live processor's Shutdown shuts it down, so the protected path stops first.
-type cloudSpanPipeline struct {
-	calls  *enginetel.CallSpanProcessor
-	live   sdktrace.SpanProcessor
-	others sdktrace.SpanProcessor
-}
-
-func newCloudSpanPipeline(exporter sdktrace.SpanExporter) *cloudSpanPipeline {
-	exporter = newSerialSpanExporter(exporter)
-	live := enginetel.NewLargeQueueLiveSpanProcessor(exporter)
-	return &cloudSpanPipeline{
-		calls:  enginetel.NewCallSpanProcessor(exporter),
-		live:   live,
-		others: enginetel.WithoutCallSpans(live),
-	}
-}
-
-// OnStart and OnEnd offer every span to both paths; each keeps only its own.
-func (p *cloudSpanPipeline) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
-	p.calls.OnStart(ctx, span)
-	p.others.OnStart(ctx, span)
-}
-
-func (p *cloudSpanPipeline) OnEnd(span sdktrace.ReadOnlySpan) {
-	p.calls.OnEnd(span)
-	p.others.OnEnd(span)
-}
-
-// ForceFlush flushes both paths at once, within ctx.
-func (p *cloudSpanPipeline) ForceFlush(ctx context.Context) error {
-	return allWithin(ctx, p.calls.ForceFlush, p.live.ForceFlush)
-}
-
-// Shutdown stops the protected path while flushing ordinary spans, all within
-// ctx, then shuts the live processor and with it the exporter down. The
-// protected path's Shutdown waits until its worker has stopped.
-func (p *cloudSpanPipeline) Shutdown(ctx context.Context) error {
-	err := allWithin(ctx, p.calls.Shutdown, p.live.ForceFlush)
-	return errors.Join(err, p.live.Shutdown(ctx))
-}
-
-// serialSpanExporter lets one ExportSpans at a time reach the exporter it
-// wraps. A caller waits its turn only as long as its context allows.
-type serialSpanExporter struct {
-	next sdktrace.SpanExporter
-	turn chan struct{}
-}
-
-func newSerialSpanExporter(next sdktrace.SpanExporter) *serialSpanExporter {
-	return &serialSpanExporter{next: next, turn: make(chan struct{}, 1)}
-}
-
-func (e *serialSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	select {
-	case e.turn <- struct{}{}:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	defer func() { <-e.turn }()
-	return e.next.ExportSpans(ctx, spans)
-}
-
-// Shutdown waits for the export in flight, within ctx, and shuts down.
-func (e *serialSpanExporter) Shutdown(ctx context.Context) error {
-	select {
-	case e.turn <- struct{}{}:
-		defer func() { <-e.turn }()
-	case <-ctx.Done():
-	}
-	return e.next.Shutdown(ctx)
-}
-
-// serialLogExporter lets one Export at a time reach the exporter it wraps.
-// A caller waits its turn only as long as its context allows.
-type serialLogExporter struct {
-	next sdklog.Exporter
-	turn chan struct{}
-}
-
-func newSerialLogExporter(next sdklog.Exporter) *serialLogExporter {
-	return &serialLogExporter{next: next, turn: make(chan struct{}, 1)}
-}
-
-func (e *serialLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
-	select {
-	case e.turn <- struct{}{}:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	defer func() { <-e.turn }()
-	return e.next.Export(ctx, records)
-}
-
-// Shutdown waits for the export in flight, within ctx, and shuts down.
-func (e *serialLogExporter) Shutdown(ctx context.Context) error {
-	select {
-	case e.turn <- struct{}{}:
-		defer func() { <-e.turn }()
-	case <-ctx.Done():
-	}
-	return e.next.Shutdown(ctx)
-}
-
-func (e *serialLogExporter) ForceFlush(ctx context.Context) error {
-	return e.next.ForceFlush(ctx)
-}
-
-func allWithin(ctx context.Context, funcs ...func(context.Context) error) error {
-	errs := make([]error, len(funcs))
-	var wg sync.WaitGroup
-	for i, fn := range funcs {
-		wg.Go(func() { errs[i] = fn(ctx) })
-	}
-	wg.Wait()
-	return errors.Join(errs...)
-}
-
-// sessionCloudSpanForwarder and sessionCloudLogForwarder feed the session's
-// Cloud processors, which the session shuts down itself.
-type sessionCloudSpanForwarder struct{ telemetry.SpanForwarder }
-
-func (sessionCloudSpanForwarder) Shutdown(context.Context) error { return nil }
-
-type sessionCloudLogForwarder struct{ telemetry.LogForwarder }
-
-func (sessionCloudLogForwarder) Shutdown(context.Context) error { return nil }
