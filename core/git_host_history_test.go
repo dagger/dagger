@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,6 +124,39 @@ func TestImportHostCommitPack(t *testing.T) {
 			require.NoFileExists(t, filepath.Join(dest, "objects", "info", "alternates"))
 		})
 	}
+}
+
+// Legacy objects that only --strict fsck rejects (e.g. zero-padded tree modes,
+// common in old histories) are accepted by the remote path, which does not fsck
+// fetched packs. The donated closure is pinned by SHA and so byte-identical;
+// the importer must accept it too.
+func TestImportHostCommitPackAcceptsLegacyHistory(t *testing.T) {
+	source := t.TempDir()
+	gitMirrorTestRun(t, source, "init", "--quiet", "--bare")
+	blob, err := runWorkspaceCommitGitInput(t.Context(), source, nil, strings.NewReader("hello\n"), "hash-object", "-w", "--stdin")
+	require.NoError(t, err)
+	raw, err := hex.DecodeString(strings.TrimSpace(blob))
+	require.NoError(t, err)
+	var tree bytes.Buffer
+	tree.WriteString("0100644 file\x00") // zero-padded mode, as written by old tools
+	tree.Write(raw)
+	treeID, err := runWorkspaceCommitGitInput(t.Context(), source, nil, &tree, "hash-object", "-t", "tree", "--literally", "-w", "--stdin")
+	require.NoError(t, err)
+	commit, err := runWorkspaceCommitGitInput(t.Context(), source, []string{
+		"GIT_AUTHOR_NAME=a", "GIT_AUTHOR_EMAIL=a@example.com", "GIT_COMMITTER_NAME=a", "GIT_COMMITTER_EMAIL=a@example.com",
+	}, nil, "commit-tree", strings.TrimSpace(treeID), "-m", "legacy")
+	require.NoError(t, err)
+	sha := strings.TrimSpace(commit)
+	gitMirrorTestRun(t, source, "fsck")
+
+	require.NoError(t, packRemoteCommitBaseDepth(t.Context(), source, t.TempDir(), sha, nil, 0))
+
+	prefix := filepath.Join(t.TempDir(), "pack")
+	hash, err := runWorkspaceCommitGitInput(t.Context(), source, nil, strings.NewReader(sha+"\n"), "pack-objects", "--revs", prefix)
+	require.NoError(t, err)
+	dest := t.TempDir()
+	require.NoError(t, importHostCommitPack(t.Context(), dest, prefix+"-"+strings.TrimSpace(hash)+".pack", sha, nil))
+	require.Equal(t, sha, gitMirrorTestRun(t, dest, "rev-parse", "HEAD"))
 }
 
 type hostHistoryObservedManager struct {

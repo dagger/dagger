@@ -169,6 +169,10 @@ func (q *Query) importApprovedHostCommitBase(ctx context.Context, pack *engineut
 // Validate the received pack in an isolated object database before publishing
 // any snapshot. No alternates, host refs or mutable mount paths survive. The
 // inventory must equal the requested closure, including when a donor is buggy.
+// Objects are checked at Git's default fsck severity, not --strict: the closure
+// is pinned by SHA, so it is byte-identical to what the remote serves, and the
+// remote path (which does not fsck fetches) accepts legacy objects such as
+// zero-padded tree modes too.
 func importHostCommitPack(ctx context.Context, dest, packPath, sha string, remotes []GitRemote) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "git import approved host commit closure", telemetry.Internal())
 	span.SetAttributes(attribute.Int("git.history.depth", 0))
@@ -180,14 +184,16 @@ func importHostCommitPack(ctx context.Context, dest, packPath, sha string, remot
 	if err != nil {
 		return err
 	}
-	_, indexErr := runWorkspaceCommitGitInput(ctx, dest, nil, f, "index-pack", "--stdin", "--strict")
+	// index-pack verifies the pack and object hashes; its fsck is always
+	// strict-level, so object checks are left to the default-severity fsck below.
+	_, indexErr := runWorkspaceCommitGitInput(ctx, dest, nil, f, "index-pack", "--stdin")
 	if err := errors.Join(indexErr, f.Close()); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dest, "HEAD"), []byte(sha+"\n"), 0644); err != nil {
 		return err
 	}
-	if _, err := runWorkspaceCommitGit(ctx, dest, nil, "fsck", "--strict", "--no-reflogs", sha); err != nil {
+	if _, err := runWorkspaceCommitGit(ctx, dest, nil, "fsck", "--no-reflogs", sha); err != nil {
 		return err
 	}
 	closure, err := runWorkspaceCommitGit(ctx, dest, nil, "rev-list", "--objects", "--no-object-names", sha)
