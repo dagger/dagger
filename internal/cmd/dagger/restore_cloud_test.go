@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/log"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/proto"
 )
@@ -217,6 +221,59 @@ func TestCloudRestoreSkipsIncompleteSnapshot(t *testing.T) {
 	require.Equal(t, []string{"rehydrate:chief", "adopt:chief", "focus:chief"}, target.calls)
 	require.Contains(t, warnings.String(), "worker (worker)")
 	require.Contains(t, warnings.String(), "missing call payload")
+}
+
+// TestCloudRestoreCapturesSpanCarriedFrames: a spanned call's frame rides its
+// span's dagger.io/dag.call attribute and no payload log, so the capture must
+// take frames from spans too, or the worker's closure would look incomplete.
+func TestCloudRestoreCapturesSpanCarriedFrames(t *testing.T) {
+	chief, worker, edge, records := cloudControlFixture(t)
+	var spanned *callpbv1.Call
+	records = slices.DeleteFunc(records, func(rec log.Record) bool {
+		frame := new(callpbv1.Call)
+		require.NoError(t, proto.Unmarshal(rec.Body().AsBytes(), frame))
+		if frame.Digest == worker.Digest {
+			spanned = frame
+			return true
+		}
+		return false
+	})
+	require.NotNil(t, spanned)
+	encoded, err := spanned.Encode()
+	require.NoError(t, err)
+	traceID, err := hex.DecodeString(restoreRequest().traceID)
+	require.NoError(t, err)
+	str := func(s string) *commonpb.AnyValue {
+		return &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: s}}
+	}
+	spans := &coltracepb.ExportTraceServiceRequest{ResourceSpans: []*tracepb.ResourceSpans{{
+		ScopeSpans: []*tracepb.ScopeSpans{{Spans: []*tracepb.Span{{
+			TraceId:           traceID,
+			SpanId:            []byte{0, 0, 0, 0, 0, 0, 0, 7},
+			Name:              "LLM.withPrompt",
+			StartTimeUnixNano: 1,
+			EndTimeUnixNano:   2,
+			Attributes: []*commonpb.KeyValue{
+				{Key: telemetry.DagDigestAttr, Value: str(worker.Digest)},
+				{Key: telemetry.DagCallAttr, Value: str(encoded)},
+			},
+		}}}},
+	}}}
+	records = append(records, chief.Record(), worker.Record(), edge.Record())
+	req := restoreRequest()
+	req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
+	req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
+		if err := sink.ImportSpans(ctx, spans); err != nil {
+			return err
+		}
+		return sink.ImportLogs(ctx, controlLogs(records...))
+	})
+	target := newFakeRestoreTarget()
+	cleanup, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, target, req)
+	require.NoError(t, err)
+	cleanup()
+	require.Contains(t, target.calls, "rehydrate:chief")
+	require.Contains(t, target.calls, "rehydrate:worker")
 }
 
 // TestCloudRestoreSkipsCaptureFailure: a worker whose latest record is a

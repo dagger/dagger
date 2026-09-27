@@ -29,11 +29,51 @@ type cloudRestoreSource interface {
 	FetchTrace(context.Context, string, cloud.TraceImportSink) error
 }
 
-// cloudRestoreCapture retains the received call payloads so each snapshot's
-// recipe closure can be checked for completeness before it is rebuilt.
+// cloudRestoreCapture retains the received call frames so each snapshot's
+// recipe closure can be checked for completeness before it is rebuilt. A frame
+// arrives on one of two carriers: a call-payload log record, or — for a call
+// with a recording span of its own — the span's dagger.io/dag.call attribute.
 type cloudRestoreCapture struct {
 	*enginetel.TraceImporter
 	calls map[string]*callpbv1.Call
+}
+
+func (capture *cloudRestoreCapture) ImportSpans(ctx context.Context, req *coltracepb.ExportTraceServiceRequest) error {
+	for _, resource := range req.GetResourceSpans() {
+		for _, scope := range resource.GetScopeSpans() {
+			for _, span := range scope.GetSpans() {
+				var digest, encoded string
+				for _, kv := range span.GetAttributes() {
+					switch kv.GetKey() {
+					case telemetry.DagDigestAttr:
+						digest = kv.GetValue().GetStringValue()
+					case telemetry.DagCallAttr:
+						encoded = kv.GetValue().GetStringValue()
+					}
+				}
+				if encoded == "" {
+					continue
+				}
+				// A span that cannot yield its frame is skipped, not fatal: the
+				// span is presentation too, and a frame the closure actually
+				// needs is reported missing when the closure is verified.
+				frame := new(callpbv1.Call)
+				if err := frame.Decode(encoded); err != nil {
+					slog.Warn("skipping undecodable span call payload", "digest", digest, "err", err)
+					continue
+				}
+				if frame.Digest == "" {
+					frame.Digest = digest
+				}
+				if frame.Digest == "" || (digest != "" && digest != frame.Digest) {
+					slog.Warn("skipping span call payload without a matching digest", "digest", digest, "frame", frame.Digest)
+					continue
+				}
+				capture.calls[frame.Digest] = frame
+			}
+		}
+	}
+	return capture.TraceImporter.ImportSpans(ctx, req)
 }
 
 func (capture *cloudRestoreCapture) ImportLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
