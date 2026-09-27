@@ -87,6 +87,21 @@ func (b boundTool) typeName() string {
 	return ""
 }
 
+// neverCached reports whether the bound type's field is a module function
+// with cache policy Never, looked up on the bound object's own type (the
+// defining schema's AST carries no cache policy).
+func (b boundTool) neverCached(fieldName string, srv *dagql.Server) bool {
+	objType := b.objType
+	if b.object != nil {
+		objType = b.object.ObjectType()
+	}
+	if objType == nil || srv == nil {
+		return false
+	}
+	spec, ok := objType.FieldSpec(fieldName, srv.View)
+	return ok && cachePolicyNever(spec)
+}
+
 // WithTools binds obj's methods as tools, carrying the schema that defined the
 // receiver at composition time and except. At most one binding per object type
 // is kept: binding an object whose type is already bound replaces it in place.
@@ -491,11 +506,14 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 			// it was written (see MCP.CallBatch). A method changes the agent's
 			// state when it returns the bound object's own type, a Workspace, a
 			// Changeset, or an LLM — the conversation itself, run last in its
-			// batch (MCP.SplitContinuationCalls).
+			// batch (MCP.SplitContinuationCalls). A module function cached with
+			// policy Never is impure too: side effects and live reads are
+			// exactly what that policy is for.
 			ReadOnly: retType != typeName &&
 				retType != "Changeset" &&
 				retType != workspaceTypeName &&
-				retType != llmTypeName,
+				retType != llmTypeName &&
+				!b.neverCached(field.Name, srv),
 			ReturnsLLM: retType == llmTypeName,
 			Call:       m.callObjectMethod(srv, typeName, field),
 			Server:     typeName,
