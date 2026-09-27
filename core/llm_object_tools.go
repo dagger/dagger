@@ -1457,7 +1457,9 @@ const spanResultOutputHeading = "== OUTPUT =="
 //     tool (or test, or check) printed itself -- verbatim and unabridged. A
 //     deliberate report is the point of the call, and letting a rendered
 //     summary stand in for it is exactly the regression the provenance-based
-//     abridging already fixed once for the flat path.
+//     abridging already fixed once for the flat path. When the report hides
+//     its span tree (a tool call's own result), OUTPUT also carries a tail of
+//     the nested logs, as the flat path does; see spanResultOutput.
 //   - the report: the structure of the nested work, with its logs clamped
 //     per row, plus the CHECKS/TESTS roll-ups. It carries no heading of its
 //     own -- its sections are already labelled.
@@ -1466,11 +1468,13 @@ const spanResultOutputHeading = "== OUTPUT =="
 // report. The byte guard applies to the COMBINED text; navigation stays at the
 // head so neither that guard nor the outer tool-result guard can discard it.
 //
-// There is no duplication between the two: the report is told to suppress the
-// inline logs of exactly the spans OUTPUT was built from (HideLogSpans).
+// The direct lines are not duplicated: the report is told to suppress the
+// inline logs of exactly the spans that printed them (HideLogSpans).
 // Suppressing rather than de-duplicating after the fact keeps the report's
 // own clamping honest -- a hidden row's nested children are still clamped and
-// still rendered.
+// still rendered. The nested tail OUTPUT carries when the tree is hidden is
+// deliberately NOT suppressed, so a check's or test's logs stay under its own
+// row; the overlap is bounded by that tail.
 //
 // With no report to show -- nothing nested, a render failure, or a subtree
 // that renders to nothing -- the result is the flat capture, byte for byte as
@@ -1502,7 +1506,7 @@ func (m *MCP) inspectSpanResult(ctx context.Context, spanID string, opts traceRe
 	if strings.TrimSpace(report.body) == "" && report.failures == "" {
 		return flatLogs(spanID, captured.lines), err
 	}
-	own := directLogs(captured.lines)
+	own := spanResultOutput(spanID, captured.lines, opts.HideSpanTree)
 	if opts.FocusFailures && report.failures != "" {
 		own = guardText(own, textGuard{
 			maxBytes: 4096, maxLineLen: llmLogsMaxLineLen, headBytes: 2048,
@@ -1554,9 +1558,11 @@ func toolCallReportOpts() traceReportOpts {
 		// drowns out deliberate output, and the LLM's own message spans are
 		// conversation rather than work. ReadLogs remains the discovery path.
 		HideNoise: true,
-		// The report is about this tool call, not about the agent that made
-		// it: drop the whole-trace CONVERSATION/SERVICES sections, which would
-		// otherwise render the caller's own transcript back at it.
+		// The report is about this tool call, not about the run that made it:
+		// drop the run-wide TRACE verdict header and skip the live-tree
+		// promotions that would reshape the report around the whole run. The
+		// surfaced sections (CHECKS, SERVICES, CONVERSATION, ...) are rolled
+		// up relative to the tool call regardless; see traceReportOpts.Scoped.
 		Scoped: true,
 		// Nested work is abridged to a tail, exactly as in the flat path; the
 		// OUTPUT section carries the tool's own lines unabridged.
@@ -1567,8 +1573,10 @@ func toolCallReportOpts() traceReportOpts {
 		SuggestReadTrace: true,
 		// A tool result is about the RESULT, not about the machinery: keep
 		// what the call surfaced (CHECKS, TESTS, SERVICES, conversation) and
-		// the tool's own OUTPUT, and drop the span tree. An agent that wants
-		// the tree asks for it with ReadTrace, which keeps rendering it.
+		// the OUTPUT section, and drop the span tree. With no tree to carry
+		// nested logs, OUTPUT takes them instead, abridged to a tail as in
+		// the flat path (see spanResultOutput). An agent that wants the tree
+		// asks for it with ReadTrace, which keeps rendering it.
 		HideSpanTree: true,
 	}
 }
@@ -1592,6 +1600,28 @@ func directLogs(lines []capturedLine) string {
 		}
 	}
 	return strings.TrimRight(strings.Join(out, "\n"), "\n")
+}
+
+// spanResultOutput builds a combined result's OUTPUT section.
+//
+// With the span tree shown (ReadTrace), OUTPUT is only what the span printed
+// itself: nested logs render in the tree, under the rows that produced them.
+// With the tree hidden (a tool call's own result), OUTPUT is the only place
+// most nested output can appear at all, so it takes the flat path's shape:
+// direct lines in full plus a tail of nested lines. Otherwise a tool whose
+// result is its nested exec's stdout would lose it the moment anything else
+// -- a started service, a check -- made the report non-empty.
+//
+// Either way, only the DIRECT spans are hidden from the report
+// (HideLogSpans). A nested span whose lines land in OUTPUT's tail keeps its
+// inline logs under its own row -- a check's or test's logs stay attributed
+// to it in CHECKS/TESTS -- at the cost of a bounded (llmToolLogsMaxLines)
+// duplication.
+func spanResultOutput(spanID string, lines []capturedLine, withNested bool) string {
+	if !withNested {
+		return directLogs(lines)
+	}
+	return flatLogs(spanID, lines)
 }
 
 // toolSpanHasDescendants reports whether anything ran beneath the tool-call

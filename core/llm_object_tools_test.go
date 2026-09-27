@@ -579,6 +579,50 @@ func TestDirectLogs(t *testing.T) {
 	}))
 }
 
+// TestSpanResultOutputKeepsNestedTail covers a tool call whose report body is
+// just surfaced sections (here only SERVICES, because a service started
+// beneath the call): with the span tree hidden, OUTPUT is the only place the
+// nested output can land, so it must keep the flat path's shape -- direct
+// lines verbatim, nested lines abridged to a tail, never dropped.
+func TestSpanResultOutputKeepsNestedTail(t *testing.T) {
+	const spanID = "00000000000000aa"
+
+	var lines []capturedLine
+	// Nested output from an early exec that falls entirely outside the tail.
+	lines = append(lines, capturedLine{text: "EARLY"})
+	lines = append(lines, capturedLine{text: "REPORT-START", direct: true})
+	nested := llmToolLogsMaxLines + 4
+	for i := 1; i <= nested; i++ {
+		lines = append(lines, capturedLine{text: fmt.Sprintf("EXEC-%02d", i)})
+	}
+	lines = append(lines, capturedLine{text: "REPORT-END", direct: true})
+
+	opts := toolCallReportOpts()
+	require.True(t, opts.HideSpanTree)
+	own := spanResultOutput(spanID, lines, opts.HideSpanTree)
+	got := combineSpanResult(spanID, own, "== SERVICES ==\n● svc running", "")
+
+	// Direct lines stay verbatim; each abridged nested run is counted, not
+	// silently dropped.
+	require.Contains(t, got, "== OUTPUT ==\n... 1 lines omitted (use ReadLogs(span: "+spanID+") to read more) ...\nREPORT-START\n"+
+		"... 4 lines omitted (use ReadLogs(span: "+spanID+") to read more) ...\nEXEC-05\n")
+	require.Contains(t, got, "EXEC-12\nREPORT-END\n\n== SERVICES ==")
+	// The nested tail survives.
+	for i := nested - llmToolLogsMaxLines + 1; i <= nested; i++ {
+		require.Contains(t, got, fmt.Sprintf("EXEC-%02d", i))
+	}
+	for i := 1; i <= nested-llmToolLogsMaxLines; i++ {
+		require.NotContains(t, got, fmt.Sprintf("EXEC-%02d", i))
+	}
+	require.NotContains(t, got, "EARLY")
+
+	// With the span tree shown (ReadTrace), nested logs render in the tree
+	// under their own rows: OUTPUT stays direct-only.
+	readOpts := readTraceReportOpts()
+	require.False(t, readOpts.HideSpanTree)
+	require.Equal(t, "REPORT-START\nREPORT-END", spanResultOutput(spanID, lines, readOpts.HideSpanTree))
+}
+
 // liftTestRunner is a minimal receiver type for exercising
 // buildObjectMethodSelector's address lifting against a real dagql server.
 type liftTestRunner struct{}
