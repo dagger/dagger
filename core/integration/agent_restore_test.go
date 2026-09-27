@@ -325,11 +325,17 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 
 	// The source session's trace, as its own client saw it. Two things have
 	// to land before it is worth capturing, and each rides its own export:
-	// every anchor's payload (or the plan names conversations nothing can
-	// rebuild), and the dismissal's STOPPED record (or the plan puts the
-	// worker back into its pre-stop state).
-	rostered := sink.awaitRestorable(t, 3)
+	// the dismissal's STOPPED record (or the plan puts the worker back into
+	// its pre-stop state), and then every anchor's payload closure (or the
+	// plan names conversations nothing can rebuild). The order matters: the
+	// dismissal is the last control record this session publishes, and
+	// control records share one ordered lane, so once it has landed every
+	// agent's latest record is its final one, and awaitRestorable checks the
+	// anchors those final records name. Checked the other way round, a
+	// revision landing in between (the dismissed worker's) could move an
+	// anchor to frames still in flight when the capture is taken.
 	sink.awaitAgentState(t, "tests", "STOPPED")
+	rostered := sink.awaitRestorable(t, 3)
 	require.Contains(t, rostered, "chief")
 	require.NotNil(t, rostered["chief"].Control)
 	sourceTraceID := rostered["chief"].Control.Trace

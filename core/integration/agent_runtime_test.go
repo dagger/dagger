@@ -1711,6 +1711,13 @@ func (sink *agentTraceSink) awaitAgent(t *testctx.T, state string) *dagui.AgentN
 // whose anchor names a conversation nothing can rebuild (the "never reached
 // this client" restore failure, seen as a CI flake on the worker dismissed
 // right after its turn).
+//
+// The rebuild check reads each agent's LATEST record on every poll, not the
+// one the roster wait saw first: a newer revision (the turn's final commit,
+// a dismissal) can move an agent's anchor to a conversation whose frames are
+// still in flight. Callers that need an agent's final revision must wait for
+// it (awaitAgentState) BEFORE calling this, so the anchors checked here are
+// the ones a capture taken afterwards will restore.
 func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]*dagui.AgentNode {
 	t.Helper()
 	byName := map[string]*dagui.AgentNode{}
@@ -1738,9 +1745,13 @@ func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]
 	require.NoError(t, captureErr)
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
 		sink.read(func(db *dagui.DB) {
-			for name, node := range byName {
-				_, err := db.CallIDForDigest(node.SnapshotDigest)
-				assert.NoError(ct, err, "agent %q's anchor does not rebuild yet", name)
+			for _, agent := range db.Agents() {
+				if _, ok := byName[agent.Name]; !ok {
+					continue
+				}
+				byName[agent.Name] = agent
+				_, err := db.CallIDForDigest(agent.SnapshotDigest)
+				assert.NoError(ct, err, "agent %q's anchor does not rebuild yet", agent.Name)
 			}
 		})
 	}, 60*time.Second, 100*time.Millisecond)
