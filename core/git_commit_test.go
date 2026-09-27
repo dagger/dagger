@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -210,6 +211,50 @@ func TestGitNativeCommitPublicationIsRooted(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	require.ErrorIs(t, copyNativeCommitObjects(ctx, newObjects, repo), context.Canceled)
+}
+
+// git add streams blobs >= core.bigFileThreshold (512 MiB by default) straight
+// into a pack in the transaction's object store instead of a loose object. The
+// native commit must carry that pack into the repository, not reject it.
+func TestGitNativeCommitLargeFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("hashes a 512 MiB sparse file")
+	}
+	ctx := t.Context()
+	run := func(dir string, args ...string) string {
+		t.Helper()
+		out, err := runWorkspaceCommitGit(ctx, dir, nil, args...)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	source := t.TempDir()
+	run(source, "init", "-b", "main")
+	run(source, "commit", "--allow-empty", "-m", "base")
+	parent := run(source, "rev-parse", "HEAD")
+	gitDir := filepath.Join(t.TempDir(), "native.git")
+	run(source, "clone", "--bare", "--no-hardlinks", source, gitDir)
+	packGlob := filepath.Join(gitDir, "objects", "pack", "pack-*.pack")
+	before, err := filepath.Glob(packGlob)
+	require.NoError(t, err)
+	err = withNativeCommitIndex(ctx, gitDir, filepath.Join(source, ".git", "objects"),
+		&gitutil.Ref{SHA: parent, Name: "refs/heads/main"},
+		&ChangesetPaths{Added: []string{"big.bin"}},
+		GitCommitOpts{Message: "add big file", Date: "2025-01-02T03:04:05Z"},
+		func(work string) error {
+			f, err := os.Create(filepath.Join(work, "big.bin"))
+			if err != nil {
+				return err
+			}
+			// Sparse: no real disk usage, but git still hashes 512 MiB + 1.
+			return errors.Join(f.Truncate(512<<20+1), f.Close())
+		})
+	require.NoError(t, err)
+	after, err := filepath.Glob(packGlob)
+	require.NoError(t, err)
+	require.Len(t, after, len(before)+1, "the big blob arrives as a transaction pack")
+	require.Equal(t, parent, run(gitDir, "rev-parse", "main~1"))
+	require.Equal(t, strconv.Itoa(512<<20+1), run(gitDir, "cat-file", "-s", "main:big.bin"))
+	run(gitDir, "fsck", "--connectivity-only")
 }
 
 // Owned shallow storage holds only its remote anchor and descendants. A commit

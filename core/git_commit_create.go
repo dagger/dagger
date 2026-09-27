@@ -673,14 +673,17 @@ func nativeCommitWriteFile(root *os.Root, name string, data []byte) error {
 	return errors.Join(err, file.Close())
 }
 
-// copyNativeCommitObjects walks only the new operation-local loose objects,
-// never the inherited object database. O_EXCL avoids freshening an existing
-// object, even when content deduplication made an insertion redundant.
+// copyNativeCommitObjects walks only the new operation-local objects, never the
+// inherited object database: loose objects, plus the self-contained packs git
+// add streams blobs >= core.bigFileThreshold into. Pack names are content
+// hashes. O_EXCL avoids freshening an existing object or pack, even when
+// content deduplication made an insertion redundant.
 func copyNativeCommitObjects(ctx context.Context, source, dest string) error {
 	var newObjects, newObjectBytes int64
 	defer func() {
-		// These are compressed loose-object file bytes copied into the child,
-		// not logical blob bytes or physical snapshot disk allocation.
+		// These are compressed loose-object and transaction-pack file bytes
+		// copied into the child, not logical blob bytes or physical snapshot
+		// disk allocation. new_objects counts loose objects only.
 		trace.SpanFromContext(ctx).SetAttributes(
 			attribute.Int64("dagger.git.native.new_objects", newObjects),
 			attribute.Int64("dagger.git.native.new_object_bytes", newObjectBytes),
@@ -706,7 +709,8 @@ func copyNativeCommitObjects(ctx context.Context, source, dest string) error {
 			return err
 		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if len(parts) != 2 || len(parts[0]) != 2 || !IsFullGitSHA(strings.Join(parts, "")) || !entry.Type().IsRegular() {
+		pack := nativeCommitTransactionPack(parts, entry)
+		if !pack && (len(parts) != 2 || len(parts[0]) != 2 || !IsFullGitSHA(strings.Join(parts, "")) || !entry.Type().IsRegular()) {
 			return fmt.Errorf("unexpected transaction object %q", rel)
 		}
 		if err := nativeCommitMkdirParents(root, rel); err != nil {
@@ -733,11 +737,31 @@ func copyNativeCommitObjects(ctx context.Context, source, dest string) error {
 		n, err := io.Copy(out, in)
 		newObjectBytes += n
 		err = errors.Join(err, in.Close(), out.Close())
-		if err == nil {
+		if err == nil && !pack {
 			newObjects++
 		}
 		return err
 	})
+}
+
+// nativeCommitTransactionPack matches pack/pack-<sha>.{pack,idx,rev}: a pack
+// git wrote for this transaction, with its index and reverse index.
+func nativeCommitTransactionPack(parts []string, entry os.DirEntry) bool {
+	if len(parts) != 2 || parts[0] != "pack" || !entry.Type().IsRegular() {
+		return false
+	}
+	name, ok := strings.CutPrefix(parts[1], "pack-")
+	if !ok {
+		return false
+	}
+	ext := path.Ext(name)
+	switch ext {
+	case ".pack", ".idx", ".rev":
+	default:
+		return false
+	}
+	sha := strings.TrimSuffix(name, ext)
+	return len(sha) == 40 && IsFullGitSHA(sha)
 }
 
 func normalizeGitDirAfterCommit(ctx context.Context, workDir string) error {
