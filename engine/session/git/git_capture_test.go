@@ -279,6 +279,66 @@ func TestCaptureGitPreservesFileToDirectoryReplacement(t *testing.T) {
 	require.Equal(t, "new child\n", string(mustReadFile(t, filepath.Join(clone, "replaced", "child.txt"))))
 }
 
+// Capturing thousands of untracked files (for example a foreign checkout
+// mounted under the workspace) once spawned two git processes per file, each
+// update-index rewriting the whole staging index, which took minutes in a
+// large repository. The number of git processes must not grow with the
+// number of selected files.
+func TestCaptureGitStagesSelectedFilesInConstantGitInvocations(t *testing.T) {
+	skipIfNoGit(t)
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+	shimDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "git.log")
+	require.NoError(t, os.WriteFile(filepath.Join(shimDir, "git"), []byte(
+		"#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$DAGGER_CAPTURE_GIT_LOG\"\nexec "+realGit+" \"$@\"\n"), 0o700))
+
+	capture := func(files int) (*fakeCaptureGitServer, []string, string, string, string) {
+		repo, home, remote := initCaptureRepo(t)
+		for i := range files {
+			dir := filepath.Join(repo, "mnt", fmt.Sprintf("d%d", i%7))
+			require.NoError(t, os.MkdirAll(dir, 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%03d.txt", i)), fmt.Appendf(nil, "untracked %d\n", i), 0o600))
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(repo, "mnt", "tool.sh"), []byte("#!/bin/sh\n"), 0o700))
+		require.NoError(t, os.Symlink("tool.sh", filepath.Join(repo, "mnt", "link")))
+		require.NoError(t, os.WriteFile(filepath.Join(repo, "base.txt"), []byte("tracked edit\n"), 0o600))
+
+		require.NoError(t, os.WriteFile(logPath, nil, 0o600))
+		srv := captureGit(t, repo, &CaptureGitPolicy{Include: []string{"mnt/**"}})
+		log := strings.Split(strings.TrimSpace(string(mustReadFile(t, logPath))), "\n")
+		return srv, log, repo, home, remote
+	}
+	t.Setenv("DAGGER_CAPTURE_GIT_LOG", logPath)
+	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	small, smallLog, _, _, _ := capture(2)
+	require.Nil(t, small.metadata(t).GetError())
+	large, largeLog, _, home, remote := capture(200)
+	meta := large.metadata(t)
+	require.Nil(t, meta.GetError())
+	require.Equal(t, int32(202), meta.GetUntrackedFiles())
+	require.Len(t, largeLog, len(smallLog),
+		"git invocations must not scale with selected files; 5 files ran:\n%s",
+		strings.Join(smallLog, "\n"))
+
+	bundlePath := filepath.Join(t.TempDir(), "capture.bundle")
+	require.NoError(t, os.WriteFile(bundlePath, large.payload(CAPTURE_CHUNK_BUNDLE), 0o600))
+	clone := filepath.Join(t.TempDir(), "clone")
+	gitCmd(t, home, "", "clone", remote, clone)
+	gitCmd(t, home, clone, "fetch", bundlePath, captureWorktreeRef+":"+captureWorktreeRef)
+	gitCmd(t, home, clone, "checkout", "--detach", meta.GetWorktreeSha())
+	require.Equal(t, "tracked edit\n", string(mustReadFile(t, filepath.Join(clone, "base.txt"))))
+	require.Equal(t, "untracked 199\n", string(mustReadFile(t, filepath.Join(clone, "mnt", "d3", "f199.txt"))))
+	target, err := os.Readlink(filepath.Join(clone, "mnt", "link"))
+	require.NoError(t, err)
+	require.Equal(t, "tool.sh", target)
+	info, err := os.Stat(filepath.Join(clone, "mnt", "tool.sh"))
+	require.NoError(t, err)
+	require.NotZero(t, info.Mode().Perm()&0o100, "executable bit is staged")
+	require.Contains(t, gitCmd(t, home, clone, "ls-tree", "-r", meta.GetWorktreeSha(), "--", "mnt/link"), "120000 blob")
+}
+
 func TestCaptureGitRemoteHeadCleanOmitsBundleDirtyRestores(t *testing.T) {
 	skipIfNoGit(t)
 	repo, home, remote := initCaptureRepo(t)
