@@ -216,8 +216,9 @@ func (s *directorySchema) changesetMergeForWorkspaceCommit(ctx context.Context, 
 	} else if supported {
 		return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	}
-	// Unsupported storage, metadata and divergent baselines preserve the
-	// existing fail-on-conflict merge, including its filesystem behavior.
+	// Unsupported storage, metadata, divergent baselines and native failures
+	// preserve the existing fail-on-conflict merge, including its filesystem
+	// behavior.
 	err = srv.Select(ctx, parent, &inst, dagql.Selector{Field: "__mergeWithChangeset", Args: []dagql.NamedInput{
 		{Name: "changes", Value: args.Changes},
 		{Name: "onConflict", Value: core.FailOnMergeConflict},

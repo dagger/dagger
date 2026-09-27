@@ -44,9 +44,17 @@ func TestRemoteCommitBaseProvenance(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, supported)
 	before.Self().Lazy = &DirectoryGitTreeLazy{LazyState: NewLazyState(), Ref: parent, DiscardGitDir: true}
+	// Invalid options fall back like any other native failure; the checkout
+	// path reports them itself.
 	_, supported, err = GitCommitChangesetNative(ctx, parent, changes, GitCommitOpts{Date: "invalid"})
-	require.ErrorContains(t, err, "RFC3339")
-	require.True(t, supported)
+	require.NoError(t, err)
+	require.False(t, supported)
+	// Only the caller's own cancellation surfaces.
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, supported, err = GitCommitChangesetNative(canceled, parent, changes, GitCommitOpts{Date: "2026-01-01T00:00:00Z", Message: "m"})
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, supported)
 	before.Self().Lazy = nil
 	ok, err = GitCommitChangesetNativeBase(ctx, parent, changes)
 	require.NoError(t, err)

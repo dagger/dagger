@@ -38,9 +38,16 @@ func (ref *LocalGitRef) incrementalCheckoutEligible() bool {
 	return remote && base.Tree.Self() != nil
 }
 
+// incrementalTree applies only the commit's delta to a COW child of the parent
+// tree. False means the caller must use the full checkout: unsupported inputs,
+// an unusable parent tree, or any other failure (see nativeFallback). Only the
+// caller's cancellation surfaces.
 func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "materialize incremental git checkout", telemetry.Internal())
 	defer func() {
+		if nativeFallback(ctx, span, "dagger.git.checkout.incremental.fallback", rerr) {
+			supported, rerr = false, nil
+		}
 		span.SetAttributes(attribute.Bool("dagger.git.checkout.incremental.supported", supported))
 		telemetry.EndWithCause(span, &rerr)
 	}()

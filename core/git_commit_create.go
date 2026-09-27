@@ -191,9 +191,28 @@ func (reason nativeCommitUnsupportedReason) Is(target error) bool {
 	return target == errNativeCommitUnsupported
 }
 
-// nativeCommitFallback accepts an error only when every leaf is an explicit
-// unsupported marker. Mount cleanup joins errors with the operation's error;
-// errors.Is alone would hide a real unmount failure joined to a fallback reason.
+// nativeFallback is the policy shared by every native fast path (commit,
+// workspace reconciliation, incremental checkout). Each is an optimization over
+// a complete legacy path, so ANY failure falls back to that path: unanticipated
+// repository states, missing objects and internal timeouts included. Only the
+// caller's own cancellation surfaces; an error that merely wraps a deadline
+// from some internal context still falls back. ErrNothingToCommit is a result,
+// not a failure: the legacy path would reach the same answer only after a full
+// checkout, so it is returned as-is. The error is recorded on span as attr, so
+// fallbacks stay visible. Callers release anything they produced before
+// discarding the error.
+func nativeFallback(ctx context.Context, span trace.Span, attr string, err error) bool {
+	if err == nil || ctx.Err() != nil || errors.Is(err, ErrNothingToCommit) {
+		return false
+	}
+	span.SetAttributes(attribute.String(attr, err.Error()))
+	return true
+}
+
+// nativeCommitFallback reports whether every leaf of err is an explicit
+// unsupported marker, distinguishing an expected ineligibility from a failure
+// in helpers that classify rather than fail. Mount cleanup joins errors with the
+// operation's error; errors.Is alone would hide a real unmount failure.
 func nativeCommitFallback(err error) bool {
 	switch err := err.(type) {
 	case nil:
@@ -227,8 +246,9 @@ func nativeCommitFallback(err error) bool {
 // existing objects, and only newly written objects consume a new layer. No
 // mutable repository, index, ref, or mount-path alternate is shared with callers.
 //
-// The bool is false only for explicitly unsupported provenance/storage/semantics.
-// Errors (including cancellation and missing objects) must not trigger fallback.
+// The bool is false when the caller must use the checkout path: unsupported
+// provenance/storage/semantics, or any failure of the native transaction (see
+// nativeFallback). Only the caller's own cancellation is returned as an error.
 // Currently supported: complete snapshot-owned SHA-1 branches/commit IDs, or
 // owned shallow history with an exact remote anchor capability, without
 // alternates or linked worktrees. Remote inputs first acquire an owned closure
@@ -236,6 +256,17 @@ func nativeCommitFallback(err error) bool {
 // attributes and ignore rules. Changes touching gitlinks or .gitmodules use the
 // existing checkout path.
 func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*GitRef], changes *Changeset, opts GitCommitOpts) (_ *Directory, supported bool, rerr error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "git native commit transaction", telemetry.Internal())
+	defer func() {
+		if nativeFallback(ctx, span, "dagger.git.native.fallback_reason", rerr) {
+			supported, rerr = false, nil
+		}
+		span.SetAttributes(attribute.Bool("dagger.git.native.supported", supported))
+		telemetry.EndWithCause(span, &rerr)
+	}()
 	ok, err := GitCommitChangesetNativeBase(ctx, parent, changes)
 	if err != nil || !ok {
 		return nil, false, err
@@ -243,20 +274,12 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 	if err := normalizeNativeCommitOpts(&opts); err != nil {
 		return nil, true, err
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "git native commit transaction", telemetry.Internal())
-	defer func() {
-		span.SetAttributes(attribute.Bool("dagger.git.native.supported", supported))
-		telemetry.EndWithCause(span, &rerr)
-	}()
 	content, err := changes.content(ctx)
 	if err != nil {
 		return nil, true, fmt.Errorf("changeset content: %w", err)
 	}
 	local, err := nativeCommitRepository(ctx, parent)
 	if err != nil {
-		if nativeCommitFallback(err) {
-			return nil, false, nil
-		}
 		return nil, true, err
 	}
 	var gitSubdir string
@@ -281,16 +304,9 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 	})
 	err = errors.Join(err, ctx.Err())
 	if err != nil && dir != nil {
-		// A cancellation observed after snapshot commit still owns that
-		// snapshot. Do not abandon it when returning an error or fallback.
+		// A failure or cancellation observed after snapshot commit still owns
+		// that snapshot. Release it before returning an error or falling back.
 		err = errors.Join(err, dir.OnRelease(context.WithoutCancel(ctx)))
-	}
-	if nativeCommitFallback(err) {
-		var reason nativeCommitUnsupportedReason
-		if errors.As(err, &reason) {
-			span.SetAttributes(attribute.String("dagger.git.native.fallback_reason", string(reason)))
-		}
-		return nil, false, nil
 	}
 	if err != nil {
 		return nil, true, err

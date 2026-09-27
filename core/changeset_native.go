@@ -24,8 +24,9 @@ import (
 // restaging the baseline. The returned filesystem is a COW child of Before,
 // not a raw After tree: Git normalizes only changed paths, while unchanged
 // filesystem metadata survives. Temporary indexes, commits and objects never
-// become part of the returned snapshot. False means an explicit eligibility
-// fallback, never a failed merge, missing object, or cancellation.
+// become part of the returned snapshot. False means the caller must use the
+// existing merge: an eligibility fallback or any failure of the native merge
+// (see nativeFallback). Only the caller's own cancellation is an error.
 func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) (_ *Directory, supported bool, rerr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
@@ -37,17 +38,20 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 	if !ok {
 		return nil, false, nil
 	}
+	ctx, span := Tracer(ctx).Start(ctx, "git native workspace merge", telemetry.Internal())
+	defer func() {
+		if nativeFallback(ctx, span, "dagger.git.native_merge.fallback_reason", rerr) {
+			supported, rerr = false, nil
+		}
+		span.SetAttributes(attribute.Bool("dagger.git.native_merge.supported", supported))
+		telemetry.EndWithCause(span, &rerr)
+	}()
 	for _, changes := range []*Changeset{working, incoming} {
 		ok, err := GitCommitChangesetNativeBase(ctx, lazy.Ref, changes)
 		if err != nil || !ok {
 			return nil, false, err
 		}
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "git native workspace merge", telemetry.Internal())
-	defer func() {
-		span.SetAttributes(attribute.Bool("dagger.git.native_merge.supported", supported))
-		telemetry.EndWithCause(span, &rerr)
-	}()
 	contents := make([]*changesetContent, 2)
 	for i, changes := range []*Changeset{working, incoming} {
 		var err error
@@ -60,9 +64,6 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 		len(commitStagePaths(contents[0].paths))+len(commitStagePaths(contents[1].paths))))
 	local, err := nativeCommitRepository(ctx, lazy.Ref)
 	if err != nil {
-		if nativeCommitFallback(err) {
-			return nil, false, nil
-		}
 		return nil, true, err
 	}
 	var result *Directory
@@ -95,15 +96,8 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 	if err != nil && result != nil {
 		// The inner workspace may already have committed its snapshot when
 		// the source mount fails to unmount, or cancellation arrives. Release
-		// that result before abandoning it, preserving cleanup failures too.
+		// that result before failing or falling back, preserving cleanup errors.
 		err = errors.Join(err, result.OnRelease(context.WithoutCancel(ctx)))
-	}
-	if nativeCommitFallback(err) {
-		var reason nativeCommitUnsupportedReason
-		if errors.As(err, &reason) {
-			span.SetAttributes(attribute.String("dagger.git.native_merge.fallback_reason", string(reason)))
-		}
-		return nil, false, nil
 	}
 	if err != nil {
 		return nil, true, err

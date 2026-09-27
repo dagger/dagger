@@ -230,7 +230,8 @@ func (s *gitSchema) gitRefWithCommitDirectory(ctx context.Context, parent dagql.
 	// Same-base edits can update an isolated Git index directly. Local storage
 	// shares its existing objects through snapshot ancestry; remote inputs first
 	// promote a private authorized closure, never a retained checkout. Divergent
-	// and unsupported inputs still use the general reconciliation below.
+	// and unsupported inputs, and any native failure, use the general
+	// reconciliation below.
 	if dir, supported, err := core.GitCommitChangesetNative(ctx, parent, changes.Self(), opts); err != nil {
 		return inst, err
 	} else if supported {

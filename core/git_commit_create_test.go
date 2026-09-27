@@ -5,8 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestNativeCommitFallback(t *testing.T) {
@@ -35,6 +39,57 @@ func TestNativeCommitFallback(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.fallback, nativeCommitFallback(tc.err))
 		})
+	}
+}
+
+func TestNativeFallbackPolicy(t *testing.T) {
+	reason := nativeCommitUnsupportedReason("shallow-history")
+	failure := errors.New("git [read-tree abc]: exit status 128: fatal: failed to unpack tree object abc")
+	for _, tc := range []struct {
+		name     string
+		err      error
+		fallback bool
+	}{
+		{"success", nil, false},
+		// Nothing to commit is the answer, not a failure of the optimization.
+		{"nothing to commit", ErrNothingToCommit, false},
+		{"wrapped nothing to commit", fmt.Errorf("native commit: %w", ErrNothingToCommit), false},
+		{"unsupported", reason, true},
+		// Real failures of the optimization fall back to the legacy path.
+		{"failure", failure, true},
+		{"reason and cleanup", errors.Join(reason, errors.New("unmount failed")), true},
+		{"unexpected transaction object", fmt.Errorf("unexpected transaction object %q", "pack/tmp_pack_x"), true},
+		// A deadline from some internal context is not the caller's.
+		{"internal deadline", fmt.Errorf("mount: %w", context.DeadlineExceeded), true},
+		{"internal cancellation", context.Canceled, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+			defer provider.Shutdown(t.Context())
+			_, span := provider.Tracer("native-test").Start(t.Context(), "native")
+			require.Equal(t, tc.fallback, nativeFallback(t.Context(), span, "fallback_reason", tc.err))
+			span.End()
+			attrs := map[string]string{}
+			for _, attr := range recorder.Ended()[0].Attributes() {
+				attrs[string(attr.Key)] = attr.Value.AsString()
+			}
+			if tc.fallback {
+				require.Equal(t, tc.err.Error(), attrs["fallback_reason"])
+			} else {
+				require.NotContains(t, attrs, "fallback_reason")
+			}
+		})
+	}
+	// The caller's own cancellation always surfaces, whatever the error.
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	expired, cancelExpired := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancelExpired()
+	for _, ctx := range []context.Context{canceled, expired} {
+		for _, err := range []error{reason, failure, ctx.Err()} {
+			require.False(t, nativeFallback(ctx, trace.SpanFromContext(ctx), "fallback_reason", err))
+		}
 	}
 }
 

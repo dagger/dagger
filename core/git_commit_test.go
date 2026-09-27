@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // The oracle uses a complete worktree and git commit, not commit-tree. Exact
@@ -209,6 +210,24 @@ func TestGitNativeCommitPublicationIsRooted(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	require.ErrorIs(t, copyNativeCommitObjects(ctx, newObjects, repo), context.Canceled)
+}
+
+// Owned shallow storage holds only its remote anchor and descendants. A commit
+// on an older ancestor cannot be built natively; the transaction fails, and
+// that failure hands the commit to the checkout path, which hydrates history.
+func TestGitNativeCommitBeyondOwnedShallowBoundaryFallsBack(t *testing.T) {
+	ctx := t.Context()
+	source, older, anchor := gitMirrorTestSource(t)
+	shallow := t.TempDir()
+	require.NoError(t, packRemoteCommitBaseDepth(ctx, source, shallow, anchor, nil, 1))
+	opts := GitCommitOpts{Message: "on older", Date: "2026-01-01T00:00:00Z", AuthorName: "A", AuthorEmail: "a@example.com"}
+	err := withNativeCommitIndex(ctx, shallow, filepath.Join(shallow, "objects"), &gitutil.Ref{SHA: older}, &ChangesetPaths{Added: []string{"new"}}, opts, func(work string) error {
+		return os.WriteFile(filepath.Join(work, "new"), []byte("new\n"), 0644)
+	})
+	require.Error(t, err)
+	require.False(t, nativeCommitFallback(err), "not an anticipated ineligibility")
+	require.True(t, nativeFallback(ctx, trace.SpanFromContext(ctx), "fallback_reason", err), "any native failure uses the checkout path")
+	require.Equal(t, anchor, gitMirrorTestRun(t, shallow, "rev-parse", "HEAD"), "a failed transaction publishes nothing")
 }
 
 func TestGitNativeCommitRejectsGitlinks(t *testing.T) {
