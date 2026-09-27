@@ -2066,6 +2066,11 @@ func (s *directorySchema) changesetFilter(ctx context.Context, parent dagql.Obje
 	Include []string `default:"[]"`
 	Exclude []string `default:"[]"`
 }) (inst dagql.ObjectResult[*core.Changeset], err error) {
+	if len(args.Include) == 0 && len(args.Exclude) == 0 {
+		// No patterns select every change. Filtering would copy both full
+		// trees only to rebuild an equivalent changeset over the same baseline.
+		return parent, nil
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err

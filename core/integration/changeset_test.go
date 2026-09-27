@@ -2352,6 +2352,25 @@ func (ChangesetSuite) TestFilter(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "docs", after)
 }
 
+func (ChangesetSuite) TestFilterWithoutPatternsSelectsAll(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	before := c.Directory().WithNewFile("src/edit.txt", "old").WithNewFile("src/delete.txt", "delete").WithNewDirectory("gone")
+	after := before.WithNewFile("src/edit.txt", "new").WithoutFile("src/delete.txt").WithNewFile("add.txt", "added").WithoutDirectory("gone")
+	selected := after.Changes(before).Filter()
+	added, err := selected.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"add.txt"}, added)
+	removed, err := selected.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"gone/", "src/delete.txt"}, removed)
+	modified, err := selected.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"src/edit.txt"}, modified)
+	equal, err := before.WithChanges(selected).Changes(after).IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, equal, "applying an unfiltered selection must reproduce the after tree")
+}
+
 // Selecting a single deletion must not remove its siblings. Filtering both
 // sides down to the selected path leaves the after side without the parent
 // directory at all, and re-applying that selection to the complete baseline
