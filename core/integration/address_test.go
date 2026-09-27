@@ -194,7 +194,7 @@ func (AddressSuite) TestSecret(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		plaintext, err := c.Address("cmd://echo hello there").Secret().Plaintext(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "hello there\n", plaintext)
+		require.Equal(t, "hello there", plaintext)
 	})
 
 	t.Run("uri", func(ctx context.Context, t *testctx.T) {
