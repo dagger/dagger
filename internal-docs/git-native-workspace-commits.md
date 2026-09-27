@@ -44,7 +44,7 @@ The transaction then:
 3. Initializes private scratch metadata, a private index and an empty sparse worktree, with the borrowed object directory as `GIT_ALTERNATE_OBJECT_DIRECTORIES`.
 4. `stageNativeChanges`: `read-tree` the parent, check out only `.gitattributes`/`.gitignore` files on the changed paths' ancestor chains, apply the changeset, then `update-index --force-remove` removals and `add -A` additions/modifications. Unchanged blobs are never read.
 5. `write-tree`, then `commit-tree` with explicit author/committer identity and dates. Signoff uses `git interpret-trailers --no-divider`, matching `git commit --trailer`.
-6. `copyNativeCommitObjects` copies only the transaction's new loose objects into the COW child (`O_EXCL`, never touching existing objects), then `publishNativeCommit` writes `HEAD`/the branch ref and a fresh config with rooted writes, and removes index/logs.
+6. `copyNativeCommitObjects` copies only the transaction's new loose objects, plus the pack `git add` writes for blobs over `core.bigFileThreshold` (with its `.idx`/`.rev`), into the COW child (`O_EXCL`, never touching existing objects), then `publishNativeCommit` writes `HEAD`/the branch ref and a fresh config with rooted writes, and removes index/logs.
 
 New objects are written to scratch first because Git may freshen the mtime of an existing pack in its primary object store; pointed at the writable child it could copy up a history-sized pack. The borrowed mount must be genuinely read-only for the same reason. The result is self-contained: snapshot ancestry shares all existing objects, and no scratch index or alternates file is persisted.
 
@@ -136,14 +136,14 @@ The surrounding status/diff/commit loop walked the same full trees repeatedly. T
 Every native path is an optimization; the legacy path is always correct. The policy is uniform:
 
 - **Unsupported configurations take the legacy path up front**, recorded as a fixed reason code on the span (never paths or refs). From the code: non-branch/non-detached refs; `.git` gitfiles or symlinks; linked worktrees; foreign shallow boundaries; object alternates; partial clones/promisors; non-SHA-1 object formats; reftable ref storage in the source repository; `.gitmodules` changes and changes touching gitlinks (for incremental checkout, gitlinks anywhere in either tree); merge commits or annotated parents that are not the actual single parent; `.gitattributes` changes (checkout) or `.gitattributes`/`.gitignore` changes (reconciliation); empty directory additions, ignored paths, non-canonical base blobs, unreported filesystem changes and directory metadata/xattr changes (reconciliation).
-- **Any other error in a native path also falls back**: commit construction, reconciliation, incremental checkout and host donation all retry through the legacy commit, the general `__mergeWithChangeset`, a full checkout, or the authorized remote respectively, recording the error as the fallback reason in telemetry. The single exception is cancellation of the caller's context, which is returned.
-- **Checkout-base provenance that fails validation is dropped**, not fatal: the repository simply behaves as one without a `CheckoutBase` and takes the full checkout path.
-- **Chains are bounded.** Each incremental checkout and native commit adds a snapshot layer over its parent. Beyond a fixed chain depth the full path is taken instead, resetting the chain and avoiding unbounded overlay layer depth.
+- **Any other error in a native path also falls back**: commit construction, reconciliation, incremental checkout and host donation all retry through the legacy commit, the general `__mergeWithChangeset`, a full checkout, or the authorized remote respectively, recording the error as the fallback reason in telemetry. The exceptions are cancellation of the caller's context and `ErrNothingToCommit` (a result, not a failure), which are returned.
+- **Checkout-base provenance that fails validation is dropped**, not fatal: an unprovable parent tree (e.g. the cache answered `tree()` with a content-equivalent recipe's frame) is dropped while `Parent` is kept, so a remote parent takes the full checkout path.
+- **Chains are bounded.** Each incremental checkout and native commit adds a snapshot layer over its parent. When the new child's overlay mount has more than 64 `lowerdir` entries the full path is taken instead, resetting the chain and avoiding unbounded overlay layer depth.
 
 ## Limitations and Non-Goals
 
 - No durability beyond the existing [cache persistence model](cache_persistence.md): graceful persistence is best-effort, and nothing here survives an engine crash that the cache would not.
-- Physical storage growth (retained layers, promoted closures, hydrated history) has not been measured. The `dagger.git.native.new_object_bytes` span attribute counts compressed loose-object bytes, not disk allocation.
+- Physical storage growth (retained layers, promoted closures, hydrated history) has not been measured. The `dagger.git.native.new_object_bytes` span attribute counts compressed loose-object and transaction-pack bytes, not disk allocation.
 - A cold remote-backed first commit still pays one depth-one promotion and one full source materialization; genuinely old history still pays hydration, from the host when donated and from the remote otherwise.
 
 **Direction B, Git trees as a general Directory backend**, would represent Directories as Git trees so diff and merge become tree operations everywhere. It is deferred because it changes Directory's representation across lazy evaluation, persistence and every consumer, and Git trees cannot express the ownership, xattrs and timestamps Directory must preserve; the reconciliation section shows how subtle that gap is even in one place.
@@ -154,11 +154,11 @@ Every native path is an optimization; the legacy path is always correct. The pol
 
 Unit tests (`go test -race ./core ./core/schema ./engine/session/git ./engine/engineutil -count=1`):
 
-- `core/git_commit_test.go`: `TestGitNativeCommitMatchesCheckout` (native vs legacy commit objects), `TestGitNativeCommitPublicationIsRooted`, `TestGitNativeCommitRejectsGitlinks`, `TestGitNativeCommitRefStorageEligibility`, `TestGitNativeCommitStorageEligibility`, `TestGitNativeCommitObjectMetrics`; `core/git_commit_create_test.go`: `TestNativeCommitFallback`.
+- `core/git_commit_test.go`: `TestGitNativeCommitMatchesCheckout` (native vs legacy commit objects), `TestGitNativeCommitPublicationIsRooted`, `TestGitNativeCommitRejectsGitlinks`, `TestGitNativeCommitRefStorageEligibility`, `TestGitNativeCommitStorageEligibility`, `TestGitNativeCommitObjectMetrics`, `TestGitNativeCommitLargeFile`, `TestGitNativeCommitBeyondOwnedShallowBoundaryFallsBack`; `core/git_commit_create_test.go`: `TestNativeCommitFallback`, `TestNativeFallbackPolicy`, `TestNativeSnapshotDepthBound`.
 - `core/git_commit_remote_test.go`: promotion provenance, isolation from unrelated mirror objects/refs, shallow promotion, fallbacks. `core/schema/git_lazy_test.go`: `TestNativeCommitBaseCacheScope`.
 - `core/git_history_native_test.go`, `core/git_history_test.go`: parent-history provenance and raw headers, cached/shallow history joins.
 - `core/changeset_native_test.go`: `TestNativeWorkspaceMergeMatchesCheckout` (reconciliation vs legacy checkout sequence, including metadata), fallback and base-evidence tests.
-- `core/git_local_incremental_test.go`: incremental checkout vs full checkout, gates, actual-parent and provenance checks. `core/git_persistence_test.go`: checkout-base and remote tree persistence.
+- `core/git_local_incremental_test.go`: incremental checkout vs full checkout, gates, actual-parent and provenance checks. `core/git_persistence_test.go`: checkout-base and remote tree persistence, `TestGitCheckoutBaseContentEquivalentParentTree`.
 - `core/git_host_history_test.go`, `engine/session/git/git_pack_commit_test.go`, `engine/engineutil/git_history_test.go`: donor scoping, exact-closure packs, unavailable donors, import validation.
 
 Integration tests run against a from-source engine, e.g. `dagger call engine-dev test --pkg ./core/integration --run 'TestGit/TestGitRefWithCommitNative'`:
