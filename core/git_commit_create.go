@@ -406,7 +406,7 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 		return err
 	}
 	meta := filepath.Join(scratch, "repo")
-	if _, err := runWorkspaceCommitGit(ctx, scratch, nil, "init", "--bare", "--template=", "--object-format=sha1", meta); err != nil {
+	if _, err := runWorkspaceCommitGit(ctx, scratch, nil, "init", "--bare", "--template=", "--object-format=sha1", "--ref-format=files", meta); err != nil {
 		return err
 	}
 	if err := copyGitShallowBoundary(filepath.Dir(parentObjects), meta); err != nil {

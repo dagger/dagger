@@ -242,7 +242,7 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 	}
 	defer os.RemoveAll(scratch)
 	meta := filepath.Join(scratch, "repo")
-	if _, err := runWorkspaceCommitGit(ctx, scratch, nil, "init", "--bare", "--template=", "--object-format=sha1", meta); err != nil {
+	if _, err := runWorkspaceCommitGit(ctx, scratch, nil, "init", "--bare", "--template=", "--object-format=sha1", "--ref-format=files", meta); err != nil {
 		return err
 	}
 	if err := copyGitShallowBoundary(filepath.Dir(parentObjects), meta); err != nil {

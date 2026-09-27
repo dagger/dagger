@@ -145,7 +145,7 @@ func packRemoteCommitBaseDepth(ctx context.Context, source, dest, sha string, re
 	if err != nil {
 		return err
 	}
-	if _, err := runWorkspaceCommitGit(ctx, dest, nil, "init", "--bare", "--template=", "--object-format=sha1"); err != nil {
+	if _, err := runWorkspaceCommitGit(ctx, dest, nil, "init", "--bare", "--template=", "--object-format=sha1", "--ref-format=files"); err != nil {
 		return err
 	}
 	if depth == 1 {

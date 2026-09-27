@@ -122,7 +122,7 @@ func importHostCommitPack(ctx context.Context, dest, packPath, sha string, remot
 	ctx, span := Tracer(ctx).Start(ctx, "git import approved host commit closure", telemetry.Internal())
 	span.SetAttributes(attribute.Int("git.history.depth", 0))
 	defer telemetry.EndWithCause(span, &rerr)
-	if _, err := runWorkspaceCommitGit(ctx, dest, nil, "init", "--bare", "--template=", "--object-format=sha1"); err != nil {
+	if _, err := runWorkspaceCommitGit(ctx, dest, nil, "init", "--bare", "--template=", "--object-format=sha1", "--ref-format=files"); err != nil {
 		return err
 	}
 	f, err := os.Open(packPath)
