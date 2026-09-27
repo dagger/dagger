@@ -704,45 +704,76 @@ func logTelemetryWrite(clientID, what string, rows int, totalStart, appendStart 
 	}
 }
 
+// fetchSpanBatch reads up to limit span rows after the since cursor as one
+// OTLP request. rows counts every row read and next is the last one's ID, so
+// the caller advances past all of them; keep, when set, selects the rows the
+// request carries. With no rows left it returns since, no request and 0.
+func fetchSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Span) bool) (next int64, req *coltracepb.ExportTraceServiceRequest, rows int, err error) {
+	spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
+		ID:    since,
+		Limit: int64(limit),
+	})
+	if err != nil {
+		return 0, nil, 0, fmt.Errorf("select spans: %w", err)
+	}
+	if len(spans) == 0 {
+		return since, nil, 0, nil
+	}
+	roSpans := make([]sdktrace.ReadOnlySpan, 0, len(spans))
+	for i := range spans {
+		if keep == nil || keep(&spans[i]) {
+			roSpans = append(roSpans, spans[i].ReadOnly())
+		}
+	}
+	return spans[len(spans)-1].ID, &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: telemetry.SpansToPB(roSpans),
+	}, len(spans), nil
+}
+
+// fetchLogBatch is fetchSpanBatch for log records.
+func fetchLogBatch(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Log) bool) (next int64, req *collogspb.ExportLogsServiceRequest, rows int, err error) {
+	logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
+		ID:    since,
+		Limit: int64(limit),
+	})
+	if err != nil {
+		return 0, nil, 0, fmt.Errorf("select logs: %w", err)
+	}
+	if len(logs) == 0 {
+		return since, nil, 0, nil
+	}
+	next = logs[len(logs)-1].ID
+	kept := logs
+	if keep != nil {
+		kept = make([]clientdb.Log, 0, len(logs))
+		for i := range logs {
+			if keep(&logs[i]) {
+				kept = append(kept, logs[i])
+			}
+		}
+	}
+	return next, &collogspb.ExportLogsServiceRequest{
+		ResourceLogs: clientdb.LogsToPB(kept),
+	}, len(logs), nil
+}
+
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
-			ID:    since,
-			Limit: int64(limit),
-		})
-		if err != nil {
-			return 0, nil, 0, fmt.Errorf("select spans: %w", err)
+		next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, nil)
+		if req == nil {
+			return next, nil, rows, err
 		}
-		if len(spans) == 0 {
-			return since, nil, 0, nil
-		}
-		roSpans := make([]sdktrace.ReadOnlySpan, len(spans))
-		for i, span := range spans {
-			roSpans[i] = span.ReadOnly()
-			since = span.ID
-		}
-		return since, &coltracepb.ExportTraceServiceRequest{
-			ResourceSpans: telemetry.SpansToPB(roSpans),
-		}, len(spans), nil
+		return next, req, rows, err
 	})
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
-			ID:    since,
-			Limit: int64(limit),
-		})
-		if err != nil {
-			return 0, nil, 0, fmt.Errorf("select logs: %w", err)
+		next, req, rows, err := fetchLogBatch(ctx, db, since, limit, nil)
+		if req == nil {
+			return next, nil, rows, err
 		}
-		if len(logs) == 0 {
-			return since, nil, 0, nil
-		}
-		since = logs[len(logs)-1].ID
-		return since, &collogspb.ExportLogsServiceRequest{
-			ResourceLogs: clientdb.LogsToPB(logs),
-		}, len(logs), nil
+		return next, req, rows, err
 	})
 }
 
