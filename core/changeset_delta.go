@@ -38,18 +38,17 @@ type changesetDelta struct {
 // computeChangesetPathsDelta computes ChangesetPaths by walking filesystem
 // metadata and reading content only for files the metadata can't rule out,
 // instead of content-diffing both full trees like computeChangesetPaths.
-// Rename detection and line counts still come from git, but scoped to the
-// changed files only. When withStats is true it also returns per-path
-// line-change counts matching `git diff --numstat` semantics.
-func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string, withStats bool) (*ChangesetPaths, map[string]lineChanges, error) {
+// Rename detection still comes from git, but scoped to the changed files
+// only. Line counts are left to changesetLineStats, which needs no walk.
+func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string) (*ChangesetPaths, error) {
 	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("collect delta: %w", err)
+		return nil, fmt.Errorf("collect delta: %w", err)
 	}
 
 	modified, err := verifyModifiedFiles(ctx, beforeDir, afterDir, delta.modifiedCandidates)
 	if err != nil {
-		return nil, nil, fmt.Errorf("verify modified files: %w", err)
+		return nil, fmt.Errorf("verify modified files: %w", err)
 	}
 
 	fc := fileChanges{
@@ -61,80 +60,19 @@ func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string,
 	// Renames are always an added/removed pair, so the changed files are the
 	// complete candidate set; running git over just them yields the same
 	// pairings as a full-tree diff.
-	detectRenames := len(delta.addedFiles) > 0 && len(delta.removedFiles) > 0
-	materializeModified := withStats && len(modified) > 0
-
-	var stats map[string]lineChanges
-	if detectRenames || materializeModified {
-		tmpRoot, err := os.MkdirTemp("", "dagger-changeset-delta-")
-		if err != nil {
-			return nil, nil, fmt.Errorf("create delta staging dir: %w", err)
-		}
-		defer os.RemoveAll(tmpRoot)
-		tmpBefore := filepath.Join(tmpRoot, "before")
-		tmpAfter := filepath.Join(tmpRoot, "after")
-
-		// Modified files exist at the same path on both sides, so they can
-		// never participate in rename pairing; stage them only when numstat
-		// needs their content.
-		var beforePaths, afterPaths []string
-		if materializeModified {
-			beforePaths = slices.Clone(modified)
-			afterPaths = slices.Clone(modified)
-		}
-		if detectRenames {
-			beforePaths = append(beforePaths, delta.removedFiles...)
-			afterPaths = append(afterPaths, delta.addedFiles...)
-		}
-		if err := materializeDeltaFiles(ctx, beforeDir, tmpBefore, beforePaths); err != nil {
-			return nil, nil, fmt.Errorf("stage before delta: %w", err)
-		}
-		if err := materializeDeltaFiles(ctx, afterDir, tmpAfter, afterPaths); err != nil {
-			return nil, nil, fmt.Errorf("stage after delta: %w", err)
-		}
-
-		if detectRenames {
+	if len(delta.addedFiles) > 0 && len(delta.removedFiles) > 0 {
+		err := withStagedDeltaFiles(ctx, beforeDir, afterDir, delta.removedFiles, delta.addedFiles, func(tmpBefore, tmpAfter string) error {
 			gitFC, err := compareDirectories(ctx, tmpBefore, tmpAfter)
 			if err != nil {
-				return nil, nil, fmt.Errorf("compare delta files: %w", err)
+				return fmt.Errorf("compare delta files: %w", err)
 			}
 			fc.Added = gitFC.Added
 			fc.Removed = gitFC.Removed
 			fc.Renamed = gitFC.Renamed
-		}
-		if withStats {
-			stats, err = compareDirectoriesNumStat(ctx, tmpBefore, tmpAfter)
-			if err != nil {
-				return nil, nil, fmt.Errorf("numstat delta files: %w", err)
-			}
-		}
-	}
-
-	if withStats {
-		if stats == nil {
-			stats = make(map[string]lineChanges)
-		}
-		if !detectRenames {
-			// Added/removed files weren't staged for git; their counts are
-			// just the file's own line count.
-			for _, rel := range fc.Added {
-				lines, ok, err := countGitLines(filepath.Join(afterDir, rel))
-				if err != nil {
-					return nil, nil, fmt.Errorf("count lines of added %s: %w", rel, err)
-				}
-				if ok {
-					stats[rel] = lineChanges{Added: lines}
-				}
-			}
-			for _, rel := range fc.Removed {
-				lines, ok, err := countGitLines(filepath.Join(beforeDir, rel))
-				if err != nil {
-					return nil, nil, fmt.Errorf("count lines of removed %s: %w", rel, err)
-				}
-				if ok {
-					stats[rel] = lineChanges{Removed: lines}
-				}
-			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -157,7 +95,89 @@ func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string,
 		Removed:    collapseChildPaths(allRemoved),
 		AllRemoved: allRemoved,
 		Renamed:    fc.Renamed,
-	}, stats, nil
+	}, nil
+}
+
+// changesetLineStats computes per-path line-change counts matching `git diff
+// --numstat` semantics for already-computed changeset paths, reading only the
+// changed files rather than walking either tree again.
+func changesetLineStats(ctx context.Context, beforeDir, afterDir string, paths *ChangesetPaths) (map[string]lineChanges, error) {
+	isFile := func(p string) bool { return !strings.HasSuffix(p, "/") }
+	// Renamed paths appear in both Added and AllRemoved, so these are the
+	// file-level additions and removals as seen before rename pairing.
+	added := slices.DeleteFunc(slices.Clone(paths.Added), func(p string) bool { return !isFile(p) })
+	removed := slices.DeleteFunc(slices.Clone(paths.AllRemoved), func(p string) bool { return !isFile(p) })
+	// With both sides present, git must see every addition and removal to
+	// pair (and count) renames exactly as a full-tree numstat would.
+	stageAddRemove := len(added) > 0 && len(removed) > 0
+
+	stats := make(map[string]lineChanges)
+	// Modified files exist at the same path on both sides, so they can never
+	// participate in rename pairing; stage them only for their content.
+	beforePaths := slices.Clone(paths.Modified)
+	afterPaths := slices.Clone(paths.Modified)
+	if stageAddRemove {
+		beforePaths = append(beforePaths, removed...)
+		afterPaths = append(afterPaths, added...)
+	}
+	if len(beforePaths) > 0 || len(afterPaths) > 0 {
+		err := withStagedDeltaFiles(ctx, beforeDir, afterDir, beforePaths, afterPaths, func(tmpBefore, tmpAfter string) error {
+			var err error
+			stats, err = compareDirectoriesNumStat(ctx, tmpBefore, tmpAfter)
+			if err != nil {
+				return fmt.Errorf("numstat delta files: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if stats == nil {
+			stats = make(map[string]lineChanges)
+		}
+	}
+	if !stageAddRemove {
+		// Added/removed files weren't staged for git; their counts are
+		// just the file's own line count.
+		for _, rel := range added {
+			lines, ok, err := countGitLines(filepath.Join(afterDir, rel))
+			if err != nil {
+				return nil, fmt.Errorf("count lines of added %s: %w", rel, err)
+			}
+			if ok {
+				stats[rel] = lineChanges{Added: lines}
+			}
+		}
+		for _, rel := range removed {
+			lines, ok, err := countGitLines(filepath.Join(beforeDir, rel))
+			if err != nil {
+				return nil, fmt.Errorf("count lines of removed %s: %w", rel, err)
+			}
+			if ok {
+				stats[rel] = lineChanges{Removed: lines}
+			}
+		}
+	}
+	return stats, nil
+}
+
+// withStagedDeltaFiles copies the given relative paths out of each tree into
+// temporary before/after roots, so git can diff just those files.
+func withStagedDeltaFiles(ctx context.Context, beforeDir, afterDir string, beforePaths, afterPaths []string, fn func(tmpBefore, tmpAfter string) error) error {
+	tmpRoot, err := os.MkdirTemp("", "dagger-changeset-delta-")
+	if err != nil {
+		return fmt.Errorf("create delta staging dir: %w", err)
+	}
+	defer os.RemoveAll(tmpRoot)
+	tmpBefore := filepath.Join(tmpRoot, "before")
+	tmpAfter := filepath.Join(tmpRoot, "after")
+	if err := materializeDeltaFiles(ctx, beforeDir, tmpBefore, beforePaths); err != nil {
+		return fmt.Errorf("stage before delta: %w", err)
+	}
+	if err := materializeDeltaFiles(ctx, afterDir, tmpAfter, afterPaths); err != nil {
+		return fmt.Errorf("stage after delta: %w", err)
+	}
+	return fn(tmpBefore, tmpAfter)
 }
 
 // collectChangesetDelta double-walks both trees comparing stat metadata,

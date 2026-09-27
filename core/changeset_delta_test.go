@@ -28,7 +28,7 @@ func requireSamePaths(t *testing.T, beforeDir, afterDir string) *ChangesetPaths 
 
 	gitPaths, err := computeChangesetPaths(ctx, beforeDir, afterDir)
 	require.NoError(t, err)
-	deltaPaths, _, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, true)
+	deltaPaths, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir)
 	require.NoError(t, err)
 
 	require.ElementsMatch(t, gitPaths.Added, deltaPaths.Added, "Added")
@@ -36,11 +36,6 @@ func requireSamePaths(t *testing.T, beforeDir, afterDir string) *ChangesetPaths 
 	require.ElementsMatch(t, gitPaths.Removed, deltaPaths.Removed, "Removed")
 	require.ElementsMatch(t, gitPaths.AllRemoved, deltaPaths.AllRemoved, "AllRemoved")
 	require.Equal(t, gitPaths.Renamed, deltaPaths.Renamed, "Renamed")
-
-	// The stats-less variant stages fewer files but must report the same paths.
-	deltaPathsNoStats, _, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, false)
-	require.NoError(t, err)
-	require.Equal(t, deltaPaths, deltaPathsNoStats, "withStats=false paths")
 
 	// The IsEmpty fast path must agree with whether git sees any file-level
 	// change (renames included; directory-only changes don't count).
@@ -61,16 +56,24 @@ func requireSameNumStat(t *testing.T, beforeDir, afterDir string) {
 
 	gitStats, err := compareDirectoriesNumStat(ctx, beforeDir, afterDir)
 	require.NoError(t, err)
-	_, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, true)
+	// Stats must match whichever path computation produced the paths: the
+	// delta walk, or the full-tree fallback.
+	deltaPaths, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir)
 	require.NoError(t, err)
-	// git omits nothing; delta may omit zero-value entries. Compare as maps
-	// treating missing == zero.
-	for path, gs := range gitStats {
-		require.Equal(t, gs, deltaStats[path], "numstat for %s", path)
-	}
-	for path, ds := range deltaStats {
-		if _, ok := gitStats[path]; !ok {
-			require.Equal(t, lineChanges{}, ds, "extra numstat for %s", path)
+	fullPaths, err := computeChangesetPaths(ctx, beforeDir, afterDir)
+	require.NoError(t, err)
+	for name, paths := range map[string]*ChangesetPaths{"delta": deltaPaths, "full": fullPaths} {
+		deltaStats, err := changesetLineStats(ctx, beforeDir, afterDir, paths)
+		require.NoError(t, err, name)
+		// git omits nothing; delta may omit zero-value entries. Compare as
+		// maps treating missing == zero.
+		for path, gs := range gitStats {
+			require.Equal(t, gs, deltaStats[path], "%s numstat for %s", name, path)
+		}
+		for path, ds := range deltaStats {
+			if _, ok := gitStats[path]; !ok {
+				require.Equal(t, lineChanges{}, ds, "%s extra numstat for %s", name, path)
+			}
 		}
 	}
 }
@@ -263,7 +266,7 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 		// No renames and no metadata-only changes, so the bound is exact:
 		// 3 added (add.txt, fresh/, fresh/c.txt), 1 modified, 5 removed
 		// (remove.txt, gone/, gone/a.txt, gone/sub/, gone/sub/b.txt).
-		paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+		paths, err := computeChangesetPathsDelta(ctx, before, after)
 		require.NoError(t, err)
 		full := changesetPathCount(paths)
 		require.Equal(t, 9, full)
@@ -301,7 +304,7 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 		past := time.Now().Add(-time.Hour)
 		require.NoError(t, os.Chtimes(filepath.Join(after, "f.txt"), past, past))
 
-		paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+		paths, err := computeChangesetPathsDelta(ctx, before, after)
 		require.NoError(t, err)
 		require.Equal(t, 0, changesetPathCount(paths))
 

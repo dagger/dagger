@@ -271,7 +271,7 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 
 	var result *ChangesetPaths
 	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) (err error) {
-		result, _, err = computeChangesetPathsDelta(ctx, beforeDir, afterDir, false)
+		result, err = computeChangesetPathsDelta(ctx, beforeDir, afterDir)
 		if err != nil {
 			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
 			result, err = computeChangesetPaths(ctx, beforeDir, afterDir)
@@ -697,28 +697,31 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 }
 
 func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
-	var paths *ChangesetPaths
-	var statsByPath map[string]lineChanges
-	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		computedPaths, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, true)
-		if err != nil {
-			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
-			computedPaths, err = computeChangesetPaths(ctx, beforeDir, afterDir)
-			if err != nil {
-				return fmt.Errorf("compute paths: %w", err)
-			}
-			deltaStats, err = compareDirectoriesNumStat(ctx, beforeDir, afterDir)
-			if err != nil {
-				slog.Debug("changeset numstat failed; returning path-only diff stat entries", "error", err)
-				deltaStats = nil
-			}
-		}
-		paths = computedPaths
-		statsByPath = deltaStats
-		return nil
-	})
+	// Share the memoized path scan: callers commonly ask for paths and stats
+	// of the same changeset, and each scan walks both full trees. Line counts
+	// then only read the changed files.
+	paths, err := ch.ComputePaths(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compute paths: %w", err)
+	}
+	var statsByPath map[string]lineChanges
+	if changesetPathCount(paths) > 0 {
+		err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+			var err error
+			statsByPath, err = changesetLineStats(ctx, beforeDir, afterDir, paths)
+			if err != nil {
+				slog.Warn("changeset delta numstat failed; falling back to full content numstat", "error", err)
+				statsByPath, err = compareDirectoriesNumStat(ctx, beforeDir, afterDir)
+				if err != nil {
+					slog.Debug("changeset numstat failed; returning path-only diff stat entries", "error", err)
+					statsByPath = nil
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	addEntry := func(path string, kind DiffStatKind) *DiffStat {
