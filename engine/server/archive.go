@@ -297,7 +297,10 @@ func buildArchiveBootstrap(ctx context.Context, db *clientdb.DB, manifest archiv
 // buildArchiveBootstrapWithPayloadLimit is where a bootstrap is verified: the
 // final control rows must match the producer's witnessed roster (ControlRows),
 // and every snapshot's recipe closure must be present at the cut
-// (VerifyClosure). Readers only check the framing and checksum.
+// (VerifyClosure). Readers only check the framing and checksum. The bootstrap
+// packs log rows only: a frame that rode its call span rather than a payload
+// log is packed as the payload record CallPayload synthesizes from the span,
+// so readers see one uniform shape.
 func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB, manifest archive.Manifest, cut clientdb.HighWater, want agentcontrol.Expectation, sealAt time.Time, maxPayloadSize int) ([]byte, int64, error) {
 	if maxPayloadSize <= 0 || maxPayloadSize > archive.MaxBootstrapPayloadSize {
 		return nil, 0, fmt.Errorf("invalid bootstrap payload limit %d", maxPayloadSize)
@@ -324,7 +327,7 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 		}
 	}
 	_, err = archive.VerifyClosure(roots, func(d string) (*callpbv1.Call, error) {
-		row, err := db.CallPayload(ctx, manifest.TraceID, d, cut.Logs)
+		row, err := db.CallPayload(ctx, manifest.TraceID, d, cut)
 		if err != nil {
 			return nil, err
 		}

@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
@@ -29,8 +30,11 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	logapi "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -210,6 +214,82 @@ func TestArchiveBootstrapSplitsLargeRecipeClosure(t *testing.T) {
 			require.Equal(t, records, terminal.LogRecords)
 		})
 	}
+}
+
+// A committed leaf whose frame rode its call span — the only carrier for a
+// spanned call — must satisfy closure verification and reach the bootstrap
+// as an ordinary call payload record.
+func TestArchiveBootstrapPacksSpanCarriedFrames(t *testing.T) {
+	_, sess, db, want := archiveFixture(t)
+	id := call.New().Append(&ast.Type{NamedType: "LLM", NonNull: true}, "llm").
+		Append(&ast.Type{NamedType: "LLM", NonNull: true}, "withResponse")
+	frame := id.Call()
+	encoded, err := frame.Encode()
+	require.NoError(t, err)
+	now := time.Now()
+	span := tracetest.SpanStub{
+		Name: "LLM.withResponse",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{1},
+			SpanID:  trace.SpanID{9},
+		}),
+		StartTime: now,
+		EndTime:   now.Add(time.Millisecond),
+		Attributes: []attribute.KeyValue{
+			attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
+			attribute.String(telemetry.DagCallAttr, encoded),
+		},
+	}.Snapshot()
+	require.NoError(t, sess.telemetryPubSub.Spans("main").ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
+
+	a := archiveAgent()
+	a.Revision++
+	a.Digest = id.Digest().String()
+	want.Agents[a.Key] = a.Revision
+	rec := controlTestRecord(t, a.Record())
+	row, err := logRecordRow(&rec)
+	require.NoError(t, err)
+	_, err = db.AppendLogs([]clientdb.Log{row})
+	require.NoError(t, err)
+	cut, err := db.Checkpoint(t.Context())
+	require.NoError(t, err)
+
+	data, records, err := buildArchiveBootstrap(t.Context(), db, *sess.archiveManifest, cut, want, time.Now())
+	require.NoError(t, err)
+	require.EqualValues(t, 3, records, "the control row and both closure frames")
+	payloads := map[string]string{}
+	_, _, err = archive.DecodeBootstrap(bytes.NewReader(data), nil, func(payload []byte) error {
+		var logs collogspb.ExportLogsServiceRequest
+		require.NoError(t, proto.Unmarshal(payload, &logs))
+		for _, rl := range logs.GetResourceLogs() {
+			for _, sl := range rl.GetScopeLogs() {
+				for _, lr := range sl.GetLogRecords() {
+					var digest, contentType string
+					for _, kv := range lr.GetAttributes() {
+						switch kv.GetKey() {
+						case telemetry.ContentTypeAttr:
+							contentType = kv.GetValue().GetStringValue()
+						case telemetryattrs.CallPayloadDigestAttr:
+							digest = kv.GetValue().GetStringValue()
+						}
+					}
+					if contentType != telemetryattrs.CallPayloadContentType {
+						continue
+					}
+					var decoded callpbv1.Call
+					require.NoError(t, proto.Unmarshal(lr.GetBody().GetBytesValue(), &decoded))
+					payloads[decoded.GetDigest()] = decoded.GetField()
+					if digest != "" {
+						require.Equal(t, decoded.GetDigest(), digest)
+					}
+				}
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "withResponse", payloads[id.Digest().String()], "the span-carried frame is packed as a payload record")
+	require.Equal(t, "llm", payloads[id.Receiver().Digest().String()])
 }
 
 func TestArchiveHistorySplitsLargeBatches(t *testing.T) {
