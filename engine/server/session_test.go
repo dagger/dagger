@@ -3463,12 +3463,6 @@ func TestCallPayloadWriteOwnershipAndRelease(t *testing.T) {
 		"a released target must be claimable by a later walk")
 	require.Equal(t, []string{"child"}, sess.takeCallPayloadForWrite("xxh3:abc", route),
 		"a retry must write only the released target")
-
-	// A best-effort span copy cannot turn a failed DB write into success.
-	store.CallPayloadDelivered("xxh3:abc")
-	sess.settleCallPayload("xxh3:abc", []string{"child"}, false)
-	require.Equal(t, []string{"child"}, sess.callPayloadMissingTargets("xxh3:abc", route))
-	require.True(t, store.ClaimCallPayload("xxh3:abc"))
 }
 
 func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {

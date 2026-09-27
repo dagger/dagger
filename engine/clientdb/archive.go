@@ -36,6 +36,10 @@ func (s *DB) Checkpoint(ctx context.Context) (HighWater, error) {
 // still Checkpoints for real durability.
 func (s *DB) FlushLogs(ctx context.Context) error { return s.logs.flush(ctx) }
 
+// FlushSpans is FlushLogs for the span tail: a spanned call's frame rides its
+// call span alone, so an unsealed restore needs those rows on file too.
+func (s *DB) FlushSpans(ctx context.Context) error { return s.spans.flush(ctx) }
+
 // HighWater reports the current end of each stream without a persistence
 // barrier. Use it only for a store no producer writes to anymore, such as an
 // archive whose session ended without sealing.

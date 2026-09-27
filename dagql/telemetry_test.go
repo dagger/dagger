@@ -28,10 +28,6 @@ func (s *testCallPayloadSeenKeyStore) ClaimCallPayload(digest string) bool {
 	return !seen
 }
 
-func (s *testCallPayloadSeenKeyStore) CallPayloadDelivered(digest string) {
-	s.keys.Store(digest, struct{}{})
-}
-
 // The two telemetry dedupe stores must be blind to each other. Payload
 // decisions cover a chain's whole closure and must neither suppress spans nor
 // be suppressed by the session-wide span cache.

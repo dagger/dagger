@@ -1,19 +1,27 @@
 package server
 
 import (
+	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // callPayloadMissingTargets reports the route targets whose DB does not hold
@@ -53,29 +61,143 @@ func TestArchiveRegistrationFailureDoesNotDropControl(t *testing.T) {
 	require.Len(t, rows, 1, "archive registration must not gate live persistence")
 }
 
-func TestReportedSpanDoesNotSuppressDurablePayload(t *testing.T) {
+// callSpan is an ended span carrying the call frame body as dagger.io/dag.call,
+// routed from origin.
+func callSpan(t *testing.T, origin string, spanID byte, body []byte, digest string) sdktrace.ReadOnlySpan {
+	t.Helper()
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.DagDigestAttr, digest),
+		attribute.String(telemetry.DagCallAttr, base64.StdEncoding.EncodeToString(body)),
+	}
+	if origin != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, origin))
+	}
+	now := time.Now()
+	return tracetest.SpanStub{
+		Name: "Thing.lookup",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{1},
+			SpanID:  trace.SpanID{spanID},
+		}),
+		StartTime:  now,
+		EndTime:    now.Add(time.Millisecond),
+		Attributes: attrs,
+	}.Snapshot()
+}
+
+func clientRows(t *testing.T, dbs *clientdb.DBs, client string) (spans []clientdb.Span, logs []clientdb.Log) {
+	t.Helper()
+	db, err := dbs.Open(t.Context(), client)
+	require.NoError(t, err)
+	defer db.Close()
+	spans, err = db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
+	require.NoError(t, err)
+	logs, err = db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
+	require.NoError(t, err)
+	return spans, logs
+}
+
+// A control record must not land ahead of the call frames queued before it:
+// the call lanes are drained first, and a drain failure only warns.
+func TestControlAfterCallsExporterDrainsCallLanesFirst(t *testing.T) {
+	var order []string
+	next := &orderedLogExporter{order: &order}
+	exp := controlAfterCallsExporter{next: next, calls: []func(context.Context) error{
+		func(context.Context) error { order = append(order, "call spans"); return nil },
+		func(context.Context) error { order = append(order, "call payloads"); return errors.New("dropped") },
+	}}
+	require.NoError(t, exp.Export(t.Context(), []sdklog.Record{{}}))
+	require.Equal(t, []string{"call spans", "call payloads", "controls"}, order)
+}
+
+type orderedLogExporter struct{ order *[]string }
+
+func (e *orderedLogExporter) Export(context.Context, []sdklog.Record) error {
+	*e.order = append(*e.order, "controls")
+	return nil
+}
+func (*orderedLogExporter) ForceFlush(context.Context) error { return nil }
+func (*orderedLogExporter) Shutdown(context.Context) error   { return nil }
+
+// A call span is its frame's delivery: once the span lands in a target's DB,
+// the payload counts as delivered there, so no payload log is written for it.
+func TestSessionSpanExporterSettlesCallSpanDelivery(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["parent"] = &clientRecord{daggerSession: sess, clientID: "parent"}
+	sess.clientRecords["child"] = &clientRecord{daggerSession: sess, clientID: "child", parentClientIDs: []string{"parent"}}
+	ps := NewPubSub(srv)
+	body, digest := serverCallPayload(t, "lookup", "spanned")
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"parent", "child"}}
+	require.True(t, store.ClaimCallPayload(digest))
+
+	spans := sessionSpanExporter{sess: sess, ps: ps}
+	require.NoError(t, spans.ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{callSpan(t, "child", 1, body, digest)}))
+	require.Empty(t, sess.callPayloadMissingTargets(digest, store.targets))
+	require.False(t, store.ClaimCallPayload(digest))
+
+	// A later payload record for the same frame (a re-posted copy, a racing
+	// walk) finds every target delivered.
+	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	require.NoError(t, sessionLogExporter{sess: sess, ps: ps}.Export(t.Context(), []sdklog.Record{record}))
+
+	// Another snapshot of the span is still written: it is also the span.
+	require.NoError(t, spans.ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{callSpan(t, "child", 1, body, digest)}))
+	for _, target := range store.targets {
+		spanRows, logRows := clientRows(t, dbs, target)
+		require.Len(t, spanRows, 2, "target %s", target)
+		require.Empty(t, logRows, "target %s", target)
+	}
+}
+
+// A failed span write releases the frame's targets, so the protected span
+// processor's retry, or a later closure walk, can still deliver it.
+func TestSessionSpanExporterReleasesFailedCallSpan(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "store")
+	require.NoError(t, os.WriteFile(root, []byte("temporarily unavailable"), 0600))
+	dbs := clientdb.NewDBs(root)
+	srv := &Server{clientDBs: dbs}
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	spans := sessionSpanExporter{sess: sess, ps: NewPubSub(srv)}
+	body, digest := serverCallPayload(t, "lookup", "retry")
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
+	require.True(t, store.ClaimCallPayload(digest))
+
+	span := callSpan(t, "client", 1, body, digest)
+	require.Error(t, spans.ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
+	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(digest, store.targets))
+	require.True(t, store.ClaimCallPayload(digest), "a failed write must release the producer's claim")
+
+	require.NoError(t, os.Remove(root))
+	require.NoError(t, spans.ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
+	require.Empty(t, sess.callPayloadMissingTargets(digest, store.targets))
+	require.False(t, store.ClaimCallPayload(digest))
+}
+
+// A span that cannot be routed must not poison its batch: the protected call
+// span processor would otherwise retry it and then drop its siblings too.
+func TestSessionSpanExporterSkipsUnroutableSpans(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
 	srv := &Server{clientDBs: dbs}
 	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
 	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
-	body, digest := serverCallPayload(t, "lookup", "span-reported")
-	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
-	require.True(t, store.ClaimCallPayload(digest))
-	store.CallPayloadDelivered(digest)
-	require.False(t, store.ClaimCallPayload(digest), "avoid duplicate ordinary span walks")
-	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(digest, store.targets))
-	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
-	exporter := sessionLogExporter{sess: sess, ps: NewPubSub(srv)}
-	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{record}))
-	require.Empty(t, sess.callPayloadMissingTargets(digest, store.targets))
-	db, err := dbs.Open(t.Context(), "client")
-	require.NoError(t, err)
-	defer db.Close()
-	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
+	spans := sessionSpanExporter{sess: sess, ps: NewPubSub(srv)}
+	body, digest := serverCallPayload(t, "lookup", "routable")
+	strayBody, strayDigest := serverCallPayload(t, "lookup", "stray")
+
+	require.NoError(t, spans.ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{
+		callSpan(t, "", 1, strayBody, strayDigest),
+		callSpan(t, "client", 2, body, digest),
+		callSpan(t, "nobody", 3, strayBody, strayDigest),
+	}))
+	require.Empty(t, sess.callPayloadMissingTargets(digest, []string{"client"}))
+	require.Equal(t, []string{"client"}, sess.callPayloadMissingTargets(strayDigest, []string{"client"}))
+	spanRows, _ := clientRows(t, dbs, "client")
+	require.Len(t, spanRows, 1)
 }
 
 func TestSessionLogExporterRetriesPayloadAfterStoreFailure(t *testing.T) {

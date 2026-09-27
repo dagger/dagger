@@ -792,6 +792,83 @@ func (p *cloudLogPipeline) Shutdown(ctx context.Context) error {
 	return errors.Join(err, p.records.Shutdown(ctx))
 }
 
+// cloudSpanPipeline carries the session's spans to Cloud. Call spans, the only
+// carriers of their calls' frames, take a protected, retrying path, as in
+// client routing; every other span takes the bounded live processor, whose
+// queue drops on overflow. Both paths share the Cloud exporter through
+// serialSpanExporter, since an exporter must not export concurrently. The
+// live processor's Shutdown shuts it down, so the protected path stops first.
+type cloudSpanPipeline struct {
+	calls  *enginetel.CallSpanProcessor
+	live   sdktrace.SpanProcessor
+	others sdktrace.SpanProcessor
+}
+
+func newCloudSpanPipeline(exporter sdktrace.SpanExporter) *cloudSpanPipeline {
+	exporter = newSerialSpanExporter(exporter)
+	live := enginetel.NewLargeQueueLiveSpanProcessor(exporter)
+	return &cloudSpanPipeline{
+		calls:  enginetel.NewCallSpanProcessor(exporter),
+		live:   live,
+		others: enginetel.WithoutCallSpans(live),
+	}
+}
+
+// OnStart and OnEnd offer every span to both paths; each keeps only its own.
+func (p *cloudSpanPipeline) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
+	p.calls.OnStart(ctx, span)
+	p.others.OnStart(ctx, span)
+}
+
+func (p *cloudSpanPipeline) OnEnd(span sdktrace.ReadOnlySpan) {
+	p.calls.OnEnd(span)
+	p.others.OnEnd(span)
+}
+
+// ForceFlush flushes both paths at once, within ctx.
+func (p *cloudSpanPipeline) ForceFlush(ctx context.Context) error {
+	return allWithin(ctx, p.calls.ForceFlush, p.live.ForceFlush)
+}
+
+// Shutdown stops the protected path while flushing ordinary spans, all within
+// ctx, then shuts the live processor and with it the exporter down. The
+// protected path's Shutdown waits until its worker has stopped.
+func (p *cloudSpanPipeline) Shutdown(ctx context.Context) error {
+	err := allWithin(ctx, p.calls.Shutdown, p.live.ForceFlush)
+	return errors.Join(err, p.live.Shutdown(ctx))
+}
+
+// serialSpanExporter lets one ExportSpans at a time reach the exporter it
+// wraps. A caller waits its turn only as long as its context allows.
+type serialSpanExporter struct {
+	next sdktrace.SpanExporter
+	turn chan struct{}
+}
+
+func newSerialSpanExporter(next sdktrace.SpanExporter) *serialSpanExporter {
+	return &serialSpanExporter{next: next, turn: make(chan struct{}, 1)}
+}
+
+func (e *serialSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	select {
+	case e.turn <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-e.turn }()
+	return e.next.ExportSpans(ctx, spans)
+}
+
+// Shutdown waits for the export in flight, within ctx, and shuts down.
+func (e *serialSpanExporter) Shutdown(ctx context.Context) error {
+	select {
+	case e.turn <- struct{}{}:
+		defer func() { <-e.turn }()
+	case <-ctx.Done():
+	}
+	return e.next.Shutdown(ctx)
+}
+
 // serialLogExporter lets one Export at a time reach the exporter it wraps.
 // A caller waits its turn only as long as its context allows.
 type serialLogExporter struct {

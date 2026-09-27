@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -216,16 +217,41 @@ type sessionSpanExporter struct {
 	ps   *PubSub
 }
 
+// ExportSpans fans spans out to the per-client DBs on each span's route.
+//
+// A call span (one carrying its frame as dagger.io/dag.call) is also the
+// delivery of that frame's payload, so it settles the same per-(digest,
+// target) state the log exporter does: the targets it takes are marked
+// delivered once their DB appended the span, or released when the write
+// failed, so the protected span processor's retry — or a later closure walk
+// over the log lane — can still deliver the frame. Unlike payload logs, the
+// span itself is written to every target on its route regardless: it is
+// also the span, and a repeated snapshot is harmless.
 func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	// A span that cannot be routed is skipped, not fatal: a missing or
+	// unknown origin never resolves on retry, and failing the batch would
+	// have the protected call span processor retry it and then drop its
+	// routable siblings too. Only store writes, which can succeed on retry,
+	// fail the batch.
 	byTarget := map[string][]sdktrace.ReadOnlySpan{}
+	payloadsByTarget := map[string][]string{}
 	for _, span := range spans {
 		origin := spanOriginClientID(span)
 		if origin == "" {
-			return fmt.Errorf("span %s is missing telemetry origin client ID", span.SpanContext().SpanID())
+			slog.Warn("dropping span without telemetry origin client ID", "span", span.SpanContext().SpanID(), "name", span.Name())
+			continue
 		}
 		route, err := exp.sess.telemetryRouteOriginClientID(origin)
 		if err != nil {
-			return err
+			slog.Warn("dropping unroutable span", "origin", origin, "span", span.SpanContext().SpanID(), "name", span.Name(), "err", err)
+			continue
+		}
+		if digest, ok := enginetel.CallSpanDigest(span); ok && digest != "" {
+			// Taking is also the in-batch dedupe: a second snapshot of the
+			// same call finds its targets already owned by the first.
+			for _, target := range exp.sess.takeCallPayloadForWrite(digest, route) {
+				payloadsByTarget[target] = append(payloadsByTarget[target], digest)
+			}
 		}
 		span = withoutSpanOrigin(span)
 		for _, target := range route {
@@ -235,7 +261,11 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 	var eg errgroup.Group
 	for target, targetSpans := range byTarget {
 		eg.Go(func() error {
-			if err := exp.ps.Spans(target).ExportSpans(ctx, targetSpans); err != nil {
+			err := exp.ps.Spans(target).ExportSpans(ctx, targetSpans)
+			for _, digest := range payloadsByTarget[target] {
+				exp.sess.settleCallPayload(digest, []string{target}, err == nil)
+			}
+			if err != nil {
 				return fmt.Errorf("export spans to %s: %w", target, err)
 			}
 			return nil
@@ -370,6 +400,41 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 
 func (sessionLogExporter) ForceFlush(context.Context) error { return nil }
 func (sessionLogExporter) Shutdown(context.Context) error   { return nil }
+
+// controlAfterCallsExporter persists the call frames queued before a batch of
+// agent control records ahead of the records themselves. A control record
+// names a committed recipe whose frames ride other lanes — call spans and
+// payload logs, each on its own protected processor — and nothing else orders
+// those lanes against the control lane. Draining them first means a control
+// row never lands before the frames that preceded it, so the tail flush its
+// write triggers (clientLogs.Export) also puts them on file: an engine killed
+// right after cannot leave an unsealed archive naming a conversation it never
+// persisted. Control records are rare, so the extra drains are cheap.
+type controlAfterCallsExporter struct {
+	next  sdklog.Exporter
+	calls []func(context.Context) error
+}
+
+func (exp controlAfterCallsExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	for _, flush := range exp.calls {
+		if err := flush(ctx); err != nil {
+			// The control records still go out: withholding them would lose
+			// the roster too. Whatever this drain could not deliver stays
+			// with its protected processor, retried or, once dropped,
+			// reported by its Shutdown.
+			slog.Warn("call telemetry not persisted ahead of agent control records", "err", err)
+		}
+	}
+	return exp.next.Export(ctx, records)
+}
+
+func (exp controlAfterCallsExporter) ForceFlush(ctx context.Context) error {
+	return exp.next.ForceFlush(ctx)
+}
+
+func (exp controlAfterCallsExporter) Shutdown(ctx context.Context) error {
+	return exp.next.Shutdown(ctx)
+}
 
 // clientMetricExporter binds one live client's metric stream to its immutable
 // record. Measurements therefore need no routing attribute: each provider
@@ -853,9 +918,11 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		// Only control rows (rare, agent sessions only) pay for this: every
 		// call emits payloads, and flushing for them would drain the
 		// in-memory tail on nearly every batch, pushing live readers onto
-		// file scans. Payloads spill with the ordinary tail, and any already
-		// appended ahead of a control row are written by its flush too.
-		appendErr = db.FlushLogs(ctx)
+		// file scans. Payloads and call spans spill with the ordinary tails,
+		// and any already appended ahead of a control row are written by its
+		// flush too — the span tail included, since a spanned call's frame
+		// (a snapshot's committed leaf, typically) rides its call span alone.
+		appendErr = errors.Join(db.FlushSpans(ctx), db.FlushLogs(ctx))
 	}
 	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
 	return appendErr

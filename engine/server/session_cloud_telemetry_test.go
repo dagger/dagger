@@ -217,8 +217,8 @@ func TestSessionPublishesTelemetryToCloud(t *testing.T) {
 		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 	})
 	require.NotNil(t, sess.cloudSpans)
-	require.Equal(t, 5, sess.telemetryDebug.ConfiguredSpanProcessors)
-	require.Equal(t, 4, sess.telemetryDebug.ConfiguredLogProcessors)
+	require.Equal(t, 6, sess.telemetryDebug.ConfiguredSpanProcessors)
+	require.Equal(t, 5, sess.telemetryDebug.ConfiguredLogProcessors)
 
 	emitCloudTestTelemetry(t, sess, root)
 	sess.flushSessionCloudTelemetry(ctx)
@@ -232,6 +232,51 @@ func TestSessionPublishesTelemetryToCloud(t *testing.T) {
 	require.NotEmpty(t, auths)
 	for _, got := range auths {
 		require.Equal(t, want, got)
+	}
+}
+
+// A call span carries its call's frame and is the frame's only delivery: the
+// session exports it on the protected call span lane, both to the client's
+// store — where it settles the payload claim — and to Cloud.
+func TestSessionDeliversCallSpansToStoreAndCloud(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	receiver := newCloudReceiver(t, false)
+	srv := &Server{}
+	sess, root := newCloudTestSession(t, srv, &engine.ClientMetadata{
+		CloudAuth:               basicCloudAuth("dag_test_token"),
+		CloudURL:                receiver.URL,
+		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+	})
+	body, digest := serverCallPayload(t, "lookup", "cloud")
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{root.clientID}}
+	require.True(t, store.ClaimCallPayload(digest))
+
+	spanCtx := engine.ContextWithClientMetadata(t.Context(), root.clientMetadata)
+	_, span := sess.tracerProvider.Tracer("test").Start(spanCtx, "Thing.lookup", trace.WithAttributes(
+		attribute.String(telemetry.DagDigestAttr, digest),
+		attribute.String(telemetry.DagCallAttr, base64.StdEncoding.EncodeToString(body)),
+	))
+	span.End()
+	require.NoError(t, sess.FlushTelemetry(ctx, "test"))
+	require.Empty(t, sess.callPayloadMissingTargets(digest, store.targets),
+		"a persisted call span delivers its frame")
+
+	sess.flushSessionCloudTelemetry(ctx)
+	require.NoError(t, sess.shutdownTelemetry(ctx))
+	auths, spans, _, _ := receiver.snapshot()
+	require.NotEmpty(t, auths)
+	require.Equal(t, []string{"Thing.lookup"}, dedupe(spans))
+
+	db, err := srv.clientDBs.Open(ctx, root.clientID)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.NotEmpty(t, rows)
+	for _, row := range rows {
+		require.Equal(t, "Thing.lookup", row.Name)
 	}
 }
 
@@ -266,7 +311,8 @@ func TestSessionWithoutPublisherStaysSilent(t *testing.T) {
 			require.Nil(t, sess.cloudSpans)
 			require.Nil(t, sess.cloudLogs)
 			require.Nil(t, sess.cloudMetrics)
-			require.Equal(t, 4, sess.telemetryDebug.ConfiguredSpanProcessors)
+			require.Equal(t, 5, sess.telemetryDebug.ConfiguredSpanProcessors)
+			require.Equal(t, 4, sess.telemetryDebug.ConfiguredLogProcessors)
 
 			emitCloudTestTelemetry(t, sess, root)
 			sess.flushSessionCloudTelemetry(ctx)

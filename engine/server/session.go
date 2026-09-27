@@ -170,8 +170,8 @@ type daggerSession struct {
 	// callPayloadTargets tracks, per immutable call payload digest, where each
 	// client delivery target stands in the payload pipeline (see
 	// callPayloadState). Producers claim under this lock before any recipe
-	// work; the log exporter takes and settles under it around each write. It
-	// is never held across I/O.
+	// work; the span and log exporters take and settle under it around each
+	// write. It is never held across I/O.
 	callPayloadMu      sync.Mutex
 	callPayloadTargets map[string]map[string]callPayloadState
 
@@ -788,6 +788,9 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) er
 	start := time.Now()
 	var errs error
 	var traceDur, logDur, metricDur time.Duration
+	// A call's recipe closure spans both providers: a spanned call's own
+	// frame rides its protected call span, the rest of the closure rides
+	// payload logs. Flush both, spans first, before reporting.
 	if sess.tracerProvider != nil {
 		traceDur = timedProviderOp(ctx, &errs, sess.tracerProvider.ForceFlush)
 	}
@@ -844,15 +847,16 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	sess.logExporter = logExporter
 
 	// Keep the raised link limit used by wcprof wait edges. One bounded trace
-	// queue and an ordinary log queue plus a payload-only on-demand queue
-	// serve the entire session. Metric readers are owned by each client.
+	// queue plus a call-span-only protected queue, and an ordinary log queue
+	// plus payload-only and control-only protected queues, serve the entire
+	// session. Metric readers are owned by each client.
 	spanLimits := sdktrace.NewSpanLimits()
 	spanLimits.LinkCountLimit = 16384
 	tracerOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithRawSpanLimits(spanLimits),
 		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
 		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
-		// Stamp origin before the live processor freezes its start snapshot.
+		// Stamp origin before the live processors freeze their start snapshots.
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: sess.sessionID}),
 	}
 	// Every session span names this engine instance, so a span's
@@ -863,33 +867,46 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	} else {
 		tracerOpts = append(tracerOpts, sdktrace.WithResource(tracerResource))
 	}
+	// A call span is the only carrier of its call's frame (see
+	// core/telemetry.go), so it takes a lossless, retrying lane of its own,
+	// like call payload logs; the bounded live processor carries every other
+	// span and may drop them on overflow.
+	callSpans := enginetel.NewCallSpanProcessor(spanExporter)
 	tracerOpts = append(tracerOpts,
-		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter)),
+		sdktrace.WithSpanProcessor(callSpans),
+		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter))),
 	)
 	loggerResource, err := withEngineInstanceResource(telemetry.Resource, srv.engineInstanceID)
 	if err != nil {
 		slog.Warn("failed to create session log resource", "error", err)
 		loggerResource = telemetry.Resource
 	}
+	callPayloads := enginetel.NewCallPayloadBatchProcessor(logExporter)
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(loggerResource),
 		// Stamp origin before either batch processor copies the record. Call
 		// payloads take their own lossless, retrying, on-demand batch path so
 		// sparse closures reach clients before fast calls finish and recipe
 		// bursts never evict ordinary logs (exec output) from the bounded queue;
-		// the ordinary 250ms batch processor carries everything else.
+		// the ordinary 250ms batch processor carries everything else. Agent
+		// control records follow the call frames queued before them.
 		sdklog.WithProcessor(telemetryOriginLogProcessor{sessionID: sess.sessionID}),
-		sdklog.WithProcessor(enginetel.NewCallPayloadBatchProcessor(logExporter)),
-		sdklog.WithProcessor(enginetel.NewControlBatchProcessor(logExporter)),
+		sdklog.WithProcessor(callPayloads),
+		sdklog.WithProcessor(enginetel.NewControlBatchProcessor(controlAfterCallsExporter{
+			next:  logExporter,
+			calls: []func(context.Context) error{callSpans.ForceFlush, callPayloads.ForceFlush},
+		})),
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
-	spanProcessors, logProcessors := 4, 3
+	// Span: wcprof lazy parent, wcprof count, origin, call spans, live.
+	// Log: origin, call payloads, controls, ordinary.
+	spanProcessors, logProcessors := 5, 4
 	bound := sess.cloudBound
 	if sess.cloudSpans != nil {
 		// The engine publishes the session's telemetry to Cloud itself: every
-		// span, and every record including call payloads, as the client used
-		// to forward them.
-		processor := boundedCloudSpanProcessor{SpanProcessor: enginetel.NewLargeQueueLiveSpanProcessor(sess.cloudSpans), bound: bound}
+		// span, call spans on their own protected lane, and every record
+		// including call payloads, as the client used to forward them.
+		processor := boundedCloudSpanProcessor{SpanProcessor: newCloudSpanPipeline(sess.cloudSpans), bound: bound}
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(processor))
 		sess.cloudSpanProcessor = processor
 		sess.cloudFlushers = append(sess.cloudFlushers, processor.flush)
@@ -3617,43 +3634,30 @@ func (s *callPayloadDeliveryStore) ClaimCallPayload(digest string) bool {
 	return len(s.session.claimCallPayload(digest, s.targets)) > 0
 }
 
-func (s *callPayloadDeliveryStore) CallPayloadDelivered(digest string) {
-	// The span producer reports capture/publication, not a DB persistence
-	// receipt. A bounded span queue can still lose this copy. Explicit payload
-	// log records must remain eligible for durable delivery.
-	s.session.callPayloadMu.Lock()
-	defer s.session.callPayloadMu.Unlock()
-	states := s.session.callPayloadStates(digest, true)
-	for _, target := range s.targets {
-		if states[target] == callPayloadUnclaimed || states[target] == callPayloadClaimed {
-			states[target] = callPayloadSpanReported
-		}
-	}
-}
-
 // callPayloadState is one (digest, target) pair's position in the payload
-// pipeline. The producer claims a target before doing any recipe work; the
-// session log exporter takes the claim exclusively for the duration of a DB
-// write and then settles it, so overlapping records for the same digest
-// (sibling routes sharing an ancestor, a retried batch racing a fresh walk)
-// never write the same row twice and a failed write never leaves a target
-// stuck.
+// pipeline. The producer claims a target before doing any recipe work and
+// then hands the frame to exactly one carrier: its recording span (the
+// dagger.io/dag.call attribute, on the protected call span lane) or a payload
+// log record. That carrier's session exporter takes the claim exclusively for
+// the duration of a DB write and then settles it, so overlapping deliveries
+// of the same digest (sibling routes sharing an ancestor, a retried batch
+// racing a fresh walk, a span and a log for the same frame) never write the
+// same payload twice and a failed write never leaves a target stuck.
 type callPayloadState uint8
 
 const (
 	// callPayloadUnclaimed: no producer has claimed the target, or its last
-	// write failed. The failed record may still be queued for retry, but a
-	// fresh walk is free to emit it again; the exporter dedupes either way.
+	// write failed. The failed span or record may still be queued for retry,
+	// but a fresh walk is free to emit the frame again; the exporters dedupe
+	// either way.
 	callPayloadUnclaimed callPayloadState = iota
-	// callPayloadClaimed: a producer claimed the target and its record is
-	// queued for export.
+	// callPayloadClaimed: a producer claimed the target and its span or
+	// record is queued for export.
 	callPayloadClaimed
-	// callPayloadWriting: the log exporter owns the target while it writes.
+	// callPayloadWriting: a session exporter owns the target while it writes.
 	callPayloadWriting
-	// callPayloadSpanReported: a producer included a best-effort span copy;
-	// a protected log export is still required for persistence acknowledgment.
-	callPayloadSpanReported
-	// callPayloadDelivered: the target's log DB has appended the payload.
+	// callPayloadDelivered: the target's DB has appended the payload, on a
+	// call span or a payload log record.
 	callPayloadDelivered
 )
 
@@ -3706,7 +3710,7 @@ func (sess *daggerSession) takeCallPayloadForWrite(digest string, targets []stri
 	taken := make([]string, 0, len(targets))
 	for _, target := range targets {
 		switch states[target] {
-		case callPayloadUnclaimed, callPayloadClaimed, callPayloadSpanReported:
+		case callPayloadUnclaimed, callPayloadClaimed:
 			states[target] = callPayloadWriting
 			taken = append(taken, target)
 		case callPayloadWriting, callPayloadDelivered:
@@ -3718,10 +3722,9 @@ func (sess *daggerSession) takeCallPayloadForWrite(digest string, targets []stri
 
 // settleCallPayload records the outcome of a delivery attempt. delivered
 // marks each target done for good. Otherwise the targets are released so the
-// record's retry can deliver them — or, once the payload processor gives up
-// on it, a later closure walk, though only one that reaches the record via a
-// root not yet delivered to that target. A reported span is not a durable
-// receipt and cannot override a failed log write.
+// span's or record's retry can deliver them — or, once the protected
+// processor gives up on it, a later closure walk, though only one that
+// reaches the frame via a root not yet delivered to that target.
 func (sess *daggerSession) settleCallPayload(digest string, targets []string, delivered bool) {
 	if digest == "" || len(targets) == 0 {
 		return
