@@ -32,7 +32,7 @@ const temporalOutcome = "temporal"
 // expectedOutcome maps every configuration to what TLC must report:
 // "" means the run must complete with no error found; temporalOutcome means
 // a temporal property must be violated; any other value names the one
-// invariant that must be violated.
+// invariant or action property that must be violated.
 var expectedOutcome = map[string]string{
 	"snapshot_import": "",
 	"snapshot_export": "",
@@ -128,6 +128,24 @@ var expectedOutcome = map[string]string{
 	// session's release can collect a target out from under its claim.
 	// See the config header.
 	"attach_release_reader": "",
+
+	// green: one current entry per recipe. Publication adopts the
+	// recipe's live entry (D1) when the session covers its requirements,
+	// registers beside it unindexed otherwise, and waits for one still
+	// attaching; an
+	// expired entry is replaced in place when nothing uses it, including
+	// no dependent entry, and retired otherwise (D9); a failed
+	// replacement drops its retention edge; retirement and the
+	// replacement count survive a restart; a live merge targets the
+	// recipe's current entry. OneLiveEntryPerCall and the action property
+	// NoReplaceUnderUser hold. See the config headers.
+	"recipe_adopt":          "",
+	"recipe_adopt_filter":   "",
+	"recipe_adopt_liveness": "",
+	"recipe_expiry":         "",
+	"recipe_expiry_deps":    "",
+	"recipe_expiry_restart": "",
+	"recipe_merge":          "",
 }
 
 var clientExpectedOutcome = map[string]string{
@@ -469,6 +487,12 @@ func runOne(
 			violated = strings.Fields(rest)[0]
 			break
 		}
+		if rest, ok := strings.CutPrefix(line, "Error: Action property "); ok {
+			// An action property ([][A]_vars) is named like an invariant:
+			// " is violated."
+			violated = strings.Fields(rest)[0]
+			break
+		}
 		if strings.HasPrefix(line, "Error: Temporal properties were violated") {
 			violated = temporalOutcome
 			break
@@ -479,7 +503,7 @@ func runOne(
 		if outcome == temporalOutcome {
 			return "a temporal property"
 		}
-		return "invariant " + outcome
+		return outcome
 	}
 
 	switch {
