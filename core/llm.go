@@ -2388,40 +2388,36 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	}
 	llm.mcp.SetSelfLLM(responded)
 
-	// Continuations — tools returning an LLM — run in a second batch after
-	// every other call, so the conversation they receive already carries the
-	// turn's workspace and binding changes: `[editModule, reload]` reloads the
-	// edit. See MCP.SplitContinuationCalls.
-	regularCalls, continuationCalls := llm.mcp.SplitContinuationCalls(tools, toolCalls)
-	resultMsgs := llm.mcp.CallBatch(ctx, tools, regularCalls, res.ToolCallDisplays)
+	// CallBatch runs the calls in the order written, except continuations —
+	// tools returning an LLM — which run last, so the conversation they receive
+	// carries the turn's workspace and binding changes: `[editModule, reload]`
+	// reloads the edit. Before they run, fold those changes into the
+	// conversation, materialized here the way the response itself was above.
+	// See MCP.SplitContinuationCalls.
+	base := responded
+	var folded bool
+	resultMsgs := llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays, func(ctx context.Context) error {
+		if sels := stateDeltaSelectors(llm.mcp, wsBefore, toolsBefore); len(sels) > 0 {
+			var withState dagql.ObjectResult[*LLM]
+			if err := srv.Select(ctx, responded, &withState, sels...); err != nil {
+				return err
+			}
+			base = withState
+		}
+		folded = true
+		llm.mcp.SetSelfLLM(base)
+		return nil
+	})
 
 	// In-step state changes — a Changeset overlaid onto the bound workspace, a
 	// Workspace returned, an object rebound as the new state — live only on this
 	// step's transient MCP clone. They must be re-recorded onto the materialized
 	// state as withWorkspace/withTools selectors, or later steps rebuild history
-	// from the stale bindings and silently revert them.
-	stateSels := stateDeltaSelectors(llm.mcp, wsBefore, toolsBefore)
-
-	base := responded
-	if len(continuationCalls) > 0 {
-		if len(stateSels) > 0 {
-			// Fold the turn's state into the conversation the continuations
-			// receive, so they transform what the turn produced rather than
-			// what it started from. Materialized here instead of at the end,
-			// the way the response itself was above.
-			var withState dagql.ObjectResult[*LLM]
-			if err := srv.Select(ctx, responded, &withState, stateSels...); err != nil {
-				for _, tc := range continuationCalls {
-					endToolCallDisplay(res.ToolCallDisplays, tc.CallID, true, err.Error())
-				}
-				endRemainingDisplaySpans()
-				return inst, err
-			}
-			base = withState
-			stateSels = nil
-		}
-		llm.mcp.SetSelfLLM(base)
-		resultMsgs = append(resultMsgs, llm.mcp.CallBatch(ctx, tools, continuationCalls, res.ToolCallDisplays)...)
+	// from the stale bindings and silently revert them. Once folded into base
+	// for the continuations, they already are.
+	var stateSels []dagql.Selector
+	if !folded {
+		stateSels = stateDeltaSelectors(llm.mcp, wsBefore, toolsBefore)
 	}
 
 	// A tool may have returned an LLM: it acted as a continuation, and the turn

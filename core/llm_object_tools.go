@@ -87,6 +87,22 @@ func (b boundTool) typeName() string {
 	return ""
 }
 
+// impure reports whether the bound type's field is marked as having side
+// effects or live reads: a module function with cache policy Never, or a core
+// field marked DoNotCache. Looked up on the bound object's own type, since the
+// defining schema's AST carries neither.
+func (b boundTool) impure(fieldName string, srv *dagql.Server) bool {
+	objType := b.objType
+	if b.object != nil {
+		objType = b.object.ObjectType()
+	}
+	if objType == nil || srv == nil {
+		return false
+	}
+	spec, ok := objType.FieldSpec(fieldName, srv.View)
+	return ok && (cachePolicyNever(spec) || spec.DoNotCache != "")
+}
+
 // WithTools binds obj's methods as tools, carrying the schema that defined the
 // receiver at composition time and except. At most one binding per object type
 // is kept: binding an object whose type is already bound replaces it in place.
@@ -486,22 +502,22 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 			Field:       field,
 			Description: strings.TrimSpace(field.Description),
 			Schema:      methodSchema,
-			// A method that returns the bound object's own type, a Workspace, or
-			// an LLM mutates shared state and must run sequentially — an LLM
-			// return replaces the whole conversation, and at most one may be
-			// adopted per turn. Changeset-returning methods run in parallel;
-			// CallBatch merges their results before applying them to the
-			// workspace. LLM-returning methods run last, in their own batch
-			// (MCP.SplitContinuationCalls), on the state the rest of the turn
-			// produced.
+			// A pure method may run concurrently with its pure neighbors in a
+			// batch; any other is a sequential step, run alone in the position
+			// it was written (see MCP.CallBatch). A method changes the agent's
+			// state when it returns the bound object's own type, a Workspace, a
+			// Changeset, or an LLM — the conversation itself, run last in its
+			// batch (MCP.SplitContinuationCalls). A module function cached with
+			// policy Never, or a core field marked DoNotCache, is impure too:
+			// side effects and live reads are exactly what those are for.
 			ReadOnly: retType != typeName &&
 				retType != "Changeset" &&
 				retType != workspaceTypeName &&
-				retType != llmTypeName,
-			ReturnsChangeset: retType == "Changeset",
-			ReturnsLLM:       retType == llmTypeName,
-			Call:             m.callObjectMethod(srv, typeName, field),
-			Server:           typeName,
+				retType != llmTypeName &&
+				!b.impure(field.Name, srv),
+			ReturnsLLM: retType == llmTypeName,
+			Call:       m.callObjectMethod(srv, typeName, field),
+			Server:     typeName,
 		})
 	}
 	return tools, nil

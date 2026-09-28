@@ -81,9 +81,8 @@ type Swapper {
   """
   Rewrite both lines of shared.txt one way, and add NEW.txt.
 
-  Paired with clashSecond to produce two parallel changesets that rewrite the
-  same lines and add the same new file with different content, i.e. a batch
-  that cannot merge cleanly.
+  Paired with clashSecond: two changesets that rewrite the same lines and add
+  the same new file with different content, so the one written last must win.
   """
   clashFirst(ws: Workspace!): Changeset! {
     let root = ws.directory("/")
@@ -108,11 +107,22 @@ type Swapper {
   """
   Delete shared.txt.
 
-  Paired with clashFirst for a modify/delete conflict: one call rewrites the
-  file, the other removes it.
+  Paired with clashFirst: one call rewrites the file, the other removes it.
   """
   removeShared(ws: Workspace!): Changeset! {
     let root = ws.directory("/")
     root.withoutFile("shared.txt").changes(root)
+  }
+
+  """
+  Replace "placeholder" in shared.txt, where it occurs twice — an ambiguous
+  edit. The replacement is lazy, so it only fails once the returned changeset
+  is evaluated.
+  """
+  breakShared(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root
+      .withFile("shared.txt", root.file("shared.txt").withReplaced("placeholder", "BROKEN"))
+      .changes(root)
   }
 }

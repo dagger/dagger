@@ -204,7 +204,8 @@ func changesetPathCount(paths *ChangesetPaths) int {
 // changes, while false guarantees at most limit paths changed.
 //
 // The partial walk never populates the ComputePaths memo; a later ComputePaths
-// still computes the full result.
+// still computes the full result. The walk's answer is memoized per limit,
+// though, so repeated calls with the same limit only walk once.
 func (ch *Changeset) PathCountExceeds(ctx context.Context, limit int) (bool, error) {
 	if ch.paths.done.Load() {
 		paths, err := ch.ComputePaths(ctx)
@@ -212,6 +213,13 @@ func (ch *Changeset) PathCountExceeds(ctx context.Context, limit int) (bool, err
 			return false, err
 		}
 		return changesetPathCount(paths) > limit, nil
+	}
+
+	memo := ch.paths
+	memo.boundMu.Lock()
+	defer memo.boundMu.Unlock()
+	if memo.boundKnown && memo.boundLimit == limit {
+		return memo.boundExceeds, nil
 	}
 
 	beforeDigest, err := ch.Before.ContentPreferredDigest(ctx)
@@ -244,6 +252,7 @@ func (ch *Changeset) PathCountExceeds(ctx context.Context, limit int) (bool, err
 		// diff. Callers can omit the summary or keep the raw changeset.
 		return false, fmt.Errorf("bound changeset delta: %w", deltaErr)
 	}
+	memo.boundLimit, memo.boundExceeds, memo.boundKnown = limit, exceeds, true
 	return exceeds, nil
 }
 
@@ -434,6 +443,15 @@ type changesetPathsMemo struct {
 	done  atomic.Bool // set once paths/err are final
 	paths *ChangesetPaths
 	err   error
+
+	// bound memoizes PathCountExceeds' partial walk for the last limit asked
+	// about. The callers that apply a tool's changeset ask the same question
+	// in turn — whether to normalize it to a patch, then whether to show it in
+	// full — and shouldn't each mount and walk the delta again.
+	boundMu      sync.Mutex
+	boundLimit   int
+	boundExceeds bool
+	boundKnown   bool
 }
 
 type changesetJSONEnvelope struct {

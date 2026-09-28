@@ -270,7 +270,7 @@ func TestToolResultSelectors(t *testing.T) {
 func TestSplitContinuationCalls(t *testing.T) {
 	tools := []LLMTool{
 		{Name: "reload", ReturnsLLM: true},
-		{Name: "edit", ReturnsChangeset: true},
+		{Name: "edit"},
 		{Name: "read", ReadOnly: true},
 	}
 	calls := []*LLMToolCall{
@@ -289,8 +289,8 @@ func TestSplitContinuationCalls(t *testing.T) {
 }
 
 func TestStateRingsAndContinuationsAreExclusiveOutOfOrder(t *testing.T) {
-	// Continuations normally run last (SplitContinuationCalls), with the turn's
-	// state folded into the conversation they receive. These guards cover a
+	// Continuations normally run last (CallBatch), with the turn's state folded
+	// into the conversation they receive. These guards cover a
 	// continuation reached out of order — e.g. through the Timeout builtin —
 	// where whichever side runs second would otherwise be silently dropped.
 

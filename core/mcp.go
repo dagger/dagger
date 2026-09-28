@@ -56,15 +56,17 @@ type LLMTool struct {
 	// Whether we should hide the LLM tool call span in favor of just showing its
 	// child spans.
 	HideSelf bool `json:"-"`
-	// Whether the tool is read-only (from MCP ReadOnlyHint annotation)
+	// Whether the tool is pure: it changes neither the agent's state (bound
+	// workspace, bindings, conversation) nor the outside world, so CallBatch
+	// may run it concurrently with the pure calls next to it. Any other tool is
+	// a sequential step, run alone in the position it was written. Unset means
+	// sequential, the safe default. Object tools derive it from their return
+	// type and cache policy or DoNotCache mark (toolsForBoundObject);
+	// MCP-server tools from their ReadOnlyHint annotation.
 	ReadOnly bool `json:"-"`
-	// Whether the tool returns a Changeset. Changeset-returning tools can execute
-	// in parallel against the same workspace; CallBatch merges their results
-	// before updating the workspace.
-	ReturnsChangeset bool `json:"-"`
 	// Whether the tool returns an LLM — a continuation (see MCP.adoptLLM).
-	// step() runs these in a second batch after every other call in the turn,
-	// so the conversation they receive already reflects the turn's effects.
+	// CallBatch runs these after every other call in the turn, so the
+	// conversation they receive already reflects the turn's effects.
 	ReturnsLLM bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
 	Field *ast.FieldDefinition `json:"-"`
@@ -113,9 +115,8 @@ type MCP struct {
 	// applyStateReturn / adoptLLM). When set, step() appends the turn's tool
 	// results to IT rather than to the LLM that made the call, so the loop
 	// resumes from the returned conversation — env, tools, prompts and all.
-	// Continuations run after the turn's other calls (SplitContinuationCalls),
-	// so by then there is no other state left to persist. Transient: cleared by
-	// Clone.
+	// Continuations run after the turn's other calls (CallBatch), so by then
+	// there is no other state left to persist. Transient: cleared by Clone.
 	continuation dagql.ObjectResult[*LLM]
 	// stateChanged records that a tool call changed the bound workspace or
 	// bindings since selfLLM was set — this MCP has diverged from the
@@ -203,9 +204,9 @@ func (m *MCP) Standalone() *MCP {
 
 // SetSelfLLM records the conversation dispatching this step's tool calls, so
 // the object-tool adapter can pass it explicitly to an `LLM!` argument. Called
-// by step() on its transient MCP clone before each CallBatch: first with the
-// response itself, then — before the continuation phase — with the turn's
-// workspace and binding changes folded in, so a continuation transforms the
+// by step() on its transient MCP clone: first with the response itself, then —
+// before CallBatch runs the turn's continuations — with the turn's workspace
+// and binding changes folded in, so a continuation transforms the
 // state the turn actually produced. The conversation is in sync with this MCP
 // at that point by construction, so the divergence flag resets.
 func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
@@ -241,13 +242,13 @@ func (m *MCP) markStateChanged() {
 }
 
 // SplitContinuationCalls partitions a turn's tool calls into the ones to run
-// first and the continuations (ReturnsLLM tools) that step() runs afterwards,
-// in a second CallBatch, once every other call's effect on the workspace and
-// bindings has been folded into the conversation they receive. A continuation
-// is the turn's outermost transform — "replace the conversation" — so it takes
-// everything else that happened as input: `[editModule, reload]` reloads the
-// edit, whichever phase editModule itself ran in. Calls to unknown tools stay
-// in the first batch so they fail there normally.
+// first, in the order written, and the continuations (ReturnsLLM tools) that
+// CallBatch runs afterwards, once every other call's effect on the workspace
+// and bindings has been folded into the conversation they receive. A
+// continuation is the turn's outermost transform — "replace the conversation"
+// — so it takes everything else that happened as input: `[reload,
+// editModule]` reloads the edit just like `[editModule, reload]` does. Calls
+// to unknown tools stay with the others so they fail there normally.
 func (m *MCP) SplitContinuationCalls(tools []LLMTool, toolCalls []*LLMToolCall) (regular, continuations []*LLMToolCall) {
 	for _, toolCall := range toolCalls {
 		tool, err := m.LookupTool(toolCall.Name, tools)
@@ -585,18 +586,14 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 	}
 }
 
-type changesetCaptureKey struct{}
-
-type changesetCapture struct {
-	changes dagql.ObjectResult[*Changeset]
-}
-
 // applyStateReturn implements the state-mutation convention shared by tool calls
 // and Dang eval results. Three kinds of value advance the agent's state:
 //
 //   - a Changeset overlays onto the bound workspace (via Workspace.withChanges,
 //     yielding a new immutable overlay Workspace) so the agent's edits accumulate
-//     across turns.
+//     across turns. It is evaluated first: one that cannot be (e.g. an edit
+//     whose search string is ambiguous) fails as this call's own error and is
+//     never applied.
 //   - a Workspace *replaces* the bound one — a tool that produces a whole new
 //     workspace (e.g. a checkout or install) makes it the agent's current
 //     workspace, mirroring the Changeset convention.
@@ -615,9 +612,14 @@ func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql
 		return true, out, err
 	}
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
-		if capture, ok := ctx.Value(changesetCaptureKey{}).(*changesetCapture); ok {
-			capture.changes = changes
-			return true, m.summarizePatch(ctx, srv, changes), nil
+		// A tool's Changeset is usually lazy — an edit is a File.withReplaced
+		// nobody has run yet — so evaluate it here: a broken one must fail
+		// this call rather than surface later, from inside the workspace it
+		// was overlaid onto.
+		if changes.Self() != nil {
+			if err := changes.Self().Evaluate(ctx); err != nil {
+				return true, "", err
+			}
 		}
 		if err := m.applyChangeset(ctx, srv, changes); err != nil {
 			return true, "", err
@@ -940,7 +942,7 @@ func countCommitsSince(ctx context.Context, srv *dagql.Server, head, base dagql.
 //     load fails the tool call instead of bricking the loop. A failure here is
 //     an ordinary failed tool call: the agent survives, the old conversation
 //     stands.
-//   - one per turn: LLMs do not merge the way Changesets do, so at most one
+//   - one per turn: LLMs do not compose the way Changesets do, so at most one
 //     continuation may be adopted per batch of tool calls.
 //   - visibility: the string returned here is the model's notice of what
 //     changed — which tools came and went, and whether the conversation
@@ -948,13 +950,14 @@ func countCommitsSince(ctx context.Context, srv *dagql.Server, head, base dagql.
 //
 // Two mechanical details the caller handles rather than this function:
 //
-//   - ordering: step() runs continuations after every other call in the turn
-//     (SplitContinuationCalls), with the turn's workspace and binding changes
-//     already folded into the conversation they receive, so a continuation
-//     transforms what the turn produced. If one is reached out of order (e.g.
-//     wrapped in the Timeout builtin) the stateChanged check below refuses it
-//     rather than let it drop earlier work, and errContinuationAdopted refuses
-//     later work rather than let the continuation drop it.
+//   - ordering: CallBatch runs continuations after every other call in the
+//     turn (SplitContinuationCalls), with the turn's workspace and binding
+//     changes already folded into the conversation they receive by step(), so
+//     a continuation transforms what the turn produced. If one is reached out
+//     of order (e.g. wrapped in the Timeout builtin) the stateChanged check
+//     below refuses it rather than let it drop earlier work, and
+//     errContinuationAdopted refuses later work rather than let the
+//     continuation drop it.
 //   - tool results: step() appends the turn's tool results to the adopted LLM,
 //     and a tool-result block is only valid where the matching tool call exists
 //     in the history. See toolResultSelectors in llm.go, which degrades an
@@ -1828,8 +1831,6 @@ func guardToolResult(res string) string {
 	})
 }
 
-// CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
-// grouping calls by destructiveness and server to avoid workspace conflicts
 // toolCallCtx returns the display span context a tool call's arguments streamed
 // into, so the tool's execution nests beneath it. Every provider — including
 // the recorded-response provider — builds one display span per tool call (see
@@ -1861,373 +1862,332 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 	}
 }
 
-func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
-	// Group tool calls by their characteristics
-	readOnlyMCPCalls := make(map[string][]*LLMToolCall)    // server -> read-only calls
-	destructiveMCPCalls := make(map[string][]*LLMToolCall) // server -> destructive calls
-	regularCalls := make([]*LLMToolCall, 0)
-	changesetCalls := make([]*LLMToolCall, 0)
-	destructiveCalls := make([]*LLMToolCall, 0)
-
-	for _, toolCall := range toolCalls {
-		tool, err := m.LookupTool(toolCall.Name, tools)
-		if err != nil {
-			// Couldn't find the tool, just call it regularly and let it fail with the
-			// tool not found (or ambiguous) error
-			regularCalls = append(regularCalls, toolCall)
-			continue
-		}
-
-		// Object tools set Server to their bound type name for display, so a
-		// non-empty Server alone doesn't make this an MCP tool — only a
-		// registered MCP server does.
-		if _, isMCPTool := m.mcpServers[tool.Server]; !isMCPTool {
-			// Changeset-returning tools are evaluated in parallel against the same
-			// workspace, then merged before the workspace is updated.
-			if tool.ReturnsChangeset {
-				changesetCalls = append(changesetCalls, toolCall)
-			} else if tool.ReadOnly {
-				regularCalls = append(regularCalls, toolCall)
-			} else {
-				destructiveCalls = append(destructiveCalls, toolCall)
-			}
-			continue
-		}
-
-		// This is an MCP tool call - check if it's read-only using the stored field
-		if tool.ReadOnly {
-			readOnlyMCPCalls[tool.Server] = append(readOnlyMCPCalls[tool.Server], toolCall)
-		} else {
-			destructiveMCPCalls[tool.Server] = append(destructiveMCPCalls[tool.Server], toolCall)
-		}
+// CallBatch runs one turn's tool calls and returns one result per call, in the
+// order the calls were written.
+//
+// Models emit a turn's tool calls as an ordered list and read it as a script,
+// so calls take effect in the order written:
+//
+//   - A pure call (LLMTool.ReadOnly) changes nothing, so a run of consecutive
+//     pure calls executes concurrently.
+//   - Any other call is a sequential step: it runs alone, in its position,
+//     after everything written before it has landed — a Changeset it returns
+//     is applied before the next call starts.
+//   - Consecutive calls to one MCP server whose working directory mirrors the
+//     workspace share a single sync (callBatchMCPServer), read-only ones
+//     included, so they see the tree the calls before them produced. Within
+//     the sync the same rules apply: pure runs concurrent, the rest one at a
+//     time.
+//   - Every call runs, whether or not an earlier one failed: each result
+//     reports its own call, which is the contract models are trained on. A
+//     call written against a failed one's effect fails on its own terms (the
+//     edit's search string is missing, the test sees the old tree), and the
+//     model reads both results together.
+//   - Continuations (LLMTool.ReturnsLLM) run last, whatever their position:
+//     see SplitContinuationCalls. beforeContinuations, if set, runs once before
+//     the first of them, so the caller can hand them a conversation that
+//     carries the turn's effects. If it fails, the continuations don't run:
+//     they would replace the conversation with one missing the turn's work.
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay, beforeContinuations func(context.Context) error) []*LLMMessage {
+	results := make([]*LLMMessage, len(toolCalls))
+	position := make(map[*LLMToolCall]int, len(toolCalls))
+	for i, call := range toolCalls {
+		position[call] = i
 	}
-
-	var allResults []*LLMMessage
-
-	// 1. Execute destructive non-MCP calls sequentially (they replace shared state).
-	for _, call := range destructiveCalls {
-		result := m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
+	record := func(call *LLMToolCall, result *LLMContentBlock) {
 		endToolCallDisplay(toolCallDisplays, call.CallID, result.Errored, result.ContentText())
-		allResults = append(allResults, &LLMMessage{
-			Role:    LLMMessageRoleUser,
+		results[position[call]] = &LLMMessage{
+			Role:    LLMMessageRoleUser, // Anthropic only allows tool call results in user messages
 			Content: []*LLMContentBlock{result},
-		})
+		}
+	}
+	call := func(call *LLMToolCall) *LLMContentBlock {
+		return m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
 	}
 
-	// 2. Execute Changeset-returning calls in parallel and merge their changes.
-	if len(changesetCalls) > 0 {
-		allResults = append(allResults, m.callBatchChangesets(ctx, tools, changesetCalls, toolCallDisplays)...)
+	regular, continuations := m.SplitContinuationCalls(tools, toolCalls)
+	// runSteps executes a plan, handing each call's result to emit.
+	var runSteps func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock))
+	runSteps = func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock)) {
+		for _, step := range steps {
+			switch {
+			case step.mcpServer != "":
+				// One sync for the whole run; within it the calls follow the
+				// same rules as the batch itself. Results are held back
+				// until the sync has finished, since that is when the calls'
+				// effects have (or haven't) reached the workspace.
+				inner := m.planCalls(tools, step.calls, false)
+				var mu sync.Mutex
+				held := make(map[*LLMToolCall]*LLMContentBlock, len(step.calls))
+				synced, err := m.callBatchMCPServer(ctx, step.mcpServer, func() {
+					runSteps(inner, func(call *LLMToolCall, result *LLMContentBlock) {
+						mu.Lock()
+						defer mu.Unlock()
+						held[call] = result
+					})
+				})
+				if err != nil {
+					annotateMCPSyncFailure(step.mcpServer, inner, held, synced, err)
+				}
+				for _, call := range step.calls {
+					emit(call, held[call])
+				}
+			case step.pure:
+				calls := pool.New()
+				for _, c := range step.calls {
+					calls.Go(func() { emit(c, call(c)) })
+				}
+				calls.Wait()
+			default:
+				emit(step.calls[0], call(step.calls[0]))
+			}
+		}
 	}
+	runSteps(m.planBatch(tools, regular), record)
 
-	// 3. Execute destructive MCP calls one server at a time to avoid workspace conflicts
-	for serverName, calls := range destructiveMCPCalls {
-		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName, toolCallDisplays)
-		allResults = append(allResults, serverResults...)
+	if len(continuations) > 0 && beforeContinuations != nil {
+		if err := beforeContinuations(ctx); err != nil {
+			for _, call := range continuations {
+				record(call, &LLMContentBlock{
+					Kind:    LLMContentToolResult,
+					CallID:  call.CallID,
+					Text:    fmt.Sprintf("not run: failed to carry this turn's changes into the conversation: %s", err),
+					Errored: true,
+				})
+			}
+			return results
+		}
 	}
-
-	// 4. Execute all regular read-only (non-MCP) calls in parallel
-	if len(regularCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls, toolCallDisplays)...)
+	for _, c := range continuations {
+		record(c, call(c))
 	}
-
-	// 5. Execute all read-only MCP calls in parallel (safe across servers)
-	var readOnlyToolCalls []*LLMToolCall
-	for _, calls := range readOnlyMCPCalls {
-		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
-	}
-	if len(readOnlyToolCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls, toolCallDisplays)...)
-	}
-
-	return allResults
+	return results
 }
 
-// callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
-func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
+// annotateMCPSyncFailure rewrites the results of an MCP server's calls after
+// their workspace sync failed, so the model doesn't build on effects that
+// never reached the workspace. If the calls ran unsynced (synced is false),
+// every result is suspect: the server saw a stale tree and nothing it wrote
+// was captured. If the sync failed after they ran, the reads stand but the
+// changes the other calls made were not carried back.
+func annotateMCPSyncFailure(server string, plan []batchStep, results map[*LLMToolCall]*LLMContentBlock, synced bool, err error) {
+	for _, step := range plan {
+		if synced && step.pure {
+			continue
+		}
+		var note string
+		if synced {
+			note = fmt.Sprintf("WARNING: the changes this call made in MCP server %q could not be carried back into the workspace: %s", server, err)
+		} else {
+			note = fmt.Sprintf("WARNING: the workspace could not be synced into MCP server %q, so this call ran against a stale tree and any changes it made were not captured: %s", server, err)
+		}
+		for _, call := range step.calls {
+			res := results[call]
+			if res == nil {
+				continue
+			}
+			if res.Text != "" {
+				res.Text += "\n\n"
+			}
+			res.Text += note
+			res.Errored = true
+		}
+	}
+}
+
+// batchStep is one step of a CallBatch schedule.
+type batchStep struct {
+	calls []*LLMToolCall
+	// pure: the calls run concurrently. Otherwise the step is sequential and
+	// holds a single call, unless mcpServer is set.
+	pure bool
+	// mcpServer: consecutive calls to this MCP server, run within a single
+	// workspace sync. The calls themselves are planned again inside it, so
+	// pure is unset here.
+	mcpServer string
+}
+
+// planBatch groups calls, in the order written, into CallBatch steps: runs of
+// consecutive pure calls, runs of consecutive calls to the same MCP server,
+// and single sequential calls. A call to an unknown tool is sequential, the
+// safe default for a call nothing is known about.
+func (m *MCP) planBatch(tools []LLMTool, toolCalls []*LLMToolCall) []batchStep {
+	return m.planCalls(tools, toolCalls, true)
+}
+
+// planCalls is planBatch, optionally without the MCP-server grouping: inside a
+// server's sync the calls are planned by purity alone.
+//
+// A server's read-only calls join its run too. They read the server's working
+// directory, which only mirrors the bound workspace while a sync is in
+// progress; outside of one they would read whatever the last sync left there,
+// not the tree the calls before them produced.
+func (m *MCP) planCalls(tools []LLMTool, toolCalls []*LLMToolCall, groupServers bool) []batchStep {
+	var steps []batchStep
+	for _, call := range toolCalls {
+		var pure bool
+		var server string
+		if tool, err := m.planningTool(call, tools); err == nil {
+			pure = tool.ReadOnly
+			// Object tools set Server to their bound type name for display,
+			// so only a registered MCP server makes this an MCP tool.
+			if _, isMCP := m.mcpServers[tool.Server]; isMCP && groupServers {
+				server = tool.Server
+			}
+		}
+		if n := len(steps); n > 0 {
+			last := &steps[n-1]
+			if server != "" && server == last.mcpServer {
+				last.calls = append(last.calls, call)
+				continue
+			}
+			if server == "" && pure && last.pure && last.mcpServer == "" {
+				last.calls = append(last.calls, call)
+				continue
+			}
+		}
+		steps = append(steps, batchStep{calls: []*LLMToolCall{call}, pure: pure && server == "", mcpServer: server})
+	}
+	return steps
+}
+
+// planningTool returns the tool whose purity and server decide how call is
+// scheduled: the tool it names, or, for the Timeout builtin, the tool it
+// wraps. A deadline changes nothing about what the wrapped call reads or
+// writes, so `Timeout(ReadLogs)` runs alongside other reads rather than as a
+// barrier. A Timeout whose target can't be resolved plans as Timeout itself,
+// sequential, and fails on its own when it runs.
+func (m *MCP) planningTool(call *LLMToolCall, tools []LLMTool) (*LLMTool, error) {
+	tool, err := m.LookupTool(call.Name, tools)
+	if err != nil {
+		return nil, err
+	}
+	if tool.Name != timeoutToolName {
+		return tool, nil
+	}
+	if wrapped := m.timeoutTarget(call, tools); wrapped != nil {
+		return wrapped, nil
+	}
+	return tool, nil
+}
+
+// timeoutTarget returns the tool a Timeout call wraps, or nil when its
+// arguments don't name one that exists. Timeout itself reports the details
+// when it runs; the planner only needs to know whether to schedule as the
+// target.
+func (m *MCP) timeoutTarget(call *LLMToolCall, tools []LLMTool) *LLMTool {
+	var args struct {
+		Tool string `json:"tool"`
+	}
+	if json.Unmarshal(call.Arguments, &args) != nil || args.Tool == "" {
+		return nil
+	}
+	wrapped, err := m.LookupTool(args.Tool, tools)
+	if err != nil {
+		return nil
+	}
+	return wrapped
+}
+
+// mcpServerSyncsWorkspace reports whether calls to the named MCP server run
+// with the bound workspace synced into the server's working directory: the
+// server is registered with a live session, its container has a working
+// directory to mirror the workspace into, and there is a workspace to mirror.
+func (m *MCP) mcpServerSyncsWorkspace(serverName string) bool {
 	mcpSrv, ok := m.mcpServers[serverName]
 	if !ok {
-		// Fall back to individual calls if server not found
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return false
 	}
-
 	if _, ok := m.mcpSessions[serverName]; !ok {
-		// Fall back to individual calls if session not found
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return false
 	}
-
+	if mcpSrv.Service.Self() == nil {
+		return false
+	}
 	ctr := mcpSrv.Service.Self().Container
 	if ctr.Self() == nil || ctr.Self().Config.WorkingDir == "" || ctr.Self().Config.WorkingDir == "/" {
-		// No workspace syncing needed - execute normally
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return false
 	}
+	// Snapshotting the workspace requires a bound workspace to diff against
+	// and overlay back onto.
+	return m.workspace.Self() != nil
+}
 
-	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
+// callBatchMCPServer runs calls to one MCP server — run executes them — with
+// the bound workspace synced into the server's working directory, then
+// overlays whatever the calls changed there back onto the workspace. run
+// executes exactly once either way: when there is nothing to sync with (no
+// working directory, no bound workspace) or the sync can't be set up, it runs
+// without the sync, and synced reports which. A non-nil error means the sync
+// failed — before run if synced is false, after it otherwise — and the caller
+// tells the model, since the calls' results alone would misreport what
+// reached the workspace.
+func (m *MCP) callBatchMCPServer(ctx context.Context, serverName string, run func()) (synced bool, err error) {
+	err = m.syncMCPServerWorkspace(ctx, serverName, func() {
+		synced = true
+		run()
+	})
+	if err != nil {
+		slog.Error("failed to sync workspace with MCP server", "server", serverName, "synced", synced, "error", err)
+	}
+	if !synced {
+		run()
+	}
+	return synced, err
+}
+
+// syncMCPServerWorkspace is callBatchMCPServer's sync. It returns without
+// calling run when there is nothing to sync.
+func (m *MCP) syncMCPServerWorkspace(ctx context.Context, serverName string, run func()) error {
+	if !m.mcpServerSyncsWorkspace(serverName) {
+		return nil
+	}
+	mcpSrv := m.mcpServers[serverName]
+	ctr := mcpSrv.Service.Self().Container
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	serviceDigest, err := mcpSrv.Service.ContentPreferredDigest(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	running, err := query.Services(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	runningSvc, err := running.Get(ctx, serviceDigest, false)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
-	}
-
-	// Snapshotting the workspace requires a bound workspace to diff against and
-	// overlay back onto; without one, run the tools without syncing.
-	if m.workspace.Self() == nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	srv, err := m.baseServer(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	sourceDir, err := m.workspaceDirectory(ctx, srv)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 
-	var results []*LLMMessage
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
 		runningSvc,
 		ctr.Self().Config.WorkingDir,
 		sourceDir,
 		func() error {
-			// Execute all tool calls for this server in parallel within the synced context
-			results = m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+			run()
 			return nil
 		})
-
 	if err != nil {
-		// Fall back to individual calls if sync fails
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
-
-	// Apply workspace changes if any were made
 	if hasChanges {
 		if err := m.applyWorkspaceSnapshot(ctx, srv, sourceDir, snapshot); err != nil {
-			slog.Error("failed to update workspace after MCP server batch", "server", serverName, "error", err)
+			return fmt.Errorf("update workspace after MCP server calls: %w", err)
 		}
 	}
-
-	return results
-}
-
-// callBatchChangesets evaluates Changeset-returning tools concurrently without
-// mutating the workspace, merges the successful results, then applies the merged
-// Changeset once. Each tool still receives its own patch summary.
-func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
-	type callResult struct {
-		message *LLMMessage
-		capture *changesetCapture
-		failed  bool
-	}
-
-	calls := pool.NewWithResults[callResult]()
-	for _, toolCall := range toolCalls {
-		calls.Go(func() callResult {
-			capture := new(changesetCapture)
-			callCtx := context.WithValue(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), changesetCaptureKey{}, capture)
-			content := m.CallContent(callCtx, tools, toolCall)
-			return callResult{
-				message: &LLMMessage{
-					Role:    LLMMessageRoleUser,
-					Content: []*LLMContentBlock{content},
-				},
-				capture: capture,
-				failed:  content.Errored,
-			}
-		})
-	}
-	callResults := calls.Wait()
-
-	changes := make([]dagql.ObjectResult[*Changeset], 0, len(callResults))
-	for _, result := range callResults {
-		if !result.failed && result.capture.changes.Self() != nil {
-			changes = append(changes, result.capture.changes)
-		}
-	}
-
-	var mergeErr error
-	var conflictNote string
-	if len(changes) > 0 {
-		srv, err := m.baseServer(ctx)
-		if err != nil {
-			mergeErr = err
-		} else if err := m.guardStateChange(); err != nil {
-			// Checked up front so the refusal reads as what it is, rather
-			// than as a merge failure.
-			mergeErr = err
-		} else {
-			merged, note, err := mergeChangesets(ctx, srv, changes)
-			if err == nil {
-				conflictNote = note
-				err = m.applyChangeset(ctx, srv, merged)
-			}
-			mergeErr = err
-		}
-	}
-
-	messages := make([]*LLMMessage, len(callResults))
-	for i, result := range callResults {
-		block := result.message.Content[0]
-		contributed := !result.failed && result.capture.changes.Self() != nil
-		switch {
-		case errors.Is(mergeErr, errContinuationAdopted) && contributed:
-			block.Text = mergeErr.Error()
-			block.Errored = true
-		case mergeErr != nil && contributed:
-			block.Text = fmt.Sprintf("failed to merge parallel changesets: %s", mergeErr)
-			block.Errored = true
-		case conflictNote != "" && contributed:
-			// The changes did land, so this is not a failed tool call — but the
-			// merged result has conflict markers in it, which the agent must
-			// resolve before building on top of them.
-			block.Text += "\n\n" + conflictNote
-		}
-		endToolCallDisplay(toolCallDisplays, block.CallID, block.Errored, block.Text)
-		messages[i] = result.message
-	}
-	return messages
-}
-
-// mergeChangesets combines the changesets produced by a batch of parallel tool
-// calls into one.
-//
-// The fast path is git's octopus merge (Changeset.withChangesets), which is
-// efficient and gives full git merge semantics — including rename detection —
-// but it refuses to resolve any content-level conflict. Worse, "conflict" there
-// includes merely *adjacent* edits, and a single conflicting pair fails the
-// whole batch. Discarding the result would throw away every participating
-// call's work, which is the expensive part: the agents have already done their
-// reasoning, edits and verification by the time we get here.
-//
-// So on failure, fall back to folding the changesets together one at a time
-// with Changeset.withChangeset in LEAVE_CONFLICT_MARKERS mode: the same
-// three-way git merge, allowed to leave the conflicts in the tree. The work is
-// preserved and the agent gets a tree it can inspect and repair, rather than an
-// error and an empty workspace. The returned note is non-empty in that case, so
-// the caller can tell the agent to resolve the markers.
-func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], string, error) {
-	if len(changes) == 1 {
-		return changes[0], "", nil
-	}
-
-	merged, mergeErr := octopusMergeChangesets(ctx, srv, changes)
-	if mergeErr == nil {
-		return merged, "", nil
-	}
-
-	merged, err := markerMergeChangesets(ctx, srv, changes)
-	if err != nil {
-		// Preserving the work didn't pan out either; report the original merge
-		// failure, with the fallback's own failure as context.
-		return dagql.ObjectResult[*Changeset]{}, "", errors.Join(mergeErr, err)
-	}
-	return merged, conflictMarkerNote(mergeErr), nil
-}
-
-// conflictMarkerNote tells the agent what happened to its changes when the
-// clean merge failed. The underlying git error names the conflicting paths
-// (e.g. "CONFLICT (content): Merge conflict in foo.go"), which is the most
-// useful part, so it is quoted verbatim. The rules it states are git's own for
-// a merge left unresolved, as Changeset.withChangeset's LEAVE_CONFLICT_MARKERS
-// applies them: overlapping edits and files added on both sides get markers, a
-// file modified on one side and deleted on the other keeps the modified
-// version, and a binary file keeps the earlier call's version.
-func conflictMarkerNote(mergeErr error) string {
-	return fmt.Sprintf(`NOTE: parallel edits from this batch overlapped, so they could not be merged cleanly.
-Rather than discarding them, they were merged with git-style conflict markers
-(<<<<<<< / ======= / >>>>>>>) left wherever edits overlap, including a file added
-by more than one call. A file modified by one call and deleted by another keeps
-the modified version; a binary file changed by more than one call keeps the
-earlier call's version.
-Search the workspace for conflict markers and resolve them before building on these changes.
-
-The merge reported:
-%s`, mergeErr)
-}
-
-func octopusMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	otherIDs := make(dagql.ArrayInput[dagql.ID[*Changeset]], len(changes)-1)
-	for i, changeset := range changes[1:] {
-		id, err := changeset.ID()
-		if err != nil {
-			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("get changeset %d ID: %w", i+1, err)
-		}
-		otherIDs[i] = dagql.NewID[*Changeset](id)
-	}
-
-	var merged dagql.ObjectResult[*Changeset]
-	if err := srv.Select(ctx, changes[0], &merged, dagql.Selector{
-		View:  srv.View,
-		Field: "withChangesets",
-		Args: []dagql.NamedInput{
-			{Name: "changes", Value: otherIDs},
-		},
-	}); err != nil {
-		return dagql.ObjectResult[*Changeset]{}, err
-	}
-	return merged, nil
-}
-
-// markerMergeChangesets folds the changesets into one with successive
-// Changeset.withChangeset merges in LEAVE_CONFLICT_MARKERS mode. It is the
-// conflict-preserving fallback for octopusMergeChangesets: the same three-way
-// git merge, run pairwise because the octopus strategy cannot leave a merge
-// unresolved, so every kind of conflict gets git's own treatment — markers for
-// overlapping edits and for a file added on both sides, the modified version
-// for a modify/delete pair — instead of the hunk-level best effort of a patch
-// reapplication, which can only mark what git apply rejects and skips a file it
-// cannot patch at all.
-//
-// Merging through the withChangeset field rather than the raw Go method keeps
-// the result an attached dagql result, which applyChangeset needs.
-func markerMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	merged := changes[0]
-	for i, changeset := range changes[1:] {
-		id, err := changeset.ID()
-		if err != nil {
-			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("get changeset %d ID: %w", i+1, err)
-		}
-		var next dagql.ObjectResult[*Changeset]
-		if err := srv.Select(ctx, merged, &next, dagql.Selector{
-			View:  srv.View,
-			Field: "withChangeset",
-			Args: []dagql.NamedInput{
-				{Name: "changes", Value: dagql.NewID[*Changeset](id)},
-				{Name: "onConflict", Value: LeaveConflictMarkersOnMergeConflict},
-			},
-		}); err != nil {
-			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("merge changeset %d with conflict markers: %w", i+1, err)
-		}
-		merged = next
-	}
-	return merged, nil
-}
-
-// callBatchRegular is the original parallel execution logic without MCP-specific syncing
-func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
-	// Run tool calls in parallel using the existing pool logic
-	toolCallsPool := pool.NewWithResults[*LLMMessage]()
-	for _, toolCall := range toolCalls {
-		toolCallsPool.Go(func() *LLMMessage {
-			content := m.CallContent(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), tools, toolCall)
-			endToolCallDisplay(toolCallDisplays, toolCall.CallID, content.Errored, content.ContentText())
-			return &LLMMessage{
-				Role:    LLMMessageRoleUser, // Anthropic only allows tool call results in user messages
-				Content: []*LLMContentBlock{content},
-			}
-		})
-	}
-	return toolCallsPool.Wait()
+	return nil
 }
 
 // stableIDDigest returns a stable identity digest for an ID in either form.
@@ -2979,7 +2939,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call: m.listServicesTool(srv),
 	})
 	allTools.Add(LLMTool{
-		Name:        "Timeout",
+		Name:        timeoutToolName,
 		Description: "Run one currently exposed tool with a timeout.",
 		Schema: map[string]any{
 			"type": "object",
@@ -3004,6 +2964,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call: m.timeoutTool(allTools),
 	})
 }
+
+// timeoutToolName is the builtin that runs another tool under a deadline. The
+// planner schedules a Timeout call as the tool it wraps (planningTool).
+const timeoutToolName = "Timeout"
 
 // timeoutTool runs one of the currently exposed tools under a deadline. The
 // nested call is dispatched the way the loop dispatches every tool call, so it
