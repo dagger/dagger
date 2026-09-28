@@ -73,10 +73,15 @@ The loop:
    a summary: op count, span, dropped events, call outcomes, top clients and
    classes. Each capture replaces the previous one.
 5. `wcprofReport(view, ...)` slices the last capture. `class` (regexp),
-   `client` (substring) and `kind` filter every view; `limit` caps the lines.
+   `excludeClass` (regexp to leave out — RE2 has no lookahead, so this is
+   "everything except X"), `client` (substring) and `kind` filter every
+   view; `limit` caps the lines.
    - `classes`: per kind+class count, self time total/p50/max, duration,
      duplicate executions and outcomes (hit/executed/joined/do_not_cache).
-     Self time = duration minus child ops and waits.
+     Self time = duration minus child ops and waits; `self_tot` sums it
+     across ops, concurrent ones included, so it can exceed wall time.
+     Internal-kind ops (bookkeeping like `dagql.publishResult`) are left out
+     of this and the summary's rankings unless you pass `kind: "internal"`.
    - `breakdown` (needs `class`): the matching ops' direct children by class,
      and "shapes" — parent ops grouped by identical child multisets with
      count and p50 duration. The view for "why is each Query.node slow?".

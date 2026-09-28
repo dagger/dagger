@@ -20,11 +20,13 @@ import (
 
 func main() {
 	var (
-		opts  Options
-		class string
+		opts         Options
+		class        string
+		excludeClass string
 	)
 	flag.StringVar(&opts.View, "view", "summary", "report view: "+strings.Join(Views, ", "))
 	flag.StringVar(&class, "class", "", "regexp over op classes (e.g. '^Query\\.node$')")
+	flag.StringVar(&excludeClass, "exclude-class", "", "regexp over op classes to leave out (e.g. '^Query\\.')")
 	flag.StringVar(&opts.Filter.Client, "client", "", "substring of the client ID")
 	flag.StringVar(&opts.Filter.Kind, "kind", "", "exact op kind (call, call_exec, lazy, exec, ...)")
 	flag.Uint64Var(&opts.Op, "op", 0, "tree/children views: root op ID (default: slowest matching op)")
@@ -49,6 +51,13 @@ func main() {
 			fatal(fmt.Errorf("bad -class: %w", err))
 		}
 		opts.Filter.Class = re
+	}
+	if excludeClass != "" {
+		re, err := regexp.Compile(excludeClass)
+		if err != nil {
+			fatal(fmt.Errorf("bad -exclude-class: %w", err))
+		}
+		opts.Filter.ExcludeClass = re
 	}
 
 	f, err := os.Open(flag.Arg(0))

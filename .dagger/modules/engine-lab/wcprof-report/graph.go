@@ -268,11 +268,13 @@ func cmpInt64(a, b int64) int {
 	return 0
 }
 
-// Filter selects ops by class regex, client substring and exact kind.
+// Filter selects ops by class regex (minus an exclusion regex), client
+// substring and exact kind.
 type Filter struct {
-	Class  *regexp.Regexp
-	Client string
-	Kind   string
+	Class        *regexp.Regexp
+	ExcludeClass *regexp.Regexp
+	Client       string
+	Kind         string
 }
 
 // Match reports whether op passes the filter.
@@ -289,18 +291,24 @@ func (f Filter) Match(op *Op) bool {
 	if f.Class != nil && !f.Class.MatchString(op.Class) {
 		return false
 	}
+	if f.ExcludeClass != nil && f.ExcludeClass.MatchString(op.Class) {
+		return false
+	}
 	return true
 }
 
 // Empty reports whether the filter selects everything.
 func (f Filter) Empty() bool {
-	return f.Class == nil && f.Client == "" && f.Kind == ""
+	return f.Class == nil && f.ExcludeClass == nil && f.Client == "" && f.Kind == ""
 }
 
 func (f Filter) String() string {
 	var parts []string
 	if f.Class != nil {
 		parts = append(parts, fmt.Sprintf("class=~%q", f.Class.String()))
+	}
+	if f.ExcludeClass != nil {
+		parts = append(parts, fmt.Sprintf("class!~%q", f.ExcludeClass.String()))
 	}
 	if f.Client != "" {
 		parts = append(parts, fmt.Sprintf("client~%q", f.Client))

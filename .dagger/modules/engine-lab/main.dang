@@ -552,9 +552,14 @@ type EngineLab {
     string for plain-text rows. Output is capped at `limit` lines.
   - `summary`: the capture summary again.
 
-  `class`, `client` and `kind` filter ops in every view. Self time is an
-  op's duration minus its child ops and its waits; times are relative to the
-  capture's first recorded op.
+  `class`, `excludeClass`, `client` and `kind` filter ops in every view (in
+  tree and children, they pick the root). Self time is an op's duration
+  minus its child ops and its waits; self_tot sums it across ops, concurrent
+  ones included, so it can exceed wall time. The summary and classes
+  rankings leave out internal-kind ops (engine bookkeeping such as
+  dagql.publishResult, whose summed self time would top every ranking)
+  unless `kind` is "internal". Times are relative to the capture's first
+  recorded op.
   """
   wcprofReport(
     source: Workspace!,
@@ -566,6 +571,11 @@ type EngineLab {
     Regexp over op classes, e.g. "^Query.node$" or "withExec".
     """
     class: String! = "",
+    """
+    Regexp over op classes to leave out, e.g. "^Query[.]node$" (RE2 has no
+    lookahead, so this is how to say "everything except X").
+    """
+    excludeClass: String! = "",
     """
     Substring of the client ID (see the summary or the clients view).
     """
@@ -614,6 +624,7 @@ type EngineLab {
     }
     let args = [
       "-class", class,
+      "-exclude-class", excludeClass,
       "-client", client,
       "-kind", kind,
       "-op", toString(op),

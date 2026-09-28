@@ -302,8 +302,13 @@ func summary(o *out, g *Graph, opts Options) {
 		o.printf("  %8d %10s  %-19s  %s", c.ops, fmtDur(c.self), g.fmtAt(c.first)+".."+g.fmtAt(c.end), clientName(c.name))
 	}
 
-	aggs := aggregate(g.Ops)
-	o.printf("top classes (of %d) by count:", len(aggs))
+	ranked, internal := rankable(g.matching(opts.Filter), opts.Filter)
+	aggs := aggregate(ranked)
+	scope := ""
+	if !opts.Filter.Empty() {
+		scope = ", " + opts.Filter.String()
+	}
+	o.printf("top classes (of %d%s) by count:", len(aggs), scope)
 	sortAggs(aggs, "count")
 	o.printf("  %8s %10s  %s", "count", "self_tot", "kind class")
 	for i, a := range aggs {
@@ -321,13 +326,44 @@ func summary(o *out, g *Graph, opts Options) {
 		}
 		o.printf("  %8d %10s  %s", a.Count, fmtDur(a.SelfTotal), a.Key)
 	}
-	o.printf("(times are relative to the first recorded op; self = duration minus child ops and waits)")
+	internalNote(o, internal)
+	o.printf("(times are relative to the first recorded op; self = duration minus child ops and waits; self_tot sums it across ops, concurrent ones included, so it can exceed wall time)")
+}
+
+// rankable splits internal-kind ops (engine bookkeeping such as
+// dagql.publishResult) out of class rankings, unless the filter asks for
+// that kind. They run beside the work they account for, so their self time
+// summed across concurrent ops would otherwise top every self ranking.
+func rankable(ops []*Op, f Filter) (kept, internal []*Op) {
+	if f.Kind == "internal" {
+		return ops, nil
+	}
+	kept = make([]*Op, 0, len(ops))
+	for _, op := range ops {
+		if op.Kind == "internal" {
+			internal = append(internal, op)
+		} else {
+			kept = append(kept, op)
+		}
+	}
+	return kept, internal
+}
+
+func internalNote(o *out, internal []*Op) {
+	if len(internal) == 0 {
+		return
+	}
+	var self int64
+	for _, op := range internal {
+		self += op.Self
+	}
+	o.printf("(left out: %d internal-kind ops, self_tot %s; kind: \"internal\" ranks them)", len(internal), fmtDur(self))
 }
 
 // ---- classes ---------------------------------------------------------------
 
 func classes(o *out, g *Graph, opts Options) {
-	ops := g.matching(opts.Filter)
+	ops, internal := rankable(g.matching(opts.Filter), opts.Filter)
 	aggs := aggregate(ops)
 	sortBy := opts.Sort
 	if sortBy != "count" && sortBy != "dur" {
@@ -338,8 +374,9 @@ func classes(o *out, g *Graph, opts Options) {
 	for _, a := range aggs {
 		selfTotal += a.SelfTotal
 	}
-	o.printf("classes: %d ops in %d classes (%s) over %s, self total %s; sorted by %s",
+	o.printf("classes: %d ops in %d classes (%s) over %s, self_tot %s (summed across concurrent ops); sorted by %s",
 		len(ops), len(aggs), opts.Filter, fmtDur(g.End-g.Start), fmtDur(selfTotal), sortBy)
+	internalNote(o, internal)
 	o.printf("%8s %10s %9s %9s %10s %9s %9s %5s  %-24s %s",
 		"count", "self_tot", "self_p50", "self_max", "dur_tot", "dur_p50", "dur_max", "dup", "kind class", "outcomes")
 	for i, a := range aggs {

@@ -328,6 +328,53 @@ func TestChildren(t *testing.T) {
 	}
 }
 
+func TestExcludeClass(t *testing.T) {
+	g := syntheticDump(t)
+	notTypeDef := Filter{ExcludeClass: regexp.MustCompile(`typeDef`)}
+	out := report(t, g, Options{View: "classes", Filter: notTypeDef})
+	assertContains(t, out, `class!~"typeDef"`, "call Query.node", "call TypeDef.withOptional")
+	if strings.Contains(out, "Query.typeDef") {
+		t.Errorf("excludeClass leaked Query.typeDef:\n%s", out)
+	}
+	// It combines with class: everything under Query. except typeDef.
+	out = report(t, g, Options{View: "classes", Filter: Filter{Class: regexp.MustCompile(`^Query\.`), ExcludeClass: regexp.MustCompile(`typeDef`)}})
+	assertContains(t, out, "4 ops in 1 classes")
+	// Tree roots and events honor it too.
+	out = report(t, g, Options{View: "tree", Filter: Filter{ExcludeClass: regexp.MustCompile(`withExec|node`)}})
+	assertContains(t, out, "tree: slowest of 7 ops", "3 call Query.typeDef")
+	var buf bytes.Buffer
+	if err := Report(&buf, g, Options{View: "events", Filter: notTypeDef}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), `"Query.typeDef"`) {
+		t.Errorf("excludeClass leaked into events:\n%s", buf.String())
+	}
+}
+
+func TestInternalExcluded(t *testing.T) {
+	b := newDump(t)
+	b.call(1, 0, "Query.foo", "c", 0, 10) // exec op 2
+	// publication runs after the exec, parented under it; many of these
+	// overlap, so their summed self time dwarfs the real work
+	for i := range uint64(3) {
+		b.op(3+i, 2, "internal", "dagql.publishResult", "", "ok", 10, 1000)
+	}
+	g := b.graph()
+	for _, view := range []string{"summary", "classes"} {
+		out := report(t, g, Options{View: view})
+		assertContains(t, out, `(left out: 3 internal-kind ops, self_tot 2.97s; kind: "internal" ranks them)`, "call Query.foo")
+		if strings.Contains(out, "internal dagql.publishResult") {
+			t.Errorf("%s ranks internal ops by default:\n%s", view, out)
+		}
+		assertContains(t, out, "concurrent")
+	}
+	out := report(t, g, Options{View: "classes", Filter: Filter{Kind: "internal"}})
+	assertContains(t, out, "internal dagql.publishResult")
+	if strings.Contains(out, "left out") {
+		t.Errorf("kind internal should rank internal ops, not leave them out:\n%s", out)
+	}
+}
+
 func TestEvents(t *testing.T) {
 	g := syntheticDump(t)
 	var buf bytes.Buffer
