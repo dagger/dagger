@@ -1876,13 +1876,16 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 //     is applied before the next call starts. Consecutive calls to the same
 //     MCP server share one workspace sync (callBatchMCPServer), still one at
 //     a time.
-//   - Once a sequential step fails, the calls after it don't run — they were
-//     written expecting it to succeed — and each gets a "not run" result
-//     instead. A failed pure call does not stop the batch.
+//   - Every call runs, whether or not an earlier one failed: each result
+//     reports its own call, which is the contract models are trained on. A
+//     call written against a failed one's effect fails on its own terms (the
+//     edit's search string is missing, the test sees the old tree), and the
+//     model reads both results together.
 //   - Continuations (LLMTool.ReturnsLLM) run last, whatever their position:
 //     see SplitContinuationCalls. beforeContinuations, if set, runs once before
 //     the first of them, so the caller can hand them a conversation that
-//     carries the turn's effects. If it fails, the continuations don't run.
+//     carries the turn's effects. If it fails, the continuations don't run:
+//     they would replace the conversation with one missing the turn's work.
 func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay, beforeContinuations func(context.Context) error) []*LLMMessage {
 	results := make([]*LLMMessage, len(toolCalls))
 	position := make(map[*LLMToolCall]int, len(toolCalls))
@@ -1896,58 +1899,45 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 			Content: []*LLMContentBlock{result},
 		}
 	}
-	notRun := func(call *LLMToolCall, reason string) {
-		record(call, &LLMContentBlock{Kind: LLMContentToolResult, CallID: call.CallID, Text: reason, Errored: true})
-	}
-
-	// halted is the result every remaining call gets once a sequential step
-	// has failed.
-	var halted string
-	runStep := func(call *LLMToolCall) {
-		if halted != "" {
-			notRun(call, halted)
-			return
-		}
-		result := m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
-		record(call, result)
-		if result.Errored {
-			halted = fmt.Sprintf("not run: call %d (%s) in this batch failed first", position[call]+1, call.Name)
-		}
+	run := func(call *LLMToolCall) {
+		record(call, m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call))
 	}
 
 	regular, continuations := m.SplitContinuationCalls(tools, toolCalls)
 	for _, step := range m.planBatch(tools, regular) {
 		switch {
-		case halted != "":
-			for _, call := range step.calls {
-				notRun(call, halted)
-			}
 		case step.pure:
 			calls := pool.New()
 			for _, call := range step.calls {
-				calls.Go(func() {
-					record(call, m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call))
-				})
+				calls.Go(func() { run(call) })
 			}
 			calls.Wait()
 		case step.mcpServer != "":
 			m.callBatchMCPServer(ctx, step.mcpServer, func() {
 				for _, call := range step.calls {
-					runStep(call)
+					run(call)
 				}
 			})
 		default:
-			runStep(step.calls[0])
+			run(step.calls[0])
 		}
 	}
 
-	if len(continuations) > 0 && halted == "" && beforeContinuations != nil {
+	if len(continuations) > 0 && beforeContinuations != nil {
 		if err := beforeContinuations(ctx); err != nil {
-			halted = fmt.Sprintf("not run: failed to carry this turn's changes into the conversation: %s", err)
+			for _, call := range continuations {
+				record(call, &LLMContentBlock{
+					Kind:    LLMContentToolResult,
+					CallID:  call.CallID,
+					Text:    fmt.Sprintf("not run: failed to carry this turn's changes into the conversation: %s", err),
+					Errored: true,
+				})
+			}
+			return results
 		}
 	}
 	for _, call := range continuations {
-		runStep(call)
+		run(call)
 	}
 	return results
 }
@@ -1966,7 +1956,7 @@ type batchStep struct {
 // planBatch groups calls, in the order written, into CallBatch steps: runs of
 // consecutive pure calls, runs of consecutive non-read-only calls to the same
 // MCP server, and single sequential calls. A call to an unknown tool is
-// sequential, so that when it fails nothing written after it runs.
+// sequential, the safe default for a call nothing is known about.
 func (m *MCP) planBatch(tools []LLMTool, toolCalls []*LLMToolCall) []batchStep {
 	var steps []batchStep
 	for _, call := range toolCalls {

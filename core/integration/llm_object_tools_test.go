@@ -484,7 +484,7 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 // calls take effect in the order the model wrote them (MCP.CallBatch): each
 // is applied before the next one runs, so later calls see earlier ones'
 // edits, and a call whose changes can't be evaluated fails on its own —
-// keeping the edits before it and skipping the calls after it.
+// keeping the edits before it, and the calls after it still run.
 func (LLMSuite) TestChangesetToolsApplyInOrder(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-tool-return")
@@ -549,7 +549,7 @@ func (LLMSuite) TestChangesetToolsApplyInOrder(ctx context.Context, t *testctx.T
 		transcript, err := loopThen(ctx, model, "transcript")
 		require.NoError(t, err)
 		require.Contains(t, transcript, "found multiple times")
-		require.Contains(t, transcript, "not run: call 2 (breakShared) in this batch failed first")
+		require.NotContains(t, transcript, "not run")
 		require.Contains(t, transcript, "done")
 
 		// The edit before it landed...
@@ -560,9 +560,10 @@ func (LLMSuite) TestChangesetToolsApplyInOrder(ctx context.Context, t *testctx.T
 		shared, err := loopThen(ctx, model, "workspace | file shared.txt | contents")
 		require.NoError(t, err)
 		require.Equal(t, "line1: placeholder\nline2: placeholder\n", shared)
-		// ...and the one after it never ran.
-		_, err = loopThen(ctx, model, "workspace | file SECOND.txt | contents")
-		require.Error(t, err)
+		// ...and the one after it still ran, on the tree the failure left.
+		second, err := loopThen(ctx, model, "workspace | file SECOND.txt | contents")
+		require.NoError(t, err)
+		require.Equal(t, "second parallel change", strings.TrimSpace(second))
 	})
 }
 

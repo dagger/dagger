@@ -252,7 +252,7 @@ func TestCallBatchReturnsResultsInCallOrder(t *testing.T) {
 	}
 }
 
-func TestCallBatchFailedSequentialStepSkipsTheRest(t *testing.T) {
+func TestCallBatchFailedStepDoesNotStopTheBatch(t *testing.T) {
 	fs := newBatchFS(map[string]string{"a.txt": "one one"})
 	calls := []*LLMToolCall{
 		batchCall(t, 1, "write", map[string]any{"path": "b.txt", "contents": "b"}),
@@ -266,30 +266,16 @@ func TestCallBatchFailedSequentialStepSkipsTheRest(t *testing.T) {
 	require.False(t, results[0].Errored)
 	require.True(t, results[1].Errored)
 	require.Contains(t, results[1].Text, "search string found 2 times")
-	for _, res := range results[2:] {
-		require.True(t, res.Errored)
-		require.Equal(t, "not run: call 2 (edit) in this batch failed first", res.Text)
-	}
+	// Every call reports its own outcome: the ones after the failure still
+	// ran, and read the tree as the failure left it.
+	require.False(t, results[2].Errored)
+	require.Equal(t, "one one", results[2].Text)
+	require.False(t, results[3].Errored)
 
-	// The write before the failure stands; nothing after it ran.
 	b, _ := fs.file("b.txt")
 	require.Equal(t, "b", b)
-	_, ok := fs.file("c.txt")
-	require.False(t, ok)
-	require.NotContains(t, fs.log, "start read")
-}
-
-func TestCallBatchFailedPureCallDoesNotStopTheBatch(t *testing.T) {
-	fs := newBatchFS(nil)
-	calls := []*LLMToolCall{
-		batchCall(t, 1, "read", map[string]any{"path": "missing.txt"}),
-		batchCall(t, 2, "write", map[string]any{"path": "b.txt", "contents": "b"}),
-	}
-	results := batchResults(t, newMCP().CallBatch(t.Context(), fs.tools(), calls, nil, nil))
-	require.True(t, results[0].Errored)
-	require.False(t, results[1].Errored)
-	b, _ := fs.file("b.txt")
-	require.Equal(t, "b", b)
+	c, _ := fs.file("c.txt")
+	require.Equal(t, "c", c)
 }
 
 func TestCallBatchUnevaluableChangesetFailsItsOwnCall(t *testing.T) {
@@ -334,13 +320,12 @@ func TestCallBatchUnevaluableChangesetFailsItsOwnCall(t *testing.T) {
 	require.True(t, results[1].Errored)
 	require.Contains(t, results[1].Text, "search string found multiple times")
 	require.NotContains(t, results[1].Text, "no workspace bound")
-	require.True(t, results[2].Errored)
-	require.Equal(t, "not run: call 2 (brokenEdit) in this batch failed first", results[2].Text)
+	require.False(t, results[2].Errored)
 
 	a, _ := fs.file("a.txt")
 	require.Equal(t, "a", a, "the write before the broken edit stays applied")
-	_, ok := fs.file("b.txt")
-	require.False(t, ok)
+	b, _ := fs.file("b.txt")
+	require.Equal(t, "b", b, "the write after it still runs")
 }
 
 func TestCallBatchRunsContinuationsLast(t *testing.T) {
@@ -370,7 +355,7 @@ func TestCallBatchRunsContinuationsLast(t *testing.T) {
 		}, results)
 	})
 
-	t.Run("not after a failed step", func(t *testing.T) {
+	t.Run("even after a failed step", func(t *testing.T) {
 		fs.log = nil
 		calls := []*LLMToolCall{
 			batchCall(t, 1, "edit", map[string]any{"path": "missing.txt", "oldText": "x", "newText": "y"}),
@@ -381,9 +366,9 @@ func TestCallBatchRunsContinuationsLast(t *testing.T) {
 			folded = true
 			return nil
 		}))
-		require.False(t, folded)
-		require.True(t, results[1].Errored)
-		require.Equal(t, "not run: call 1 (edit) in this batch failed first", results[1].Text)
+		require.True(t, folded)
+		require.True(t, results[0].Errored)
+		require.Equal(t, batchResult{CallID: "call_2", Text: "reloaded"}, results[1])
 	})
 
 	t.Run("not when the turn can't be folded in", func(t *testing.T) {
