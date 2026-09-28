@@ -383,6 +383,48 @@ func TestCallBatchRunsContinuationsLast(t *testing.T) {
 	})
 }
 
+func TestPlanBatchTimeoutPlansAsTheWrappedTool(t *testing.T) {
+	fs := newBatchFS(map[string]string{"a.txt": "a"})
+	m := newMCP()
+	allTools := NewLLMToolSet()
+	for _, tool := range fs.tools() {
+		require.True(t, allTools.Add(tool))
+	}
+	m.loadBuiltins(nil, allTools)
+	tools := allTools.Order
+
+	timeout := func(i int, tool string, args map[string]any) *LLMToolCall {
+		return batchCall(t, i, "Timeout", map[string]any{"duration": "1s", "tool": tool, "arguments": args})
+	}
+	calls := []*LLMToolCall{
+		batchCall(t, 1, "read", map[string]any{"path": "a.txt"}),
+		timeout(2, "read", map[string]any{"path": "a.txt"}),
+		timeout(3, "write", map[string]any{"path": "b.txt", "contents": "b"}),
+		timeout(4, "nonexistent", nil),
+		batchCall(t, 5, "read", map[string]any{"path": "a.txt"}),
+	}
+	steps := m.planBatch(tools, calls)
+	require.Len(t, steps, 4)
+	// A timed-out read joins the reads around it...
+	require.True(t, steps[0].pure)
+	require.Equal(t, calls[0:2], steps[0].calls)
+	// ...a timed-out write is the barrier the write would be...
+	require.False(t, steps[1].pure)
+	require.Equal(t, calls[2:3], steps[1].calls)
+	// ...and one wrapping nothing known is sequential, the safe default.
+	require.False(t, steps[2].pure)
+	require.Equal(t, calls[3:4], steps[2].calls)
+	require.True(t, steps[3].pure)
+
+	// The plan is only scheduling: the calls still run through Timeout.
+	results := batchResults(t, m.CallBatch(t.Context(), tools, calls, nil, nil))
+	require.Equal(t, "a", results[1].Text)
+	require.False(t, results[2].Errored, results[2].Text)
+	require.True(t, results[3].Errored)
+	b, _ := fs.file("b.txt")
+	require.Equal(t, "b", b)
+}
+
 func TestAnnotateMCPSyncFailure(t *testing.T) {
 	read := &LLMToolCall{CallID: "read", Name: "read_file"}
 	write := &LLMToolCall{CallID: "write", Name: "write_file"}

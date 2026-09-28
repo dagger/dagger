@@ -2027,7 +2027,7 @@ func (m *MCP) planCalls(tools []LLMTool, toolCalls []*LLMToolCall, groupServers 
 	for _, call := range toolCalls {
 		var pure bool
 		var server string
-		if tool, err := m.LookupTool(call.Name, tools); err == nil {
+		if tool, err := m.planningTool(call, tools); err == nil {
 			pure = tool.ReadOnly
 			// Object tools set Server to their bound type name for display,
 			// so only a registered MCP server makes this an MCP tool.
@@ -2049,6 +2049,33 @@ func (m *MCP) planCalls(tools []LLMTool, toolCalls []*LLMToolCall, groupServers 
 		steps = append(steps, batchStep{calls: []*LLMToolCall{call}, pure: pure, mcpServer: server})
 	}
 	return steps
+}
+
+// planningTool returns the tool whose purity and server decide how call is
+// scheduled: the tool it names, or, for the Timeout builtin, the tool it
+// wraps. A deadline changes nothing about what the wrapped call reads or
+// writes, so `Timeout(ReadLogs)` runs alongside other reads rather than as a
+// barrier. A Timeout whose target can't be resolved plans as Timeout itself,
+// sequential, and fails on its own when it runs.
+func (m *MCP) planningTool(call *LLMToolCall, tools []LLMTool) (*LLMTool, error) {
+	tool, err := m.LookupTool(call.Name, tools)
+	if err != nil {
+		return nil, err
+	}
+	if tool.Name != timeoutToolName {
+		return tool, nil
+	}
+	var args struct {
+		Tool string `json:"tool"`
+	}
+	if err := json.Unmarshal(call.Arguments, &args); err != nil || args.Tool == "" {
+		return tool, nil
+	}
+	wrapped, err := m.LookupTool(args.Tool, tools)
+	if err != nil {
+		return tool, nil
+	}
+	return wrapped, nil
 }
 
 // mcpServerSyncsWorkspace reports whether calls to the named MCP server run
@@ -2901,7 +2928,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call: m.listServicesTool(srv),
 	})
 	allTools.Add(LLMTool{
-		Name:        "Timeout",
+		Name:        timeoutToolName,
 		Description: "Run one currently exposed tool with a timeout.",
 		Schema: map[string]any{
 			"type": "object",
@@ -2926,6 +2953,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call: m.timeoutTool(allTools),
 	})
 }
+
+// timeoutToolName is the builtin that runs another tool under a deadline. The
+// planner schedules a Timeout call as the tool it wraps (planningTool).
+const timeoutToolName = "Timeout"
 
 // timeoutTool runs one of the currently exposed tools under a deadline. The
 // nested call is dispatched the way the loop dispatches every tool call, so it
