@@ -148,34 +148,12 @@ Without a new version, refresh the existing request.
 
 With no arguments, this refreshes all installed modules. It does not refresh
 client targets or runtime targets. If a client scope targets an updated module,
-the command regenerates that scope. Use dagger workspace update to refresh all
+the command regenerates that scope. Use dagger lock update to refresh all
 entries in dagger.lock.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: runModuleUpdate,
 	}
 	cmd.Flags().String("version", "", "New version request for one installed module")
-	return cmd
-}
-
-func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
-	var noGenerate bool
-	cmd := &cobra.Command{
-		Use:   "update",
-		Short: "Refresh all workspace lockfile state",
-		Long: `Refresh all workspace lockfile state.
-
-Refreshes entries already recorded in dagger.lock. Regenerates SDK client scopes
-unless --no-generate is set.`,
-		Example: `"dagger workspace update"`,
-		Args:    cobra.NoArgs,
-		Hidden:  hidden,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runWorkspaceUpdate(cmd, args, noGenerate)
-		},
-	}
-	cmd.Flags().BoolVar(&noGenerate, "no-generate", false, "Update the lockfile without regenerating SDK client scopes")
-	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
-	setWorkspaceFlagPolicy(cmd)
 	return cmd
 }
 

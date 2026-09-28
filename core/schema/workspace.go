@@ -439,6 +439,19 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("noGenerate").Doc("Do not regenerate SDK client scopes."),
 			),
+		dagql.NodeFunc("__withUpdatedLock", s.withSelectedUpdatedLock).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with selected lockfile entries refreshed.").
+			Args(
+				dagql.Arg("noGenerate").Doc("Do not regenerate SDK client scopes."),
+				dagql.Arg("selectors").Doc("Lock entry patterns to refresh. An empty list refreshes all entries."),
+			),
+		dagql.Func("__lockEntries", s.lockEntries).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return printable selectors for lock entries selected for refresh.").
+			Args(
+				dagql.Arg("selectors").Doc("Lock entry patterns to select. An empty list selects all entries."),
+			),
 		dagql.NodeFunc("withUpdatedModules", s.withUpdatedModules).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).

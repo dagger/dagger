@@ -523,7 +523,7 @@ Affected areas:
 
 - engine workspace dagger.lock state
 - schema lockfile helpers
-- workspace update/refresh commands
+- lock update/refresh commands
 
 ### 4. Update Workspace API Path Resolution
 

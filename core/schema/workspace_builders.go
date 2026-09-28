@@ -592,10 +592,64 @@ type workspaceLockUpdateArgs struct {
 	NoGenerate bool `default:"false"`
 }
 
+type workspaceSelectedLockUpdateArgs struct {
+	NoGenerate bool     `default:"false"`
+	Selectors  []string `default:"[]"`
+}
+
+type workspaceLockEntriesArgs struct {
+	Selectors []string `default:"[]"`
+}
+
+func (s *workspaceSchema) lockEntries(
+	ctx context.Context,
+	ws *core.Workspace,
+	args workspaceLockEntriesArgs,
+) ([]dagql.String, error) {
+	operationCtx := ctx
+	var err error
+	if ws.ClientID != "" {
+		operationCtx, err = s.withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, fmt.Errorf("workspace client context: %w", err)
+		}
+	}
+	lock, err := s.readWorkspaceLockForOverlay(operationCtx, ws)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := core.SelectWorkspaceLockEntries(lock, args.Selectors)
+	if err != nil {
+		return nil, err
+	}
+	selectors := make([]dagql.String, len(entries))
+	for i, entry := range entries {
+		selectors[i] = dagql.String(core.WorkspaceLockEntrySelector(entry))
+	}
+	return selectors, nil
+}
+
 func (s *workspaceSchema) withUpdatedLock(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceLockUpdateArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	return s.withUpdatedLockEntries(ctx, parent, args.NoGenerate, nil)
+}
+
+func (s *workspaceSchema) withSelectedUpdatedLock(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceSelectedLockUpdateArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	return s.withUpdatedLockEntries(ctx, parent, args.NoGenerate, args.Selectors)
+}
+
+func (s *workspaceSchema) withUpdatedLockEntries(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	noGenerate bool,
+	selectors []string,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	ws := parent.Self()
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, ws, workspaceConfigMustExist, false)
@@ -623,7 +677,7 @@ func (s *workspaceSchema) withUpdatedLock(
 	// credential discovery, but make nested resolver calls ignore stale pins
 	// and avoid writing entries of their own.
 	updateCtx := withWorkspaceLookupLockRefresh(operationCtx)
-	if err := core.UpdateWorkspaceLock(updateCtx, query, lock); err != nil {
+	if _, err := core.UpdateWorkspaceLockEntries(updateCtx, query, lock, selectors); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update workspace lock: %w", err)
 	}
 
@@ -632,7 +686,7 @@ func (s *workspaceSchema) withUpdatedLock(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	updated, err := s.workspaceWithChangeset(operationCtx, parent, changes)
-	if err != nil || args.NoGenerate {
+	if err != nil || noGenerate {
 		return updated, err
 	}
 	selections, err := selectSDKModuleClients(staged, cleanWorkspaceRelPath(ws.Cwd), sdkModuleClientUpdateArgs{All: true})

@@ -68,7 +68,7 @@ The design in this document is locked unless an item below says that a decision 
 
 ### Update lifecycle decisions
 
-- [x] `dagger workspace update` regenerates client scopes unless `--no-generate` is set.
+- [x] `dagger lock update` regenerates client scopes unless `--no-generate` is set.
 - [x] `dagger module update` regenerates a client scope when it targets an updated module.
 
 ### Merge readiness
@@ -121,13 +121,16 @@ dagger
 │
 ├── workspace (alias: ws)
 │   ├── activity [--all]
-│   ├── update [--no-generate]
 │   ├── config [KEY] [VALUE] [--global] [--here] [--unset]
 │   ├── config-file
 │   ├── cwd
 │   ├── remote
 │   ├── remotes
 │   └── root
+│
+├── lock
+│   ├── list [SELECTOR...]
+│   └── update [SELECTOR...] [-l|--list] [--no-generate]
 │
 ├── cloud
 ├── llm
@@ -191,9 +194,19 @@ The engine resolves the selected targets into an empty lock, then merges the res
 
 A new pin can change the API of the target module. Because of this, the engine calls `generateScope` for each scope that has a changed client. The command uses the same generation path, graph order, cycle rules, and atomic changeset as `dagger module client add`.
 
-### `dagger workspace update`
+### `dagger lock list`
+
+This command prints the canonical identities of entries in `dagger.lock`.
+
+One or more selectors list only matching entries. With no selectors, the
+command lists every supported entry. It does not resolve or write entries.
+
+### `dagger lock update`
 
 This command refreshes all entries in `dagger.lock`.
+
+One or more selectors refresh only matching entries. `-l` or `--list` prints
+the same entries as `dagger lock list` without resolving or writing them.
 
 The command refreshes installed modules, client targets, and runtime targets.
 
@@ -207,13 +220,13 @@ These three commands update different lock entries and SDK client scopes.
 | --- | --- | --- | --- | --- |
 | `dagger module update` | yes | shared refs only | shared refs only | Scopes that target an updated module |
 | `dagger module client update` | shared refs only | yes | shared refs only | yes |
-| `dagger workspace update` | yes | yes | yes | All client scopes, unless `--no-generate` is set |
+| `dagger lock update` | yes | yes | yes | All client scopes, unless `--no-generate` is set |
 
 A lock entry has a ref for its key. It does not have an owner. Two different entries in `dagger.toml` can therefore use one lock entry. If they do, an update of one entry also moves the other. "Shared refs only" in the table shows this effect.
 
 `dagger module update` and `dagger module client update` do not read all lock entries. Each command resolves only its own selection into an empty lock, then merges the result. An entry that no selected item reaches stays unchanged.
 
-The pin of a client sets the content of the generated code. Therefore, a command that can change an effective client pin also regenerates the affected scope. `dagger workspace update` can change every client pin, so it regenerates every client scope by default. The opt-out supports workflows that need only the lockfile change.
+The pin of a client sets the content of the generated code. Therefore, a command that can change an effective client pin also regenerates the affected scope. `dagger lock update` can change every client pin, so it regenerates every client scope by default. The opt-out supports workflows that need only the lockfile change.
 
 ### `dagger module settings`
 
@@ -764,7 +777,7 @@ The engine owns these commands:
 - `module client add`
 - `module client update`
 - `module client rm`
-- `workspace update`
+- `lock update`
 
 These commands change workspace intent, lock state, or both.
 
