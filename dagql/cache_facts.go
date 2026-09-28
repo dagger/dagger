@@ -284,20 +284,6 @@ func (c *Cache) emitRemovedLocked(removed []*sharedResult, reason cachefact.Remo
 	c.emitFactLocked(cachefact.Removed{IDs: ids, Reason: reason})
 }
 
-// classRepresentativeLocked returns the smallest digest of the class, the
-// class's portable name in boot facts. Requires egraphMu, for reading or
-// writing.
-func (c *Cache) classRepresentativeLocked(id eqClassID) string {
-	root := c.eqClassRootLocked(id)
-	var rep string
-	for dig := range c.eqClassToDigests[root] {
-		if rep == "" || dig < rep {
-			rep = dig
-		}
-	}
-	return rep
-}
-
 // announceBootLocked describes the restored cache: one class fact per class,
 // one term fact per term, then one result fact per result. Requires egraphMu
 // for writing, after the restore fully succeeded.

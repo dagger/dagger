@@ -42,15 +42,15 @@ func (c *Cache) schemaModuleLookup(ctx context.Context, sessionID string, record
 	if recorded == nil {
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", recordedID)
 	}
-	if recorded.remote != nil {
-		return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", recordedID, errRemoteEntryHasNoValue)
+	if recorded.noValueLocked() {
+		return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", recordedID, errEntryHasNoValue)
 	}
 	classes := c.outputEqClassesForResultLocked(recorded.id)
 	var selected *sharedResult
 	for _, candidate := range installed {
 		operational := c.resultsByID[sharedResultID(candidate.ModuleResultID)]
 		scoped := c.resultsByID[sharedResultID(candidate.ScopedResultID)]
-		if operational == nil || scoped == nil || operational.remote != nil || scoped.remote != nil ||
+		if operational == nil || scoped == nil || operational.noValueLocked() || scoped.noValueLocked() ||
 			operational.attachmentState() != resultAttachmentClean || scoped.attachmentState() != resultAttachmentClean {
 			continue
 		}

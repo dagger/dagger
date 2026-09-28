@@ -558,10 +558,9 @@ func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
 		if res == nil {
 			continue
 		}
-		if res.remote != nil {
-			// A remote entry keeps its class's terms until its engine removes
-			// it, expired or not: it is never served, and its identity is
-			// what the cache holds it for.
+		if len(res.holders) > 0 {
+			// An entry with a holding keeps its class's terms, expired or
+			// not: its identity is what the cache holds it for.
 			return true
 		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
@@ -621,8 +620,8 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		if res.attachmentState() == resultAttachmentFailed {
 			continue
 		}
-		// Remote entries have no value to serve.
-		if res.remote != nil {
+		// An entry known only through holdings has no value to serve.
+		if res.noValueLocked() {
 			continue
 		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
@@ -649,7 +648,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 			if res.attachmentState() == resultAttachmentFailed {
 				continue
 			}
-			if res.remote != nil {
+			if res.noValueLocked() {
 				continue
 			}
 			if c.resultExpiredAtLocked(res, nowUnix) {
@@ -1926,9 +1925,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	if res == nil {
 		return
 	}
-	if res.remote != nil {
-		delete(c.remoteEntries, res.remote.key)
-	}
+	c.unindexRecipesLocked(res)
 	if len(c.egraphTerms) == 0 && len(c.resultsByID) == 1 && c.resultsByID[res.id] == res {
 		// The last entry, with no term left: the reset clears everything it
 		// indexed.
@@ -2002,10 +1999,10 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 }
 
 func (c *Cache) maybeResetEgraphLocked() {
-	// An entry can hold classes without terms, such as a restored remote
-	// entry, and an entry can outlive its class's last term, such as an
-	// expired entry a session still owns: nothing is reset while any entry,
-	// remote entries included, remains.
+	// An entry can hold classes without terms, such as one known only through
+	// holdings, and an entry can outlive its class's last term, such as an
+	// expired entry a session still owns: nothing is reset while any entry
+	// remains.
 	if len(c.egraphTerms) != 0 || len(c.resultsByID) != 0 {
 		return
 	}
@@ -2028,7 +2025,9 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
-	c.remoteEntries = nil
+	c.holderEntries = nil
+	c.entriesByRecipe = nil
+	c.remoteCaches = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs
@@ -2094,7 +2093,11 @@ func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, 
 
 	newEqClassToDigests := make(map[eqClassID]map[string]struct{}, len(oldRoots))
 	newEqClassExtraDigests := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(oldRoots))
-	newEgraphDigestToClass := make(map[string]eqClassID, len(c.egraphDigestToClass))
+	liveDigests := 0
+	for _, oldRoot := range oldRoots {
+		liveDigests += len(c.eqClassToDigests[oldRoot])
+	}
+	newEgraphDigestToClass := make(map[string]eqClassID, liveDigests)
 	for _, oldRoot := range oldRoots {
 		newRoot := remap[oldRoot]
 		if oldDigests := c.eqClassToDigests[oldRoot]; len(oldDigests) > 0 {

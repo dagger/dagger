@@ -1917,10 +1917,13 @@ type Cache struct {
 
 	// Cache fact emission, guarded by egraphMu. See cache_facts.go.
 	cacheFactState
-	// remoteEntries maps the key of each remote entry, a result another engine
-	// announced in its facts, to its entry here. Guarded by egraphMu. See
+	// holderEntries maps each holding's key to the entry it sits on, and
+	// entriesByRecipe each recipe digest to its entry. remoteCaches keeps each
+	// held engine cache's own indexes. All guarded by egraphMu. See
 	// cache_remote_entries.go.
-	remoteEntries map[RemoteEntryKey]sharedResultID
+	holderEntries   map[HolderKey]sharedResultID
+	entriesByRecipe map[digest.Digest]sharedResultID
+	remoteCaches    map[CacheID]*remoteCacheState
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
@@ -1982,6 +1985,15 @@ type Cache struct {
 	// the rank of the given eqClassID, slice is index by eqClassID so it's
 	// conceptually a map of eqClassID->rank
 	egraphRanks []uint8
+
+	// The Cloud's compaction checks (CollectRemoteHoldings): when the last
+	// check ran and the class slots it left, whether a collection has removed
+	// entries since, the clock (time.Now when nil), and a count of checks.
+	eqClassCheckedAt    time.Time
+	eqClassCheckedSlots int
+	eqClassRemoved      bool
+	eqClassClock        func() time.Time
+	eqClassChecks       int
 
 	//
 	// indexes for terms
@@ -2244,9 +2256,11 @@ type sharedResult struct {
 	// are guarded by egraphMu.
 	factAnnounced     bool
 	factDepsAnnounced bool
-	// remote is set on a remote entry: a result of another engine known
-	// from its facts, with no value. Guarded by egraphMu.
-	remote *remoteEntryState
+	// holders are what the cache knows about other engine caches' copies of
+	// this entry, by holding key. recipeKeys are the entriesByRecipe keys
+	// that name it. Both guarded by egraphMu.
+	holders    map[HolderKey]*holding
+	recipeKeys []digest.Digest
 
 	// Immutable payload shared by all per-call Result values.
 	self     Typed
