@@ -247,6 +247,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped).
 			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
 		moduleDefinitionField(s.moduleSourceModuleDefinition),
+		moduleTypesDefinitionField(s.moduleSourceModuleTypesDefinition),
 		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
 			Doc(`The introspection schema JSON file for this module source.`,
 				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
@@ -3214,9 +3215,9 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 
 	var initialized *core.Module
 
-	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
+	_, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
 	if typeDefsEnabled {
-		resultInst, terr := typeDefsImpl.ModuleTypes(ctx, mod.Deps, src, mod)
+		resultInst, terr := s.moduleTypesDefinition(ctx, dag, mod)
 		switch {
 		case errors.Is(terr, core.ErrStaleSDKCapability):
 			// The source was persisted before its SDK dropped moduleTypes (the
@@ -3227,6 +3228,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			return nil, terr
 		default:
 			initialized = resultInst.Self()
+			mod.Definition = dagql.NonNull(resultInst)
 		}
 	}
 	if !typeDefsEnabled {
@@ -3570,6 +3572,127 @@ func (s *moduleSourceSchema) moduleDefinitionFromRuntime(
 		return nil, fmt.Errorf("expected Module result, got %T", result)
 	}
 	return resultInst.Self(), nil
+}
+
+// moduleTypesDefinitionArgs are the identity of a cached definition from an
+// SDK that implements ModuleTypes (Dang, module entrypoints, module-based
+// SDKs): the dependencies' introspection schema and the module's name as
+// loaded. There is no runtime container to key on; such an SDK reads the
+// types from the source itself, so the receiver (the implementation-scoped
+// source) and these arguments cover everything the SDK reads.
+type moduleTypesDefinitionArgs struct {
+	IntrospectionJSON core.FileID `name:"introspectionJson"`
+	ModuleName        string
+}
+
+// moduleTypesDefinitionField declares ModuleSource._moduleTypesDefinition,
+// the ModuleTypes counterpart of _moduleDefinition.
+func moduleTypesDefinitionField(resolver dagql.NodeFuncHandler[*core.ModuleSource, moduleTypesDefinitionArgs, dagql.ObjectResult[*core.Module]]) dagql.Field[*core.ModuleSource] {
+	return dagql.NodeFunc("_moduleTypesDefinition", resolver).
+		IsPersistable().
+		Doc(`The module's type definitions as its SDK's moduleTypes reports them.`,
+			`Keyed on the implementation-scoped source, the dependencies' introspection schema and the loaded module name, so equivalent loads on different clients and engines share one result.`).
+		Args(
+			dagql.Arg("introspectionJson").Doc(`The introspection schema JSON file of the module's dependencies.`),
+			dagql.Arg("moduleName").Doc(`The module's name as loaded.`),
+		)
+}
+
+// moduleTypesDefinition obtains the definition of a module whose SDK
+// implements ModuleTypes through the cached _moduleTypesDefinition field.
+func (s *moduleSourceSchema) moduleTypesDefinition(
+	ctx context.Context,
+	dag *dagql.Server,
+	mod *core.Module,
+) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	scopedSrc, err := core.ImplementationScopedModuleSource(ctx, mod.Source.Value)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module source for module types definition: %w", err)
+	}
+	schemaJSONFile, err := mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json for module types definition: %w", err)
+	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json ID for module types definition: %w", err)
+	}
+	if err := dag.Select(ctx, scopedSrc, &inst, dagql.Selector{
+		Field: "_moduleTypesDefinition",
+		Args: []dagql.NamedInput{
+			{Name: "introspectionJson", Value: dagql.NewID[*core.File](schemaJSONFileID)},
+			{Name: "moduleName", Value: dagql.String(mod.NameField)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+// moduleSourceModuleTypesDefinition is the resolver of
+// _moduleTypesDefinition: on a miss it calls the SDK's ModuleTypes, as the
+// uncached path did, and returns a fresh definition-only module. It builds
+// its discovery module and its result the same way as
+// moduleSourceModuleDefinition, minus the runtime.
+func (s *moduleSourceSchema) moduleSourceModuleTypesDefinition(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	args moduleTypesDefinitionArgs,
+) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDefsImpl, ok := src.Self().SDKImpl.AsModuleTypes()
+	if !ok {
+		return inst, fmt.Errorf("module source sdk does not implement module types")
+	}
+	schema, err := args.IntrospectionJSON.Load(ctx, dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load schema introspection json for module types definition: %w", err)
+	}
+	schemaDigest, err := schema.RecipeDigest(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("module types definition identity: introspection json: %w", err)
+	}
+	identity := hashutil.HashStrings("ModuleSource._moduleTypesDefinition", schemaDigest.String(), args.ModuleName)
+	deps, err := s.loadDependencyModules(ctx, src, src)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load dependencies for module types definition: %w", err)
+	}
+	// The identity goes into AsModuleVariantDigest so the SDK-operation and
+	// currentModule scopes the SDK creates are distinct per definition, not
+	// shared by every definition of one source.
+	mod := &core.Module{
+		Source:                dagql.NonNull(src),
+		ContextSource:         dagql.NonNull(src),
+		NameField:             args.ModuleName,
+		OriginalName:          src.Self().ModuleOriginalName,
+		SDKConfig:             src.Self().SDK,
+		Deps:                  deps,
+		AsModuleVariantDigest: identity.String(),
+	}
+	if mod.SDKConfig == nil {
+		mod.SDKConfig = &core.SDKConfig{}
+	}
+	initialized, err := typeDefsImpl.ModuleTypes(ctx, deps, src, mod)
+	if err != nil {
+		return inst, err
+	}
+	def := &core.Module{
+		NameField:     args.ModuleName,
+		OriginalName:  src.Self().ModuleOriginalName,
+		SDKConfig:     mod.SDKConfig.Clone(),
+		Description:   initialized.Self().Description,
+		ObjectDefs:    append(dagql.ObjectResultArray[*core.TypeDef](nil), initialized.Self().ObjectDefs...),
+		InterfaceDefs: append(dagql.ObjectResultArray[*core.TypeDef](nil), initialized.Self().InterfaceDefs...),
+		EnumDefs:      append(dagql.ObjectResultArray[*core.TypeDef](nil), initialized.Self().EnumDefs...),
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, def)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create module types definition result for module %q: %w", args.ModuleName, err)
+	}
+	return inst, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(

@@ -44,8 +44,9 @@ type Module struct {
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
 
 	// Definition is the cached result of ModuleSource._moduleDefinition when
-	// the module's type definitions came from its container runtime: the
-	// definition-only module the runtime reported. Keeping the reference puts
+	// the module's type definitions came from its container runtime, or of
+	// ModuleSource._moduleTypesDefinition when they came from its SDK's
+	// ModuleTypes: the definition-only module. Keeping the reference puts
 	// the definition row inside this module's closure, so a bundle that
 	// carries the module carries the definition too.
 	Definition dagql.Nullable[dagql.ObjectResult[*Module]]
