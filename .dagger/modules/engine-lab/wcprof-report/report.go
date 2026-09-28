@@ -31,10 +31,14 @@ type Options struct {
 	Collapse int
 	// Limit bounds output lines (0 = unlimited). Not applied to events.
 	Limit int
+	// Against is the baseline dump for the compare view; Name and
+	// AgainstName label the two sides.
+	Against           *Graph
+	Name, AgainstName string
 }
 
 // Views lists the supported report views.
-var Views = []string{"summary", "classes", "breakdown", "clients", "tree", "children", "events"}
+var Views = []string{"summary", "classes", "breakdown", "clients", "tree", "children", "compare", "events"}
 
 // Report writes the selected view of g to w.
 func Report(w io.Writer, g *Graph, opts Options) error {
@@ -62,6 +66,8 @@ func Report(w io.Writer, g *Graph, opts Options) error {
 		err = tree(o, g, opts)
 	case "children":
 		err = childrenView(o, g, opts)
+	case "compare":
+		err = compare(o, g, opts)
 	default:
 		err = fmt.Errorf("unknown view %q (want one of %s)", opts.View, strings.Join(Views, ", "))
 	}
@@ -918,6 +924,110 @@ func childrenView(o *out, g *Graph, opts Options) error {
 		o.printf("%10d %10s %10s %10s  %-14s %s", c.op.ID, fmtRel(c.op.Start-root.Start), fmtDur(c.op.Dur()), fmtDur(c.self()), outcome, class)
 	}
 	return nil
+}
+
+// ---- compare ---------------------------------------------------------------
+
+// compare lines g's classes up against a baseline dump's: count, duration
+// total and p50, and self total per side, with the ratio or delta, sorted by
+// the largest absolute change in duration total.
+func compare(o *out, g *Graph, opts Options) error {
+	base := opts.Against
+	if base == nil {
+		return fmt.Errorf("compare needs a baseline dump (-against)")
+	}
+	nameA, nameB := cmp.Or(opts.AgainstName, "against"), cmp.Or(opts.Name, "capture")
+	opsA, internalA := rankable(base.matching(opts.Filter), opts.Filter)
+	opsB, internalB := rankable(g.matching(opts.Filter), opts.Filter)
+	aggsA, aggsB := map[string]*classAgg{}, map[string]*classAgg{}
+	var keys []string
+	for _, a := range aggregate(opsA) {
+		aggsA[a.Key] = a
+		keys = append(keys, a.Key)
+	}
+	for _, b := range aggregate(opsB) {
+		aggsB[b.Key] = b
+		if aggsA[b.Key] == nil {
+			keys = append(keys, b.Key)
+		}
+	}
+	empty := &classAgg{}
+	side := func(m map[string]*classAgg, key string) *classAgg {
+		if a := m[key]; a != nil {
+			return a
+		}
+		return empty
+	}
+	delta := func(key string) int64 {
+		d := side(aggsB, key).DurTotal - side(aggsA, key).DurTotal
+		if d < 0 {
+			return -d
+		}
+		return d
+	}
+	slices.SortFunc(keys, func(x, y string) int {
+		return cmp.Or(cmpInt64(delta(y), delta(x)), cmp.Compare(x, y))
+	})
+
+	o.printf("compare %q (%d ops over %s) against %q (%d ops over %s); %s; %s → %s, sorted by |Δdur|",
+		nameB, len(g.Ops), fmtDur(g.End-g.Start), nameA, len(base.Ops), fmtDur(base.End-base.Start),
+		opts.Filter, nameA, nameB)
+	if len(internalA)+len(internalB) > 0 {
+		o.printf("(left out: %d → %d internal-kind ops; kind: \"internal\" compares them)", len(internalA), len(internalB))
+	}
+	o.printf("%7s %7s  %9s %9s %10s %6s  %9s %9s %6s  %9s %9s %10s  %s",
+		"n_a", "n_b", "dur_a", "dur_b", "Δdur", "×dur", "p50_a", "p50_b", "×p50", "self_a", "self_b", "Δself", "kind class")
+	row := func(a, b *classAgg, label string) {
+		p50A, p50B := quantile(a.Durs, 0.5), quantile(b.Durs, 0.5)
+		o.printf("%7d %7d  %9s %9s %10s %6s  %9s %9s %6s  %9s %9s %10s  %s",
+			a.Count, b.Count,
+			fmtDur(a.DurTotal), fmtDur(b.DurTotal), fmtDelta(b.DurTotal-a.DurTotal), fmtRatio(a.DurTotal, b.DurTotal),
+			fmtDur(p50A), fmtDur(p50B), fmtRatio(p50A, p50B),
+			fmtDur(a.SelfTotal), fmtDur(b.SelfTotal), fmtDelta(b.SelfTotal-a.SelfTotal), label)
+	}
+	total := func(ops []*Op) *classAgg {
+		t := &classAgg{Outcomes: map[string]int{}, execIdents: map[string]int{}}
+		for _, op := range ops {
+			t.add(op)
+		}
+		return t
+	}
+	row(total(opsA), total(opsB), "(all matching ops)")
+	for i, key := range keys {
+		if i == opts.Top {
+			o.printf("… %d more classes (raise `top`)", len(keys)-opts.Top)
+			break
+		}
+		row(side(aggsA, key), side(aggsB, key), key)
+	}
+	o.printf("(× is %s/%s; new/gone: absent from one side; totals sum across concurrent ops)", nameB, nameA)
+	return nil
+}
+
+func fmtDelta(ns int64) string {
+	switch {
+	case ns > 0:
+		return "+" + fmtDur(ns)
+	case ns < 0:
+		return fmtDur(ns)
+	}
+	return "0"
+}
+
+func fmtRatio(a, b int64) string {
+	switch {
+	case a == 0 && b == 0:
+		return "-"
+	case a == 0:
+		return "new"
+	case b == 0:
+		return "gone"
+	}
+	r := float64(b) / float64(a)
+	if r < 0.1 {
+		return fmt.Sprintf("%.3f", r)
+	}
+	return fmt.Sprintf("%.2f", r)
 }
 
 // ---- events ----------------------------------------------------------------

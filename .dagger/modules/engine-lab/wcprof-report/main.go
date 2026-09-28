@@ -1,7 +1,8 @@
 // Command wcprof-report turns an engine wcprof dump (see engine/wcprof) into
 // small, agent-sized reports: per-class self time, per-parent child
 // breakdowns grouped into shapes, per-client activity over time, one op's
-// subtree or direct-children table, or name-resolved NDJSON events for jq.
+// subtree or direct-children table, a per-class comparison against a
+// baseline dump, or name-resolved NDJSON events for jq.
 //
 // It lives in the engine-lab module rather than the repo (the offline
 // analyzer moved out of tree in #13588); engine-lab builds it at tool-call
@@ -36,6 +37,9 @@ func main() {
 	flag.IntVar(&opts.Buckets, "buckets", 10, "clients view: number of time buckets")
 	flag.IntVar(&opts.Collapse, "collapse", 4, "tree view: aggregate same-class siblings from this many")
 	flag.IntVar(&opts.Limit, "limit", 0, "maximum output lines (0 = unlimited; not applied to events)")
+	against := flag.String("against", "", "compare view: the baseline dump to compare <dump> against")
+	flag.StringVar(&opts.Name, "name", "", "compare view: label for <dump>")
+	flag.StringVar(&opts.AgainstName, "against-name", "", "compare view: label for the -against dump")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "usage: wcprof-report [flags] <dump>\n")
 		flag.PrintDefaults()
@@ -60,14 +64,14 @@ func main() {
 		opts.Filter.ExcludeClass = re
 	}
 
-	f, err := os.Open(flag.Arg(0))
+	g, err := loadFile(flag.Arg(0))
 	if err != nil {
 		fatal(err)
 	}
-	g, err := Load(bufio.NewReaderSize(f, 1<<20))
-	f.Close()
-	if err != nil {
-		fatal(err)
+	if *against != "" {
+		if opts.Against, err = loadFile(*against); err != nil {
+			fatal(err)
+		}
 	}
 	w := bufio.NewWriter(os.Stdout)
 	if err := Report(w, g, opts); err != nil {
@@ -77,6 +81,19 @@ func main() {
 	if err := w.Flush(); err != nil {
 		fatal(err)
 	}
+}
+
+func loadFile(path string) (*Graph, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	g, err := Load(bufio.NewReaderSize(f, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return g, nil
 }
 
 func fatal(err error) {

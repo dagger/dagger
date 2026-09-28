@@ -71,8 +71,10 @@ The loop:
 4. `wcprofCapture` again: it fetches the dump ONCE into private module state
    (never into your workspace — dumps hold 100k+ ops, tens of MB) and returns
    a summary: op count, span, dropped events, call outcomes, top clients and
-   classes. Each capture replaces the previous one.
-5. `wcprofReport(view, ...)` slices the last capture. `class` (regexp),
+   classes. Captures are kept under `name` (default `"default"`; re-using a
+   name replaces that capture).
+5. `wcprofReport(view, ...)` slices a capture (`capture`, default the
+   latest). `class` (regexp),
    `excludeClass` (regexp to leave out — RE2 has no lookahead, so this is
    "everything except X"), `client` (substring) and `kind` filter every
    view; `limit` caps the lines.
@@ -105,7 +107,22 @@ The loop:
      compact JSON and strings print raw, so end a filter in `@tsv` for
      plain tab-separated rows, e.g.
      `select(.class == "Query.node") | [.id, .dur_ms] | @tsv`.
+   - `compare` (needs `against`): the capture against a baseline capture,
+     per class: count, duration total and p50, and self total on each side,
+     with deltas and ratios, sorted by the largest absolute change in
+     duration total. The filters apply to both sides.
 
-For a before/after comparison, run the same window on both engine builds
-(revert → `restart` → repeat) and compare `classes`/`breakdown` counts and
-p50s. `restart` loses the recording (new engine), so capture first.
+For a before/after comparison across engine builds, name the captures.
+Captures live in module state, which survives `restart` (only the engine
+is replaced), so:
+
+1. `wcprofEnable`, `wcprofCapture` (flush), reproduce,
+   `wcprofCapture(name: "before")`.
+2. Edit the engine, `restart`, then `wcprofEnable` again (the new engine
+   starts with recording off) and `wcprofCapture` to flush.
+3. Reproduce the same workload, `wcprofCapture(name: "after")`.
+4. `wcprofReport(view: "compare", capture: "after", against: "before")`,
+   then drill into the classes that moved with `classes`/`breakdown`/`tree`
+   on either capture.
+
+Captures are lost when the module state resets (e.g. a new session).

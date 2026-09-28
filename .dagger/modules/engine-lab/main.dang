@@ -26,8 +26,9 @@
 #     the workspace — recipe forensics on a base64 call ID, with no engine
 #     needed.
 #   - `wcprofEnable`/`wcprofCapture`/`wcprofReport`: record the engine's
-#     wall-clock profile (engine/wcprof), fetch a dump once into module state,
-#     and slice it with the wcprof-report helper shipped in this module.
+#     wall-clock profile (engine/wcprof), fetch named dumps once into module
+#     state, and slice or compare them with the wcprof-report helper shipped
+#     in this module.
 #
 # Engine log access deliberately has no tool here: the engine service's spans
 # are discoverable via ListServices, and ReadLogs(span: ..., grep: ...) reads
@@ -96,10 +97,14 @@ type EngineLab {
   # (digest hostname + session DNS domain) — the handoff other tools (e.g.
   # tui-qa's `start`) use to attach to THIS engine ("" until `start`)
   let engineEndpoint: String! = ""
-  # the last wcprof dump fetched by `wcprofCapture` (null until then). Kept as
-  # module state rather than written to the workspace: a dump is tens of MB
-  # and only `wcprofReport` should ever read it.
-  let wcprofDump: File = null
+  # wcprof dumps fetched by `wcprofCapture`, named: wcprofDumps[i] is the
+  # capture named wcprofCaptureNames[i] (parallel lists, oldest first). Kept
+  # as module state rather than written to the workspace: a dump is tens of
+  # MB and only `wcprofReport` should ever read it. Module state outlives an
+  # engine `restart`, which is what makes before/after comparisons work.
+  # Re-capturing a name appends it again; lookups take the last match.
+  let wcprofCaptureNames: [String!]! = []
+  let wcprofDumps: [File!]! = []
 
   # The skills shipped alongside this module (skills/<name>/SKILL.md), installed
   # onto the agent's LLM instead of a static system prompt: the model discovers
@@ -479,13 +484,16 @@ type EngineLab {
 
   """
   Fetch the live engine's wcprof recording ONCE and keep it as private module
-  state for `wcprofReport` (it is never written to the workspace: dumps hold
-  100k+ ops). Returns a short summary: op count, span, dropped events, call
-  outcomes, top clients and top classes.
+  state for `wcprofReport`, under `name` (it is never written to the
+  workspace: dumps hold 100k+ ops). Returns a short summary: op count, span,
+  dropped events, call outcomes, top clients and top classes.
 
   The loop: `wcprofEnable`, `wcprofCapture` (flush) to clear what was already
   recorded, reproduce the workload, `wcprofCapture` again, then slice that
-  capture with `wcprofReport`. Each capture replaces the previous one.
+  capture with `wcprofReport`. Captures are kept by name (re-using a name
+  replaces it) and survive `restart`, so capture "before", edit the engine,
+  `restart`, re-enable, reproduce, capture "after", then
+  `wcprofReport(view: "compare", capture: "after", against: "before")`.
   """
   wcprofCapture(
     source: Workspace!,
@@ -494,6 +502,10 @@ type EngineLab {
     sees new work. Pass false to leave the buffer intact.
     """
     flush: Boolean! = true,
+    """
+    Name to keep the capture under, e.g. "before" or "after".
+    """
+    name: String! = "default",
   ): EngineLab! @cache(policy: FunctionCachePolicy.Never) {
     if (engine == null) {
       print("No engine session. Call the engine-lab start tool first.")
@@ -513,14 +525,28 @@ type EngineLab {
     # Summarizing reads the dump, so the fetch (and flush) happens here and
     # now, not lazily at the first report.
     let summary = wcprofRun(source, dump, ["-view", "summary", "-top", "8"])
-    self.wcprofDump = dump
-    print(summary)
+    let names = wcprofCaptureNames + [name]
+    self.wcprofCaptureNames = names
+    self.wcprofDumps = wcprofDumps + [dump]
+    print("capture \"" + name + "\" (captures: " + names.uniq.join(", ") + ")\n" + summary)
     self
   }
 
+  # The index in wcprofDumps of the capture named `name` ("" = the latest),
+  # or -1. A re-captured name was appended again, so the last match wins.
+  let wcprofIndex(name: String!): Int! {
+    if (name == "") {
+      return wcprofDumps.length - 1
+    }
+    wcprofCaptureNames
+      .map { n, i => if (n == name) { i } else { -1 } }
+      .reduce(-1) { acc, i => if (i > acc) { i } else { acc } }
+  }
+
   """
-  Report on the last `wcprofCapture` with the wcprof-report helper, built from
-  this module against the workspace's engine/wcprof package. Views:
+  Report on a `wcprofCapture` (`capture`, default the latest) with the
+  wcprof-report helper, built from this module against the workspace's
+  engine/wcprof package. Views:
 
   - `classes`: per op class (kind + class), count, self-time total/p50/max,
     duration total/p50/max, duplicate executions and outcome counts
@@ -551,6 +577,10 @@ type EngineLab {
     print as compact JSON, strings print raw, so end a filter in `@tsv` or a
     string for plain-text rows. Output is capped at `limit` lines.
   - `summary`: the capture summary again.
+  - `compare`: the capture against another (`against`, required): per
+    class, count, duration total, duration p50 and self total on each side,
+    with the delta or ratio, sorted by the largest absolute change in
+    duration total. The filters apply to both sides.
 
   `class`, `excludeClass`, `client` and `kind` filter ops in every view (in
   tree and children, they pick the root). Self time is an op's duration
@@ -564,9 +594,17 @@ type EngineLab {
   wcprofReport(
     source: Workspace!,
     """
-    classes, breakdown, clients, tree, children, jq or summary.
+    classes, breakdown, clients, tree, children, compare, jq or summary.
     """
     view: String! = "classes",
+    """
+    Name of the capture to report on ("" = the latest).
+    """
+    capture: String! = "",
+    """
+    compare: name of the baseline capture, e.g. "before".
+    """
+    against: String! = "",
     """
     Regexp over op classes, e.g. "^Query.node$" or "withExec".
     """
@@ -619,9 +657,20 @@ type EngineLab {
     """
     limit: Int! = 200,
   ): String! @cache(policy: FunctionCachePolicy.Never) {
-    if (wcprofDump == null) {
+    if (wcprofDumps.isEmpty) {
       return "No wcprof capture yet. Call wcprofEnable, reproduce the workload, then wcprofCapture."
     }
+    let known = "captures: " + wcprofCaptureNames.uniq.join(", ")
+    let missing = "No wcprof capture named \"" + capture + "\" (" + known + ")."
+    let idx = wcprofIndex(capture)
+    if (idx < 0) {
+      return missing
+    }
+    let dump = wcprofDumps[idx]
+    if (dump == null) {
+      return missing
+    }
+    let name = wcprofCaptureNames[idx] ?? capture
     let args = [
       "-class", class,
       "-exclude-class", excludeClass,
@@ -633,8 +682,29 @@ type EngineLab {
       "-sort", sortBy,
       "-buckets", toString(buckets),
     ]
+    if (view == "compare") {
+      if (against == "") {
+        return "compare needs `against`: the name of the baseline capture (" + known + ")."
+      }
+      let baseMissing = "No wcprof capture named \"" + against + "\" (" + known + ")."
+      let baseIdx = wcprofIndex(against)
+      if (baseIdx < 0) {
+        return baseMissing
+      }
+      let base = wcprofDumps[baseIdx]
+      if (base == null) {
+        return baseMissing
+      }
+      return wcprofExec(
+        wcprofRunner(source, dump).withMountedFile("/tmp/against.dump", base),
+        [
+          "-view", "compare", "-limit", toString(limit),
+          "-name", name, "-against-name", against, "-against", "/tmp/against.dump",
+        ] + args,
+      )
+    }
     if (view != "jq") {
-      return wcprofRun(source, wcprofDump, ["-view", view, "-limit", toString(limit)] + args)
+      return wcprofRun(source, dump, ["-view", view, "-limit", toString(limit)] + args)
     }
     # -r prints string results raw, so filters ending in a string or @tsv
     # read as plain text; with -c, objects and arrays stay compact JSON.
@@ -642,7 +712,7 @@ type EngineLab {
     # The filter travels as an env var and the helper args as "$@", so no
     # user input is shell-quoted. Clipping happens in the container, so a
     # broad filter never ships the whole dump back as a string.
-    wcprofRunner(source, wcprofDump)
+    wcprofRunner(source, dump)
       .withEnvVariable("WCPROF_JQ_FILTER", filter)
       .withEnvVariable("WCPROF_JQ_FLAGS", jqFlags)
       .withEnvVariable("WCPROF_LIMIT", toString(limit))
@@ -745,7 +815,13 @@ type EngineLab {
   # empty: wcprofCapture prints the summary, and a stdout copy would show up
   # in the tool output a second time.
   let wcprofRun(source: Workspace!, dump: File!, args: [String!]!): String! {
-    wcprofRunner(source, dump)
+    wcprofExec(wcprofRunner(source, dump), args)
+  }
+
+  # Run the helper on /tmp/wcprof.dump in a runner (which may mount more,
+  # e.g. a compare baseline).
+  let wcprofExec(runner: Container!, args: [String!]!): String! {
+    runner
       .withExec(
         ["sh", "-c", "wcprof-report \"$@\" /tmp/wcprof.dump > /tmp/wcprof.out", "sh"] + args,
       )

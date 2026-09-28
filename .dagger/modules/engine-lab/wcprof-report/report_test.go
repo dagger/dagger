@@ -375,6 +375,44 @@ func TestInternalExcluded(t *testing.T) {
 	}
 }
 
+func TestCompare(t *testing.T) {
+	before := newDump(t)
+	before.op(1, 0, "call", "Query.node", "c", "hit", 0, 100)
+	before.op(2, 0, "call", "Query.node", "c", "hit", 200, 300)
+	before.op(3, 0, "call", "Query.typeDef", "c", "hit", 400, 410)
+	before.op(4, 0, "internal", "dagql.publishResult", "", "ok", 0, 500)
+	after := newDump(t)
+	after.op(1, 0, "call", "Query.node", "c", "hit", 0, 10)
+	after.op(2, 0, "call", "Query.node", "c", "hit", 20, 30)
+	after.op(3, 0, "call", "Query.typeDef", "c", "hit", 40, 60)
+	after.op(4, 0, "call", "Host.directory", "c", "executed", 70, 75)
+
+	g := after.graph()
+	out := report(t, g, Options{View: "compare", Against: before.graph(), Name: "after", AgainstName: "before"})
+	assertContains(t, out,
+		`compare "after" (4 ops over 75.00ms) against "before" (4 ops over 500.00ms)`,
+		"before → after",
+		"(left out: 1 → 0 internal-kind ops",
+		"      3       4   210.00ms   45.00ms  -165.00ms   0.21", // all matching ops
+		"      2       2   200.00ms   20.00ms  -180.00ms   0.10   100.00ms   10.00ms   0.10   200.00ms   20.00ms  -180.00ms  call Query.node",
+		"      0       1        0ns    5.00ms    +5.00ms    new        0ns    5.00ms    new",
+	)
+	// Sorted by the largest absolute change in duration total.
+	iNode, iTypeDef, iHost := strings.Index(out, "call Query.node"), strings.Index(out, "call Query.typeDef"), strings.Index(out, "call Host.directory")
+	if iNode >= iTypeDef || iTypeDef >= iHost {
+		t.Errorf("rows not sorted by |Δdur|:\n%s", out)
+	}
+	// Filters apply to both sides.
+	out = report(t, g, Options{View: "compare", Against: before.graph(), Filter: Filter{ExcludeClass: regexp.MustCompile(`node`)}})
+	if strings.Contains(out, "Query.node") {
+		t.Errorf("excludeClass leaked into compare:\n%s", out)
+	}
+	var buf bytes.Buffer
+	if err := Report(&buf, g, Options{View: "compare"}); err == nil {
+		t.Error("compare without a baseline should fail")
+	}
+}
+
 func TestEvents(t *testing.T) {
 	g := syntheticDump(t)
 	var buf bytes.Buffer
