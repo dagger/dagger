@@ -382,3 +382,41 @@ func TestCallBatchRunsContinuationsLast(t *testing.T) {
 		require.NotContains(t, fs.log, "start reload")
 	})
 }
+
+func TestAnnotateMCPSyncFailure(t *testing.T) {
+	read := &LLMToolCall{CallID: "read", Name: "read_file"}
+	write := &LLMToolCall{CallID: "write", Name: "write_file"}
+	plan := []batchStep{
+		{calls: []*LLMToolCall{read}, pure: true},
+		{calls: []*LLMToolCall{write}},
+	}
+	fresh := func() map[*LLMToolCall]*LLMContentBlock {
+		return map[*LLMToolCall]*LLMContentBlock{
+			read:  {Kind: LLMContentToolResult, CallID: "read", Text: "contents"},
+			write: {Kind: LLMContentToolResult, CallID: "write", Text: "wrote"},
+		}
+	}
+	syncErr := errors.New("mount failed")
+
+	t.Run("sync failed after the calls ran", func(t *testing.T) {
+		results := fresh()
+		annotateMCPSyncFailure("fs", plan, results, true, syncErr)
+		// The read stands; the write's effect never reached the workspace.
+		require.False(t, results[read].Errored)
+		require.Equal(t, "contents", results[read].Text)
+		require.True(t, results[write].Errored)
+		require.Contains(t, results[write].Text, "wrote\n\nWARNING")
+		require.Contains(t, results[write].Text, "could not be carried back into the workspace: mount failed")
+	})
+
+	t.Run("calls ran unsynced", func(t *testing.T) {
+		results := fresh()
+		annotateMCPSyncFailure("fs", plan, results, false, syncErr)
+		// Both are suspect: the server never saw the workspace.
+		for _, call := range []*LLMToolCall{read, write} {
+			require.True(t, results[call].Errored, call.CallID)
+			require.Contains(t, results[call].Text, "ran against a stale tree")
+			require.Contains(t, results[call].Text, "mount failed")
+		}
+	})
+}

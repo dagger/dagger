@@ -1902,33 +1902,49 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 			Content: []*LLMContentBlock{result},
 		}
 	}
-	run := func(call *LLMToolCall) {
-		record(call, m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call))
+	call := func(call *LLMToolCall) *LLMContentBlock {
+		return m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
 	}
 
 	regular, continuations := m.SplitContinuationCalls(tools, toolCalls)
-	var runSteps func(steps []batchStep)
-	runSteps = func(steps []batchStep) {
+	// runSteps executes a plan, handing each call's result to emit.
+	var runSteps func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock))
+	runSteps = func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock)) {
 		for _, step := range steps {
 			switch {
 			case step.mcpServer != "":
 				// One sync for the whole run; within it the calls follow the
-				// same rules as the batch itself.
-				m.callBatchMCPServer(ctx, step.mcpServer, func() {
-					runSteps(m.planCalls(tools, step.calls, false))
+				// same rules as the batch itself. Results are held back
+				// until the sync has finished, since that is when the calls'
+				// effects have (or haven't) reached the workspace.
+				inner := m.planCalls(tools, step.calls, false)
+				var mu sync.Mutex
+				held := make(map[*LLMToolCall]*LLMContentBlock, len(step.calls))
+				synced, err := m.callBatchMCPServer(ctx, step.mcpServer, func() {
+					runSteps(inner, func(call *LLMToolCall, result *LLMContentBlock) {
+						mu.Lock()
+						defer mu.Unlock()
+						held[call] = result
+					})
 				})
+				if err != nil {
+					annotateMCPSyncFailure(step.mcpServer, inner, held, synced, err)
+				}
+				for _, call := range step.calls {
+					emit(call, held[call])
+				}
 			case step.pure:
 				calls := pool.New()
-				for _, call := range step.calls {
-					calls.Go(func() { run(call) })
+				for _, c := range step.calls {
+					calls.Go(func() { emit(c, call(c)) })
 				}
 				calls.Wait()
 			default:
-				run(step.calls[0])
+				emit(step.calls[0], call(step.calls[0]))
 			}
 		}
 	}
-	runSteps(m.planBatch(tools, regular))
+	runSteps(m.planBatch(tools, regular), record)
 
 	if len(continuations) > 0 && beforeContinuations != nil {
 		if err := beforeContinuations(ctx); err != nil {
@@ -1943,10 +1959,41 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 			return results
 		}
 	}
-	for _, call := range continuations {
-		run(call)
+	for _, c := range continuations {
+		record(c, call(c))
 	}
 	return results
+}
+
+// annotateMCPSyncFailure rewrites the results of an MCP server's calls after
+// their workspace sync failed, so the model doesn't build on effects that
+// never reached the workspace. If the calls ran unsynced (synced is false),
+// every result is suspect: the server saw a stale tree and nothing it wrote
+// was captured. If the sync failed after they ran, the reads stand but the
+// changes the other calls made were not carried back.
+func annotateMCPSyncFailure(server string, plan []batchStep, results map[*LLMToolCall]*LLMContentBlock, synced bool, err error) {
+	for _, step := range plan {
+		if synced && step.pure {
+			continue
+		}
+		var note string
+		if synced {
+			note = fmt.Sprintf("WARNING: the changes this call made in MCP server %q could not be carried back into the workspace: %s", server, err)
+		} else {
+			note = fmt.Sprintf("WARNING: the workspace could not be synced into MCP server %q, so this call ran against a stale tree and any changes it made were not captured: %s", server, err)
+		}
+		for _, call := range step.calls {
+			res := results[call]
+			if res == nil {
+				continue
+			}
+			if res.Text != "" {
+				res.Text += "\n\n"
+			}
+			res.Text += note
+			res.Errored = true
+		}
+	}
 }
 
 // batchStep is one step of a CallBatch schedule.
@@ -2030,21 +2077,25 @@ func (m *MCP) mcpServerSyncsWorkspace(serverName string) bool {
 
 // callBatchMCPServer runs calls to one MCP server — run executes them — with
 // the bound workspace synced into the server's working directory, then
-// overlays whatever the calls changed there back onto the workspace. When
-// there is nothing to sync with (no working directory, no bound workspace) or
-// the sync can't be set up, run executes without it.
-func (m *MCP) callBatchMCPServer(ctx context.Context, serverName string, run func()) {
-	var ran bool
-	err := m.syncMCPServerWorkspace(ctx, serverName, func() {
-		ran = true
+// overlays whatever the calls changed there back onto the workspace. run
+// executes exactly once either way: when there is nothing to sync with (no
+// working directory, no bound workspace) or the sync can't be set up, it runs
+// without the sync, and synced reports which. A non-nil error means the sync
+// failed — before run if synced is false, after it otherwise — and the caller
+// tells the model, since the calls' results alone would misreport what
+// reached the workspace.
+func (m *MCP) callBatchMCPServer(ctx context.Context, serverName string, run func()) (synced bool, err error) {
+	err = m.syncMCPServerWorkspace(ctx, serverName, func() {
+		synced = true
 		run()
 	})
 	if err != nil {
-		slog.Error("failed to sync workspace with MCP server", "server", serverName, "error", err)
+		slog.Error("failed to sync workspace with MCP server", "server", serverName, "synced", synced, "error", err)
 	}
-	if !ran {
+	if !synced {
 		run()
 	}
+	return synced, err
 }
 
 // syncMCPServerWorkspace is callBatchMCPServer's sync. It returns without
