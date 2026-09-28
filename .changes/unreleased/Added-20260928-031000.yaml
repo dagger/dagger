@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  `GitRepository.ref` accepts git revision suffixes: `~`, `~N`, `^` and `^N`,
+  e.g. `HEAD~3`, `main^2` or `abc1234~2`. The base name resolves (and is
+  locked) like any other ref name; the result is a detached ref of the
+  resulting commit.
+time: 2026-09-28T03:10:00Z
+custom:
+  Author: vito
+  PR: 14359
