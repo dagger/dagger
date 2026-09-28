@@ -48,7 +48,7 @@ func TestLazyOpSpanReselectIsNotAnError(t *testing.T) {
 					t.Fatalf("isResume = %v, want %v", isResume, resume)
 				}
 				err := tc.err
-				endOTelLazyOp(lazySpan, isResume, resultID, false, false, "", &err)
+				endOTelLazyOp(lazySpan, isResume, resultID, false, false, "", lazySpanCacheState{}, &err)
 				root.End()
 				exported := spanBySpanID(t, sr.Ended(), lazySpan.SpanContext().SpanID())
 				if tc.wantErr {

@@ -21,6 +21,20 @@ const (
 	// Engine. It is a resource attribute on client and engine telemetry. (bool)
 	CloudEngineAttr = "dagger.io/cloud.engine"
 
+	// EngineSessionAttr is the ID of the engine session whose telemetry this
+	// is. It is a resource attribute on a session's own spans and logs, so
+	// sessions that share one trace stay apart. (string)
+	EngineSessionAttr = "dagger.io/engine.session"
+
+	// EngineCacheAttr names the engine's dagql cache: its identity, a random
+	// ID kept in the cache's database across the engine's restarts, and the
+	// generation, the number of engine starts on that identity, as
+	// "<identity>/<generation>". It is a resource attribute on a session's
+	// spans and logs, and an attribute of every engine cache event. Together
+	// with dagger.io/cache.result.id it names one entry of one cache for the
+	// cache's lifetime. (string)
+	EngineCacheAttr = "dagger.io/engine.cache"
+
 	// TelemetryOriginClientIDAttr records the immutable client identity captured
 	// from the emission context. Session-owned trace and log exporters use it to
 	// route each record to the origin client's DB and every validated ancestor
@@ -466,10 +480,11 @@ const (
 // quoted strings round-trip as strings). The value tokens below are chosen
 // so that trip is loss-free: enum tokens and digest values
 // (algorithm-prefixed) can never collide with true/false/null or a leading
-// digit; the two boolean facts are emitted as "true" only when true (absent
+// digit; the boolean facts are emitted as "true" only when true (absent
 // means false) and intentionally decode into real bools; the unknown-input
-// index is a decimal-string. The array value survives the same trip as a
-// JSON array of strings, which is exactly how consumers read it back.
+// index, result numbers and Unix times are decimal strings. The array values
+// (structural inputs, dependencies, parts) survive the same trip as JSON
+// arrays of strings, which is exactly how consumers read them back.
 //
 // Producer condition: the attributes are stamped by core.AroundFunc's completion
 // callback from a request-only evidence carrier (dagql.CacheDecision) that
@@ -582,4 +597,37 @@ const (
 	// (service.instance.id) it names the result the engine's cache facts
 	// (dagql/cachefact) describe, so a span can be joined with them.
 	CacheResultIDAttr = "dagger.io/cache.result.id"
+
+	// The entry's state in its cache, stamped beside CacheResultIDAttr when
+	// the span ends, so a consumer can follow the cache's ownership without
+	// the engine's internals. A lazy-evaluation span carries CacheResultIDAttr,
+	// CacheDepsAttr, CachePartsAttr and CacheOutputContentDigestAttr for the
+	// entry it evaluated, and no CacheOutcomeAttr.
+
+	// CacheDepsAttr lists the result numbers of the entry's dependencies, of
+	// every kind, as decimal strings (native string array). An empty list
+	// records that the entry has none.
+	CacheDepsAttr = "dagger.io/cache.deps"
+	// CacheRetainedAttr is "true" when the entry has a retention edge, the
+	// record that keeps it after its session, or when this call's publication
+	// adds one; absent otherwise. It states the edge at the span's end.
+	CacheRetainedAttr = "dagger.io/cache.retained"
+	// CacheRetentionExpiresAttr is the retention edge's expiry, in decimal
+	// Unix seconds, when retained and the edge expires.
+	CacheRetentionExpiresAttr = "dagger.io/cache.retention.expires"
+	// CacheExpiresAttr is the entry's own expiry, when it stops serving as a
+	// cache hit, in decimal Unix seconds, when it has one.
+	CacheExpiresAttr = "dagger.io/cache.expires"
+	// CachePartsAttr lists the entry's complete parts, the pieces of its value
+	// that own filesystem bytes, each as its part address (native string
+	// array). On a lazy-evaluation span, it lists them as the attempt left
+	// them. Absent when there are none.
+	CachePartsAttr = "dagger.io/cache.parts"
+	// CacheTypeAttr is the name of the entry's type, such as "Container".
+	CacheTypeAttr = "dagger.io/cache.type"
+
+	// CacheSessionSpansAttr is the decimal-string count of the spans of one
+	// session that carry CacheResultIDAttr, stamped on the session's
+	// WcprofSessionCompleteAttr carrier span, which marks the session's end.
+	CacheSessionSpansAttr = "dagger.io/cache.session.spans"
 )

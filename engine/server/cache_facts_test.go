@@ -8,9 +8,7 @@ import (
 	"testing"
 	"time"
 
-	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
@@ -18,7 +16,6 @@ import (
 	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/engine"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
-	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 type cacheFactTestExporter struct {
@@ -93,24 +90,6 @@ func TestCacheFactEmitterNeverBlocks(t *testing.T) {
 	require.NoError(t, e.Close(ctx))
 	e.Emit(fact)
 	require.EqualValues(t, 2, e.Dropped(), "a fact after Close is dropped")
-}
-
-func TestSessionResourcesNameEngineInstance(t *testing.T) {
-	t.Parallel()
-	for _, cloudEngine := range []bool{false, true} {
-		res, err := sessionTracerResource("instance-1", cloudEngine)
-		require.NoError(t, err)
-		value, ok := res.Set().Value(attribute.Key(cachefact.ResourceEngineInstance))
-		require.True(t, ok)
-		require.Equal(t, "instance-1", value.AsString())
-		_, isCloud := res.Set().Value(attribute.Key(telemetryattrs.CloudEngineAttr))
-		require.Equal(t, cloudEngine, isCloud)
-	}
-	res, err := withEngineInstanceResource(telemetry.Resource, "instance-2")
-	require.NoError(t, err)
-	value, ok := res.Set().Value(attribute.Key(cachefact.ResourceEngineInstance))
-	require.True(t, ok)
-	require.Equal(t, "instance-2", value.AsString())
 }
 
 type cacheFactTestResolver struct{}

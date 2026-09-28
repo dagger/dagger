@@ -1,6 +1,8 @@
 package dagql
 
 import (
+	"context"
+
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -77,6 +79,45 @@ type CacheDecision struct {
 	// PairingDigest is the self digest derived with implicit inputs excluded —
 	// the cross-run pairing anchor. Empty for CacheOutcomeUncached.
 	PairingDigest digest.Digest
+
+	// pendingEdge is the retention edge the publication this call executed or
+	// joined adds to its result, set when the call is persistable. The last of
+	// the publication's waiters creates it, possibly after this call's span
+	// has ended.
+	pendingEdge *pendingRetention
+
+	// cache is the cache that decided, for ResultState.
+	cache *Cache
+}
+
+// CacheResultState is the state of a cache entry in its cache, as a span
+// reports it when it ends.
+type CacheResultState struct {
+	// Deps are the result numbers of the entry's dependencies, sorted.
+	Deps []uint64
+	// Retained reports a retention edge, or one the call's publication adds,
+	// expiring at RetentionExpiresAtUnix (0: never).
+	Retained               bool
+	RetentionExpiresAtUnix int64
+	// ExpiresAtUnix is the entry's own expiry (0: none).
+	ExpiresAtUnix int64
+	// Parts are the part addresses of the entry's complete parts, sorted.
+	Parts []string
+}
+
+// ResultState reads res's state in the cache that decided this call, with the
+// retention edge its publication adds while that is still to be created. It
+// never waits on the cache's work, and reports false for a result the cache
+// does not hold.
+func (ev *CacheDecision) ResultState(ctx context.Context, res AnyResult) (CacheResultState, bool) {
+	if ev == nil || ev.cache == nil || res == nil {
+		return CacheResultState{}, false
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return CacheResultState{}, false
+	}
+	return ev.cache.resultState(ctx, shared, ev.pendingEdge)
 }
 
 // NewCacheDecision returns an empty carrier with its index sentinel set.
