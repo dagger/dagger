@@ -132,6 +132,24 @@ func TestMarkdownTableNested(t *testing.T) {
 	}
 }
 
+// TestMarkdownInlineCodeIsBrightBlue: inline code is common in agent replies,
+// so it is set off by color alone -- the terminal's bright blue, with no
+// background block behind it.
+func TestMarkdownInlineCodeIsBrightBlue(t *testing.T) {
+	got, err := renderMarkdown("use `foo` here", 40, MarkdownStyle, nil)
+	require.NoError(t, err)
+	line := strings.Split(trimMarkdownPadding(got), "\n")[0]
+	col := strings.Index(ansi.Strip(line), "foo")
+	require.GreaterOrEqual(t, col, 0, "code missing: %q", line)
+	buf := cellbuf.NewBuffer(ansi.StringWidth(line), 1)
+	cellbuf.SetContent(buf, line)
+	for x := col; x < col+len("foo"); x++ {
+		cell := buf.Cell(x, 0)
+		require.Equal(t, ansi.BrightBlue, cell.Style.Fg, "code cell %d foreground: %q", x, line)
+		require.Nil(t, cell.Style.Bg, "code cell %d has a background: %q", x, line)
+	}
+}
+
 func TestMarkdownNonTablesUnchanged(t *testing.T) {
 	content := "# Heading\n\nSome **bold** and *italic*, `code`, [link](https://example.com), :smile:.\n\n> a quote\n>\n> - nested\n\n- [x] done\n- list\n\n```text\n| not | a table |\n| --- | --- |\n```\n\n---\n"
 	for _, style := range []string{styles.LightStyle, styles.DarkStyle} {

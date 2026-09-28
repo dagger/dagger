@@ -128,43 +128,11 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 	right := strings.Join(rightParts, " ")
 
 	// -- left side: agent roster + context ---------------------------------
-	var contextPart string
-	if d.ContextWindow > 0 {
-		autoTag := ""
-		if d.AutoCompact {
-			autoTag = " (auto)"
-		}
-		if d.ContextPercent >= 0 {
-			contextPart = fmt.Sprintf("%.1f%%/%s%s",
-				d.ContextPercent,
-				formatTokenCount(d.ContextWindow),
-				autoTag)
-		} else {
-			contextPart = fmt.Sprintf("?/%s%s",
-				formatTokenCount(d.ContextWindow),
-				autoTag)
-		}
-		// Colorise based on usage.
-		switch {
-		case d.ContextPercent > 90:
-			contextPart = out.String(contextPart).Foreground(termenv.ANSIRed).String()
-		case d.ContextPercent > 70:
-			contextPart = out.String(contextPart).Foreground(termenv.ANSIYellow).String()
-		}
-		// Prepend a gauge when the usage is known, so it's obvious at a glance
-		// how close the conversation is to the context limit.
-		if d.ContextPercent >= 0 {
-			contextPart = renderContextBar(out, d.ContextPercent) + " " + contextPart
-		}
-	}
+	contextPart := sl.contextPart(out, d)
 
 	var leftParts []string
 	if rosterVisible {
-		rosterWidth := width
-		if contextPart != "" {
-			rosterWidth -= visibleLen(contextPart) + 1
-		}
-		if rosterWidth > 0 {
+		if rosterWidth := sl.rosterWidth(width, contextPart); rosterWidth > 0 {
 			if rosterPart := sl.roster.Line(rosterWidth); rosterPart != "" {
 				leftParts = append(leftParts, rosterPart)
 			}
@@ -199,6 +167,66 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 	dimLine := out.String(line).Foreground(termenv.ANSIBrightBlack).String()
 
 	ctx.Lines(dimLine)
+}
+
+// FocusedTab reports the columns [start, end) the focused agent's tab spans
+// on this line when rendered at width, so the prompt card above can open its
+// bottom edge over it. The roster leads the line, so its columns are the
+// line's.
+func (sl *StatusLine) FocusedTab(width int) (start, end int, ok bool) {
+	if sl.roster == nil || !sl.roster.Visible() {
+		return 0, 0, false
+	}
+	width = max(width, 20)
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(sl.profile))
+	rosterWidth := sl.rosterWidth(width, sl.contextPart(out, sl.data))
+	if rosterWidth <= 0 {
+		return 0, 0, false
+	}
+	return sl.roster.FocusedTab(rosterWidth)
+}
+
+// rosterWidth is the room left for the roster beside the context meter.
+func (sl *StatusLine) rosterWidth(width int, contextPart string) int {
+	if contextPart != "" {
+		width -= visibleLen(contextPart) + 1
+	}
+	return width
+}
+
+// contextPart renders the context-usage meter, or "" when the window is
+// unknown.
+func (sl *StatusLine) contextPart(out *termenv.Output, d StatusLineData) string {
+	var contextPart string
+	if d.ContextWindow > 0 {
+		autoTag := ""
+		if d.AutoCompact {
+			autoTag = " (auto)"
+		}
+		if d.ContextPercent >= 0 {
+			contextPart = fmt.Sprintf("%.1f%%/%s%s",
+				d.ContextPercent,
+				formatTokenCount(d.ContextWindow),
+				autoTag)
+		} else {
+			contextPart = fmt.Sprintf("?/%s%s",
+				formatTokenCount(d.ContextWindow),
+				autoTag)
+		}
+		// Colorise based on usage.
+		switch {
+		case d.ContextPercent > 90:
+			contextPart = out.String(contextPart).Foreground(termenv.ANSIRed).String()
+		case d.ContextPercent > 70:
+			contextPart = out.String(contextPart).Foreground(termenv.ANSIYellow).String()
+		}
+		// Prepend a gauge when the usage is known, so it's obvious at a glance
+		// how close the conversation is to the context limit.
+		if d.ContextPercent >= 0 {
+			contextPart = renderContextBar(out, d.ContextPercent) + " " + contextPart
+		}
+	}
+	return contextPart
 }
 
 // contextBarWidth is the fixed cell width of the status-line context gauge.

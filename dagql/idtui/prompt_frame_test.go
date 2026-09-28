@@ -115,6 +115,28 @@ func TestPromptFrameSoftBorder(t *testing.T) {
 	require.Equal(t, "  hello there", strings.TrimRight(ansi.Strip(result.Lines[2]), " "))
 }
 
+// TestPromptFrameOpensOverFocusedTab: the card's bottom edge leaves a gap over
+// the focused agent's tab on the line beneath, so the tab reads as hanging off
+// the card; the gap keeps the card's fill.
+func TestPromptFrameOpensOverFocusedTab(t *testing.T) {
+	const width = 40
+	shade := blendPromptBackground(color.Black, termenv.TrueColor)
+	input := tuist.NewTextInput("")
+	frame := NewPromptFrame(input, termenv.ANSI)
+	frame.SetEnabled(true)
+	frame.SetBackground(shade.cell)
+	frame.SetBorder(shade.border)
+	frame.SetTabSource(func(int) (int, int, bool) { return 11, 24, true })
+	result := renderPromptFrame(frame, width)
+
+	requirePromptBackground(t, result.Lines, width)
+	bottom := result.Lines[len(result.Lines)-1]
+	require.Equal(t,
+		strings.Repeat(promptBottomEdge, 11)+strings.Repeat(" ", 13)+strings.Repeat(promptBottomEdge, width-24),
+		ansi.Strip(bottom))
+	require.Equal(t, strings.Repeat(promptTopEdge, width), ansi.Strip(result.Lines[1]))
+}
+
 // TestPromptFrameFocusCue verifies the focused input swaps its first line's
 // two-space indent for the "❯ " focus cue -- same width, so wrapping and the
 // cursor column don't move -- and reverts to the indent when focus leaves. The

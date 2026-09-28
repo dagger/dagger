@@ -426,6 +426,13 @@ func init() {
 	// Render inline code without the default padding spaces on either side.
 	MarkdownStyle.Code.Prefix = ""
 	MarkdownStyle.Code.Suffix = ""
+
+	// Inline code is frequent enough that a background plus a foreground is
+	// noisy and hard to read: just color it, in the terminal's own bright
+	// blue (plain blue is too dark on many dark themes).
+	brightBlue := "12"
+	MarkdownStyle.Code.Color = &brightBlue
+	MarkdownStyle.Code.BackgroundColor = nil
 }
 
 func (term *Vterm) redraw() {

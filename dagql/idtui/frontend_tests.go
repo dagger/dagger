@@ -1496,9 +1496,7 @@ func (fe *frontendPretty) toggleTestsMode() {
 	tv.ensureFocusedTest(tv.currentView())
 	fe.testsFocus = fe.tui.PushFocus(tv)
 	fe.syncHardwareCursor()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 	fe.Update()
 }
 
@@ -1626,9 +1624,7 @@ func (fe *frontendPretty) closeTestsMode() {
 		fe.focusNavigationTarget()
 	}
 	fe.syncHardwareCursor()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 	fe.Update()
 }
 

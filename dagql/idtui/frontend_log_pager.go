@@ -343,9 +343,7 @@ func (fe *frontendPretty) showLogPager(id dagui.SpanID, title, titleIcon string,
 	}
 	fe.logPagerFocus = fe.tui.PushFocus(fe.logPager)
 	fe.syncHardwareCursor()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 	fe.Update()
 }
 
@@ -367,9 +365,7 @@ func (fe *frontendPretty) closeLogPager() {
 		}
 	}
 	fe.syncHardwareCursor()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 	fe.Update()
 }
 
@@ -390,9 +386,7 @@ func (fe *frontendPretty) enterLogPagerSearchMode() {
 	fe.tui.AddChild(fe.keymapBar)
 	fe.logSearchFocus = fe.tui.PushFocus(fe.logSearchInput)
 	fe.syncHardwareCursor()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 	fe.Update()
 }
 
@@ -405,9 +399,7 @@ func (fe *frontendPretty) exitLogPagerSearchMode() {
 	fe.logSearchInput = nil
 	fe.logSearchFocus = nil
 	fe.syncHardwareCursor()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 }
 
 func (fe *frontendPretty) confirmLogPagerSearch(query string) {
@@ -416,9 +408,7 @@ func (fe *frontendPretty) confirmLogPagerSearch(query string) {
 		return
 	}
 	fe.logPager.SetSearch(query)
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 	fe.Update()
 }
 
@@ -438,9 +428,7 @@ func (fe *frontendPretty) updateLogPagerForLogs(spanID dagui.SpanID) {
 	}
 	fe.logPager.RefreshSearch()
 	fe.logPager.Update()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 }
 
 // logStream is a log buffer filled by OpenLogStream's writer, for one span.

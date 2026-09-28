@@ -539,7 +539,7 @@ func TestRosterStaysVisibleInNavMode(t *testing.T) {
 
 	fe.enterNavMode()
 	frame := ansi.Strip(strings.Join(fe.tui.Step(), "\n"))
-	require.Contains(t, frame, "i input mode", "sanity: this is nav mode's frame")
+	require.Contains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "i input mode", "sanity: this is nav mode")
 	require.Contains(t, frame, "1 chief")
 	require.Contains(t, frame, "2 scout")
 }
