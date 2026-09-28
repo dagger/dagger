@@ -2002,7 +2002,8 @@ type batchStep struct {
 	// holds a single call, unless mcpServer is set.
 	pure bool
 	// mcpServer: consecutive calls to this MCP server, run within a single
-	// workspace sync. The calls themselves are planned again inside it.
+	// workspace sync. The calls themselves are planned again inside it, so
+	// pure is unset here.
 	mcpServer string
 }
 
@@ -2045,7 +2046,7 @@ func (m *MCP) planCalls(tools []LLMTool, toolCalls []*LLMToolCall, groupServers 
 				continue
 			}
 		}
-		steps = append(steps, batchStep{calls: []*LLMToolCall{call}, pure: pure, mcpServer: server})
+		steps = append(steps, batchStep{calls: []*LLMToolCall{call}, pure: pure && server == "", mcpServer: server})
 	}
 	return steps
 }

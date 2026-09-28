@@ -429,6 +429,99 @@ func TestPlanBatchTimeoutPlansAsTheWrappedTool(t *testing.T) {
 	require.Equal(t, "b", b)
 }
 
+// mcpServerBatchFS registers fs's tools as the tools of a fake MCP server:
+// registered with a session, but with no service container to sync a
+// workspace into.
+func mcpServerBatchFS(t *testing.T, m *MCP, server string, fs *batchFS) []LLMTool {
+	t.Helper()
+	m.mcpServers[server] = &MCPServerConfig{Name: server}
+	m.mcpSessions[server] = nil
+	var tools []LLMTool
+	for _, tool := range fs.tools() {
+		tool.Name = server + "_" + tool.Name
+		tool.Server = server
+		tools = append(tools, tool)
+	}
+	return tools
+}
+
+func TestPlanBatchGroupsMCPServerCalls(t *testing.T) {
+	m := newMCP()
+	local := newBatchFS(nil)
+	tools := local.tools()
+	tools = append(tools, mcpServerBatchFS(t, m, "fs", newBatchFS(nil))...)
+	tools = append(tools, mcpServerBatchFS(t, m, "other", newBatchFS(nil))...)
+
+	calls := []*LLMToolCall{
+		batchCall(t, 1, "read", map[string]any{"path": "a"}),
+		// A server's reads join its run: they read the server's working
+		// directory, which only mirrors the workspace during the sync.
+		batchCall(t, 2, "fs_read", map[string]any{"path": "a"}),
+		batchCall(t, 3, "fs_write", map[string]any{"path": "a", "contents": "a"}),
+		batchCall(t, 4, "fs_read", map[string]any{"path": "a"}),
+		batchCall(t, 5, "other_read", map[string]any{"path": "a"}),
+		batchCall(t, 6, "fs_read", map[string]any{"path": "a"}),
+		batchCall(t, 7, "write", map[string]any{"path": "b", "contents": "b"}),
+		batchCall(t, 8, "fs_read", map[string]any{"path": "a"}),
+		batchCall(t, 9, "fs_read", map[string]any{"path": "a"}),
+	}
+	steps := m.planBatch(tools, calls)
+	require.Len(t, steps, 6)
+	require.Equal(t, batchStep{calls: calls[0:1], pure: true}, steps[0])
+	require.Equal(t, batchStep{calls: calls[1:4], mcpServer: "fs"}, steps[1])
+	require.Equal(t, batchStep{calls: calls[4:5], mcpServer: "other"}, steps[2])
+	require.Equal(t, batchStep{calls: calls[5:6], mcpServer: "fs"}, steps[3])
+	require.Equal(t, batchStep{calls: calls[6:7]}, steps[4])
+	require.Equal(t, batchStep{calls: calls[7:9], mcpServer: "fs"}, steps[5])
+
+	// Within a server's run, the calls are planned by purity alone.
+	inner := m.planCalls(tools, steps[1].calls, false)
+	require.Equal(t, []batchStep{
+		{calls: calls[1:2], pure: true},
+		{calls: calls[2:3]},
+		{calls: calls[3:4], pure: true},
+	}, inner)
+}
+
+func TestCallBatchMCPServerRunsCallsOnceWithoutSync(t *testing.T) {
+	m := newMCP()
+	fs := newBatchFS(nil)
+	tools := mcpServerBatchFS(t, m, "fs", fs)
+
+	// Registered, but nothing to sync with: no service container, no bound
+	// workspace.
+	require.False(t, m.mcpServerSyncsWorkspace("fs"))
+	require.False(t, m.mcpServerSyncsWorkspace("unknown"))
+
+	var runs int
+	synced, err := m.callBatchMCPServer(t.Context(), "fs", func() { runs++ })
+	require.NoError(t, err)
+	require.False(t, synced)
+	require.Equal(t, 1, runs, "the calls run exactly once, unsynced")
+
+	// And through CallBatch: the server's calls take effect in order, each
+	// executing once, with nothing to annotate.
+	calls := []*LLMToolCall{
+		batchCall(t, 1, "fs_write", map[string]any{"id": "w1", "path": "a.txt", "contents": "one"}),
+		batchCall(t, 2, "fs_read", map[string]any{"id": "r1", "path": "a.txt"}),
+		batchCall(t, 3, "fs_edit", map[string]any{"id": "e", "path": "a.txt", "oldText": "one", "newText": "two"}),
+		batchCall(t, 4, "fs_read", map[string]any{"id": "r2", "path": "a.txt"}),
+	}
+	results := batchResults(t, m.CallBatch(t.Context(), tools, calls, nil, nil))
+	require.Equal(t, []batchResult{
+		{CallID: "call_1", Text: "wrote a.txt"},
+		{CallID: "call_2", Text: "one"},
+		{CallID: "call_3", Text: "edited a.txt"},
+		{CallID: "call_4", Text: "two"},
+	}, results)
+	require.Equal(t, []string{
+		"start w1", "end w1",
+		"start r1", "end r1",
+		"start e", "end e",
+		"start r2", "end r2",
+	}, fs.log)
+}
+
 func TestAnnotateMCPSyncFailure(t *testing.T) {
 	read := &LLMToolCall{CallID: "read", Name: "read_file"}
 	write := &LLMToolCall{CallID: "write", Name: "write_file"}
