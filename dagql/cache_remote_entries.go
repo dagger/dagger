@@ -33,6 +33,11 @@ import (
 // database keeps across the engine's restarts.
 type CacheID string
 
+// cloudCacheID is the identity an engine keys its one Cloud holding by. The
+// Cloud's copy is not an engine cache's entry: an entry the Cloud holds still
+// has a value of its own, or is a cached nil result.
+const cloudCacheID CacheID = "cloud"
+
 // HolderKey names one entry of one engine cache: the cache's identity and the
 // entry's result number there.
 type HolderKey struct {
@@ -194,10 +199,18 @@ type remoteCacheState struct {
 
 // noValueLocked reports an entry known only through holdings: it has no value
 // of its own, neither decoded nor stored, so it is never served, loaded or
-// selected. The holdings tell it from an engine's cached nil result, which
-// also has neither but is served. Requires egraphMu.
+// selected. A holding of an engine cache tells it from a cached nil result,
+// which also has neither but is served, even when the Cloud holds it too.
+// Requires egraphMu.
 func (res *sharedResult) noValueLocked() bool {
-	if len(res.holders) == 0 {
+	engineHolding := false
+	for key := range res.holders {
+		if key.Cache != cloudCacheID {
+			engineHolding = true
+			break
+		}
+	}
+	if !engineHolding {
 		return false
 	}
 	res.payloadMu.RLock()

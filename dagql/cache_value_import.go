@@ -369,6 +369,11 @@ func (c *Cache) ImportValues(ctx context.Context, input ValueBundle) ([]Imported
 	}
 	for _, plan := range plans {
 		c.applyPreparedResultIdentityLocked(ctx, plan.row, plan.row.loadResultCall(), plan.recipe, plan.self, plan.inputs, plan.provenance, plan.recipe)
+		// An imported row becomes its recipe's current entry only when the
+		// recipe has none: import still allocates a row per record.
+		if c.currentEntryForRecipeLocked(plan.recipe) == nil {
+			c.indexRecipeLocked(plan.recipe, plan.row)
+		}
 	}
 	// After every identity application: notify each final class the imported
 	// rows now belong to, together with the interval's union and membership

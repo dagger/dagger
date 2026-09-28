@@ -168,6 +168,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				isObject:              env.Kind == persistedResultKindObject,
 				sessionResourceHandle: env.SessionResourceHandle,
 				expiresAtUnix:         row.ExpiresAtUnix,
+				replacements:          uint64(row.Replacements),
 				createdAtUnixNano:     row.CreatedAtUnixNano,
 				lastUsedAtUnixNano:    row.LastUsedAtUnixNano,
 				description:           row.Description,
@@ -462,6 +463,15 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	c.egraphMu.Unlock()
 	if importErr != nil {
 		return importErr
+	}
+	indexed := make(map[sharedResultID]struct{})
+	for _, row := range resultRows {
+		if row.Indexed {
+			indexed[sharedResultID(row.ID)] = struct{}{}
+		}
+	}
+	if err := c.indexRestoredEntries(indexed); err != nil {
+		return err
 	}
 
 	for _, resultID := range eagerDecodeResultIDs {

@@ -626,6 +626,11 @@ const (
 	CachePartsAttr = "dagger.io/cache.parts"
 	// CacheTypeAttr is the name of the entry's type, such as "Container".
 	CacheTypeAttr = "dagger.io/cache.type"
+	// CacheReplacementsAttr is the decimal-string count of the times the
+	// entry's value was replaced in place under the same result number, read
+	// with the state beside it: the parts, dependencies and expiry it names
+	// belong to that value. Absent while the count is 0.
+	CacheReplacementsAttr = "dagger.io/cache.replacements"
 
 	// CacheSessionSpansAttr is the decimal-string count of the spans of one
 	// session that carry CacheResultIDAttr, stamped on the session's
@@ -706,6 +711,9 @@ type EngineSharedPart struct {
 	Part string `json:"part"`
 	// Deps are the result numbers of the entry's dependencies.
 	Deps []uint64 `json:"deps"`
+	// Replacements is the entry's replacement count (CacheReplacementsAttr),
+	// when not 0: the part and the dependencies are its current value's.
+	Replacements uint64 `json:"replacements,omitempty"`
 }
 
 // EngineStopEvent is the body of an engine.stop event.

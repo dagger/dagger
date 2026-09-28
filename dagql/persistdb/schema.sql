@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS results (
     self_payload BLOB NOT NULL,
     output_effect_ids_json TEXT NOT NULL DEFAULT '[]',
     expires_at_unix INTEGER NOT NULL DEFAULT 0,
+    replacements INTEGER NOT NULL DEFAULT 0,
+    indexed INTEGER NOT NULL DEFAULT 0,
     created_at_unix_nano INTEGER NOT NULL,
     last_used_at_unix_nano INTEGER NOT NULL,
     record_type TEXT NOT NULL DEFAULT '',

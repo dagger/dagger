@@ -1217,11 +1217,14 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 
 // SnapshotSharedPart is one part a snapshot-sharing pass completed on an
 // entry: the entry's result number, the part's address (as a span's
-// dagger.io/cache.parts lists it) and the entry's dependencies.
+// dagger.io/cache.parts lists it), the entry's dependencies, and the entry's
+// replacement count, which names the value the part and dependencies belong
+// to.
 type SnapshotSharedPart struct {
-	ResultID uint64
-	Part     string
-	Deps     []uint64
+	ResultID     uint64
+	Part         string
+	Deps         []uint64
+	Replacements uint64
 }
 
 // WithSnapshotShareReport makes the cache report, after each snapshot-sharing
@@ -1234,26 +1237,38 @@ func WithSnapshotShareReport(report func([]SnapshotSharedPart)) CacheOption {
 	}
 }
 
-// reportSharedParts reports the parts the pass's receipts completed: of each
-// receipt's installed outputs, those the gate settled once the receipt was
-// finished.
+// captureSharedParts records, for the report, what a finished receipt
+// completed: of its installed outputs, those the gate settled, with the
+// entry's dependencies and replacement count. It runs while the receipt
+// still holds its entry, so no replacement comes between the settlement and
+// this read, and the count names these parts and dependencies. The pass
+// reports later, after its holds are gone.
+func (c *Cache) captureSharedParts(receipt *ReadyPartReceipt) {
+	if c.shareReport == nil {
+		return
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	keys := receipt.receiver.taskSettledPartKeys(receipt.task)
+	if len(keys) == 0 {
+		return
+	}
+	deps := sortedResultIDs(receipt.receiver.deps)
+	for _, key := range keys {
+		receipt.shared = append(receipt.shared, SnapshotSharedPart{ResultID: uint64(receipt.receiver.id), Part: key, Deps: deps, Replacements: receipt.receiver.replacements})
+	}
+}
+
+// reportSharedParts reports the parts the pass's receipts completed, as each
+// receipt's finish captured them.
 func (c *Cache) reportSharedParts(receipts []*ReadyPartReceipt) {
 	if c.shareReport == nil || len(receipts) == 0 {
 		return
 	}
 	var parts []SnapshotSharedPart
-	c.egraphMu.RLock()
 	for _, receipt := range receipts {
-		keys := receipt.receiver.taskSettledPartKeys(receipt.task)
-		if len(keys) == 0 {
-			continue
-		}
-		deps := sortedResultIDs(receipt.receiver.deps)
-		for _, key := range keys {
-			parts = append(parts, SnapshotSharedPart{ResultID: uint64(receipt.receiver.id), Part: key, Deps: deps})
-		}
+		parts = append(parts, receipt.shared...)
 	}
-	c.egraphMu.RUnlock()
 	if len(parts) > 0 {
 		c.shareReport(parts)
 	}

@@ -110,7 +110,8 @@ func openEngineEventTestCache(t *testing.T, path string) *dagql.Cache {
 
 // Every event carries its kind and the cache's identity and generation, is
 // timed when it happened, and has its body as JSON. A prune run that dropped
-// no edge sends nothing.
+// no edge sends nothing. A shared part carries its entry's replacement count
+// only when it is not 0.
 func TestEngineEventsCarryKindCacheAndBody(t *testing.T) {
 	t.Parallel()
 	ctx := boundedContext(t)
@@ -122,7 +123,10 @@ func TestEngineEventsCarryKindCacheAndBody(t *testing.T) {
 	first, second := time.Unix(100, 1), time.Unix(100, 2)
 	srv.emitPruneEvent([]dagql.CacheRetentionDrop{{ResultID: 7, DroppedAt: first}, {ResultID: 9, DroppedAt: second}})
 	srv.emitPruneEvent(nil)
-	srv.emitShareEvent([]dagql.SnapshotSharedPart{{ResultID: 12, Part: `{"part":"snapshot"}`, Deps: []uint64{3, 4}}})
+	srv.emitShareEvent([]dagql.SnapshotSharedPart{
+		{ResultID: 12, Part: `{"part":"snapshot"}`, Deps: []uint64{3, 4}},
+		{ResultID: 13, Part: `{"part":"snapshot"}`, Deps: []uint64{3}, Replacements: 2},
+	})
 	require.NoError(t, cache.Close(ctx))
 	srv.stopEngineEvents(ctx, true)
 
@@ -144,7 +148,13 @@ func TestEngineEventsCarryKindCacheAndBody(t *testing.T) {
 	require.Equal(t, telemetryattrs.EngineEventShare, events[2].kind)
 	require.Equal(t, telemetryattrs.EngineShareEvent{Parts: []telemetryattrs.EngineSharedPart{
 		{ResultID: 12, Part: `{"part":"snapshot"}`, Deps: []uint64{3, 4}},
+		{ResultID: 13, Part: `{"part":"snapshot"}`, Deps: []uint64{3}, Replacements: 2},
 	}}, decodeEngineEvent[telemetryattrs.EngineShareEvent](t, events[2]))
+	shareParts := decodeEngineEvent[struct {
+		Parts []map[string]json.RawMessage `json:"parts"`
+	}](t, events[2]).Parts
+	require.NotContains(t, shareParts[0], "replacements")
+	require.Equal(t, json.RawMessage("2"), shareParts[1]["replacements"])
 
 	require.Equal(t, telemetryattrs.EngineEventStop, events[3].kind)
 	require.Equal(t, telemetryattrs.EngineStopEvent{Clean: true}, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[3]))

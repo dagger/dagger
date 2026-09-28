@@ -195,11 +195,14 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 }
 
 // lazySpanCacheState is what a lazy op span reports of its entry when the
-// attempt ends: its complete parts, its dependencies and its content digest.
+// attempt ends: its complete parts, its dependencies and its content digest,
+// and its replacement count. The attempt's evaluating session holds the
+// entry, so no replacement happens during it.
 type lazySpanCacheState struct {
 	parts         []string
 	deps          []uint64
 	contentDigest digest.Digest
+	replacements  uint64
 }
 
 // lazySpanCacheState reads the state a lazy op span reports for row once its
@@ -216,6 +219,7 @@ func (c *Cache) lazySpanCacheState(ctx context.Context, row *sharedResult, frame
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	state.deps = sortedResultIDs(row.deps)
+	state.replacements = row.replacements
 	return state
 }
 
@@ -249,6 +253,9 @@ func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, part
 		}
 		if cacheState.contentDigest != "" {
 			span.SetAttributes(attribute.String(telemetryattrs.CacheOutputContentDigestAttr, cacheState.contentDigest.String()))
+		}
+		if cacheState.replacements != 0 {
+			span.SetAttributes(attribute.String(telemetryattrs.CacheReplacementsAttr, strconv.FormatUint(cacheState.replacements, 10)))
 		}
 	}
 	if storedPart != "" && *errPtr == nil {

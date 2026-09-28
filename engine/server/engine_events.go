@@ -159,7 +159,7 @@ func (srv *Server) emitShareEvent(parts []dagql.SnapshotSharedPart) {
 	}
 	event := telemetryattrs.EngineShareEvent{Parts: make([]telemetryattrs.EngineSharedPart, len(parts))}
 	for i, part := range parts {
-		event.Parts[i] = telemetryattrs.EngineSharedPart{ResultID: part.ResultID, Part: part.Part, Deps: part.Deps}
+		event.Parts[i] = telemetryattrs.EngineSharedPart{ResultID: part.ResultID, Part: part.Part, Deps: part.Deps, Replacements: part.Replacements}
 	}
 	srv.engineEvents.Emit(telemetryattrs.EngineEventShare, srv.engineCache.Identity(), time.Now(), event)
 }

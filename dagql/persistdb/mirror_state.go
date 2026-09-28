@@ -8,6 +8,8 @@ type MirrorResult struct {
 	SelfPayload        []byte
 	OutputEffectIDs    string
 	ExpiresAtUnix      int64
+	Replacements       int64
+	Indexed            bool
 	CreatedAtUnixNano  int64
 	LastUsedAtUnixNano int64
 	RecordType         string
@@ -117,16 +119,16 @@ func (q *Queries) ClearMirrorState(ctx context.Context) error {
 const insertMirrorResult = `
 INSERT INTO results (
 	id, call_frame_json, self_payload, output_effect_ids_json,
-	expires_at_unix, created_at_unix_nano,
+	expires_at_unix, replacements, indexed, created_at_unix_nano,
 	last_used_at_unix_nano, record_type, description
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 func (q *Queries) InsertMirrorResult(ctx context.Context, arg MirrorResult) error {
 	_, err := q.exec(ctx, nil, insertMirrorResult,
 		arg.ID, arg.CallFrameJSON, arg.SelfPayload, arg.OutputEffectIDs,
-		arg.ExpiresAtUnix, arg.CreatedAtUnixNano, arg.LastUsedAtUnixNano,
-		arg.RecordType, arg.Description,
+		arg.ExpiresAtUnix, arg.Replacements, arg.Indexed, arg.CreatedAtUnixNano,
+		arg.LastUsedAtUnixNano, arg.RecordType, arg.Description,
 	)
 	return err
 }
@@ -231,7 +233,7 @@ func (q *Queries) InsertMirrorImportedLayerDiffIndex(ctx context.Context, arg Mi
 const listMirrorResults = `
 SELECT
 	id, call_frame_json, self_payload, output_effect_ids_json,
-	expires_at_unix, created_at_unix_nano,
+	expires_at_unix, replacements, indexed, created_at_unix_nano,
 	last_used_at_unix_nano, record_type, description
 FROM results
 `
@@ -252,6 +254,8 @@ func (q *Queries) ListMirrorResults(ctx context.Context) ([]MirrorResult, error)
 			&row.SelfPayload,
 			&row.OutputEffectIDs,
 			&row.ExpiresAtUnix,
+			&row.Replacements,
+			&row.Indexed,
 			&row.CreatedAtUnixNano,
 			&row.LastUsedAtUnixNano,
 			&row.RecordType,
