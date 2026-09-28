@@ -510,6 +510,9 @@ var persistedModuleVisitor = persistedStructVisitor("", func(p *persistedModuleP
 	if err := w.child("runtimeResultID", &p.RuntimeResultID); err != nil {
 		return err
 	}
+	if err := w.child("definitionResultID", &p.DefinitionResultID); err != nil {
+		return err
+	}
 	if err := w.children("depModuleResultIDs", p.DepModuleResultIDs); err != nil {
 		return err
 	}
