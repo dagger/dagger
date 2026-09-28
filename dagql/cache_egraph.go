@@ -1929,7 +1929,10 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	if res.remote != nil {
 		delete(c.remoteEntries, res.remote.key)
 	}
-	if (len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0) && len(c.remoteEntries) == 0 {
+	if len(c.egraphTerms) == 0 && len(c.resultsByID) == 1 && c.resultsByID[res.id] == res {
+		// The last entry, with no term left: the reset clears everything it
+		// indexed.
+		delete(c.resultsByID, res.id)
 		c.maybeResetEgraphLocked()
 		return
 	}
@@ -1999,9 +2002,11 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 }
 
 func (c *Cache) maybeResetEgraphLocked() {
-	// Remote entries can hold classes without terms (restored entries), and each
-	// stays until its own engine removes it.
-	if len(c.egraphTerms) != 0 || len(c.remoteEntries) != 0 {
+	// An entry can hold classes without terms, such as a restored remote
+	// entry, and an entry can outlive its class's last term, such as an
+	// expired entry a session still owns: nothing is reset while any entry,
+	// remote entries included, remains.
+	if len(c.egraphTerms) != 0 || len(c.resultsByID) != 0 {
 		return
 	}
 
