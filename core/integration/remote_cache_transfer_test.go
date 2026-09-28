@@ -265,22 +265,14 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			var acquisition transferFixtureReport
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
 			counters := map[string]int{}
-			builtinRoute := 0
 			for _, event := range acquisition.Parts {
 				counters[event.Kind]++
-				if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy") {
-					builtinRoute++
-				}
 			}
 			require.Positive(t, counters["provider-read"], "selected artifact must read its transferred chain")
 			require.Positive(t, counters["installed-chain"])
 			require.Positive(t, counters["owner-sync"])
 			require.Positive(t, counters["settled"])
-			if cold {
-				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
-				assertColdPartDelegation(t, acquisition)
-			}
-			t.Logf("acquisition route counters cold=%t builtin=%d counts=%v", cold, builtinRoute, counters)
+			t.Logf("acquisition route counters cold=%t counts=%v", cold, counters)
 			var echoed struct {
 				Probe struct{ Echo struct{ Seed string } } `json:"cacheProbe"`
 			}
@@ -294,6 +286,21 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			// The scratch demand happens inside the changed-argument body, after
 			// the earlier acquisition report was captured.
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
+			if cold {
+				// The module's cached definition travels in the bundle, so a cold
+				// engine loads the module without running its runtime. The later
+				// uncached function calls demand the SDK runtime, and with it its
+				// builtin FS.
+				builtinRoute := 0
+				for _, event := range acquisition.Parts {
+					if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy") {
+						builtinRoute++
+					}
+				}
+				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
+				assertColdPartDelegation(t, acquisition)
+				t.Logf("acquisition cold builtin route=%d", builtinRoute)
+			}
 			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold)
 			entries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(scratchHandle)).Entries(ctx)
 			require.NoError(t, err)
