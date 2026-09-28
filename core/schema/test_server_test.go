@@ -86,6 +86,10 @@ func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.SchemaBu
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) SchemaBuilderMemo(context.Context) (*core.SchemaBuilderMemo, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
 	return nil, nil
 }

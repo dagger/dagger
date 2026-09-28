@@ -47,25 +47,10 @@ type SchemaBuilder struct {
 	root    *Query
 	entries []modDepEntry
 
-	// memo is shared by every builder derived from the same root without
-	// changing it (Clone, Append, Prepend, With), so it outlives the copies
-	// callers get handed. See Memoized.
-	memo *schemaBuilderMemo
-
 	lazilyLoadedServer *dagql.Server
 	loadSchemaErr      error
 	loadSchemaFailed   atomic.Bool
 	loadSchemaLock     sync.Mutex
-}
-
-// maxMemoizedSchemaBuilders bounds a memo: each entry retains a built schema
-// server. Distinct module sets per client are few in practice; overflowing
-// just starts over.
-const maxMemoizedSchemaBuilders = 32
-
-type schemaBuilderMemo struct {
-	mu       sync.Mutex
-	builders map[string]*SchemaBuilder
 }
 
 func NewSchemaBuilder(root *Query, mods []Mod) *SchemaBuilder {
@@ -76,7 +61,6 @@ func NewSchemaBuilder(root *Query, mods []Mod) *SchemaBuilder {
 	return &SchemaBuilder{
 		root:    root,
 		entries: entries,
-		memo:    &schemaBuilderMemo{},
 	}
 }
 
@@ -87,15 +71,12 @@ func (b *SchemaBuilder) Clone() *SchemaBuilder {
 	return &SchemaBuilder{
 		root:    b.root,
 		entries: slices.Clone(b.entries),
-		memo:    b.memo,
 	}
 }
 
 func (b *SchemaBuilder) WithRoot(root *Query) *SchemaBuilder {
 	cp := b.Clone()
 	cp.root = root
-	// Memoized servers are built on the old root.
-	cp.memo = &schemaBuilderMemo{}
 	return cp
 }
 
@@ -107,7 +88,6 @@ func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 	return &SchemaBuilder{
 		root:    b.root,
 		entries: append(extra, b.entries...),
-		memo:    b.memo,
 	}
 }
 
@@ -119,42 +99,56 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 	return &SchemaBuilder{
 		root:    b.root,
 		entries: append(slices.Clone(b.entries), extra...),
-		memo:    b.memo,
 	}
 }
 
-// Memoized returns the builder previously memoized for exactly b's entries,
-// or memoizes b. A builder memoizes its schema server once built, so callers
-// that repeatedly derive the same module set (loading IDs by handle resolves
-// one per load) share one server instead of rebuilding it, and reinstalling
-// every module, each time.
+// SchemaBuilderMemo shares one builder, and so one built schema server, per
+// module set. Loading a handle resolves the module set its value references
+// (Query.ModDepsForCall) on every load; without a memo, each load would build
+// a server and reinstall every module.
+//
+// The engine keeps one memo per client and drops it with the client's other
+// heavy state, so its entries live exactly as long as the client that loaded
+// them. It is unbounded: a client loads handles through few distinct module
+// sets, and an entry costs roughly one forked core schema plus its modules'
+// types.
+type SchemaBuilderMemo struct {
+	mu       sync.Mutex
+	builders map[string]*SchemaBuilder
+}
+
+func NewSchemaBuilderMemo() *SchemaBuilderMemo {
+	return &SchemaBuilderMemo{builders: map[string]*SchemaBuilder{}}
+}
+
+// Get returns the builder memoized for exactly b's root and entries, or
+// memoizes b. A nil memo returns b.
 //
 // A builder whose schema failed to load is replaced rather than returned, so
-// a transient failure (a canceled build) does not stick.
-func (b *SchemaBuilder) Memoized() *SchemaBuilder {
-	if b == nil || b.memo == nil {
+// a failed build is retried by the next load instead of sticking.
+func (m *SchemaBuilderMemo) Get(b *SchemaBuilder) *SchemaBuilder {
+	if m == nil || b == nil {
 		return b
 	}
 	key, ok := b.memoKey()
 	if !ok {
 		return b
 	}
-	b.memo.mu.Lock()
-	defer b.memo.mu.Unlock()
-	if cached := b.memo.builders[key]; cached != nil && !cached.loadSchemaFailed.Load() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if cached := m.builders[key]; cached != nil && !cached.loadSchemaFailed.Load() {
 		return cached
 	}
-	if b.memo.builders == nil || len(b.memo.builders) >= maxMemoizedSchemaBuilders {
-		b.memo.builders = map[string]*SchemaBuilder{}
-	}
-	b.memo.builders[key] = b
+	m.builders[key] = b
 	return b
 }
 
-// memoKey identifies b's entries: user modules by attached result, anything
-// else (core) by instance.
+// memoKey identifies b's root and entries: user modules by attached result,
+// anything else (core) by instance. Entry order and install options are part
+// of the key, since both shape the built schema.
 func (b *SchemaBuilder) memoKey() (string, bool) {
 	var key strings.Builder
+	fmt.Fprintf(&key, "r%p;", b.root)
 	for _, e := range b.entries {
 		switch mod := e.mod.(type) {
 		case *userMod:
@@ -311,6 +305,13 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 		return nil, b.loadSchemaErr
 	}
 	defer func() {
+		if rerr != nil && ctx.Err() != nil {
+			// This caller gave up, which says nothing about the schema.
+			// Leave the builder unloaded so callers sharing it build
+			// with their own contexts instead of inheriting the
+			// cancellation.
+			return
+		}
 		b.lazilyLoadedServer = loadedSchema
 		b.loadSchemaErr = rerr
 		b.loadSchemaFailed.Store(rerr != nil)

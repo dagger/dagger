@@ -116,6 +116,10 @@ type Server interface {
 	// The default deps of every user module (currently just core)
 	DefaultDeps(context.Context) (*SchemaBuilder, error)
 
+	// The current client's memo of schema builders by module set, shared by
+	// its handle loads (see Query.ModDepsForCall). Nil disables memoization.
+	SchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error)
+
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
 
@@ -386,7 +390,11 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	// Share one schema server per module set: without this, every handle
 	// load (node(id:), interface loads) rebuilds a server and reinstalls
 	// every referenced module.
-	return deps.Memoized(), nil
+	memo, err := q.SchemaBuilderMemo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("schema builder memo: %w", err)
+	}
+	return memo.Get(deps), nil
 }
 
 func (q *Query) RequireMainClient(ctx context.Context) error {
