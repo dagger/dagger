@@ -2986,6 +2986,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 			key.WithHelp("+/-", fmt.Sprintf("verbosity=%d", fe.Verbosity))),
 		key.NewBinding(key.WithKeys("E"),
 			key.WithHelp("E", noExitHelp)),
+		key.NewBinding(key.WithKeys("C"),
+			key.WithHelp("C", onlyRunningHelp(fe.OnlyRunning))),
 		key.NewBinding(key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", quitMsg)),
 		key.NewBinding(key.WithKeys("esc", "alt+esc"),
@@ -5737,6 +5739,11 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	case "E":
 		fe.NoExit = !fe.NoExit
 		return
+	case "C":
+		fe.OnlyRunning = !fe.OnlyRunning
+		fe.renderVersion++
+		fe.recalculateViewLocked()
+		return
 	case "down", "j":
 		fe.goDown()
 		return
@@ -7309,6 +7316,13 @@ func progressToggleHelp(expanded bool) string {
 		return "collapse transfers"
 	}
 	return "expand transfers"
+}
+
+func onlyRunningHelp(onlyRunning bool) string {
+	if onlyRunning {
+		return "show all spans"
+	}
+	return "only running"
 }
 
 // spanHasProgressRollup reports whether the span currently folds completed
