@@ -571,6 +571,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
 				dagql.Arg("exclude").Doc("Exclude agents matching the specified patterns"),
 			),
+		dagql.NodeFunc("__doctor", s.workspaceDoctor).
+			WithInput(dagql.PerClientInput).
+			Doc("(Internal-only) Validate workspace module loading and configured settings."),
 		migrateField,
 	}.Install(srv)
 

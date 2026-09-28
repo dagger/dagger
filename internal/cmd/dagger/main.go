@@ -206,6 +206,7 @@ func init() {
 		agentCmd,
 		generateCmd,
 		workspaceCmd,
+		doctorAliasCmd,
 		lockCmd,
 		moduleCmd,
 		sdkCmd,
@@ -321,8 +322,10 @@ var rootCmd = &cobra.Command{
 
 		checkForUpdates(cmd.Context(), cmd.ErrOrStderr())
 
-		if err := checkCloudToken(cmd.Context(), cmd.OutOrStdout()); err != nil {
-			return err
+		if name := commandName(cmd); name != "workspace doctor" && name != "doctor" {
+			if err := checkCloudToken(cmd.Context(), cmd.OutOrStdout()); err != nil {
+				return err
+			}
 		}
 
 		t.Capture(cmd.Context(), "cli_command", map[string]string{
