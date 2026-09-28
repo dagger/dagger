@@ -1873,9 +1873,12 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 //     pure calls executes concurrently.
 //   - Any other call is a sequential step: it runs alone, in its position,
 //     after everything written before it has landed — a Changeset it returns
-//     is applied before the next call starts. Consecutive calls to the same
-//     MCP server share one workspace sync (callBatchMCPServer), still one at
-//     a time.
+//     is applied before the next call starts.
+//   - Consecutive calls to one MCP server whose working directory mirrors the
+//     workspace share a single sync (callBatchMCPServer), read-only ones
+//     included, so they see the tree the calls before them produced. Within
+//     the sync the same rules apply: pure runs concurrent, the rest one at a
+//     time.
 //   - Every call runs, whether or not an earlier one failed: each result
 //     reports its own call, which is the contract models are trained on. A
 //     call written against a failed one's effect fails on its own terms (the
@@ -1904,24 +1907,28 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 	}
 
 	regular, continuations := m.SplitContinuationCalls(tools, toolCalls)
-	for _, step := range m.planBatch(tools, regular) {
-		switch {
-		case step.pure:
-			calls := pool.New()
-			for _, call := range step.calls {
-				calls.Go(func() { run(call) })
-			}
-			calls.Wait()
-		case step.mcpServer != "":
-			m.callBatchMCPServer(ctx, step.mcpServer, func() {
+	var runSteps func(steps []batchStep)
+	runSteps = func(steps []batchStep) {
+		for _, step := range steps {
+			switch {
+			case step.mcpServer != "":
+				// One sync for the whole run; within it the calls follow the
+				// same rules as the batch itself.
+				m.callBatchMCPServer(ctx, step.mcpServer, func() {
+					runSteps(m.planCalls(tools, step.calls, false))
+				})
+			case step.pure:
+				calls := pool.New()
 				for _, call := range step.calls {
-					run(call)
+					calls.Go(func() { run(call) })
 				}
-			})
-		default:
-			run(step.calls[0])
+				calls.Wait()
+			default:
+				run(step.calls[0])
+			}
 		}
 	}
+	runSteps(m.planBatch(tools, regular))
 
 	if len(continuations) > 0 && beforeContinuations != nil {
 		if err := beforeContinuations(ctx); err != nil {
@@ -1948,16 +1955,27 @@ type batchStep struct {
 	// pure: the calls run concurrently. Otherwise the step is sequential and
 	// holds a single call, unless mcpServer is set.
 	pure bool
-	// mcpServer: consecutive calls to this MCP server, run one at a time
-	// within a single workspace sync.
+	// mcpServer: consecutive calls to this MCP server, run within a single
+	// workspace sync. The calls themselves are planned again inside it.
 	mcpServer string
 }
 
 // planBatch groups calls, in the order written, into CallBatch steps: runs of
-// consecutive pure calls, runs of consecutive non-read-only calls to the same
-// MCP server, and single sequential calls. A call to an unknown tool is
-// sequential, the safe default for a call nothing is known about.
+// consecutive pure calls, runs of consecutive calls to the same MCP server,
+// and single sequential calls. A call to an unknown tool is sequential, the
+// safe default for a call nothing is known about.
 func (m *MCP) planBatch(tools []LLMTool, toolCalls []*LLMToolCall) []batchStep {
+	return m.planCalls(tools, toolCalls, true)
+}
+
+// planCalls is planBatch, optionally without the MCP-server grouping: inside a
+// server's sync the calls are planned by purity alone.
+//
+// A server's read-only calls join its run too. They read the server's working
+// directory, which only mirrors the bound workspace while a sync is in
+// progress; outside of one they would read whatever the last sync left there,
+// not the tree the calls before them produced.
+func (m *MCP) planCalls(tools []LLMTool, toolCalls []*LLMToolCall, groupServers bool) []batchStep {
 	var steps []batchStep
 	for _, call := range toolCalls {
 		var pure bool
@@ -1966,13 +1984,17 @@ func (m *MCP) planBatch(tools []LLMTool, toolCalls []*LLMToolCall) []batchStep {
 			pure = tool.ReadOnly
 			// Object tools set Server to their bound type name for display,
 			// so only a registered MCP server makes this an MCP tool.
-			if _, isMCP := m.mcpServers[tool.Server]; isMCP && !pure {
+			if _, isMCP := m.mcpServers[tool.Server]; isMCP && groupServers {
 				server = tool.Server
 			}
 		}
 		if n := len(steps); n > 0 {
 			last := &steps[n-1]
-			if (pure && last.pure) || (server != "" && server == last.mcpServer) {
+			if server != "" && server == last.mcpServer {
+				last.calls = append(last.calls, call)
+				continue
+			}
+			if server == "" && pure && last.pure && last.mcpServer == "" {
 				last.calls = append(last.calls, call)
 				continue
 			}
@@ -1980,6 +2002,30 @@ func (m *MCP) planBatch(tools []LLMTool, toolCalls []*LLMToolCall) []batchStep {
 		steps = append(steps, batchStep{calls: []*LLMToolCall{call}, pure: pure, mcpServer: server})
 	}
 	return steps
+}
+
+// mcpServerSyncsWorkspace reports whether calls to the named MCP server run
+// with the bound workspace synced into the server's working directory: the
+// server is registered with a live session, its container has a working
+// directory to mirror the workspace into, and there is a workspace to mirror.
+func (m *MCP) mcpServerSyncsWorkspace(serverName string) bool {
+	mcpSrv, ok := m.mcpServers[serverName]
+	if !ok {
+		return false
+	}
+	if _, ok := m.mcpSessions[serverName]; !ok {
+		return false
+	}
+	if mcpSrv.Service.Self() == nil {
+		return false
+	}
+	ctr := mcpSrv.Service.Self().Container
+	if ctr.Self() == nil || ctr.Self().Config.WorkingDir == "" || ctr.Self().Config.WorkingDir == "/" {
+		return false
+	}
+	// Snapshotting the workspace requires a bound workspace to diff against
+	// and overlay back onto.
+	return m.workspace.Self() != nil
 }
 
 // callBatchMCPServer runs calls to one MCP server — run executes them — with
@@ -2004,22 +2050,11 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, serverName string, run fun
 // syncMCPServerWorkspace is callBatchMCPServer's sync. It returns without
 // calling run when there is nothing to sync.
 func (m *MCP) syncMCPServerWorkspace(ctx context.Context, serverName string, run func()) error {
-	mcpSrv, ok := m.mcpServers[serverName]
-	if !ok {
+	if !m.mcpServerSyncsWorkspace(serverName) {
 		return nil
 	}
-	if _, ok := m.mcpSessions[serverName]; !ok {
-		return nil
-	}
+	mcpSrv := m.mcpServers[serverName]
 	ctr := mcpSrv.Service.Self().Container
-	if ctr.Self() == nil || ctr.Self().Config.WorkingDir == "" || ctr.Self().Config.WorkingDir == "/" {
-		return nil
-	}
-	// Snapshotting the workspace requires a bound workspace to diff against and
-	// overlay back onto; without one, run the tools without syncing.
-	if m.workspace.Self() == nil {
-		return nil
-	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
