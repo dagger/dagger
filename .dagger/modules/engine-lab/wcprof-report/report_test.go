@@ -279,6 +279,20 @@ func TestTreeFold(t *testing.T) {
 	b.op(3, 1, "lazy", "Directory.sync", "c", "ok", 0, 5)
 	out = report(t, b.graph(), Options{View: "tree", Op: 1})
 	assertContains(t, out, "1 call Workspace.withCommit [executed] dur 100.00ms self 0ns @", "2 call_exec Workspace.withCommit", "wait call_exec")
+
+	// Result publication runs after the exec ends, while the call is still
+	// open: the folded self counts it once, not as both the call's self and
+	// the exec's child, and it does not count as an unexpanded child.
+	b = newDump(t)
+	b.op(10, 0, "call", "Workspace.withCommit", "c", "do_not_cache", 0, 200)
+	b.op(1, 10, "call", "Workspace.directory", "c", "executed", 0, 100)
+	b.op(2, 1, "call_exec", "Workspace.directory", "c", "ok", 0, 90)
+	b.wait(1, 2, "call_exec", "", 0, 90)
+	b.op(3, 2, "internal", "dagql.publishResult", "", "ok", 90, 95)
+	out = report(t, b.graph(), Options{View: "tree", Op: 10, Depth: 1})
+	assertContains(t, out, "  +0ns 1 call Workspace.directory [executed] dur 100.00ms self 95.00ms (exec 2)\n")
+	out = report(t, b.graph(), Options{View: "tree", Op: 10, Depth: 2})
+	assertContains(t, out, "    +90.00ms 3 internal dagql.publishResult [ok] dur 5.00ms self 5.00ms")
 }
 
 func TestTreeOrder(t *testing.T) {
@@ -312,7 +326,7 @@ func TestChildren(t *testing.T) {
 	out := report(t, g, Options{View: "children", Op: 1})
 	assertContains(t, out,
 		"(folded with its call_exec op 2",
-		"8 children in 3 classes, 1 waits (total 10.00ms); self 59.00ms; sorted by start",
+		"8 children in 3 classes, 1 waits totaling 10.00ms; self 59.00ms; sorted by start",
 		"         3    +2.00ms     8.00ms     7.00ms  executed       call GitRef.asWorkspace (exec 4) ▸ 1",
 		"         6   +20.00ms     1.00ms     1.00ms  hit            call Query.node",
 		"         -   +60.00ms    10.00ms          -  -              wait lock → lock:foo",

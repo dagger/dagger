@@ -235,27 +235,33 @@ func Build(header *wcprof.DumpHeader, events []wcprof.DumpEvent) *Graph {
 // selfTime is the op's duration minus the union of its children's intervals
 // and its waits, each clipped to the op's own interval.
 func selfTime(op *Op) int64 {
-	if len(op.Children) == 0 && len(op.Waits) == 0 {
-		return op.Dur()
+	return uncovered(op.Start, op.End, op.Children, op.Waits)
+}
+
+// uncovered is the time in [start, end) not covered by any of the children
+// or waits.
+func uncovered(start, end int64, children []*Op, waits []*Wait) int64 {
+	if len(children) == 0 && len(waits) == 0 {
+		return end - start
 	}
-	cuts := make([][2]int64, 0, len(op.Children)+len(op.Waits))
-	for _, c := range op.Children {
+	cuts := make([][2]int64, 0, len(children)+len(waits))
+	for _, c := range children {
 		cuts = append(cuts, [2]int64{c.Start, c.End})
 	}
-	for _, w := range op.Waits {
+	for _, w := range waits {
 		cuts = append(cuts, [2]int64{w.Start, w.End})
 	}
 	slices.SortFunc(cuts, func(a, b [2]int64) int { return cmpInt64(a[0], b[0]) })
 	var covered int64
-	cursor := op.Start
+	cursor := start
 	for _, c := range cuts {
-		s, e := max(c[0], cursor), min(c[1], op.End)
+		s, e := max(c[0], cursor), min(c[1], end)
 		if e > s {
 			covered += e - s
 			cursor = e
 		}
 	}
-	return op.Dur() - covered
+	return end - start - covered
 }
 
 func cmpInt64(a, b int64) int {

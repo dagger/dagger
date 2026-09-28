@@ -676,12 +676,28 @@ func (n node) body() *Op {
 	return n.op
 }
 
-// self is the node's own time: the call's plus its folded exec's.
+// self is the node's own time. Folded, that is the call's interval minus
+// the exec's children and waits: the exec's children (e.g. result
+// publication) can run after the exec ends but while the call is still
+// open, so summing the call's and the exec's self would count them twice.
 func (n node) self() int64 {
 	if n.exec != nil {
-		return n.op.Self + n.exec.Self
+		return uncovered(n.op.Start, n.op.End, n.exec.Children, n.exec.Waits)
 	}
 	return n.op.Self
+}
+
+// expandable counts the children the tree would expand under the node,
+// leaving out internal-kind bookkeeping (e.g. dagql.publishResult under
+// nearly every executed call).
+func (n node) expandable() int {
+	k := 0
+	for _, c := range n.body().Children {
+		if c.Kind != "internal" {
+			k++
+		}
+	}
+	return k
 }
 
 func (n node) line() string {
@@ -753,7 +769,7 @@ func tree(o *out, g *Graph, opts Options) error {
 	o.printf("%s @%s", n.line(), g.fmtAt(root.Start))
 	t.children(n, "  ", depth)
 	if t.unexpanded > 0 {
-		o.printf("(▸ N: children not expanded at this depth; raise `depth`, or re-root with `op`. (exec N): a call folded with its call_exec op N)")
+		o.printf("(▸ N: N children not expanded at this depth, internal-kind ops not counted; raise `depth`, or re-root with `op`. (exec N): a call folded with its call_exec op N)")
 	} else if t.folded > 0 {
 		o.printf("((exec N): a call folded with its call_exec op N)")
 	}
@@ -825,11 +841,10 @@ func (t *treeRenderer) render(n node, origin int64, indent string, depth int) {
 		t.folded++
 	}
 	line := indent + fmtRel(n.op.Start-origin) + " " + n.line()
-	body := n.body()
 	if depth <= 0 {
-		if len(body.Children) > 0 {
+		if k := n.expandable(); k > 0 {
 			t.unexpanded++
-			line += fmt.Sprintf(" ▸ %d", len(body.Children))
+			line += fmt.Sprintf(" ▸ %d", k)
 		}
 		t.o.printf("%s", line)
 		return
@@ -851,7 +866,7 @@ func (t *treeRenderer) aggregate(run []*Op, origin int64, indent string) {
 		selfs = append(selfs, n.self())
 		durTot += op.Dur()
 		selfTot += n.self()
-		grand += len(n.body().Children)
+		grand += n.expandable()
 		outcomes[op.Outcome]++
 	}
 	slowest := slices.MaxFunc(run, func(a, b *Op) int { return cmp.Compare(a.Dur(), b.Dur()) })
@@ -900,8 +915,11 @@ func childrenView(o *out, g *Graph, opts Options) error {
 	for _, w := range body.Waits {
 		waitTot += w.Dur()
 	}
-	o.printf("%d children in %d classes, %d waits (total %s); self %s; sorted by %s",
-		len(body.Children), len(classes), len(body.Waits), fmtDur(waitTot), fmtDur(n.self()), cmp.Or(opts.Sort, "start"))
+	head := fmt.Sprintf("%d children in %d classes", len(body.Children), len(classes))
+	if len(body.Waits) > 0 {
+		head += fmt.Sprintf(", %d waits totaling %s", len(body.Waits), fmtDur(waitTot))
+	}
+	o.printf("%s; self %s; sorted by %s", head, fmtDur(n.self()), cmp.Or(opts.Sort, "start"))
 	o.printf("%10s %10s %10s %10s  %-14s %s", "id", "start", "dur", "self", "outcome", "kind class")
 	for _, it := range its {
 		if w := it.wait; w != nil {
@@ -918,7 +936,7 @@ func childrenView(o *out, g *Graph, opts Options) error {
 		if c.exec != nil {
 			class += fmt.Sprintf(" (exec %d)", c.exec.ID)
 		}
-		if nKids := len(c.body().Children); nKids > 0 {
+		if nKids := c.expandable(); nKids > 0 {
 			class += fmt.Sprintf(" ▸ %d", nKids)
 		}
 		o.printf("%10d %10s %10s %10s  %-14s %s", c.op.ID, fmtRel(c.op.Start-root.Start), fmtDur(c.op.Dur()), fmtDur(c.self()), outcome, class)

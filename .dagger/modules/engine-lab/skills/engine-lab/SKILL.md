@@ -95,7 +95,8 @@ The loop:
      (`+31.2ms`); runs of a class with 4+ siblings collapse into one
      aggregate line. A call whose only content is its call_exec folds into
      one node, `(exec N)`, with the exec's children directly under it;
-     `▸ N` marks N children not expanded at this depth.
+     `▸ N` marks N children not expanded at this depth (internal-kind ops
+     such as `dagql.publishResult` not counted).
    - `children`: a flat table of one op's direct children and waits — id,
      start offset, duration, self, outcome, class — for "where did this
      op's time go?". `sortBy` start (default), dur or self. Walk down by

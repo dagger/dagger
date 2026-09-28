@@ -563,7 +563,8 @@ type EngineLab {
     parent (`+31.2ms`); a class with at least 4 siblings collapses runs of
     them into one aggregate line. A call whose only content is its
     call_exec shows as one node, "(exec N)", with the exec's children
-    directly under it. "▸ N" marks N unexpanded children.
+    directly under it. "▸ N" marks N unexpanded children (internal-kind
+    ops such as dagql.publishResult not counted).
   - `children`: a flat table of one op's (`op`, default the slowest
     matching op) direct children and waits — id, start offset from the
     parent, duration, self, outcome, class — the view for "where did this
