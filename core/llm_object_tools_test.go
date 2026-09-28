@@ -835,6 +835,10 @@ func TestObjectToolPurity(t *testing.T) {
 		dagql.Func("status", func(context.Context, *batchTestRunner, struct{}) (dagql.String, error) {
 			return "", nil
 		}).WithInput(dagql.PerSessionInput),
+		// A core field's DoNotCache marks the same thing.
+		dagql.Func("export", func(context.Context, *batchTestRunner, struct{}) (dagql.String, error) {
+			return "", nil
+		}).DoNotCache("writes to the host"),
 		dagql.Func("edit", func(context.Context, *batchTestRunner, struct{}) (*Changeset, error) {
 			return nil, nil
 		}),
@@ -857,6 +861,7 @@ func TestObjectToolPurity(t *testing.T) {
 		"read":    true,
 		"status":  true,
 		"deploy":  false, // Never-cached: side effects or live reads
+		"export":  false, // DoNotCache: the core spelling of the same
 		"edit":    false, // returns a Changeset
 		"advance": false, // rebinds the agent's state
 	}, pure)

@@ -87,10 +87,11 @@ func (b boundTool) typeName() string {
 	return ""
 }
 
-// neverCached reports whether the bound type's field is a module function
-// with cache policy Never, looked up on the bound object's own type (the
-// defining schema's AST carries no cache policy).
-func (b boundTool) neverCached(fieldName string, srv *dagql.Server) bool {
+// impure reports whether the bound type's field is marked as having side
+// effects or live reads: a module function with cache policy Never, or a core
+// field marked DoNotCache. Looked up on the bound object's own type, since the
+// defining schema's AST carries neither.
+func (b boundTool) impure(fieldName string, srv *dagql.Server) bool {
 	objType := b.objType
 	if b.object != nil {
 		objType = b.object.ObjectType()
@@ -99,7 +100,7 @@ func (b boundTool) neverCached(fieldName string, srv *dagql.Server) bool {
 		return false
 	}
 	spec, ok := objType.FieldSpec(fieldName, srv.View)
-	return ok && cachePolicyNever(spec)
+	return ok && (cachePolicyNever(spec) || spec.DoNotCache != "")
 }
 
 // WithTools binds obj's methods as tools, carrying the schema that defined the
@@ -507,13 +508,13 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 			// state when it returns the bound object's own type, a Workspace, a
 			// Changeset, or an LLM — the conversation itself, run last in its
 			// batch (MCP.SplitContinuationCalls). A module function cached with
-			// policy Never is impure too: side effects and live reads are
-			// exactly what that policy is for.
+			// policy Never, or a core field marked DoNotCache, is impure too:
+			// side effects and live reads are exactly what those are for.
 			ReadOnly: retType != typeName &&
 				retType != "Changeset" &&
 				retType != workspaceTypeName &&
 				retType != llmTypeName &&
-				!b.neverCached(field.Name, srv),
+				!b.impure(field.Name, srv),
 			ReturnsLLM: retType == llmTypeName,
 			Call:       m.callObjectMethod(srv, typeName, field),
 			Server:     typeName,

@@ -61,8 +61,8 @@ type LLMTool struct {
 	// may run it concurrently with the pure calls next to it. Any other tool is
 	// a sequential step, run alone in the position it was written. Unset means
 	// sequential, the safe default. Object tools derive it from their return
-	// type and cache policy (toolsForBoundObject); MCP-server tools from their
-	// ReadOnlyHint annotation.
+	// type and cache policy or DoNotCache mark (toolsForBoundObject);
+	// MCP-server tools from their ReadOnlyHint annotation.
 	ReadOnly bool `json:"-"`
 	// Whether the tool returns an LLM — a continuation (see MCP.adoptLLM).
 	// CallBatch runs these after every other call in the turn, so the
