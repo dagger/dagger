@@ -97,10 +97,11 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 	}
 
 	engineSpec, err := client.Engine(ctx, cloud.EngineRequest{
-		Module:   module,
-		Function: function,
-		ExecCmd:  execCmd,
-		ClientID: opts.ClientID,
+		Module:       module,
+		Function:     function,
+		ExecCmd:      execCmd,
+		ClientID:     opts.ClientID,
+		SingleTenant: opts.SingleTenant,
 	})
 	if err != nil {
 		if errors.Is(err, cloud.ErrNoOrg) {

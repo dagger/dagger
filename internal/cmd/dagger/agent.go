@@ -71,6 +71,7 @@ Examples:
 		return withEngine(
 			cmd.Context(),
 			client.Params{
+				SingleTenant: true,
 				// A trace carries the workspace and module recipes needed to restore
 				// its agents. Loading modules from the destination checkout would
 				// both be unnecessary and make cold restore depend on that checkout.

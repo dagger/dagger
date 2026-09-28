@@ -42,6 +42,7 @@ type DriverOpts struct {
 	Module           string
 	Function         string
 	ExecCmd          []string
+	SingleTenant     bool
 	ClientID         string
 	CloudAuth        *auth.Cloud
 }
