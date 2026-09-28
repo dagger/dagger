@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,7 +110,7 @@ func TestRenderKeymapLinesTwoColumns(t *testing.T) {
 		}
 	}
 
-	long := append(keys, key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "a description much too long to share")))
+	long := append(slices.Clone(keys), key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "a description much too long to share")))
 	if got := render(long, 46); len(got) != len(long) {
 		t.Fatalf("a label too long for two columns must fall back to one:\n%s", strings.Join(got, "\n"))
 	}
