@@ -25,6 +25,9 @@
 #   - `dumpId`: build and run the repo's own `cmd/dump-id` against a file in
 #     the workspace — recipe forensics on a base64 call ID, with no engine
 #     needed.
+#   - `wcprofEnable`/`wcprofCapture`/`wcprofReport`: record the engine's
+#     wall-clock profile (engine/wcprof), fetch a dump once into module state,
+#     and slice it with the wcprof-report helper shipped in this module.
 #
 # Engine log access deliberately has no tool here: the engine service's spans
 # are discoverable via ListServices, and ReadLogs(span: ..., grep: ...) reads
@@ -32,6 +35,10 @@
 
 let defaultWorkdir = "/src"
 let debugPort = 6060
+# Where the wcprof-report helper is grafted into its build tree: Go import
+# paths can't have a leading-dot element, so it can't build in place under
+# .dagger/ (see wcprofReportBin).
+let wcprofReportPkg = "internal/enginelab/wcprofreport"
 
 # Where forwarded Dagger Cloud credentials are mounted. The CLI reads its
 # credentials from $XDG_CONFIG_HOME/dagger/credentials.json (see configRoot in
@@ -89,6 +96,10 @@ type EngineLab {
   # (digest hostname + session DNS domain) — the handoff other tools (e.g.
   # tui-qa's `start`) use to attach to THIS engine ("" until `start`)
   let engineEndpoint: String! = ""
+  # the last wcprof dump fetched by `wcprofCapture` (null until then). Kept as
+  # module state rather than written to the workspace: a dump is tens of MB
+  # and only `wcprofReport` should ever read it.
+  let wcprofDump: File = null
 
   # The skills shipped alongside this module (skills/<name>/SKILL.md), installed
   # onto the agent's LLM instead of a static system prompt: the model discovers
@@ -443,6 +454,183 @@ type EngineLab {
     clip(out, limit)
   }
 
+  """
+  Turn the live engine's engine-wide wcprof wall-clock recording on or off.
+  Engine-wide means every session is recorded, including a TUI or agent
+  session driving this engine — no `--profile` flag needed. Turning it off
+  keeps buffered events dumpable. Returns the recorder state.
+  """
+  wcprofEnable(
+    on: Boolean! = true,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    if (engine == null) {
+      return "No engine session. Call the engine-lab start tool first."
+    }
+    let v = if (on) { "on" } else { "off" }
+    client
+      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      .withExec([
+        "curl", "-sS", "--max-time", "30",
+        "-X", "POST", "-d", v,
+        debugURL("/debug/wcprof/enabled"),
+      ])
+      .stdout
+  }
+
+  """
+  Fetch the live engine's wcprof recording ONCE and keep it as private module
+  state for `wcprofReport` (it is never written to the workspace: dumps hold
+  100k+ ops). Returns a short summary: op count, span, dropped events, call
+  outcomes, top clients and top classes.
+
+  The loop: `wcprofEnable`, `wcprofCapture` (flush) to clear what was already
+  recorded, reproduce the workload, `wcprofCapture` again, then slice that
+  capture with `wcprofReport`. Each capture replaces the previous one.
+  """
+  wcprofCapture(
+    source: Workspace!,
+    """
+    Clear the engine's event buffer after dumping, so the next capture only
+    sees new work. Pass false to leave the buffer intact.
+    """
+    flush: Boolean! = true,
+  ): EngineLab! @cache(policy: FunctionCachePolicy.Never) {
+    if (engine == null) {
+      print("No engine session. Call the engine-lab start tool first.")
+      return self
+    }
+    let flushArg = if (flush) { "1" } else { "0" }
+    # The endpoint answers 503 with a hint when recording was never enabled;
+    # surface that body instead of a bare curl failure.
+    let dump = client
+      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      .withEnvVariable("ENGINE_LAB_DEBUG_URL", debugURL("/debug/wcprof/dump?flush=" + flushArg))
+      .withExec([
+        "sh", "-c",
+        "code=$(curl -sS --max-time 300 -o /tmp/wcprof.dump -w '%{http_code}' \"$ENGINE_LAB_DEBUG_URL\") || exit 1; if [ \"$code\" != 200 ]; then cat /tmp/wcprof.dump >&2; exit 1; fi",
+      ])
+      .file("/tmp/wcprof.dump")
+    # Summarizing reads the dump, so the fetch (and flush) happens here and
+    # now, not lazily at the first report.
+    let summary = wcprofRun(source, dump, ["-view", "summary", "-top", "8"])
+    self.wcprofDump = dump
+    print(summary)
+    self
+  }
+
+  """
+  Report on the last `wcprofCapture` with the wcprof-report helper, built from
+  this module against the workspace's engine/wcprof package. Views:
+
+  - `classes`: per op class (kind + class), count, self-time total/p50/max,
+    duration total/p50/max, duplicate executions and outcome counts
+    (hit/executed/joined/do_not_cache/...). `sortBy` self, count or dur.
+  - `breakdown`: for ops whose class matches `class` (required), their direct
+    children aggregated by class, and "shapes": groups of parent ops with an
+    identical child multiset, with count and p50 duration per shape — the
+    view for "what does each Query.node actually do?".
+  - `clients`: ops started per client over `buckets` time buckets, plus each
+    client's top classes.
+  - `tree`: one op's subtree (`op`, default the slowest matching op) with
+    durations and waits, `depth` levels deep; same-class siblings collapse.
+  - `jq`: one JSON object per event with names resolved, piped through the
+    jq `filter` (with `slurp`, over the whole array). Ops look like
+    {"type":"op","id","kind","class","client","parent","parent_class",
+    "outcome","start_ms","dur_ms","self_ms","children",...}; waits are
+    {"type":"wait","waiter_class","target_class","reason","dur_ms",...} and
+    links {"type":"link","link",...}. Output is capped at `limit` lines.
+  - `summary`: the capture summary again.
+
+  `class`, `client` and `kind` filter ops in every view. Self time is an
+  op's duration minus its child ops and its waits; times are relative to the
+  capture's first recorded op.
+  """
+  wcprofReport(
+    source: Workspace!,
+    """
+    classes, breakdown, clients, tree, jq or summary.
+    """
+    view: String! = "classes",
+    """
+    Regexp over op classes, e.g. "^Query.node$" or "withExec".
+    """
+    class: String! = "",
+    """
+    Substring of the client ID (see the summary or the clients view).
+    """
+    client: String! = "",
+    """
+    Exact op kind: call, call_exec, lazy, exec, exec_phase, session_phase, ...
+    """
+    kind: String! = "",
+    """
+    tree: root op ID (0 = the slowest op matching the filters).
+    """
+    op: Int! = 0,
+    """
+    tree: levels to expand.
+    """
+    depth: Int! = 6,
+    """
+    Rows per ranking (classes, clients, shapes, child classes).
+    """
+    top: Int! = 30,
+    """
+    classes: sort by self, count or dur.
+    """
+    sortBy: String! = "self",
+    """
+    clients: number of time buckets.
+    """
+    buckets: Int! = 10,
+    """
+    jq: the jq filter applied to each event, e.g.
+    'select(.class == "Query.node") | [.start_ms, .dur_ms]'.
+    """
+    filter: String! = ".",
+    """
+    jq: slurp all events into one array first (jq -s), for aggregations.
+    """
+    slurp: Boolean! = false,
+    """
+    Keep at most this many lines of output (0 = unlimited).
+    """
+    limit: Int! = 200,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    if (wcprofDump == null) {
+      return "No wcprof capture yet. Call wcprofEnable, reproduce the workload, then wcprofCapture."
+    }
+    let args = [
+      "-class", class,
+      "-client", client,
+      "-kind", kind,
+      "-op", toString(op),
+      "-depth", toString(depth),
+      "-top", toString(top),
+      "-sort", sortBy,
+      "-buckets", toString(buckets),
+    ]
+    if (view != "jq") {
+      return wcprofRun(source, wcprofDump, ["-view", view, "-limit", toString(limit)] + args)
+    }
+    let jqFlags = if (slurp) { "-c -s" } else { "-c" }
+    # The filter travels as an env var and the helper args as "$@", so no
+    # user input is shell-quoted. Clipping happens in the container, so a
+    # broad filter never ships the whole dump back as a string.
+    wcprofRunner(source, wcprofDump)
+      .withEnvVariable("WCPROF_JQ_FILTER", filter)
+      .withEnvVariable("WCPROF_JQ_FLAGS", jqFlags)
+      .withEnvVariable("WCPROF_LIMIT", toString(limit))
+      .withExec(
+        [
+          "sh", "-c",
+          "set -o pipefail; wcprof-report -view events \"$@\" /tmp/wcprof.dump | jq $WCPROF_JQ_FLAGS \"$WCPROF_JQ_FILTER\" > /tmp/out || exit 1; n=$(wc -l < /tmp/out); if [ \"$WCPROF_LIMIT\" -gt 0 ] && [ \"$n\" -gt \"$WCPROF_LIMIT\" ]; then head -n \"$WCPROF_LIMIT\" /tmp/out; echo \"… ($((n - WCPROF_LIMIT)) more lines truncated; raise limit, or narrow with class/client/kind or the filter) …\"; else cat /tmp/out; fi",
+          "sh",
+        ] + args,
+      )
+      .stdout
+  }
+
   # A self-call (`engineLab`) yields the module's own type as it lives in the
   # runtime schema — a Dagger.EngineLab, which carries a GraphQL id and
   # implements Node. Declaring the return as Dagger.EngineLab! (rather than
@@ -488,10 +676,56 @@ type EngineLab {
   # Share go-cli's Go toolchain and module/build caches with the other dev
   # tools, so repeated builds can reuse their downloaded modules and objects.
   let goEnv(source: Workspace!): Container! {
+    goEnvAt(source.directory("/"))
+  }
+
+  let goEnvAt(dir: Directory!): Container! {
     goCli
       .base
-      .withMountedDirectory(defaultWorkdir, source.directory("/"))
+      .withMountedDirectory(defaultWorkdir, dir)
       .withWorkdir(defaultWorkdir)
+  }
+
+  # The wcprof-report helper (wcprof-report/ in this module), built against
+  # the CURRENT workspace's engine/wcprof so it always reads the dump format
+  # of the engine being profiled. The offline analyzer moved out of the repo
+  # in #13588, so the helper ships with this module and is grafted into a
+  # minimal build tree (go.mod/go.sum + engine/wcprof, both stdlib-only): the
+  # build only re-runs when those or the helper change. Static, so it runs
+  # in the alpine+jq runner.
+  let wcprofReportBin(source: Workspace!): File! {
+    let ws = source.directory("/")
+    let tree = directory
+      .withFile("go.mod", ws.file("go.mod"))
+      .withFile("go.sum", ws.file("go.sum"))
+      .withDirectory("engine/wcprof", ws.directory("engine/wcprof"))
+      .withDirectory(wcprofReportPkg, currentModule.source.directory("wcprof-report"))
+    goEnvAt(tree)
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withExec(["go", "build", "-o", "/out/wcprof-report", "./" + wcprofReportPkg])
+      .file("/out/wcprof-report")
+  }
+
+  # A container with the helper, jq, and a dump at /tmp/wcprof.dump. Not
+  # nonce-busted: a report is a pure function of the binary, dump and args.
+  let wcprofRunner(source: Workspace!, dump: File!): Container! {
+    container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "--quiet", "jq"])
+      .withFile("/usr/local/bin/wcprof-report", wcprofReportBin(source))
+      .withMountedFile("/tmp/wcprof.dump", dump)
+  }
+
+  # The report goes to a file rather than stdout so the exec's own log stays
+  # empty: wcprofCapture prints the summary, and a stdout copy would show up
+  # in the tool output a second time.
+  let wcprofRun(source: Workspace!, dump: File!, args: [String!]!): String! {
+    wcprofRunner(source, dump)
+      .withExec(
+        ["sh", "-c", "wcprof-report \"$@\" /tmp/wcprof.dump > /tmp/wcprof.out", "sh"] + args,
+      )
+      .file("/tmp/wcprof.out")
+      .contents
   }
 
   # Head-truncate a report to keep tool results context-friendly. Head, not

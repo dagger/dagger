@@ -1,6 +1,6 @@
 ---
 name: engine-lab
-description: Build and debug the Dagger engine from the workspace source with the EngineLab tools — the sandbox equivalent of the ./hack/dev + ./hack/with-dev loop. Read before using the engine-lab tools to run commands against a live from-source engine, poke its debug/pprof endpoints, run engine tests, or re-run repros after editing engine code.
+description: Build and debug the Dagger engine from the workspace source with the EngineLab tools — the sandbox equivalent of the ./hack/dev + ./hack/with-dev loop. Read before using the engine-lab tools to run commands against a live from-source engine, poke its debug/pprof endpoints, profile wall-clock time with wcprof, run engine tests, or re-run repros after editing engine code.
 ---
 
 # Engine Lab
@@ -50,3 +50,45 @@ Workflow:
   (e.g. reproduce a hang in the TUI, then pprof it live). `restart` and the
   engine-lab stop tool break attached TUI sessions; restart them after.
 - the engine-lab stop tool when done.
+
+## Wall-clock profiling (wcprof)
+
+wcprof is the engine's native wall-clock recorder (engine/wcprof). Unlike
+OTel it records every dagql call — cache hits and do-not-cache calls
+included — plus waits and exec phases, so it answers "what is the engine
+doing N times per refresh?" and "where does this latency go?". Recording is
+engine-wide: a TUI or agent session attached to the lab engine is recorded
+with no extra flags.
+
+The loop:
+
+1. `wcprofEnable` turns recording on (`on: false` stops it; buffered events
+   stay dumpable).
+2. `wcprofCapture` (flush defaults to true) to throw away what was recorded
+   before the window you care about.
+3. Reproduce the workload — or, for idle/background behavior, just wait a
+   fixed window (e.g. 30s) so counts are comparable between runs.
+4. `wcprofCapture` again: it fetches the dump ONCE into private module state
+   (never into your workspace — dumps hold 100k+ ops, tens of MB) and returns
+   a summary: op count, span, dropped events, call outcomes, top clients and
+   classes. Each capture replaces the previous one.
+5. `wcprofReport(view, ...)` slices the last capture. `class` (regexp),
+   `client` (substring) and `kind` filter every view; `limit` caps the lines.
+   - `classes`: per kind+class count, self time total/p50/max, duration,
+     duplicate executions and outcomes (hit/executed/joined/do_not_cache).
+     Self time = duration minus child ops and waits.
+   - `breakdown` (needs `class`): the matching ops' direct children by class,
+     and "shapes" — parent ops grouped by identical child multisets with
+     count and p50 duration. The view for "why is each Query.node slow?".
+   - `clients`: ops per client over time buckets, and each client's top
+     classes — who is generating the load, steadily or in bursts.
+   - `tree`: one op's subtree (`op`, default the slowest matching op),
+     `depth` levels, with waits; big same-class sibling groups collapse.
+   - `jq`: name-resolved events (`{"type":"op","class":…,"client":…,
+     "parent_class":…,"start_ms":…,"dur_ms":…,"self_ms":…,"outcome":…}`,
+     plus waits and links) through your jq `filter`; `slurp` for
+     aggregations like `group_by`.
+
+For a before/after comparison, run the same window on both engine builds
+(revert → `restart` → repeat) and compare `classes`/`breakdown` counts and
+p50s. `restart` loses the recording (new engine), so capture first.
