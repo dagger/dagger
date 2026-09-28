@@ -87,7 +87,10 @@ The loop:
    - `jq`: name-resolved events (`{"type":"op","class":…,"client":…,
      "parent_class":…,"start_ms":…,"dur_ms":…,"self_ms":…,"outcome":…}`,
      plus waits and links) through your jq `filter`; `slurp` for
-     aggregations like `group_by`.
+     aggregations like `group_by`. jq runs with `-c -r`: objects stay
+     compact JSON and strings print raw, so end a filter in `@tsv` for
+     plain tab-separated rows, e.g.
+     `select(.class == "Query.node") | [.id, .dur_ms] | @tsv`.
 
 For a before/after comparison, run the same window on both engine builds
 (revert → `restart` → repeat) and compare `classes`/`breakdown` counts and

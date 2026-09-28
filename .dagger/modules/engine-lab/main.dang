@@ -538,7 +538,9 @@ type EngineLab {
     {"type":"op","id","kind","class","client","parent","parent_class",
     "outcome","start_ms","dur_ms","self_ms","children",...}; waits are
     {"type":"wait","waiter_class","target_class","reason","dur_ms",...} and
-    links {"type":"link","link",...}. Output is capped at `limit` lines.
+    links {"type":"link","link",...}. jq runs with -c -r: objects and arrays
+    print as compact JSON, strings print raw, so end a filter in `@tsv` or a
+    string for plain-text rows. Output is capped at `limit` lines.
   - `summary`: the capture summary again.
 
   `class`, `client` and `kind` filter ops in every view. Self time is an
@@ -584,8 +586,8 @@ type EngineLab {
     """
     buckets: Int! = 10,
     """
-    jq: the jq filter applied to each event, e.g.
-    'select(.class == "Query.node") | [.start_ms, .dur_ms]'.
+    jq: the jq filter applied to each event (jq -c -r), e.g.
+    'select(.class == "Query.node") | [.id, .start_ms, .dur_ms] | @tsv'.
     """
     filter: String! = ".",
     """
@@ -613,7 +615,9 @@ type EngineLab {
     if (view != "jq") {
       return wcprofRun(source, wcprofDump, ["-view", view, "-limit", toString(limit)] + args)
     }
-    let jqFlags = if (slurp) { "-c -s" } else { "-c" }
+    # -r prints string results raw, so filters ending in a string or @tsv
+    # read as plain text; with -c, objects and arrays stay compact JSON.
+    let jqFlags = if (slurp) { "-c -r -s" } else { "-c -r" }
     # The filter travels as an env var and the helper args as "$@", so no
     # user input is shell-quoted. Clipping happens in the container, so a
     # broad filter never ships the whole dump back as a string.
