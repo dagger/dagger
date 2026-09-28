@@ -40,6 +40,9 @@ func (a *Artifact) QueryCloud(ctx context.Context, arguments JSON, fields string
 	var response struct {
 		Node struct {
 			Artifacts struct {
+				Items []struct {
+					LoadError string
+				}
 				FilterURI struct {
 					Values []struct {
 						Value json.RawMessage
@@ -52,6 +55,7 @@ func (a *Artifact) QueryCloud(ctx context.Context, arguments JSON, fields string
 	err = client.Dagger().Do(ctx, &dagger.Request{
 		Query: `query($workspace: ID!, $path: String!, $uri: String!, $arguments: JSON!) {
 		 node(id: $workspace) { ... on Workspace { artifacts(include: [$path]) {
+		  items { loadError }
 		  filterUri(uri: $uri) { values(arguments: $arguments) { error { message values { name value } } value { ` + fields + ` } } }
 		 } } }
 		}`,
@@ -62,6 +66,15 @@ func (a *Artifact) QueryCloud(ctx context.Context, arguments JSON, fields string
 	}
 	results := response.Node.Artifacts.FilterURI.Values
 	if len(results) != 1 {
+		var loadErrors []string
+		for _, item := range response.Node.Artifacts.Items {
+			if item.LoadError != "" {
+				loadErrors = append(loadErrors, item.LoadError)
+			}
+		}
+		if len(loadErrors) > 0 {
+			return fmt.Errorf("load %s in cloud engine: %s", uri, strings.Join(loadErrors, "; "))
+		}
 		return fmt.Errorf("expected one result for %s, got %d", uri, len(results))
 	}
 	if results[0].Error != nil {
