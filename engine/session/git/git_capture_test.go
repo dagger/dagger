@@ -293,7 +293,7 @@ func TestCaptureGitStagesSelectedFilesInConstantGitInvocations(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(shimDir, "git"), []byte(
 		"#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$DAGGER_CAPTURE_GIT_LOG\"\nexec "+realGit+" \"$@\"\n"), 0o700))
 
-	capture := func(files int) (*fakeCaptureGitServer, []string, string, string, string) {
+	capture := func(files int) (*fakeCaptureGitServer, []string, string, string) {
 		repo, home, remote := initCaptureRepo(t)
 		for i := range files {
 			dir := filepath.Join(repo, "mnt", fmt.Sprintf("d%d", i%7))
@@ -307,14 +307,14 @@ func TestCaptureGitStagesSelectedFilesInConstantGitInvocations(t *testing.T) {
 		require.NoError(t, os.WriteFile(logPath, nil, 0o600))
 		srv := captureGit(t, repo, &CaptureGitPolicy{Include: []string{"mnt/**"}})
 		log := strings.Split(strings.TrimSpace(string(mustReadFile(t, logPath))), "\n")
-		return srv, log, repo, home, remote
+		return srv, log, home, remote
 	}
 	t.Setenv("DAGGER_CAPTURE_GIT_LOG", logPath)
 	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	small, smallLog, _, _, _ := capture(2)
+	small, smallLog, _, _ := capture(2)
 	require.Nil(t, small.metadata(t).GetError())
-	large, largeLog, _, home, remote := capture(200)
+	large, largeLog, home, remote := capture(200)
 	meta := large.metadata(t)
 	require.Nil(t, meta.GetError())
 	require.Equal(t, int32(202), meta.GetUntrackedFiles())
