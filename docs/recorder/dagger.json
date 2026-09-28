@@ -21,7 +21,7 @@
     },
     {
       "name": "wolfi",
-      "source": "../../modules/wolfi"
+      "source": "dagger.io/linux/wolfi@main"
     }
   ]
 }

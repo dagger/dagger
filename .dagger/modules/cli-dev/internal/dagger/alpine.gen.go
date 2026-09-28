@@ -11,7 +11,7 @@ import (
 )
 
 // An Alpine Linux configuration
-type Alpine struct { // alpine (../../../../../modules/alpine/main.go:85:6)
+type Alpine struct { // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L85)
 	query *querybuilder.Selection
 
 	arch   *string
@@ -27,7 +27,7 @@ func (r *Alpine) WithGraphQLQuery(q *querybuilder.Selection) *Alpine {
 }
 
 // The hardware architecture to build for
-func (r *Alpine) Arch(ctx context.Context) (string, error) { // alpine (../../../../../modules/alpine/main.go:89:2)
+func (r *Alpine) Arch(ctx context.Context) (string, error) { // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L89)
 	if r.arch != nil {
 		return *r.arch, nil
 	}
@@ -40,7 +40,7 @@ func (r *Alpine) Arch(ctx context.Context) (string, error) { // alpine (../../..
 }
 
 // The Alpine branch to download packages from
-func (r *Alpine) Branch(ctx context.Context) (string, error) { // alpine (../../../../../modules/alpine/main.go:91:2)
+func (r *Alpine) Branch(ctx context.Context) (string, error) { // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L91)
 	if r.branch != nil {
 		return *r.branch, nil
 	}
@@ -53,7 +53,7 @@ func (r *Alpine) Branch(ctx context.Context) (string, error) { // alpine (../../
 }
 
 // Build an Alpine Linux container
-func (r *Alpine) Container() *Container { // alpine (../../../../../modules/alpine/main.go:105:1)
+func (r *Alpine) Container() *Container { // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L105)
 	q := r.query.Select("container")
 
 	return &Container{
@@ -62,7 +62,7 @@ func (r *Alpine) Container() *Container { // alpine (../../../../../modules/alpi
 }
 
 // The distro to use
-func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (../../../../../modules/alpine/main.go:87:2)
+func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L87)
 	if r.distro != nil {
 		return *r.distro, nil
 	}
@@ -75,7 +75,7 @@ func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (
 }
 
 // Where to download additional keys from
-func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine (../../../../../modules/alpine/main.go:97:2)
+func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L97)
 	q := r.query.Select("extraKeyUrls")
 
 	var response []string
@@ -85,7 +85,7 @@ func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine
 }
 
 // Extra repositories to add to the package resolver
-func (r *Alpine) ExtraRepositories(ctx context.Context) ([]string, error) { // alpine (../../../../../modules/alpine/main.go:95:2)
+func (r *Alpine) ExtraRepositories(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L95)
 	q := r.query.Select("extraRepositories")
 
 	var response []string
@@ -144,7 +144,7 @@ func (r *Alpine) UnmarshalJSON(bs []byte) error {
 }
 
 // The APK packages to install
-func (r *Alpine) Packages(ctx context.Context) ([]string, error) { // alpine (../../../../../modules/alpine/main.go:93:2)
+func (r *Alpine) Packages(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L93)
 	q := r.query.Select("packages")
 
 	var response []string
@@ -166,35 +166,35 @@ type AlpineOpts struct {
 	//
 	// Hardware architecture to build for
 	//
-	Arch string // alpine (../../../../../modules/alpine/main.go:32:2)
+	Arch string // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L32)
 	//
 	// Alpine branch to download packages from
 	//
 	//
 	// Default: "edge"
-	Branch string // alpine (../../../../../modules/alpine/main.go:36:2)
+	Branch string // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L36)
 	//
 	// APK packages to install
 	//
-	Packages []string // alpine (../../../../../modules/alpine/main.go:39:2)
+	Packages []string // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L39)
 	//
 	// Extra repositories to add to the package resolver
 	//
-	ExtraRepositories []string // alpine (../../../../../modules/alpine/main.go:42:2)
+	ExtraRepositories []string // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L42)
 	//
 	// Extra keys needed to authenticate the extra repositories
 	//
-	ExtraKeyUrls []string // alpine (../../../../../modules/alpine/main.go:45:2)
+	ExtraKeyUrls []string // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L45)
 	//
 	// Alpine distribution to use
 	//
 	//
 	// Default: ALPINE
-	Distro AlpineDistro // alpine (../../../../../modules/alpine/main.go:50:2)
+	Distro AlpineDistro // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L50)
 }
 
 // An Alpine Linux configuration
-func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (../../../../../modules/alpine/main.go:29:1)
+func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L29)
 	q := r.query.Select("alpine")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `arch` optional argument
@@ -228,7 +228,7 @@ func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (../../../../../m
 	}
 }
 
-type AlpineDistro string // alpine (../../../../../modules/alpine/main.go:22:6)
+type AlpineDistro string // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L22)
 
 func (AlpineDistro) IsEnum() {}
 
@@ -277,8 +277,8 @@ func (v *AlpineDistro) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	AlpineDistroAlpine AlpineDistro = "ALPINE" // alpine (../../../../../modules/alpine/main.go:25:2)
+	AlpineDistroAlpine AlpineDistro = "ALPINE" // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L25)
 
-	AlpineDistroWolfi AlpineDistro = "WOLFI" // alpine (../../../../../modules/alpine/main.go:26:2)
+	AlpineDistroWolfi AlpineDistro = "WOLFI" // alpine (https://github.com/dagger/alpine/tree/0cbccf6115c57069e2aa3ef9b07133093f1a3246/main.go#L26)
 
 )
