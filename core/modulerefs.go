@@ -81,16 +81,20 @@ func ParseRefString(
 		}, nil
 	}
 
-	// First, we stat ref in case the mod path github.com/username is a local directory
-	if _, stat, err := statFS.Stat(ctx, refString); err != nil {
-		slog.Debug("parseRefString stat error", "error", err)
-	} else if stat.IsDir() {
-		return &ParsedRefString{
-			Kind: ModuleSourceKindLocal,
-			Local: &ParsedLocalRefString{
-				ModPath: refString,
-			},
-		}, nil
+	// A remote-looking ref can be a local directory. Missing paths are expected.
+	if _, exists, err := StatFSExists(ctx, statFS, refString); err != nil {
+		slog.Debug("parseRefString exists error", "error", err)
+	} else if exists {
+		if _, stat, err := statFS.Stat(ctx, refString); err != nil {
+			slog.Debug("parseRefString stat error", "error", err)
+		} else if stat.IsDir() {
+			return &ParsedRefString{
+				Kind: ModuleSourceKindLocal,
+				Local: &ParsedLocalRefString{
+					ModPath: refString,
+				},
+			}, nil
+		}
 	}
 
 	// Parse scheme and attempt to parse as git endpoint

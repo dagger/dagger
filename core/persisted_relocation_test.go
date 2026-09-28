@@ -294,12 +294,12 @@ func TestPersistedModuleObjectPayloadRelocation(t *testing.T) {
 	})
 }
 
-// TestPersistedActionPayloadRelocationKeepsNodeIndices relocates an action
-// group's declared row references and checks that the shared node table's
+// TestPersistedArtifactsPayloadRelocationKeepsNodeIndices relocates an artifact
+// selection's declared row references and checks that the shared node table's
 // local indices are left alone. A node index is a position inside one
 // payload's own table, not a cache row, so rewriting it would corrupt the
 // parent sharing the table encodes.
-func TestPersistedActionPayloadRelocationKeepsNodeIndices(t *testing.T) {
+func TestPersistedArtifactsPayloadRelocationKeepsNodeIndices(t *testing.T) {
 	env := newPersistedFamiliesTestEnv(t, "reloc-actions")
 	ctx, cache, srv := env.open(t)
 
@@ -314,13 +314,11 @@ func TestPersistedActionPayloadRelocationKeepsNodeIndices(t *testing.T) {
 	}
 
 	root := &ModTreeNode{Name: "root", Module: modA, OriginalModule: modA}
-	lint := &ModTreeNode{Name: "lint", Parent: root, Module: modA, IsCheck: true}
-	format := &ModTreeNode{Name: "format", Parent: root, Module: modA, IsCheck: true}
-	group := env.attach(t, ctx, cache, srv, "reloc-check-group", &CheckGroup{
-		Node:           root,
-		Checks:         []*Check{{Node: lint}, {Node: format}},
-		BoundWorkspace: wsA,
-	})
+	lint := &ModTreeNode{Name: "lint", Parent: root, Module: modA, Directives: []string{"check"}}
+	format := &ModTreeNode{Name: "format", Parent: root, Module: modA, Directives: []string{"check"}}
+	group := env.attach(t, ctx, cache, srv, "reloc-artifacts", &Artifacts{Entries: []*Artifact{
+		{Node: lint, Workspace: wsA}, {Node: format, Workspace: wsA},
+	}})
 	rec := coreRelocationRecord(t, ctx, cache, group)
 	before := recordJSON(t, rec)
 
@@ -332,10 +330,11 @@ func TestPersistedActionPayloadRelocationKeepsNodeIndices(t *testing.T) {
 				ModuleResultID         uint64 `json:"moduleResultID"`
 				OriginalModuleResultID uint64 `json:"originalModuleResultID"`
 			} `json:"nodes"`
-		} `json:"tree"`
-		Checks []struct {
-			NodeID int `json:"nodeID"`
-		} `json:"checks"`
+		} `json:"Tree"`
+		Entries []struct {
+			Node      int
+			Workspace uint64
+		}
 	}
 	require.NoError(t, json.Unmarshal(rec.Envelope.ObjectJSON, &original))
 	require.NotEmpty(t, original.Tree.Nodes)
@@ -352,11 +351,12 @@ func TestPersistedActionPayloadRelocationKeepsNodeIndices(t *testing.T) {
 	// Only rows are reported. No node table position appears here, which is
 	// what keeps the indices out of any mapping a receiving engine applies.
 	require.Equal(t, map[string]uint64{
-		"objectJSON.tree.nodes[0].moduleResultID":         ids["modA"],
-		"objectJSON.tree.nodes[0].originalModuleResultID": ids["modA"],
-		"objectJSON.tree.nodes[1].moduleResultID":         ids["modA"],
-		"objectJSON.tree.nodes[2].moduleResultID":         ids["modA"],
-		"objectJSON.boundWorkspaceResultID":               ids["wsA"],
+		"objectJSON.Tree.nodes[0].moduleResultID":         ids["modA"],
+		"objectJSON.Tree.nodes[0].originalModuleResultID": ids["modA"],
+		"objectJSON.Tree.nodes[1].moduleResultID":         ids["modA"],
+		"objectJSON.Tree.nodes[2].moduleResultID":         ids["modA"],
+		"objectJSON.Entries[0].Workspace":                 ids["wsA"],
+		"objectJSON.Entries[1].Workspace":                 ids["wsA"],
 	}, reloc.childIDs())
 
 	var relocated struct {
@@ -367,14 +367,14 @@ func TestPersistedActionPayloadRelocationKeepsNodeIndices(t *testing.T) {
 				ModuleResultID         uint64 `json:"moduleResultID"`
 				OriginalModuleResultID uint64 `json:"originalModuleResultID"`
 			} `json:"nodes"`
-		} `json:"tree"`
-		Checks []struct {
-			NodeID int `json:"nodeID"`
-		} `json:"checks"`
-		BoundWorkspaceResultID uint64 `json:"boundWorkspaceResultID"`
+		} `json:"Tree"`
+		Entries []struct {
+			Node      int
+			Workspace uint64
+		}
 	}
 	require.NoError(t, json.Unmarshal(out.Envelope.ObjectJSON, &relocated))
-	require.Equal(t, ids["wsB"], relocated.BoundWorkspaceResultID)
+	require.Equal(t, ids["wsB"], relocated.Entries[0].Workspace)
 	require.Len(t, relocated.Tree.Nodes, len(original.Tree.Nodes))
 	for i, node := range relocated.Tree.Nodes {
 		require.Equal(t, original.Tree.Nodes[i].Name, node.Name)
@@ -387,24 +387,23 @@ func TestPersistedActionPayloadRelocationKeepsNodeIndices(t *testing.T) {
 			require.Equal(t, ids["modB"], node.OriginalModuleResultID)
 		}
 	}
-	for i, check := range relocated.Checks {
-		require.Equal(t, original.Checks[i].NodeID, check.NodeID, "check %d still points at its own node", i)
-		require.NotZero(t, check.NodeID, "the node table position is a real index")
+	for i, check := range relocated.Entries {
+		require.Equal(t, original.Entries[i].Node, check.Node, "check %d still points at its own node", i)
+		require.NotZero(t, check.Node, "the node table position is a real index")
 	}
 
-	decodedTyped, err := (&CheckGroup{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, out.ResultID, out.Call), out.Envelope.ObjectJSON)
+	decodedTyped, err := (&Artifacts{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, out.ResultID, out.Call), out.Envelope.ObjectJSON)
 	require.NoError(t, err)
-	decoded, ok := decodedTyped.(*CheckGroup)
+	decoded, ok := decodedTyped.(*Artifacts)
 	require.True(t, ok)
-	require.Equal(t, ids["wsB"], persistedRowID(t, cache, decoded.BoundWorkspace))
-	require.Equal(t, "file:///b", decoded.BoundWorkspace.Self().Address, "the bound workspace is the B row's actual content")
-	require.Equal(t, ids["modB"], persistedRowID(t, cache, decoded.Node.Module))
-	require.Equal(t, "b", decoded.Node.Module.Self().NameField)
-	require.Len(t, decoded.Checks, 2)
-	require.Same(t, decoded.Node, decoded.Checks[0].Node.Parent, "the shared node table survives relocation")
-	require.Same(t, decoded.Node, decoded.Checks[1].Node.Parent)
-	require.Equal(t, "lint", decoded.Checks[0].Node.Name)
-	require.Equal(t, "format", decoded.Checks[1].Node.Name)
+	require.Equal(t, ids["wsB"], persistedRowID(t, cache, decoded.Entries[0].Workspace))
+	require.Equal(t, "file:///b", decoded.Entries[0].Workspace.Self().Address, "the bound workspace is the B row's actual content")
+	require.Equal(t, ids["modB"], persistedRowID(t, cache, decoded.Entries[0].Node.Parent.Module))
+	require.Equal(t, "b", decoded.Entries[0].Node.Parent.Module.Self().NameField)
+	require.Len(t, decoded.Entries, 2)
+	require.Same(t, decoded.Entries[0].Node.Parent, decoded.Entries[1].Node.Parent)
+	require.Equal(t, "lint", decoded.Entries[0].Node.Name)
+	require.Equal(t, "format", decoded.Entries[1].Node.Name)
 }
 
 // TestPersistedCoreStorageRolesAreClassified checks that the registered core

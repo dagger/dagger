@@ -23,6 +23,30 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+     */
+    public function compose(array $expertise): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('compose');
+        $innerQueryBuilder->setArgument('expertise', $expertise);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
+     *
+     * Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+     *
+     * A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
+     */
+    public function recompose(array $expertise): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('recompose');
+        $innerQueryBuilder->setArgument('expertise', $expertise);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The model the conversation is running against, after resolving any configured default.
      */
     public function model(): string

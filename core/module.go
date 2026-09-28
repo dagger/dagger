@@ -179,14 +179,6 @@ func argRequired(arg *FunctionArg) bool {
 	return true
 }
 
-// agentBaseArgName is the conventional name for an @agent middleware's base
-// argument, used only as a fallback when the actual LLM! argument can't be
-// resolved. The base is identified by *type* — a single required LLM! arg — not
-// by name, so authors may call it `base`, `llm`, etc. (hack/designs/workspace-agents.md §3). The
-// compose fold (AgentMiddlewareGroup.Compose) fills that argument with the running
-// accumulator explicitly.
-const agentBaseArgName = "base"
-
 // isCoreLLMArg reports whether an argument is of the core LLM type. Like
 // IsWorkspace, the SourceModuleName guard keeps it to the core LLM (functions
 // can't currently accept types from other modules, but be explicit anyway).
@@ -244,7 +236,7 @@ func validateGeneratorFunction(obj *ObjectTypeDef, fn *Function) error {
 	return nil
 }
 
-// validateAgentFunction enforces the @agent middleware contract (hack/designs/workspace-agents.md
+// validateAgentFunction enforces the @expertise contract (hack/designs/workspace-agents.md
 // §3): the function must return LLM! and must declare exactly one required
 // argument, an LLM! (the base the compose fold supplies, whatever it is
 // named). A non-LLM! return, a missing base, or any other required argument is
@@ -319,17 +311,6 @@ func (mod *Module) GetSource() *ModuleSource {
 		return nil
 	}
 	return mod.Source.Value.Self()
-}
-
-// The "context source" is the module used as the execution context for the module.
-// Usually it's simply the module source itself. But when using blueprints or
-// toolchains, it will point to the downstream module applying the toolchain,
-// not the toolchain itself.
-func (mod *Module) GetContextSource() *ModuleSource {
-	if !mod.ContextSource.Valid {
-		return nil
-	}
-	return mod.ContextSource.Value.Self()
 }
 
 func ImplementationScopedModule(
@@ -1386,6 +1367,12 @@ func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDe
 	if gqlFieldName(fn.Name) == "id" {
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 	}
+	if fn.IsCheck && fn.CheckReturnType.Self() == nil && fn.ReturnType.Self().Kind != TypeDefKindVoid &&
+		mod.Source.Valid && AfterVersion("v1.0.0-0").Contains(call.View(mod.Source.Value.Self().EngineVersion)) {
+		if obj.SourceModuleName == "" || fn.ReturnType.Self().ToType().Name() != "Check" {
+			return fmt.Errorf("check %s.%s must return Void", obj.Name, fn.Name)
+		}
+	}
 	if fn.IsUp {
 		if err := validateUpFunction(obj, fn); err != nil {
 			return err
@@ -1576,14 +1563,26 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 		if err != nil {
 			return updated, err
 		}
-		if !sameAttachedResult(returnType, fn.Self().ReturnType) {
+		returnTypes := []dagql.ObjectResult[*TypeDef]{returnType}
+		if fn.Self().IsCheck && fn.Self().CheckReturnType.Self() == nil {
+			checkType, err := SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withObject", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("Check")}},
+			})
+			if err != nil {
+				return updated, err
+			}
+			returnTypes = append(returnTypes, checkType)
+		}
+		for _, returnType := range returnTypes {
+			if sameAttachedResult(returnType, updated.Self().ReturnType) {
+				continue
+			}
 			returnTypeID, err := ResultIDInput(returnType)
 			if err != nil {
 				return updated, fmt.Errorf("namespace function return type id: %w", err)
 			}
 			if err := dag.Select(ctx, updated, &updated, dagql.Selector{
-				Field: "__withReturnType",
-				Args:  []dagql.NamedInput{{Name: "returnType", Value: returnTypeID}},
+				Field: "__withReturnType", Args: []dagql.NamedInput{{Name: "returnType", Value: returnTypeID}},
 			}); err != nil {
 				return updated, fmt.Errorf("namespace function return type: %w", err)
 			}

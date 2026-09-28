@@ -201,7 +201,8 @@ func TestEngineFlagHelp(t *testing.T) {
 		"shell":    shellCmd,
 	} {
 		help := renderHelp(t, cmd)
-		require.Contains(t, help, "--engine string", name)
+		// Artifact commands render typed flag values in upper case.
+		require.Regexp(t, `--engine (string|ENGINE)`, help, name)
 		require.Contains(t, help, "dagger help engine", name)
 		// The full catalog must not repeat in every command's usage message.
 		require.NotContains(t, help, "image+nerdctl://IMAGE", name)
@@ -250,6 +251,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger api query",
 		"dagger api session",
 		"dagger api with-session",
+		"dagger list",
 		"dagger call",
 		"dagger check",
 		"dagger core",
@@ -561,6 +563,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger api query",
 		"dagger api session",
 		"dagger api with-session",
+		"dagger list",
 		"dagger call",
 		"dagger check",
 		"dagger core",

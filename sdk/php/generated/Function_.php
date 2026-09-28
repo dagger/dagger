@@ -74,7 +74,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Returns the function with a flag indicating it is an agent middleware.
+     * Returns the function with a flag indicating it is a source of expertise.
      */
     public function withAgent(): Function_
     {

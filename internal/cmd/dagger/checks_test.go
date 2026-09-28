@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,55 +16,9 @@ func TestScaleOutFlagScopedToCheck(t *testing.T) {
 	require.Nil(t, version.Flags().Lookup("scale-out"))
 }
 
-func TestWriteCheckListWithGenerateChecks(t *testing.T) {
-	var out bytes.Buffer
-	err := writeCheckList(&out, []*CheckInfo{
-		{
-			Name:        "lint",
-			Description: "Run lint\nwith details",
-			Type:        "check",
-		},
-		{
-			Name:        "assets",
-			Description: "Generate assets.",
-			Type:        "generate",
-		},
-		{
-			Name: "empty",
-			Type: "check",
-		},
-	})
-	require.NoError(t, err)
-
-	text := out.String()
-	require.NotContains(t, text, "Name")
-	require.NotContains(t, text, "Type")
-	require.Regexp(t, `(?m)^lint\s+# Run lint$`, text)
-	require.Regexp(t, `(?m)^assets\s+# Did you "generate assets"\?$`, text)
-	require.Regexp(t, `(?m)^empty$`, text)
-	require.NotContains(t, text, "with details")
-}
-
-func TestWriteCheckListWithoutGenerateChecks(t *testing.T) {
-	var out bytes.Buffer
-	err := writeCheckList(&out, []*CheckInfo{
-		{
-			Name:        "lint",
-			Description: "Run lint",
-			Type:        "check",
-		},
-	})
-	require.NoError(t, err)
-
-	text := out.String()
-	require.NotContains(t, text, "Name")
-	require.NotContains(t, text, "Type")
-	require.Regexp(t, `(?m)^lint\s+# Run lint$`, text)
-}
-
 func TestValidateCheckSelection(t *testing.T) {
-	t.Run("unfiltered empty selection is allowed", func(t *testing.T) {
-		require.NoError(t, validateCheckSelection(nil, 0))
+	t.Run("empty selection fails even without a positional link", func(t *testing.T) {
+		require.ErrorContains(t, validateCheckSelection(nil, 0), "no checks selected")
 	})
 
 	t.Run("non-empty selection is allowed", func(t *testing.T) {

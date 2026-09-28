@@ -712,10 +712,6 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	remoteKey string,
 ) error {
 	clientMD := client.clientMetadata
-	loadModules := client.pendingWorkspaceLoad &&
-		clientMD != nil &&
-		clientMD.LoadWorkspaceModules &&
-		!clientMD.SkipWorkspaceModules
 	workspaceEnv, hasWorkspaceEnv := workspaceEnvFromClientMetadata(clientMD)
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
@@ -768,7 +764,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			// extra module). Clients that opted out of module loading (SDK
 			// codegen, client generators, internal tooling) would leak it
 			// into the calling session's output.
-			warnCompat := loadModules || (clientMD != nil && len(clientMD.ExtraModules) > 0)
+			warnCompat := client.autoLoadWorkspaceModules() || (clientMD != nil && len(clientMD.ExtraModules) > 0)
 			if warnCompat && (clientMD == nil || !clientMD.SuppressCompatWorkspaceWarning) {
 				msg := legacyWorkspaceCompatMessage(cwd, cfgPath)
 				console(ctx, msg)
@@ -828,10 +824,6 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 	client.workspace = coreWS
 
-	if !loadModules {
-		return nil
-	}
-
 	// User-level overrides merge over the repository config before any env
 	// overlay so that user-defined environments are selectable.
 	if overlay := coreWS.UserConfigOverlay(); overlay != nil {
@@ -841,7 +833,15 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	if hasWorkspaceEnv {
+	// Applying the env overlay needs the env to already exist. Config-editing
+	// commands (`dagger workspace config --env=X k v`, `dagger module install
+	// --env=X ./dep`) name an env they are about to create, and they do not
+	// auto-load workspace modules, so for them a missing dagger.toml or an
+	// undefined env is normal: skip the overlay rather than fail, and do not
+	// open an "applying env" span that would only be marked failed. Clients
+	// that auto-load modules still need the env to resolve, and every other
+	// overlay error (e.g. an unknown module alias) still fails for both.
+	if hasWorkspaceEnv && (workspace.HasEnv(wsConfig, workspaceEnv) || client.autoLoadWorkspaceModules()) {
 		if wsConfig == nil {
 			return fmt.Errorf("workspace env %q requires dagger.toml", workspaceEnv)
 		}
@@ -855,7 +855,8 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// --- Gather all modules to load ---
+	// Keep module definitions available for explicit Workspace API calls,
+	// including when automatic loading is disabled by -m core.
 	var pending []pendingModule
 
 	pending = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
@@ -1184,8 +1185,7 @@ func workspaceGitRefSelector(remote workspaceRemoteRef, supportsVersionQueries b
 // committed generated files don't exist yet, which loads only after its SDK
 // generator runs), or may have work to do for the modules that did load
 // (dagger check). The skipped modules' failure messages are returned so the
-// caller can surface them (e.g. GeneratorGroup.loadFailures, or the failed
-// check Workspace.checks stands each one up as). Genuine engine errors (batch
+// caller can surface them as failed check artifacts. Genuine engine errors (batch
 // resolution, arbitration, serving) stay fatal regardless.
 func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *clientRuntime, filter func([]pendingModule) []pendingModule, mode core.ModuleLoadMode) (loadFailures []core.ModuleLoadFailure, _ error) {
 	return srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, mode, nil)
@@ -1227,7 +1227,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 		kept := make([]pendingModule, 0, len(demand))
 		for _, mod := range demand {
 			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
-				loadFailures = append(loadFailures, moduleLoadFailure(mod, err, mode))
+				loadFailures = append(loadFailures, moduleLoadFailure(mod, err))
 				continue
 			}
 			kept = append(kept, mod)
@@ -1265,7 +1265,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 			client.recordFailedModule(load.mod, loadErr)
 			if mode.BestEffort() {
 				reportSkippedModule(ctx, moduleProgressName(load.mod), core.LoadFailureCause("", loadErr, mode))
-				loadFailures = append(loadFailures, moduleLoadFailure(load.mod, loadErr, mode))
+				loadFailures = append(loadFailures, moduleLoadFailure(load.mod, loadErr))
 				continue
 			}
 			if firstErr == nil {
@@ -1979,11 +1979,11 @@ func reportSkippedModule(ctx context.Context, name string, cause error) {
 // moduleLoadFailure is the API-facing record of a skipped module: its name
 // (matching the skipped-module span), its workspace directory (so generate
 // can tell whether the run regenerated it) and the described message.
-func moduleLoadFailure(mod pendingModule, err error, mode core.ModuleLoadMode) core.ModuleLoadFailure {
+func moduleLoadFailure(mod pendingModule, err error) core.ModuleLoadFailure {
 	return core.ModuleLoadFailure{
 		Name:    moduleProgressName(mod),
 		Dir:     mod.WorkspaceDir,
-		Message: core.DescribeLoadFailure(err, mode),
+		Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort),
 	}
 }
 

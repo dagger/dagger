@@ -277,7 +277,7 @@ entrypoint = true
 		{Function: "fail-multi", Fail: true},
 		{Name: "fail-multi-noexpand", Function: "fail-multi", Fail: true, NoExpand: true},
 		{Name: "test-summary-check", Function: "test-summary", Check: true, NoExpand: true, Fail: true, DBTest: testSummaryDB, OutputTest: testSummaryOutput},
-		{Name: "test-summary-call", Function: "test-summary", NoExpand: true, Fail: true, DBTest: testSummaryDB, OutputTest: testSummaryOutput},
+		{Name: "test-summary-call", Function: "test-summary", NoExpand: true, DBTest: testSummaryDB, OutputTest: testSummaryOutput},
 
 		// Used to be marked as flaky
 		{Function: "cached-execs"},

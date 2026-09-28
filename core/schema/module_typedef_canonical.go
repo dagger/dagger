@@ -20,6 +20,9 @@ func (s *moduleSchema) functionReturnType(
 	fn *core.Function,
 	_ struct{},
 ) (dagql.ObjectResult[*core.TypeDef], error) {
+	if call := dagql.CurrentCall(ctx); call != nil && !AfterVersion("v1.0.0-0").Contains(call.View) && fn.CheckReturnType.Self() != nil {
+		return fn.CheckReturnType, nil
+	}
 	return fn.ReturnType, nil
 }
 

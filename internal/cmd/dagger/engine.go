@@ -22,6 +22,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -102,6 +103,39 @@ func withEngine(
 	ctx context.Context,
 	params client.Params,
 	fn runClientCallback,
+) error {
+	return withEngineAction(ctx, "", params, fn)
+}
+
+// Metadata discovery can run before Cobra has parsed the full command. Give it
+// its own frontend and exporters, then restore the execution session's state.
+func withEngineMetadata(ctx context.Context, action string, params client.Params, fn runClientCallback) error {
+	oldFrontend, oldOpts := Frontend, opts
+	oldProgress, oldHasTTY := progress, hasTTY
+	oldSkip := skipSharedTelemetryExporters
+	defer func() {
+		Frontend, opts = oldFrontend, oldOpts
+		progress, hasTTY = oldProgress, oldHasTTY
+		skipSharedTelemetryExporters = oldSkip
+	}()
+
+	configureProgressOptions()
+	opts.Verbosity = dagui.HideCompletedVerbosity + verbose - quiet
+	opts.OpenWeb = false
+	opts.NoExit = false
+	opts.DotOutputFilePath = ""
+	skipSharedTelemetryExporters = true
+	if err := resolveProgressFrontend(); err != nil {
+		return err
+	}
+	return withEngineAction(ctx, action, params, fn)
+}
+
+func withEngineAction(
+	ctx context.Context,
+	action string,
+	params client.Params,
+	fn runClientCallback,
 ) (rerr error) {
 	if err := applyWorkspaceClientParams(&params); err != nil {
 		return err
@@ -126,6 +160,11 @@ func withEngine(
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+		if action != "" {
+			var span trace.Span
+			ctx, span = Tracer().Start(ctx, action, telemetry.Encapsulate())
+			defer telemetry.EndWithCause(span, &rerr)
+		}
 
 		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 			if opts.Debug {
@@ -353,7 +392,7 @@ func applyWorkspaceClientParams(params *client.Params) error {
 
 // skipSharedTelemetryExporters, when set, makes engineTelemetryConfig leave out
 // the process-wide OTLP exporter singletons (Dagger Cloud + the OTEL_* "Detect"
-// exporters). It is toggled by withEngineSilent for internal plumbing sessions;
+// exporters). It is toggled by preparation sessions;
 // see engineTelemetryConfig for why.
 var skipSharedTelemetryExporters bool
 
@@ -366,8 +405,7 @@ var skipSharedTelemetryExporters bool
 // tore them down would leave them dead for the real command that runs next in
 // the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
 // telemetry warnings (e.g. the preflight session for a dynamic SDK command).
-// Such sessions render to a discard frontend and have no reason to export to
-// Cloud, so they simply skip the shared exporters.
+// Preparation sessions use only their own frontend exporters.
 func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes) {
 	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
 }

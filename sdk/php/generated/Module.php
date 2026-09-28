@@ -23,6 +23,20 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     }
 
     /**
+     * The source used to resolve contextual files and directories, when different from source.
+     */
+    public function contextSource(): ?ModuleSource
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('contextSource');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\ModuleSource::class, new \Dagger\Id((string)$id), 'ModuleSource');
+    }
+
+    /**
      * Forces evaluation of the module, including any loading into the engine and associated validation.
      */
     public function sync(): Module
@@ -30,65 +44,6 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         $id = $this->queryLeaf($leafQueryBuilder, 'sync');
         return $this->client->loadObjectFromId(\Dagger\Module::class, new \Dagger\Id((string)$id), 'Module');
-    }
-
-    /**
-     * Return all checks defined by the module
-     */
-    public function checks(?array $include = null, ?bool $noGenerate = null): CheckGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $noGenerate) {
-        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
-        }
-        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return the check defined by the module with the given name. Must match to exactly one check.
-     */
-    public function check(string $name): Check
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('check');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all generators defined by the module
-     */
-    public function generators(?array $include = null): GeneratorGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all services defined by the module
-     */
-    public function services(?array $include = null): UpGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return the generator defined by the module with the given name. Must match to exactly one generator.
-     */
-    public function generator(string $name): Generator
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generator');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

@@ -623,3 +623,28 @@ func TestCurrentTypeDefsReturnAllTypesAfterSessionRelease(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, len(afterRelease), 0)
 }
+
+func TestWorkspaceAddressViews(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID: "address-view-client", SessionID: "address-view-session",
+	})
+	server := &currentTypeDefsTestServer{}
+	base, err := NewCoreSchemaBase(ctx, server)
+	require.NoError(t, err)
+	for _, view := range []string{"v0.21.5", "v1.0.0"} {
+		t.Run(view, func(t *testing.T) {
+			dag, err := base.Fork(ctx, core.NewRoot(server), call.View(view))
+			require.NoError(t, err)
+			var address dagql.ObjectResult[*core.Address]
+			err = dag.Select(ctx, dag.Root(), &address, dagql.Selector{
+				Field: "address", View: dag.View, Args: []dagql.NamedInput{{Name: "value", Value: dagql.String("provider:base")}},
+			})
+			require.NoError(t, err)
+			require.Equal(t, view == "v1.0.0", address.Self().ExternalOnly)
+		})
+	}
+}

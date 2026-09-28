@@ -49,7 +49,7 @@ func (s *workspaceSchema) workspacePrimaryModules(
 	return mods, failures, err
 }
 
-// workspaceOverlayModules loads the workspace modules that the workspace's
+// workspaceOverlayModulesWithLoadFailures loads the workspace modules that the workspace's
 // pending overlay affects, resolving their source through the overlay instead
 // of the host checkout.
 //
@@ -57,7 +57,7 @@ func (s *workspaceSchema) workspacePrimaryModules(
 // workspace detection) are a snapshot of the on-disk workspace: an agent that
 // edits a module's source, or installs a module by staging a dagger.toml edit,
 // cannot see its own work when the conversation is recomposed
-// (Workspace.agents). This resolves the affected entries from
+// through artifact agent functions. This resolves the affected entries from
 // workspaceOverlayRootfs, which is host + the overlay's changeset, so the
 // self-repair loop (edit module -> reload -> new behavior) closes fully
 // in-session. The resulting module identity is keyed on the overlay directory's
@@ -71,21 +71,10 @@ func (s *workspaceSchema) workspacePrimaryModules(
 // from their own tree, even without an overlay.
 //
 // Known limitations of the live overlay path, deliberate for now:
-//   - an entry REMOVED from dagger.toml in the overlay still resolves through
-//     the served module: this only ever adds or replaces.
 //   - for live workspaces, legacy +defaultPath entries (entry.LegacyDefaultPath)
 //     are left to the served path, whose host-ref based context resolution has
 //     no overlay equivalent. Value workspaces load them here, with their own
 //     tree as the +defaultPath context (see workspaceOverlayContextSource).
-func (s *workspaceSchema) workspaceOverlayModules(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Workspace],
-	include []string,
-) ([]overlayModule, error) {
-	loaded, _, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, core.ModuleLoadStrict)
-	return loaded, err
-}
-
 func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -112,15 +101,9 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	// suspect; otherwise only the entries whose source tree was edited are.
 	configTouched := ws.IsValueWorkspace() || ws.OverlayPathTouched(configFile)
 
-	cfg, err := readWorkspaceConfig(ctx, ws)
+	cfg, err := workspaceEffectiveConfig(ctx, ws)
 	if err != nil {
 		return nil, nil, err
-	}
-	if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
-		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
-		if err != nil {
-			return nil, nil, err
-		}
 	}
 	if len(cfg.Modules) == 0 {
 		return nil, nil, nil
@@ -184,7 +167,7 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 			if !mode.BestEffort() {
 				return nil, nil, err
 			}
-			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, mode)}
+			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort)}
 			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
 				failure.Dir = filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 			}

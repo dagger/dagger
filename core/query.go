@@ -98,7 +98,7 @@ type Server interface {
 	// its patterns name ("module" or "module:item"), empty or unrecognized
 	// loads all. In a best-effort mode, modules that fail to load are skipped with a
 	// warning instead of failing the operation, and their failure messages are
-	// returned for the caller to surface (e.g. GeneratorGroup.loadFailures) —
+	// returned for the caller to surface (e.g. failed module artifacts) —
 	// for operations like generate that may be exactly what repairs the module.
 	EnsureWorkspaceModules(ctx context.Context, include []string, mode ModuleLoadMode) (loadFailures []ModuleLoadFailure, _ error)
 

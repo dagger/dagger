@@ -2,28 +2,20 @@ package core
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	telemetry "github.com/dagger/otel-go"
-	"github.com/dagger/querybuilder"
 
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type ModTreeNode struct {
+	RootValue   dagql.AnyObjectResult
 	Parent      *ModTreeNode
 	Name        string
 	Description string
@@ -33,10 +25,8 @@ type ModTreeNode struct {
 	// This original module is the one in which the node has been defined.
 	OriginalModule dagql.ObjectResult[*Module]
 	Type           dagql.ObjectResult[*TypeDef]
-	IsCheck        bool
-	IsGenerator    bool
-	IsUp           bool
-	IsAgent        bool
+	Directives     []string
+	types          map[string]dagql.ObjectResult[*TypeDef]
 
 	// WorkspaceEntrypoint is set on the module root when its targets are
 	// exposed without a module prefix. Path retains the qualified identity.
@@ -63,7 +53,33 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 	if err != nil {
 		return nil, err
 	}
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defaults, err := q.DefaultDeps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	types := map[string]dagql.ObjectResult[*TypeDef]{}
+	// Discover core fields in the caller's view, including fields added after
+	// the module's authored version. Execution still uses the module's deps.
+	for _, dep := range slices.Concat(main.Deps.Mods(), defaults.Mods()) {
+		defs, err := dep.TypeDefs(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+		for _, def := range defs {
+			if def.Self().AsObject.Valid {
+				types[def.Self().AsObject.Value.Self().Name] = def
+			}
+		}
+	}
+	for _, def := range main.ObjectDefs {
+		types[def.Self().AsObject.Value.Self().Name] = def
+	}
 	return &ModTreeNode{
+		types:          types,
 		DagqlServer:    srv,
 		Module:         mod,
 		OriginalModule: mod,
@@ -72,602 +88,8 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 	}, nil
 }
 
-func (node *ModTreeNode) Run(
-	ctx context.Context,
-	// should return true if that's a leaf we need to execute
-	// for instance if we want to run a check, return true if IsCheck is true
-	isLeaf func(*ModTreeNode) bool,
-	// run the right function on the leaf. For instance run as a check, or run as a generator
-	// clientMetadata is used to know if we want to try to scale out
-	// this callback is used to keep this function generic and allow to return different values
-	runLeaf func(context.Context, *ModTreeNode, *engine.ClientMetadata) error,
-	include, exclude []string,
-) (rerr error) {
-	clientMD, _ := engine.ClientMetadataFromContext(ctx)
-
-	if isLeaf(node) {
-		return runLeaf(ctx, node, clientMD)
-	}
-
-	children, err := node.Children(ctx)
-	if err != nil {
-		return err
-	}
-	jobs := parallel.New().WithTracing(false)
-	for _, child := range children {
-		// FIXME: filtering uses `node` instead of `child` - should match against the child being iterated
-		if len(include) > 0 {
-			if match, err := node.Match(ctx, include); err != nil {
-				return err
-			} else if !match {
-				continue
-			}
-		}
-		if len(exclude) > 0 {
-			if match, err := node.Match(ctx, exclude); err != nil {
-				return err
-			} else if match {
-				continue
-			}
-		}
-		jobs = jobs.WithJob(child.Name, func(ctx context.Context) error {
-			return child.Run(ctx, isLeaf, runLeaf, nil, nil)
-		})
-	}
-	return jobs.Run(ctx) // don't suppress the error. That can be handled by the top-level caller if necessary
-}
-
-func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
-	return node.runAsCheck(ctx,
-		func(n *ModTreeNode) bool { return n.IsCheck },
-		func(n *ModTreeNode, ctx context.Context) (bool, error) {
-			return node.tryRunCheckScaleOut(ctx)
-		},
-		func(n *ModTreeNode, ctx context.Context) error {
-			return n.runCheckLocally(ctx)
-		},
-		(*ModTreeNode).CommandName,
-		include, exclude)
-}
-
-func (node *ModTreeNode) RunGeneratorAsCheck(ctx context.Context, include, exclude []string) error {
-	return node.runAsCheck(ctx,
-		func(n *ModTreeNode) bool { return n.IsGenerator },
-		func(n *ModTreeNode, ctx context.Context) (bool, error) {
-			return n.tryRunGeneratorAsCheckScaleOut(ctx)
-		},
-		func(n *ModTreeNode, ctx context.Context) error {
-			return n.runGeneratorAsCheckLocally(ctx)
-		},
-		func(n *ModTreeNode) string { return generateCheckNode(n).CommandName() },
-		include, exclude)
-}
-
-// runAsCheck runs a leaf node as a check, with telemetry span and optional scale-out.
-// checkName names the span, which has to be the name Check.Name lists the check
-// under: the frontends build the checks report from it.
-func (node *ModTreeNode) runAsCheck(
-	ctx context.Context,
-	isLeaf func(*ModTreeNode) bool,
-	tryScaleOut func(*ModTreeNode, context.Context) (bool, error),
-	runLocally func(*ModTreeNode, context.Context) error,
-	checkName func(*ModTreeNode) string,
-	include, exclude []string,
-) error {
-	return node.Run(ctx,
-		isLeaf,
-		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
-			// Try scale-out if enabled (will be false for scaled-out sessions)
-			if clientMD != nil && clientMD.EnableCloudScaleOut {
-				if ok, err := tryScaleOut(n, ctx); ok {
-					return err
-				}
-			}
-			name := checkName(n)
-			ctx, span := Tracer(ctx).Start(ctx, name,
-				trace.WithAttributes(
-					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-					attribute.String(telemetry.CheckNameAttr, name),
-				),
-			)
-			defer func() {
-				span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
-				telemetry.EndWithCause(span, &rerr)
-			}()
-			return runLocally(n, ctx)
-		},
-		include, exclude)
-}
-
-func (node *ModTreeNode) runGeneratorAsCheckLocally(ctx context.Context) error {
-	changes, err := node.runGeneratorLocally(ctx)
-	if err != nil {
-		return err
-	}
-	if changes.Self() == nil {
-		return nil
-	}
-	empty, err := changes.Self().IsEmpty(ctx)
-	if err != nil {
-		return err
-	}
-	if !empty {
-		return fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
-			node.PathString(), node.PathString())
-	}
-	return nil
-}
-
-func (node *ModTreeNode) tryRunGeneratorAsCheckScaleOut(ctx context.Context) (_ bool, rerr error) {
-	q, err := CurrentQuery(ctx)
-	if err != nil {
-		return true, err
-	}
-
-	cloudClient, useCloud, err := q.CloudEngineClient(ctx,
-		node.RootAddress(),
-		node.PathString(),
-		nil,
-	)
-	if err != nil {
-		return true, fmt.Errorf("engine-to-engine connect: %w", err)
-	}
-	if !useCloud {
-		return false, nil
-	}
-	defer func() {
-		rerr = errors.Join(rerr, cloudClient.Close())
-	}()
-
-	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
-	if err != nil {
-		return true, err
-	}
-
-	query = query.Select("generator").Arg("name", node.moduleLocalPathString())
-	query = query.Select("run")
-	query = query.Select("isEmpty")
-
-	var empty bool
-	if err := query.Bind(&empty).Execute(ctx); err != nil {
-		return true, err
-	}
-
-	if !empty {
-		return true, fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
-			node.PathString(), node.PathString())
-	}
-
-	return true, nil
-}
-
-func (node *ModTreeNode) runCheckLocally(ctx context.Context) error {
-	var status dagql.AnyResult
-	if err := node.DagqlValue(ctx, &status); err != nil {
-		return err
-	}
-	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](status); ok {
-		// If the check returns a syncable type, sync it
-		srv := node.DagqlServer
-		if syncField, has := obj.ObjectType().FieldSpec("sync", srv.View); has {
-			if !syncField.Args.HasRequired(srv.View) {
-				if err := srv.Select(
-					dagql.WithNonInternalTelemetry(ctx),
-					obj,
-					&status,
-					dagql.Selector{Field: "sync"},
-				); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr error) {
-	q, err := CurrentQuery(ctx)
-	if err != nil {
-		return true, err
-	}
-
-	cloudClient, useCloud, err := q.CloudEngineClient(ctx,
-		node.RootAddress(),
-		node.PathString(),
-		nil,
-	)
-	if err != nil {
-		return true, fmt.Errorf("engine-to-engine connect: %w", err)
-	}
-	if !useCloud {
-		return false, nil
-	}
-	defer func() {
-		rerr = errors.Join(rerr, cloudClient.Close())
-	}()
-
-	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
-	if err != nil {
-		return true, err
-	}
-
-	query = query.Select("check").Arg("name", node.moduleLocalPathString())
-	query = query.Select("run")
-	query = query.Select("error")
-	query = query.Select("id")
-
-	var errID string
-	if err := query.Bind(&errID).Execute(ctx); err != nil {
-		return true, err
-	}
-
-	if errID != "" {
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return true, err
-		}
-		var idp call.ID
-		if err := idp.Decode(errID); err != nil {
-			return true, err
-		}
-		errObj, err := dagql.NewID[*Error](&idp).Load(ctx, srv)
-		if err != nil {
-			return true, err
-		}
-		return true, errObj.Self()
-	}
-
-	return true, nil
-}
-
-// ServiceNameAttr is the telemetry attribute key for the service name.
-// Canonically defined in engine/telemetryattrs (see the note there about the
-// external github.com/dagger/otel-go package); aliased here for the existing
-// callers.
+// ServiceNameAttr identifies the service displayed by the frontend.
 const ServiceNameAttr = telemetryattrs.ServiceNameAttr
-
-// PrepareUp opens the service's display span and evaluates the +up function
-// beneath it, returning the prepared service without starting anything. The
-// caller decides when (and whether) to Start it — UpGroup.Run evaluates every
-// service first and refuses to start any of them on a host-port collision.
-//
-// The evaluation deliberately happens beneath the display span: the API spans
-// it creates are where dagui routes the service's stdio, so this is what puts
-// the service's log stream under its own row in `dagger up`. The display span
-// stays open until Start or Abort ends it.
-func (node *ModTreeNode) PrepareUp(ctx context.Context, portMappings []PortForward) (_ *preparedUp, rerr error) {
-	if !node.IsUp {
-		return nil, fmt.Errorf("%s is not a service function", node.PathString())
-	}
-	ctx, span := Tracer(ctx).Start(ctx, node.CommandName(),
-		trace.WithAttributes(
-			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-			attribute.String(ServiceNameAttr, node.CommandName()),
-		),
-	)
-	defer func() {
-		if rerr != nil {
-			telemetry.EndWithCause(span, &rerr)
-		}
-	}()
-
-	// Evaluate the +up function to get the Service
-	var svcResult dagql.ObjectResult[*Service]
-	if err := node.DagqlValue(ctx, &svcResult); err != nil {
-		return nil, err
-	}
-
-	// Collect the service's host ports: the explicit mappings' host side, or
-	// the container's exposed ports tunneled 1:1.
-	var hostPorts []upHostPort
-	if len(portMappings) > 0 {
-		hostPorts = make([]upHostPort, 0, len(portMappings))
-		for _, pf := range portMappings {
-			hostPorts = append(hostPorts, upHostPort{
-				port:     pf.FrontendOrBackendPort(),
-				protocol: pf.Protocol,
-			})
-		}
-	} else if svc := svcResult.Self(); svc != nil && svc.Container.Self() != nil {
-		hostPorts = make([]upHostPort, 0, len(svc.Container.Self().Ports))
-		for _, p := range svc.Container.Self().Ports {
-			hostPorts = append(hostPorts, upHostPort{
-				port:     p.Port,
-				protocol: p.Protocol,
-			})
-		}
-	}
-
-	// Update the display span name with port info.
-	if len(hostPorts) > 0 {
-		portStrs := make([]string, 0, len(hostPorts))
-		if len(portMappings) > 0 {
-			for _, pf := range portMappings {
-				portStrs = append(portStrs, fmt.Sprintf(":%d→%d", pf.FrontendOrBackendPort(), pf.Backend))
-			}
-		} else {
-			for _, p := range hostPorts {
-				portStrs = append(portStrs, fmt.Sprintf(":%d", p.port))
-			}
-		}
-		span.SetName(fmt.Sprintf("%s %s", node.CommandName(), strings.Join(portStrs, ", ")))
-	}
-
-	return &preparedUp{
-		node:         node,
-		span:         span,
-		svc:          svcResult,
-		portMappings: portMappings,
-		hostPorts:    hostPorts,
-	}, nil
-}
-
-// preparedUp is a service that has been evaluated beneath its own display
-// span and is ready to start: PrepareUp's output, Start's receiver. Its
-// display span stays open until exactly one of Start or Abort runs.
-type preparedUp struct {
-	node         *ModTreeNode
-	span         trace.Span
-	svc          dagql.ObjectResult[*Service]
-	portMappings []PortForward
-	hostPorts    []upHostPort
-}
-
-func (p *preparedUp) Name() string {
-	return p.node.CommandName()
-}
-
-// Abort ends the display span without starting the service — the group's
-// answer when a sibling failed to evaluate or the port-collision verdict
-// refused the whole group.
-func (p *preparedUp) Abort(err error) {
-	telemetry.EndWithCause(p.span, &err)
-}
-
-// runUpStartResult is the result of starting a single service.
-// It contains everything needed to display status and clean up after ctx cancellation.
-type runUpStartResult struct {
-	ReadySpan trace.Span
-}
-
-// Start creates the host tunnel, starts the service, and returns immediately
-// once it is healthy — the caller is responsible for blocking on ctx.Done()
-// afterwards. It runs beneath the display span PrepareUp opened and ends it on
-// return; the returned ReadySpan (the `ready <url>` marker) stays open until
-// the caller ends it at shutdown, keeping the display row visibly live.
-func (p *preparedUp) Start(ctx context.Context) (_ *runUpStartResult, rerr error) {
-	ctx = trace.ContextWithSpan(ctx, p.span)
-	defer func() {
-		telemetry.EndWithCause(p.span, &rerr)
-	}()
-
-	// Set up the host tunnel
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var hostSvc dagql.Result[*Service]
-	svcID, err := p.svc.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get service ID: %w", err)
-	}
-	tunnelArgs := []dagql.NamedInput{
-		{Name: "service", Value: dagql.NewID[*Service](svcID)},
-	}
-	if len(p.portMappings) > 0 {
-		// Use explicit port mappings instead of native 1:1 tunneling.
-		portInputs := make([]dagql.InputObject[PortForward], len(p.portMappings))
-		for i, pf := range p.portMappings {
-			inputMap := map[string]any{
-				"backend": pf.Backend,
-			}
-			if pf.Frontend != nil {
-				inputMap["frontend"] = *pf.Frontend
-			}
-			if pf.Protocol != "" {
-				inputMap["protocol"] = string(pf.Protocol)
-			}
-			portInputAny, err := (dagql.InputObject[PortForward]{}).Decoder().DecodeInput(inputMap)
-			if err != nil {
-				return nil, fmt.Errorf("decode host tunnel port forward input: %w", err)
-			}
-			portInput, ok := portInputAny.(dagql.InputObject[PortForward])
-			if !ok {
-				return nil, fmt.Errorf("decode host tunnel port forward input: unexpected input %T", portInputAny)
-			}
-			portInputs[i] = portInput
-		}
-		tunnelArgs = append(tunnelArgs, dagql.NamedInput{
-			Name:  "ports",
-			Value: dagql.ArrayInput[dagql.InputObject[PortForward]](portInputs),
-		})
-	} else {
-		tunnelArgs = append(tunnelArgs, dagql.NamedInput{Name: "native", Value: dagql.Boolean(true)})
-	}
-	// Select non-internal: dagui routes the service's stdio to the most
-	// recent creator span for its call digest, and the service ID load
-	// inside host.tunnel presents exactly such a span. Server.Select would
-	// mark the tunnel span internal (it's an engine-side call), and internal
-	// spans block the log roll-up walk — which would strand the service's
-	// stdio beneath machinery instead of rolling it up into the service's
-	// display row (the span PrepareUp opened, see above).
-	err = srv.Select(dagql.WithNonInternalTelemetry(ctx), srv.Root(), &hostSvc,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "tunnel",
-			Args:  tunnelArgs,
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create host tunnel: %w", err)
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	hostSvcDig, err := hostSvc.ContentPreferredDigest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get host service digest: %w", err)
-	}
-	runningSvc, err := svcs.Start(ctx, hostSvcDig, hostSvc.Self(), true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start service: %w", err)
-	}
-
-	// Build URL list from the running service's actual ports.
-	var urls []string
-	for _, port := range runningSvc.Ports {
-		scheme := "http"
-		if port.Port == 443 {
-			scheme = "https"
-		}
-		urls = append(urls, fmt.Sprintf("%s://localhost:%d", scheme, port.Port))
-	}
-
-	// Stamp the URLs on the display span itself: it ends right below, and the
-	// end export delivers them, so the TUI can show where to point a browser
-	// on the service's own collapsed row (see idtui's renderStepTitle).
-	p.span.SetAttributes(attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls))
-
-	// Create a "ready" child span visible in the TUI. It stays open while the
-	// service runs, which also keeps the display row's rolled-up logs live.
-	readyName := "ready"
-	if len(urls) > 0 {
-		readyName = "ready " + strings.Join(urls, " ")
-	}
-	_, readySpan := Tracer(ctx).Start(ctx, readyName,
-		trace.WithAttributes(
-			attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls),
-		),
-	)
-
-	return &runUpStartResult{ReadySpan: readySpan}, nil
-}
-
-func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (dagql.ObjectResult[*Changeset], error) {
-	var changes dagql.ObjectResult[*Changeset]
-	err := node.Run(ctx,
-		func(n *ModTreeNode) bool { return n.IsGenerator },
-		func(ctx context.Context, n *ModTreeNode, _ *engine.ClientMetadata) (rerr error) {
-			ctx, span := Tracer(ctx).Start(ctx, node.CommandName(),
-				trace.WithAttributes(
-					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-					attribute.String(telemetry.GeneratorNameAttr, node.CommandName()),
-				),
-			)
-			defer telemetry.EndWithCause(span, &rerr)
-			localChanges, err := n.runGeneratorLocally(ctx)
-			changes = localChanges
-			return err
-		},
-		include, exclude)
-	return changes, err
-}
-
-func (node *ModTreeNode) runGeneratorLocally(ctx context.Context) (dagql.ObjectResult[*Changeset], error) {
-	var changes dagql.ObjectResult[*Changeset]
-	if err := node.DagqlValue(ctx, &changes); err != nil {
-		return dagql.ObjectResult[*Changeset]{}, err
-	}
-	// DagqlValue only grabs the lazy Changeset; force it here, inside the
-	// generator's span, so the underlying exec runs (and any failure attributes)
-	// here rather than later during the merge. Generators already run in
-	// parallel and the changeset must sync eventually, so nothing is lost.
-	if err := changes.Self().Sync(ctx); err != nil {
-		return dagql.ObjectResult[*Changeset]{}, err
-	}
-	return changes, nil
-}
-
-// buildScaleOutModuleQuery builds a query to load a module for scale-out execution.
-// It handles all module source kinds (Local, Git, Dir) and returns a query
-// positioned at the "asModule" selection, ready for check/generator-specific queries.
-func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection) (*querybuilder.Selection, error) {
-	mod := node.Module.Self()
-	if mod == nil {
-		return nil, fmt.Errorf("build scale-out module query: missing module")
-	}
-	modSrc := mod.Source.Value.Self()
-	switch modSrc.Kind {
-	case ModuleSourceKindLocal:
-		localPath, err := modSrc.LocalContextDirectoryPath()
-		if err != nil {
-			return nil, err
-		}
-		query = query.Select("moduleSource").
-			Arg("refString", filepath.Join(
-				localPath,
-				modSrc.SourceRootSubpath,
-			))
-	case ModuleSourceKindGit:
-		query = query.Select("moduleSource").
-			Arg("refString", modSrc.AsString()).
-			Arg("refPin", modSrc.Git.Commit).
-			Arg("requireKind", modSrc.Kind)
-	case ModuleSourceKindDir:
-		dirID, err := modSrc.DirSrc.OriginalContextDir.ID()
-		if err != nil {
-			return nil, fmt.Errorf("get dir ID: %w", err)
-		}
-		dirIDEnc, err := dirID.Encode()
-		if err != nil {
-			return nil, fmt.Errorf("encode dir ID: %w", err)
-		}
-		query = query.Select("node").Arg("id", dirIDEnc).InlineFragment("Directory")
-		query = query.Select("asModuleSource").
-			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
-	}
-	query = query.Select("asModule")
-	if mod.Name() != "" && mod.Name() != modSrc.ModuleName {
-		query = query.Arg("legacyNameOverride", mod.Name())
-	}
-	if mod.LegacyDefaultPath {
-		query = query.Arg("legacyDefaultPath", true)
-	}
-	if mod.ContextSource.Valid {
-		contextSrc := mod.ContextSource.Value.Self()
-		if contextSrc != nil {
-			if contextSrc.Kind == ModuleSourceKindLocal {
-				if _, err := contextSrc.LocalContextDirectoryPath(); err != nil {
-					return nil, err
-				}
-			}
-			contextRef := contextSrc.AsString()
-			if contextRef != "" && (contextRef != modSrc.AsString() || contextSrc.Pin() != modSrc.Pin()) {
-				query = query.Arg("defaultPathContextSourceRef", contextRef)
-				if contextPin := contextSrc.Pin(); contextPin != "" {
-					query = query.Arg("defaultPathContextSourcePin", contextPin)
-				}
-			}
-		}
-	}
-	if len(mod.WorkspaceConfig) > 0 {
-		workspaceConfigJSON, err := json.Marshal(mod.WorkspaceConfig)
-		if err != nil {
-			return nil, fmt.Errorf("encode workspace config: %w", err)
-		}
-		query = query.Arg("legacyWorkspaceConfigJson", string(workspaceConfigJSON))
-		if mod.DefaultsFromDotEnv {
-			query = query.Arg("legacyDefaultsFromDotEnv", true)
-		}
-	}
-	if len(mod.LegacyArgCustomizations) > 0 {
-		customizationsJSON, err := json.Marshal(mod.LegacyArgCustomizations)
-		if err != nil {
-			return nil, fmt.Errorf("encode arg customizations: %w", err)
-		}
-		query = query.Arg("legacyArgCustomizationsJson", string(customizationsJSON))
-	}
-	return query, nil
-}
 
 // Initialize a standalone dagql server for querying the given module
 func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) (*dagql.Server, error) {
@@ -700,20 +122,6 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	return srv, nil
 }
 
-// The address of the dagger module that is the root of the tree
-// If the node is a "file", the root address is the URL of the filesystem root
-func (node *ModTreeNode) RootAddress() string {
-	mod := node.Module.Self()
-	if mod == nil {
-		return ""
-	}
-	modSrc := mod.Source.Value.Self()
-	if modSrc == nil {
-		return ""
-	}
-	return modSrc.AsString()
-}
-
 func (node *ModTreeNode) Clone() *ModTreeNode {
 	cp := *node
 	return &cp
@@ -726,17 +134,20 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 // dagqlValue selects the node's value, passing leafArgs as arguments to the
 // final Select (the leaf function). Parent objects are always auto-constructed
 // with defaults (no leafArgs), so leafArgs only ever fill the leaf itself — e.g.
-// the @agent fold supplies `base` here (see RunAgent).
+// the @agent fold supplies `base` here.
 func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []dagql.NamedInput) error {
 	// We can't direct-select the dagql path, because Select() doesn't support traversing
 	// lists
 	// FIXME: as an optimization, one-shot when possible?
 	srv := node.DagqlServer
+	if node.RootValue != nil {
+		return srv.Select(ctx, node.RootValue, dest)
+	}
 	// 1. Are we the root? Select the module's main object from Query root.
 	// A node is also treated as root if its parent is a synthetic naming-only
 	// node (e.g. injected by workspace checks reparenting, which sets
 	// Parent to an empty ModTreeNode with nil Module).
-	if node.Parent == nil || node.Parent.Module.Self() == nil {
+	if node.Parent == nil || (node.Parent.Module.Self() == nil && node.Parent.RootValue == nil && node.Parent.Type.Self() == nil) {
 		mod := node.Module.Self()
 		if mod == nil {
 			return fmt.Errorf("%q: get value: missing module", node.PathString())
@@ -773,57 +184,6 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 	return fmt.Errorf("%q: get value: parent is not an object", node.PathString())
 }
 
-// RunAgent evaluates an @agent leaf, threading the accumulator LLM explicitly
-// as the required `base` argument, and returns the resulting composed LLM. This
-// is the per-leaf step of AgentMiddlewareGroup.Compose (hack/designs/workspace-agents.md §3): the owning
-// object is auto-constructed with defaults and the leaf is selected with
-// base = acc.
-func (node *ModTreeNode) RunAgent(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
-	var result dagql.ObjectResult[*LLM]
-	baseID, err := base.ID()
-	if err != nil {
-		return result, fmt.Errorf("%q: agent base id: %w", node.PathString(), err)
-	}
-	err = node.dagqlValue(ctx, &result, []dagql.NamedInput{
-		{Name: node.agentBaseArg(), Value: dagql.NewID[*LLM](baseID)},
-	})
-	return result, err
-}
-
-// agentBaseArg returns the name of this @agent function's LLM! argument (the
-// base the fold fills). It is identified by type, so it works whatever the
-// author named it (`base`, `llm`, …). Falls back to agentBaseArgName if the
-// function or its LLM arg can't be resolved.
-func (node *ModTreeNode) agentBaseArg() string {
-	if node.Parent != nil {
-		if pot := node.Parent.ObjectType(); pot != nil {
-			for _, fnRes := range pot.Functions {
-				fn := fnRes.Self()
-				if fn.Name != node.Name || !fn.IsAgent {
-					continue
-				}
-				for _, argRes := range fn.Args {
-					if arg := argRes.Self(); isCoreLLMArg(arg) {
-						return arg.Name
-					}
-				}
-			}
-		}
-	}
-	return agentBaseArgName
-}
-
-// boundWorkspaceArgs supplies fn's required Workspace argument. A
-// declared-optional Workspace arg is skipped: dagql's injection hook
-// (GetDynamicInput) still fills those in, but it runs after the non-null check
-// in preselect, so a required one has to be on the selector before the call is
-// made.
-//
-// The value resolves the same way loadWorkspaceArg's does: the workspace the
-// enclosing group threaded into the context, else the session's ambient one.
-// The fallback is what keeps a generator reached outside a group working —
-// Module.generator(name:) sets no BoundWorkspace, which is the shape the
-// scale-out check query builds.
 func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([]dagql.NamedInput, error) {
 	if fn == nil {
 		return nil, nil
@@ -863,12 +223,13 @@ func debugTrace(ctx context.Context, msg string, args ...any) {
 }
 
 // Walk the tree and return all matching nodes, with include and exclude filters applied.
-func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeNode) bool, include []string, exclude []string) ([]*ModTreeNode, error) {
+func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeNode) (bool, bool), include []string, exclude []string) ([]*ModTreeNode, error) {
 	var res []*ModTreeNode
 	err := node.Walk(ctx, func(ctx context.Context, n *ModTreeNode) (bool, error) {
 		// FIXME: prune the search tree more aggressively, for efficiency
 		// BUT be careful to not break matching!
-		if matches(n) {
+		collect, descend := matches(n)
+		if collect {
 			if len(include) > 0 {
 				if match, err := n.Match(ctx, include); err != nil {
 					return false, err
@@ -885,9 +246,9 @@ func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeN
 				}
 			}
 			res = append(res, n)
-			return false, nil // always looking for leaves - no point in trying to walk
+			return descend, nil
 		}
-		return true, nil
+		return descend, nil
 	})
 	slices.SortStableFunc(res, func(a, b *ModTreeNode) int {
 		return strings.Compare(a.PathString(), b.PathString())
@@ -898,39 +259,6 @@ func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeN
 		return a.PathString() == b.PathString()
 	})
 	return res, err
-}
-
-// Walk the tree and return all check nodes, with include and exclude filters applied.
-func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
-	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
-		return n.IsCheck
-	}, include, exclude)
-}
-
-// Walk the tree and return all generator nodes, with include and exclude filters applied.
-func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
-	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
-		return n.IsGenerator
-	}, include, exclude)
-}
-
-// RollupTerminals walks the tree and returns non-null Container and Directory values.
-func (node *ModTreeNode) RollupTerminals(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
-	return node.RollupNodes(ctx, func(node *ModTreeNode) bool { return terminalType(node) != "" }, include, exclude)
-}
-
-// Walk the tree and return all up (service) nodes, with include and exclude filters applied.
-func (node *ModTreeNode) RollupUp(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
-	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
-		return n.IsUp
-	}, include, exclude)
-}
-
-// Walk the tree and return all agent nodes, with include and exclude filters applied.
-func (node *ModTreeNode) RollupAgents(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
-	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
-		return n.IsAgent
-	}, include, exclude)
 }
 
 type ModTreePath []string
@@ -1047,26 +375,6 @@ func (node *ModTreeNode) CommandName() string {
 	return strings.Join(node.CommandPath().CliCase(), ":")
 }
 
-func (node *ModTreeNode) moduleLocalPathString() string {
-	path := node.Path()
-	if len(path) == 0 {
-		return ""
-	}
-
-	root := node
-	for root.Parent != nil && root.Parent.Module.Self() != nil {
-		root = root.Parent
-	}
-
-	// Workspace checks reparent each module tree under a synthetic naming-only
-	// root. Scale-out loads the module directly, so the remote check/generator
-	// lookup must use the name relative to that module.
-	if root.Parent != nil && root.Parent.Module.Self() == nil && path[0] == root.Name {
-		path = path[1:]
-	}
-	return strings.Join(path.CliCase(), ":")
-}
-
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)
 
 func (node *ModTreeNode) Walk(ctx context.Context, fn WalkFunc) error {
@@ -1112,76 +420,51 @@ func (node *ModTreeNode) walk(ctx context.Context, fn WalkFunc, visiting map[str
 	return nil
 }
 
-// Children returns child nodes for tree walking.
-// NOTE: When a function returns a module-defined object, both a function leaf
-// (preserving IsCheck/IsGenerator/IsUp) and an object subtree child are
-// added with the same Name. This is intentional so that leaf flags are preserved
-// while the object's nested functions are still discoverable via the subtree.
-// Callers that need unique results should deduplicate by path (see RollupNodes).
+// Children exposes each reachable schema field once. Full type definitions are
+// used for descent; a field's directives remain attached to its own node.
 func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	var children []*ModTreeNode
-	if objType := node.ObjectType(); objType != nil {
-		nodeType := objType.Name
-		for _, fnRes := range objType.Functions {
-			fn := fnRes.Self()
-			// Only args the caller must supply disqualify a function here.
-			// Engine-supplied ones (an @agent's `base: LLM!`, a `Workspace!`)
-			// are filled in at selection time, so a leaf declaring one must
-			// still be discovered — see boundWorkspaceArgs.
-			if functionRequiresCallerArgs(fn) {
-				continue
-			}
-			returnType := fn.ReturnType.Self().ToType().Name()
-			children = append(children, &ModTreeNode{
-				Parent:         node,
-				Name:           fn.Name,
-				DagqlServer:    node.DagqlServer,
-				Module:         node.Module,
-				OriginalModule: node.OriginalModule,
-				Type:           fn.ReturnType,
-				IsCheck:        fn.IsCheck,
-				IsGenerator:    fn.IsGenerator,
-				IsUp:           fn.IsUp,
-				IsAgent:        fn.IsAgent,
-				Description:    fn.Description,
-			})
-			// if the type returned by the function is an object, also add the object subtree
-			if returnsObject := fn.ReturnType.Self().AsObject.Valid; returnsObject &&
-				// avoid cycles (X.withFoo: X)
-				returnType != nodeType {
-				if subType, ok := node.OriginalModule.Self().objectTypeDefResultByName(fn.ReturnType.Self().ToType().Name()); ok {
-					children = append(children, &ModTreeNode{
-						Parent:         node,
-						Name:           fn.Name,
-						DagqlServer:    node.DagqlServer,
-						Module:         node.Module,
-						OriginalModule: node.OriginalModule,
-						Type:           subType,
-						IsCheck:        false,
-						IsGenerator:    false,
-						IsUp:           false,
-						IsAgent:        false,
-						Description:    subType.Self().AsObject.Value.Self().Description,
-					})
+	obj := node.ObjectType()
+	if obj == nil {
+		return nil, nil
+	}
+	add := func(name, description string, typ dagql.ObjectResult[*TypeDef], fn *Function) {
+		child := &ModTreeNode{Parent: node, Name: name, Description: description,
+			DagqlServer: node.DagqlServer, Module: node.Module, OriginalModule: node.OriginalModule,
+			Type: typ, types: node.types}
+		if fn != nil {
+			for _, directive := range fn.Directives() {
+				if isArtifactDirective(directive.Name) {
+					child.Directives = append(child.Directives, directive.Name)
 				}
 			}
 		}
-		for _, fieldRes := range objType.Fields {
-			field := fieldRes.Self()
-			children = append(children, &ModTreeNode{
-				Parent:         node,
-				Name:           field.Name,
-				DagqlServer:    node.DagqlServer,
-				Module:         node.Module,
-				OriginalModule: node.OriginalModule,
-				Type:           field.TypeDef,
-				IsCheck:        false,
-				IsGenerator:    false,
-				IsUp:           false,
-				IsAgent:        false,
-				Description:    field.Description,
-			})
+		if class, ok := node.DagqlServer.ObjectType(obj.Name); ok {
+			if spec, ok := class.FieldSpec(name, node.DagqlServer.View); ok {
+				for _, dir := range spec.Directives {
+					if isArtifactDirective(dir.Name) && !slices.Contains(child.Directives, dir.Name) {
+						child.Directives = append(child.Directives, dir.Name)
+					}
+				}
+			}
 		}
+		if !typ.Self().Optional && typ.Self().Kind == TypeDefKindObject {
+			if full, ok := node.types[typ.Self().ToType().Name()]; ok {
+				child.Type = full
+			}
+		}
+		children = append(children, child)
+	}
+	for _, fnResult := range obj.Functions {
+		fn := fnResult.Self()
+		if functionRequiresCallerArgs(fn) {
+			continue
+		}
+		add(fn.Name, fn.Description, fn.ReturnType, fn)
+	}
+	for _, fieldResult := range obj.Fields {
+		field := fieldResult.Self()
+		add(field.Name, field.Description, field.TypeDef, nil)
 	}
 	return children, nil
 }
@@ -1227,17 +510,15 @@ type persistedModTree struct {
 }
 
 type persistedModTreeNode struct {
-	ID                     int    `json:"id"`
-	ParentID               int    `json:"parentID,omitempty"`
-	Name                   string `json:"name,omitempty"`
-	Description            string `json:"description,omitempty"`
-	ModuleResultID         uint64 `json:"moduleResultID,omitempty"`
-	OriginalModuleResultID uint64 `json:"originalModuleResultID,omitempty"`
-	TypeResultID           uint64 `json:"typeResultID,omitempty"`
-	IsCheck                bool   `json:"isCheck,omitempty"`
-	IsGenerator            bool   `json:"isGenerator,omitempty"`
-	IsUp                   bool   `json:"isUp,omitempty"`
-	IsAgent                bool   `json:"isAgent,omitempty"`
+	RootValueResultID      uint64   `json:"rootValueResultID,omitempty"`
+	ID                     int      `json:"id"`
+	ParentID               int      `json:"parentID,omitempty"`
+	Name                   string   `json:"name,omitempty"`
+	Description            string   `json:"description,omitempty"`
+	ModuleResultID         uint64   `json:"moduleResultID,omitempty"`
+	OriginalModuleResultID uint64   `json:"originalModuleResultID,omitempty"`
+	TypeResultID           uint64   `json:"typeResultID,omitempty"`
+	Directives             []string `json:"directives,omitempty"`
 }
 
 type persistedModTreeEncoder struct {
@@ -1280,10 +561,13 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 		ParentID:    parentID,
 		Name:        node.Name,
 		Description: node.Description,
-		IsCheck:     node.IsCheck,
-		IsGenerator: node.IsGenerator,
-		IsUp:        node.IsUp,
-		IsAgent:     node.IsAgent,
+		Directives:  node.Directives,
+	}
+	if node.RootValue != nil {
+		persisted.RootValueResultID, err = encodePersistedObjectRef(enc.encCtx, node.RootValue, "artifact root value")
+		if err != nil {
+			return 0, err
+		}
 	}
 	if node.Module.Self() != nil {
 		moduleID, err := encodePersistedObjectRef(enc.encCtx, node.Module, "mod tree module")
@@ -1325,10 +609,14 @@ func decodePersistedModTree(ctx context.Context, dec *dagql.PersistDecodeContext
 		node := &ModTreeNode{
 			Name:        persisted.Name,
 			Description: persisted.Description,
-			IsCheck:     persisted.IsCheck,
-			IsGenerator: persisted.IsGenerator,
-			IsUp:        persisted.IsUp,
-			IsAgent:     persisted.IsAgent,
+			Directives:  persisted.Directives,
+		}
+		if persisted.RootValueResultID != 0 {
+			value, err := loadPersistedResultByResultID(ctx, dec, persisted.RootValueResultID, "artifact root value")
+			if err != nil {
+				return nil, err
+			}
+			node.RootValue = value.(dagql.AnyObjectResult)
 		}
 		if persisted.ModuleResultID != 0 {
 			module, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, persisted.ModuleResultID, "mod tree module")
@@ -1407,6 +695,14 @@ func attachModTreeNodeDependencyResultsWithSeen(
 		owned = append(owned, parentDeps...)
 	}
 
+	if node.RootValue != nil {
+		value, err := attach(node.RootValue)
+		if err != nil {
+			return nil, err
+		}
+		node.RootValue = value.(dagql.AnyObjectResult)
+		owned = append(owned, value)
+	}
 	if node.Module.Self() != nil {
 		attached, err := attach(node.Module)
 		if err != nil {
@@ -1445,4 +741,37 @@ func attachModTreeNodeDependencyResultsWithSeen(
 	}
 
 	return owned, nil
+}
+
+func isArtifactDirective(name string) bool {
+	return name == "check" || name == "generate" || name == "up" || name == "agent"
+}
+
+// NewArtifactTree starts discovery at an engine object, such as an installed SDK.
+func NewArtifactTree(ctx context.Context, value dagql.AnyObjectResult) (*ModTreeNode, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := q.DefaultDeps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	types := map[string]dagql.ObjectResult[*TypeDef]{}
+	for _, dep := range deps.Mods() {
+		defs, err := dep.TypeDefs(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+		for _, def := range defs {
+			if def.Self().AsObject.Valid {
+				types[def.Self().ToType().Name()] = def
+			}
+		}
+	}
+	return &ModTreeNode{RootValue: value, Type: types[value.Type().Name()], types: types, DagqlServer: srv}, nil
 }

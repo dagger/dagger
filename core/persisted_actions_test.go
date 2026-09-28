@@ -2,71 +2,47 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
-// TestPersistedActionGroupsShareOwnersThroughRestart saves check, up and
-// terminal groups whose bound workspace is rooted at one Directory, together
-// with a module object that holds the same Directory as a private field. After
-// restart every group restores its exact workspace, node table and error row,
-// the shared Directory is one row with one snapshot owner, and removing both
-// retained owners releases it once. Decoding restores data and references
-// only; no action runs.
-func TestPersistedActionGroupsShareOwnersThroughRestart(t *testing.T) {
-	env := newPersistedFamiliesTestEnv(t, "actions-a")
+// TestPersistedArtifactsShareOwnersThroughRestart verifies that artifact
+// selections, bound addresses, SDKs and module values retain the same workspace
+// and node references through two cache restarts, without evaluating artifacts.
+func TestPersistedArtifactsShareOwnersThroughRestart(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "artifacts-a")
 	ctx, cache, srv := env.open(t)
-
 	modRes := env.attach(t, ctx, cache, srv, "cold-module", &Module{NameField: "cold", OriginalName: "cold", Deps: NewSchemaBuilder(nil, nil)}).(dagql.ObjectResult[*Module])
 	modID := persistedRowID(t, cache, modRes)
 	dirRes := env.directory(t, ctx, cache, srv, "shared-root", "shared-root")
 	dirID := persistedRowID(t, cache, dirRes)
 	wsRes := env.attach(t, ctx, cache, srv, "bound-workspace", &Workspace{rootfs: dirRes, Address: "file:///ws", Cwd: "/"}).(dagql.ObjectResult[*Workspace])
 	wsID := persistedRowID(t, cache, wsRes)
-	errRes := env.attach(t, ctx, cache, srv, "check-error", &Error{Message: "boom"}).(dagql.ObjectResult[*Error])
-	errID := persistedRowID(t, cache, errRes)
-
-	root := &ModTreeNode{Name: "cold", Module: modRes, OriginalModule: modRes}
-	lint := &ModTreeNode{Name: "lint", Description: "lints", Parent: root, Module: modRes, IsCheck: true}
-	format := &ModTreeNode{Name: "format", Parent: root, Module: modRes, IsCheck: true, IsGenerator: true}
-	web := &ModTreeNode{Name: "web", Parent: root, Module: modRes, IsUp: true}
-	shell := &ModTreeNode{Name: "shell", Parent: root, Module: modRes}
-	frontend := 8080
-
-	failed := &Check{Node: lint, Completed: true, Passed: false, Error: dagql.NonNull(errRes)}
-	pending := &Check{Node: format, IsGenerate: true}
-	checkGroup := env.attach(t, ctx, cache, srv, "check-group", &CheckGroup{Node: root, Checks: []*Check{failed, pending}, BoundWorkspace: wsRes})
-	upGroup := env.attach(t, ctx, cache, srv, "up-group", &UpGroup{Node: root, Ups: []*Up{{Node: web, PortMappings: []PortForward{{Frontend: &frontend, Backend: 80, Protocol: NetworkProtocolTCP}}}}, BoundWorkspace: wsRes})
-	terminalGroup := env.attach(t, ctx, cache, srv, "terminal-group", &TerminalGroup{Node: root, Terminals: []*TerminalTarget{{Node: shell}}, BoundWorkspace: wsRes})
-	singleCheck := env.attach(t, ctx, cache, srv, "single-check", &Check{Node: lint, Completed: true, Passed: false, Error: dagql.NonNull(errRes)})
-	singleUp := env.attach(t, ctx, cache, srv, "single-up", &Up{Node: web})
-	singleTerminal := env.attach(t, ctx, cache, srv, "single-terminal", &TerminalTarget{Node: shell})
-
+	root := &ModTreeNode{Name: "cold", Module: modRes, OriginalModule: modRes, RootValue: dirRes}
+	entries := []*Artifact{
+		{Path: []string{"cold", "lint"}, TypeName: "Check", DimensionKeys: []*ArtifactDimensionKey{}, Directives: []string{"check"}, Workspace: wsRes, Node: &ModTreeNode{Name: "lint", Description: "lints", Parent: root, Module: modRes, Directives: []string{"check"}}},
+		{Path: []string{"cold", "format"}, TypeName: "Changeset", DimensionKeys: []*ArtifactDimensionKey{}, Directives: []string{"generate"}, Workspace: wsRes, Node: &ModTreeNode{Name: "format", Parent: root, Module: modRes, Directives: []string{"generate"}}},
+	}
+	artifacts := env.attach(t, ctx, cache, srv, "artifacts", &Artifacts{Entries: entries})
+	single := env.attach(t, ctx, cache, srv, "artifact", entries[0])
+	address := env.attach(t, ctx, cache, srv, "address", &Address{Value: "dag://cold/lint", BoundWorkspace: wsRes})
+	sdk := env.attach(t, ctx, cache, srv, "sdk", &WorkspaceSDK{Name: "test", Workspace: wsRes})
 	holderDef := NewObjectTypeDef("Holder", "", nil)
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: &ModuleObject{Module: modRes, TypeDef: holderDef}}))
 	holder := env.attach(t, ctx, cache, srv, "holder", &ModuleObject{Module: modRes, TypeDef: holderDef, Fields: map[string]any{"dir": dirRes, "label": "x"}})
-
 	ids := map[string]uint64{}
 	encodings := map[string]dagql.PersistedResultEnvelope{}
-	for name, res := range map[string]dagql.AnyResult{
-		"check-group": checkGroup, "up-group": upGroup, "terminal-group": terminalGroup,
-		"single-check": singleCheck, "single-up": singleUp, "single-terminal": singleTerminal, "holder": holder,
-	} {
+	for name, res := range map[string]dagql.AnyResult{"artifacts": artifacts, "artifact": single, "address": address, "sdk": sdk, "holder": holder} {
 		ids[name] = persistedRowID(t, cache, res)
 		encodings[name] = persistedEncoding(t, ctx, cache, res).Envelope
-		refs := assertPersistedRefsMatchOwnership(t, ctx, cache, res)
-		require.NotEmpty(t, refs, "%s declares its owned rows", name)
+		require.NotEmpty(t, assertPersistedRefsMatchOwnership(t, ctx, cache, res), name)
 	}
-	groupRefs := persistedVisitedRefs(t, ctx, cache, checkGroup)
-	require.Equal(t, wsID, groupRefs["objectJSON.boundWorkspaceResultID"], "the bound workspace is a declared reference")
-	require.Equal(t, errID, groupRefs["objectJSON.checks[0].errorResultID"])
-	require.Equal(t, modID, groupRefs["objectJSON.tree.nodes[0].moduleResultID"])
-	require.Equal(t, modID, groupRefs["objectJSON.tree.nodes[0].originalModuleResultID"])
-	require.Equal(t, dirID, persistedVisitedRefs(t, ctx, cache, holder)["objectJSON.fields.dir.resultID"], "the module object's private field names the shared Directory row")
-
+	refs := persistedVisitedRefs(t, ctx, cache, artifacts)
+	require.Equal(t, wsID, refs["objectJSON.Entries[0].Workspace"])
+	require.Equal(t, modID, refs["objectJSON.Tree.nodes[0].moduleResultID"])
+	require.Equal(t, dirID, refs["objectJSON.Tree.nodes[0].rootValueResultID"])
 	snapshotOwners := func(snapshotID string) int {
 		env.manager.mu.Lock()
 		defer env.manager.mu.Unlock()
@@ -78,117 +54,34 @@ func TestPersistedActionGroupsShareOwnersThroughRestart(t *testing.T) {
 		}
 		return owners
 	}
-	require.Equal(t, 1, snapshotOwners("shared-root"), "one Directory row owns the snapshot however many rows reference it")
-
+	require.Equal(t, 1, snapshotOwners("shared-root"))
 	for round := 1; round <= 2; round++ {
 		ctx, cache, srv = env.restart(t, ctx, cache)
-		// A served module installs its object classes with the module row
-		// they belong to; the restarted server does the same from the saved
-		// module row.
 		restartedMod, err := cache.LoadResultByResultID(ctx, env.session, srv, modID)
 		require.NoError(t, err)
 		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: &ModuleObject{Module: restartedMod.(dagql.ObjectResult[*Module]), TypeDef: holderDef}}))
 		load := func(name string) dagql.AnyResult {
 			res, err := cache.LoadResultByResultID(ctx, env.session, srv, ids[name])
 			require.NoError(t, err, name)
-			require.Equal(t, encodings[name], persistedEncoding(t, ctx, cache, res).Envelope, "round %d: %s second save is identical", round, name)
+			require.Equal(t, encodings[name], persistedEncoding(t, ctx, cache, res).Envelope, "round %d: %s", round, name)
 			return res
 		}
-
-		group := load("check-group").Unwrap().(*CheckGroup)
-		require.Equal(t, wsID, persistedRowID(t, cache, group.BoundWorkspace), "the exact bound workspace row")
-		require.Equal(t, dirID, persistedRowID(t, cache, group.BoundWorkspace.Self().rootfs), "the workspace is rooted at the shared Directory row")
-		require.Equal(t, "file:///ws", group.BoundWorkspace.Self().Address)
-		require.Len(t, group.Checks, 2)
-		require.Equal(t, "cold", group.Node.Name)
-		require.Equal(t, modID, persistedRowID(t, cache, group.Node.Module))
-		require.Equal(t, modID, persistedRowID(t, cache, group.Node.OriginalModule), "the defining module survives")
-		require.NotNil(t, group.Node.DagqlServer, "the node's server is rebuilt from the saved module without running anything")
-		restoredFailed := group.Checks[0]
-		require.Equal(t, "lint", restoredFailed.Node.Name)
-		require.Equal(t, "lints", restoredFailed.Node.Description)
-		require.Same(t, group.Node, restoredFailed.Node.Parent, "members share the group's node table")
-		require.Same(t, group.Node.DagqlServer, restoredFailed.Node.DagqlServer, "one server per saved module")
-		require.True(t, restoredFailed.Completed)
-		require.False(t, restoredFailed.Passed)
-		require.True(t, restoredFailed.Error.Valid)
-		require.Equal(t, errID, persistedRowID(t, cache, restoredFailed.Error.Value))
-		require.Equal(t, "boom", restoredFailed.Error.Value.Self().Message, "the reported failure value survives")
-		restoredPending := group.Checks[1]
-		require.Equal(t, "format", restoredPending.Node.Name)
-		require.True(t, restoredPending.IsGenerate)
-		require.True(t, restoredPending.Node.IsGenerator)
-		require.False(t, restoredPending.Completed)
-		require.False(t, restoredPending.Error.Valid)
-
-		ups := load("up-group").Unwrap().(*UpGroup)
-		require.Equal(t, wsID, persistedRowID(t, cache, ups.BoundWorkspace))
-		require.Len(t, ups.Ups, 1)
-		require.Equal(t, "web", ups.Ups[0].Node.Name)
-		require.True(t, ups.Ups[0].Node.IsUp)
-		require.Equal(t, []PortForward{{Frontend: &frontend, Backend: 80, Protocol: NetworkProtocolTCP}}, ups.Ups[0].PortMappings)
-		require.Same(t, ups.Node, ups.Ups[0].Node.Parent)
-
-		terminals := load("terminal-group").Unwrap().(*TerminalGroup)
-		require.Equal(t, wsID, persistedRowID(t, cache, terminals.BoundWorkspace))
-		require.Len(t, terminals.Terminals, 1)
-		require.Equal(t, "shell", terminals.Terminals[0].Node.Name)
-		require.Same(t, terminals.Node, terminals.Terminals[0].Node.Parent)
-
-		single := load("single-check").Unwrap().(*Check)
-		require.Equal(t, errID, persistedRowID(t, cache, single.Error.Value))
-		require.Equal(t, "cold", single.Node.Parent.Name, "a lone leaf keeps its parent node")
-		require.Equal(t, "web", load("single-up").Unwrap().(*Up).Node.Name)
-		require.Equal(t, "shell", load("single-terminal").Unwrap().(*TerminalTarget).Node.Name)
-
+		restored := load("artifacts").Unwrap().(*Artifacts)
+		require.Len(t, restored.Entries, 2)
+		require.Equal(t, "lint", restored.Entries[0].Node.Name)
+		require.Equal(t, []string{"check"}, restored.Entries[0].Directives)
+		require.Equal(t, []string{"generate"}, restored.Entries[1].Node.Directives)
+		require.Same(t, restored.Entries[0].Node.Parent, restored.Entries[1].Node.Parent)
+		require.Equal(t, wsID, persistedRowID(t, cache, restored.Entries[0].Workspace))
+		require.Equal(t, dirID, persistedRowID(t, cache, restored.Entries[0].Node.Parent.RootValue))
+		require.Equal(t, "cold", load("artifact").Unwrap().(*Artifact).Node.Parent.Name)
+		require.Equal(t, wsID, persistedRowID(t, cache, load("address").Unwrap().(*Address).BoundWorkspace))
+		require.Equal(t, wsID, persistedRowID(t, cache, load("sdk").Unwrap().(*WorkspaceSDK).Workspace))
 		restoredHolder := load("holder").Unwrap().(*ModuleObject)
-		dirField, ok := restoredHolder.Fields["dir"].(dagql.AnyResult)
-		require.True(t, ok, "the private field is an attached result")
-		require.Equal(t, dirID, persistedRowID(t, cache, dirField), "the module object shares the same Directory row")
+		require.Equal(t, dirID, persistedRowID(t, cache, restoredHolder.Fields["dir"].(dagql.AnyResult)))
 		require.Equal(t, "x", restoredHolder.Fields["label"])
-		require.Equal(t, 1, snapshotOwners("shared-root"), "round %d: retained owners preserve one snapshot owner", round)
+		require.Equal(t, 1, snapshotOwners("shared-root"))
 	}
-
-	// Deliberate controls on the saved bytes.
-	groupFrame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "check-group", Type: dagql.NewResultCallType((&CheckGroup{}).Type())}
-	decodeGroup := func(t *testing.T, payload json.RawMessage) *CheckGroup {
-		t.Helper()
-		decoded, err := (&CheckGroup{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, ids["check-group"], groupFrame), payload)
-		require.NoError(t, err)
-		return decoded.(*CheckGroup)
-	}
-	var groupPayload map[string]any
-	require.NoError(t, json.Unmarshal(encodings["check-group"].ObjectJSON, &groupPayload))
-	t.Run("omitting the bound workspace leaves the group without one", func(t *testing.T) {
-		lossy := map[string]any{}
-		for k, v := range groupPayload {
-			if k != "boundWorkspaceResultID" {
-				lossy[k] = v
-			}
-		}
-		raw, err := json.Marshal(lossy)
-		require.NoError(t, err)
-		group := decodeGroup(t, raw)
-		require.Nil(t, group.BoundWorkspace.Self(), "runs would no longer resolve against the saved workspace")
-		require.NotNil(t, decodeGroup(t, encodings["check-group"].ObjectJSON).BoundWorkspace.Self())
-	})
-	t.Run("omitting the defining module leaves no server to select from", func(t *testing.T) {
-		var lossy map[string]any
-		require.NoError(t, json.Unmarshal(encodings["check-group"].ObjectJSON, &lossy))
-		nodes := lossy["tree"].(map[string]any)["nodes"].([]any)
-		for _, node := range nodes {
-			delete(node.(map[string]any), "moduleResultID")
-			delete(node.(map[string]any), "originalModuleResultID")
-		}
-		raw, err := json.Marshal(lossy)
-		require.NoError(t, err)
-		group := decodeGroup(t, raw)
-		require.Nil(t, group.Node.Module.Self())
-		require.Nil(t, group.Node.DagqlServer)
-		var dest dagql.AnyResult
-		require.ErrorContains(t, group.Node.DagqlValue(ctx, &dest), "missing module", "action selection fails without its defining module")
-	})
-
 	// Final removal: with no session holding the rows, prune both retained
 	// owners and every other root; the shared Directory's snapshot lease is
 	// removed exactly once.

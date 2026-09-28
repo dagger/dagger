@@ -236,14 +236,6 @@ type PortForward struct {
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
-type TerminalCopy struct {
-	// Location of the copied directory. A relative path is relative to the container's working directory.
-	Path string `json:"path"`
-
-	// The directory to copy.
-	Source *Directory `json:"source"`
-}
-
 // A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
 type Address struct {
 	query *querybuilder.Selection
@@ -953,226 +945,45 @@ func (r *AgentMessage) AsNode() Node {
 	}
 }
 
-// EXPERIMENTAL: Agent APIs are likely to change.
-//
-// An agent middleware contributed by a module.
-type AgentMiddleware struct {
+// One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+type Artifact struct {
 	query *querybuilder.Selection
 
 	description *string
 	id          *ID
-	name        *string
+	loadError   *string
+	moduleName  *string
+	uri         *string
 }
 
-func (r *AgentMiddleware) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddleware {
-	return &AgentMiddleware{
+func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
+	return &Artifact{
 		query: q,
 	}
 }
 
-// The description of the agent
-//
-// Experimental: Agent APIs are likely to change.
-func (r *AgentMiddleware) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this AgentMiddleware.
-func (r *AgentMiddleware) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *AgentMiddleware) XXX_GraphQLType() string {
-	return "AgentMiddleware"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *AgentMiddleware) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *AgentMiddleware) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *AgentMiddleware) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Return the command name of the agent. Entrypoint targets omit the module prefix.
-//
-// Experimental: Agent APIs are likely to change.
-func (r *AgentMiddleware) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The original module in which the agent has been defined
-//
-// Experimental: Agent APIs are likely to change.
-func (r *AgentMiddleware) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// The path of the agent within its module
-//
-// Experimental: Agent APIs are likely to change.
-func (r *AgentMiddleware) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// AsNode returns this AgentMiddleware as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *AgentMiddleware) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-// EXPERIMENTAL: Agent APIs are likely to change.
-//
-// A group of agent middlewares composable onto a base LLM.
-type AgentMiddlewareGroup struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-
-func (r *AgentMiddlewareGroup) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddlewareGroup {
-	return &AgentMiddlewareGroup{
-		query: q,
-	}
-}
-
-// AgentMiddlewareGroupComposeOpts contains options for AgentMiddlewareGroup.Compose
-type AgentMiddlewareGroupComposeOpts struct {
-	// The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
-	Base *LLM
-}
-
-// Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
-//
-// Experimental: Agent APIs are likely to change.
-func (r *AgentMiddlewareGroup) Compose(opts ...AgentMiddlewareGroupComposeOpts) *LLM {
-	q := r.query.Select("compose")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `base` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Base) {
-			q = q.Arg("base", opts[i].Base)
-		}
-	}
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// A unique identifier for this AgentMiddlewareGroup.
-func (r *AgentMiddlewareGroup) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *AgentMiddlewareGroup) XXX_GraphQLType() string {
-	return "AgentMiddlewareGroup"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *AgentMiddlewareGroup) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *AgentMiddlewareGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *AgentMiddlewareGroup) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Return a list of individual agents and their details
-//
-// Experimental: Agent APIs are likely to change.
-func (r *AgentMiddlewareGroup) List(ctx context.Context) ([]AgentMiddleware, error) {
-	q := r.query.Select("list")
+// The arguments accepted by the artifact field.
+func (r *Artifact) Arguments(ctx context.Context) ([]FunctionArg, error) {
+	q := r.query.Select("arguments")
 
 	q = q.Select("id")
 
-	type list struct {
+	type arguments struct {
 		Id ID
 	}
 
-	convert := func(fields []list) []AgentMiddleware {
-		out := []AgentMiddleware{}
+	convert := func(fields []arguments) []FunctionArg {
+		out := []FunctionArg{}
 
 		for i := range fields {
-			val := AgentMiddleware{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "AgentMiddleware")
+			val := FunctionArg{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "FunctionArg")
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []list
+	var response []arguments
 
 	q = q.Bind(&response)
 
@@ -1184,28 +995,1326 @@ func (r *AgentMiddlewareGroup) List(ctx context.Context) ([]AgentMiddleware, err
 	return convert(response), nil
 }
 
-// Recompose the selected agent middlewares onto an existing LLM, replacing their modules' owned system prompts, skills, and tool bindings while preserving tool object state.
-//
-// Contributions belong to the installed module calling withSystemPrompt, withSkills, or withTools, independently of the bound object's module or middleware entrypoint. Ownership follows the installed module name, not its source location. Moving a module between remote, local, or forked sources preserves compatible state when its installation name and intrinsic module and object identities stay the same.
-//
-// Contributions from selected modules are removed once before running the selected entrypoints. Unowned contributions and contributions from other modules are retained. Nested modules own their own contributions; use recompose explicitly to refresh them. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
-//
-// Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or changed module or object identities are errors regardless of version. Ownership checks still apply. The base workspace is preserved.
-//
-// Experimental: Agent APIs are likely to change.
-func (r *AgentMiddlewareGroup) Recompose(base *LLM) *LLM {
-	assertNotNil("base", base)
-	q := r.query.Select("recompose")
-	q = q.Arg("base", base)
+// The description of the field that supplies this artifact.
+func (r *Artifact) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
 
-	return &LLM{
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module name, and the full path key in the artifact type dimension.
+func (r *Artifact) DimensionKeys(ctx context.Context) ([]ArtifactDimensionKey, error) {
+	q := r.query.Select("dimensionKeys")
+
+	q = q.Select("id")
+
+	type dimensionKeys struct {
+		Id ID
+	}
+
+	convert := func(fields []dimensionKeys) []ArtifactDimensionKey {
+		out := []ArtifactDimensionKey{}
+
+		for i := range fields {
+			val := ArtifactDimensionKey{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactDimensionKey")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dimensionKeys
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The directives carried by this artifact.
+func (r *Artifact) Directives(ctx context.Context) ([]string, error) {
+	q := r.query.Select("directives")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Artifact.
+func (r *Artifact) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Artifact) XXX_GraphQLType() string {
+	return "Artifact"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Artifact) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Artifact) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Artifact) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// A module load failure, or an empty string if discovery succeeded.
+func (r *Artifact) LoadError(ctx context.Context) (string, error) {
+	if r.loadError != nil {
+		return *r.loadError, nil
+	}
+	q := r.query.Select("loadError")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The installed module name.
+func (r *Artifact) ModuleName(ctx context.Context) (string, error) {
+	if r.moduleName != nil {
+		return *r.moduleName, nil
+	}
+	q := r.query.Select("moduleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+func (r *Artifact) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// ArtifactURIOpts contains options for Artifact.URI
+type ArtifactURIOpts struct {
+	// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+	Absolute bool
+	// Include the dimension keys as a query. Without them, the address is a path selector.
+	//
+	// Default: true
+	DimensionKeys bool
+	// Include the artifact type in the scheme: dag+container://.
+	TypeAssertion bool
+}
+
+// The artifact's DAG address, such as dag://engine-dev/playground.
+func (r *Artifact) URI(ctx context.Context, opts ...ArtifactURIOpts) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `absolute` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Absolute) {
+			q = q.Arg("absolute", opts[i].Absolute)
+		}
+		// `dimensionKeys` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DimensionKeys) {
+			q = q.Arg("dimensionKeys", opts[i].DimensionKeys)
+		}
+		// `typeAssertion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TypeAssertion) {
+			q = q.Arg("typeAssertion", opts[i].TypeAssertion)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// ArtifactValueOpts contains options for Artifact.Value
+type ArtifactValueOpts struct {
+	// Field arguments as a JSON object.
+	//
+	// Default: "{}"
+	Arguments JSON
+}
+
+// Evaluate the target in the workspace that supplied this artifact.
+func (r *Artifact) Value(opts ...ArtifactValueOpts) Node {
+	q := r.query.Select("value")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `arguments` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Arguments) {
+			q = q.Arg("arguments", opts[i].Arguments)
+		}
+	}
+	return &NodeClient{
 		query: q,
 	}
 }
 
-// AsNode returns this AgentMiddlewareGroup as a Node.
+// AsNode returns this Artifact as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *AgentMiddlewareGroup) AsNode() Node {
+func (r *Artifact) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type ArtifactDimension struct {
+	query *querybuilder.Selection
+
+	id            *ID
+	identifier    *string
+	itemType      *string
+	kind          *ArtifactDimensionKind
+	name          *string
+	qualifiedName *string
+}
+
+func (r *ArtifactDimension) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimension {
+	return &ArtifactDimension{
+		query: q,
+	}
+}
+
+// A unique identifier for this ArtifactDimension.
+func (r *ArtifactDimension) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactDimension) XXX_GraphQLType() string {
+	return "ArtifactDimension"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactDimension) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactDimension) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactDimension) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Stable identifier: type:TypeName for an artifact type, or module.
+func (r *ArtifactDimension) Identifier(ctx context.Context) (string, error) {
+	if r.identifier != nil {
+		return *r.identifier, nil
+	}
+	q := r.query.Select("identifier")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The artifact type name, or empty for the module dimension.
+func (r *ArtifactDimension) ItemType(ctx context.Context) (string, error) {
+	if r.itemType != nil {
+		return *r.itemType, nil
+	}
+	q := r.query.Select("itemType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// How this dimension gets its keys.
+func (r *ArtifactDimension) Kind(ctx context.Context) (ArtifactDimensionKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response ArtifactDimensionKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Short name used to select this dimension.
+func (r *ArtifactDimension) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Qualified name used when the short name is ambiguous.
+func (r *ArtifactDimension) QualifiedName(ctx context.Context) (string, error) {
+	if r.qualifiedName != nil {
+		return *r.qualifiedName, nil
+	}
+	q := r.query.Select("qualifiedName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactDimension as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactDimension) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type ArtifactDimensionKey struct {
+	query *querybuilder.Selection
+
+	dimension *string
+	id        *ID
+	key       *string
+}
+
+func (r *ArtifactDimensionKey) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimensionKey {
+	return &ArtifactDimensionKey{
+		query: q,
+	}
+}
+
+// The dimension identifier, fixed across the workspace schema.
+func (r *ArtifactDimensionKey) Dimension(ctx context.Context) (string, error) {
+	if r.dimension != nil {
+		return *r.dimension, nil
+	}
+	q := r.query.Select("dimension")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ArtifactDimensionKey.
+func (r *ArtifactDimensionKey) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactDimensionKey) XXX_GraphQLType() string {
+	return "ArtifactDimensionKey"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactDimensionKey) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactDimensionKey) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactDimensionKey) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The dimension item's key.
+func (r *ArtifactDimensionKey) Key(ctx context.Context) (string, error) {
+	if r.key != nil {
+		return *r.key, nil
+	}
+	q := r.query.Select("key")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactDimensionKey as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactDimensionKey) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A schema path and its dimensions.
+type ArtifactPath struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	loadError   *string
+	moduleName  *string
+	uri         *string
+}
+
+func (r *ArtifactPath) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactPath {
+	return &ArtifactPath{
+		query: q,
+	}
+}
+
+// The description of the field at this path.
+func (r *ArtifactPath) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The dimension identifiers required by this path.
+func (r *ArtifactPath) Dimensions(ctx context.Context) ([]string, error) {
+	q := r.query.Select("dimensions")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ArtifactPath.
+func (r *ArtifactPath) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactPath) XXX_GraphQLType() string {
+	return "ArtifactPath"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactPath) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactPath) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactPath) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// A module load failure for this path, or an empty string.
+func (r *ArtifactPath) LoadError(ctx context.Context) (string, error) {
+	if r.loadError != nil {
+		return *r.loadError, nil
+	}
+	q := r.query.Select("loadError")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The installed module name.
+func (r *ArtifactPath) ModuleName(ctx context.Context) (string, error) {
+	if r.moduleName != nil {
+		return *r.moduleName, nil
+	}
+	q := r.query.Select("moduleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The DAG address of this path, without dimension keys.
+func (r *ArtifactPath) URI(ctx context.Context) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactPath as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactPath) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type ArtifactResult struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *ArtifactResult) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactResult {
+	return &ArtifactResult{
+		query: q,
+	}
+}
+
+// The artifact that was evaluated.
+func (r *ArtifactResult) Artifact() *Artifact {
+	q := r.query.Select("artifact")
+
+	return &Artifact{
+		query: q,
+	}
+}
+
+// The evaluation failure, if any.
+func (r *ArtifactResult) Error(ctx context.Context) (*Error, error) {
+	q := r.query.Select("error")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Error{
+		query: selectNode(q.Root(), *objectID, "Error"),
+	}, nil
+}
+
+// A unique identifier for this ArtifactResult.
+func (r *ArtifactResult) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactResult) XXX_GraphQLType() string {
+	return "ArtifactResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactResult) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The evaluated value, or null when evaluation failed.
+func (r *ArtifactResult) Value(ctx context.Context) (Node, error) {
+	q := r.query.Select("value")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &NodeClient{
+		query: selectNode(q.Root(), *objectID, "Node"),
+	}, nil
+}
+
+// AsNode returns this ArtifactResult as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactResult) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
+type Artifacts struct {
+	query *querybuilder.Selection
+
+	id  *ID
+	uri *string
+}
+type WithArtifactsFunc func(r *Artifacts) *Artifacts
+
+// With calls the provided function with current Artifacts.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Artifacts) With(f WithArtifactsFunc) *Artifacts {
+	return f(r)
+}
+
+func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+func (r *Artifacts) AsChangesets(ctx context.Context) ([]Changeset, error) {
+	q := r.query.Select("asChangesets")
+
+	q = q.Select("id")
+
+	type asChangesets struct {
+		Id ID
+	}
+
+	convert := func(fields []asChangesets) []Changeset {
+		out := []Changeset{}
+
+		for i := range fields {
+			val := Changeset{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Changeset")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asChangesets
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
+	q := r.query.Select("asChecks")
+
+	q = q.Select("id")
+
+	type asChecks struct {
+		Id ID
+	}
+
+	convert := func(fields []asChecks) []Check {
+		out := []Check{}
+
+		for i := range fields {
+			val := Check{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Check")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asChecks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+func (r *Artifacts) AsExpertise(ctx context.Context) ([]Expertise, error) {
+	q := r.query.Select("asExpertise")
+
+	q = q.Select("id")
+
+	type asExpertise struct {
+		Id ID
+	}
+
+	convert := func(fields []asExpertise) []Expertise {
+		out := []Expertise{}
+
+		for i := range fields {
+			val := Expertise{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Expertise")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asExpertise
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+func (r *Artifacts) AsGenerators(ctx context.Context) ([]Generator, error) {
+	q := r.query.Select("asGenerators")
+
+	q = q.Select("id")
+
+	type asGenerators struct {
+		Id ID
+	}
+
+	convert := func(fields []asGenerators) []Generator {
+		out := []Generator{}
+
+		for i := range fields {
+			val := Generator{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Generator")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asGenerators
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+func (r *Artifacts) AsServices(ctx context.Context) ([]Service, error) {
+	q := r.query.Select("asServices")
+
+	q = q.Select("id")
+
+	type asServices struct {
+		Id ID
+	}
+
+	convert := func(fields []asServices) []Service {
+		out := []Service{}
+
+		for i := range fields {
+			val := Service{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Service")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asServices
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// List dimensions on the selected schema paths. Does not read runtime values.
+func (r *Artifacts) DimensionDefinitions(ctx context.Context) ([]ArtifactDimension, error) {
+	q := r.query.Select("dimensionDefinitions")
+
+	q = q.Select("id")
+
+	type dimensionDefinitions struct {
+		Id ID
+	}
+
+	convert := func(fields []dimensionDefinitions) []ArtifactDimension {
+		out := []ArtifactDimension{}
+
+		for i := range fields {
+			val := ArtifactDimension{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactDimension")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dimensionDefinitions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// List keys represented in this selection for the given dimension, sorted with no duplicates.
+func (r *Artifacts) DimensionKeys(ctx context.Context, dimension string) ([]string, error) {
+	q := r.query.Select("dimensionKeys")
+	q = q.Arg("dimension", dimension)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// List dimension identifiers represented in this selection, sorted with no duplicates.
+func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
+	q := r.query.Select("dimensions")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Keep artifacts with any listed key in this dimension.
+func (r *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
+	q := r.query.Select("filterDimensionKeys")
+	q = q.Arg("dimension", dimension)
+	q = q.Arg("keys", keys)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Keep artifacts selected through any listed dimension.
+func (r *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
+	q := r.query.Select("filterDimensions")
+	q = q.Arg("dimensions", dimensions)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// ArtifactsFilterDirectivesOpts contains options for Artifacts.FilterDirectives
+type ArtifactsFilterDirectivesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts with any listed directive. Does not filter by type or workspace settings.
+func (r *Artifacts) FilterDirectives(directives []string, opts ...ArtifactsFilterDirectivesOpts) *Artifacts {
+	q := r.query.Select("filterDirectives")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("directives", directives)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// ArtifactsFilterParentDirectivesOpts contains options for Artifacts.FilterParentDirectives
+type ArtifactsFilterParentDirectivesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+func (r *Artifacts) FilterParentDirectives(directives []string, opts ...ArtifactsFilterParentDirectivesOpts) *Artifacts {
+	q := r.query.Select("filterParentDirectives")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("directives", directives)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// ArtifactsFilterParentTypesOpts contains options for Artifacts.FilterParentTypes
+type ArtifactsFilterParentTypesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.
+func (r *Artifacts) FilterParentTypes(types []string, opts ...ArtifactsFilterParentTypesOpts) *Artifacts {
+	q := r.query.Select("filterParentTypes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("types", types)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Match one complete, ordered field sequence exactly.
+func (r *Artifacts) FilterPath(path []string) *Artifacts {
+	q := r.query.Select("filterPath")
+	q = q.Arg("path", path)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+func (r *Artifacts) FilterPathPattern(pattern string) *Artifacts {
+	q := r.query.Select("filterPathPattern")
+	q = q.Arg("pattern", pattern)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// ArtifactsFilterTypesOpts contains options for Artifacts.FilterTypes
+type ArtifactsFilterTypesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts of any listed concrete GraphQL type.
+func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts) *Artifacts {
+	q := r.query.Select("filterTypes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("types", types)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
+//
+// The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+func (r *Artifacts) FilterURI(uri string) *Artifacts {
+	q := r.query.Select("filterUri")
+	q = q.Arg("uri", uri)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// A unique identifier for this Artifacts.
+func (r *Artifacts) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Artifacts) XXX_GraphQLType() string {
+	return "Artifacts"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Artifacts) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Artifacts) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Artifacts) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Enumerate complete artifacts without evaluating their values.
+func (r *Artifacts) Items(ctx context.Context) ([]Artifact, error) {
+	q := r.query.Select("items")
+
+	q = q.Select("id")
+
+	type items struct {
+		Id ID
+	}
+
+	convert := func(fields []items) []Artifact {
+		out := []Artifact{}
+
+		for i := range fields {
+			val := Artifact{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Artifact")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []items
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// List the modules represented in this selection without evaluating artifact values.
+func (r *Artifacts) Modules(ctx context.Context) ([]Module, error) {
+	q := r.query.Select("modules")
+
+	q = q.Select("id")
+
+	type modules struct {
+		Id ID
+	}
+
+	convert := func(fields []modules) []Module {
+		out := []Module{}
+
+		for i := range fields {
+			val := Module{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Module")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []modules
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
+func (r *Artifacts) One() *Artifact {
+	q := r.query.Select("one")
+
+	return &Artifact{
+		query: q,
+	}
+}
+
+// ArtifactsPathDefinitionsOpts contains options for Artifacts.PathDefinitions
+type ArtifactsPathDefinitionsOpts struct {
+	// Prefix each address with the workspace's Git address and commit.
+	Absolute bool
+	// Include the artifact type in each address scheme.
+	TypeAssertion bool
+}
+
+// List selected schema paths. Does not read runtime values.
+func (r *Artifacts) PathDefinitions(ctx context.Context, opts ...ArtifactsPathDefinitionsOpts) ([]ArtifactPath, error) {
+	q := r.query.Select("pathDefinitions")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `absolute` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Absolute) {
+			q = q.Arg("absolute", opts[i].Absolute)
+		}
+		// `typeAssertion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TypeAssertion) {
+			q = q.Arg("typeAssertion", opts[i].TypeAssertion)
+		}
+	}
+
+	q = q.Select("id")
+
+	type pathDefinitions struct {
+		Id ID
+	}
+
+	convert := func(fields []pathDefinitions) []ArtifactPath {
+		out := []ArtifactPath{}
+
+		for i := range fields {
+			val := ArtifactPath{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactPath")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []pathDefinitions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// List concrete type definitions represented in this selection, sorted by name with no duplicates.
+func (r *Artifacts) Types(ctx context.Context) ([]TypeDef, error) {
+	q := r.query.Select("types")
+
+	q = q.Select("id")
+
+	type types struct {
+		Id ID
+	}
+
+	convert := func(fields []types) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "TypeDef")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []types
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+func (r *Artifacts) URI(ctx context.Context) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// ArtifactsValuesOpts contains options for Artifacts.Values
+type ArtifactsValuesOpts struct {
+	// Cancel remaining work after the first failure.
+	FailFast bool
+	// Field arguments applied to each artifact, as a JSON object.
+	//
+	// Default: "{}"
+	Arguments JSON
+}
+
+// Evaluate the selection in parallel, retaining each result and error.
+func (r *Artifacts) Values(ctx context.Context, opts ...ArtifactsValuesOpts) ([]ArtifactResult, error) {
+	q := r.query.Select("values")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
+		}
+		// `arguments` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Arguments) {
+			q = q.Arg("arguments", opts[i].Arguments)
+		}
+	}
+
+	q = q.Select("id")
+
+	type values struct {
+		Id ID
+	}
+
+	convert := func(fields []values) []ArtifactResult {
+		out := []ArtifactResult{}
+
+		for i := range fields {
+			val := ArtifactResult{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactResult")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []values
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
+func (r *Artifacts) WithArtifacts(artifacts *Artifacts) *Artifacts {
+	assertNotNil("artifacts", artifacts)
+	q := r.query.Select("withArtifacts")
+	q = q.Arg("artifacts", artifacts)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Remove artifacts selected by a DAG address.
+func (r *Artifacts) WithoutURI(uri string) *Artifacts {
+	q := r.query.Select("withoutUri")
+	q = q.Arg("uri", uri)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// AsNode returns this Artifacts as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Artifacts) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -1583,16 +2692,13 @@ func (r *Changeset) AsSyncer() Syncer {
 	}
 }
 
+// One deferred check. Reading pass, error, or sync runs it.
 type Check struct {
 	query *querybuilder.Selection
 
-	checkType   *string
-	completed   *bool
-	description *string
-	id          *ID
-	name        *string
-	passed      *bool
-	resultEmoji *string
+	assertion *string
+	id        *ID
+	pass      *bool
 }
 type WithCheckFunc func(r *Check) *Check
 
@@ -1609,12 +2715,12 @@ func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
 	}
 }
 
-// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks, 'load' for a workspace module that could not be loaded
-func (r *Check) CheckType(ctx context.Context) (string, error) {
-	if r.checkType != nil {
-		return *r.checkType, nil
+// The assertion that is false when this check fails.
+func (r *Check) Assertion(ctx context.Context) (string, error) {
+	if r.assertion != nil {
+		return *r.assertion, nil
 	}
-	q := r.query.Select("checkType")
+	q := r.query.Select("assertion")
 
 	var response string
 
@@ -1622,33 +2728,7 @@ func (r *Check) CheckType(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Whether the check completed
-func (r *Check) Completed(ctx context.Context) (bool, error) {
-	if r.completed != nil {
-		return *r.completed, nil
-	}
-	q := r.query.Select("completed")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The description of the check
-func (r *Check) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// If the check failed, this is the error
+// Run the check and return its failure, if any.
 func (r *Check) Error(ctx context.Context) (*Error, error) {
 	q := r.query.Select("error")
 
@@ -1705,34 +2785,12 @@ func (r *Check) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Return the command name of the check. Entrypoint targets omit the module prefix.
-func (r *Check) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
+// Run the check and return whether it passes.
+func (r *Check) Pass(ctx context.Context) (bool, error) {
+	if r.pass != nil {
+		return *r.pass, nil
 	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The original module in which the check has been defined
-func (r *Check) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// Whether the check passed
-func (r *Check) Passed(ctx context.Context) (bool, error) {
-	if r.passed != nil {
-		return *r.passed, nil
-	}
-	q := r.query.Select("passed")
+	q := r.query.Select("pass")
 
 	var response bool
 
@@ -1740,32 +2798,26 @@ func (r *Check) Passed(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// The path of the check within its module
-func (r *Check) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
+// An optional report produced by the check.
+func (r *Check) Report(ctx context.Context) (*Directory, error) {
+	q := r.query.Select("report")
 
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// An emoji representing the result of the check
-func (r *Check) ResultEmoji(ctx context.Context) (string, error) {
-	if r.resultEmoji != nil {
-		return *r.resultEmoji, nil
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
-	q := r.query.Select("resultEmoji")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Directory{
+		query: selectNode(q.Root(), *objectID, "Directory"),
+	}, nil
 }
 
-// Execute the check
-func (r *Check) Run() *Check {
-	q := r.query.Select("run")
+// Run the check and retain its result.
+func (r *Check) Sync() *Check {
+	q := r.query.Select("sync")
 
 	return &Check{
 		query: q,
@@ -1775,137 +2827,6 @@ func (r *Check) Run() *Check {
 // AsNode returns this Check as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Check) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type CheckGroup struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-type WithCheckGroupFunc func(r *CheckGroup) *CheckGroup
-
-// With calls the provided function with current CheckGroup.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *CheckGroup) With(f WithCheckGroupFunc) *CheckGroup {
-	return f(r)
-}
-
-func (r *CheckGroup) WithGraphQLQuery(q *querybuilder.Selection) *CheckGroup {
-	return &CheckGroup{
-		query: q,
-	}
-}
-
-// A unique identifier for this CheckGroup.
-func (r *CheckGroup) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *CheckGroup) XXX_GraphQLType() string {
-	return "CheckGroup"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *CheckGroup) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *CheckGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *CheckGroup) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Return a list of individual checks and their details
-func (r *CheckGroup) List(ctx context.Context) ([]Check, error) {
-	q := r.query.Select("list")
-
-	q = q.Select("id")
-
-	type list struct {
-		Id ID
-	}
-
-	convert := func(fields []list) []Check {
-		out := []Check{}
-
-		for i := range fields {
-			val := Check{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Check")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []list
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Generate a markdown report
-func (r *CheckGroup) Report() *File {
-	q := r.query.Select("report")
-
-	return &File{
-		query: q,
-	}
-}
-
-// CheckGroupRunOpts contains options for CheckGroup.Run
-type CheckGroupRunOpts struct {
-	// If true, stop running checks as soon as any check fails.
-	FailFast bool
-}
-
-// Execute all selected checks
-func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
-	q := r.query.Select("run")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `failFast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].FailFast) {
-			q = q.Arg("failFast", opts[i].FailFast)
-		}
-	}
-
-	return &CheckGroup{
-		query: q,
-	}
-}
-
-// AsNode returns this CheckGroup as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *CheckGroup) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -2042,6 +2963,152 @@ func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
 // AsNode returns this Cloud as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Cloud) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A command's arguments and execution settings.
+type Command struct {
+	query *querybuilder.Selection
+
+	id                       *ID
+	insecureRootCapabilities *bool
+	privilegedNesting        *bool
+	workdir                  *string
+}
+
+func (r *Command) WithGraphQLQuery(q *querybuilder.Selection) *Command {
+	return &Command{
+		query: q,
+	}
+}
+
+// The command arguments.
+func (r *Command) Args(ctx context.Context) ([]string, error) {
+	q := r.query.Select("args")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Environment variable overrides. Other variables come from the container.
+func (r *Command) Env(ctx context.Context) ([]EnvVariable, error) {
+	q := r.query.Select("env")
+
+	q = q.Select("id")
+
+	type env struct {
+		Id ID
+	}
+
+	convert := func(fields []env) []EnvVariable {
+		out := []EnvVariable{}
+
+		for i := range fields {
+			val := EnvVariable{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "EnvVariable")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []env
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this Command.
+func (r *Command) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Command) XXX_GraphQLType() string {
+	return "Command"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Command) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Command) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Command) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Whether the command has all root capabilities.
+func (r *Command) InsecureRootCapabilities(ctx context.Context) (bool, error) {
+	if r.insecureRootCapabilities != nil {
+		return *r.insecureRootCapabilities, nil
+	}
+	q := r.query.Select("insecureRootCapabilities")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the command has access to Dagger.
+func (r *Command) PrivilegedNesting(ctx context.Context) (bool, error) {
+	if r.privilegedNesting != nil {
+		return *r.privilegedNesting, nil
+	}
+	q := r.query.Select("privilegedNesting")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Working directory override. If unset, use the container's working directory.
+func (r *Command) Workdir(ctx context.Context) (string, error) {
+	if r.workdir != nil {
+		return *r.workdir, nil
+	}
+	q := r.query.Select("workdir")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Command as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Command) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -2880,6 +3947,27 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
+// ContainerShellOpts contains options for Container.Shell
+type ContainerShellOpts struct {
+	// Return the batch command instead of the interactive command.
+	Batch bool
+}
+
+// Return the configured shell command. Defaults to ["sh"].
+func (r *Container) Shell(opts ...ContainerShellOpts) *Command {
+	q := r.query.Select("shell")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `batch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Batch) {
+			q = q.Arg("batch", opts[i].Batch)
+		}
+	}
+
+	return &Command{
+		query: q,
+	}
+}
+
 // ContainerStatOpts contains options for Container.Stat
 type ContainerStatOpts struct {
 	// If specified, do not follow symlinks.
@@ -3120,6 +4208,8 @@ type ContainerWithDefaultTerminalCmdOpts struct {
 }
 
 // Set the default command to invoke for the container's terminal API.
+//
+// Deprecated: Use withShell.
 func (r *Container) WithDefaultTerminalCmd(args []string, opts ...ContainerWithDefaultTerminalCmdOpts) *Container {
 	q := r.query.Select("withDefaultTerminalCmd")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3890,6 +4980,47 @@ func (r *Container) WithRootfs(directory *Directory) *Container {
 	}
 }
 
+// ContainerWithRunOpts contains options for Container.WithRun
+type ContainerWithRunOpts struct {
+	// Override the batch shell arguments. Example: ["bash", "-c"].
+	Shell []string
+	// Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
+	// Override whether the shell has all root capabilities.
+	InsecureRootCapabilities bool
+}
+
+// Execute a script with the configured batch shell and return the modified container.
+func (r *Container) WithRun(command string, opts ...ContainerWithRunOpts) *Container {
+	q := r.query.Select("withRun")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `shell` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Shell) {
+			q = q.Arg("shell", opts[i].Shell)
+		}
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+	}
+	q = q.Arg("command", command)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // Set a new environment variable, using a secret value
 func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	assertNotNil("secret", secret)
@@ -3914,6 +5045,47 @@ func (r *Container) WithServiceBinding(alias string, service *Service) *Containe
 	q := r.query.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
 	q = q.Arg("service", service)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// ContainerWithShellOpts contains options for Container.WithShell
+type ContainerWithShellOpts struct {
+	// Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".
+	Batch []string
+	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
+	// Give the shell all root capabilities. Use only with trusted commands.
+	InsecureRootCapabilities bool
+}
+
+// Set the shell used by terminal() and withRun().
+func (r *Container) WithShell(interactive []string, opts ...ContainerWithShellOpts) *Container {
+	q := r.query.Select("withShell")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `batch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Batch) {
+			q = q.Arg("batch", opts[i].Batch)
+		}
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+	}
+	q = q.Arg("interactive", interactive)
 
 	return &Container{
 		query: q,
@@ -4372,29 +5544,6 @@ func (r *CurrentModule) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// CurrentModuleGeneratorsOpts contains options for CurrentModule.Generators
-type CurrentModuleGeneratorsOpts struct {
-	// Only include generators matching the specified patterns
-	Include []string
-}
-
-// Return all generators defined by the module
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *CurrentModule) Generators(opts ...CurrentModuleGeneratorsOpts) *GeneratorGroup {
-	q := r.query.Select("generators")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &GeneratorGroup{
 		query: q,
 	}
 }
@@ -6979,6 +8128,114 @@ func (r *ErrorValue) AsNode() Node {
 	}
 }
 
+// An agent function that can modify a conversation.
+type Expertise struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *ID
+	name        *string
+}
+
+func (r *Expertise) WithGraphQLQuery(q *querybuilder.Selection) *Expertise {
+	return &Expertise{
+		query: q,
+	}
+}
+
+// The agent function's description.
+func (r *Expertise) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Expertise.
+func (r *Expertise) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Expertise) XXX_GraphQLType() string {
+	return "Expertise"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Expertise) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Expertise) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Expertise) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The agent function's name.
+func (r *Expertise) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module that defines the agent function.
+func (r *Expertise) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// The agent function's path within its module.
+func (r *Expertise) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Expertise as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Expertise) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a field on a custom object defined in a Module.
 //
 // A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
@@ -7726,7 +8983,7 @@ func (r *Function) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Returns the function with a flag indicating it is an agent middleware.
+// Returns the function with a flag indicating it is a source of expertise.
 //
 // Experimental: Agent APIs are likely to change.
 func (r *Function) WithAgent() *Function {
@@ -8447,14 +9704,11 @@ func (r *GeneratedCode) AsNode() Node {
 	}
 }
 
+// A generation function and its staleness check. Reading changeset runs the function.
 type Generator struct {
 	query *querybuilder.Selection
 
-	completed   *bool
-	description *string
-	id          *ID
-	isEmpty     *bool
-	name        *string
+	id *ID
 }
 type WithGeneratorFunc func(r *Generator) *Generator
 
@@ -8471,39 +9725,13 @@ func (r *Generator) WithGraphQLQuery(q *querybuilder.Selection) *Generator {
 	}
 }
 
-// The generated changeset from the last run
-func (r *Generator) Changes() *Changeset {
-	q := r.query.Select("changes")
+// Run the generator and return its changes.
+func (r *Generator) Changeset() *Changeset {
+	q := r.query.Select("changeset")
 
 	return &Changeset{
 		query: q,
 	}
-}
-
-// Whether the generator complete
-func (r *Generator) Completed(ctx context.Context) (bool, error) {
-	if r.completed != nil {
-		return *r.completed, nil
-	}
-	q := r.query.Select("completed")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Return the description of the generator
-func (r *Generator) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this Generator.
@@ -8546,62 +9774,18 @@ func (r *Generator) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Whether changeset from the last generator run is empty or not
-func (r *Generator) IsEmpty(ctx context.Context) (bool, error) {
-	if r.isEmpty != nil {
-		return *r.isEmpty, nil
+// A check that passes when this generator would produce no changes.
+func (r *Generator) Stale() *Check {
+	q := r.query.Select("stale")
+
+	return &Check{
+		query: q,
 	}
-	q := r.query.Select("isEmpty")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
-// Return the command name of the generator. Entrypoint targets omit the module prefix.
-func (r *Generator) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The module that defined the generator, or null for an engine-defined generator
-func (r *Generator) OriginalModule(ctx context.Context) (*Module, error) {
-	q := r.query.Select("originalModule")
-
-	q = q.Select("id")
-	var objectID *ID
-	if err := q.Bind(&objectID).Execute(ctx); err != nil {
-		return nil, err
-	}
-	if objectID == nil {
-		return nil, nil
-	}
-	return &Module{
-		query: selectNode(q.Root(), *objectID, "Module"),
-	}, nil
-}
-
-// The path of the generator within its module
-func (r *Generator) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Execute the generator
-func (r *Generator) Run() *Generator {
-	q := r.query.Select("run")
+// Run the generator and retain its result.
+func (r *Generator) Sync() *Generator {
+	q := r.query.Select("sync")
 
 	return &Generator{
 		query: q,
@@ -8611,192 +9795,6 @@ func (r *Generator) Run() *Generator {
 // AsNode returns this Generator as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Generator) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type GeneratorGroup struct {
-	query *querybuilder.Selection
-
-	id      *ID
-	isEmpty *bool
-}
-type WithGeneratorGroupFunc func(r *GeneratorGroup) *GeneratorGroup
-
-// With calls the provided function with current GeneratorGroup.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *GeneratorGroup) With(f WithGeneratorGroupFunc) *GeneratorGroup {
-	return f(r)
-}
-
-func (r *GeneratorGroup) WithGraphQLQuery(q *querybuilder.Selection) *GeneratorGroup {
-	return &GeneratorGroup{
-		query: q,
-	}
-}
-
-// GeneratorGroupChangesOpts contains options for GeneratorGroup.Changes
-type GeneratorGroupChangesOpts struct {
-	// Strategy to apply on conflicts between generators
-	//
-	// Default: FAIL_EARLY
-	OnConflict ChangesetsMergeConflict
-}
-
-// The combined changes from the last run of the generators
-//
-// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
-//
-// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
-func (r *GeneratorGroup) Changes(opts ...GeneratorGroupChangesOpts) *Changeset {
-	q := r.query.Select("changes")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `onConflict` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
-			q = q.Arg("onConflict", opts[i].OnConflict)
-		}
-	}
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// A unique identifier for this GeneratorGroup.
-func (r *GeneratorGroup) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *GeneratorGroup) XXX_GraphQLType() string {
-	return "GeneratorGroup"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *GeneratorGroup) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *GeneratorGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *GeneratorGroup) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Whether the generated changeset from the last run is empty or not
-func (r *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
-	if r.isEmpty != nil {
-		return *r.isEmpty, nil
-	}
-	q := r.query.Select("isEmpty")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Return a list of individual generators and their details
-func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
-	q := r.query.Select("list")
-
-	q = q.Select("id")
-
-	type list struct {
-		Id ID
-	}
-
-	convert := func(fields []list) []Generator {
-		out := []Generator{}
-
-		for i := range fields {
-			val := Generator{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Generator")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []list
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Load failures tolerated while collecting the generators.
-//
-// Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
-func (r *GeneratorGroup) LoadFailures(ctx context.Context) ([]string, error) {
-	q := r.query.Select("loadFailures")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Execute all selected generators
-func (r *GeneratorGroup) Run() *GeneratorGroup {
-	q := r.query.Select("run")
-
-	return &GeneratorGroup{
-		query: q,
-	}
-}
-
-// GeneratorGroupWorkspaceOpts contains options for GeneratorGroup.Workspace
-type GeneratorGroupWorkspaceOpts struct {
-	// Strategy to apply on conflicts between generators
-	//
-	// Default: FAIL_EARLY
-	OnConflict ChangesetsMergeConflict
-}
-
-// The workspace with the combined output from the last generator run
-func (r *GeneratorGroup) Workspace(opts ...GeneratorGroupWorkspaceOpts) *Workspace {
-	q := r.query.Select("workspace")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `onConflict` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
-			q = q.Arg("onConflict", opts[i].OnConflict)
-		}
-	}
-
-	return &Workspace{
-		query: q,
-	}
-}
-
-// AsNode returns this GeneratorGroup as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *GeneratorGroup) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -11210,6 +12208,16 @@ func (r *LLM) Agent(handle string, name string) *Agent {
 	}
 }
 
+// Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+func (r *LLM) Compose(expertise []*Expertise) *LLM {
+	q := r.query.Select("compose")
+	q = q.Arg("expertise", expertise)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
 func (r *LLM) ContextTokens(ctx context.Context) (int, error) {
 	if r.contextTokens != nil {
@@ -11435,6 +12443,20 @@ func (r *LLM) ReasoningEffort(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
+//
+// Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+//
+// A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
+func (r *LLM) Recompose(expertise []*Expertise) *LLM {
+	q := r.query.Select("recompose")
+	q = q.Arg("expertise", expertise)
+
+	return &LLM{
+		query: q,
+	}
 }
 
 // The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
@@ -12796,45 +13818,21 @@ func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	}
 }
 
-// Return the check defined by the module with the given name. Must match to exactly one check.
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Check(name string) *Check {
-	q := r.query.Select("check")
-	q = q.Arg("name", name)
+// The source used to resolve contextual files and directories, when different from source.
+func (r *Module) ContextSource(ctx context.Context) (*ModuleSource, error) {
+	q := r.query.Select("contextSource")
 
-	return &Check{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
-}
-
-// ModuleChecksOpts contains options for Module.Checks
-type ModuleChecksOpts struct {
-	// Only include checks matching the specified patterns
-	Include []string
-	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate bool
-}
-
-// Return all checks defined by the module
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
-	q := r.query.Select("checks")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
-		}
+	if objectID == nil {
+		return nil, nil
 	}
-
-	return &CheckGroup{
-		query: q,
-	}
+	return &ModuleSource{
+		query: selectNode(q.Root(), *objectID, "ModuleSource"),
+	}, nil
 }
 
 // The dependencies of the module.
@@ -12921,41 +13919,6 @@ func (r *Module) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// Return the generator defined by the module with the given name. Must match to exactly one generator.
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Generator(name string) *Generator {
-	q := r.query.Select("generator")
-	q = q.Arg("name", name)
-
-	return &Generator{
-		query: q,
-	}
-}
-
-// ModuleGeneratorsOpts contains options for Module.Generators
-type ModuleGeneratorsOpts struct {
-	// Only include generators matching the specified patterns
-	Include []string
-}
-
-// Return all generators defined by the module
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Generators(opts ...ModuleGeneratorsOpts) *GeneratorGroup {
-	q := r.query.Select("generators")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &GeneratorGroup{
 		query: q,
 	}
 }
@@ -13154,29 +14117,6 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 	}
 
 	return q.Execute(ctx)
-}
-
-// ModuleServicesOpts contains options for Module.Services
-type ModuleServicesOpts struct {
-	// Only include services matching the specified patterns
-	Include []string
-}
-
-// Return all services defined by the module
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Services(opts ...ModuleServicesOpts) *UpGroup {
-	q := r.query.Select("services")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &UpGroup{
-		query: q,
-	}
 }
 
 // The source for the module.
@@ -14494,7 +15434,7 @@ func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
 	}
 }
 
-// initialize an address to load directories, containers, secrets or other object types.
+// Resolve external references only.
 func (r *Query) Address(value string) *Address {
 	q := r.query.Select("address")
 	q = q.Arg("value", value)
@@ -16074,9 +17014,21 @@ func (r *Service) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// ServicePortsOpts contains options for Service.Ports
+type ServicePortsOpts struct {
+	// Return only container ports declared before startup. Other service types return an empty list.
+	Declared bool
+}
+
 // Retrieves the list of ports provided by the service.
-func (r *Service) Ports(ctx context.Context) ([]Port, error) {
+func (r *Service) Ports(ctx context.Context, opts ...ServicePortsOpts) ([]Port, error) {
 	q := r.query.Select("ports")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `declared` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Declared) {
+			q = q.Arg("declared", opts[i].Declared)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -16629,280 +17581,6 @@ func (r *Terminal) AsSyncer() Syncer {
 	}
 }
 
-type TerminalGroup struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-type WithTerminalGroupFunc func(r *TerminalGroup) *TerminalGroup
-
-// With calls the provided function with current TerminalGroup.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *TerminalGroup) With(f WithTerminalGroupFunc) *TerminalGroup {
-	return f(r)
-}
-
-func (r *TerminalGroup) WithGraphQLQuery(q *querybuilder.Selection) *TerminalGroup {
-	return &TerminalGroup{
-		query: q,
-	}
-}
-
-// TerminalGroupExecOpts contains options for TerminalGroup.Exec
-type TerminalGroupExecOpts struct {
-	// Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
-	Args []string
-	// Content to write to the command's standard input.
-	Stdin string
-	// Directories to copy into the container, in order.
-	Copy []TerminalCopy
-	// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
-	Init []string
-}
-
-// Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
-func (r *TerminalGroup) Exec(opts ...TerminalGroupExecOpts) *Container {
-	q := r.query.Select("exec")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-		// `stdin` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Stdin) {
-			q = q.Arg("stdin", opts[i].Stdin)
-		}
-		// `copy` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Copy) {
-			q = q.Arg("copy", opts[i].Copy)
-		}
-		// `init` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Init) {
-			q = q.Arg("init", opts[i].Init)
-		}
-	}
-
-	return &Container{
-		query: q,
-	}
-}
-
-// A unique identifier for this TerminalGroup.
-func (r *TerminalGroup) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *TerminalGroup) XXX_GraphQLType() string {
-	return "TerminalGroup"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *TerminalGroup) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *TerminalGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *TerminalGroup) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Return the selected terminal targets and their details
-func (r *TerminalGroup) List(ctx context.Context) ([]TerminalTarget, error) {
-	q := r.query.Select("list")
-
-	q = q.Select("id")
-
-	type list struct {
-		Id ID
-	}
-
-	convert := func(fields []list) []TerminalTarget {
-		out := []TerminalTarget{}
-
-		for i := range fields {
-			val := TerminalTarget{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "TerminalTarget")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []list
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// TerminalGroupRunOpts contains options for TerminalGroup.Run
-type TerminalGroupRunOpts struct {
-	// Directories to copy into the container, in order.
-	Copy []TerminalCopy
-	// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
-	Init []string
-}
-
-// Open the selected terminal target
-func (r *TerminalGroup) Run(opts ...TerminalGroupRunOpts) *TerminalGroup {
-	q := r.query.Select("run")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `copy` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Copy) {
-			q = q.Arg("copy", opts[i].Copy)
-		}
-		// `init` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Init) {
-			q = q.Arg("init", opts[i].Init)
-		}
-	}
-
-	return &TerminalGroup{
-		query: q,
-	}
-}
-
-// AsNode returns this TerminalGroup as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *TerminalGroup) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type TerminalTarget struct {
-	query *querybuilder.Selection
-
-	description *string
-	id          *ID
-	name        *string
-}
-
-func (r *TerminalTarget) WithGraphQLQuery(q *querybuilder.Selection) *TerminalTarget {
-	return &TerminalTarget{
-		query: q,
-	}
-}
-
-// The description of the terminal target
-func (r *TerminalTarget) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this TerminalTarget.
-func (r *TerminalTarget) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *TerminalTarget) XXX_GraphQLType() string {
-	return "TerminalTarget"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *TerminalTarget) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *TerminalTarget) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *TerminalTarget) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Return the command name of the terminal target. Entrypoint targets omit the module prefix.
-func (r *TerminalTarget) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The module in which the terminal target is defined
-func (r *TerminalTarget) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// The path of the terminal target within its module
-func (r *TerminalTarget) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// AsNode returns this TerminalTarget as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *TerminalTarget) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
 	query *querybuilder.Selection
@@ -17394,240 +18072,6 @@ func (r *TypeDef) AsNode() Node {
 	}
 }
 
-type Up struct {
-	query *querybuilder.Selection
-
-	description *string
-	id          *ID
-	name        *string
-}
-type WithUpFunc func(r *Up) *Up
-
-// With calls the provided function with current Up.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Up) With(f WithUpFunc) *Up {
-	return f(r)
-}
-
-func (r *Up) WithGraphQLQuery(q *querybuilder.Selection) *Up {
-	return &Up{
-		query: q,
-	}
-}
-
-// The description of the service
-func (r *Up) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this Up.
-func (r *Up) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Up) XXX_GraphQLType() string {
-	return "Up"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Up) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Up) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Up) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Return the command name of the service. Entrypoint targets omit the module prefix.
-func (r *Up) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The original module in which the service has been defined
-func (r *Up) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// The path of the service within its module
-func (r *Up) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Execute the service function
-func (r *Up) Run() *Up {
-	q := r.query.Select("run")
-
-	return &Up{
-		query: q,
-	}
-}
-
-// AsNode returns this Up as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *Up) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type UpGroup struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-type WithUpGroupFunc func(r *UpGroup) *UpGroup
-
-// With calls the provided function with current UpGroup.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *UpGroup) With(f WithUpGroupFunc) *UpGroup {
-	return f(r)
-}
-
-func (r *UpGroup) WithGraphQLQuery(q *querybuilder.Selection) *UpGroup {
-	return &UpGroup{
-		query: q,
-	}
-}
-
-// A unique identifier for this UpGroup.
-func (r *UpGroup) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *UpGroup) XXX_GraphQLType() string {
-	return "UpGroup"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *UpGroup) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *UpGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *UpGroup) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Return a list of individual services and their details
-func (r *UpGroup) List(ctx context.Context) ([]Up, error) {
-	q := r.query.Select("list")
-
-	q = q.Select("id")
-
-	type list struct {
-		Id ID
-	}
-
-	convert := func(fields []list) []Up {
-		out := []Up{}
-
-		for i := range fields {
-			val := Up{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Up")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []list
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Execute all selected service functions
-func (r *UpGroup) Run() *UpGroup {
-	q := r.query.Select("run")
-
-	return &UpGroup{
-		query: q,
-	}
-}
-
-// AsNode returns this UpGroup as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *UpGroup) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
 // A filesystem volume that can be mounted into containers.
 type Volume struct {
 	query *querybuilder.Selection
@@ -17731,31 +18175,23 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// WorkspaceAgentsOpts contains options for Workspace.Agents
-type WorkspaceAgentsOpts struct {
-	// Only include agents matching the specified patterns
+// WorkspaceArtifactsOpts contains options for Workspace.Artifacts
+type WorkspaceArtifactsOpts struct {
+	// Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.
 	Include []string
-	// Exclude agents matching the specified patterns
-	Exclude []string
 }
 
-// Return all agent middlewares from modules loaded in the workspace.
-//
-// Experimental: Agent APIs are likely to change.
-func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentMiddlewareGroup {
-	q := r.query.Select("agents")
+// Discover static object artifacts from workspace modules without evaluating their values.
+func (r *Workspace) Artifacts(opts ...WorkspaceArtifactsOpts) *Artifacts {
+	q := r.query.Select("artifacts")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
 	}
 
-	return &AgentMiddlewareGroup{
+	return &Artifacts{
 		query: q,
 	}
 }
@@ -17779,45 +18215,6 @@ func (r *Workspace) Changes(opts ...WorkspaceChangesOpts) *Changeset {
 	}
 
 	return &Changeset{
-		query: q,
-	}
-}
-
-// WorkspaceChecksOpts contains options for Workspace.Checks
-type WorkspaceChecksOpts struct {
-	// Only include checks matching the specified patterns
-	Include []string
-	// Skip checks matching the specified patterns
-	Skip []string
-	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate bool
-	// When true, only return generate-as-checks; exclude annotated check functions
-	OnlyGenerate bool
-}
-
-// Return all checks from modules loaded in the workspace.
-func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
-	q := r.query.Select("checks")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
-		}
-		// `onlyGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnlyGenerate) {
-			q = q.Arg("onlyGenerate", opts[i].OnlyGenerate)
-		}
-	}
-
-	return &CheckGroup{
 		query: q,
 	}
 }
@@ -17898,6 +18295,8 @@ func (r *Workspace) ConfigFile(ctx context.Context) (string, error) {
 type WorkspaceConfigReadOpts struct {
 	// Dotted key path (e.g. modules.greeter.source). Empty for full config.
 	Key string
+	// Include the selected environment, user overrides, and legacy workspace settings.
+	Effective bool
 }
 
 // Read a configuration value from dagger.toml.
@@ -17916,6 +18315,10 @@ func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadO
 		// `key` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Key) {
 			q = q.Arg("key", opts[i].Key)
+		}
+		// `effective` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Effective) {
+			q = q.Arg("effective", opts[i].Effective)
 		}
 	}
 
@@ -18132,27 +18535,6 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 	return response, q.Execute(ctx)
 }
 
-// WorkspaceGeneratorsOpts contains options for Workspace.Generators
-type WorkspaceGeneratorsOpts struct {
-	// Only include generators matching the specified patterns
-	Include []string
-}
-
-// Return all generators from modules loaded in the workspace.
-func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup {
-	q := r.query.Select("generators")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &GeneratorGroup{
-		query: q,
-	}
-}
-
 // Git state for this workspace. Errors if the workspace is not in a git repository.
 func (r *Workspace) Git() *WorkspaceGit {
 	q := r.query.Select("git")
@@ -18326,6 +18708,22 @@ func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	return convert(response), nil
 }
 
+// Resolve an address in this workspace.
+//
+// A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+//
+// A value without the dag:// scheme keeps its external meaning, such as a container image reference.
+//
+// The Address retains this workspace across module calls and ID reloads.
+func (r *Workspace) Resolve(value string) *Address {
+	q := r.query.Select("resolve")
+	q = q.Arg("value", value)
+
+	return &Address{
+		query: q,
+	}
+}
+
 // An installed SDK, by name.
 func (r *Workspace) SDK(name string) *WorkspaceSDK {
 	q := r.query.Select("sdk")
@@ -18473,27 +18871,6 @@ func (r *Workspace) Search(ctx context.Context, pattern string, opts ...Workspac
 	return convert(response), nil
 }
 
-// WorkspaceServicesOpts contains options for Workspace.Services
-type WorkspaceServicesOpts struct {
-	// Only include services matching the specified patterns
-	Include []string
-}
-
-// Return all services from modules loaded in the workspace.
-func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
-	q := r.query.Select("services")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &UpGroup{
-		query: q,
-	}
-}
-
 // Return a snapshot of this workspace as a stable value.
 //
 // Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
@@ -18509,27 +18886,6 @@ func (r *Workspace) Snapshot() *Workspace {
 	q := r.query.Select("snapshot")
 
 	return &Workspace{
-		query: q,
-	}
-}
-
-// WorkspaceTerminalsOpts contains options for Workspace.Terminals
-type WorkspaceTerminalsOpts struct {
-	// Only include terminal targets matching the specified patterns
-	Include []string
-}
-
-// Return all terminal targets from modules loaded in the workspace.
-func (r *Workspace) Terminals(opts ...WorkspaceTerminalsOpts) *TerminalGroup {
-	q := r.query.Select("terminals")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &TerminalGroup{
 		query: q,
 	}
 }
@@ -20053,6 +20409,15 @@ func (r *WorkspaceSDK) Clients(ctx context.Context) ([]WorkspaceModule, error) {
 	return convert(response), nil
 }
 
+// Generate the modules and clients managed by this SDK.
+func (r *WorkspaceSDK) Generate() *Changeset {
+	q := r.query.Select("generate")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // A unique identifier for this WorkspaceSDK.
 func (r *WorkspaceSDK) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -20595,6 +20960,60 @@ const (
 
 	// The loop failed; snapshot holds the completed prefix. Resume retries.
 	AgentStateFailed AgentState = "FAILED"
+)
+
+type ArtifactDimensionKind string
+
+func (ArtifactDimensionKind) IsEnum() {}
+
+func (v ArtifactDimensionKind) Name() string {
+	switch v {
+	case ArtifactDimensionKindModule:
+		return "MODULE"
+	case ArtifactDimensionKindType:
+		return "TYPE"
+	default:
+		return ""
+	}
+}
+
+func (v ArtifactDimensionKind) Value() string {
+	return string(v)
+}
+
+func (v *ArtifactDimensionKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ArtifactDimensionKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "MODULE":
+		*v = ArtifactDimensionKindModule
+	case "TYPE":
+		*v = ArtifactDimensionKindType
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	ArtifactDimensionKindModule ArtifactDimensionKind = "MODULE"
+
+	ArtifactDimensionKindType ArtifactDimensionKind = "TYPE"
 )
 
 // Sharing mode of the cache volume.

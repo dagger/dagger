@@ -34,6 +34,16 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
+		dagql.NodeFunc("compose", s.compose).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Run expertise in list order, passing this conversation through each function. Retain existing contributions.").
+			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
+		dagql.NodeFunc("recompose", s.recompose).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.",
+				"Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.",
+				"A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.").
+			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
 		dagql.Func("__withoutComposition", func(_ context.Context, llm *core.LLM, args struct {
 			Owner string
 		}) (*core.LLM, error) {
@@ -915,4 +925,40 @@ func (s *llmSchema) withoutMessageHistory(ctx context.Context, llm *core.LLM, _ 
 
 func (s *llmSchema) withoutSystemPrompts(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLM, error) {
 	return llm.WithoutSystemPrompts(), nil
+}
+
+type expertiseArgs struct {
+	Expertise []dagql.ID[*core.Expertise]
+}
+
+func (args expertiseArgs) load(ctx context.Context) ([]*core.Expertise, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	expertise := make([]*core.Expertise, len(args.Expertise))
+	for i, id := range args.Expertise {
+		entry, err := id.Load(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+		expertise[i] = entry.Self()
+	}
+	return expertise, nil
+}
+
+func (*llmSchema) compose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
+	expertise, err := args.load(ctx)
+	if err != nil {
+		return base, err
+	}
+	return core.ComposeExpertise(ctx, base, expertise)
+}
+
+func (*llmSchema) recompose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
+	expertise, err := args.load(ctx)
+	if err != nil {
+		return base, err
+	}
+	return core.RecomposeExpertise(ctx, base, expertise)
 }

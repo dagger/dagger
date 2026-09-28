@@ -1,6 +1,6 @@
 Expected stderr:
 
 GENERATORS  ✘ 1 failed
-✘ generate-fail X.Xs ERROR
+✘ dag://generate-fail X.Xs ERROR
   ┃ boom
   ! exit code: 3

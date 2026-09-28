@@ -198,37 +198,39 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 			require.NoError(t, err)
 			require.Equal(t, "git-agent", name)
 
-			tools, err := ws.Agents().Compose().Tools(ctx)
+			composed, err := composeArtifactAgents(ctx, c, ws, nil)
+			require.NoError(t, err)
+			tools, err := composed.Tools(ctx)
 			require.NoError(t, err)
 			require.Contains(t, tools, "## fromGit")
 			require.Contains(t, tools, gitAgentDoc)
 
-			checks, err := ws.Checks(dagger.WorkspaceChecksOpts{NoGenerate: true}).List(ctx)
+			checks, err := ws.Artifacts().FilterTypes([]string{"Check"}).WithoutURI("**/stale").Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, checks, 1)
-			checkName, err := checks[0].Name(ctx)
+			checkName, err := checks[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "git-agent:verify", checkName)
+			require.Equal(t, "dag://git-agent/verify", checkName)
 
-			generators, err := ws.Generators().List(ctx)
+			generators, err := ws.Artifacts().FilterTypes([]string{"Generator"}).Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, generators, 1)
-			generatorName, err := generators[0].Name(ctx)
+			generatorName, err := generators[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "git-agent:generate", generatorName)
+			require.Equal(t, "dag://git-agent/generate", generatorName)
 
-			services, err := ws.Services().List(ctx)
+			services, err := ws.Artifacts().FilterTypes([]string{"Service"}).Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, services, 1)
-			serviceName, err := services[0].Name(ctx)
+			serviceName, err := services[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "git-agent:web", serviceName)
+			require.Equal(t, "dag://git-agent/web", serviceName)
 
-			terminals, err := ws.Terminals().List(ctx)
+			terminals, err := ws.Artifacts().FilterTypes([]string{"Container", "Directory"}).Items(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, terminals)
 
-			passed, err := checks[0].Run().Passed(ctx)
+			passed, err := artifactValue[*dagger.Check](ctx, t, c, &checks[0]).Pass(ctx)
 			require.NoError(t, err)
 			require.True(t, passed)
 		})
@@ -259,33 +261,40 @@ source = "./modules/bad"
 		Head().
 		AsWorkspace()
 
-	group := ws.Generators()
-	generators, err := group.List(ctx)
+	// Type filters keep load failures, so the broken module is reported
+	// next to the generators that loaded.
+	items, err := ws.Artifacts().FilterTypes([]string{"Generator"}).Items(ctx)
 	require.NoError(t, err)
-	require.Len(t, generators, 1)
-	name, err := generators[0].Name(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "good:generate", name)
-
-	loadFailures, err := group.LoadFailures(ctx)
-	require.NoError(t, err)
+	var generators, loadFailures []string
+	for _, item := range items {
+		message, err := item.LoadError(ctx)
+		require.NoError(t, err)
+		if message != "" {
+			loadFailures = append(loadFailures, message)
+			continue
+		}
+		uri, err := item.URI(ctx)
+		require.NoError(t, err)
+		generators = append(generators, uri)
+	}
+	require.Equal(t, []string{"dag://good/generate"}, generators)
 	require.Len(t, loadFailures, 1)
 	require.Contains(t, loadFailures[0], `module "bad"`)
 
 	// checks loads best-effort too, but reports a module it cannot load as a
 	// check that fails rather than as an error (see
 	// TestChecksReportUnloadableModules).
-	checks, err := ws.Checks().List(ctx)
+	checks, err := ws.Artifacts().FilterTypes([]string{"Check"}).Items(ctx)
 	require.NoError(t, err)
 	checkNames := make([]string, 0, len(checks))
 	for _, check := range checks {
-		checkName, err := check.Name(ctx)
+		checkName, err := check.URI(ctx)
 		require.NoError(t, err)
 		checkNames = append(checkNames, checkName)
 	}
-	require.Contains(t, checkNames, "bad:load")
+	require.Contains(t, checkNames, "dag://bad/load")
 
-	selected, err := ws.Generators(dagger.WorkspaceGeneratorsOpts{Include: []string{"good"}}).List(ctx)
+	selected, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"good"}}).FilterTypes([]string{"Generator"}).Items(ctx)
 	require.NoError(t, err)
 	require.Len(t, selected, 1)
 }
@@ -631,15 +640,15 @@ func syntheticWorkspaceGitRef(ctx context.Context, t *testctx.T, c *dagger.Clien
 func assertSyntheticWorkspaceListsAreEmpty(ctx context.Context, t *testctx.T, ws *dagger.Workspace) {
 	t.Helper()
 
-	checks, err := ws.Checks().List(ctx)
+	checks, err := ws.Artifacts().FilterTypes([]string{"Check"}).Items(ctx)
 	require.NoError(t, err)
 	require.Empty(t, checks)
 
-	generators, err := ws.Generators().List(ctx)
+	generators, err := ws.Artifacts().FilterTypes([]string{"Generator"}).Items(ctx)
 	require.NoError(t, err)
 	require.Empty(t, generators)
 
-	services, err := ws.Services().List(ctx)
+	services, err := ws.Artifacts().FilterTypes([]string{"Service"}).Items(ctx)
 	require.NoError(t, err)
 	require.Empty(t, services)
 

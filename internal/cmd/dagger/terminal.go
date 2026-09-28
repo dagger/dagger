@@ -2,18 +2,21 @@ package daggercmd
 
 import (
 	"context"
-	_ "embed"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 var (
@@ -23,40 +26,21 @@ var (
 	terminalInits    []string
 )
 
-//go:embed terminals.graphql
-var loadTerminalsQuery string
-
 func init() {
+	registerCommandArtifactFlags(shellCmd)
 	shellCmd.Flags().BoolVarP(&terminalListMode, "list", "l", false, "List available shells")
-	shellCmd.Flags().StringVarP(&terminalCommand, "command", "c", "", "Run a command in the shell, and exit with its exit code")
-	shellCmd.Flags().StringArrayVar(&terminalCopies, "copy", nil, "Copy a directory into the container: [PATH=]SOURCE, where SOURCE is a local path, Git URL, or other address (repeatable)")
-	shellCmd.Flags().StringArrayVar(&terminalInits, "init", nil, "Run a command in the shell before it opens. Only its changes to files are kept (repeatable)")
+	shellCmd.Flags().StringVarP(&terminalCommand, "command", "c", "", "Run a shell `command` and return its exit code")
+	shellCmd.Flags().StringArrayVar(&terminalCopies, "copy", nil, "Copy a directory into the container: `[PATH=]SOURCE` (repeatable)")
+	shellCmd.Flags().StringArrayVar(&terminalInits, "init", nil, "Run a shell `command` before opening the shell (repeatable)")
 }
 
 var shellCmd = &cobra.Command{
-	Use:     "shell [options] [pattern]",
+	Use:     "shell [FILTERS] [OPTIONS]",
 	Aliases: []string{"sh"},
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "sh",
 	},
 	Short: "Open a terminal for a container or directory in your project",
-	Long: `Open a terminal for a container or directory in your project.
-
-Without a pattern, open the only container, or else the only container in the
-entrypoint module.
-
-As with sh: with -c, the command reads standard input. Without -c, if standard
-input is a pipe or a file, run it as a script.
-
-Examples:
-  dagger shell                                    # Open the default shell
-  dagger shell -l                                 # List all available shells
-  dagger shell go:dev                             # Open the go:dev shell
-  dagger sh go:dev                                # Use the short command alias
-  dagger shell go:dev -c 'go test ./...'          # Run a command in the go:dev shell
-  echo 'go test ./...' | dagger shell go:dev      # Read the script from stdin
-  dagger shell --copy . --init 'go mod download'  # Set up the shell first
-`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if terminalListMode {
 			for _, flag := range []string{"command", "copy", "init"} {
@@ -71,47 +55,199 @@ Examples:
 }
 
 func runTerminalCommand(cmd *cobra.Command, args []string) error {
-	var exec *dagger.TerminalGroupExecOpts
+	var in string
+	var execute bool
 	if !terminalListMode {
-		in, piped, err := readPipedStdin()
+		var piped bool
+		var err error
+		in, piped, err = readPipedStdin()
 		if err != nil {
 			return err
 		}
-		switch {
-		case cmd.Flags().Changed("command"):
-			exec = &dagger.TerminalGroupExecOpts{Args: []string{"-c", terminalCommand}, Stdin: in}
-		case piped && strings.TrimSpace(in) == "":
+		if !cmd.Flags().Changed("command") && piped && strings.TrimSpace(in) == "" {
 			return fmt.Errorf("no commands on stdin")
-		case piped:
-			exec = &dagger.TerminalGroupExecOpts{Stdin: in}
 		}
+		execute = cmd.Flags().Changed("command") || piped
 	}
 
+	params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, args)
+	if err != nil {
+		return err
+	}
 	return withEngine(
 		cmd.Context(),
-		client.Params{LoadWorkspaceModules: true},
+		params,
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			terminals := dag.CurrentWorkspace().Terminals(dagger.WorkspaceTerminalsOpts{Include: args})
-			if terminalListMode {
-				return listTerminalTargets(ctx, dag, terminals, cmd)
+			all, err := commandArtifactsWithFlags(ctx, dag, dag.CurrentWorkspace(), cmd, args, true)
+			if err != nil {
+				return err
 			}
-			copies := make([]dagger.TerminalCopy, 0, len(terminalCopies))
+			terminals := all.FilterTypes([]string{"Container", "Directory"})
+			if terminalListMode {
+				return listArtifactSelection(ctx, dag, terminals, cmd)
+			}
+			target, err := selectShellArtifact(ctx, dag, terminals)
+			if err != nil {
+				return err
+			}
+			ctr, err := shellArtifactContainer(ctx, dag, target)
+			if err != nil {
+				return err
+			}
 			for _, arg := range terminalCopies {
 				path, source, err := parseTerminalCopy(arg)
 				if err != nil {
 					return err
 				}
-				copies = append(copies, dagger.TerminalCopy{Path: path, Source: dag.Address(source).Directory()})
+				ctr = ctr.WithDirectory(path, dag.Address(source).Directory())
 			}
-			if exec != nil {
-				exec.Copy, exec.Init = copies, terminalInits
-				return execTerminalCommand(ctx, cmd, terminals.Exec(*exec))
+			if len(terminalInits) > 0 {
+				shell, err := containerShell(ctx, dag, ctr, true)
+				if err != nil {
+					return err
+				}
+				for _, command := range terminalInits {
+					ctr = ctr.WithExec(append(slices.Clone(shell.Args), command), dagger.ContainerWithExecOpts{
+						DisableDaggerInDagger:    !shell.PrivilegedNesting,
+						InsecureRootCapabilities: shell.InsecureRootCapabilities,
+					})
+				}
 			}
-			_, err := terminals.Run(dagger.TerminalGroupRunOpts{Copy: copies, Init: terminalInits}).ID(ctx)
-			return err
+			if !execute {
+				_, err := ctr.Terminal().ID(ctx)
+				return err
+			}
+			shell, err := containerShell(ctx, dag, ctr, cmd.Flags().Changed("command"))
+			if err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("command") {
+				shell.Args = append(shell.Args, terminalCommand)
+			}
+			// Cache setup work, but run the final user command on every invocation.
+			ctr = ctr.WithEnvVariable("_DAGGER_SHELL_NONCE", rand.Text())
+			return execTerminalCommand(ctx, cmd, ctr.WithExec(shell.Args, dagger.ContainerWithExecOpts{
+				Stdin:                    in,
+				Expect:                   dagger.ReturnTypeAny,
+				DisableDaggerInDagger:    !shell.PrivilegedNesting,
+				InsecureRootCapabilities: shell.InsecureRootCapabilities,
+			}))
 		},
 	)
+}
+
+type shellArtifact struct {
+	ID   string
+	URI  string
+	Type string
+}
+
+func selectShellArtifact(ctx context.Context, dag *dagger.Client, terminals *dagger.Artifacts) (shellArtifact, error) {
+	items, err := shellArtifacts(ctx, dag, terminals)
+	if err != nil {
+		return shellArtifact{}, err
+	}
+	if len(items) == 0 {
+		return shellArtifact{}, fmt.Errorf("no shells selected")
+	}
+	if len(items) == 1 {
+		return items[0], nil
+	}
+	var containers []shellArtifact
+	for _, item := range items {
+		if item.Type == "Container" {
+			containers = append(containers, item)
+		}
+	}
+	if len(containers) == 1 {
+		return containers[0], nil
+	}
+	entrypoint, err := dag.CurrentWorkspace().Entrypoint(ctx)
+	if err != nil {
+		return shellArtifact{}, err
+	}
+	if entrypoint != "" {
+		entrypointItems, err := shellArtifacts(ctx, dag, terminals.FilterTypes([]string{"Container"}).FilterURI("dag://"+entrypoint+"/**"))
+		if err != nil {
+			return shellArtifact{}, err
+		}
+		if len(entrypointItems) == 1 {
+			return entrypointItems[0], nil
+		}
+	}
+	names := make([]string, len(items))
+	for i, item := range items {
+		names[i] = item.URI
+	}
+	return shellArtifact{}, fmt.Errorf("shell selection matched %d targets: %s; select one, or run 'dagger shell -l' to list them", len(names), strings.Join(names, ", "))
+}
+
+func shellArtifacts(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts) ([]shellArtifact, error) {
+	id, err := selection.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Node struct{ Items []shellArtifact }
+	}
+	err = dag.Do(ctx, &dagger.Request{
+		Query:     `query ShellArtifacts($id: ID!) { node(id: $id) { ... on Artifacts { items { id uri(dimensionKeys: true, typeAssertion: true) } } } }`,
+		Variables: map[string]any{"id": id},
+	}, &dagger.Response{Data: &result})
+	if err != nil {
+		return nil, err
+	}
+	for i := range result.Node.Items {
+		item := &result.Node.Items[i]
+		address, err := dagaddress.Parse(item.URI)
+		if err != nil {
+			return nil, err
+		}
+		if len(address.Types) == 1 && address.Types[0] == "container" {
+			item.Type = "Container"
+		} else {
+			item.Type = "Directory"
+		}
+	}
+	return result.Node.Items, nil
+}
+
+func shellArtifactContainer(ctx context.Context, dag *dagger.Client, target shellArtifact) (*dagger.Container, error) {
+	id, err := dagger.Ref[*dagger.Artifact](dag, dagger.ID(target.ID)).Value().ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if target.Type == "Container" {
+		return dagger.Ref[*dagger.Container](dag, id), nil
+	}
+	// Directory shells use the CLI's default image and the engine's default
+	// platform. The Directory API does not expose a source platform.
+	dir := dagger.Ref[*dagger.Directory](dag, id)
+	return dag.Container().From(distconsts.AlpineImage).
+		WithMountedDirectory("/src", dir).
+		WithWorkdir("/src"), nil
+}
+
+// shellCommand is the part of Command needed for a shell invocation. The
+// container supplies the environment and working directory.
+type shellCommand struct {
+	Args                     []string
+	PrivilegedNesting        bool
+	InsecureRootCapabilities bool
+}
+
+func containerShell(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, batch bool) (shellCommand, error) {
+	id, err := ctr.ID(ctx)
+	if err != nil {
+		return shellCommand{}, err
+	}
+	var result struct{ Node struct{ Shell shellCommand } }
+	err = dag.Do(ctx, &dagger.Request{
+		Query:     `query ContainerShell($id: ID!, $batch: Boolean!) { node(id: $id) { ... on Container { shell(batch: $batch) { args privilegedNesting insecureRootCapabilities } } } }`,
+		Variables: map[string]any{"id": id, "batch": batch},
+	}, &dagger.Response{Data: &result})
+	return result.Node.Shell, err
 }
 
 // readPipedStdin reads stdin if it is a pipe or a file. It does not read
@@ -145,7 +281,7 @@ func parseTerminalCopy(arg string) (path, source string, _ error) {
 }
 
 func execTerminalCommand(ctx context.Context, cmd *cobra.Command, exec *dagger.Container) error {
-	// Sync once: each query of the exec field runs the command again.
+	// Pin the result before reading its exit code and output.
 	executed, err := exec.Sync(ctx)
 	if err != nil {
 		return err
@@ -172,28 +308,6 @@ func execTerminalCommand(ctx context.Context, cmd *cobra.Command, exec *dagger.C
 		return idtui.ExitError{OriginalCode: exitCode}
 	}
 	return nil
-}
-
-func listTerminalTargets(ctx context.Context, dag *dagger.Client, terminals *dagger.TerminalGroup, cmd *cobra.Command) error {
-	list, err := loadGroupListDetails(ctx, dag, "fetch terminal information",
-		func(ctx context.Context) (any, error) { return terminals.ID(ctx) },
-		loadTerminalsQuery, "TerminalGroupListDetails",
-	)
-	if err != nil {
-		return err
-	}
-	items := make([]commandListItem, 0, len(list))
-	for _, terminal := range list {
-		items = append(items, commandListItem{
-			Name:    cliName(terminal.Name),
-			Comment: firstDescriptionLine(terminal.Description),
-		})
-	}
-	out := cmd.OutOrStdout()
-	if _, err := fmt.Fprintln(out, "# select with 'dagger shell <NAME>'"); err != nil {
-		return err
-	}
-	return writeCommandList(out, items)
 }
 
 var terminalMu sync.Mutex

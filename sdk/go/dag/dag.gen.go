@@ -46,7 +46,7 @@ func Close() error {
 	return err
 }
 
-// initialize an address to load directories, containers, secrets or other object types.
+// Resolve external references only.
 func Address(value string) *dagger.Address {
 	client := initClient()
 	return client.Address(value)
