@@ -508,7 +508,7 @@ func (LLMSuite) TestChangesetToolsApplyInOrder(ctx context.Context, t *testctx.T
 			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 		}))
 	}
-	loopThen := func(ctx context.Context, t *testctx.T, model, then string) (string, error) {
+	loopThen := func(ctx context.Context, model, then string) (string, error) {
 		return base.With(daggerShell(fmt.Sprintf(
 			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "make the changes" | loop | %s`,
 			model, then,
@@ -520,24 +520,24 @@ func (LLMSuite) TestChangesetToolsApplyInOrder(ctx context.Context, t *testctx.T
 		// both add NEW.txt. clashSecond runs on the tree clashFirst left.
 		model := batchModel(ctx, t, "clashFirst", "clashSecond")
 
-		shared, err := loopThen(ctx, t, model, "workspace | file shared.txt | contents")
+		shared, err := loopThen(ctx, model, "workspace | file shared.txt | contents")
 		require.NoError(t, err)
 		require.Equal(t, "line1: BLUE\nline2: BLUE\n", shared)
 
-		added, err := loopThen(ctx, t, model, "workspace | file NEW.txt | contents")
+		added, err := loopThen(ctx, model, "workspace | file NEW.txt | contents")
 		require.NoError(t, err)
 		require.Equal(t, "blue new file\n", added)
 
 		// clashSecond's patch is against clashFirst's result, not the
 		// original tree.
-		transcript, err := loopThen(ctx, t, model, "transcript")
+		transcript, err := loopThen(ctx, model, "transcript")
 		require.NoError(t, err)
 		require.Contains(t, transcript, "-line1: RED")
 	})
 
 	t.Run("a removal written after an edit removes the edited file", func(ctx context.Context, t *testctx.T) {
 		model := batchModel(ctx, t, "clashFirst", "removeShared")
-		_, err := loopThen(ctx, t, model, "workspace | file shared.txt | contents")
+		_, err := loopThen(ctx, model, "workspace | file shared.txt | contents")
 		require.Error(t, err)
 	})
 
@@ -546,22 +546,22 @@ func (LLMSuite) TestChangesetToolsApplyInOrder(ctx context.Context, t *testctx.T
 		// replacement is lazy, so only evaluating its changeset finds out.
 		model := batchModel(ctx, t, "addFirst", "breakShared", "addSecond")
 
-		transcript, err := loopThen(ctx, t, model, "transcript")
+		transcript, err := loopThen(ctx, model, "transcript")
 		require.NoError(t, err)
 		require.Contains(t, transcript, "found multiple times")
 		require.Contains(t, transcript, "not run: call 2 (breakShared) in this batch failed first")
 		require.Contains(t, transcript, "done")
 
 		// The edit before it landed...
-		first, err := loopThen(ctx, t, model, "workspace | file FIRST.txt | contents")
+		first, err := loopThen(ctx, model, "workspace | file FIRST.txt | contents")
 		require.NoError(t, err)
 		require.Equal(t, "first parallel change", strings.TrimSpace(first))
 		// ...the broken one did not...
-		shared, err := loopThen(ctx, t, model, "workspace | file shared.txt | contents")
+		shared, err := loopThen(ctx, model, "workspace | file shared.txt | contents")
 		require.NoError(t, err)
 		require.Equal(t, "line1: placeholder\nline2: placeholder\n", shared)
 		// ...and the one after it never ran.
-		_, err = loopThen(ctx, t, model, "workspace | file SECOND.txt | contents")
+		_, err = loopThen(ctx, model, "workspace | file SECOND.txt | contents")
 		require.Error(t, err)
 	})
 }
