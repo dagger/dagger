@@ -173,6 +173,57 @@ func TestReplayEmitsAuthoritativePatchResult(t *testing.T) {
 	t.Fatal("replayed patch result was not emitted")
 }
 
+func TestRecordedResponseProviderSystemPrompts(t *testing.T) {
+	message := func(role LLMMessageRole, text string) *LLMMessage {
+		return &LLMMessage{Role: role, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: text}}}
+	}
+	user := message(LLMMessageRoleUser, "task")
+	user.Origin = &LLMMessageOrigin{Kind: LLMMessageOriginAgent, AgentName: "chief", Ref: "#1"}
+	system := message(LLMMessageRoleSystem, "worker instructions")
+	otherSystem := message(LLMMessageRoleSystem, "other instructions")
+	reply := message(LLMMessageRoleAssistant, "done")
+
+	for _, tc := range []struct {
+		name     string
+		recorded []*LLMMessage
+		history  []*LLMMessage
+		wantErr  bool
+	}{
+		{
+			name:     "no system prompt",
+			recorded: []*LLMMessage{user, reply}, history: []*LLMMessage{user},
+		},
+		{
+			name:     "explicit system prompt",
+			recorded: []*LLMMessage{system, user, reply}, history: []*LLMMessage{system, user},
+		},
+		{
+			name:     "multiple system prompts",
+			recorded: []*LLMMessage{system, otherSystem, user, reply}, history: []*LLMMessage{system, otherSystem, user},
+		},
+		{
+			name:     "unexpected leading system prompt is not discarded",
+			recorded: []*LLMMessage{user, reply, user, reply}, history: []*LLMMessage{system, user}, wantErr: true,
+		},
+		{
+			name:     "mismatched leading system prompt is not discarded",
+			recorded: []*LLMMessage{system, user, reply}, history: []*LLMMessage{otherSystem, user}, wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ctx := recordingTestRecorder(t)
+			response, err := newRecordedResponseProvider(tc.recorded).SendQuery(ctx, renderMessagesForModel(tc.history), nil, nil)
+			if tc.wantErr {
+				require.ErrorContains(t, err, "message history diverges at index 0")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "done", response.TextContent())
+			require.Equal(t, "task", user.TextContent(), "rendering must not alter recorded history")
+		})
+	}
+}
+
 func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
 	sr, ctx := recordingTestRecorder(t)
 	ctx = testAgentContext(t, ctx, "agent-123", "reviewer")

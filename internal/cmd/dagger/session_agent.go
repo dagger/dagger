@@ -275,7 +275,6 @@ func (a *sessionAgent) GenerateSessionTitle(ctx context.Context, initialPrompt s
 	titleLLM := a.llm.
 		WithoutMessageHistory().
 		WithoutSystemPrompts().
-		WithoutDefaultSystemPrompt().
 		WithSmallModel()
 
 	prompt := fmt.Sprintf(`Create a concise title describing this Dagger agent session.

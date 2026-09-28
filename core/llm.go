@@ -111,9 +111,6 @@ type LLM struct {
 	endpoint    *LLMEndpoint
 	endpointMtx *sync.Mutex
 
-	// Whether to disable the default system prompt
-	disableDefaultSystemPrompt bool
-
 	// maxSteps caps the number of steps per loop when loop() itself doesn't
 	// specify a cap. Zero means no cap. Only set via the legacy
 	// llm(maxAPICalls:) argument, kept for pre-v1 module views.
@@ -2042,8 +2039,7 @@ func (llm *LLM) WithoutMessageHistory() *LLM {
 	return llm
 }
 
-// WithoutSystemPrompts removes all system prompts from the history, leaving
-// only the default system prompt
+// WithoutSystemPrompts removes all system prompts from the history.
 func (llm *LLM) WithoutSystemPrompts() *LLM {
 	llm = llm.Clone()
 	llm.Messages = slices.DeleteFunc(llm.Messages, func(msg *LLMMessage) bool {
@@ -2164,13 +2160,6 @@ func (llm *LLM) WithMaxAPICalls(calls int) *LLM {
 	return llm
 }
 
-// Disable the default system prompt
-func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
-	llm = llm.Clone()
-	llm.disableDefaultSystemPrompt = true
-	return llm
-}
-
 // Add an external MCP server to the LLM
 func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LLM {
 	llm = llm.Clone()
@@ -2218,28 +2207,6 @@ func (llm *LLM) LastReply() (string, bool) {
 		reply = txt
 	}
 	return reply, foundReply
-}
-
-func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*LLMMessage, error) {
-	var systemPrompt string
-	if !llm.disableDefaultSystemPrompt {
-		var err error
-		systemPrompt, err = llm.mcp.DefaultSystemPrompt(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-	messages := renderMessagesForModel(llm.Messages)
-	if systemPrompt != "" {
-		return append([]*LLMMessage{{
-			Role: LLMMessageRoleSystem,
-			Content: []*LLMContentBlock{{
-				Kind: LLMContentText,
-				Text: systemPrompt,
-			}},
-		}}, messages...), nil
-	}
-	return messages, nil
 }
 
 // renderMessagesForModel applies each message's recorded origin as a
@@ -2316,10 +2283,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 		return inst, err
 	}
 
-	messagesToSend, err := llm.messagesWithSystemPrompt(ctx)
-	if err != nil {
-		return inst, err
-	}
+	messagesToSend := renderMessagesForModel(llm.Messages)
 
 	// Compute the LLM call digest for prompt/response span metadata. inst is the
 	// LLM state entering step() (typically the result of withPrompt). Its recipe
@@ -3332,10 +3296,6 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 	}
 	sels := []dagql.Selector{root}
 
-	if llm.disableDefaultSystemPrompt {
-		sels = append(sels, dagql.Selector{Field: "withoutDefaultSystemPrompt"})
-	}
-
 	for _, name := range slices.Sorted(maps.Keys(llm.mcp.mcpServers)) {
 		cfg := llm.mcp.mcpServers[name]
 		svcID, err := cfg.Service.ID()
@@ -3574,10 +3534,7 @@ func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsa
 // appended since that response and will be sent with the next request.
 func (llm *LLM) ContextTokens(ctx context.Context, dag *dagql.Server) (int, error) {
 	_ = dag
-	messages, err := llm.messagesWithSystemPrompt(ctx)
-	if err != nil {
-		return 0, err
-	}
+	messages := renderMessagesForModel(llm.Messages)
 	return int(estimateOccupiedContextTokens(messages)), nil
 }
 

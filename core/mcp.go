@@ -166,14 +166,6 @@ func newMCP() *MCP {
 	}
 }
 
-func (m *MCP) DefaultSystemPrompt(ctx context.Context) (string, error) {
-	// The agent acts through the methods of the objects it's bound to via
-	// LLM.withTools (hack/designs/workspace-agents.md), so there is no default harness prompt to
-	// teach — each tool is self-describing, and an agent module supplies its own
-	// system prompts (e.g. Doug.agent adds provider + reminder prompts).
-	return "", nil
-}
-
 func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.boundTools = slices.Clone(cp.boundTools)
