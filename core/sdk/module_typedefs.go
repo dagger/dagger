@@ -71,6 +71,7 @@ func (sdk *moduleTypes) ModuleTypes(
 			return inst, fmt.Errorf("compute module types exec call digest: %w", err)
 		}
 		execMD.CallDigest = callDigest
+		core.SetExecutionIdentity(ctx, &execMD)
 	}
 	var ctr dagql.ObjectResult[*core.Container]
 	err = dag.Select(ctx, sdkInst.sdk, &ctr,

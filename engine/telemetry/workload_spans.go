@@ -70,7 +70,8 @@ func workloadSpanAttribute(key attribute.Key) bool {
 		telemetryattrs.CacheContractAttr,
 		telemetryattrs.CacheOutcomeAttr, telemetryattrs.CacheHitRouteAttr, telemetryattrs.CacheResultIDAttr,
 		telemetryattrs.WcprofOpKindAttr, telemetryattrs.WcprofParentAttr,
-		telemetryattrs.TelemetryOriginClientIDAttr, ExecutionIDAttr, ExecutionInternalAttr:
+		telemetryattrs.TelemetryOriginClientIDAttr, ExecutionIDAttr, ExecutionInternalAttr,
+		telemetryattrs.ExecutionContentPreferredDigestAttr:
 		return true
 	default:
 		return false

@@ -615,6 +615,7 @@ func (svc *Service) startContainer(
 	// resolution problem its consumers do; see recordBoundServiceFQDNs. execMD
 	// is cloned above, so this never mutates shared state.
 	recordBoundServiceFQDNs(execMD, ctr.Services, runningDeps)
+	SetExecutionIdentity(ctx, execMD)
 
 	propagateDependencyExits := len(runningDeps) > 0 &&
 		running.Key.Kind != ServiceRuntimeInteractive &&

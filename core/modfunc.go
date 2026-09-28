@@ -861,6 +861,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			return nil, fmt.Errorf("compute function exec call digest: %w", err)
 		}
 		execMD.CallDigest = callDigest
+		// The runtime execution runs the user's function: give it the
+		// function call's identity, not the runtime container's.
+		SetExecutionIdentity(ctx, &execMD)
 	}
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
