@@ -279,16 +279,20 @@ func TestCallBatchFailedStepDoesNotStopTheBatch(t *testing.T) {
 }
 
 func TestCallBatchUnevaluableChangesetFailsItsOwnCall(t *testing.T) {
-	srv := newCoreDagqlServerForTest(t, &Query{})
+	ctx, cache, srv := containerPersistenceTestCache(t, "", newContainerPersistenceTestSnapshots(), "batch")
 	srv.InstallObject(dagql.NewClass[*Changeset](srv))
 
 	// A lazy changeset that fails once evaluated, as an edit with an ambiguous
-	// search string does.
-	evalErr := errors.New("evaluate changeset directories: search string found multiple times")
-	broken := &Changeset{paths: &changesetPathsMemo{}}
-	broken.paths.once.Do(func() {})
-	broken.paths.err = evalErr
-	broken.paths.done.Store(true)
+	// search string does: its After directory is an operation nobody has run
+	// yet, and running it is what finds the second match.
+	evalErr := errors.New("search string found multiple times")
+	before := attachStoredSnapshotTestValue(t, ctx, cache, srv, "batch", "before",
+		storedSnapshotTestValue("Directory", "before", "/", false), false).(dagql.ObjectResult[*Directory])
+	afterDir := storedSnapshotTestValue("Directory", "after", "/", false).(*Directory)
+	afterDir.Lazy = &storedSnapshotTestLazy[*Directory]{LazyState: NewLazyState(), run: func(*Directory) error { return evalErr }}
+	after := attachStoredSnapshotTestValue(t, ctx, cache, srv, "batch", "after", afterDir, false).(dagql.ObjectResult[*Directory])
+	broken, err := NewChangeset(ctx, before, after)
+	require.NoError(t, err)
 	changes, err := dagql.NewObjectResultForCall(broken, srv, &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
 		SyntheticOp: "broken-edit",
@@ -311,7 +315,7 @@ func TestCallBatchUnevaluableChangesetFailsItsOwnCall(t *testing.T) {
 		batchCall(t, 2, "brokenEdit", nil),
 		batchCall(t, 3, "write", map[string]any{"path": "b.txt", "contents": "b"}),
 	}
-	results := batchResults(t, m.CallBatch(t.Context(), tools, calls, nil, nil))
+	results := batchResults(t, m.CallBatch(ctx, tools, calls, nil, nil))
 
 	require.False(t, results[0].Errored)
 	// The evaluation error is the call's own failure — it was never handed to

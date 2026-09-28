@@ -612,13 +612,12 @@ func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql
 		return true, out, err
 	}
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
-		// A tool's Changeset is usually lazy, so force it here: a broken one
-		// must fail this call rather than surface later, from inside the
-		// workspace it was overlaid onto. The bounded path check evaluates
-		// both sides without a full diff; summarizePatch and
-		// normalizeChangesetToPatch run the same check next anyway.
+		// A tool's Changeset is usually lazy — an edit is a File.withReplaced
+		// nobody has run yet — so evaluate it here: a broken one must fail
+		// this call rather than surface later, from inside the workspace it
+		// was overlaid onto.
 		if changes.Self() != nil {
-			if _, err := changesetTooLarge(ctx, changes); err != nil {
+			if err := changes.Self().Evaluate(ctx); err != nil {
 				return true, "", err
 			}
 		}
