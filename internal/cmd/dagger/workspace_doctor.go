@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,11 +26,13 @@ func newWorkspaceDoctorCmd(hidden bool) *cobra.Command {
 		Use:    "doctor",
 		Short:  "Check whether your workspace is ready to run Dagger",
 		Hidden: hidden,
-		Long: `Check workspace configuration, lockfile, engine connectivity, and Cloud authentication.
+		Long: `Check workspace configuration, lockfile, engine connectivity, Cloud authentication,
+module loading, and module settings.
 
 Missing configuration or lockfiles and Cloud authentication problems are warnings.
-Invalid files or an unavailable engine cause a nonzero exit status.
-Modules and their dependencies are not loaded. No workspace files are changed.`,
+Invalid files, unavailable engines, module loading failures, and invalid settings
+cause a nonzero exit status. Object settings are resolved using their configured
+addresses, which may invoke module functions. Loading modules can populate dagger.lock.`,
 		Args: cobra.NoArgs,
 		RunE: runWorkspaceDoctor,
 	}
@@ -97,7 +100,7 @@ func runWorkspaceDoctor(cmd *cobra.Command, _ []string) error {
 	// prevent connecting to a local engine. A Cloud engine still requires auth.
 	ctx = context.WithValue(ctx, doctorCloudAuthKey{}, cloudAuth)
 	connected := false
-	err := withEngine(ctx, client.Params{SkipWorkspaceModules: true}, func(ctx context.Context, c *client.Client) error {
+	err := withEngine(ctx, client.Params{LoadWorkspaceModules: true}, func(ctx context.Context, c *client.Client) error {
 		connected = true
 		report.result("Engine", "connected", nil, false)
 		ws := c.Dagger().CurrentWorkspace()
@@ -106,6 +109,9 @@ func runWorkspaceDoctor(cmd *cobra.Command, _ []string) error {
 		}
 		_, err := ws.ConfigRead(ctx)
 		report.result("Workspace loading", "selected configuration and environment loaded", err, false)
+		if err == nil {
+			doctorWorkspaceModules(ctx, report, c.Dagger())
+		}
 		return nil
 	})
 	if err != nil {
@@ -201,4 +207,36 @@ func doctorWorkspaceFilesInRoot(ctx context.Context, report *doctorReport, cwd s
 		}
 		return readFile(name)
 	})
+}
+
+func doctorWorkspaceModules(ctx context.Context, report *doctorReport, dag *dagger.Client) {
+	var response struct {
+		CurrentWorkspace struct {
+			Doctor string `json:"__doctor"`
+		}
+	}
+	err := dag.Do(ctx, &dagger.Request{Query: `query { currentWorkspace { __doctor } }`}, &dagger.Response{Data: &response})
+	if err != nil {
+		report.result("Workspace modules", "", err, false)
+		return
+	}
+	var diagnostics []struct {
+		Name  string
+		Check string
+		Error string
+	}
+	if err := json.Unmarshal([]byte(response.CurrentWorkspace.Doctor), &diagnostics); err != nil {
+		report.result("Workspace modules", "", err, false)
+		return
+	}
+	if len(diagnostics) == 0 {
+		report.result("Workspace modules", "no modules configured", nil, false)
+	}
+	for _, diagnostic := range diagnostics {
+		var err error
+		if diagnostic.Error != "" {
+			err = errors.New(diagnostic.Error)
+		}
+		report.result(fmt.Sprintf("%s %q", diagnostic.Check, diagnostic.Name), "valid", err, false)
+	}
 }

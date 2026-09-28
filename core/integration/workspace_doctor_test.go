@@ -24,7 +24,7 @@ func (WorkspaceSuite) TestDoctorCLI(ctx context.Context, t *testctx.T) {
 		want    []string
 	}{
 		{"missing files", "", "", []string{"workspace", "doctor"}, dagger.ReturnTypeSuccess, []string{"WARN Workspace config", "WARN Lockfile", "PASS Engine", "WARN Cloud login"}},
-		{"unloadable module is not checked", "[modules.broken]\nsource = \"does-not-exist\"\n", "[[\"version\",\"2\"]]\n", []string{"workspace", "doctor"}, dagger.ReturnTypeSuccess, []string{"PASS Workspace config", "PASS Lockfile", "PASS Engine"}},
+		{"unloadable module fails", "[modules.broken]\nsource = \"does-not-exist\"\n", "[[\"version\",\"2\"]]\n", []string{"workspace", "doctor"}, dagger.ReturnTypeFailure, []string{"PASS Workspace config", "PASS Lockfile", "PASS Engine", `FAIL Module loading "broken"`}},
 		{"hidden alias", "", "", []string{"doctor"}, dagger.ReturnTypeSuccess, []string{"WARN Workspace config", "PASS Engine"}},
 		{"invalid files", "[broken", "broken", []string{"workspace", "doctor"}, dagger.ReturnTypeFailure, []string{"FAIL Workspace config", "FAIL Lockfile", "PASS Engine", "WARN Cloud login"}},
 	} {
@@ -56,7 +56,7 @@ func (WorkspaceSuite) TestDoctorCLI(ctx context.Context, t *testctx.T) {
 		}
 	})
 	t.Run("remote workspace", func(ctx context.Context, t *testctx.T) {
-		source := c.Directory().WithNewFile("dagger.toml", "[modules.broken]\nsource = \"does-not-exist\"\n")
+		source := c.Directory().WithNewFile("dagger.toml", "")
 		ref := workspaceSelectionRemoteRef(ctx, t, c, source)
 		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "workspace", "doctor")).Stdout(ctx)
 		require.NoError(t, err)
@@ -64,4 +64,63 @@ func (WorkspaceSuite) TestDoctorCLI(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "WARN Lockfile")
 		require.Contains(t, out, "PASS Engine")
 	})
+}
+
+func (WorkspaceSuite) TestDoctorModuleSettings(ctx context.Context, t *testctx.T) {
+	fixture := workspaceSettingsModuleFixture{relDir: "probe", name: "probe", main: `package main
+import "dagger/probe/internal/dagger"
+type Probe struct{}
+type Flavor string
+const Vanilla Flavor = "VANILLA"
+func New(
+ // +optional
+ flavor Flavor,
+ // +optional
+ count int,
+ // +optional
+ enabled bool,
+ // +optional
+ tags []string,
+ // +optional
+ dir *dagger.Directory,
+) *Probe { panic("doctor must not invoke the constructor") }
+func (p *Probe) Hello() string { return "hello" }
+`}
+	provider := workspaceSettingsModuleFixture{relDir: "provider", name: "provider", main: `package main
+import "dagger/provider/internal/dagger"
+type Provider struct{}
+func (p *Provider) Directory() *dagger.Directory { return dag.Directory() }
+`}
+	for _, tc := range []struct {
+		name, settings, extra string
+		args                  []string
+		fail                  bool
+		want                  []string
+	}{
+		{name: "valid settings", settings: "COUNT = 3\nenabled = true\ntags = [\"a\", \"b\"]\ndir = \".\"\n", want: []string{`PASS Module loading "probe"`, `PASS Module settings "probe"`}},
+		{name: "module wiring", settings: "dir = \"provider:directory\"\n", extra: "[modules.provider]\nsource = \"provider\"\n", want: []string{`PASS Module settings "probe"`}},
+		{name: "invalid module wiring", settings: "dir = \"provider:missing\"\n", extra: "[modules.provider]\nsource = \"provider\"\n", fail: true, want: []string{`FAIL Module settings "probe"`}},
+		{name: "enum setting", settings: "flavor = \"VANILLA\"\n", want: []string{`PASS Module settings "probe"`}},
+		{name: "invalid enum setting", settings: "flavor = \"INVALID\"\n", fail: true, want: []string{"FAIL", "flavor"}},
+		{name: "unknown settings", settings: "typo = true\n", fail: true, want: []string{`FAIL Module settings "probe"`, `unknown setting "typo"`}},
+		{name: "invalid primitive", settings: "count = \"not-an-int\"\n", fail: true, want: []string{"FAIL", "count"}},
+		{name: "invalid bool", settings: "enabled = 42\n", fail: true, want: []string{"FAIL", "enabled"}},
+		{name: "invalid address", settings: "dir = \"/does-not-exist\"\n", fail: true, want: []string{`FAIL Module settings "probe"`, "dir"}},
+		{name: "selected environment", settings: "count = 3\n", extra: "[env.bad.modules.probe.settings]\ntyppo = true\n", args: []string{"--env=bad"}, fail: true, want: []string{`FAIL Module settings "probe"`, "typpo"}},
+		{name: "continue after load failure", extra: "[modules.broken]\nsource = \"does-not-exist\"\n", fail: true, want: []string{`FAIL Module loading "broken"`, `PASS Module settings "probe"`}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			dir := newWorkspaceSettingsWorkdir(ctx, t, "[modules.probe]\nsource = \"probe\"\n[modules.probe.settings]\n"+tc.settings+tc.extra, fixture, provider)
+			args := append([]string{"workspace", "doctor"}, tc.args...)
+			out, err := hostDaggerExec(ctx, t, dir, args...)
+			if tc.fail {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			for _, want := range tc.want {
+				require.Contains(t, string(out), want)
+			}
+		})
+	}
 }
