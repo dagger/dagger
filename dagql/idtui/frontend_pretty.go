@@ -7320,9 +7320,9 @@ func progressToggleHelp(expanded bool) string {
 
 func onlyRunningHelp(onlyRunning bool) string {
 	if onlyRunning {
-		return "show all spans"
+		return "show completed"
 	}
-	return "only running"
+	return "hide completed"
 }
 
 // spanHasProgressRollup reports whether the span currently folds completed
