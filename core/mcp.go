@@ -2065,17 +2065,28 @@ func (m *MCP) planningTool(call *LLMToolCall, tools []LLMTool) (*LLMTool, error)
 	if tool.Name != timeoutToolName {
 		return tool, nil
 	}
+	if wrapped := m.timeoutTarget(call, tools); wrapped != nil {
+		return wrapped, nil
+	}
+	return tool, nil
+}
+
+// timeoutTarget returns the tool a Timeout call wraps, or nil when its
+// arguments don't name one that exists. Timeout itself reports the details
+// when it runs; the planner only needs to know whether to schedule as the
+// target.
+func (m *MCP) timeoutTarget(call *LLMToolCall, tools []LLMTool) *LLMTool {
 	var args struct {
 		Tool string `json:"tool"`
 	}
-	if err := json.Unmarshal(call.Arguments, &args); err != nil || args.Tool == "" {
-		return tool, nil
+	if json.Unmarshal(call.Arguments, &args) != nil || args.Tool == "" {
+		return nil
 	}
 	wrapped, err := m.LookupTool(args.Tool, tools)
 	if err != nil {
-		return tool, nil
+		return nil
 	}
-	return wrapped, nil
+	return wrapped
 }
 
 // mcpServerSyncsWorkspace reports whether calls to the named MCP server run
