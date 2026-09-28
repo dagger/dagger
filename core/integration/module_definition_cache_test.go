@@ -165,6 +165,22 @@ func definitionRows(t *testctx.T, report transferFixtureReport) map[uint64]defin
 	return out
 }
 
+// moduleTypesDefinitionRows closes client after reading the cache report
+// and returns the _moduleTypesDefinition rows in it.
+func moduleTypesDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client) []uint64 {
+	t.Helper()
+	defer func() { require.NoError(t, client.Close()) }()
+	var report transferFixtureReport
+	require.NoError(t, transferFixture(ctx, client, "report", "", []string{}, &report))
+	var out []uint64
+	for _, row := range report.Rows {
+		if row.Call != nil && row.Call.Field == "_moduleTypesDefinition" {
+			out = append(out, row.ResultID)
+		}
+	}
+	return out
+}
+
 func rowNumbers(rows map[uint64]definitionRow) []uint64 {
 	var out []uint64
 	for id := range rows {
@@ -178,7 +194,8 @@ const servedQuery = `{moduleSource(refString:"."){asModule{id objects{asObject{n
 // A Go module's type definitions are a cached, content-keyed result. On one
 // engine: the first client's load computes them through the runtime, a
 // second client's load hits that row without running the runtime, a source
-// edit makes a new row, and Dang modules add none. Across engines: the row
+// edit makes a new row, and Dang modules get a _moduleTypesDefinition row
+// instead, with the same hit and edit behavior. Across engines: the row
 // travels in a bundle with its runtime, a cold engine's eager client hits it
 // and still evaluates the runtime, and a function then runs in it.
 func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *testctx.T) {
@@ -249,6 +266,17 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 	native, nativeRows := load(t, a, dangDir)
 	require.Equal(t, []string{"Native.hello"}, functionNames(native))
 	require.ElementsMatch(t, rowNumbers(thirdRows), rowNumbers(nativeRows), "no definition row was added for a ModuleTypes SDK")
+
+	// Its definition is a _moduleTypesDefinition row instead: a second
+	// client hits it, and a source edit makes a new one.
+	typesRows := func() []uint64 { return moduleTypesDefinitionRows(ctx, t, a.connect(ctx, t, dangDir)) }
+	require.Len(t, typesRows(), 1)
+	load(t, a, dangDir)
+	require.Len(t, typesRows(), 1, "the second client hit the same definition")
+	require.NoError(t, os.WriteFile(filepath.Join(dangDir, "main.dang"), []byte("type Native {\n  hello: String! { \"hi\" }\n  bye: String! { \"bye\" }\n}\n"), 0o644))
+	edited, _ := load(t, a, dangDir)
+	require.ElementsMatch(t, []string{"Native.hello", "Native.bye"}, functionNames(edited))
+	require.Len(t, typesRows(), 2, "a source edit is a new definition")
 
 	// A module that calls itself (SELF_CALLS) loads and answers a real self
 	// call on the same engine, and adds no definition row either.

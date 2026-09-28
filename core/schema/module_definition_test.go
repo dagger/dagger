@@ -98,7 +98,10 @@ func moduleDefinitionTestEnv(t *testing.T, path, session string, stub *moduleDef
 		}
 		return dagql.NewObjectResultForCurrentCall(ctx, srv, def)
 	}
-	dagql.Fields[*core.ModuleSource]{moduleDefinitionField(resolver)}.Install(srv)
+	dagql.Fields[*core.ModuleSource]{
+		moduleDefinitionField(resolver),
+		moduleTypesDefinitionField((&moduleSourceSchema{}).moduleSourceModuleTypesDefinition),
+	}.Install(srv)
 	return ctx, cache, srv, server
 }
 
