@@ -82,10 +82,13 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			buildUV.Rootfs(),
 			dagger.ContainerWithDirectoryOpts{Include: []string{"uv*"}},
 		).
-		WithMountedDirectory("", pySrc.Directory("codegen")).
+		// mount the whole uv workspace so the export honors uv.lock instead of
+		// resolving the latest versions of codegen's dependencies
+		WithMountedDirectory("", pySrc).
 		WithEnvVariable("UV_NATIVE_TLS", "true").
 		WithExec([]string{
 			"uv", "export",
+			"--frozen",
 			"--no-hashes",
 			"--no-editable",
 			"--package", "codegen",
