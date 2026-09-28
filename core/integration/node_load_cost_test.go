@@ -82,7 +82,9 @@ func (LLMSuite) TestNodeLoadCost(ctx context.Context, t *testctx.T) {
 
 	withTools := func(id string, n int) string {
 		for _, tool := range toolIDs[:n] {
-			var res struct{ Node struct{ WithTools struct{ ID string } } }
+			var res struct {
+				Node struct{ WithTools struct{ ID string } }
+			}
 			do(`query($id: ID!, $tool: ID!) { node(id: $id) { ... on LLM { withTools(object: $tool) { id } } } }`,
 				map[string]any{"id": id, "tool": tool}, &res)
 			id = res.Node.WithTools.ID
@@ -114,7 +116,9 @@ func (LLMSuite) TestNodeLoadCost(ctx context.Context, t *testctx.T) {
 		return id
 	}
 
-	var dir struct{ Directory struct{ WithNewFile struct{ ID string } } }
+	var dir struct {
+		Directory struct{ WithNewFile struct{ ID string } }
+	}
 	do(`{ directory { withNewFile(path: "a", contents: "a") { id } } }`, nil, &dir)
 
 	const llmFragment = `... on LLM { tokenUsage { inputTokens } }`
