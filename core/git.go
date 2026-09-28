@@ -405,6 +405,50 @@ func (repo *GitRepository) ResolveShortSHA(ctx context.Context, prefix string) (
 	return repo.Backend.ResolveShortSHA(ctx, prefix)
 }
 
+// WalkRevision applies a revision's suffixes (e.g. the ~3 of HEAD~3) to base,
+// the ref its base name resolved to, and returns the resulting commit SHA.
+//
+// Parents are read from commit objects. Local repositories walk the objects
+// they already have. Remote repositories fetch just enough history below the
+// base commit for the walk, falling back to a full-history fetch if that
+// history turns out to be incomplete (e.g. a merge parent beyond the fetched
+// depth). A commit that is still unavailable is an error, never a truncated
+// answer.
+func (repo *GitRepository) WalkRevision(ctx context.Context, base *gitutil.Ref, rev gitutil.Revision) (string, error) {
+	backend, err := repo.Backend.Get(ctx, base)
+	if err != nil {
+		return "", err
+	}
+	walk := func(depth int) (sha string, err error) {
+		err = backend.mount(ctx, depth, false, func(git *gitutil.GitCLI) error {
+			var err error
+			sha, err = git.WalkRevision(ctx, rev, base.SHA)
+			return err
+		})
+		return sha, err
+	}
+
+	if _, ok := repo.Backend.(*RemoteGitRepository); !ok {
+		return walk(0)
+	}
+
+	// Commits up to N generations below the base are needed to walk N parent
+	// links; fetch one more so the resulting commit itself is available.
+	depth := 0 // full history
+	if gens := rev.Generations(); gens < maxRevisionFetchDepth {
+		depth = gens + 1
+	}
+	sha, err := walk(depth)
+	if depth > 0 && errors.Is(err, gitutil.ErrRevisionHistoryUnavailable) {
+		sha, err = walk(0)
+	}
+	return sha, err
+}
+
+// maxRevisionFetchDepth bounds the shallow fetch used to walk a remote
+// revision: deeper walks fetch the full history instead.
+const maxRevisionFetchDepth = 1 << 16
+
 // CloneWithBackend returns a repository with fresh remote metadata state. This
 // is used when changing authentication so metadata loaded with one credential
 // set cannot be reused with another.

@@ -4138,6 +4138,13 @@ type GitRepository implements Node {
     objects, so remote repositories (resolved via ls-remote) can only expand
     prefixes of already-fetched commits; use the full SHA or a named ref
     otherwise.
+
+    The name may be followed by git revision suffixes, applied left to right:
+    `~N` follows first parents N times and `^N` selects the Nth parent (`~` and
+    `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or
+    `abc1234~2`. The result is a detached ref of the resulting commit; remote
+    repositories fetch the history the walk needs. Other git revision syntax
+    (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
     """
     name: String!
   ): GitRef!
