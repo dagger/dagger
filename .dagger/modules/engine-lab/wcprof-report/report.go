@@ -14,13 +14,15 @@ import (
 type Options struct {
 	View   string
 	Filter Filter
-	// Op is the root op for the tree view (0 = the slowest matching op).
+	// Op is the root op for the tree and children views (0 = the slowest
+	// matching op).
 	Op uint64
-	// Depth bounds the tree view's recursion.
+	// Depth is how many levels below the root the tree view expands.
 	Depth int
 	// Top bounds rows per ranking (classes, clients, shapes, shape entries).
 	Top int
-	// Sort orders the classes view: self, count or dur.
+	// Sort orders the classes view (self, count or dur; default self) and
+	// the children view (start, dur or self; default start).
 	Sort string
 	// Buckets is the number of time buckets in the clients view.
 	Buckets int
@@ -32,7 +34,7 @@ type Options struct {
 }
 
 // Views lists the supported report views.
-var Views = []string{"summary", "classes", "breakdown", "clients", "tree", "events"}
+var Views = []string{"summary", "classes", "breakdown", "clients", "tree", "children", "events"}
 
 // Report writes the selected view of g to w.
 func Report(w io.Writer, g *Graph, opts Options) error {
@@ -58,6 +60,8 @@ func Report(w io.Writer, g *Graph, opts Options) error {
 		clients(o, g, opts)
 	case "tree":
 		err = tree(o, g, opts)
+	case "children":
+		err = childrenView(o, g, opts)
 	default:
 		err = fmt.Errorf("unknown view %q (want one of %s)", opts.View, strings.Join(Views, ", "))
 	}
@@ -553,35 +557,36 @@ func fmtSecs(ns int64) string {
 
 // ---- tree ------------------------------------------------------------------
 
-func tree(o *out, g *Graph, opts Options) error {
-	var root *Op
+// pickRoot resolves the op the tree and children views start from: opts.Op,
+// or else the slowest op matching the filter (announced with the runners-up).
+// A nil op with a nil error means nothing matched (already reported).
+func pickRoot(o *out, g *Graph, opts Options) (*Op, error) {
 	if opts.Op != 0 {
-		root = g.ByID[opts.Op]
+		root := g.ByID[opts.Op]
 		if root == nil {
-			return fmt.Errorf("op %d not found in the dump", opts.Op)
+			return nil, fmt.Errorf("op %d not found in the dump", opts.Op)
 		}
-	} else {
-		ops := slices.Clone(g.matching(opts.Filter))
-		if len(ops) == 0 {
-			o.printf("tree: no ops match %s", opts.Filter)
-			return nil
-		}
-		slices.SortStableFunc(ops, func(a, b *Op) int { return cmp.Compare(b.Dur(), a.Dur()) })
-		root = ops[0]
-		others := make([]string, 0, 5)
-		for _, op := range ops[1:min(len(ops), 6)] {
-			others = append(others, fmt.Sprintf("%d (%s)", op.ID, fmtDur(op.Dur())))
-		}
-		line := fmt.Sprintf("tree: slowest of %d ops matching %s", len(ops), opts.Filter)
-		if len(others) > 0 {
-			line += "; next slowest ops: " + strings.Join(others, ", ")
-		}
-		o.printf("%s", line)
+		return root, nil
 	}
-	depth := opts.Depth
-	if depth <= 0 {
-		depth = 6
+	ops := slices.Clone(g.matching(opts.Filter))
+	if len(ops) == 0 {
+		o.printf("%s: no ops match %s", opts.View, opts.Filter)
+		return nil, nil
 	}
+	slices.SortStableFunc(ops, func(a, b *Op) int { return cmp.Compare(b.Dur(), a.Dur()) })
+	others := make([]string, 0, 5)
+	for _, op := range ops[1:min(len(ops), 6)] {
+		others = append(others, fmt.Sprintf("%d (%s)", op.ID, fmtDur(op.Dur())))
+	}
+	line := fmt.Sprintf("%s: slowest of %d ops matching %s", opts.View, len(ops), opts.Filter)
+	if len(others) > 0 {
+		line += "; next slowest ops: " + strings.Join(others, ", ")
+	}
+	o.printf("%s", line)
+	return ops[0], nil
+}
+
+func printParents(o *out, root *Op) {
 	var chain []string
 	for p := root.Parent; p != nil && len(chain) < 8; p = p.Parent {
 		chain = append(chain, fmt.Sprintf("%d %s", p.ID, p.Key()))
@@ -589,80 +594,293 @@ func tree(o *out, g *Graph, opts Options) error {
 	if len(chain) > 0 {
 		o.printf("parents: %s", strings.Join(chain, " ← "))
 	}
-	o.printf("client %s", clientName(root.Client))
-	renderOp(o, g, root, "", depth, opts.Collapse)
-	return nil
 }
 
-func opLine(g *Graph, op *Op) string {
+// foldedExec returns the call_exec op that is a call's only real content:
+// its sole child, with every wait of the call targeting it. The tree shows
+// such a pair (the caller's view, then the shared execution) as one node.
+// It returns nil when the call does anything besides waiting on its exec.
+func foldedExec(op *Op) *Op {
+	if op.Kind != "call" || len(op.Children) != 1 {
+		return nil
+	}
+	e := op.Children[0]
+	if e.Kind != "call_exec" {
+		return nil
+	}
+	for _, w := range op.Waits {
+		if w.Target != e {
+			return nil
+		}
+	}
+	return e
+}
+
+// node is one line of the tree: an op, possibly folded with its call_exec.
+type node struct {
+	op   *Op
+	exec *Op // the folded call_exec, or nil
+}
+
+func newNode(op *Op) node { return node{op: op, exec: foldedExec(op)} }
+
+// body is the op whose children and waits the node shows: the call_exec
+// when folded, since the call itself only waits on it.
+func (n node) body() *Op {
+	if n.exec != nil {
+		return n.exec
+	}
+	return n.op
+}
+
+// self is the node's own time: the call's plus its folded exec's.
+func (n node) self() int64 {
+	if n.exec != nil {
+		return n.op.Self + n.exec.Self
+	}
+	return n.op.Self
+}
+
+func (n node) line() string {
+	op := n.op
 	s := fmt.Sprintf("%d %s", op.ID, op.Key())
 	if op.Outcome != "" {
 		s += " [" + op.Outcome + "]"
 	}
-	s += fmt.Sprintf(" dur %s self %s @%s", fmtDur(op.Dur()), fmtDur(op.Self), g.fmtAt(op.Start))
+	s += fmt.Sprintf(" dur %s self %s", fmtDur(op.Dur()), fmtDur(n.self()))
+	if n.exec != nil {
+		s += fmt.Sprintf(" (exec %d)", n.exec.ID)
+	}
 	if op.Reparented {
 		s += " (nested client)"
 	}
 	return s
 }
 
-func renderOp(o *out, g *Graph, op *Op, indent string, depth, collapse int) {
-	o.printf("%s%s", indent, opLine(g, op))
-	sub := indent + "  "
-	if len(op.Waits) > 0 {
-		if len(op.Waits) < collapse {
-			for _, w := range op.Waits {
-				target := w.Ident
-				if w.Target != nil {
-					target = fmt.Sprintf("%d %s", w.Target.ID, w.Target.Key())
-				}
-				o.printf("%s⏳ wait %s %s → %s", sub, w.Reason, fmtDur(w.Dur()), target)
-			}
-		} else {
-			reasons := map[string]int{}
-			var total int64
-			for _, w := range op.Waits {
-				reasons[w.Reason]++
-				total += w.Dur()
-			}
-			o.printf("%s⏳ %d waits (%s), total %s", sub, len(op.Waits), counts(reasons, 0), fmtDur(total))
+// fmtRel formats an offset from a parent's start.
+func fmtRel(ns int64) string {
+	if ns < 0 {
+		return fmtDur(ns)
+	}
+	return "+" + fmtDur(ns)
+}
+
+func waitLine(w *Wait) string {
+	target := w.Ident
+	if w.Target != nil {
+		target = fmt.Sprintf("%d %s", w.Target.ID, w.Target.Key())
+	}
+	return fmt.Sprintf("⏳ wait %s %s → %s", w.Reason, fmtDur(w.Dur()), target)
+}
+
+// item is a child op or a wait of a node, in the node's start order.
+type item struct {
+	start int64
+	op    *Op
+	wait  *Wait
+}
+
+func items(body *Op, withWaits bool) []item {
+	its := make([]item, 0, len(body.Children)+len(body.Waits))
+	for _, c := range body.Children {
+		its = append(its, item{start: c.Start, op: c})
+	}
+	if withWaits {
+		for _, w := range body.Waits {
+			its = append(its, item{start: w.Start, wait: w})
 		}
 	}
-	if len(op.Children) == 0 {
-		return
+	slices.SortStableFunc(its, func(a, b item) int { return cmpInt64(a.start, b.start) })
+	return its
+}
+
+func tree(o *out, g *Graph, opts Options) error {
+	root, err := pickRoot(o, g, opts)
+	if root == nil {
+		return err
 	}
-	if depth <= 1 {
-		o.printf("%s… %d children (raise `depth`)", sub, len(op.Children))
-		return
+	depth := opts.Depth
+	if depth <= 0 {
+		depth = 6
 	}
-	// Group siblings by class, in first-start order; big groups collapse
-	// into one aggregate line.
-	groups := map[string][]*Op{}
-	var order []string
-	for _, c := range op.Children {
-		if _, ok := groups[c.Key()]; !ok {
-			order = append(order, c.Key())
+	printParents(o, root)
+	o.printf("client %s", clientName(root.Client))
+	t := &treeRenderer{o: o, g: g, collapse: opts.Collapse}
+	n := newNode(root)
+	o.printf("%s @%s", n.line(), g.fmtAt(root.Start))
+	t.children(n, "  ", depth)
+	if t.unexpanded > 0 {
+		o.printf("(▸ N: children not expanded at this depth; raise `depth`, or re-root with `op`. (exec N): a call folded with its call_exec op N)")
+	} else if t.folded > 0 {
+		o.printf("((exec N): a call folded with its call_exec op N)")
+	}
+	return nil
+}
+
+type treeRenderer struct {
+	o          *out
+	g          *Graph
+	collapse   int
+	unexpanded int
+	folded     int
+}
+
+// children renders n's children and waits in start order, `depth` levels
+// deep. Classes with at least `collapse` siblings aggregate: consecutive
+// members (between individually rendered lines) share one line.
+func (t *treeRenderer) children(n node, indent string, depth int) {
+	body := n.body()
+	waitsInline := len(body.Waits) < t.collapse
+	if !waitsInline {
+		reasons := map[string]int{}
+		var total int64
+		for _, w := range body.Waits {
+			reasons[w.Reason]++
+			total += w.Dur()
 		}
-		groups[c.Key()] = append(groups[c.Key()], c)
+		t.o.printf("%s⏳ %d waits (%s), total %s", indent, len(body.Waits), counts(reasons, 0), fmtDur(total))
 	}
-	for _, key := range order {
-		kids := groups[key]
-		if len(kids) < collapse {
-			for _, c := range kids {
-				renderOp(o, g, c, sub, depth-1, collapse)
+	perKey := map[string]int{}
+	for _, c := range body.Children {
+		perKey[c.Key()]++
+	}
+	origin := n.op.Start
+	var pendingKeys []string
+	pending := map[string][]*Op{}
+	flush := func() {
+		for _, key := range pendingKeys {
+			if run := pending[key]; len(run) == 1 {
+				t.render(newNode(run[0]), origin, indent, depth-1)
+			} else {
+				t.aggregate(run, origin, indent)
 			}
+		}
+		pendingKeys = pendingKeys[:0]
+		clear(pending)
+	}
+	for _, it := range items(body, waitsInline) {
+		if it.op != nil && perKey[it.op.Key()] >= t.collapse {
+			key := it.op.Key()
+			if _, ok := pending[key]; !ok {
+				pendingKeys = append(pendingKeys, key)
+			}
+			pending[key] = append(pending[key], it.op)
 			continue
 		}
-		a := aggregate(kids)[0]
-		slowest := slices.MaxFunc(kids, func(a, b *Op) int { return cmp.Compare(a.Dur(), b.Dur()) })
-		grand := 0
-		for _, c := range kids {
-			grand += len(c.Children)
+		flush()
+		if it.wait != nil {
+			t.o.printf("%s%s %s", indent, fmtRel(it.wait.Start-origin), waitLine(it.wait))
+		} else {
+			t.render(newNode(it.op), origin, indent, depth-1)
 		}
-		o.printf("%s%d× %s [%s] dur p50 %s max %s total %s, self total %s, %d grandchildren; slowest: op %d",
-			sub, len(kids), key, counts(a.Outcomes, 0), fmtDur(quantile(a.Durs, 0.5)), fmtDur(slices.Max(a.Durs)),
-			fmtDur(a.DurTotal), fmtDur(a.SelfTotal), grand, slowest.ID)
 	}
+	flush()
+}
+
+func (t *treeRenderer) render(n node, origin int64, indent string, depth int) {
+	if n.exec != nil {
+		t.folded++
+	}
+	line := indent + fmtRel(n.op.Start-origin) + " " + n.line()
+	body := n.body()
+	if depth <= 0 {
+		if len(body.Children) > 0 {
+			t.unexpanded++
+			line += fmt.Sprintf(" ▸ %d", len(body.Children))
+		}
+		t.o.printf("%s", line)
+		return
+	}
+	t.o.printf("%s", line)
+	t.children(n, indent+"  ", depth)
+}
+
+func (t *treeRenderer) aggregate(run []*Op, origin int64, indent string) {
+	var (
+		durs, selfs     []int64
+		durTot, selfTot int64
+		grand           int
+	)
+	outcomes := map[string]int{}
+	for _, op := range run {
+		n := newNode(op)
+		durs = append(durs, op.Dur())
+		selfs = append(selfs, n.self())
+		durTot += op.Dur()
+		selfTot += n.self()
+		grand += len(n.body().Children)
+		outcomes[op.Outcome]++
+	}
+	slowest := slices.MaxFunc(run, func(a, b *Op) int { return cmp.Compare(a.Dur(), b.Dur()) })
+	t.o.printf("%s%s..%s %d× %s [%s] dur p50 %s max %s total %s, self total %s, %d grandchildren; slowest: op %d",
+		indent, fmtRel(run[0].Start-origin), fmtRel(run[len(run)-1].Start-origin), len(run), run[0].Key(),
+		counts(outcomes, 0), fmtDur(quantile(durs, 0.5)), fmtDur(slices.Max(durs)),
+		fmtDur(durTot), fmtDur(selfTot), grand, slowest.ID)
+}
+
+// ---- children --------------------------------------------------------------
+
+// childrenView is a flat table of one op's direct children and waits: where
+// did this op's time go?
+func childrenView(o *out, g *Graph, opts Options) error {
+	root, err := pickRoot(o, g, opts)
+	if root == nil {
+		return err
+	}
+	printParents(o, root)
+	n := newNode(root)
+	body := n.body()
+	o.printf("%s @%s", n.line(), g.fmtAt(root.Start))
+	if n.exec != nil {
+		o.printf("(folded with its call_exec op %d: listing that op's children and waits)", n.exec.ID)
+	}
+	its := items(body, true)
+	switch opts.Sort {
+	case "dur", "self":
+		key := func(it item) int64 {
+			switch {
+			case it.wait != nil:
+				return it.wait.Dur()
+			case opts.Sort == "dur":
+				return it.op.Dur()
+			default:
+				return newNode(it.op).self()
+			}
+		}
+		slices.SortStableFunc(its, func(a, b item) int { return cmpInt64(key(b), key(a)) })
+	}
+	classes := map[string]bool{}
+	for _, c := range body.Children {
+		classes[c.Key()] = true
+	}
+	var waitTot int64
+	for _, w := range body.Waits {
+		waitTot += w.Dur()
+	}
+	o.printf("%d children in %d classes, %d waits (total %s); self %s; sorted by %s",
+		len(body.Children), len(classes), len(body.Waits), fmtDur(waitTot), fmtDur(n.self()), cmp.Or(opts.Sort, "start"))
+	o.printf("%10s %10s %10s %10s  %-14s %s", "id", "start", "dur", "self", "outcome", "kind class")
+	for _, it := range its {
+		if w := it.wait; w != nil {
+			target := w.Ident
+			if w.Target != nil {
+				target = fmt.Sprintf("%d %s", w.Target.ID, w.Target.Key())
+			}
+			o.printf("%10s %10s %10s %10s  %-14s wait %s → %s", "-", fmtRel(w.Start-root.Start), fmtDur(w.Dur()), "-", "-", w.Reason, target)
+			continue
+		}
+		c := newNode(it.op)
+		outcome := cmp.Or(c.op.Outcome, "-")
+		class := c.op.Key()
+		if c.exec != nil {
+			class += fmt.Sprintf(" (exec %d)", c.exec.ID)
+		}
+		if nKids := len(c.body().Children); nKids > 0 {
+			class += fmt.Sprintf(" ▸ %d", nKids)
+		}
+		o.printf("%10d %10s %10s %10s  %-14s %s", c.op.ID, fmtRel(c.op.Start-root.Start), fmtDur(c.op.Dur()), fmtDur(c.self()), outcome, class)
+	}
+	return nil
 }
 
 // ---- events ----------------------------------------------------------------

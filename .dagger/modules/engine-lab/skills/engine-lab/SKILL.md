@@ -83,7 +83,16 @@ The loop:
    - `clients`: ops per client over time buckets, and each client's top
      classes — who is generating the load, steadily or in bursts.
    - `tree`: one op's subtree (`op`, default the slowest matching op),
-     `depth` levels, with waits; big same-class sibling groups collapse.
+     `depth` levels below the root (1 = direct children), with waits.
+     Children print in start order with their offset from the parent
+     (`+31.2ms`); runs of a class with 4+ siblings collapse into one
+     aggregate line. A call whose only content is its call_exec folds into
+     one node, `(exec N)`, with the exec's children directly under it;
+     `▸ N` marks N children not expanded at this depth.
+   - `children`: a flat table of one op's direct children and waits — id,
+     start offset, duration, self, outcome, class — for "where did this
+     op's time go?". `sortBy` start (default), dur or self. Walk down by
+     re-rooting with `op`.
    - `jq`: name-resolved events (`{"type":"op","class":…,"client":…,
      "parent_class":…,"start_ms":…,"dur_ms":…,"self_ms":…,"outcome":…}`,
      plus waits and links) through your jq `filter`; `slurp` for

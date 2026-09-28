@@ -532,7 +532,16 @@ type EngineLab {
   - `clients`: ops started per client over `buckets` time buckets, plus each
     client's top classes.
   - `tree`: one op's subtree (`op`, default the slowest matching op) with
-    durations and waits, `depth` levels deep; same-class siblings collapse.
+    durations and waits, `depth` levels below the root (1 = the direct
+    children). Children and waits print in start order, offset from their
+    parent (`+31.2ms`); a class with at least 4 siblings collapses runs of
+    them into one aggregate line. A call whose only content is its
+    call_exec shows as one node, "(exec N)", with the exec's children
+    directly under it. "▸ N" marks N unexpanded children.
+  - `children`: a flat table of one op's (`op`, default the slowest
+    matching op) direct children and waits — id, start offset from the
+    parent, duration, self, outcome, class — the view for "where did this
+    op's time go?". `sortBy` start (default), dur or self.
   - `jq`: one JSON object per event with names resolved, piped through the
     jq `filter` (with `slurp`, over the whole array). Ops look like
     {"type":"op","id","kind","class","client","parent","parent_class",
@@ -550,7 +559,7 @@ type EngineLab {
   wcprofReport(
     source: Workspace!,
     """
-    classes, breakdown, clients, tree, jq or summary.
+    classes, breakdown, clients, tree, children, jq or summary.
     """
     view: String! = "classes",
     """
@@ -566,11 +575,11 @@ type EngineLab {
     """
     kind: String! = "",
     """
-    tree: root op ID (0 = the slowest op matching the filters).
+    tree/children: root op ID (0 = the slowest op matching the filters).
     """
     op: Int! = 0,
     """
-    tree: levels to expand.
+    tree: levels to expand below the root (1 = its direct children).
     """
     depth: Int! = 6,
     """
@@ -578,9 +587,10 @@ type EngineLab {
     """
     top: Int! = 30,
     """
-    classes: sort by self, count or dur.
+    classes: sort by self (default), count or dur. children: sort by start
+    (default), dur or self.
     """
-    sortBy: String! = "self",
+    sortBy: String! = "",
     """
     clients: number of time buckets.
     """
