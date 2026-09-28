@@ -935,7 +935,7 @@ func TestCloudMetricQueueCopiesCollections(t *testing.T) {
 	counts[0], counts[1], bounds[0] = 99, 99, 99
 
 	require.Len(t, q.queue, 1)
-	point := q.queue[0].GetScopeMetrics()[0].GetMetrics()[0].GetHistogram().GetDataPoints()[0]
+	point := q.queue[0].metrics.GetScopeMetrics()[0].GetMetrics()[0].GetHistogram().GetDataPoints()[0]
 	require.Equal(t, []uint64{1, 2}, point.GetBucketCounts())
 	require.Equal(t, []float64{10}, point.GetExplicitBounds())
 }
@@ -986,6 +986,7 @@ func TestCloudMetricQueueShutdownIsBounded(t *testing.T) {
 	default:
 		t.Fatal("the export in flight was not cancelled: the worker still waits on Cloud")
 	}
+	require.GreaterOrEqual(t, q.dropped, 1, "a cancelled in-flight export must be counted as dropped")
 }
 
 // Stopping refreshes waits for a file operation in flight even when the
