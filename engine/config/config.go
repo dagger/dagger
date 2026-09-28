@@ -39,6 +39,11 @@ type Config struct {
 }
 
 type TelemetryConfig struct {
+	// WorkloadExport enables the internal workload export, configured with
+	// standard OTLP environment settings. It does not replace Cloud/UI export
+	// or the existing engine-wide resource export.
+	WorkloadExport bool `json:"workloadExport,omitempty" jsonschema:"-"`
+
 	// ResourceMetrics enables cgroup v2 resource metrics for the engine process.
 	// It is disabled by default. Export requires OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
 	// in the engine environment. Other OTLP settings use the standard environment variables.

@@ -348,10 +348,12 @@ type clientRuntime struct {
 	// Metrics are owned by the live runtime. The typed lease invariant proves
 	// that no producer remains when the runtime becomes quiescent, so its one
 	// provider and periodic reader can be flushed and shut down at reclamation.
-	metricMu       sync.Mutex
-	meterProvider  *sdkmetric.MeterProvider
-	metricExporter sdkmetric.Exporter
-	telemetryDebug LifecycleTelemetryCounts
+	metricMu              sync.Mutex
+	meterProvider         *sdkmetric.MeterProvider
+	metricExporter        sdkmetric.Exporter
+	workloadReadings      *enginetel.WorkloadReadings
+	workloadMeterProvider *sdkmetric.MeterProvider
+	telemetryDebug        LifecycleTelemetryCounts
 
 	// Workspace and extra module loading is deferred from initializeClientRuntime
 	// to serveQuery because it requires the client's engine utility session, which
@@ -674,7 +676,11 @@ func (client *clientRuntime) flushMetrics(ctx context.Context) error {
 	if client.meterProvider == nil {
 		return nil
 	}
-	return client.meterProvider.ForceFlush(ctx)
+	var errs error
+	if client.workloadMeterProvider != nil {
+		errs = client.workloadMeterProvider.ForceFlush(ctx)
+	}
+	return errors.Join(errs, client.meterProvider.ForceFlush(ctx))
 }
 
 func (client *clientRuntime) shutdownMetrics(ctx context.Context) error {
@@ -684,6 +690,10 @@ func (client *clientRuntime) shutdownMetrics(ctx context.Context) error {
 		return nil
 	}
 	var errs error
+	if client.workloadMeterProvider != nil {
+		errs = errors.Join(errs, client.workloadMeterProvider.Shutdown(ctx))
+		client.workloadMeterProvider = nil
+	}
 	errs = errors.Join(errs, client.meterProvider.ForceFlush(ctx))
 	errs = errors.Join(errs, client.meterProvider.Shutdown(ctx))
 	client.meterProvider = nil
@@ -823,7 +833,7 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 			sdkmetric.WithInterval(metricReaderInterval),
 		)),
 	}
-	readers := 1
+	readers, providers := 1, 1
 	if cloudMetrics := client.daggerSession.cloudMetrics; cloudMetrics != nil {
 		// Each client's reader shuts its exporter down with the client; the
 		// session owns the Cloud exporter.
@@ -834,11 +844,26 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 		readers++
 	}
 	client.metricMu.Lock()
+	if exporter := srv.workloadExport.MetricExporter(); exporter != nil {
+		interval := srv.workloadExport.SampleInterval()
+		client.workloadReadings = enginetel.NewWorkloadReadings(interval)
+		// A separate provider prevents ordinary SDK instruments from being
+		// exported a second time, and keeps raw points out of real-time routes.
+		client.workloadMeterProvider = sdkmetric.NewMeterProvider(
+			sdkmetric.WithResource(srv.workloadExport.SessionResource(client.daggerSession.sessionID)),
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter,
+				sdkmetric.WithProducer(client.workloadReadings),
+				sdkmetric.WithInterval(interval),
+			)),
+		)
+		readers++
+		providers++
+	}
 	client.metricExporter = exporter
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 	client.metricMu.Unlock()
 	client.telemetryDebug = LifecycleTelemetryCounts{
-		MeterProviders:          1,
+		MeterProviders:          providers,
 		ConfiguredMetricReaders: readers,
 	}
 }
@@ -903,11 +928,16 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		})),
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
-	// Span: wcprof lazy parent, wcprof count, origin, call spans, live.
+	// Span: wcprof lazy parent, wcprof count, origin, call spans, live, and
+	// workload export when enabled.
 	// Log: origin, call payloads, controls, ordinary.
 	// A session that publishes to Cloud does so from the main client's
 	// store (see cloudForwarder), so Cloud adds no processor here.
 	spanProcessors, logProcessors := 5, 4
+	if processor := srv.workloadExport.SpanProcessor(sess.sessionID); processor != nil {
+		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(processor))
+		spanProcessors++
+	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	sess.telemetryDebug = LifecycleTelemetryCounts{
@@ -2557,6 +2587,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	// Install the session-owned logger and lifecycle-bound client meter provider.
 	ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
+	ctx = enginetel.WithWorkloadReadings(ctx, client.workloadReadings)
 
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {

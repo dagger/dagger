@@ -63,6 +63,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 type Server struct {
@@ -71,6 +72,7 @@ type Server struct {
 	// engineInstanceID names this engine process: a random ID created once at
 	// startup. It names the engine in the dagql cache's facts.
 	engineInstanceID string
+	workloadExport   *enginetel.WorkloadExport
 	// cacheFacts receives the dagql cache's facts and cacheFactExport sends
 	// them; both nil when the engine emits none. The alive loop reports
 	// liveness between start and stop. cacheFactShutdownBudget bounds the
@@ -223,6 +225,8 @@ type NewServerOpts struct {
 	// CacheFactExport, when set, makes the dagql cache emit its bookkeeping
 	// facts as OTel log records through its logger.
 	CacheFactExport CacheFactExport
+	// WorkloadExport is engine-owned and independent of session Cloud export.
+	WorkloadExport *enginetel.WorkloadExport
 }
 
 const (
@@ -241,6 +245,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv := &Server{
 		engineName:       opts.Name,
 		engineInstanceID: cmp.Or(opts.EngineInstanceID, uuid.NewString()),
+		workloadExport:   opts.WorkloadExport,
 
 		rootDir: bkcfg.Root,
 
