@@ -13,22 +13,21 @@ import (
 
 // ProxyStream proxies messages between a gRPC client stream and server stream.
 func ProxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, serverStream grpc.ServerStream) error {
+	parentCtx := ctx
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errors.New("proxy stream done"))
 	var eg errgroup.Group
-	var done bool
+	var serverErr, clientErr error
 	eg.Go(func() (rerr error) {
 		defer func() {
 			clientStream.CloseSend()
 			if rerr == io.EOF {
 				rerr = nil
 			}
-			if errors.Is(rerr, context.Canceled) && done {
-				rerr = nil
-			}
 			if rerr != nil {
 				cancel(fmt.Errorf("failed to proxy stream server->client: %w", rerr))
 			}
+			serverErr = rerr
 		}()
 		for {
 			msg, err := withContext(ctx, func() (*T, error) {
@@ -50,11 +49,11 @@ func ProxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, ser
 				rerr = nil
 			}
 			if rerr == nil {
-				done = true
 				cancel(errors.New("proxy stream client->server done"))
 			} else {
 				cancel(fmt.Errorf("failed to proxy stream client->server: %w", rerr))
 			}
+			clientErr = rerr
 		}()
 		for {
 			msg, err := withContext(ctx, func() (*T, error) {
@@ -70,7 +69,20 @@ func ProxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, ser
 			}
 		}
 	})
-	return eg.Wait()
+	eg.Wait()
+	// When one direction stops, it cancels ctx, and the other direction then
+	// stops with context.Canceled. Return the error that stopped the proxy, not
+	// that cancellation. Check the upstream (client->server) error first.
+	for _, err := range []error{clientErr, serverErr} {
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, context.Canceled) && parentCtx.Err() == nil {
+			continue
+		}
+		return err
+	}
+	return nil
 }
 
 // withContext adapts a blocking function to a context-aware function. It's
