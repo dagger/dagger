@@ -56,7 +56,7 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 			// Drop every other hold on the reference while only the prepared
 			// owner protects it.
 			require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-			_, err := c.removePersistedEdge(ctx, depRow.id)
+			_, _, err := c.removePersistedEdge(ctx, depRow.id)
 			require.NoError(t, err)
 			c.egraphMu.RLock()
 			collected = c.resultsByID[depRow.id] != depRow

@@ -146,7 +146,7 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, runOnReleaseFuncs(ctx, releases))
 		for _, row := range []AnyResult{root, old, next} {
-			_, err := c.removePersistedEdge(ctx, row.cacheSharedResult().id)
+			_, _, err := c.removePersistedEdge(ctx, row.cacheSharedResult().id)
 			require.NoError(t, err)
 		}
 		require.NoError(t, c.ReleaseSession(ctx, "test-session"))

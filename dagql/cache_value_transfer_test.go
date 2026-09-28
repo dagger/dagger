@@ -20,12 +20,15 @@ import (
 )
 
 type transferTestValue struct {
-	Text    string `json:"text"`
-	Child   uint64 `json:"child,omitempty"`
-	Recipe  string `json:"recipe,omitempty"`
-	rev     atomic.Uint64
-	release OnReleaseFunc
-	links   []PersistedSnapshotRefLink
+	Text   string `json:"text"`
+	Child  uint64 `json:"child,omitempty"`
+	Recipe string `json:"recipe,omitempty"`
+	// PartDeps are the result numbers its snapshot part's probe declares as
+	// dependencies, which a receiver installing the part takes on.
+	PartDeps []uint64 `json:"partDeps,omitempty"`
+	rev      atomic.Uint64
+	release  OnReleaseFunc
+	links    []PersistedSnapshotRefLink
 	// revisionHook runs on each output revision read, in the reader's goroutine.
 	revisionHook func()
 	// unready makes the output revision read report a held persistence guard.
@@ -409,7 +412,7 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	require.EqualValues(t, 1, losingReleases.Load())
 	require.Zero(t, rowCleanups.Load())
 	require.NoError(t, b.ReleaseSession(ctx, "test-session"))
-	removed, err := b.removePersistedEdge(ctx, row.id)
+	_, removed, err := b.removePersistedEdge(ctx, row.id)
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.EqualValues(t, 1, rowCleanups.Load())

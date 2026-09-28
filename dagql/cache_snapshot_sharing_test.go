@@ -1283,7 +1283,7 @@ func TestSnapshotSharingFailedFinishLastOwner(t *testing.T) {
 	}
 	// Remove the receiver's ordinary owners: the session and the saved edge.
 	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-	_, err := c.removePersistedEdge(ctx, row.id)
+	_, _, err := c.removePersistedEdge(ctx, row.id)
 	require.NoError(t, err)
 	c.egraphMu.RLock()
 	installedRegistered := c.resultsByID[row.id] == row
@@ -1551,7 +1551,7 @@ func TestSnapshotSharingTypedSuccessorHoldsTheDonor(t *testing.T) {
 	// With the first pass parked at its start, take away every ordinary owner
 	// of the donor: its session and its saved edge. The cohort holds it alone.
 	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-	_, err := c.removePersistedEdge(ctx, donorRow.id)
+	_, _, err := c.removePersistedEdge(ctx, donorRow.id)
 	require.NoError(t, err)
 	c.egraphMu.RLock()
 	donorRegistered := c.resultsByID[donorRow.id] == donorRow

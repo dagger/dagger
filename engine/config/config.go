@@ -50,11 +50,12 @@ type TelemetryConfig struct {
 	// This does not change client or execution metric collection and export.
 	ResourceMetrics bool `json:"resourceMetrics,omitempty" jsonschema:"default=false"`
 
-	// CacheFacts enables the export of the engine's cache facts to Dagger Cloud.
-	// It is disabled by default. Export requires DAGGER_CLOUD_TOKEN in the engine
+	// EngineEvents enables the export of the engine's cache events to Dagger
+	// Cloud: its cache's start, prunes, snapshot sharing and stop. It is
+	// disabled by default. Export requires DAGGER_CLOUD_TOKEN in the engine
 	// environment, the credential it is sent under. The
-	// _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT environment variable enables it too.
-	CacheFacts bool `json:"cacheFacts,omitempty" jsonschema:"default=false"`
+	// _EXPERIMENTAL_DAGGER_ENGINE_EVENTS environment variable enables it too.
+	EngineEvents bool `json:"engineEvents,omitempty" jsonschema:"default=false"`
 }
 
 type LogLevel string

@@ -180,7 +180,7 @@ func TestCacheResultStateJoinedNotLast(t *testing.T) {
 
 	// A prune drops the created edge. Either waiter's span, read now, sees
 	// that: the publication's edge counts only until it is created.
-	removed, err := c.removePersistedEdge(ctx, last.res.cacheSharedResult().id)
+	_, removed, err := c.removePersistedEdge(ctx, last.res.cacheSharedResult().id)
 	assert.NilError(t, err)
 	assert.Assert(t, removed)
 	for _, waiter := range []done{first, last} {
@@ -204,7 +204,7 @@ func TestCacheResultStatePublishedEdgePruned(t *testing.T) {
 	assert.NilError(t, err)
 	_, found := stateTestEdge(c, res)
 	assert.Assert(t, found)
-	removed, err := c.removePersistedEdge(ctx, res.cacheSharedResult().id)
+	_, removed, err := c.removePersistedEdge(ctx, res.cacheSharedResult().id)
 	assert.NilError(t, err)
 	assert.Assert(t, removed)
 	state, ok := req.CacheEvidence.ResultState(ctx, res)
@@ -237,7 +237,7 @@ func TestCacheResultStatePrunePlannedBeforePublication(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, CacheOutcomeExecuted, req.CacheEvidence.Outcome)
 	assert.Equal(t, root.cacheSharedResult().id, alias.cacheSharedResult().id)
-	removed, err := c.removePersistedEdge(ctx, plan[0].candidate.resultID)
+	_, removed, err := c.removePersistedEdge(ctx, plan[0].candidate.resultID)
 	assert.NilError(t, err)
 	assert.Assert(t, removed)
 	state, ok := req.CacheEvidence.ResultState(ctx, alias)
@@ -273,7 +273,7 @@ func TestCacheResultStatePersistableHit(t *testing.T) {
 	assert.Assert(t, req.CacheEvidence.pendingEdge == nil, "a hit publishes nothing")
 
 	// A prune drops the edge between the hit and the span's end.
-	removed, err := c.removePersistedEdge(ctx, hit.cacheSharedResult().id)
+	_, removed, err := c.removePersistedEdge(ctx, hit.cacheSharedResult().id)
 	assert.NilError(t, err)
 	assert.Assert(t, removed)
 	state, ok = req.CacheEvidence.ResultState(ctx, hit)

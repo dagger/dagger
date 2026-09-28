@@ -24,7 +24,7 @@ func (transferTestCodec) DescribeParts(v PersistedPayloadVisit) ([]PartProbe, er
 			snapshot = link.RefKey
 		}
 	}
-	return []PartProbe{{Descriptor: PartDescriptor{SnapshotID: snapshot, Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, Absent: p.Text == "ready"}, LocalComplete: p.Text == "ready" || snapshot != "", HasLazyOperation: p.Text != "ready"}}, nil
+	return []PartProbe{{Descriptor: PartDescriptor{SnapshotID: snapshot, Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, Absent: p.Text == "ready", DependencyIDs: p.PartDeps}, LocalComplete: p.Text == "ready" || snapshot != "", HasLazyOperation: p.Text != "ready"}}, nil
 }
 func (transferTestCodec) PreparePartRecord(receiver, source PersistedRecord, descriptor PartDescriptor, _ PersistedPartAddress) (PersistedRecord, error) {
 	if descriptor.SnapshotID != "" {
@@ -263,7 +263,7 @@ func TestPartSourceScanFailureReleasesWinner(t *testing.T) {
 			require.NoError(t, setupErr)
 			c.SetPartContentSource(&partAvailabilityHook{fn: func() {
 				require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-				_, err := c.removePersistedEdge(ctx, loser.cacheSharedResult().id)
+				_, _, err := c.removePersistedEdge(ctx, loser.cacheSharedResult().id)
 				require.NoError(t, err, "the scan still holds the loser")
 			}})
 			source, _, err := c.scanPartSources(ctx, receiver, address, nil)

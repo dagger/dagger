@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -33,7 +33,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type cacheFactExportRequest struct {
+type engineEventExportRequest struct {
 	user    string
 	logs    *collogspb.ExportLogsServiceRequest
 	path    string
@@ -41,15 +41,15 @@ type cacheFactExportRequest struct {
 	hasAuth bool
 }
 
-// With _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT and DAGGER_CLOUD_TOKEN set, the
-// engine exports its cache facts to
+// With _EXPERIMENTAL_DAGGER_ENGINE_EVENTS and DAGGER_CLOUD_TOKEN set, the
+// engine exports its cache events to
 // DAGGER_CLOUD_URL under the token, with the engine instance in the resource,
 // through a logger provider of its own: the process context keeps its own
 // provider, so nothing else emitted in the process reaches Cloud.
-func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
+func TestEngineEventExportSendsOnlyEventsToCloud(t *testing.T) {
 	var (
 		mu       sync.Mutex
-		requests []cacheFactExportRequest
+		requests []engineEventExportRequest
 	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -58,22 +58,22 @@ func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
 		require.NoError(t, proto.Unmarshal(body, &logs))
 		user, _, ok := r.BasicAuth()
 		mu.Lock()
-		requests = append(requests, cacheFactExportRequest{user: user, hasAuth: ok, logs: &logs, path: r.URL.Path, writer: r.Header.Get("X-Dagger-Export")})
+		requests = append(requests, engineEventExportRequest{user: user, hasAuth: ok, logs: &logs, path: r.URL.Path, writer: r.Header.Get("X-Dagger-Export")})
 		mu.Unlock()
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv(envCacheFactsExport, "1")
+	t.Setenv(envEngineEvents, "1")
 	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
 	t.Setenv("DAGGER_CLOUD_URL", srv.URL)
 
 	ctx, res := InitTelemetry(t.Context(), "instance-a")
-	export := newCacheFactExport(ctx, res, config.TelemetryConfig{})
+	export := newEngineEventExport(ctx, res, config.TelemetryConfig{})
 	require.True(t, export.Enabled())
 	require.NotSame(t, export.provider, telemetry.LoggerProvider(ctx), "the process context keeps its own logger provider")
 
-	var fact log.Record
-	fact.SetBody(log.StringValue("fact"))
-	export.Logger().Emit(ctx, fact)
+	var event log.Record
+	event.SetBody(log.StringValue("event"))
+	export.Logger().Emit(ctx, event)
 	var other log.Record
 	other.SetBody(log.StringValue("snapshot progress"))
 	telemetry.Logger(ctx, "dagger.io/engine").Emit(ctx, other)
@@ -91,34 +91,34 @@ func TestCacheFactExportSendsOnlyFactsToCloud(t *testing.T) {
 	require.Len(t, got.logs.ResourceLogs, 1)
 	instance := ""
 	for _, kv := range got.logs.ResourceLogs[0].Resource.Attributes {
-		if kv.Key == cachefact.ResourceEngineInstance {
+		if kv.Key == string(semconv.ServiceInstanceIDKey) {
 			instance = kv.Value.GetStringValue()
 		}
 	}
 	require.Equal(t, "instance-a", instance)
 	var bodies []string
 	for _, scopeLogs := range got.logs.ResourceLogs[0].ScopeLogs {
-		require.Equal(t, cachefact.ScopeName, scopeLogs.Scope.Name)
+		require.Equal(t, telemetryattrs.EngineEventScope, scopeLogs.Scope.Name)
 		for _, rec := range scopeLogs.LogRecords {
 			bodies = append(bodies, rec.Body.GetStringValue())
 		}
 	}
-	require.Equal(t, []string{"fact"}, bodies)
+	require.Equal(t, []string{"event"}, bodies)
 }
 
-func TestCacheFactExportDisabledWithoutToken(t *testing.T) {
-	t.Setenv(envCacheFactsExport, "1")
+func TestEngineEventExportDisabledWithoutToken(t *testing.T) {
+	t.Setenv(envEngineEvents, "1")
 	t.Setenv("DAGGER_CLOUD_TOKEN", "")
-	export := newCacheFactExport(t.Context(), resource.Empty(), config.TelemetryConfig{CacheFacts: true})
+	export := newEngineEventExport(t.Context(), resource.Empty(), config.TelemetryConfig{EngineEvents: true})
 	require.False(t, export.Enabled())
 	require.NoError(t, export.Shutdown(t.Context()))
-	require.Nil(t, serverCacheFactExport(export), "the server gets no export, not a nil pointer")
+	require.Nil(t, serverEngineEventExport(export), "the server gets no export, not a nil pointer")
 }
 
 // A client forwards DAGGER_CLOUD_TOKEN into every engine it provisions, so the
-// token alone exports nothing: no fact reaches Cloud unless
-// _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT is set too.
-func TestCacheFactExportDisabledWithTokenAlone(t *testing.T) {
+// token alone exports nothing: no event reaches Cloud unless
+// _EXPERIMENTAL_DAGGER_ENGINE_EVENTS is set too.
+func TestEngineEventExportDisabledWithTokenAlone(t *testing.T) {
 	var (
 		mu       sync.Mutex
 		requests int
@@ -129,20 +129,20 @@ func TestCacheFactExportDisabledWithTokenAlone(t *testing.T) {
 		mu.Unlock()
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv(envCacheFactsExport, "")
+	t.Setenv(envEngineEvents, "")
 	t.Setenv("DAGGER_CLOUD_TOKEN", "forwarded-token")
 	t.Setenv("DAGGER_CLOUD_URL", srv.URL)
 
 	ctx, res := InitTelemetry(t.Context(), "instance-a")
-	export := newCacheFactExport(ctx, res, config.TelemetryConfig{})
+	export := newEngineEventExport(ctx, res, config.TelemetryConfig{})
 	require.False(t, export.Enabled())
-	require.Nil(t, serverCacheFactExport(export), "the server gets no export, so it creates no emitter")
+	require.Nil(t, serverEngineEventExport(export), "the server gets no export, so it creates no emitter")
 
-	// A record in the facts scope on the process's own provider does not
+	// A record in the events scope on the process's own provider does not
 	// reach Cloud either.
-	var fact log.Record
-	fact.SetBody(log.StringValue("fact"))
-	telemetry.Logger(ctx, cachefact.ScopeName).Emit(ctx, fact)
+	var event log.Record
+	event.SetBody(log.StringValue("event"))
+	telemetry.Logger(ctx, telemetryattrs.EngineEventScope).Emit(ctx, event)
 	require.NoError(t, export.Shutdown(context.Background()))
 
 	mu.Lock()
@@ -150,23 +150,42 @@ func TestCacheFactExportDisabledWithTokenAlone(t *testing.T) {
 	require.Zero(t, requests, "nothing is sent to Cloud")
 }
 
-// The engine config's telemetry.cacheFacts enables the export like the
+// The engine config's telemetry.engineEvents enables the export like the
 // environment variable does, and like it, only with DAGGER_CLOUD_TOKEN.
-func TestCacheFactExportEnabledByEngineConfig(t *testing.T) {
-	t.Setenv(envCacheFactsExport, "")
-	enabled := config.TelemetryConfig{CacheFacts: true}
+func TestEngineEventExportEnabledByEngineConfig(t *testing.T) {
+	t.Setenv(envEngineEvents, "")
+	enabled := config.TelemetryConfig{EngineEvents: true}
 
 	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
 	t.Setenv("DAGGER_CLOUD_URL", "http://127.0.0.1:1")
-	export := newCacheFactExport(t.Context(), resource.Empty(), enabled)
+	export := newEngineEventExport(t.Context(), resource.Empty(), enabled)
 	require.True(t, export.Enabled(), "config and token")
 	require.NoError(t, export.Shutdown(t.Context()))
 
-	require.False(t, newCacheFactExport(t.Context(), resource.Empty(), config.TelemetryConfig{}).Enabled(),
+	require.False(t, newEngineEventExport(t.Context(), resource.Empty(), config.TelemetryConfig{}).Enabled(),
 		"token without either switch")
 
 	t.Setenv("DAGGER_CLOUD_TOKEN", "")
-	require.False(t, newCacheFactExport(t.Context(), resource.Empty(), enabled).Enabled(), "config without token")
+	require.False(t, newEngineEventExport(t.Context(), resource.Empty(), enabled).Enabled(), "config without token")
+}
+
+// _EXPERIMENTAL_DAGGER_ENGINE_EVENTS is a boolean: "false" and "0" leave the
+// export off, as does a value that is not a boolean.
+func TestEngineEventExportSwitchIsBoolean(t *testing.T) {
+	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
+	t.Setenv("DAGGER_CLOUD_URL", "http://127.0.0.1:1")
+	for _, tc := range []struct {
+		value   string
+		enabled bool
+	}{
+		{"1", true}, {"true", true}, {"TRUE", true},
+		{"0", false}, {"false", false}, {"no", false}, {"", false},
+	} {
+		t.Setenv(envEngineEvents, tc.value)
+		export := newEngineEventExport(t.Context(), resource.Empty(), config.TelemetryConfig{})
+		require.Equal(t, tc.enabled, export.Enabled(), "%s=%q", envEngineEvents, tc.value)
+		require.NoError(t, export.Shutdown(t.Context()))
+	}
 }
 
 func TestEngineTelemetry(t *testing.T) {
@@ -425,10 +444,4 @@ func (sink *telemetryReceiver) take() []telemetryRequest {
 	requests := sink.requests
 	sink.requests = nil
 	return requests
-}
-
-// The cache facts' engine instance attribute is OpenTelemetry's
-// service.instance.id.
-func TestEngineInstanceAttributeIsServiceInstanceID(t *testing.T) {
-	require.Equal(t, string(semconv.ServiceInstanceIDKey), cachefact.ResourceEngineInstance)
 }

@@ -124,3 +124,17 @@ func (ev *CacheDecision) ResultState(ctx context.Context, res AnyResult) (CacheR
 func NewCacheDecision() *CacheDecision {
 	return &CacheDecision{MissUnknownInputIndex: -1}
 }
+
+// CacheResultNumber returns the engine-local result number of a cache-backed
+// result: the number its cache names it by, dagger.io/cache.result.id on its
+// spans.
+func CacheResultNumber(res AnyResult) (uint64, bool) {
+	if res == nil {
+		return 0, false
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return 0, false
+	}
+	return uint64(shared.id), true
+}

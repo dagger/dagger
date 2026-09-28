@@ -35,10 +35,11 @@ import (
 const telemetrySplitReleasedEngine = "registry.dagger.io/engine:v1.0.0-beta.14"
 
 // telemetrySplitCloud is a fake Dagger Cloud and a container that reads what
-// it received.
+// it received. events is the volume it records into.
 type telemetrySplitCloud struct {
 	service  *dagger.Service
 	reader   *dagger.Container
+	events   *dagger.CacheVolume
 	eventsID string
 }
 
@@ -52,12 +53,13 @@ func newTelemetrySplitCloud(t *testctx.T, c *dagger.Client, withs ...dagger.With
 			"go.sum",
 		},
 	})
+	events := c.CacheVolume("dagger-telemetry-split-events-" + identity.NewID())
 	base := c.Container().
 		From(golangImage).
 		With(goCache(c)).
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
-		WithMountedCache("/events", c.CacheVolume("dagger-telemetry-split-events-"+identity.NewID()))
+		WithMountedCache("/events", events)
 	svc := base
 	for _, with := range withs {
 		svc = svc.With(with)
@@ -68,6 +70,7 @@ func newTelemetrySplitCloud(t *testctx.T, c *dagger.Client, withs ...dagger.With
 			WithExposedPort(8080).
 			AsService(),
 		reader:   base,
+		events:   events,
 		eventsID: identity.NewID(),
 	}
 }
@@ -198,7 +201,7 @@ func (got telemetrySplitReceived) requireSpansFromOneWriter(t *testctx.T) {
 
 // telemetrySplitEngine is an engine container from ctr that serves on
 // tcp://:1234 and reaches the fake Cloud. It has no Cloud token of its own,
-// so it exports no cache facts.
+// so it exports no engine cache events.
 func telemetrySplitEngine(c *dagger.Client, ctr *dagger.Container, cloud telemetrySplitCloud) *dagger.Container {
 	return telemetrySplitEngineWithoutCloud(c, cloud.bind(ctr))
 }

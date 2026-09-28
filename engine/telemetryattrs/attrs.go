@@ -593,9 +593,9 @@ const (
 
 	// CacheResultIDAttr is the decimal-string engine-local result number of
 	// the call's cache-backed result, stamped for any stamped outcome that
-	// returned one. Together with the engine instance resource attribute
-	// (service.instance.id) it names the result the engine's cache facts
-	// (dagql/cachefact) describe, so a span can be joined with them.
+	// returned one. Together with the cache identity resource attribute
+	// (EngineCacheAttr) it names one entry of one cache for the cache's
+	// lifetime.
 	CacheResultIDAttr = "dagger.io/cache.result.id"
 
 	// The entry's state in its cache, stamped beside CacheResultIDAttr when
@@ -618,10 +618,11 @@ const (
 	// CacheExpiresAttr is the entry's own expiry, when it stops serving as a
 	// cache hit, in decimal Unix seconds, when it has one.
 	CacheExpiresAttr = "dagger.io/cache.expires"
-	// CachePartsAttr lists the entry's complete parts, the pieces of its value
-	// that own filesystem bytes, each as its part address (native string
-	// array). On a lazy-evaluation span, it lists them as the attempt left
-	// them. Absent when there are none.
+	// CachePartsAttr lists the entry's complete parts: the parts its record
+	// reports complete, including absent and metadata ones, which own no
+	// filesystem bytes. Each is its part address (native string array). On a
+	// lazy-evaluation span, it lists them as the attempt left them. The
+	// attribute is omitted when there are none.
 	CachePartsAttr = "dagger.io/cache.parts"
 	// CacheTypeAttr is the name of the entry's type, such as "Container".
 	CacheTypeAttr = "dagger.io/cache.type"
@@ -631,3 +632,86 @@ const (
 	// WcprofSessionCompleteAttr carrier span, which marks the session's end.
 	CacheSessionSpansAttr = "dagger.io/cache.session.spans"
 )
+
+// Engine cache events (dagger.io/engine.cache).
+//
+// Outside any session, the engine reports what happens to its dagql cache as
+// OpenTelemetry log records on its own logger provider, exported to Dagger
+// Cloud under the engine's own token when the engine-events switch is on.
+// Each record's instrumentation scope is EngineEventScope, its body is the
+// JSON encoding of the event's type below (an OTLP string), and it carries
+// EngineEventAttr (the event's kind) and EngineCacheAttr (the cache's
+// identity and generation). The record's timestamp is the engine's clock when
+// the event happened; the process resource names the engine instance
+// (service.instance.id).
+const (
+	// EngineEventScope is the instrumentation scope of engine cache events.
+	EngineEventScope = "dagger.io/engine.cache"
+	// EngineEventAttr is the record attribute holding the event's kind.
+	EngineEventAttr = "dagger.io/engine.event"
+
+	// EngineEventStart: the engine opened, and possibly restored, its cache
+	// (EngineStartEvent).
+	EngineEventStart = "engine.start"
+	// EngineEventPrune: a prune run dropped retention edges
+	// (EnginePruneEvent). Runs that drop none send nothing.
+	EngineEventPrune = "engine.prune"
+	// EngineEventShare: a snapshot-sharing pass completed parts
+	// (EngineShareEvent).
+	EngineEventShare = "engine.share"
+	// EngineEventStop: the engine closed its cache (EngineStopEvent).
+	EngineEventStop = "engine.stop"
+)
+
+// EngineStartEvent is the body of an engine.start event.
+type EngineStartEvent struct {
+	EngineVersion string `json:"engineVersion"`
+	EngineName    string `json:"engineName"`
+	// Restored reports that the engine opened the cache's existing database
+	// rather than starting empty.
+	Restored bool `json:"restored"`
+	// RestoredEntries counts the entries the restore installed, not
+	// counting type definitions.
+	RestoredEntries int `json:"restoredEntries"`
+	// WipedCache is the identity of a cache database this start wiped, if
+	// any.
+	WipedCache string `json:"wipedCache,omitempty"`
+}
+
+// EnginePruneEvent is the body of an engine.prune event: every retention
+// edge one prune run dropped.
+type EnginePruneEvent struct {
+	Drops []EngineRetentionDrop `json:"drops"`
+}
+
+// EngineRetentionDrop is one retention edge a prune run dropped.
+type EngineRetentionDrop struct {
+	// ResultID is the entry's result number.
+	ResultID uint64 `json:"resultId"`
+	// DroppedAtUnixNano is the engine's clock when it dropped the edge.
+	DroppedAtUnixNano int64 `json:"droppedAtUnixNano"`
+}
+
+// EngineShareEvent is the body of an engine.share event: every part one
+// snapshot-sharing pass completed.
+type EngineShareEvent struct {
+	Parts []EngineSharedPart `json:"parts"`
+}
+
+// EngineSharedPart is one part a snapshot-sharing pass completed.
+type EngineSharedPart struct {
+	// ResultID is the entry's result number.
+	ResultID uint64 `json:"resultId"`
+	// Part is the part's address, as in dagger.io/cache.parts.
+	Part string `json:"part"`
+	// Deps are the result numbers of the entry's dependencies.
+	Deps []uint64 `json:"deps"`
+}
+
+// EngineStopEvent is the body of an engine.stop event.
+type EngineStopEvent struct {
+	// Clean reports that the engine saved its cache for its next start.
+	Clean bool `json:"clean"`
+	// SavedEntries counts the entries the save wrote.
+	SavedEntries int `json:"savedEntries"`
+}

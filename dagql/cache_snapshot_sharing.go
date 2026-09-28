@@ -1212,6 +1212,51 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 	for _, st := range states {
 		<-st.done
 	}
+	c.reportSharedParts(receipts)
+}
+
+// SnapshotSharedPart is one part a snapshot-sharing pass completed on an
+// entry: the entry's result number, the part's address (as a span's
+// dagger.io/cache.parts lists it) and the entry's dependencies.
+type SnapshotSharedPart struct {
+	ResultID uint64
+	Part     string
+	Deps     []uint64
+}
+
+// WithSnapshotShareReport makes the cache report, after each snapshot-sharing
+// pass that completed parts, the parts it completed. Sharing runs outside any
+// session, so no span reports them. report runs on the sharing worker with no
+// cache lock held, and must not block.
+func WithSnapshotShareReport(report func([]SnapshotSharedPart)) CacheOption {
+	return func(c *Cache) {
+		c.shareReport = report
+	}
+}
+
+// reportSharedParts reports the parts the pass's receipts completed: of each
+// receipt's installed outputs, those the gate settled once the receipt was
+// finished.
+func (c *Cache) reportSharedParts(receipts []*ReadyPartReceipt) {
+	if c.shareReport == nil || len(receipts) == 0 {
+		return
+	}
+	var parts []SnapshotSharedPart
+	c.egraphMu.RLock()
+	for _, receipt := range receipts {
+		keys := receipt.receiver.taskSettledPartKeys(receipt.task)
+		if len(keys) == 0 {
+			continue
+		}
+		deps := sortedResultIDs(receipt.receiver.deps)
+		for _, key := range keys {
+			parts = append(parts, SnapshotSharedPart{ResultID: uint64(receipt.receiver.id), Part: key, Deps: deps})
+		}
+	}
+	c.egraphMu.RUnlock()
+	if len(parts) > 0 {
+		c.shareReport(parts)
+	}
 }
 
 // abortShareSuffix withdraws the dependent suffix of the same receiver after a

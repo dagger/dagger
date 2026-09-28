@@ -659,7 +659,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 
 	pruneCtx := withMetadataPruneContext(f.ctx)
 	for i, resultID := range f.allResultIDs {
-		removed, err := f.cache.removePersistedEdge(pruneCtx, resultID)
+		_, removed, err := f.cache.removePersistedEdge(pruneCtx, resultID)
 		assert.NilError(t, err)
 		assert.Assert(t, removed, "persisted edge for result %d was not removed", resultID)
 
