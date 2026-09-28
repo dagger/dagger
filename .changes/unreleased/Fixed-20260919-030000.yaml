@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Module functions and fields no longer fail with `missing shared result` when
+  the session that installed the module's schema has ended. Cached module
+  objects and LLM tool bindings now own the operational module they were
+  installed from, and each call scopes that module in the calling session
+  instead of reusing a scoped result owned by the installing session.
+time: 2026-09-19T03:00:00Z
+custom:
+  Author: sipsma

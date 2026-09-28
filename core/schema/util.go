@@ -15,6 +15,37 @@ type SchemaResolvers interface {
 	Install(*dagql.Server)
 }
 
+// Nesting is opt-out in the v1.0 API. Older views retain the
+// experimentalPrivilegedNesting opt-in argument and behavior.
+//
+// This shipped after v1.0.0-beta.14, but views cannot tell v1.0.0 prereleases
+// apart (see engine.APIViewVersion), so every v1.0.0 prerelease caller gets
+// it.
+const defaultNestingVersion = "v1.0.0-0"
+
+// Container.withGPU is available in the v1.0 API. Older views keep the
+// experimentalWithGPU and experimentalWithAllGPUs names undecorated; newer
+// views still accept them, marked deprecated, so released callers keep
+// working.
+//
+// Like defaultNestingVersion, this shipped after v1.0.0-beta.14 but reaches
+// every v1.0.0 prerelease caller.
+const gpuAPIVersion = "v1.0.0-0"
+
+// Newer views still accept experimentalPrivilegedNesting so existing callers
+// keep working, but ignore it: nesting is already the default.
+var (
+	disableNestingArg = dagql.Arg("disableDaggerInDagger").
+				View(AfterVersion(defaultNestingVersion)).
+				Doc(`Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.`)
+	legacyNestingArg = dagql.Arg("experimentalPrivilegedNesting").
+				View(BeforeVersion(defaultNestingVersion)).
+				Doc(`Provides Dagger access to the executed command.`)
+	deprecatedNestingArg = dagql.Arg("experimentalPrivilegedNesting").
+				View(AfterVersion(defaultNestingVersion)).
+				Deprecated(`Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.`)
+)
+
 func Syncer[T dagql.Typed]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {
 		Recipe bool `default:"false" internal:"true"`

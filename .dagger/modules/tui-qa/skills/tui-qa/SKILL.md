@@ -24,10 +24,11 @@ Workflow:
   exactly like the endpoints in the `tui-console` skill. Key tokens are tuist
   names — "enter", "esc", single characters, "ctrl+s" style modifier combos
   (not "C-s") — and unknown tokens are rejected rather than typed literally.
-- `span(spanHex)` inspects one span in depth (status, timing, dagui flags like
-  internal/passthrough/roll-up, and the parent chain with each ancestor's
-  flags) — use it to answer "why is this span hidden / why didn't its logs roll
-  up". Get ids from `spans`.
+- `span(spanHex)` inspects one span in depth (status, error and origins,
+  timing, dagui flags like internal/passthrough/roll-up, the parent chain with
+  each ancestor's flags, and its loaded direct children) — use it to answer
+  "why is this span hidden / why didn't its logs roll up", or to walk the tree
+  from a span. Get ids from `spans`.
 - Check for crashes explicitly: grep the screen for "panic:", "fatal error".
 - the tui-qa stop tool when done.
 

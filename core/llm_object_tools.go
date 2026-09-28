@@ -67,6 +67,13 @@ type boundTool struct {
 	// edits only affect tools after explicit recomposition creates a new LLM.
 	definingSchema *ast.Schema
 	Except         []string
+	// Owner identifies the composition that installed this binding. A
+	// same-type tool return retains it; an explicit withTools replaces it.
+	// Empty means caller-owned/unowned.
+	Owner string
+	// Version is the explicit withTools state contract. Same-type returns keep
+	// it; recomposition resets the receiver when the new binding differs.
+	Version int
 }
 
 // typeName returns the bound object's type name without forcing a load.
@@ -80,6 +87,22 @@ func (b boundTool) typeName() string {
 	return ""
 }
 
+// impure reports whether the bound type's field is marked as having side
+// effects or live reads: a module function with cache policy Never, or a core
+// field marked DoNotCache. Looked up on the bound object's own type, since the
+// defining schema's AST carries neither.
+func (b boundTool) impure(fieldName string, srv *dagql.Server) bool {
+	objType := b.objType
+	if b.object != nil {
+		objType = b.object.ObjectType()
+	}
+	if objType == nil || srv == nil {
+		return false
+	}
+	spec, ok := objType.FieldSpec(fieldName, srv.View)
+	return ok && (cachePolicyNever(spec) || spec.DoNotCache != "")
+}
+
 // WithTools binds obj's methods as tools, carrying the schema that defined the
 // receiver at composition time and except. At most one binding per object type
 // is kept: binding an object whose type is already bound replaces it in place.
@@ -87,6 +110,10 @@ func (b boundTool) typeName() string {
 // through here — so the binding list stays bounded and a recorded withTools
 // selector reconstructs the same state deterministically.
 func (m *MCP) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string) *MCP {
+	return m.withToolsOwner(obj, definingSchema, except, "", 0)
+}
+
+func (m *MCP) withToolsOwner(obj dagql.AnyObjectResult, definingSchema *ast.Schema, except []string, owner string, version int) *MCP {
 	m = m.Clone()
 	typeName := obj.Type().Name()
 	id, _ := obj.ID()
@@ -96,6 +123,8 @@ func (m *MCP) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, e
 		objType:        obj.ObjectType(),
 		definingSchema: definingSchema,
 		Except:         except,
+		Owner:          owner,
+		Version:        version,
 	}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
@@ -115,9 +144,13 @@ func (m *MCP) WithTools(obj dagql.AnyObjectResult, definingSchema *ast.Schema, e
 // GraphQL type without loading it. The defining schema stays authoritative even
 // if the bound Workspace later contains another definition of the same type.
 func (m *MCP) WithLazyTools(id *call.ID, objType dagql.ObjectType, definingSchema *ast.Schema, except []string) *MCP {
+	return m.withLazyToolsOwner(id, objType, definingSchema, except, "", 0)
+}
+
+func (m *MCP) withLazyToolsOwner(id *call.ID, objType dagql.ObjectType, definingSchema *ast.Schema, except []string, owner string, version int) *MCP {
 	m = m.Clone()
 	typeName := objType.TypeName()
-	binding := boundTool{id: id, objType: objType, definingSchema: definingSchema, Except: except}
+	binding := boundTool{id: id, objType: objType, definingSchema: definingSchema, Except: except, Owner: owner, Version: version}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
 			m.boundTools[i] = binding
@@ -200,9 +233,9 @@ func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) err
 	}
 	for i, b := range m.boundTools {
 		if b.typeName() == typeName {
-			// A state transition changes the value, not the module revision the
-			// binding was composed from. Select may have wrapped the returned
-			// value using the caller's older same-named class.
+			// A state transition changes the value, not its composition owner or
+			// the module revision the binding was composed from. Select may have
+			// wrapped the returned value using the caller's older same-named class.
 			newObj, err := b.objType.New(newObj)
 			if err != nil {
 				return fmt.Errorf("rebind object of type %q: %w", typeName, err)
@@ -218,10 +251,12 @@ func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) err
 }
 
 // boundToolBinding is a flattened snapshot of a binding: the object's ID plus its
-// except list, enough for step() to rebuild a withTools selector.
+// except list and owner, enough for step() to rebuild a withTools selector.
 type boundToolBinding struct {
-	ID     *call.ID
-	Except []string
+	ID      *call.ID
+	Except  []string
+	Owner   string
+	Version int
 }
 
 // BoundToolBindings snapshots the current bindings' IDs and except lists so
@@ -242,7 +277,7 @@ func (m *MCP) BoundToolBindings() ([]boundToolBinding, error) {
 				return nil, err
 			}
 		}
-		out = append(out, boundToolBinding{ID: id, Except: slices.Clone(b.Except)})
+		out = append(out, boundToolBinding{ID: id, Except: slices.Clone(b.Except), Owner: b.Owner, Version: b.Version})
 	}
 	return out, nil
 }
@@ -467,22 +502,22 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 			Field:       field,
 			Description: strings.TrimSpace(field.Description),
 			Schema:      methodSchema,
-			// A method that returns the bound object's own type, a Workspace, or
-			// an LLM mutates shared state and must run sequentially — an LLM
-			// return replaces the whole conversation, and at most one may be
-			// adopted per turn. Changeset-returning methods run in parallel;
-			// CallBatch merges their results before applying them to the
-			// workspace. LLM-returning methods run last, in their own batch
-			// (MCP.SplitContinuationCalls), on the state the rest of the turn
-			// produced.
+			// A pure method may run concurrently with its pure neighbors in a
+			// batch; any other is a sequential step, run alone in the position
+			// it was written (see MCP.CallBatch). A method changes the agent's
+			// state when it returns the bound object's own type, a Workspace, a
+			// Changeset, or an LLM — the conversation itself, run last in its
+			// batch (MCP.SplitContinuationCalls). A module function cached with
+			// policy Never, or a core field marked DoNotCache, is impure too:
+			// side effects and live reads are exactly what those are for.
 			ReadOnly: retType != typeName &&
 				retType != "Changeset" &&
 				retType != workspaceTypeName &&
-				retType != llmTypeName,
-			ReturnsChangeset: retType == "Changeset",
-			ReturnsLLM:       retType == llmTypeName,
-			Call:             m.callObjectMethod(srv, typeName, field),
-			Server:           typeName,
+				retType != llmTypeName &&
+				!b.impure(field.Name, srv),
+			ReturnsLLM: retType == llmTypeName,
+			Call:       m.callObjectMethod(srv, typeName, field),
+			Server:     typeName,
 		})
 	}
 	return tools, nil
@@ -1097,11 +1132,9 @@ const spanResultOutputHeading = "== OUTPUT =="
 //     per row, plus the CHECKS/TESTS roll-ups. It carries no heading of its
 //     own -- its sections are already labelled.
 //
-// OUTPUT comes first for two reasons: it is the answer, while the report is
-// the supporting evidence; and guardTraceReport drops the MIDDLE of an
-// over-budget result, so the head is the one place a section is guaranteed to
-// survive in full. The byte guard is applied to the COMBINED text -- the
-// budget is what reaches the reader, not what one half of it renders to.
+// Bounded failure links come first, when present, followed by OUTPUT and the
+// report. The byte guard applies to the COMBINED text; navigation stays at the
+// head so neither that guard nor the outer tool-result guard can discard it.
 //
 // There is no duplication between the two: the report is told to suppress the
 // inline logs of exactly the spans OUTPUT was built from (HideLogSpans).
@@ -1113,40 +1146,67 @@ const spanResultOutputHeading = "== OUTPUT =="
 // that renders to nothing -- the result is the flat capture, byte for byte as
 // before: no headings, no separators, no empty sections.
 func (m *MCP) spanResult(ctx context.Context, spanID string, opts traceReportOpts) string {
-	// Exclude service exec span logs: long-lived services stream noise into
-	// the subtree via cause links, drowning out deliberate prints. ReadLogs
-	// remains the discovery path for service logs.
-	captured, err := m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly)
+	result, err := m.inspectSpanResult(ctx, spanID, opts)
 	if err != nil {
-		slog.Warn("failed to capture tool logs", "span", spanID, "error", err)
+		// Automatic decoration must not replace the actual tool result with a
+		// telemetry failure. Explicit inspection returns this error instead.
+		slog.Warn("incomplete tool trace decoration", "span", spanID, "error", err)
 	}
-
-	report := m.traceReport(ctx, spanID, captured.directSpans, opts)
-	if report == "" {
-		return flatLogs(spanID, captured.lines)
-	}
-	return combineSpanResult(spanID, directLogs(captured.lines), report)
+	return result
 }
 
-// combineSpanResult assembles the sections, bounds the COMBINED text, and
-// closes with the ReadLogs breadcrumb. own may be empty -- a target that
-// printed nothing gets no OUTPUT section, not an empty one. The report is
-// appended unlabelled: its own sections (CHECKS, TESTS, SERVICES, ...) are
-// already headed, and the span tree needs no banner.
-func combineSpanResult(spanID, own, report string) string {
+// inspectSpanResult preserves component errors even when the other half of a
+// report is available. ReadTrace must never present partial telemetry as a
+// successful inspection; spanResult deliberately keeps the best-effort text.
+func (m *MCP) inspectSpanResult(ctx context.Context, spanID string, opts traceReportOpts) (string, error) {
+	captured, captureErr := m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly)
+	opts.HideLogSpans = captured.directSpans
+	report, reportErr := renderTraceReport(ctx, spanID, opts)
+	if captureErr != nil {
+		captureErr = fmt.Errorf("capture logs for span %s: %w", spanID, captureErr)
+	}
+	if reportErr != nil {
+		reportErr = fmt.Errorf("render report for span %s: %w", spanID, reportErr)
+	}
+	err := errors.Join(captureErr, reportErr)
+	if strings.TrimSpace(report.body) == "" && report.failures == "" {
+		return flatLogs(spanID, captured.lines), err
+	}
+	own := directLogs(captured.lines)
+	if opts.FocusFailures && report.failures != "" {
+		own = guardText(own, textGuard{
+			maxBytes: 4096, maxLineLen: llmLogsMaxLineLen, headBytes: 2048,
+			marker: func(lines, bytes int) string {
+				return fmt.Sprintf("... %d own log lines omitted; ReadLogs(span: %q, scope: \"own\", fromLine: 1) ...", lines, spanID)
+			},
+		})
+	}
+	return combineSpanResult(spanID, own, report.body, report.failures), err
+}
+
+// combineSpanResult assembles and bounds the sections. A root ReadLogs
+// breadcrumb is a fallback only when there are no narrower failure links.
+// own may be empty; the report's sections already carry their own headings.
+func combineSpanResult(spanID, own, report, failures string) string {
 	report = strings.TrimLeft(report, "\n")
-	if strings.TrimSpace(report) == "" {
+	if strings.TrimSpace(report) == "" && failures == "" {
 		return ""
 	}
 	var sections []string
+	if failures != "" {
+		// Put actionable failure links ahead of potentially huge OUTPUT. This
+		// bounded section survives both report and outer CallContent guards.
+		sections = append(sections, failures)
+	}
 	if own != "" {
 		sections = append(sections, spanResultOutputHeading+"\n"+own)
 	}
 	sections = append(sections, report)
-	// The report clamps nested log tails (and the byte guard may drop its
-	// middle), so tell the reader where the unabridged logs live.
-	return guardTraceReport(strings.Join(sections, "\n\n")) + "\n" +
-		fmt.Sprintf("... use ReadLogs(span: %s) to read the full logs ...", spanID)
+	result := guardTraceReport(strings.Join(sections, "\n\n"))
+	if failures == "" {
+		result += "\n" + fmt.Sprintf("... use ReadLogs(span: %s) to read the full logs ...", spanID)
+	}
+	return result
 }
 
 // toolCallReportOpts are the render options for the report embedded in a tool
@@ -1172,7 +1232,7 @@ func toolCallReportOpts() traceReportOpts {
 		// OUTPUT section carries the tool's own lines unabridged.
 		NestedLogLines: llmToolLogsMaxLines,
 		// The reader is an LLM, which has tools rather than a shell: suggest
-		// the ReadTrace builtin for the failed checks instead of `dagger
+		// FindSpans then ReadTrace for failed checks instead of `dagger
 		// check "<name>"` commands it cannot run.
 		SuggestReadTrace: true,
 		// A tool result is about the RESULT, not about the machinery: keep
@@ -1181,23 +1241,6 @@ func toolCallReportOpts() traceReportOpts {
 		// the tree asks for it with ReadTrace, which keeps rendering it.
 		HideSpanTree: true,
 	}
-}
-
-// traceReport renders spanID's subtree as the pretty report, with the spans
-// whose output the caller prints itself suppressed. It returns "" when there
-// is no report to show and the flat capture should be used instead.
-func (m *MCP) traceReport(ctx context.Context, spanID string, hideLogSpans map[string]bool, opts traceReportOpts) string {
-	opts.HideLogSpans = hideLogSpans
-	report, err := renderTraceReport(ctx, spanID, opts)
-	if err != nil {
-		slog.Warn("failed to render trace report", "span", spanID, "error", err)
-		return ""
-	}
-	report = strings.TrimRight(report, "\n")
-	if strings.TrimSpace(report) == "" {
-		return ""
-	}
-	return report
 }
 
 // directLogs joins the lines the captured span printed itself, verbatim save

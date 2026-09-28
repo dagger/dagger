@@ -13,6 +13,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 
+	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -82,6 +83,28 @@ func cloudEngineTelemetryResource() (*sdkresource.Resource, error) {
 		sdkresource.Default(),
 		sdkresource.NewSchemaless(attribute.Bool(telemetryattrs.CloudEngineAttr, true)),
 	)
+}
+
+// sessionTracerResource is the resource of a session's spans: the SDK default
+// plus the engine instance, and the Cloud engine marker on Cloud engines.
+func sessionTracerResource(engineInstanceID string, cloudEngine bool) (*sdkresource.Resource, error) {
+	base := sdkresource.Default()
+	if cloudEngine {
+		var err error
+		base, err = cloudEngineTelemetryResource()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return withEngineInstanceResource(base, engineInstanceID)
+}
+
+// withEngineInstanceResource adds the engine instance attribute to base.
+func withEngineInstanceResource(base *sdkresource.Resource, engineInstanceID string) (*sdkresource.Resource, error) {
+	if engineInstanceID == "" {
+		return base, nil
+	}
+	return sdkresource.Merge(base, sdkresource.NewSchemaless(attribute.String(cachefact.ResourceEngineInstance, engineInstanceID)))
 }
 
 type telemetryOriginLogProcessor struct {
@@ -448,7 +471,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	slog.Debug("exporting spans", "spans", len(spans), "origin", clientID)
 
 	start := time.Now()
-	exporter := originSpanExporter{origin: clientID, next: record.daggerSession.spanExporter}
+	exporter := record.daggerSession.postedSpanExporter(clientID)
 	if err := exporter.ExportSpans(r.Context(), spans); err != nil {
 		slog.Error("error exporting spans", "err", err, "duration", time.Since(start))
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
@@ -488,7 +511,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	slog.Debug("exporting logs", "origin", clientID)
 
 	start := time.Now()
-	exporter := originLogExporter{origin: clientID, next: record.daggerSession.logExporter}
+	exporter := record.daggerSession.postedLogExporter(clientID)
 	if err := telemetry.ReexportLogsFromPB(r.Context(), exporter, &req); err != nil {
 		slog.Error("error exporting logs", "err", err, "duration", time.Since(start))
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
@@ -528,8 +551,8 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 	slog.Debug("exporting metrics", "origin", clientID)
 
 	start := time.Now()
-	exporter := clientMetricExporter{record: record, ps: ps}
-	if err := enginetel.ReexportMetricsFromPB(r.Context(), []sdkmetric.Exporter{exporter}, &req); err != nil {
+	exporters := record.daggerSession.postedMetricExporters(clientMetricExporter{record: record, ps: ps})
+	if err := enginetel.ReexportMetricsFromPB(r.Context(), exporters, &req); err != nil {
 		slog.Error("error exporting metrics", "err", err, "duration", time.Since(start))
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
@@ -975,6 +998,9 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	defer db.Close()
 
 	w.Header().Set("Cache-Control", "no-cache")
+	if sess := record.daggerSession; sess != nil && sess.publishesToCloud() {
+		w.Header().Set(engine.CloudTelemetryPublisherHeader, engine.CloudTelemetryPublisherEngine)
+	}
 	if binary {
 		w.Header().Set("Content-Type", enginetel.LiveContentType)
 	} else {

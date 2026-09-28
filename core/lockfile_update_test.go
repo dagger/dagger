@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core/workspace"
@@ -46,6 +47,143 @@ func TestUpdateWorkspaceLockIgnoresUnsupportedEntries(t *testing.T) {
 
 	require.NoError(t, UpdateWorkspaceLock(context.Background(), nil, lock))
 	require.Len(t, lock.Entries(), 2)
+}
+
+func TestSelectWorkspaceLockEntries(t *testing.T) {
+	t.Parallel()
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationOCISHA,
+		[]any{"docker.io/library/node:lts-alpine"},
+		"sha256:"+strings.Repeat("0", 64),
+	))
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationGitSHA,
+		[]any{"github.com/dagger/dagger", "refs/tags/v1.0.0"},
+		"0123456789012345678901234567890123456789",
+	))
+	require.NoError(t, lock.SetLookup("acme", "resolve", []any{"ignored"}, "value"))
+
+	t.Run("all supported", func(t *testing.T) {
+		entries, err := SelectWorkspaceLockEntries(lock, nil)
+		require.NoError(t, err)
+		require.Len(t, entries, 2)
+		require.Equal(t, []string{
+			"github.com/dagger/dagger@refs/tags/v1.0.0",
+			"docker.io/library/node:lts-alpine",
+		}, []string{
+			WorkspaceLockEntrySelector(entries[0]),
+			WorkspaceLockEntrySelector(entries[1]),
+		})
+	})
+
+	t.Run("multiple selectors", func(t *testing.T) {
+		entries, err := SelectWorkspaceLockEntries(lock, []string{"node", "github.com/dagger/dagger"})
+		require.NoError(t, err)
+		require.Len(t, entries, 2)
+	})
+
+	t.Run("overlapping selectors", func(t *testing.T) {
+		entries, err := SelectWorkspaceLockEntries(lock, []string{"node", "*node*", "node"})
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+		require.Equal(t, workspace.LockOperationOCISHA, entries[0].Operation)
+	})
+
+	t.Run("printable selector", func(t *testing.T) {
+		entries, err := SelectWorkspaceLockEntries(lock, []string{"docker.io/library/node:lts-alpine"})
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+		require.Equal(t, workspace.LockOperationOCISHA, entries[0].Operation)
+	})
+
+	t.Run("glob crosses path separators", func(t *testing.T) {
+		entries, err := SelectWorkspaceLockEntries(lock, []string{"*node*"})
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+		require.Equal(t, workspace.LockOperationOCISHA, entries[0].Operation)
+	})
+
+	t.Run("OCI shorthand preserves tag", func(t *testing.T) {
+		entries, err := SelectWorkspaceLockEntries(lock, []string{"node:lts*"})
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+		require.Equal(t, workspace.LockOperationOCISHA, entries[0].Operation)
+	})
+
+	t.Run("operation is not a selector", func(t *testing.T) {
+		_, err := SelectWorkspaceLockEntries(lock, []string{"oci-sha"})
+		require.EqualError(t, err, `lock selector "oci-sha" matched no entries`)
+	})
+
+	t.Run("unmatched", func(t *testing.T) {
+		_, err := SelectWorkspaceLockEntries(lock, []string{"debian"})
+		require.EqualError(t, err, `lock selector "debian" matched no entries`)
+	})
+
+	t.Run("invalid pattern", func(t *testing.T) {
+		_, err := SelectWorkspaceLockEntries(lock, []string{"["})
+		require.ErrorContains(t, err, `invalid lock selector "["`)
+	})
+
+	t.Run("invalid pattern after catch-all", func(t *testing.T) {
+		_, err := SelectWorkspaceLockEntries(lock, []string{"*", "["})
+		require.ErrorContains(t, err, `invalid lock selector "["`)
+	})
+
+	t.Run("empty selector after catch-all", func(t *testing.T) {
+		_, err := SelectWorkspaceLockEntries(lock, []string{"*", ""})
+		require.EqualError(t, err, "lock selector must not be empty")
+	})
+
+	t.Run("literal pattern metacharacters", func(t *testing.T) {
+		literalLock := workspace.NewLock()
+		require.NoError(t, literalLock.SetLookup(
+			workspace.CoreLockNamespace,
+			workspace.LockOperationOCISHA,
+			[]any{"registry.example/image[debug]:latest"},
+			"sha256:"+strings.Repeat("0", 64),
+		))
+		require.NoError(t, literalLock.SetLookup(
+			workspace.CoreLockNamespace,
+			workspace.LockOperationOCISHA,
+			[]any{"registry.example/other:latest"},
+			"sha256:"+strings.Repeat("1", 64),
+		))
+		selector := "registry.example/image[debug]:latest"
+		entries, err := SelectWorkspaceLockEntries(literalLock, []string{selector})
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+		require.Equal(t, selector, WorkspaceLockEntrySelector(entries[0]))
+	})
+
+	t.Run("git shorthand matches branches and tags", func(t *testing.T) {
+		gitLock := workspace.NewLock()
+		for _, ref := range []string{"refs/heads/main", "refs/tags/main", "refs/pull/123/main"} {
+			require.NoError(t, gitLock.SetLookup(
+				workspace.CoreLockNamespace,
+				workspace.LockOperationGitSHA,
+				[]any{"https://github.com/dagger/dagger.git", ref},
+				strings.Repeat("0", 40),
+			))
+		}
+
+		for _, selector := range []string{"dagger@main", "dagger@m*"} {
+			entries, err := SelectWorkspaceLockEntries(gitLock, []string{selector})
+			require.NoError(t, err)
+			require.Len(t, entries, 2)
+			require.ElementsMatch(t, []string{
+				"github.com/dagger/dagger@refs/heads/main",
+				"github.com/dagger/dagger@refs/tags/main",
+			}, []string{
+				WorkspaceLockEntrySelector(entries[0]),
+				WorkspaceLockEntrySelector(entries[1]),
+			})
+		}
+	})
 }
 
 func TestUpdateVanityURLLockEntry(t *testing.T) {

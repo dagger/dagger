@@ -78,7 +78,7 @@ func BenchmarkCachePruneSnapshot(b *testing.B) {
 						}
 
 						b.StartTimer()
-						snapshot := c.snapshotPruneState(nil, mode.mode, directResultBytes)
+						snapshot := c.snapshotPruneState(mode.mode, directResultBytes)
 						b.StopTimer()
 						if len(snapshot.results) != resultCount {
 							b.Fatalf("snapshot results: got %d, want %d", len(snapshot.results), resultCount)

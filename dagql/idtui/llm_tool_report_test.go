@@ -349,7 +349,7 @@ func TestReportRenderOptsRerunSuggestion(t *testing.T) {
 		RerunSuggestion: func(names []string) (string, []string) {
 			body := make([]string, 0, len(names))
 			for _, name := range names {
-				body = append(body, `ReadTrace(check: "`+name+`")`)
+				body = append(body, `FindSpans(query: "`+name+`")`)
 			}
 			return "SEE FULL TRACE", body
 		},
@@ -362,7 +362,7 @@ func TestReportRenderOptsRerunSuggestion(t *testing.T) {
 	got := buf.String()
 	t.Logf("rendered report:\n%s", got)
 	if !strings.Contains(got, "SEE FULL TRACE") ||
-		!strings.Contains(got, `ReadTrace(check: "ci:bootstrap")`) {
+		!strings.Contains(got, `FindSpans(query: "ci:bootstrap")`) {
 		t.Fatalf("report missing the injected suggestion:\n%s", got)
 	}
 	if strings.Contains(got, `dagger check "ci:bootstrap"`) || strings.Contains(got, "RUN LOCALLY") {
@@ -451,11 +451,17 @@ func TestASCIIReporterScopedChecksUnderToolBoundary(t *testing.T) {
 		return buf.String()
 	}
 
-	// Unzoomed at the DB root, the boundary contains the check: no CHECKS
-	// section -- the whole-trace behavior is unchanged.
+	// Unzoomed at the DB root, the boundary contains the check: no trace-level
+	// CHECKS section -- the whole-trace behavior is unchanged. The check only
+	// rolls up beneath the tool call that ran it, indented under its row.
 	before := render(rootID, false)
-	if strings.Contains(before, "CHECKS") {
-		t.Fatalf("expected the boundary to contain the check at the DB root:\n%s", before)
+	for _, line := range strings.Split(before, "\n") {
+		if strings.HasPrefix(line, "CHECKS") {
+			t.Fatalf("expected the boundary to contain the check at the DB root:\n%s", before)
+		}
+	}
+	if !strings.Contains(before, "  CHECKS") || !strings.Contains(before, "shellcheck:check") {
+		t.Fatalf("expected the tool call to roll up the check it ran:\n%s", before)
 	}
 
 	// Zoomed to the tool call, the check is what ran inside it.

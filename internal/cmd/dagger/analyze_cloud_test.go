@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -159,18 +160,13 @@ func TestSpanSelectorResolveSpanOverOTLP(t *testing.T) {
 func TestCloudLogsWritesTextOutputOnly(t *testing.T) {
 	f, client := newFakeCloudLogs(t)
 
-	prevSpan, prevCheck, prevTest, prevDesc, prevOut := logsSpan, logsCheck, logsTest, logsDescendants, logsOutput
-	t.Cleanup(func() {
-		logsSpan, logsCheck, logsTest, logsDescendants, logsOutput = prevSpan, prevCheck, prevTest, prevDesc, prevOut
-	})
-	logsSpan, logsCheck, logsTest, logsDescendants, logsOutput = "", "lint", "", false, ""
-
 	cli := &CloudCLI{otlpClient: client}
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetContext(context.Background())
-	require.NoError(t, cli.CloudLogs(cmd, []string{"trace-id"}))
+	o := &traceViewOptions{sel: spanSelector{check: "lint"}, log: true, timeout: time.Minute}
+	require.NoError(t, cli.writeTraceLogs(cmd, "trace-id", o.sel, o))
 
 	require.Equal(t, "hello world\n", out.String())
 

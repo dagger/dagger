@@ -126,16 +126,23 @@ func TestWorkspaceRestoreOpensNothing(t *testing.T) {
 func TestModuleObjectListFieldRestore(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "cache.db")
 	ctx, cache, srv := containerPersistenceTestCache(t, db, newContainerPersistenceTestSnapshots(), "a")
-	install := func(srv *dagql.Server) *ModuleObject {
+	// The class's module is acquired by the installing session, as a served
+	// module is: a decoded holder must own the module its decoding class
+	// supplies, so that module has to be a cache row.
+	install := func(ctx context.Context, cache *dagql.Cache, srv *dagql.Server, session string) *ModuleObject {
 		installModuleObjectTestModuleClass(srv)
 		module := &Module{NameField: "test", Deps: NewSchemaBuilder(nil, nil)}
-		mod, err := dagql.NewObjectResultForCall(module, srv, moduleObjectTestSyntheticCall("list-module", module))
+		detached, err := dagql.NewObjectResultForCall(module, srv, moduleObjectTestSyntheticCall("list-module", module))
 		require.NoError(t, err)
+		attached, err := cache.AttachResult(ctx, session, srv, detached)
+		require.NoError(t, err)
+		mod, ok := attached.(dagql.ObjectResult[*Module])
+		require.True(t, ok)
 		shape := &ModuleObject{Module: mod, TypeDef: NewObjectTypeDef("ListHolder", "", nil)}
 		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: shape}))
 		return shape
 	}
-	shape := install(srv)
+	shape := install(ctx, cache, srv, "a")
 	child := attachStoredSnapshotTestValue(t, ctx, cache, srv, "a", "child", storedSnapshotTestValue("Directory", "child", "", false), false)
 	childID, err := cache.PersistedResultID(child)
 	require.NoError(t, err)
@@ -152,7 +159,7 @@ func TestModuleObjectListFieldRestore(t *testing.T) {
 	for _, session := range []string{"b", "c"} {
 		manager := newContainerPersistenceTestSnapshots()
 		ctx, cache, srv = containerPersistenceTestCache(t, db, manager, session)
-		install(srv)
+		install(ctx, cache, srv, session)
 		loaded, err := cache.LoadResultByResultID(ctx, session, srv, id)
 		require.NoError(t, err)
 		fields := loaded.Unwrap().(*ModuleObject).Fields

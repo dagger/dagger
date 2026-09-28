@@ -43,44 +43,44 @@ func (r *Resolver) tryLocalCanonicalConfigMetadata(
 	ctx context.Context,
 	ref string,
 	opts ResolveImageConfigOpts,
-) (string, digest.Digest, []byte, bool, error) {
+) (string, ocispecs.Descriptor, []byte, bool, error) {
 	parsed, err := reference.ParseNormalizedNamed(ref)
 	if err != nil {
-		return "", "", nil, false, nil //nolint:nilerr // Invalid refs are not local-cache hits; the remote resolver reports the real error.
+		return "", ocispecs.Descriptor{}, nil, false, nil //nolint:nilerr // Invalid refs are not local-cache hits; the remote resolver reports the real error.
 	}
 	canonical, ok := parsed.(reference.Canonical)
 	if !ok {
-		return "", "", nil, false, nil
+		return "", ocispecs.Descriptor{}, nil, false, nil
 	}
 
 	rootDesc, found, err := r.localCanonicalRootDescriptor(ctx, canonical.Digest())
 	if err != nil || !found {
-		return "", "", nil, found, err
+		return "", ocispecs.Descriptor{}, nil, found, err
 	}
 
 	manifestDesc, manifest, found, err := tryResolveLocalManifestDescriptor(ctx, r.contentStore, rootDesc, imageConfigPlatformMatcher(opts.Platform), false)
 	if err != nil || !found {
-		return "", "", nil, false, err
+		return "", ocispecs.Descriptor{}, nil, false, err
 	}
 
 	configBytes, err := content.ReadBlob(ctx, r.contentStore, manifest.Config)
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
-			return "", "", nil, false, nil
+			return "", ocispecs.Descriptor{}, nil, false, nil
 		}
-		return "", "", nil, false, err
+		return "", ocispecs.Descriptor{}, nil, false, err
 	}
 
 	refspec, err := ctdreference.Parse(canonical.String())
 	if err != nil {
-		return "", "", nil, false, err
+		return "", ocispecs.Descriptor{}, nil, false, err
 	}
 	ok, err = r.localMetadataHasMatchingSource(ctx, refspec, rootDesc, manifestDesc, manifest.Config)
 	if err != nil || !ok {
-		return "", "", nil, false, err
+		return "", ocispecs.Descriptor{}, nil, false, err
 	}
 
-	return canonical.String(), rootDesc.Digest, configBytes, true, nil
+	return canonical.String(), rootDesc, configBytes, true, nil
 }
 
 func (r *Resolver) ensureImageConfigMetadata(

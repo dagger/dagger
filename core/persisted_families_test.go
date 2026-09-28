@@ -225,13 +225,20 @@ func persistedVisitedRefs(t *testing.T, ctx context.Context, cache *dagql.Cache,
 }
 
 // assertPersistedRefsMatchOwnership checks that the rows a family's visitor
-// declares are exactly the rows its dependency hook owns.
+// declares are exactly the rows its dependency hook owns, apart from rows the
+// decoding server supplies rather than the payload (HasDecodedDependencyResults),
+// which the decoded row owns without declaring them in the envelope.
 func assertPersistedRefsMatchOwnership(t *testing.T, ctx context.Context, cache *dagql.Cache, res dagql.AnyResult) map[string]uint64 {
 	t.Helper()
 	refs := persistedVisitedRefs(t, ctx, cache, res)
 	declared := make([]uint64, 0, len(refs))
 	for _, id := range refs {
 		declared = append(declared, id)
+	}
+	if decoded, ok := res.Unwrap().(dagql.HasDecodedDependencyResults); ok {
+		for _, dep := range decoded.DecodedDependencyResults() {
+			declared = append(declared, persistedRowID(t, cache, dep))
+		}
 	}
 	slices.Sort(declared)
 	declared = slices.Compact(declared)

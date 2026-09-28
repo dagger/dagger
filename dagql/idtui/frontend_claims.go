@@ -20,6 +20,9 @@ type renderClaims struct {
 	// tests records test-case spans already represented by a check's test report,
 	// so the global tests section can show only the cases no check covered.
 	tests map[dagui.SpanID]struct{}
+	// parent, when set, is the claims this set was forked from (see fork):
+	// lookups consult it too, and commit folds this set's claims into it.
+	parent *renderClaims
 }
 
 func newRenderClaims() *renderClaims {
@@ -30,11 +33,54 @@ func newRenderClaims() *renderClaims {
 	}
 }
 
+// fork returns claims for one sub-render: they dedupe against everything
+// already claimed (lookups fall through to claims), but record their own
+// claims separately until commit. That lets a caller
+//
+//   - ask what exactly the sub-render represented (ownsTestCase), e.g. a tool
+//     call's TESTS rollup leaving out the cases its CHECKS rollup nested under
+//     their checks, untouched by claims seeded elsewhere in the pass; and
+//   - discard a render it ends up not showing (e.g. a rollup's full detail,
+//     condensed away to fit the screen) by simply not committing it.
+func (claims *renderClaims) fork() *renderClaims {
+	fork := newRenderClaims()
+	fork.parent = claims
+	return fork
+}
+
+// commit folds a fork's claims into the claims it was forked from.
+func (claims *renderClaims) commit() {
+	if claims == nil || claims.parent == nil {
+		return
+	}
+	for id := range claims.errors {
+		claims.parent.claimErrorID(id)
+	}
+	for id := range claims.logs {
+		claims.parent.claimLogID(id)
+	}
+	for id := range claims.tests {
+		claims.parent.claimTestCase(id)
+	}
+}
+
 func (claims *renderClaims) claimTestCase(id dagui.SpanID) {
 	if claims == nil || !id.IsValid() {
 		return
 	}
 	claims.tests[id] = struct{}{}
+}
+
+// withForkedClaims runs render against claims forked from the pass's (see
+// renderClaims.fork) and returns the fork, uncommitted: the caller decides
+// whether what render claimed counts.
+func (fe *frontendPretty) withForkedClaims(render func()) *renderClaims {
+	parent := fe.claims
+	fork := parent.fork()
+	fe.claims = fork
+	defer func() { fe.claims = parent }()
+	render()
+	return fork
 }
 
 // anyTestCases reports whether any check's test report claimed cases this pass.
@@ -51,15 +97,26 @@ func (claims *renderClaims) testCaseCount() int {
 	if claims == nil {
 		return 0
 	}
-	return len(claims.tests)
+	return len(claims.tests) + claims.parent.testCaseCount()
 }
 
 func (claims *renderClaims) hasTestCase(id dagui.SpanID) bool {
+	return claims.ownsTestCase(id) || (claims != nil && claims.parent.hasTestCase(id))
+}
+
+// ownsTestCase reports whether these claims themselves -- not the claims they
+// were forked from -- claimed a test case.
+func (claims *renderClaims) ownsTestCase(id dagui.SpanID) bool {
 	if claims == nil || !id.IsValid() {
 		return false
 	}
 	_, ok := claims.tests[id]
 	return ok
+}
+
+// ownsAnyTestCases reports whether these claims themselves claimed any case.
+func (claims *renderClaims) ownsAnyTestCases() bool {
+	return claims != nil && len(claims.tests) > 0
 }
 
 func (claims *renderClaims) claimError(span *dagui.Span) {
@@ -80,8 +137,10 @@ func (claims *renderClaims) hasError(id dagui.SpanID) bool {
 	if claims == nil || !id.IsValid() {
 		return false
 	}
-	_, ok := claims.errors[id]
-	return ok
+	if _, ok := claims.errors[id]; ok {
+		return true
+	}
+	return claims.parent.hasError(id)
 }
 
 func (claims *renderClaims) claimLog(span *dagui.Span) {
@@ -102,8 +161,10 @@ func (claims *renderClaims) hasLog(id dagui.SpanID) bool {
 	if claims == nil || !id.IsValid() {
 		return false
 	}
-	_, ok := claims.logs[id]
-	return ok
+	if _, ok := claims.logs[id]; ok {
+		return true
+	}
+	return claims.parent.hasLog(id)
 }
 
 // claimTestReport marks output covered by the test report rooted at span. The

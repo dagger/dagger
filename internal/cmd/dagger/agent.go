@@ -12,6 +12,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -60,6 +61,12 @@ Examples:
 		// happens (hack/designs/resume-from-trace.md §5.4).
 		if err := validateAgentTraceFlags(agentTrace, resume, args); err != nil {
 			return err
+		}
+		// The prompt is about to use the LLM, so renew an expired subscription
+		// login up front. The on-demand refresher hook exports the renewed
+		// token on the engine's first credential lookup.
+		if err := llmconfig.RefreshOAuthTokensIfNeeded(cmd.Context()); err != nil {
+			slog.Warn("failed to refresh LLM OAuth tokens", "error", err)
 		}
 		return withEngine(
 			cmd.Context(),

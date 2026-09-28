@@ -542,6 +542,16 @@ class PortForward(Input):
     """Transport layer protocol to use for traffic."""
 
 
+@typecheck
+@dataclass(slots=True)
+class TerminalCopy(Input):
+    path: str
+    """Location of the copied directory. A relative path is relative to the container's working directory."""
+
+    source: "Directory"
+    """The directory to copy."""
+
+
 @runtime_checkable
 class Exportable(Protocol):
     """An object that can be exported to the host.  Calling export writes
@@ -1592,6 +1602,48 @@ class AgentMiddlewareGroup(Type):
         _ctx = self._select("list", _args)
         return await _ctx.execute_object_list(AgentMiddleware)
 
+    def recompose(self, base: "LLM") -> "LLM":
+        """Recompose the selected agent middlewares onto an existing LLM,
+        replacing their modules' owned system prompts, skills, and tool
+        bindings while preserving tool object state.
+
+        Contributions belong to the installed module calling withSystemPrompt,
+        withSkills, or withTools, independently of the bound object's module
+        or middleware entrypoint. Ownership follows the installed module name,
+        not its source location. Moving a module between remote, local, or
+        forked sources preserves compatible state when its installation name
+        and intrinsic module and object identities stay the same.
+
+        Contributions from selected modules are removed once before running
+        the selected entrypoints. Unowned contributions and contributions from
+        other modules are retained. Nested modules own their own
+        contributions; use recompose explicitly to refresh them. Other
+        middleware effects retain compose semantics; this is not a general
+        rollback of arbitrary middleware changes.
+
+        Existing field values win over new defaults; fields added by the new
+        revision take its defaults. Changing a binding's withTools version
+        resets that object's state to the new defaults instead. With an
+        unchanged version, visibly incompatible state (a public field that
+        changed type, or a value whose shape differs from the new default) is
+        an error. Discarded bindings or changed module or object identities
+        are errors regardless of version. Ownership checks still apply. The
+        base workspace is preserved.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
+        Parameters
+        ----------
+        base:
+            The existing conversation whose tool state should be preserved.
+        """
+        _args = [
+            Arg("base", base),
+        ]
+        _ctx = self._select("recompose", _args)
+        return LLM(_ctx)
+
 
 @typecheck
 class CacheVolume(Type):
@@ -2270,6 +2322,7 @@ class Container(Type):
         *,
         args: list[str] | None = None,
         use_entrypoint: bool | None = False,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -2287,8 +2340,12 @@ class Container(Type):
             If empty, the container's default command is used.
         use_entrypoint:
             If the container has an entrypoint, prepend it to the args.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -2308,6 +2365,7 @@ class Container(Type):
         _args = [
             Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -2562,30 +2620,43 @@ class Container(Type):
         return await _ctx.execute(int)
 
     def experimental_with_all_gp_us(self) -> Self:
-        """EXPERIMENTAL API! Subject to change/removal at any time.
-
-        Configures all available GPUs on the host to be accessible to this
+        """Configures all available GPUs on the host to be accessible to this
         container.
 
         This currently works for Nvidia devices only.
+
+        .. deprecated::
+            Use "withGPU" instead.
         """
+        warnings.warn(
+            'Method "experimental_with_all_gp_us" is deprecated: Use "withGPU" instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("experimentalWithAllGPUs", _args)
         return Container(_ctx)
 
     def experimental_with_gpu(self, devices: list[str]) -> Self:
-        """EXPERIMENTAL API! Subject to change/removal at any time.
-
-        Configures the provided list of devices to be accessible to this
+        """Configures the provided list of devices to be accessible to this
         container.
 
         This currently works for Nvidia devices only.
+
+        .. deprecated::
+            Use "withGPU" instead, which exposes all GPUs available on the
+            host.
 
         Parameters
         ----------
         devices:
             List of devices to be accessible to this container.
         """
+        warnings.warn(
+            'Method "experimental_with_gpu" is deprecated: Use "withGPU" instead, which exposes all GPUs available on the host.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("devices", devices),
         ]
@@ -3186,6 +3257,7 @@ class Container(Type):
         self,
         *,
         cmd: list[str] | None = None,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
@@ -3198,8 +3270,12 @@ class Container(Type):
         cmd:
             If set, override the container's default terminal command and
             invoke these command arguments instead.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -3209,6 +3285,7 @@ class Container(Type):
         """
         _args = [
             Arg("cmd", [] if cmd is None else cmd, []),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3224,6 +3301,7 @@ class Container(Type):
         ports: list[PortForward] | None = None,
         args: list[str] | None = None,
         use_entrypoint: bool | None = False,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -3248,8 +3326,12 @@ class Container(Type):
             If empty, the container's default command is used.
         use_entrypoint:
             If the container has an entrypoint, prepend it to the args.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -3284,6 +3366,7 @@ class Container(Type):
             Arg("ports", [] if ports is None else ports, []),
             Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3352,6 +3435,7 @@ class Container(Type):
         self,
         args: list[str],
         *,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
@@ -3361,8 +3445,12 @@ class Container(Type):
         ----------
         args:
             The args of the command.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -3372,6 +3460,7 @@ class Container(Type):
         """
         _args = [
             Arg("args", args),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3577,6 +3666,7 @@ class Container(Type):
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
         expect: ReturnType | None = ReturnType.SUCCESS,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -3611,8 +3701,12 @@ class Container(Type):
             Example: "./stderr.txt"
         expect:
             Exit codes this command is allowed to exit with without error
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. Like --privileged
             in Docker
@@ -3637,6 +3731,7 @@ class Container(Type):
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
             Arg("expect", expect, ReturnType.SUCCESS),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3769,6 +3864,17 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withFiles", _args)
+        return Container(_ctx)
+
+    def with_gpu(self) -> Self:
+        """Configures all GPUs available on the host to be accessible to this
+        container.
+
+        This currently works with NVIDIA devices only, and requires the engine
+        to run with GPU support enabled.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withGPU", _args)
         return Container(_ctx)
 
     def with_label(self, name: str, value: str) -> Self:
@@ -5464,6 +5570,7 @@ class Directory(Type):
         *,
         container: Container | None = None,
         cmd: list[str] | None = None,
+        disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
@@ -5477,8 +5584,12 @@ class Directory(Type):
         cmd:
             If set, override the container's default terminal command and
             invoke these command arguments instead.
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -5489,6 +5600,7 @@ class Directory(Type):
         _args = [
             Arg("container", container, None),
             Arg("cmd", [] if cmd is None else cmd, []),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -11638,6 +11750,7 @@ class LLM(Type):
         object: Node,
         *,
         except_: list[str] | None = None,
+        version: int | None = 0,
     ) -> Self:
         """Expose an object's methods as tools. Every eligible method of the
         bound object becomes a tool; a tool that returns this object's own
@@ -11650,10 +11763,18 @@ class LLM(Type):
         except_:
             Method names to exclude from the toolset (e.g. constructors,
             entrypoints).
+        version:
+            Version of this binding's state contract. Recomposition preserves
+            compatible state when the version is unchanged and resets to the
+            newly bound object's defaults when it differs. Change this when
+            the state layout changes incompatibly. Same-type tool returns
+            retain the version. Module identity and ownership checks still
+            apply.
         """
         _args = [
             Arg("object", object),
             Arg("except", [] if except_ is None else except_, []),
+            Arg("version", version, 0),
         ]
         _ctx = self._select("withTools", _args)
         return LLM(_ctx)
@@ -16005,6 +16126,39 @@ class Terminal(Type):
 
 @typecheck
 class TerminalGroup(Type):
+    def exec(
+        self,
+        *,
+        args: list[str] | None = None,
+        stdin: str | None = "",
+        copy: list[TerminalCopy] | None = None,
+        init: list[str] | None = None,
+    ) -> Container:
+        """Run the selected terminal target's command non-interactively, and
+        return the container after execution. Any exit code is allowed.
+
+        Parameters
+        ----------
+        args:
+            Arguments to append to the terminal command. Example: ["-c", "go
+            test ./..."]
+        stdin:
+            Content to write to the command's standard input.
+        copy:
+            Directories to copy into the container, in order.
+        init:
+            Commands to run after copy, in order, with the terminal command
+            and -c. Only their changes to the filesystem are kept.
+        """
+        _args = [
+            Arg("args", [] if args is None else args, []),
+            Arg("stdin", stdin, ""),
+            Arg("copy", [] if copy is None else copy, []),
+            Arg("init", [] if init is None else init, []),
+        ]
+        _ctx = self._select("exec", _args)
+        return Container(_ctx)
+
     async def id(self) -> str:
         """A unique identifier for this TerminalGroup.
 
@@ -16039,9 +16193,26 @@ class TerminalGroup(Type):
         _ctx = self._select("list", _args)
         return await _ctx.execute_object_list(TerminalTarget)
 
-    def run(self) -> Self:
-        """Open the selected terminal target"""
-        _args: list[Arg] = []
+    def run(
+        self,
+        *,
+        copy: list[TerminalCopy] | None = None,
+        init: list[str] | None = None,
+    ) -> Self:
+        """Open the selected terminal target
+
+        Parameters
+        ----------
+        copy:
+            Directories to copy into the container, in order.
+        init:
+            Commands to run after copy, in order, with the terminal command
+            and -c. Only their changes to the filesystem are kept.
+        """
+        _args = [
+            Arg("copy", [] if copy is None else copy, []),
+            Arg("init", [] if init is None else init, []),
+        ]
         _ctx = self._select("run", _args)
         return TerminalGroup(_ctx)
 
@@ -17087,27 +17258,34 @@ class Workspace(Type):
         """Write this workspace's commits and pending changes to a checkout on
         the calling client.
 
-        With path, accept a frozen source, integrate divergent commits by
-        cherry-picking, preserve unrelated checkout edits, and refuse
-        conflicts. The source is unchanged. Pass from to save only work since
-        an earlier source value, including previously saved pending edits that
-        are now committed.
-
-        Without path, apply a local workspace's overlay changes at its host
-        root. Pass from to apply only changes since an earlier local workspace
-        state. Export paths are relative to the workspace root regardless of
-        its working directory. Like Directory.export, this writes only to the
+        Path selects the destination; omitting it uses the calling client's
+        current local workspace root, including when exporting a snapshot or
+        committed workspace. Exported file paths are relative to the workspace
+        root regardless of its working directory. This writes only to the
         client making the call, never the source's client.
+
+        A live workspace exported to its own checkout applies only its overlay
+        edits, without capturing the whole checkout. This also applies with an
+        explicit path. Pass from with the same live base to apply only changes
+        since that overlay state.
+
+        Other exports integrate divergent commits by cherry-picking, preserve
+        unrelated checkout edits, and refuse conflicts. Live inputs are
+        snapshotted automatically; capturing untracked source files requires
+        interactive approval. Stable inputs retain their baseline. Pass from
+        to save only work since an earlier source value, including previously
+        saved pending edits that are now committed.
 
         Parameters
         ----------
         path:
             Destination checkout path on the calling client. Relative paths
-            start at the client's working directory. Omit to apply a local
-            workspace's overlay changes at its host root.
+            start at the client's working directory. Omit to use the calling
+            client's current local workspace root.
         from_:
-            Earlier workspace state to compare against. With path, this must
-            be a previously exported frozen source workspace.
+            Earlier workspace state to compare against. For Git integration,
+            live inputs are snapshotted at export time; use a snapshot to
+            retain the baseline of a previous export.
 
         Returns
         -------
@@ -19282,6 +19460,7 @@ __all__ = [
     "Stat",
     "Syncer",
     "Terminal",
+    "TerminalCopy",
     "TerminalGroup",
     "TerminalTarget",
     "TypeDef",

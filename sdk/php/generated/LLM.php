@@ -262,12 +262,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
      */
-    public function withTools(Node $object, ?array $except = []): LLM
+    public function withTools(Node $object, ?array $except = [], ?int $version = 0): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withTools');
         $innerQueryBuilder->setArgument('object', $object);
         if (null !== $except) {
         $innerQueryBuilder->setArgument('except', $except);
+        }
+        if (null !== $version) {
+        $innerQueryBuilder->setArgument('version', $version);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

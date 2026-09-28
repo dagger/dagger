@@ -23,6 +23,7 @@ defmodule Dagger.Container do
   @spec as_service(t(), [
           {:args, [String.t()]},
           {:use_entrypoint, boolean() | nil},
+          {:disable_dagger_in_dagger, boolean() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
@@ -34,6 +35,7 @@ defmodule Dagger.Container do
       |> QB.select("asService")
       |> QB.maybe_put_arg("args", optional_args[:args])
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
+      |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
@@ -225,9 +227,10 @@ defmodule Dagger.Container do
     Client.execute(container.client, query_builder)
   end
 
+  @deprecated """
+  Use \\"withGPU\\" instead.
+  """
   @doc """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
   Configures all available GPUs on the host to be accessible to this container.
 
   This currently works for Nvidia devices only.
@@ -243,9 +246,10 @@ defmodule Dagger.Container do
     }
   end
 
+  @deprecated """
+  Use \\"withGPU\\" instead, which exposes all GPUs available on the host.
+  """
   @doc """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
   Configures the provided list of devices to be accessible to this container.
 
   This currently works for Nvidia devices only.
@@ -674,6 +678,7 @@ defmodule Dagger.Container do
   """
   @spec terminal(t(), [
           {:cmd, [String.t()]},
+          {:disable_dagger_in_dagger, boolean() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil}
         ]) :: Dagger.Container.t()
@@ -682,6 +687,7 @@ defmodule Dagger.Container do
       container.query_builder
       |> QB.select("terminal")
       |> QB.maybe_put_arg("cmd", optional_args[:cmd])
+      |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
@@ -704,6 +710,7 @@ defmodule Dagger.Container do
           {:ports, [Dagger.PortForward.t()]},
           {:args, [String.t()]},
           {:use_entrypoint, boolean() | nil},
+          {:disable_dagger_in_dagger, boolean() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
@@ -717,6 +724,7 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("ports", optional_args[:ports])
       |> QB.maybe_put_arg("args", optional_args[:args])
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
+      |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
@@ -777,6 +785,7 @@ defmodule Dagger.Container do
   Set the default command to invoke for the container's terminal API.
   """
   @spec with_default_terminal_cmd(t(), [String.t()], [
+          {:disable_dagger_in_dagger, boolean() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil}
         ]) :: Dagger.Container.t()
@@ -785,6 +794,7 @@ defmodule Dagger.Container do
       container.query_builder
       |> QB.select("withDefaultTerminalCmd")
       |> QB.put_arg("args", args)
+      |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
@@ -935,6 +945,7 @@ defmodule Dagger.Container do
           {:redirect_stdout, String.t() | nil},
           {:redirect_stderr, String.t() | nil},
           {:expect, Dagger.ReturnType.t() | nil},
+          {:disable_dagger_in_dagger, boolean() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
@@ -951,6 +962,7 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])
       |> QB.maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])
       |> QB.maybe_put_arg("expect", optional_args[:expect])
+      |> QB.maybe_put_arg("disableDaggerInDagger", optional_args[:disable_dagger_in_dagger])
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
@@ -1042,6 +1054,22 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("owner", optional_args[:owner])
       |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Configures all GPUs available on the host to be accessible to this container.
+
+  This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+  """
+  @spec with_gpu(t()) :: Dagger.Container.t()
+  def with_gpu(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("withGPU")
 
     %Dagger.Container{
       query_builder: query_builder,

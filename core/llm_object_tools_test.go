@@ -389,17 +389,17 @@ func TestCombineSpanResult(t *testing.T) {
 
 	// Renders to nothing: dagui filters internal/passthrough/encapsulated
 	// spans, so a tool call with children can still produce a blank report.
-	require.Empty(t, combineSpanResult(spanID, "", ""))
-	require.Empty(t, combineSpanResult(spanID, "LINE-01", "\n \n\t\n"))
+	require.Empty(t, combineSpanResult(spanID, "", "", ""))
+	require.Empty(t, combineSpanResult(spanID, "LINE-01", "\n \n\t\n", ""))
 
 	// Report only: no empty OUTPUT section for a target that printed nothing,
 	// and no heading over the report itself.
-	quiet := combineSpanResult(spanID, "", "== CHECKS ==  ✔ 1 passed\n✔ lint:check 0.1s OK")
+	quiet := combineSpanResult(spanID, "", "== CHECKS ==  ✔ 1 passed\n✔ lint:check 0.1s OK", "")
 	require.NotContains(t, quiet, "OUTPUT")
 	require.NotContains(t, quiet, "TRACE REPORT")
 	require.True(t, strings.HasPrefix(quiet, "== CHECKS =="), "got %q", quiet)
 
-	got := combineSpanResult(spanID, "LINE-01\nLINE-02", "• Foo.bar 1.0s")
+	got := combineSpanResult(spanID, "LINE-01\nLINE-02", "• Foo.bar 1.0s", "")
 	// The tool's own output comes first, verbatim, under its own heading...
 	require.Contains(t, got, "== OUTPUT ==\nLINE-01\nLINE-02")
 	// ...then the report, bare.
@@ -806,4 +806,78 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		require.Contains(t, err.Error(), `arg "dir": decode string`)
 		require.NotContains(t, err.Error(), "address")
 	})
+}
+
+// batchTestRunner is a receiver for deriving object tools from real dagql
+// field specs, cache policy included.
+type batchTestRunner struct{}
+
+func (*batchTestRunner) Type() *ast.Type {
+	return &ast.Type{NamedType: "BatchTestRunner", NonNull: true}
+}
+
+// TestObjectToolPurity covers which object tools CallBatch may run
+// concurrently: those that neither change the agent's state nor are cached
+// with policy Never.
+func TestObjectToolPurity(t *testing.T) {
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*batchTestRunner]{Typed: &batchTestRunner{}}))
+	srv.InstallObject(dagql.NewClass[*Changeset](srv))
+	dagql.Fields[*batchTestRunner]{
+		dagql.Func("read", func(context.Context, *batchTestRunner, struct{}) (dagql.String, error) {
+			return "", nil
+		}),
+		// cacheImplicitInputs' encoding of @cache(policy: Never)...
+		dagql.Func("deploy", func(context.Context, *batchTestRunner, struct{}) (dagql.String, error) {
+			return "", nil
+		}).WithInput(dagql.PerCallInput),
+		// ...and of PerSession, which stays pure.
+		dagql.Func("status", func(context.Context, *batchTestRunner, struct{}) (dagql.String, error) {
+			return "", nil
+		}).WithInput(dagql.PerSessionInput),
+		// A core field's DoNotCache marks the same thing.
+		dagql.Func("export", func(context.Context, *batchTestRunner, struct{}) (dagql.String, error) {
+			return "", nil
+		}).DoNotCache("writes to the host"),
+		dagql.Func("edit", func(context.Context, *batchTestRunner, struct{}) (*Changeset, error) {
+			return nil, nil
+		}),
+		dagql.Func("advance", func(context.Context, *batchTestRunner, struct{}) (*batchTestRunner, error) {
+			return nil, nil
+		}),
+	}.Install(srv)
+	objType, ok := srv.ObjectType("BatchTestRunner")
+	require.True(t, ok)
+
+	m := newMCP().WithLazyTools(nil, objType, srv.Schema(), nil)
+	toolsets, err := m.boundToolsets(srv)
+	require.NoError(t, err)
+	require.Len(t, toolsets, 1)
+	pure := map[string]bool{}
+	for _, tool := range toolsets[0].tools {
+		pure[tool.Name] = tool.ReadOnly
+	}
+	require.Equal(t, map[string]bool{
+		"read":    true,
+		"status":  true,
+		"deploy":  false, // Never-cached: side effects or live reads
+		"export":  false, // DoNotCache: the core spelling of the same
+		"edit":    false, // returns a Changeset
+		"advance": false, // rebinds the agent's state
+	}, pure)
+
+	// So a Never-cached call is a barrier between the pure calls around it.
+	tools := toolsets[0].tools
+	var calls []*LLMToolCall
+	for i, name := range []string{"read", "status", "deploy", "read", "status"} {
+		calls = append(calls, batchCall(t, i+1, name, nil))
+	}
+	steps := m.planBatch(tools, calls)
+	require.Len(t, steps, 3)
+	require.True(t, steps[0].pure)
+	require.Equal(t, calls[0:2], steps[0].calls)
+	require.False(t, steps[1].pure)
+	require.Equal(t, calls[2:3], steps[1].calls)
+	require.True(t, steps[2].pure)
+	require.Equal(t, calls[3:5], steps[2].calls)
 }

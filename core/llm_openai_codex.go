@@ -138,7 +138,7 @@ func (c *OpenAICodexClient) IsRetryable(err error) bool {
 //nolint:gocyclo // streaming response handling is clearest as one protocol state machine
 func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	// Stream this turn's content into per-block display spans.
-	dp := newDisplayPhases(ctx, opts.CallDigest)
+	dp := newDisplayPhases(ctx, opts.CallDigest, tools)
 	defer func() {
 		dp.CloseAll()
 		if rerr != nil {

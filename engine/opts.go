@@ -116,6 +116,19 @@ type ClientMetadata struct {
 	// If set, the auth for cloud requests; used for PARC and scale-out
 	CloudAuth *auth.Cloud `json:"cloud_auth,omitempty"`
 
+	// If set, the Dagger Cloud API URL the client is configured with, so the
+	// engine publishes the session's telemetry to the same endpoint.
+	CloudURL string `json:"cloud_url,omitempty"`
+
+	// Path to the Dagger Cloud credentials file on the client's filesystem.
+	// The engine writes a refreshed OAuth token back to it.
+	CredentialsPath string `json:"config_path,omitempty"`
+
+	// CloudTelemetryPublisher, set to CloudTelemetryPublisherEngine by a main
+	// client, asks the engine to publish the session's telemetry to Dagger
+	// Cloud itself, with CloudAuth, instead of the client forwarding it.
+	CloudTelemetryPublisher string `json:"cloud_telemetry_publisher,omitempty"`
+
 	// If true, this client enables scaling checks out to cloud engines
 	EnableCloudScaleOut bool `json:"enable_cloud_scale_out,omitempty"`
 
@@ -235,6 +248,19 @@ func ClientMetadataFromHTTPHeaders(h http.Header) (*ClientMetadata, error) {
 
 	return m, nil
 }
+
+const (
+	// CloudTelemetryPublisherEngine is the ClientMetadata.CloudTelemetryPublisher
+	// value that asks the engine to publish the session's telemetry to Cloud.
+	CloudTelemetryPublisherEngine = "engine"
+
+	// CloudTelemetryPublisherHeader, set to CloudTelemetryPublisherEngine on a
+	// telemetry stream's response, confirms that the engine publishes the
+	// session's telemetry to Cloud, so the client must not forward it there.
+	// An engine decides once per session, before any stream opens, and answers
+	// every stream of the session alike, reconnects included.
+	CloudTelemetryPublisherHeader = "X-Dagger-Cloud-Telemetry-Publisher"
+)
 
 func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
 	h = h.Clone()
@@ -410,6 +436,10 @@ type LocalExportOpts struct {
 	// which includes deleting any files that are not in the source directory
 	Merge       bool
 	RemovePaths []string `json:"remove_paths"`
+	// ReplaceAtomically, for a file stream, writes a temporary file beside
+	// the destination and renames it into place, so a concurrent reader or
+	// writer of the file never sees a partial or interleaved one.
+	ReplaceAtomically bool `json:"replace_atomically,omitempty"`
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {

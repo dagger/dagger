@@ -474,6 +474,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     public function terminal(
         ?Container $container = null,
         ?array $cmd = [],
+        ?bool $disableDaggerInDagger = false,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
     ): Directory {
@@ -483,6 +484,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $cmd) {
         $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
+        if (null !== $disableDaggerInDagger) {
+        $innerQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
         }
         if (null !== $experimentalPrivilegedNesting) {
         $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);

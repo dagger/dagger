@@ -451,7 +451,12 @@ export type ContainerAsServiceOpts = {
   useEntrypoint?: boolean
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   */
+  disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
    */
   experimentalPrivilegedNesting?: boolean
 
@@ -695,7 +700,12 @@ export type ContainerTerminalOpts = {
   cmd?: string[]
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   */
+  disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
    */
   experimentalPrivilegedNesting?: boolean
 
@@ -731,7 +741,12 @@ export type ContainerUpOpts = {
   useEntrypoint?: boolean
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   */
+  disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
    */
   experimentalPrivilegedNesting?: boolean
 
@@ -755,7 +770,12 @@ export type ContainerUpOpts = {
 
 export type ContainerWithDefaultTerminalCmdOpts = {
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   */
+  disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
    */
   experimentalPrivilegedNesting?: boolean
 
@@ -880,7 +900,12 @@ export type ContainerWithExecOpts = {
   expect?: ReturnType
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   */
+  disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
    */
   experimentalPrivilegedNesting?: boolean
 
@@ -1490,7 +1515,12 @@ export type DirectoryTerminalOpts = {
   cmd?: string[]
 
   /**
-   * Provides Dagger access to the executed command.
+   * Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   */
+  disableDaggerInDagger?: boolean
+
+  /**
+   * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
    */
   experimentalPrivilegedNesting?: boolean
 
@@ -2491,6 +2521,11 @@ export type LLMWithToolsOpts = {
    * Method names to exclude from the toolset (e.g. constructors, entrypoints).
    */
   except?: string[]
+
+  /**
+   * Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply.
+   */
+  version?: number
 }
 
 export type LLMContentBlockInput = {
@@ -3360,6 +3395,52 @@ export type ServiceUpOpts = {
   random?: boolean
 }
 
+export type TerminalCopy = {
+  /**
+   * Location of the copied directory. A relative path is relative to the container's working directory.
+   */
+  path: string
+
+  /**
+   * The directory to copy.
+   */
+  source: Directory
+}
+
+export type TerminalGroupExecOpts = {
+  /**
+   * Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+   */
+  args?: string[]
+
+  /**
+   * Content to write to the command's standard input.
+   */
+  stdin?: string
+
+  /**
+   * Directories to copy into the container, in order.
+   */
+  copy?: TerminalCopy[]
+
+  /**
+   * Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+   */
+  init?: string[]
+}
+
+export type TerminalGroupRunOpts = {
+  /**
+   * Directories to copy into the container, in order.
+   */
+  copy?: TerminalCopy[]
+
+  /**
+   * Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+   */
+  init?: string[]
+}
+
 export type TypeDefWithEnumOpts = {
   /**
    * A doc string for the enum, if any
@@ -3729,12 +3810,12 @@ export type WorkspaceDirectoryOpts = {
 
 export type WorkspaceExportOpts = {
   /**
-   * Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
+   * Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to use the calling client's current local workspace root.
    */
   path?: string
 
   /**
-   * Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
+   * Earlier workspace state to compare against. For Git integration, live inputs are snapshotted at export time; use a snapshot to retain the baseline of a previous export.
    */
   from?: Workspace
 }
@@ -4879,6 +4960,22 @@ export class AgentMiddlewareGroup extends BaseClient {
         new AgentMiddleware(ctx.copy().selectNode(r.id, "AgentMiddleware")),
     )
   }
+
+  /**
+   * Recompose the selected agent middlewares onto an existing LLM, replacing their modules' owned system prompts, skills, and tool bindings while preserving tool object state.
+   *
+   * Contributions belong to the installed module calling withSystemPrompt, withSkills, or withTools, independently of the bound object's module or middleware entrypoint. Ownership follows the installed module name, not its source location. Moving a module between remote, local, or forked sources preserves compatible state when its installation name and intrinsic module and object identities stay the same.
+   *
+   * Contributions from selected modules are removed once before running the selected entrypoints. Unowned contributions and contributions from other modules are retained. Nested modules own their own contributions; use recompose explicitly to refresh them. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+   *
+   * Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or changed module or object identities are errors regardless of version. Ownership checks still apply. The base workspace is preserved.
+   * @param base The existing conversation whose tool state should be preserved.
+   * @experimental
+   */
+  recompose = (base: LLM): LLM => {
+    const ctx = this._ctx.select("recompose", { base })
+    return new LLM(ctx)
+  }
 }
 
 /**
@@ -5580,7 +5677,7 @@ export class Container extends BaseClient {
    *
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -5765,11 +5862,10 @@ export class Container extends BaseClient {
   }
 
   /**
-   * EXPERIMENTAL API! Subject to change/removal at any time.
-   *
    * Configures all available GPUs on the host to be accessible to this container.
    *
    * This currently works for Nvidia devices only.
+   * @deprecated Use "withGPU" instead.
    */
   experimentalWithAllGPUs = (): Container => {
     const ctx = this._ctx.select("experimentalWithAllGPUs")
@@ -5777,12 +5873,11 @@ export class Container extends BaseClient {
   }
 
   /**
-   * EXPERIMENTAL API! Subject to change/removal at any time.
-   *
    * Configures the provided list of devices to be accessible to this container.
    *
    * This currently works for Nvidia devices only.
    * @param devices List of devices to be accessible to this container.
+   * @deprecated Use "withGPU" instead, which exposes all GPUs available on the host.
    */
   experimentalWithGPU = (devices: string[]): Container => {
     const ctx = this._ctx.select("experimentalWithGPU", { devices })
@@ -6180,7 +6275,7 @@ export class Container extends BaseClient {
   /**
    * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   terminal = (opts?: ContainerTerminalOpts): Container => {
@@ -6200,7 +6295,7 @@ export class Container extends BaseClient {
    *
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -6254,7 +6349,7 @@ export class Container extends BaseClient {
   /**
    * Set the default command to invoke for the container's terminal API.
    * @param args The args of the command.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   withDefaultTerminalCmd = (
@@ -6366,7 +6461,7 @@ export class Container extends BaseClient {
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
    *
    * DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
@@ -6458,6 +6553,16 @@ export class Container extends BaseClient {
     opts?: ContainerWithFilesOpts,
   ): Container => {
     const ctx = this._ctx.select("withFiles", { path, sources, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Configures all GPUs available on the host to be accessible to this container.
+   *
+   * This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+   */
+  withGPU = (): Container => {
+    const ctx = this._ctx.select("withGPU")
     return new Container(ctx)
   }
 
@@ -7551,7 +7656,7 @@ export class Directory extends BaseClient {
    * Opens an interactive terminal in new container with this directory mounted inside.
    * @param opts.container If set, override the default container used for the terminal.
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   terminal = (opts?: DirectoryTerminalOpts): Directory => {
@@ -12502,6 +12607,7 @@ export class LLM extends BaseClient {
    * Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
    * @param object The object whose methods become tools.
    * @param opts.except Method names to exclude from the toolset (e.g. constructors, entrypoints).
+   * @param opts.version Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply.
    */
   withTools = (object: Node, opts?: LLMWithToolsOpts): LLM => {
     const ctx = this._ctx.select("withTools", { object, ...opts })
@@ -16304,6 +16410,18 @@ export class TerminalGroup extends BaseClient {
   }
 
   /**
+   * Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
+   * @param opts.args Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+   * @param opts.stdin Content to write to the command's standard input.
+   * @param opts.copy Directories to copy into the container, in order.
+   * @param opts.init Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+   */
+  exec = (opts?: TerminalGroupExecOpts): Container => {
+    const ctx = this._ctx.select("exec", { ...opts })
+    return new Container(ctx)
+  }
+
+  /**
    * Return the selected terminal targets and their details
    */
   list = async (): Promise<TerminalTarget[]> => {
@@ -16322,9 +16440,11 @@ export class TerminalGroup extends BaseClient {
 
   /**
    * Open the selected terminal target
+   * @param opts.copy Directories to copy into the container, in order.
+   * @param opts.init Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
    */
-  run = (): TerminalGroup => {
-    const ctx = this._ctx.select("run")
+  run = (opts?: TerminalGroupRunOpts): TerminalGroup => {
+    const ctx = this._ctx.select("run", { ...opts })
     return new TerminalGroup(ctx)
   }
 
@@ -17179,11 +17299,13 @@ export class Workspace extends BaseClient {
   /**
    * Write this workspace's commits and pending changes to a checkout on the calling client.
    *
-   * With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+   * Path selects the destination; omitting it uses the calling client's current local workspace root, including when exporting a snapshot or committed workspace. Exported file paths are relative to the workspace root regardless of its working directory. This writes only to the client making the call, never the source's client.
    *
-   * Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
-   * @param opts.path Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
-   * @param opts.from Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
+   * A live workspace exported to its own checkout applies only its overlay edits, without capturing the whole checkout. This also applies with an explicit path. Pass from with the same live base to apply only changes since that overlay state.
+   *
+   * Other exports integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. Live inputs are snapshotted automatically; capturing untracked source files requires interactive approval. Stable inputs retain their baseline. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+   * @param opts.path Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to use the calling client's current local workspace root.
+   * @param opts.from Earlier workspace state to compare against. For Git integration, live inputs are snapshotted at export time; use a snapshot to retain the baseline of a previous export.
    */
   export = async (opts?: WorkspaceExportOpts): Promise<void> => {
     if (this._export) {

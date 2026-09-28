@@ -3,7 +3,11 @@ package drivers
 import (
 	"context"
 	"net"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -33,6 +37,89 @@ func TestImageDriverCreateEnablesLoopbackDebugListener(t *testing.T) {
 		"tcp://0.0.0.0:1234",
 	}, backend.runOpts.args)
 	require.Equal(t, []string{"1234:1234"}, backend.runOpts.ports)
+}
+
+// An engine that already exists is started by name and connected to
+// without listing the host's containers first; engines of other versions
+// are still removed, in the background, and the engine in use never is.
+func TestImageDriverCreateStartsExistingEngineWithoutListing(t *testing.T) {
+	t.Parallel()
+
+	backend := &existingEngineBackend{
+		containers: []string{"dagger-engine-v0.20.0", "dagger-engine-v0.21.0", "unrelated"},
+	}
+	driver := &imageDriver{backend: backend}
+
+	target, err := driver.create(t.Context(), containerCreateOpts{
+		imageRef: "registry.example.com/dagger-engine:v0.21.0",
+		cleanup:  true,
+	}, &DriverOpts{})
+	require.NoError(t, err)
+	require.Equal(t, "dagger-engine-v0.21.0", target.Host)
+
+	// The command connected on the strength of the lookup and the start alone.
+	require.Equal(t, []string{"exists dagger-engine-v0.21.0", "start dagger-engine-v0.21.0"}, backend.callsBefore("ls"))
+
+	require.Eventually(t, func() bool {
+		return slices.Contains(backend.calls(), "remove dagger-engine-v0.20.0")
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NotContains(t, backend.calls(), "remove dagger-engine-v0.21.0")
+	require.NotContains(t, backend.calls(), "remove unrelated")
+	require.Empty(t, backend.runName, "no new engine should have been run")
+}
+
+// existingEngineBackend is a host on which the engine already exists. It
+// records the backend calls, in order.
+type existingEngineBackend struct {
+	captureContainerBackend
+	containers []string
+
+	mu  sync.Mutex
+	log []string
+}
+
+func (b *existingEngineBackend) record(call string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.log = append(b.log, call)
+}
+
+func (b *existingEngineBackend) calls() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.log)
+}
+
+// callsBefore returns the calls made before the first one starting with
+// prefix (all of them, if none did).
+func (b *existingEngineBackend) callsBefore(prefix string) []string {
+	calls := b.calls()
+	for i, call := range calls {
+		if strings.HasPrefix(call, prefix) {
+			return calls[:i]
+		}
+	}
+	return calls
+}
+
+func (b *existingEngineBackend) ContainerExists(_ context.Context, name string) (bool, error) {
+	b.record("exists " + name)
+	return slices.Contains(b.containers, name), nil
+}
+
+func (b *existingEngineBackend) ContainerStart(_ context.Context, name string) error {
+	b.record("start " + name)
+	return nil
+}
+
+func (b *existingEngineBackend) ContainerLs(context.Context) ([]string, error) {
+	b.record("ls")
+	return b.containers, nil
+}
+
+func (b *existingEngineBackend) ContainerRemove(_ context.Context, name string) error {
+	b.record("remove " + name)
+	return nil
 }
 
 type captureContainerBackend struct {

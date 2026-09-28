@@ -1,0 +1,6 @@
+kind: Changed
+body: The CLI finds a local engine by name instead of listing every container on the host, and opens its connections to the engine concurrently. Connecting is 100-170ms faster per command, more on a host with many containers, and no longer gets slower as containers accumulate. Cleanup of engines from older versions now runs in the background.
+time: 2026-09-16T18:37:27-07:00
+custom:
+    Author: grouville and @tiborvass
+    PR: "14177"

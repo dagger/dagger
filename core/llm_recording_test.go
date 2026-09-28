@@ -84,7 +84,7 @@ func TestDisplayToolArgsAreLineTerminatedOnce(t *testing.T) {
 			provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
 			ctx = telemetry.WithLoggerProvider(ctx, provider)
 
-			dp := newDisplayPhases(ctx, "")
+			dp := newDisplayPhases(ctx, "", nil)
 			dp.EmitToolCall(0, "call_1", "read", args)
 
 			recorder.mu.Lock()
@@ -266,4 +266,50 @@ func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
 	v, ok := spanAttr(byName["read"], telemetryattrs.LLMToolResultTokensAttr)
 	require.True(t, ok, "read: missing result tokens attr")
 	require.Greater(t, v.AsInt64(), int64(0))
+}
+
+// Live telemetry exports a span only at start and end, so the tool-call span
+// must know its tool's bare name and server when it starts: attributes the
+// tool sets while running would leave the UI showing the raw model-facing
+// name ("editor_generate") until the call finished.
+func TestToolCallDisplaySpanIdentifiesToolAtStart(t *testing.T) {
+	sr, ctx := recordingTestRecorder(t)
+
+	dp := newDisplayPhases(ctx, "", []LLMTool{
+		{Name: "editor_generate", Server: "editor"},
+		{Name: "CallMethod", HideSelf: true},
+	})
+	dp.StartToolCall(0, "call_1", "editor_generate")
+	dp.StartToolCall(1, "call_2", "CallMethod")
+	dp.StartToolCall(2, "call_3", "unknown_tool")
+
+	started := map[string]sdktrace.ReadOnlySpan{}
+	for _, s := range sr.Started() {
+		started[s.Name()] = s
+	}
+	require.Empty(t, sr.Ended(), "attributes must be checked while the spans are live")
+
+	gen := started["editor_generate"]
+	require.NotNil(t, gen)
+	v, ok := spanAttr(gen, telemetry.LLMToolAttr)
+	require.True(t, ok)
+	require.Equal(t, "generate", v.AsString())
+	v, ok = spanAttr(gen, telemetry.LLMToolServerAttr)
+	require.True(t, ok)
+	require.Equal(t, "editor", v.AsString())
+
+	call := started["CallMethod"]
+	require.NotNil(t, call)
+	v, ok = spanAttr(call, telemetry.UIPassthroughAttr)
+	require.True(t, ok)
+	require.True(t, v.AsBool())
+
+	// A tool the turn didn't offer keeps the name the model used.
+	unknown := started["unknown_tool"]
+	require.NotNil(t, unknown)
+	v, ok = spanAttr(unknown, telemetry.LLMToolAttr)
+	require.True(t, ok)
+	require.Equal(t, "unknown_tool", v.AsString())
+	_, ok = spanAttr(unknown, telemetry.LLMToolServerAttr)
+	require.False(t, ok)
 }

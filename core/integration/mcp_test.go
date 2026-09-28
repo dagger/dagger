@@ -63,6 +63,11 @@ func (MCPSuite) TestWithoutModuleAndWithPrivilegedServesBuiltins(ctx context.Con
 	// object-tools scheme.)
 	tools := listToolNames(ctx, t, cli)
 	require.Contains(t, tools, "ReadLogs")
+	require.Contains(t, tools, "LoadTrace")
+	require.Contains(t, tools, "ReadTrace")
+	require.Contains(t, tools, "FindSpans")
+	require.Contains(t, tools, "FindCalls")
+	require.Contains(t, tools, "InspectCall")
 	require.Contains(t, tools, "ListServices")
 	require.NotContains(t, tools, "container")
 }

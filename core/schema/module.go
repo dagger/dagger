@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -2180,6 +2181,9 @@ func (s *moduleSchema) serveModule(ctx context.Context, self *core.Query, args s
 		if args.RefPin != "" {
 			sel.Args = append(sel.Args, dagql.NamedInput{Name: "refPin", Value: dagql.String(args.RefPin)})
 		}
+		if gitutil.IsCommitSHA(args.RefPin) {
+			sel.Args = append(sel.Args, dagql.NamedInput{Name: "pinOverridesVersion", Value: dagql.Boolean(true)})
+		}
 		if err := dag.Select(ctx, dag.Root(), &src, sel); err != nil {
 			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
 		}
@@ -2575,7 +2579,9 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 		}
 		var sourceModuleName dagql.Optional[dagql.String]
 		if fieldSpec, ok := queryObjType.FieldSpec(introspectionField.Name, dag.View); ok {
-			if fieldSpec.Module != nil && fieldSpec.Module.ResultRef != nil {
+			// Module fields carry static module provenance; core fields carry
+			// none. The result reference is only supplied per call.
+			if fieldSpec.Module != nil {
 				sourceModuleName = core.OptSourceModuleName(fieldSpec.Module.Name)
 			}
 		}

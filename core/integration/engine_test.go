@@ -150,6 +150,7 @@ func engineWithBkConfig(ctx context.Context, t *testctx.T, cfgFns ...func(contex
 	}
 }
 
+// CLI execs on this container must disable nesting to connect to devEngine.
 func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *dagger.Service) *dagger.Container {
 	daggerCli := daggerCliFile(t, c)
 
@@ -231,7 +232,7 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	// non-TTY default, doesn't render passing-span logs).
 	clientCtr = clientCtr.
 		WithEnvVariable("DAGGER_PROGRESS", "plain").
-		WithExec([]string{"dagger", "core", "version"})
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 	// version call
 	stdout, err := clientCtr.Stdout(ctx)
@@ -244,7 +245,7 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	require.Contains(t, stderr, engineName)
 	require.Contains(t, stderr, engineVersion)
 
-	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "engine", "name"})
+	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "engine", "name"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 	// name call
 	stdout, err = clientCtr.Stdout(ctx)
@@ -287,7 +288,7 @@ func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 				// call-chain naming instead.
 				WithEnvVariable("DAGGER_PROGRESS", "plain").
 				WithExec([]string{"apk", "add", "jq", "curl"}).
-				WithExec([]string{"sh", "-c", command})
+				WithExec([]string{"sh", "-c", command}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 			stdout, err := clientCtr.Stdout(ctx)
 			require.NoError(t, err)
@@ -493,11 +494,11 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			if tc.errs == nil {
 				clientCtr = clientCtr.
 					WithNewFile("/query.graphql", `{ version }`).
-					WithExec([]string{"sh", "-c", "dagger version && dagger query --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "dagger version && dagger query --doc /query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
 			} else {
 				clientCtr = clientCtr.
 					WithNewFile("/query.graphql", `{ version }`).
-					WithExec([]string{"sh", "-c", "! dagger query --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "! dagger query --doc /query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
 			}
 
 			if tc.errs == nil {
@@ -611,10 +612,10 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 
 			if tc.errs == nil {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "dagger query -m . --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "dagger query -m . --doc /query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
 			} else {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "! dagger query -m . --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "! dagger query -m . --doc /query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
 			}
 
 			stderr, err := clientCtr.Stderr(ctx)
@@ -1105,7 +1106,7 @@ set -eu
 for i in $(seq 1 4); do
   dagger api functions >/dev/null
 done
-			`}).Sync(ctx)
+			`}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
 		return err
 	}
 

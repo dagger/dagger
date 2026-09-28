@@ -41,6 +41,20 @@ type McpLab {
   # base URL of the bridge inside the client container
   let url: String! = ""
 
+  let cloudCredentials: Secret = null
+
+  new(
+    """
+    Dagger Cloud credentials for the from-source CLI, mounted as a secret.
+    Configure cloudCredentials in this module's dagger.toml settings with
+    file://~/.config/dagger/credentials.json to test Cloud-backed traces.
+    """
+    cloudCredentials: Secret = null,
+  ) {
+    self.cloudCredentials = cloudCredentials
+    self
+  }
+
   # Skills shipped alongside this module, discovered via ListSkills/ReadSkill
   # instead of polluting context with a static system prompt.
   let skills: Directory! = currentModule.source.directory("skills")
@@ -133,7 +147,15 @@ type McpLab {
       lean.withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineAddress)
     }
 
-    let runner = base
+    let authenticated = if (cloudCredentials == null) {
+      base
+    } else {
+      base
+        .withEnvVariable("XDG_CONFIG_HOME", "/config")
+        .withMountedSecret("/config/dagger/credentials.json", cloudCredentials)
+    }
+
+    let runner = authenticated
       .withFile("/usr/local/bin/dagger", cli)
       .withFile("/usr/local/bin/mcp-bridge", bridgeBin)
       .withDirectory(defaultWorkdir, currentModule.source.directory("fixtures/" + fixture))

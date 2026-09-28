@@ -65,7 +65,7 @@ func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput,
 	// its rolled-up logs and error ARE the exec failure. Hunting descendants
 	// instead would repeat the generator's own row and surface runtime
 	// internals (e.g. exec.processRun's runc exit status).
-	if node.Failed && !node.HasFailedChild() {
+	if node.Failed() && !node.HasFailedChild() {
 		if origins := node.Span.ErrorOrigins.Order; len(origins) > 0 {
 			for _, origin := range origins {
 				if !origin.Received {
@@ -108,14 +108,9 @@ func (fe *frontendPretty) renderGeneratorFailureDetail(out TermOutput, r *render
 }
 
 // generatorStatusLine renders a generator's one-line status: its icon (red ✘ /
-// green ✔), name, and faint duration, at the given indent.
+// yellow ◐ / green ✔), name, and faint duration, at the given indent.
 func (fe *frontendPretty) generatorStatusLine(out TermOutput, r *renderer, node *dagui.GeneratorNode, indent string) string {
-	icon, color := IconSuccess, termenv.ANSIGreen
-	status := "OK"
-	if node.Failed {
-		icon, color = IconFailure, termenv.ANSIRed
-		status = "ERROR"
-	}
+	icon, color, status := surfacedSpanStatus(node.Span)
 	dur := dagui.FormatDuration(node.Span.Activity.Duration(r.now))
 	return fmt.Sprintf("%s%s %s %s %s",
 		indent,
@@ -133,18 +128,65 @@ func (fe *frontendPretty) generatorStatusLine(out TermOutput, r *renderer, node 
 // rendered right under it.
 func generatorsHeaderLine(out TermOutput, agent bool, nodes []*dagui.GeneratorNode) string {
 	line := reportHeadingLine(out, agent, "GENERATORS")
-	var counts dagui.TestCounts
-	for _, n := range nodes {
-		if n.Failed {
-			counts.Failing++
-		} else {
-			counts.Passing++
-		}
+	spans := make([]*dagui.Span, len(nodes))
+	for i, n := range nodes {
+		spans[i] = n.Span
 	}
-	for _, part := range renderTestCountParts(out, counts) {
+	for _, part := range renderTestCountParts(out, surfacedSpanCounts(spans)) {
 		line += "  " + part
 	}
 	return line
+}
+
+// inlineGeneratorNodes returns the generators an LLM tool call ran, for its
+// inline GENERATORS rollup -- the generator analog of inlineCheckNodes' tool
+// case. The tool call's boundary keeps them out of the trace-level GENERATORS
+// section, and a nested worker's tool calls keep their own.
+func (fe *frontendPretty) inlineGeneratorNodes(row *dagui.TraceRow) []*dagui.GeneratorNode {
+	if row == nil || row.Span == nil || row.Span.LLMTool == "" {
+		return nil
+	}
+	if row.Expanded && !fe.finalRender {
+		return nil
+	}
+	return fe.db.SurfacedGeneratorsForSpan(row.Span)
+}
+
+// renderInlineGenerators renders a tool call row's inline GENERATORS rollup,
+// shaped and condensed like renderInlineChecks.
+func (s *SpanTreeView) renderInlineGenerators(ctx tuist.Context, r *renderer, row *dagui.TraceRow) []string {
+	fe := s.fe
+	nodes := fe.inlineGeneratorNodes(row)
+	if len(nodes) == 0 {
+		return nil
+	}
+	body := fe.generatorsRollupLines(ctx, r, nodes, s.inlineRollupLimit(ctx))
+	return s.frameInlineRollup(r, row, body)
+}
+
+// generatorsRollupLines builds the inline rollup body for a list of
+// generators: a GENERATORS header followed by the generators, condensed to
+// height like checksRollupLines.
+func (fe *frontendPretty) generatorsRollupLines(ctx tuist.Context, r *renderer, nodes []*dagui.GeneratorNode, height int) []string {
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	header := generatorsHeaderLine(out, fe.agentStyle(), nodes)
+
+	bodyBuf := new(strings.Builder)
+	bodyOut := NewOutput(bodyBuf, termenv.WithProfile(fe.profile))
+	statuses := make([]string, 0, len(nodes))
+	detail := fe.withForkedClaims(func() {
+		for _, node := range nodes {
+			fe.renderGeneratorNode(ctx, bodyOut, r, node, 1)
+		}
+	})
+	for _, node := range nodes {
+		statuses = append(statuses, fe.generatorStatusLine(out, r, node, "  "))
+	}
+	lines, full := condenseRollup(out, header, bodyBuf.String(), statuses, height)
+	if full {
+		detail.commit()
+	}
+	return lines
 }
 
 // eachFailedLeafGenerator visits every surfaced generator that failed and has
@@ -152,7 +194,7 @@ func generatorsHeaderLine(out TermOutput, agent bool, nodes []*dagui.GeneratorNo
 // error cause for. Used to pre-fetch their logs before the single final render.
 func eachFailedLeafGenerator(nodes []*dagui.GeneratorNode, f func(*dagui.GeneratorNode)) {
 	for _, n := range nodes {
-		if n.Failed && !n.HasFailedChild() {
+		if n.Failed() && !n.HasFailedChild() {
 			f(n)
 		}
 		eachFailedLeafGenerator(n.Children, f)

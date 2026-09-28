@@ -20,6 +20,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 )
 
@@ -56,7 +57,7 @@ func main() {
 		fatal(err)
 	}
 
-	fmtOpts := formatOpts{maxLit: maxLit, spine: spineDepth}
+	fmtOpts := dagui.RecipeFormat{MaxLiteral: maxLit, Spine: spineDepth}
 
 	any := false
 	out := os.Stdout
@@ -73,12 +74,12 @@ func main() {
 
 	if statsOut {
 		any = true
-		src.graph.printStats(out, src, fmtOpts)
+		src.Graph.WriteStats(out, src.RecipeSource, fmtOpts)
 	}
 
 	if treeOut {
 		any = true
-		src.graph.printTree(out, fmtOpts, treeDepth)
+		src.Graph.WriteTree(out, fmtOpts, treeDepth)
 	}
 
 	if findPat != "" {
@@ -87,7 +88,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		src.graph.printFind(out, re, fmtOpts)
+		src.Graph.WriteFind(out, re, fmtOpts)
 	}
 
 	if diffWith != "" {
@@ -96,7 +97,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		printDiff(out, src, other, fmtOpts)
+		dagui.WriteRecipeDiff(out, src.RecipeSource, other.RecipeSource, fmtOpts)
 	}
 
 	if !any {

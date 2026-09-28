@@ -58,6 +58,9 @@ type DefaultTerminalCmdOpts struct {
 	// Provide dagger access to the executed command
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
 
+	// Disable access to the Dagger API from terminal commands.
+	DisableDaggerInDagger bool `default:"false"`
+
 	// Grant the process all root capabilities
 	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
 }
@@ -4792,7 +4795,7 @@ func decodePersistedContainerRecipe(
 			LazyState: NewLazyState(),
 			Parent:    parent,
 		}, nil
-	case "experimentalWithGPU", "experimentalWithAllGPUs":
+	case "withGPU", "experimentalWithGPU", "experimentalWithAllGPUs":
 		var persisted persistedContainerSetGPUsLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container setGPUs lazy payload: %w", err)
@@ -7271,6 +7274,9 @@ type ContainerAsServiceArgs struct {
 
 	// Provide the executed command access back to the Dagger API
 	ExperimentalPrivilegedNesting bool `default:"false"`
+
+	// Disable access to the Dagger API from the service command.
+	DisableDaggerInDagger bool `default:"false"`
 
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`

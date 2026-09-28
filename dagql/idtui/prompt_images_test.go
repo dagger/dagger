@@ -74,7 +74,7 @@ func TestPromptImagePasteAndSubmit(t *testing.T) {
 	}, time.Second, time.Millisecond)
 	frame = strings.Join(fe.tui.Step(), "\n")
 	require.Contains(t, frame, "[image 1: image/png, 1 KiB]")
-	require.Contains(t, frame, "paste image")
+	require.Contains(t, navKeyHelp(fe.keys(NewOutput(new(strings.Builder)))), "paste image")
 	require.NotContains(t, frame, string(image.Data))
 	fe.tui.Inject(tuist.ParseKey("enter"))
 	fe.tui.Step()

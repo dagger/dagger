@@ -37,10 +37,22 @@ type EGraphDebugSnapshot struct {
 	EqClasses          []EGraphDebugEqClass       `json:"eq_classes"`
 }
 
+// CacheDebugSnapshot is the streamed /debug/dagql/cache snapshot.
+//
+// EngineInstance names the engine instance whose cache facts describe this
+// cache, when the cache was given one. FactSeq is the sequence number of the
+// last cache fact emitted when the snapshot was taken. Every fact with a
+// sequence at most FactSeq describes a mutation the snapshot contains, and no
+// such fact describes a later mutation. The converse does not hold while work
+// is in flight: a mutation can be visible before its fact is emitted, for
+// example a publication's dependency edges before its deps fact. Compare a
+// snapshot with the facts up to FactSeq only when the cache is quiescent.
 type CacheDebugSnapshot struct {
 	OfferOwners             []CacheDebugOfferOwner        `json:"offer_owners,omitempty"`
 	TraceFormatVersion      int                           `json:"trace_format_version"`
 	BootID                  string                        `json:"boot_id"`
+	EngineInstance          string                        `json:"engine_instance,omitempty"`
+	FactSeq                 uint64                        `json:"fact_seq"`
 	CapturedAtSeq           uint64                        `json:"captured_at_seq"`
 	CapturedAtTime          string                        `json:"captured_at_time"`
 	SessionResults          []CacheDebugSessionResults    `json:"session_results,omitempty"`
@@ -55,20 +67,23 @@ type CacheDebugSnapshot struct {
 	CompletedArbitraryCalls []CacheDebugArbitraryCall     `json:"completed_arbitrary_calls,omitempty"`
 }
 
+// EGraphDebugResult describes one result. PersistedEdgeExpiresAtUnix is the
+// retention edge's own expiry (0: none), distinct from the result's expiry.
 type EGraphDebugResult struct {
-	SharedResultID           uint64                     `json:"shared_result_id"`
-	OutputEqClassIDs         []uint64                   `json:"output_eq_class_ids,omitempty"`
-	RecordType               string                     `json:"record_type,omitempty"`
-	Description              string                     `json:"description,omitempty"`
-	TypeName                 string                     `json:"type_name,omitempty"`
-	IncomingOwnershipCount   int64                      `json:"incoming_ownership_count"`
-	HasValue                 bool                       `json:"has_value"`
-	PayloadState             string                     `json:"payload_state"`
-	HasPersistedEdge         bool                       `json:"has_persisted_edge"`
-	PersistedEdgeUnpruneable bool                       `json:"persisted_edge_unpruneable"`
-	ExplicitDeps             []uint64                   `json:"explicit_dep_ids,omitempty"`
-	HeldDependencyResults    int                        `json:"held_dependency_results_count"`
-	SnapshotLinks            []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
+	SharedResultID             uint64                     `json:"shared_result_id"`
+	OutputEqClassIDs           []uint64                   `json:"output_eq_class_ids,omitempty"`
+	RecordType                 string                     `json:"record_type,omitempty"`
+	Description                string                     `json:"description,omitempty"`
+	TypeName                   string                     `json:"type_name,omitempty"`
+	IncomingOwnershipCount     int64                      `json:"incoming_ownership_count"`
+	HasValue                   bool                       `json:"has_value"`
+	PayloadState               string                     `json:"payload_state"`
+	HasPersistedEdge           bool                       `json:"has_persisted_edge"`
+	PersistedEdgeUnpruneable   bool                       `json:"persisted_edge_unpruneable"`
+	PersistedEdgeExpiresAtUnix int64                      `json:"persisted_edge_expires_at_unix,omitempty"`
+	ExplicitDeps               []uint64                   `json:"explicit_dep_ids,omitempty"`
+	HeldDependencyResults      int                        `json:"held_dependency_results_count"`
+	SnapshotLinks              []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
 }
 
 type CacheDebugResult struct {
@@ -1021,19 +1036,20 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 		}
 
 		snap.Results = append(snap.Results, EGraphDebugResult{
-			SharedResultID:           uint64(res.id),
-			OutputEqClassIDs:         outputEqIDs,
-			RecordType:               res.recordType,
-			Description:              res.description,
-			TypeName:                 typeName,
-			IncomingOwnershipCount:   res.incomingOwnershipCount,
-			HasValue:                 state.hasValue,
-			PayloadState:             payloadState,
-			HasPersistedEdge:         c.persistedEdgesByResult[res.id].resultID != 0,
-			PersistedEdgeUnpruneable: c.persistedEdgesByResult[res.id].unpruneable,
-			ExplicitDeps:             depIDs,
-			HeldDependencyResults:    len(res.deps),
-			SnapshotLinks:            links,
+			SharedResultID:             uint64(res.id),
+			OutputEqClassIDs:           outputEqIDs,
+			RecordType:                 res.recordType,
+			Description:                res.description,
+			TypeName:                   typeName,
+			IncomingOwnershipCount:     res.incomingOwnershipCount,
+			HasValue:                   state.hasValue,
+			PayloadState:               payloadState,
+			HasPersistedEdge:           c.persistedEdgesByResult[res.id].resultID != 0,
+			PersistedEdgeUnpruneable:   c.persistedEdgesByResult[res.id].unpruneable,
+			PersistedEdgeExpiresAtUnix: c.persistedEdgesByResult[res.id].expiresAtUnix,
+			ExplicitDeps:               depIDs,
+			HeldDependencyResults:      len(res.deps),
+			SnapshotLinks:              links,
 		})
 	}
 
@@ -1241,6 +1257,18 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	if err := writeValue(c.traceBootID); err != nil {
 		return err
 	}
+	if err := writeField("engine_instance"); err != nil {
+		return err
+	}
+	if err := writeValue(c.engineInstanceID); err != nil {
+		return err
+	}
+	if err := writeField("fact_seq"); err != nil {
+		return err
+	}
+	if err := writeValue(c.factSeq); err != nil {
+		return err
+	}
 	if err := writeField("captured_at_seq"); err != nil {
 		return err
 	}
@@ -1363,19 +1391,20 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					return nil
 				}(),
 				EGraphDebugResult: EGraphDebugResult{
-					SharedResultID:           uint64(res.id),
-					OutputEqClassIDs:         outputEqIDs,
-					RecordType:               res.recordType,
-					Description:              res.description,
-					TypeName:                 typeName,
-					IncomingOwnershipCount:   res.incomingOwnershipCount,
-					HasValue:                 state.hasValue,
-					PayloadState:             payloadState,
-					HasPersistedEdge:         c.persistedEdgesByResult[res.id].resultID != 0,
-					PersistedEdgeUnpruneable: c.persistedEdgesByResult[res.id].unpruneable,
-					ExplicitDeps:             depIDs,
-					HeldDependencyResults:    len(res.deps),
-					SnapshotLinks:            links,
+					SharedResultID:             uint64(res.id),
+					OutputEqClassIDs:           outputEqIDs,
+					RecordType:                 res.recordType,
+					Description:                res.description,
+					TypeName:                   typeName,
+					IncomingOwnershipCount:     res.incomingOwnershipCount,
+					HasValue:                   state.hasValue,
+					PayloadState:               payloadState,
+					HasPersistedEdge:           c.persistedEdgesByResult[res.id].resultID != 0,
+					PersistedEdgeUnpruneable:   c.persistedEdgesByResult[res.id].unpruneable,
+					PersistedEdgeExpiresAtUnix: c.persistedEdgesByResult[res.id].expiresAtUnix,
+					ExplicitDeps:               depIDs,
+					HeldDependencyResults:      len(res.deps),
+					SnapshotLinks:              links,
 				},
 				ResultCall:                            frame,
 				ResultCallRecipeDigest:                observed.recipeDigest,

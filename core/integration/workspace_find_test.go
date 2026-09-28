@@ -73,8 +73,7 @@ func (WorkspaceSuite) TestFindCLI(ctx context.Context, t *testctx.T) {
 
 			t.Run("continue after missing path", func(ctx context.Context, t *testctx.T) {
 				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "find", "missing", "a.txt", "sub"}, dagger.ContainerWithExecOpts{
-					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
+					Expect: dagger.ReturnTypeFailure,
 				})
 				out, err := result.Stdout(ctx)
 				require.NoError(t, err)

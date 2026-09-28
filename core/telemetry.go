@@ -255,6 +255,9 @@ func recordCacheEvidence(span trace.Span, ev *dagql.CacheDecision, res dagql.Any
 			attrs = append(attrs, attribute.String(telemetryattrs.CachePairingDigestAttr, ev.PairingDigest.String()))
 		}
 	}
+	if resultNumber, ok := dagql.CacheResultNumber(res); ok {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheResultIDAttr, strconv.FormatUint(resultNumber, 10)))
+	}
 	if res != nil {
 		// The recorded output content identity: the authoritative frame's last
 		// content-labeled extra digest at completion (never the derived

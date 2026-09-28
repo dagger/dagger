@@ -22,7 +22,7 @@ func TestModuleMaxCommandTree(t *testing.T) {
 	for _, name := range []string{"add", "list", "rm", "scope"} {
 		require.NotNil(t, findCommand(moduleClientCmd, name), name)
 	}
-	for _, name := range []string{"activity", "config", "config-file", "cwd", "remote", "remotes", "root", "update"} {
+	for _, name := range []string{"activity", "config", "config-file", "cwd", "remote", "remotes", "root"} {
 		require.NotNil(t, findCommand(workspaceCmd, name), name)
 	}
 	for _, name := range []string{"list", "scope"} {
@@ -49,8 +49,11 @@ func TestModuleMaxCommandTree(t *testing.T) {
 	require.Equal(t, "n", nameFlag.Shorthand)
 	require.NotNil(t, moduleInitCmd.PersistentFlags().Lookup("path"))
 
-	workspaceUpdate := findCommand(workspaceCmd, "update")
-	require.NotNil(t, workspaceUpdate.Flags().Lookup("no-generate"))
+	lockUpdate := findCommand(lockCmd, "update")
+	require.NotNil(t, lockUpdate.Flags().Lookup("no-generate"))
+	require.NotNil(t, lockUpdate.Flags().Lookup("list"))
+	require.Nil(t, lockUpdate.Flags().Lookup("dry-run"))
+	require.NotNil(t, findCommand(lockCmd, "list"))
 }
 
 func TestModuleInitCustomPathMessage(t *testing.T) {
@@ -75,7 +78,7 @@ func TestModuleSDKCommandSelection(t *testing.T) {
 		{args: []string{"module", "client", "rm", "database"}, want: true},
 		{args: []string{"help", "mod", "client", "rm"}, want: true},
 		{args: []string{"module", "client", "list"}, want: false},
-		{args: []string{"workspace", "update"}, want: false},
+		{args: []string{"lock", "update"}, want: false},
 	} {
 		gotSDK, got := moduleSDKCommandSelection(test.args)
 		require.Equal(t, test.want, got, test.args)

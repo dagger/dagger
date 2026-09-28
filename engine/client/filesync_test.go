@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/dagger/dagger/engine"
@@ -151,4 +152,88 @@ exit 2
 		})
 		require.ErrorContains(t, err, "something actually went wrong")
 	})
+}
+
+// fileSendStream feeds a file stream export its chunks.
+type fileSendStream struct {
+	grpc.ServerStream
+	ctx    context.Context
+	chunks [][]byte
+}
+
+func (s *fileSendStream) Context() context.Context { return s.ctx }
+func (s *fileSendStream) SendMsg(any) error        { return nil }
+func (s *fileSendStream) RecvMsg(m any) error {
+	if len(s.chunks) == 0 {
+		return io.EOF
+	}
+	m.(*filesync.BytesMessage).Data = s.chunks[0]
+	s.chunks = s.chunks[1:]
+	return nil
+}
+func (s *fileSendStream) Send(*filesync.BytesMessage) error { return nil }
+func (s *fileSendStream) Recv() (*filesync.BytesMessage, error) {
+	msg := &filesync.BytesMessage{}
+	if err := s.RecvMsg(msg); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+func exportFileStream(t *testing.T, opts engine.LocalExportOpts, chunks ...string) {
+	t.Helper()
+	fs, err := NewFilesyncer()
+	require.NoError(t, err)
+	stream := &fileSendStream{ctx: metadata.NewIncomingContext(t.Context(), opts.ToGRPCMD())}
+	for _, c := range chunks {
+		stream.chunks = append(stream.chunks, []byte(c))
+	}
+	require.NoError(t, fs.AsTarget().DiffCopy(stream))
+}
+
+// A file stream export with ReplaceAtomically renames a complete file into
+// place: a reader holding the old file keeps reading it whole, and no
+// temporary file is left behind. Without it the file is rewritten in place.
+func TestFileStreamExportReplacesAtomically(t *testing.T) {
+	t.Parallel()
+	// On Windows a file held open cannot be renamed over (the export then
+	// fails and leaves it untouched), and modes are not Unix permissions, so
+	// no reader holds it open there and only the contents are checked.
+	unix := runtime.GOOS != "windows"
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "credentials.json")
+	require.NoError(t, os.WriteFile(dest, []byte(`{"old":"token"}`), 0o600))
+	var held *os.File
+	if unix {
+		var err error
+		held, err = os.Open(dest)
+		require.NoError(t, err)
+		defer held.Close()
+	}
+
+	exportFileStream(t, engine.LocalExportOpts{Path: dest, IsFileStream: true, FileMode: 0o600, ReplaceAtomically: true},
+		`{"new":`, `"token"}`)
+	got, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	require.Equal(t, `{"new":"token"}`, string(got))
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "no temporary file left behind")
+	if !unix {
+		return
+	}
+	old, err := io.ReadAll(held)
+	require.NoError(t, err)
+	require.Equal(t, `{"old":"token"}`, string(old), "the old file was replaced, not rewritten")
+	info, err := os.Stat(dest)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
+	inPlace, err := os.Open(dest)
+	require.NoError(t, err)
+	defer inPlace.Close()
+	exportFileStream(t, engine.LocalExportOpts{Path: dest, IsFileStream: true, FileMode: 0o600}, `{"third":1}`)
+	rewritten, err := io.ReadAll(inPlace)
+	require.NoError(t, err)
+	require.Equal(t, `{"third":1}`, string(rewritten), "an ordinary export rewrites the file in place")
 }

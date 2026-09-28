@@ -236,6 +236,7 @@ module.exports = {
           collapsed: true,
           items: [
             "reference/config-files/dagger-toml",
+            "reference/config-files/engine-json",
           ],
         },
       ],

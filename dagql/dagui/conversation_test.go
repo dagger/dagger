@@ -7,6 +7,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
 // messageSnapshot builds an LLM message span snapshot. StartTime is derived from
@@ -313,5 +315,154 @@ func TestPromoteConversationToWiresRevealedSpans(t *testing.T) {
 	db.PromoteConversationTo(root)
 	if len(root.RevealedSpans.Order) != 2 {
 		t.Fatalf("host RevealedSpans after re-promote = %d, want 2", len(root.RevealedSpans.Order))
+	}
+}
+
+// llmCall registers a call payload for one link of an LLM recipe chain.
+func llmCall(db *DB, digest, field, receiver string) {
+	db.Calls[digest] = &callpbv1.Call{
+		Digest:         digest,
+		Field:          field,
+		Type:           &callpbv1.Type{NamedType: "LLM"},
+		ReceiverDigest: receiver,
+	}
+}
+
+// TestRewindsAbandonMessagesBetweenDigests covers the client half of the
+// rewind marker: the messages whose LLM call lies strictly between the
+// adopted and abandoned recipes are superseded, a tool call's execution
+// subtree goes with it, and the resumed conversation after the marker — even
+// one that reuses the abandoned prompt's digest by resubmitting the same
+// text — is untouched. Messages of another agent that happen to share the
+// chain are not this rewind's to abandon.
+func TestRewindsAbandonMessagesBetweenDigests(t *testing.T) {
+	const (
+		loopID byte = iota + 1
+		keptPromptID
+		keptReplyID
+		oldPromptID
+		oldToolID
+		oldExecID
+		oldReplyID
+		markerID
+		newPromptID
+		newReplyID
+		otherLoopID
+		otherReplyID
+	)
+	// llm -> withPrompt(kept) -> withResponse -> withPrompt(old) ->
+	// withResponse -> withToolResult -> withResponse(tip)
+	db := NewDB()
+	llmCall(db, "xxh3:llm", "llm", "")
+	llmCall(db, "xxh3:kept", "withPrompt", "xxh3:llm")
+	llmCall(db, "xxh3:kept-reply", "withResponse", "xxh3:kept")
+	llmCall(db, "xxh3:old", "withPrompt", "xxh3:kept-reply")
+	llmCall(db, "xxh3:old-tool", "withResponse", "xxh3:old")
+	llmCall(db, "xxh3:old-result", "withToolResult", "xxh3:old-tool")
+	llmCall(db, "xxh3:tip", "withResponse", "xxh3:old-result")
+
+	message := func(id byte, name string, parent SpanID, role, digest string) SpanSnapshot {
+		snap := messageSnapshot(id, name, parent, role)
+		snap.LLMCallDigest = digest
+		return snap
+	}
+	loop := messageSnapshot(loopID, "agent loop", SpanID{}, "")
+	loop.Agent, loop.AgentID = true, "chief"
+	otherLoop := messageSnapshot(otherLoopID, "other loop", SpanID{}, "")
+	otherLoop.Agent, otherLoop.AgentID = true, "worker"
+	oldTool := message(oldToolID, "Bash", spanID(loopID), "assistant", "xxh3:old")
+	oldTool.LLMTool = "Bash"
+	oldExec := messageSnapshot(oldExecID, "exec", spanID(oldToolID), "")
+	oldExec.LLMTool = "Bash"
+	marker := messageSnapshot(markerID, "conversation rewound", spanID(loopID), "user")
+	marker.AgentRewindFrom, marker.AgentRewindTo = "xxh3:tip", "xxh3:kept-reply"
+	db.ImportSnapshots([]SpanSnapshot{
+		loop,
+		message(keptPromptID, "kept prompt", spanID(loopID), "user", "xxh3:kept"),
+		message(keptReplyID, "kept reply", spanID(loopID), "assistant", "xxh3:kept"),
+		message(oldPromptID, "old prompt", spanID(loopID), "user", "xxh3:old"),
+		oldTool,
+		oldExec,
+		message(oldReplyID, "old reply", spanID(loopID), "assistant", "xxh3:old-result"),
+		marker,
+		// The user resubmitted the prompt verbatim: same digest, after the
+		// marker.
+		message(newPromptID, "new prompt", spanID(loopID), "user", "xxh3:old"),
+		message(newReplyID, "new reply", spanID(loopID), "assistant", "xxh3:old"),
+		otherLoop,
+		message(otherReplyID, "other reply", spanID(otherLoopID), "assistant", "xxh3:old"),
+	})
+
+	rewinds := db.Rewinds()
+	if len(rewinds) != 1 || rewinds[0].Span.ID != spanID(markerID) {
+		t.Fatalf("Rewinds() = %+v, want the one marker", rewinds)
+	}
+	var abandoned []string
+	for _, span := range rewinds[0].Abandoned {
+		abandoned = append(abandoned, span.Name)
+	}
+	want := []string{"old prompt", "Bash", "old reply"}
+	if len(abandoned) != len(want) {
+		t.Fatalf("Abandoned = %v, want %v", abandoned, want)
+	}
+	for i := range want {
+		if abandoned[i] != want[i] {
+			t.Fatalf("Abandoned = %v, want %v", abandoned, want)
+		}
+	}
+
+	superseded := func(id byte) bool {
+		return db.SupersededBy(db.Spans.Map[spanID(id)]) == rewinds[0]
+	}
+	for _, id := range []byte{oldPromptID, oldToolID, oldReplyID, oldExecID} {
+		if !superseded(id) {
+			t.Errorf("span %d should be superseded by the rewind", id)
+		}
+	}
+	for _, id := range []byte{loopID, keptPromptID, keptReplyID, markerID, newPromptID, newReplyID, otherLoopID, otherReplyID} {
+		if superseded(id) {
+			t.Errorf("span %d must remain part of the conversation", id)
+		}
+	}
+
+	// Repeated reads hit the memo until the DB changes.
+	if again := db.Rewinds(); &again[0] != &rewinds[0] {
+		t.Fatal("repeated same-frame reads must hit the cache")
+	}
+}
+
+// TestRewindsWithoutPayloadsMarkNothing asserts the honest degradation: a
+// marker whose chain this client cannot walk still surfaces as a rewind, but
+// abandons no messages rather than guessing.
+func TestRewindsWithoutPayloadsMarkNothing(t *testing.T) {
+	const (
+		loopID byte = iota + 1
+		promptID
+		markerID
+	)
+	db := NewDB()
+	loop := messageSnapshot(loopID, "agent loop", SpanID{}, "")
+	loop.Agent, loop.AgentID = true, "chief"
+	prompt := messageSnapshot(promptID, "prompt", spanID(loopID), "user")
+	prompt.LLMCallDigest = "xxh3:tip"
+	marker := messageSnapshot(markerID, "conversation rewound", spanID(loopID), "user")
+	marker.AgentRewindFrom, marker.AgentRewindTo = "xxh3:tip", "xxh3:base"
+	db.ImportSnapshots([]SpanSnapshot{loop, prompt, marker})
+
+	rewinds := db.Rewinds()
+	if len(rewinds) != 1 || len(rewinds[0].Abandoned) != 0 {
+		t.Fatalf("Rewinds() = %+v, want one marker abandoning nothing", rewinds)
+	}
+	if db.SupersededBy(db.Spans.Map[spanID(promptID)]) != nil {
+		t.Fatal("an unwalkable chain must not supersede on a guess")
+	}
+
+	// The payloads arriving later (logs and spans are batched independently)
+	// complete the walk.
+	llmCall(db, "xxh3:base", "llm", "")
+	llmCall(db, "xxh3:tip", "withPrompt", "xxh3:base")
+	db.mutations++
+	if got := db.SupersededBy(db.Spans.Map[spanID(promptID)]); got == nil {
+		t.Fatal("payload arrival must invalidate the memo and abandon the prompt")
 	}
 }

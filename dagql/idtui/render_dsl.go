@@ -211,7 +211,7 @@ func RegisterFieldRenderer(fieldName string, rendererFactory func() FieldRendere
 }
 
 // callArgsToJSON converts call arguments to JSON for unmarshaling
-func (r *renderer) callArgsToJSON(call *callpbv1.Call, out TermOutput, prefix string, depth int) ([]byte, error) {
+func callArgsToJSON(call *callpbv1.Call) ([]byte, error) {
 	argsMap := make(map[string]any)
 
 	for _, arg := range call.Args {
@@ -230,15 +230,10 @@ func (r *renderer) callArgsToJSON(call *callpbv1.Call, out TermOutput, prefix st
 			}
 			argsMap[arg.Name] = list
 		case value.GetCallDigest() != "":
-			argDig := value.GetCallDigest()
-			argSpan := r.db.MostInterestingSpan(argDig)
-			argCall := r.db.Simplify(r.db.MustCall(argDig), true)
-			buf := new(strings.Builder)
-			argOut := termenv.NewOutput(buf, termenv.WithProfile(out.ColorProfile()))
-			if err := r.renderCall(argOut, argSpan, argCall, prefix, false, depth, false, nil, true); err != nil {
-				return nil, err
-			}
-			argsMap[arg.Name] = argOut.String()
+			// Keep references structured, without rendering their call graphs.
+			// String fields must reject them and fall back to generic rendering;
+			// unknown fields can be ignored by JSON unmarshaling without traversal.
+			argsMap[arg.Name] = map[string]string{"callDigest": value.GetCallDigest()}
 		default:
 			// Handle other types as needed
 			argsMap[arg.Name] = value.String()
@@ -249,7 +244,7 @@ func (r *renderer) callArgsToJSON(call *callpbv1.Call, out TermOutput, prefix st
 }
 
 // renderFieldCall renders a field call using the registered renderer
-func (r *renderer) renderFieldCall(call *callpbv1.Call, out TermOutput, prefix string, depth int) (title string, elidedArgs map[string]struct{}, specialTitle bool) {
+func (r *renderer) renderFieldCall(call *callpbv1.Call, out TermOutput) (title string, elidedArgs map[string]struct{}, specialTitle bool) {
 	rendererFactory, exists := FieldRendererRegistry[call.Field]
 	if !exists {
 		return "", nil, false
@@ -258,7 +253,7 @@ func (r *renderer) renderFieldCall(call *callpbv1.Call, out TermOutput, prefix s
 	renderer := rendererFactory()
 
 	// Convert call args to JSON and unmarshal into the renderer struct
-	jsonData, err := r.callArgsToJSON(call, out, prefix, depth)
+	jsonData, err := callArgsToJSON(call)
 	if err != nil {
 		return "", nil, false
 	}

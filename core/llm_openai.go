@@ -272,7 +272,7 @@ func openAIMediaDataURL(block *LLMContentBlock) string {
 
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	// Stream this turn's content into per-block display spans.
-	dp := newDisplayPhases(ctx, opts.CallDigest)
+	dp := newDisplayPhases(ctx, opts.CallDigest, tools)
 	defer func() {
 		dp.CloseAll()
 		if rerr != nil {

@@ -139,6 +139,11 @@ pub struct PortForward {
     pub frontend: isize,
     pub protocol: NetworkProtocol,
 }
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct TerminalCopy {
+    pub path: String,
+    pub source: Id,
+}
 /// An object that can be exported to the host.
 /// Calling export writes the object to a path on the host filesystem and returns the path that was written.
 pub trait Exportable {
@@ -1117,6 +1122,29 @@ impl AgentMiddlewareGroup {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
+    }
+    /// Recompose the selected agent middlewares onto an existing LLM, replacing their modules' owned system prompts, skills, and tool bindings while preserving tool object state.
+    /// Contributions belong to the installed module calling withSystemPrompt, withSkills, or withTools, independently of the bound object's module or middleware entrypoint. Ownership follows the installed module name, not its source location. Moving a module between remote, local, or forked sources preserves compatible state when its installation name and intrinsic module and object identities stay the same.
+    /// Contributions from selected modules are removed once before running the selected entrypoints. Unowned contributions and contributions from other modules are retained. Nested modules own their own contributions; use recompose explicitly to refresh them. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+    /// Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or changed module or object identities are errors regardless of version. Ownership checks still apply. The base workspace is preserved.
+    ///
+    /// # Arguments
+    ///
+    /// * `base` - The existing conversation whose tool state should be preserved.
+    pub fn recompose(&self, base: impl IntoID<Id>) -> Llm {
+        let mut query = self.selection.select("recompose");
+        query = query.arg_lazy(
+            "base",
+            Box::new(move || {
+                let base = base.clone();
+                Box::pin(async move { base.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
     ///
@@ -2139,13 +2167,15 @@ pub struct ContainerStatOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// Exit codes this command is allowed to exit with without error
     #[builder(setter(into, strip_option), default)]
     pub expect: Option<ReturnType>,
-    /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. Like --privileged in Docker
@@ -2298,7 +2328,9 @@ pub struct ContainerWithoutExposedPortOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultTerminalCmdOpts {
-    /// Provides Dagger access to the executed command.
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -2310,7 +2342,9 @@ pub struct ContainerTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
-    /// Provides Dagger access to the executed command.
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -2323,10 +2357,12 @@ pub struct ContainerAsServiceOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -2346,10 +2382,12 @@ pub struct ContainerUpOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -4089,6 +4127,9 @@ impl Container {
         if let Some(expect) = opts.expect {
             query = query.arg("expect", expect);
         }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
                 "experimentalPrivilegedNesting",
@@ -4713,6 +4754,9 @@ impl Container {
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
                 "experimentalPrivilegedNesting",
@@ -4751,6 +4795,9 @@ impl Container {
         if let Some(cmd) = opts.cmd {
             query = query.arg("cmd", cmd);
         }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
+        }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
                 "experimentalPrivilegedNesting",
@@ -4766,7 +4813,16 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// EXPERIMENTAL API! Subject to change/removal at any time.
+    /// Configures all GPUs available on the host to be accessible to this container.
+    /// This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+    pub fn with_gpu(&self) -> Container {
+        let query = self.selection.select("withGPU");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Configures the provided list of devices to be accessible to this container.
     /// This currently works for Nvidia devices only.
     ///
@@ -4788,7 +4844,6 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures all available GPUs on the host to be accessible to this container.
     /// This currently works for Nvidia devices only.
     pub fn experimental_with_all_gp_us(&self) -> Container {
@@ -4826,6 +4881,9 @@ impl Container {
         }
         if let Some(use_entrypoint) = opts.use_entrypoint {
             query = query.arg("useEntrypoint", use_entrypoint);
+        }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
         }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
@@ -4877,6 +4935,9 @@ impl Container {
         }
         if let Some(use_entrypoint) = opts.use_entrypoint {
             query = query.arg("useEntrypoint", use_entrypoint);
+        }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
         }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
@@ -5379,7 +5440,9 @@ pub struct DirectoryTerminalOpts<'a> {
     /// If set, override the default container used for the terminal.
     #[builder(setter(into, strip_option), default)]
     pub container: Option<Id>,
-    /// Provides Dagger access to the executed command.
+    /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    #[builder(setter(into, strip_option), default)]
+    pub disable_dagger_in_dagger: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -6323,6 +6386,9 @@ impl Directory {
         }
         if let Some(cmd) = opts.cmd {
             query = query.arg("cmd", cmd);
+        }
+        if let Some(disable_dagger_in_dagger) = opts.disable_dagger_in_dagger {
+            query = query.arg("disableDaggerInDagger", disable_dagger_in_dagger);
         }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
@@ -11181,6 +11247,9 @@ pub struct LlmWithToolsOpts<'a> {
     /// Method names to exclude from the toolset (e.g. constructors, entrypoints).
     #[builder(setter(into, strip_option), default)]
     pub except: Option<Vec<&'a str>>,
+    /// Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply.
+    #[builder(setter(into, strip_option), default)]
+    pub version: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmLoopOpts {
@@ -11684,6 +11753,9 @@ impl Llm {
         );
         if let Some(except) = opts.except {
             query = query.arg("except", except);
+        }
+        if let Some(version) = opts.version {
+            query = query.arg("version", version);
         }
         Llm {
             proc: self.proc.clone(),
@@ -15862,6 +15934,30 @@ pub struct TerminalGroup {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct TerminalGroupRunOpts<'a> {
+    /// Directories to copy into the container, in order.
+    #[builder(setter(into, strip_option), default)]
+    pub copy: Option<Vec<TerminalCopy>>,
+    /// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+    #[builder(setter(into, strip_option), default)]
+    pub init: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct TerminalGroupExecOpts<'a> {
+    /// Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+    #[builder(setter(into, strip_option), default)]
+    pub args: Option<Vec<&'a str>>,
+    /// Directories to copy into the container, in order.
+    #[builder(setter(into, strip_option), default)]
+    pub copy: Option<Vec<TerminalCopy>>,
+    /// Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+    #[builder(setter(into, strip_option), default)]
+    pub init: Option<Vec<&'a str>>,
+    /// Content to write to the command's standard input.
+    #[builder(setter(into, strip_option), default)]
+    pub stdin: Option<&'a str>,
+}
 impl IntoID<Id> for TerminalGroup {
     fn into_id(
         self,
@@ -15909,9 +16005,70 @@ impl TerminalGroup {
             .collect())
     }
     /// Open the selected terminal target
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn run(&self) -> TerminalGroup {
         let query = self.selection.select("run");
         TerminalGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Open the selected terminal target
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn run_opts<'a>(&self, opts: TerminalGroupRunOpts<'a>) -> TerminalGroup {
+        let mut query = self.selection.select("run");
+        if let Some(copy) = opts.copy {
+            query = query.arg("copy", copy);
+        }
+        if let Some(init) = opts.init {
+            query = query.arg("init", init);
+        }
+        TerminalGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn exec(&self) -> Container {
+        let query = self.selection.select("exec");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Run the selected terminal target's command non-interactively, and return the container after execution. Any exit code is allowed.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn exec_opts<'a>(&self, opts: TerminalGroupExecOpts<'a>) -> Container {
+        let mut query = self.selection.select("exec");
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        if let Some(stdin) = opts.stdin {
+            query = query.arg("stdin", stdin);
+        }
+        if let Some(copy) = opts.copy {
+            query = query.arg("copy", copy);
+        }
+        if let Some(init) = opts.init {
+            query = query.arg("init", init);
+        }
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -17020,10 +17177,10 @@ pub struct WorkspaceChangesOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceExportOpts<'a> {
-    /// Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
+    /// Earlier workspace state to compare against. For Git integration, live inputs are snapshotted at export time; use a snapshot to retain the baseline of a previous export.
     #[builder(setter(into, strip_option), default)]
     pub from: Option<Id>,
-    /// Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to apply a local workspace's overlay changes at its host root.
+    /// Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to use the calling client's current local workspace root.
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
 }
@@ -18648,8 +18805,9 @@ impl Workspace {
         }
     }
     /// Write this workspace's commits and pending changes to a checkout on the calling client.
-    /// With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
-    /// Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
+    /// Path selects the destination; omitting it uses the calling client's current local workspace root, including when exporting a snapshot or committed workspace. Exported file paths are relative to the workspace root regardless of its working directory. This writes only to the client making the call, never the source's client.
+    /// A live workspace exported to its own checkout applies only its overlay edits, without capturing the whole checkout. This also applies with an explicit path. Pass from with the same live base to apply only changes since that overlay state.
+    /// Other exports integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. Live inputs are snapshotted automatically; capturing untracked source files requires interactive approval. Stable inputs retain their baseline. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
     ///
     /// # Arguments
     ///
@@ -18659,8 +18817,9 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Write this workspace's commits and pending changes to a checkout on the calling client.
-    /// With path, accept a frozen source, integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The source is unchanged. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
-    /// Without path, apply a local workspace's overlay changes at its host root. Pass from to apply only changes since an earlier local workspace state. Export paths are relative to the workspace root regardless of its working directory. Like Directory.export, this writes only to the client making the call, never the source's client.
+    /// Path selects the destination; omitting it uses the calling client's current local workspace root, including when exporting a snapshot or committed workspace. Exported file paths are relative to the workspace root regardless of its working directory. This writes only to the client making the call, never the source's client.
+    /// A live workspace exported to its own checkout applies only its overlay edits, without capturing the whole checkout. This also applies with an explicit path. Pass from with the same live base to apply only changes since that overlay state.
+    /// Other exports integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. Live inputs are snapshotted automatically; capturing untracked source files requires interactive approval. Stable inputs retain their baseline. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
     ///
     /// # Arguments
     ///

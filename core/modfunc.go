@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -136,6 +137,15 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 	}
 
 	return implicitInputs
+}
+
+// cachePolicyNever reports whether an installed field has cache policy Never,
+// reading back what cacheImplicitInputs recorded: dagql.PerCallInput, which
+// makes every call a fresh evaluation.
+func cachePolicyNever(spec dagql.FieldSpec) bool {
+	return slices.ContainsFunc(spec.ImplicitInputs, func(input dagql.ImplicitInput) bool {
+		return input.Name == dagql.PerCallInput.Name
+	})
 }
 
 // setCallInputs sets the call inputs for the function call.

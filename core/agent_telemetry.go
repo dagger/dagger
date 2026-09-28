@@ -149,3 +149,74 @@ func emitAgentFailure(ctx context.Context, loopErr error) {
 	stdio.Close()
 	span.End()
 }
+
+// agentRewindMessage is the text a rewind marker carries for renderers that
+// know nothing of the marker attributes: an older client, the plain frontend,
+// ReadLogs. The pretty frontend renders its own summary from the attributes.
+const agentRewindMessage = "Conversation rewound: the messages above it are no longer part of the conversation."
+
+// emitAgentRewind publishes a rewind marker beneath the agent's loop span: a
+// conversation message recording that the committed conversation `from` was
+// replaced by its ancestor `to`, so everything the transcript shows between
+// the two is no longer in the model's history.
+//
+// It is a span rather than a state record because it is an EVENT with a place
+// in the transcript — the row at which the conversation forked — and its facts
+// are known at start and never change, which is all a span attribute can
+// express. Emitted as an engine lifecycle event (EVENT origin) rather than an
+// assistant message so a renderer that predates the marker collapses it to a
+// one-liner instead of showing it as something the model said.
+func emitAgentRewind(ctx context.Context, from, to string) {
+	if from == "" || to == "" {
+		return
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.UIActorEmojiAttr, "↶"),
+		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
+		attribute.String(telemetryattrs.LLMMessageOriginKindAttr, telemetryattrs.LLMMessageOriginKindEvent),
+		attribute.String(telemetryattrs.AgentRewindFromDigestAttr, from),
+		attribute.String(telemetryattrs.AgentRewindToDigestAttr, to),
+	}
+	attrs = append(attrs, genAIAgentAttrsFromContext(ctx)...)
+	ctx, span := Tracer(ctx).Start(ctx, "conversation rewound", trace.WithAttributes(attrs...))
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/plain"))
+	fmt.Fprint(stdio.Stdout, agentRewindMessage)
+	stdio.Close()
+	span.End()
+}
+
+// rewindDigests reports whether replacing the conversation `from` with `next`
+// is a REWIND — next is a strict ancestor on from's receiver chain — and
+// returns the two recipe digests a rewind marker carries. Any other
+// replacement (compaction, a rebind, a model change, or a conversation that
+// cannot be inspected) is not a rewind: nothing the transcript shows was
+// abandoned, so there is nothing to mark.
+//
+// The chain is walked on the rebuilt recipe ID, whose per-frame digests are
+// the ones spans publish as LLMCallDigestAttr and dagger.io/dag.digest, so the
+// digests returned here are exactly what a client can join against.
+func rewindDigests(ctx context.Context, from, next dagql.ObjectResult[*LLM]) (string, string, bool) {
+	if from.Self() == nil || next.Self() == nil {
+		return "", "", false
+	}
+	toDigest, err := next.RecipeDigest(ctx)
+	if err != nil || toDigest == "" {
+		return "", "", false
+	}
+	fromID, err := from.RecipeID(ctx)
+	if err != nil || fromID == nil {
+		return "", "", false
+	}
+	fromDigest := fromID.Digest()
+	if fromDigest == toDigest {
+		return "", "", false
+	}
+	for cur := fromID.Receiver(); cur != nil; cur = cur.Receiver() {
+		if cur.Digest() == toDigest {
+			return fromDigest.String(), toDigest.String(), true
+		}
+	}
+	return "", "", false
+}

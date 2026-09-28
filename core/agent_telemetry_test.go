@@ -293,6 +293,120 @@ func TestEmitAgentFailureMessage(t *testing.T) {
 	require.Equal(t, []string{loopErr.Error()}, bodies)
 }
 
+// llmChainResult builds an LLM result whose recipe is the given inline frame
+// chain, so recipe digests and IDs can be derived without a live cache.
+func llmChainResult(t *testing.T, srv *dagql.Server, frame *dagql.ResultCall) dagql.ObjectResult[*LLM] {
+	t.Helper()
+	res, err := dagql.NewObjectResultForCall(&LLM{}, srv, frame)
+	require.NoError(t, err)
+	return res
+}
+
+// TestRewindDigestsRequiresAncestor pins what makes a reseed a REWIND: the
+// adopted conversation sits on the abandoned one's receiver chain. Every other
+// replacement — the same conversation, a descendant (a model change), an
+// unrelated chain (compaction) — is not one, because nothing the transcript
+// shows was abandoned.
+func TestRewindDigestsRequiresAncestor(t *testing.T) {
+	ctx := dagql.ContextWithCache(context.Background(), nil)
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass[*LLM](srv))
+
+	llmFrame := testResultCall("llm", &LLM{}, nil)
+	promptFrame := testResultCall("withPrompt", &LLM{}, llmFrame)
+	responseFrame := testResultCall("withResponse", &LLM{}, promptFrame)
+	modelFrame := testResultCall("withModel", &LLM{}, responseFrame)
+	otherFrame := testResultCall("withPrompt", &LLM{}, testResultCall("llm", &LLM{}, testResultCall("other", &LLM{}, nil)))
+
+	base := llmChainResult(t, srv, llmFrame)
+	tip := llmChainResult(t, srv, responseFrame)
+
+	from, to, ok := rewindDigests(ctx, tip, base)
+	require.True(t, ok, "the seed is an ancestor of the tip")
+	tipDigest, err := tip.RecipeDigest(ctx)
+	require.NoError(t, err)
+	baseDigest, err := base.RecipeDigest(ctx)
+	require.NoError(t, err)
+	require.Equal(t, tipDigest.String(), from,
+		"from must be the digest spans publish for the abandoned tip")
+	require.Equal(t, baseDigest.String(), to)
+
+	_, _, ok = rewindDigests(ctx, tip, tip)
+	require.False(t, ok, "replacing a conversation with itself abandons nothing")
+
+	_, _, ok = rewindDigests(ctx, tip, llmChainResult(t, srv, modelFrame))
+	require.False(t, ok, "a descendant keeps every message: not a rewind")
+
+	_, _, ok = rewindDigests(ctx, tip, llmChainResult(t, srv, otherFrame))
+	require.False(t, ok, "an unrelated chain is a replacement, not a rewind")
+}
+
+// TestReseedPublishesRewindMarker locks the marker's wire contract and the
+// one place it is emitted: a reseed that rewinds publishes exactly one
+// conversation message beneath the loop span, carrying the abandoned and
+// adopted recipe digests, and a reseed that merely replaces publishes none.
+func TestReseedPublishesRewindMarker(t *testing.T) {
+	logs, ctx := stateRecorderCtx(t)
+	ctx = dagql.ContextWithCache(ctx, nil)
+	ctx = testAgentContext(t, ctx, "agent-123", "reviewer")
+	spans := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(spans),
+	)
+	loopCtx, loop := tp.Tracer("agent-rewind-test").Start(ctx, "agent loop")
+	defer loop.End()
+
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass[*LLM](srv))
+	llmFrame := testResultCall("llm", &LLM{}, nil)
+	responseFrame := testResultCall("withResponse", &LLM{}, testResultCall("withPrompt", &LLM{}, llmFrame))
+	base := llmChainResult(t, srv, llmFrame)
+	tip := llmChainResult(t, srv, responseFrame)
+
+	rt := testRuntime(loopCtx)
+	rt.last = tip
+
+	// A replacement that is not a rewind leaves no marker.
+	require.NoError(t, rt.Reseed(ctx, llmChainResult(t, srv, testResultCall("withModel", &LLM{}, responseFrame))))
+	require.Empty(t, spans.Ended())
+
+	rt.last = tip
+	require.NoError(t, rt.Reseed(ctx, base))
+	require.Same(t, base.Self(), rt.Snapshot().Self())
+
+	require.Len(t, spans.Ended(), 1)
+	marker := spans.Ended()[0]
+	require.Equal(t, "conversation rewound", marker.Name())
+	require.Equal(t, loop.SpanContext().SpanID(), marker.Parent().SpanID(),
+		"the marker belongs to the transcript beneath the loop span")
+
+	attrs := map[string]string{}
+	for _, attr := range marker.Attributes() {
+		attrs[string(attr.Key)] = attr.Value.AsString()
+	}
+	tipDigest, err := tip.RecipeDigest(ctx)
+	require.NoError(t, err)
+	baseDigest, err := base.RecipeDigest(ctx)
+	require.NoError(t, err)
+	require.Equal(t, tipDigest.String(), attrs[telemetryattrs.AgentRewindFromDigestAttr])
+	require.Equal(t, baseDigest.String(), attrs[telemetryattrs.AgentRewindToDigestAttr])
+	require.Equal(t, telemetry.LLMRoleUser, attrs[telemetry.LLMRoleAttr])
+	require.Equal(t, telemetryattrs.LLMMessageOriginKindEvent, attrs[telemetryattrs.LLMMessageOriginKindAttr],
+		"a client predating the marker must render it as an engine event, not as words the model said")
+	require.Equal(t, "agent-123", attrs[string(semconv.GenAIAgentIDKey)])
+
+	logs.mu.Lock()
+	defer logs.mu.Unlock()
+	var bodies []string
+	for _, rec := range logs.records {
+		if rec.body != "" {
+			bodies = append(bodies, rec.body)
+		}
+	}
+	require.Equal(t, []string{agentRewindMessage}, bodies)
+}
+
 // TestStopReasonRidesTerminalRecord covers the fact that makes a trace
 // restorable at all: a stop somebody asked for and a stop the session's
 // teardown performed are the same STOPPED projection, and only the reason

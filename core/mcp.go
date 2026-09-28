@@ -56,15 +56,17 @@ type LLMTool struct {
 	// Whether we should hide the LLM tool call span in favor of just showing its
 	// child spans.
 	HideSelf bool `json:"-"`
-	// Whether the tool is read-only (from MCP ReadOnlyHint annotation)
+	// Whether the tool is pure: it changes neither the agent's state (bound
+	// workspace, bindings, conversation) nor the outside world, so CallBatch
+	// may run it concurrently with the pure calls next to it. Any other tool is
+	// a sequential step, run alone in the position it was written. Unset means
+	// sequential, the safe default. Object tools derive it from their return
+	// type and cache policy or DoNotCache mark (toolsForBoundObject);
+	// MCP-server tools from their ReadOnlyHint annotation.
 	ReadOnly bool `json:"-"`
-	// Whether the tool returns a Changeset. Changeset-returning tools can execute
-	// in parallel against the same workspace; CallBatch merges their results
-	// before updating the workspace.
-	ReturnsChangeset bool `json:"-"`
 	// Whether the tool returns an LLM — a continuation (see MCP.adoptLLM).
-	// step() runs these in a second batch after every other call in the turn,
-	// so the conversation they receive already reflects the turn's effects.
+	// CallBatch runs these after every other call in the turn, so the
+	// conversation they receive already reflects the turn's effects.
 	ReturnsLLM bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
 	Field *ast.FieldDefinition `json:"-"`
@@ -103,7 +105,7 @@ type MCP struct {
 	// skillDirs are skill directories installed via LLM.withSkills, surfaced to
 	// the model through ListSkills/ReadSkill alongside the engine-embedded and
 	// workspace-discovered skills.
-	skillDirs []dagql.ObjectResult[*Directory]
+	skillDirs []ownedSkillDirectory
 	// selfLLM is the conversation dispatching the current step's tool calls —
 	// inst + withResponse, i.e. up to and including the in-flight tool call.
 	// The object-tool adapter passes it explicitly to hidden LLM arguments.
@@ -113,9 +115,8 @@ type MCP struct {
 	// applyStateReturn / adoptLLM). When set, step() appends the turn's tool
 	// results to IT rather than to the LLM that made the call, so the loop
 	// resumes from the returned conversation — env, tools, prompts and all.
-	// Continuations run after the turn's other calls (SplitContinuationCalls),
-	// so by then there is no other state left to persist. Transient: cleared by
-	// Clone.
+	// Continuations run after the turn's other calls (CallBatch), so by then
+	// there is no other state left to persist. Transient: cleared by Clone.
 	continuation dagql.ObjectResult[*LLM]
 	// stateChanged records that a tool call changed the bound workspace or
 	// bindings since selfLLM was set — this MCP has diverged from the
@@ -203,9 +204,9 @@ func (m *MCP) Standalone() *MCP {
 
 // SetSelfLLM records the conversation dispatching this step's tool calls, so
 // the object-tool adapter can pass it explicitly to an `LLM!` argument. Called
-// by step() on its transient MCP clone before each CallBatch: first with the
-// response itself, then — before the continuation phase — with the turn's
-// workspace and binding changes folded in, so a continuation transforms the
+// by step() on its transient MCP clone: first with the response itself, then —
+// before CallBatch runs the turn's continuations — with the turn's workspace
+// and binding changes folded in, so a continuation transforms the
 // state the turn actually produced. The conversation is in sync with this MCP
 // at that point by construction, so the divergence flag resets.
 func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
@@ -241,13 +242,13 @@ func (m *MCP) markStateChanged() {
 }
 
 // SplitContinuationCalls partitions a turn's tool calls into the ones to run
-// first and the continuations (ReturnsLLM tools) that step() runs afterwards,
-// in a second CallBatch, once every other call's effect on the workspace and
-// bindings has been folded into the conversation they receive. A continuation
-// is the turn's outermost transform — "replace the conversation" — so it takes
-// everything else that happened as input: `[editModule, reload]` reloads the
-// edit, whichever phase editModule itself ran in. Calls to unknown tools stay
-// in the first batch so they fail there normally.
+// first, in the order written, and the continuations (ReturnsLLM tools) that
+// CallBatch runs afterwards, once every other call's effect on the workspace
+// and bindings has been folded into the conversation they receive. A
+// continuation is the turn's outermost transform — "replace the conversation"
+// — so it takes everything else that happened as input: `[reload,
+// editModule]` reloads the edit just like `[editModule, reload]` does. Calls
+// to unknown tools stay with the others so they fail there normally.
 func (m *MCP) SplitContinuationCalls(tools []LLMTool, toolCalls []*LLMToolCall) (regular, continuations []*LLMToolCall) {
 	for _, toolCall := range toolCalls {
 		tool, err := m.LookupTool(toolCall.Name, tools)
@@ -320,8 +321,12 @@ func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
 // WithSkills installs a directory of skills, discovered via its SKILL.md files
 // and surfaced to the model through ListSkills/ReadSkill.
 func (m *MCP) WithSkills(dir dagql.ObjectResult[*Directory]) *MCP {
+	return m.withSkillsOwner(dir, "")
+}
+
+func (m *MCP) withSkillsOwner(dir dagql.ObjectResult[*Directory], owner string) *MCP {
 	m = m.Clone()
-	m.skillDirs = append(m.skillDirs, dir)
+	m.skillDirs = append(m.skillDirs, ownedSkillDirectory{Directory: dir, Owner: owner})
 	return m
 }
 
@@ -581,18 +586,14 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 	}
 }
 
-type changesetCaptureKey struct{}
-
-type changesetCapture struct {
-	changes dagql.ObjectResult[*Changeset]
-}
-
 // applyStateReturn implements the state-mutation convention shared by tool calls
 // and Dang eval results. Three kinds of value advance the agent's state:
 //
 //   - a Changeset overlays onto the bound workspace (via Workspace.withChanges,
 //     yielding a new immutable overlay Workspace) so the agent's edits accumulate
-//     across turns.
+//     across turns. It is evaluated first: one that cannot be (e.g. an edit
+//     whose search string is ambiguous) fails as this call's own error and is
+//     never applied.
 //   - a Workspace *replaces* the bound one — a tool that produces a whole new
 //     workspace (e.g. a checkout or install) makes it the agent's current
 //     workspace, mirroring the Changeset convention.
@@ -611,9 +612,14 @@ func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql
 		return true, out, err
 	}
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
-		if capture, ok := ctx.Value(changesetCaptureKey{}).(*changesetCapture); ok {
-			capture.changes = changes
-			return true, m.summarizePatch(ctx, srv, changes), nil
+		// A tool's Changeset is usually lazy — an edit is a File.withReplaced
+		// nobody has run yet — so evaluate it here: a broken one must fail
+		// this call rather than surface later, from inside the workspace it
+		// was overlaid onto.
+		if changes.Self() != nil {
+			if err := changes.Self().Evaluate(ctx); err != nil {
+				return true, "", err
+			}
 		}
 		if err := m.applyChangeset(ctx, srv, changes); err != nil {
 			return true, "", err
@@ -936,7 +942,7 @@ func countCommitsSince(ctx context.Context, srv *dagql.Server, head, base dagql.
 //     load fails the tool call instead of bricking the loop. A failure here is
 //     an ordinary failed tool call: the agent survives, the old conversation
 //     stands.
-//   - one per turn: LLMs do not merge the way Changesets do, so at most one
+//   - one per turn: LLMs do not compose the way Changesets do, so at most one
 //     continuation may be adopted per batch of tool calls.
 //   - visibility: the string returned here is the model's notice of what
 //     changed — which tools came and went, and whether the conversation
@@ -944,13 +950,14 @@ func countCommitsSince(ctx context.Context, srv *dagql.Server, head, base dagql.
 //
 // Two mechanical details the caller handles rather than this function:
 //
-//   - ordering: step() runs continuations after every other call in the turn
-//     (SplitContinuationCalls), with the turn's workspace and binding changes
-//     already folded into the conversation they receive, so a continuation
-//     transforms what the turn produced. If one is reached out of order (e.g.
-//     wrapped in the Timeout builtin) the stateChanged check below refuses it
-//     rather than let it drop earlier work, and errContinuationAdopted refuses
-//     later work rather than let the continuation drop it.
+//   - ordering: CallBatch runs continuations after every other call in the
+//     turn (SplitContinuationCalls), with the turn's workspace and binding
+//     changes already folded into the conversation they receive by step(), so
+//     a continuation transforms what the turn produced. If one is reached out
+//     of order (e.g. wrapped in the Timeout builtin) the stateChanged check
+//     below refuses it rather than let it drop earlier work, and
+//     errContinuationAdopted refuses later work rather than let the
+//     continuation drop it.
 //   - tool results: step() appends the turn's tool results to the adopted LLM,
 //     and a tool-result block is only valid where the matching tool call exists
 //     in the history. See toolResultSelectors in llm.go, which degrades an
@@ -1477,6 +1484,38 @@ func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	return tool, nil
 }
 
+// toolSpanAttrs are the attributes that identify a tool on its call span: the
+// bare tool name, the server providing it, and whether the span hides itself
+// in favor of its children.
+//
+// The tool-call display span sets them when it starts (see
+// displayPhases.StartToolCall), not just when the tool runs: live telemetry
+// exports a span only at start and end, so attributes set in between stay
+// invisible until the tool finishes.
+func toolSpanAttrs(tool *LLMTool) []attribute.KeyValue {
+	toolName := tool.Name
+	if tool.Server != "" {
+		// External MCP tools may come prefixed `<server>_`; collision-namespaced
+		// object tools are prefixed `<gqlFieldName(server)>_` (their Server is
+		// the bound type name). Trim either so the span shows the bare tool name
+		// alongside the server attribute.
+		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
+		toolName = strings.TrimPrefix(toolName, gqlFieldName(tool.Server)+"_")
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.LLMToolAttr, toolName),
+	}
+	if tool.HideSelf {
+		// Hide spans which are better represented by the child spans that they
+		// spawn, i.e. CallMethod, ChainMethods, or direct object-method tools.
+		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
+	}
+	if tool.Server != "" {
+		attrs = append(attrs, attribute.String(telemetry.LLMToolServerAttr, tool.Server))
+	}
+	return attrs
+}
+
 func toolArgHeaderValue(name string, value any) (string, bool) {
 	if value == nil {
 		return "", false
@@ -1551,29 +1590,11 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 	for _, arg := range []string{"offset", "limit", "args"} {
 		appendToolArg(arg)
 	}
-	toolName := tool.Name
-	if tool.Server != "" {
-		// External MCP tools may come prefixed `<server>_`; collision-namespaced
-		// object tools are prefixed `<gqlFieldName(server)>_` (their Server is
-		// the bound type name). Trim either so the span shows the bare tool name
-		// alongside the server attribute.
-		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
-		toolName = strings.TrimPrefix(toolName, gqlFieldName(tool.Server)+"_")
-	}
 	span := trace.SpanFromContext(ctx)
-	attrs := []attribute.KeyValue{
-		attribute.String(telemetry.LLMToolAttr, toolName),
+	attrs := append(toolSpanAttrs(tool),
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 		attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
-	}
-	if tool.HideSelf {
-		// Hide spans which are better represented by the child spans that they
-		// spawn, i.e. CallMethod, ChainMethods, or direct object-method tools.
-		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
-	}
-	if tool.Server != "" {
-		attrs = append(attrs, attribute.String(telemetry.LLMToolServerAttr, tool.Server))
-	}
+	)
 	span.SetAttributes(attrs...)
 
 	var telemetryErr error
@@ -1810,8 +1831,6 @@ func guardToolResult(res string) string {
 	})
 }
 
-// CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
-// grouping calls by destructiveness and server to avoid workspace conflicts
 // toolCallCtx returns the display span context a tool call's arguments streamed
 // into, so the tool's execution nests beneath it. Every provider — including
 // the recorded-response provider — builds one display span per tool call (see
@@ -1843,373 +1862,332 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 	}
 }
 
-func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
-	// Group tool calls by their characteristics
-	readOnlyMCPCalls := make(map[string][]*LLMToolCall)    // server -> read-only calls
-	destructiveMCPCalls := make(map[string][]*LLMToolCall) // server -> destructive calls
-	regularCalls := make([]*LLMToolCall, 0)
-	changesetCalls := make([]*LLMToolCall, 0)
-	destructiveCalls := make([]*LLMToolCall, 0)
-
-	for _, toolCall := range toolCalls {
-		tool, err := m.LookupTool(toolCall.Name, tools)
-		if err != nil {
-			// Couldn't find the tool, just call it regularly and let it fail with the
-			// tool not found (or ambiguous) error
-			regularCalls = append(regularCalls, toolCall)
-			continue
-		}
-
-		// Object tools set Server to their bound type name for display, so a
-		// non-empty Server alone doesn't make this an MCP tool — only a
-		// registered MCP server does.
-		if _, isMCPTool := m.mcpServers[tool.Server]; !isMCPTool {
-			// Changeset-returning tools are evaluated in parallel against the same
-			// workspace, then merged before the workspace is updated.
-			if tool.ReturnsChangeset {
-				changesetCalls = append(changesetCalls, toolCall)
-			} else if tool.ReadOnly {
-				regularCalls = append(regularCalls, toolCall)
-			} else {
-				destructiveCalls = append(destructiveCalls, toolCall)
-			}
-			continue
-		}
-
-		// This is an MCP tool call - check if it's read-only using the stored field
-		if tool.ReadOnly {
-			readOnlyMCPCalls[tool.Server] = append(readOnlyMCPCalls[tool.Server], toolCall)
-		} else {
-			destructiveMCPCalls[tool.Server] = append(destructiveMCPCalls[tool.Server], toolCall)
-		}
+// CallBatch runs one turn's tool calls and returns one result per call, in the
+// order the calls were written.
+//
+// Models emit a turn's tool calls as an ordered list and read it as a script,
+// so calls take effect in the order written:
+//
+//   - A pure call (LLMTool.ReadOnly) changes nothing, so a run of consecutive
+//     pure calls executes concurrently.
+//   - Any other call is a sequential step: it runs alone, in its position,
+//     after everything written before it has landed — a Changeset it returns
+//     is applied before the next call starts.
+//   - Consecutive calls to one MCP server whose working directory mirrors the
+//     workspace share a single sync (callBatchMCPServer), read-only ones
+//     included, so they see the tree the calls before them produced. Within
+//     the sync the same rules apply: pure runs concurrent, the rest one at a
+//     time.
+//   - Every call runs, whether or not an earlier one failed: each result
+//     reports its own call, which is the contract models are trained on. A
+//     call written against a failed one's effect fails on its own terms (the
+//     edit's search string is missing, the test sees the old tree), and the
+//     model reads both results together.
+//   - Continuations (LLMTool.ReturnsLLM) run last, whatever their position:
+//     see SplitContinuationCalls. beforeContinuations, if set, runs once before
+//     the first of them, so the caller can hand them a conversation that
+//     carries the turn's effects. If it fails, the continuations don't run:
+//     they would replace the conversation with one missing the turn's work.
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay, beforeContinuations func(context.Context) error) []*LLMMessage {
+	results := make([]*LLMMessage, len(toolCalls))
+	position := make(map[*LLMToolCall]int, len(toolCalls))
+	for i, call := range toolCalls {
+		position[call] = i
 	}
-
-	var allResults []*LLMMessage
-
-	// 1. Execute destructive non-MCP calls sequentially (they replace shared state).
-	for _, call := range destructiveCalls {
-		result := m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
+	record := func(call *LLMToolCall, result *LLMContentBlock) {
 		endToolCallDisplay(toolCallDisplays, call.CallID, result.Errored, result.ContentText())
-		allResults = append(allResults, &LLMMessage{
-			Role:    LLMMessageRoleUser,
+		results[position[call]] = &LLMMessage{
+			Role:    LLMMessageRoleUser, // Anthropic only allows tool call results in user messages
 			Content: []*LLMContentBlock{result},
-		})
+		}
+	}
+	call := func(call *LLMToolCall) *LLMContentBlock {
+		return m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
 	}
 
-	// 2. Execute Changeset-returning calls in parallel and merge their changes.
-	if len(changesetCalls) > 0 {
-		allResults = append(allResults, m.callBatchChangesets(ctx, tools, changesetCalls, toolCallDisplays)...)
+	regular, continuations := m.SplitContinuationCalls(tools, toolCalls)
+	// runSteps executes a plan, handing each call's result to emit.
+	var runSteps func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock))
+	runSteps = func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock)) {
+		for _, step := range steps {
+			switch {
+			case step.mcpServer != "":
+				// One sync for the whole run; within it the calls follow the
+				// same rules as the batch itself. Results are held back
+				// until the sync has finished, since that is when the calls'
+				// effects have (or haven't) reached the workspace.
+				inner := m.planCalls(tools, step.calls, false)
+				var mu sync.Mutex
+				held := make(map[*LLMToolCall]*LLMContentBlock, len(step.calls))
+				synced, err := m.callBatchMCPServer(ctx, step.mcpServer, func() {
+					runSteps(inner, func(call *LLMToolCall, result *LLMContentBlock) {
+						mu.Lock()
+						defer mu.Unlock()
+						held[call] = result
+					})
+				})
+				if err != nil {
+					annotateMCPSyncFailure(step.mcpServer, inner, held, synced, err)
+				}
+				for _, call := range step.calls {
+					emit(call, held[call])
+				}
+			case step.pure:
+				calls := pool.New()
+				for _, c := range step.calls {
+					calls.Go(func() { emit(c, call(c)) })
+				}
+				calls.Wait()
+			default:
+				emit(step.calls[0], call(step.calls[0]))
+			}
+		}
 	}
+	runSteps(m.planBatch(tools, regular), record)
 
-	// 3. Execute destructive MCP calls one server at a time to avoid workspace conflicts
-	for serverName, calls := range destructiveMCPCalls {
-		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName, toolCallDisplays)
-		allResults = append(allResults, serverResults...)
+	if len(continuations) > 0 && beforeContinuations != nil {
+		if err := beforeContinuations(ctx); err != nil {
+			for _, call := range continuations {
+				record(call, &LLMContentBlock{
+					Kind:    LLMContentToolResult,
+					CallID:  call.CallID,
+					Text:    fmt.Sprintf("not run: failed to carry this turn's changes into the conversation: %s", err),
+					Errored: true,
+				})
+			}
+			return results
+		}
 	}
-
-	// 4. Execute all regular read-only (non-MCP) calls in parallel
-	if len(regularCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls, toolCallDisplays)...)
+	for _, c := range continuations {
+		record(c, call(c))
 	}
-
-	// 5. Execute all read-only MCP calls in parallel (safe across servers)
-	var readOnlyToolCalls []*LLMToolCall
-	for _, calls := range readOnlyMCPCalls {
-		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
-	}
-	if len(readOnlyToolCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls, toolCallDisplays)...)
-	}
-
-	return allResults
+	return results
 }
 
-// callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
-func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
+// annotateMCPSyncFailure rewrites the results of an MCP server's calls after
+// their workspace sync failed, so the model doesn't build on effects that
+// never reached the workspace. If the calls ran unsynced (synced is false),
+// every result is suspect: the server saw a stale tree and nothing it wrote
+// was captured. If the sync failed after they ran, the reads stand but the
+// changes the other calls made were not carried back.
+func annotateMCPSyncFailure(server string, plan []batchStep, results map[*LLMToolCall]*LLMContentBlock, synced bool, err error) {
+	for _, step := range plan {
+		if synced && step.pure {
+			continue
+		}
+		var note string
+		if synced {
+			note = fmt.Sprintf("WARNING: the changes this call made in MCP server %q could not be carried back into the workspace: %s", server, err)
+		} else {
+			note = fmt.Sprintf("WARNING: the workspace could not be synced into MCP server %q, so this call ran against a stale tree and any changes it made were not captured: %s", server, err)
+		}
+		for _, call := range step.calls {
+			res := results[call]
+			if res == nil {
+				continue
+			}
+			if res.Text != "" {
+				res.Text += "\n\n"
+			}
+			res.Text += note
+			res.Errored = true
+		}
+	}
+}
+
+// batchStep is one step of a CallBatch schedule.
+type batchStep struct {
+	calls []*LLMToolCall
+	// pure: the calls run concurrently. Otherwise the step is sequential and
+	// holds a single call, unless mcpServer is set.
+	pure bool
+	// mcpServer: consecutive calls to this MCP server, run within a single
+	// workspace sync. The calls themselves are planned again inside it, so
+	// pure is unset here.
+	mcpServer string
+}
+
+// planBatch groups calls, in the order written, into CallBatch steps: runs of
+// consecutive pure calls, runs of consecutive calls to the same MCP server,
+// and single sequential calls. A call to an unknown tool is sequential, the
+// safe default for a call nothing is known about.
+func (m *MCP) planBatch(tools []LLMTool, toolCalls []*LLMToolCall) []batchStep {
+	return m.planCalls(tools, toolCalls, true)
+}
+
+// planCalls is planBatch, optionally without the MCP-server grouping: inside a
+// server's sync the calls are planned by purity alone.
+//
+// A server's read-only calls join its run too. They read the server's working
+// directory, which only mirrors the bound workspace while a sync is in
+// progress; outside of one they would read whatever the last sync left there,
+// not the tree the calls before them produced.
+func (m *MCP) planCalls(tools []LLMTool, toolCalls []*LLMToolCall, groupServers bool) []batchStep {
+	var steps []batchStep
+	for _, call := range toolCalls {
+		var pure bool
+		var server string
+		if tool, err := m.planningTool(call, tools); err == nil {
+			pure = tool.ReadOnly
+			// Object tools set Server to their bound type name for display,
+			// so only a registered MCP server makes this an MCP tool.
+			if _, isMCP := m.mcpServers[tool.Server]; isMCP && groupServers {
+				server = tool.Server
+			}
+		}
+		if n := len(steps); n > 0 {
+			last := &steps[n-1]
+			if server != "" && server == last.mcpServer {
+				last.calls = append(last.calls, call)
+				continue
+			}
+			if server == "" && pure && last.pure && last.mcpServer == "" {
+				last.calls = append(last.calls, call)
+				continue
+			}
+		}
+		steps = append(steps, batchStep{calls: []*LLMToolCall{call}, pure: pure && server == "", mcpServer: server})
+	}
+	return steps
+}
+
+// planningTool returns the tool whose purity and server decide how call is
+// scheduled: the tool it names, or, for the Timeout builtin, the tool it
+// wraps. A deadline changes nothing about what the wrapped call reads or
+// writes, so `Timeout(ReadLogs)` runs alongside other reads rather than as a
+// barrier. A Timeout whose target can't be resolved plans as Timeout itself,
+// sequential, and fails on its own when it runs.
+func (m *MCP) planningTool(call *LLMToolCall, tools []LLMTool) (*LLMTool, error) {
+	tool, err := m.LookupTool(call.Name, tools)
+	if err != nil {
+		return nil, err
+	}
+	if tool.Name != timeoutToolName {
+		return tool, nil
+	}
+	if wrapped := m.timeoutTarget(call, tools); wrapped != nil {
+		return wrapped, nil
+	}
+	return tool, nil
+}
+
+// timeoutTarget returns the tool a Timeout call wraps, or nil when its
+// arguments don't name one that exists. Timeout itself reports the details
+// when it runs; the planner only needs to know whether to schedule as the
+// target.
+func (m *MCP) timeoutTarget(call *LLMToolCall, tools []LLMTool) *LLMTool {
+	var args struct {
+		Tool string `json:"tool"`
+	}
+	if json.Unmarshal(call.Arguments, &args) != nil || args.Tool == "" {
+		return nil
+	}
+	wrapped, err := m.LookupTool(args.Tool, tools)
+	if err != nil {
+		return nil
+	}
+	return wrapped
+}
+
+// mcpServerSyncsWorkspace reports whether calls to the named MCP server run
+// with the bound workspace synced into the server's working directory: the
+// server is registered with a live session, its container has a working
+// directory to mirror the workspace into, and there is a workspace to mirror.
+func (m *MCP) mcpServerSyncsWorkspace(serverName string) bool {
 	mcpSrv, ok := m.mcpServers[serverName]
 	if !ok {
-		// Fall back to individual calls if server not found
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return false
 	}
-
 	if _, ok := m.mcpSessions[serverName]; !ok {
-		// Fall back to individual calls if session not found
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return false
 	}
-
+	if mcpSrv.Service.Self() == nil {
+		return false
+	}
 	ctr := mcpSrv.Service.Self().Container
 	if ctr.Self() == nil || ctr.Self().Config.WorkingDir == "" || ctr.Self().Config.WorkingDir == "/" {
-		// No workspace syncing needed - execute normally
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return false
 	}
+	// Snapshotting the workspace requires a bound workspace to diff against
+	// and overlay back onto.
+	return m.workspace.Self() != nil
+}
 
-	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
+// callBatchMCPServer runs calls to one MCP server — run executes them — with
+// the bound workspace synced into the server's working directory, then
+// overlays whatever the calls changed there back onto the workspace. run
+// executes exactly once either way: when there is nothing to sync with (no
+// working directory, no bound workspace) or the sync can't be set up, it runs
+// without the sync, and synced reports which. A non-nil error means the sync
+// failed — before run if synced is false, after it otherwise — and the caller
+// tells the model, since the calls' results alone would misreport what
+// reached the workspace.
+func (m *MCP) callBatchMCPServer(ctx context.Context, serverName string, run func()) (synced bool, err error) {
+	err = m.syncMCPServerWorkspace(ctx, serverName, func() {
+		synced = true
+		run()
+	})
+	if err != nil {
+		slog.Error("failed to sync workspace with MCP server", "server", serverName, "synced", synced, "error", err)
+	}
+	if !synced {
+		run()
+	}
+	return synced, err
+}
+
+// syncMCPServerWorkspace is callBatchMCPServer's sync. It returns without
+// calling run when there is nothing to sync.
+func (m *MCP) syncMCPServerWorkspace(ctx context.Context, serverName string, run func()) error {
+	if !m.mcpServerSyncsWorkspace(serverName) {
+		return nil
+	}
+	mcpSrv := m.mcpServers[serverName]
+	ctr := mcpSrv.Service.Self().Container
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	serviceDigest, err := mcpSrv.Service.ContentPreferredDigest(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	running, err := query.Services(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	runningSvc, err := running.Get(ctx, serviceDigest, false)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
-	}
-
-	// Snapshotting the workspace requires a bound workspace to diff against and
-	// overlay back onto; without one, run the tools without syncing.
-	if m.workspace.Self() == nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	srv, err := m.baseServer(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 	sourceDir, err := m.workspaceDirectory(ctx, srv)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
 
-	var results []*LLMMessage
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
 		runningSvc,
 		ctr.Self().Config.WorkingDir,
 		sourceDir,
 		func() error {
-			// Execute all tool calls for this server in parallel within the synced context
-			results = m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+			run()
 			return nil
 		})
-
 	if err != nil {
-		// Fall back to individual calls if sync fails
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+		return err
 	}
-
-	// Apply workspace changes if any were made
 	if hasChanges {
 		if err := m.applyWorkspaceSnapshot(ctx, srv, sourceDir, snapshot); err != nil {
-			slog.Error("failed to update workspace after MCP server batch", "server", serverName, "error", err)
+			return fmt.Errorf("update workspace after MCP server calls: %w", err)
 		}
 	}
-
-	return results
-}
-
-// callBatchChangesets evaluates Changeset-returning tools concurrently without
-// mutating the workspace, merges the successful results, then applies the merged
-// Changeset once. Each tool still receives its own patch summary.
-func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
-	type callResult struct {
-		message *LLMMessage
-		capture *changesetCapture
-		failed  bool
-	}
-
-	calls := pool.NewWithResults[callResult]()
-	for _, toolCall := range toolCalls {
-		calls.Go(func() callResult {
-			capture := new(changesetCapture)
-			callCtx := context.WithValue(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), changesetCaptureKey{}, capture)
-			content := m.CallContent(callCtx, tools, toolCall)
-			return callResult{
-				message: &LLMMessage{
-					Role:    LLMMessageRoleUser,
-					Content: []*LLMContentBlock{content},
-				},
-				capture: capture,
-				failed:  content.Errored,
-			}
-		})
-	}
-	callResults := calls.Wait()
-
-	changes := make([]dagql.ObjectResult[*Changeset], 0, len(callResults))
-	for _, result := range callResults {
-		if !result.failed && result.capture.changes.Self() != nil {
-			changes = append(changes, result.capture.changes)
-		}
-	}
-
-	var mergeErr error
-	var conflictNote string
-	if len(changes) > 0 {
-		srv, err := m.baseServer(ctx)
-		if err != nil {
-			mergeErr = err
-		} else if err := m.guardStateChange(); err != nil {
-			// Checked up front so the refusal reads as what it is, rather
-			// than as a merge failure.
-			mergeErr = err
-		} else {
-			merged, note, err := mergeChangesets(ctx, srv, changes)
-			if err == nil {
-				conflictNote = note
-				err = m.applyChangeset(ctx, srv, merged)
-			}
-			mergeErr = err
-		}
-	}
-
-	messages := make([]*LLMMessage, len(callResults))
-	for i, result := range callResults {
-		block := result.message.Content[0]
-		contributed := !result.failed && result.capture.changes.Self() != nil
-		switch {
-		case errors.Is(mergeErr, errContinuationAdopted) && contributed:
-			block.Text = mergeErr.Error()
-			block.Errored = true
-		case mergeErr != nil && contributed:
-			block.Text = fmt.Sprintf("failed to merge parallel changesets: %s", mergeErr)
-			block.Errored = true
-		case conflictNote != "" && contributed:
-			// The changes did land, so this is not a failed tool call — but the
-			// merged result has conflict markers in it, which the agent must
-			// resolve before building on top of them.
-			block.Text += "\n\n" + conflictNote
-		}
-		endToolCallDisplay(toolCallDisplays, block.CallID, block.Errored, block.Text)
-		messages[i] = result.message
-	}
-	return messages
-}
-
-// mergeChangesets combines the changesets produced by a batch of parallel tool
-// calls into one.
-//
-// The fast path is git's octopus merge (Changeset.withChangesets), which is
-// efficient and gives full git merge semantics — including rename detection —
-// but it refuses to resolve any content-level conflict. Worse, "conflict" there
-// includes merely *adjacent* edits, and a single conflicting pair fails the
-// whole batch. Discarding the result would throw away every participating
-// call's work, which is the expensive part: the agents have already done their
-// reasoning, edits and verification by the time we get here.
-//
-// So on failure, fall back to folding the changesets together one at a time
-// with Changeset.withChangeset in LEAVE_CONFLICT_MARKERS mode: the same
-// three-way git merge, allowed to leave the conflicts in the tree. The work is
-// preserved and the agent gets a tree it can inspect and repair, rather than an
-// error and an empty workspace. The returned note is non-empty in that case, so
-// the caller can tell the agent to resolve the markers.
-func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], string, error) {
-	if len(changes) == 1 {
-		return changes[0], "", nil
-	}
-
-	merged, mergeErr := octopusMergeChangesets(ctx, srv, changes)
-	if mergeErr == nil {
-		return merged, "", nil
-	}
-
-	merged, err := markerMergeChangesets(ctx, srv, changes)
-	if err != nil {
-		// Preserving the work didn't pan out either; report the original merge
-		// failure, with the fallback's own failure as context.
-		return dagql.ObjectResult[*Changeset]{}, "", errors.Join(mergeErr, err)
-	}
-	return merged, conflictMarkerNote(mergeErr), nil
-}
-
-// conflictMarkerNote tells the agent what happened to its changes when the
-// clean merge failed. The underlying git error names the conflicting paths
-// (e.g. "CONFLICT (content): Merge conflict in foo.go"), which is the most
-// useful part, so it is quoted verbatim. The rules it states are git's own for
-// a merge left unresolved, as Changeset.withChangeset's LEAVE_CONFLICT_MARKERS
-// applies them: overlapping edits and files added on both sides get markers, a
-// file modified on one side and deleted on the other keeps the modified
-// version, and a binary file keeps the earlier call's version.
-func conflictMarkerNote(mergeErr error) string {
-	return fmt.Sprintf(`NOTE: parallel edits from this batch overlapped, so they could not be merged cleanly.
-Rather than discarding them, they were merged with git-style conflict markers
-(<<<<<<< / ======= / >>>>>>>) left wherever edits overlap, including a file added
-by more than one call. A file modified by one call and deleted by another keeps
-the modified version; a binary file changed by more than one call keeps the
-earlier call's version.
-Search the workspace for conflict markers and resolve them before building on these changes.
-
-The merge reported:
-%s`, mergeErr)
-}
-
-func octopusMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	otherIDs := make(dagql.ArrayInput[dagql.ID[*Changeset]], len(changes)-1)
-	for i, changeset := range changes[1:] {
-		id, err := changeset.ID()
-		if err != nil {
-			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("get changeset %d ID: %w", i+1, err)
-		}
-		otherIDs[i] = dagql.NewID[*Changeset](id)
-	}
-
-	var merged dagql.ObjectResult[*Changeset]
-	if err := srv.Select(ctx, changes[0], &merged, dagql.Selector{
-		View:  srv.View,
-		Field: "withChangesets",
-		Args: []dagql.NamedInput{
-			{Name: "changes", Value: otherIDs},
-		},
-	}); err != nil {
-		return dagql.ObjectResult[*Changeset]{}, err
-	}
-	return merged, nil
-}
-
-// markerMergeChangesets folds the changesets into one with successive
-// Changeset.withChangeset merges in LEAVE_CONFLICT_MARKERS mode. It is the
-// conflict-preserving fallback for octopusMergeChangesets: the same three-way
-// git merge, run pairwise because the octopus strategy cannot leave a merge
-// unresolved, so every kind of conflict gets git's own treatment — markers for
-// overlapping edits and for a file added on both sides, the modified version
-// for a modify/delete pair — instead of the hunk-level best effort of a patch
-// reapplication, which can only mark what git apply rejects and skips a file it
-// cannot patch at all.
-//
-// Merging through the withChangeset field rather than the raw Go method keeps
-// the result an attached dagql result, which applyChangeset needs.
-func markerMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	merged := changes[0]
-	for i, changeset := range changes[1:] {
-		id, err := changeset.ID()
-		if err != nil {
-			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("get changeset %d ID: %w", i+1, err)
-		}
-		var next dagql.ObjectResult[*Changeset]
-		if err := srv.Select(ctx, merged, &next, dagql.Selector{
-			View:  srv.View,
-			Field: "withChangeset",
-			Args: []dagql.NamedInput{
-				{Name: "changes", Value: dagql.NewID[*Changeset](id)},
-				{Name: "onConflict", Value: LeaveConflictMarkersOnMergeConflict},
-			},
-		}); err != nil {
-			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("merge changeset %d with conflict markers: %w", i+1, err)
-		}
-		merged = next
-	}
-	return merged, nil
-}
-
-// callBatchRegular is the original parallel execution logic without MCP-specific syncing
-func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
-	// Run tool calls in parallel using the existing pool logic
-	toolCallsPool := pool.NewWithResults[*LLMMessage]()
-	for _, toolCall := range toolCalls {
-		toolCallsPool.Go(func() *LLMMessage {
-			content := m.CallContent(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), tools, toolCall)
-			endToolCallDisplay(toolCallDisplays, toolCall.CallID, content.Errored, content.ContentText())
-			return &LLMMessage{
-				Role:    LLMMessageRoleUser, // Anthropic only allows tool call results in user messages
-				Content: []*LLMContentBlock{content},
-			}
-		})
-	}
-	return toolCallsPool.Wait()
+	return nil
 }
 
 // stableIDDigest returns a stable identity digest for an ID in either form.
@@ -2231,32 +2209,30 @@ func stableIDDigest(id *call.ID) digest.Digest {
 const llmLogsMaxLineLen = 2000
 const llmLogsBatchSize = 1000
 
-// captureLogs returns nicely Heroku-formatted lines of all logs emitted
-// beneath the given span. When excludeServiceLogs is set, logs from
-// long-lived service exec spans are skipped — they enter tool-call subtrees
-// via cause links and would otherwise drown out deliberate print output.
-func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs bool) ([]string, error) {
-	captured, err := m.captureLogLines(ctx, spanID, excludeServiceLogs, false)
-	if err != nil {
-		return nil, err
-	}
-	if len(captured.lines) == 0 {
-		return nil, nil
-	}
-	texts := make([]string, len(captured.lines))
-	for i, line := range captured.lines {
-		texts[i] = line.text
-	}
-	return texts, nil
-}
-
 // capturedLine is one assembled log line, tagged with whether it was printed
 // by the captured span itself (or one of its direct children — where a tool
 // function's own print output lands) rather than by nested work deeper in the
 // subtree. Tool results keep direct output in full and abridge the rest.
 type capturedLine struct {
-	text   string
-	direct bool
+	text      string
+	direct    bool
+	producer  logProducer
+	timestamp int64 // timestamp of the first contributing record
+}
+
+// capturedSegment retains the producer of a single log record until assembly.
+// A missing stdio stream is its own stream (zero), distinct from stdout/stderr.
+type capturedSegment struct {
+	text      string
+	direct    bool
+	producer  logProducer
+	timestamp int64
+}
+
+type logProducer struct {
+	traceID string
+	spanID  string
+	stream  int64
 }
 
 // capturedOutput is one capture: the assembled lines, plus the set of spans
@@ -2275,9 +2251,41 @@ type capturedOutput struct {
 	directSpans map[string]bool
 }
 
-// captureLogLines is captureLogs' structured form: the same filtering and
-// line assembly, but each line retains its direct/nested provenance.
-func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs, ownOnly bool) (capturedOutput, error) {
+// logCaptureScope narrows the legacy causal scope to own or raw-descendant
+// producers. A nil set leaves the causal capture unrestricted.
+func logCaptureScope(ctx context.Context, db *clientdb.DB, spanID string, scope ...string) (map[string]bool, error) {
+	if len(scope) == 0 || scope[0] == "causal" {
+		return nil, nil
+	}
+	allowed := map[string]bool{spanID: true}
+	if scope[0] != "descendants" {
+		return allowed, nil
+	}
+	rows, err := db.SelectSpansLatest(ctx, db.SpanLogScope(spanID))
+	if err != nil {
+		return nil, err
+	}
+	children := map[string][]string{}
+	for _, row := range rows {
+		children[row.ParentSpanID.String] = append(children[row.ParentSpanID.String], row.SpanID)
+	}
+	queue := []string{spanID}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		for _, child := range children[id] {
+			if !allowed[child] {
+				allowed[child] = true
+				queue = append(queue, child)
+			}
+		}
+	}
+	return allowed, nil
+}
+
+// captureLogLines assembles logs with producer and direct/nested provenance.
+// excludeServiceLogs keeps long-lived service output out of tool results.
+func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs, ownOnly bool, scope ...string) (capturedOutput, error) {
 	out := capturedOutput{directSpans: map[string]bool{}}
 	root, err := CurrentQuery(ctx)
 	if err != nil {
@@ -2292,14 +2300,17 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 		return out, err
 	}
 	defer q.Close()
+	q = inspectionStoreForSpan(q, spanID)
+	allowed, err := logCaptureScope(ctx, q, spanID, scope...)
+	if err != nil {
+		return out, err
+	}
 
-	// segments accumulates log bodies in arrival order — one per record, each
-	// tagged with its provenance; lines are assembled from them afterwards,
-	// since a single log record needn't be line-aligned. Records are NOT
-	// coalesced here: appending onto an accumulated string goes quadratic on
-	// long same-provenance runs, and assembleLines merges across record
-	// boundaries anyway.
-	var segments []capturedLine
+	// segments accumulates log bodies in database record order, retaining the
+	// producer across batch boundaries. Records are NOT coalesced here:
+	// appending onto an accumulated string goes quadratic on long runs, and
+	// assembleLines merges same-producer fragments across records anyway.
+	var segments []capturedSegment
 
 	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
 	// roll-up behavior.
@@ -2325,6 +2336,9 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 
 		for _, log := range logs {
 			lastLogID = log.ID
+			if allowed != nil && !allowed[log.SpanID.String] {
+				continue
+			}
 
 			var logAttrs []*otlpcommonv1.KeyValue
 			if err := clientdb.UnmarshalProtoJSONs(log.Attributes, &otlpcommonv1.KeyValue{}, &logAttrs); err != nil {
@@ -2348,9 +2362,12 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			}
 
 			var skip bool
+			var stream int64
 		dance:
 			for _, attr := range logAttrs {
 				switch attr.Key {
+				case telemetry.StdioStreamAttr:
+					stream = attr.Value.GetIntValue()
 				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr:
 					if attr.Value.GetBoolValue() {
 						skip = true
@@ -2401,49 +2418,83 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			if text == "" {
 				continue
 			}
-			segments = append(segments, capturedLine{text: text, direct: direct})
+			segments = append(segments, capturedSegment{
+				text: text, direct: direct, timestamp: log.Timestamp,
+				producer: logProducer{traceID: log.TraceID.String, spanID: log.SpanID.String, stream: stream},
+			})
 		}
 	}
 	out.lines = assembleLines(segments)
 	return out, nil
 }
 
-// assembleLines splits accumulated log segments into lines, carrying a line
-// that straddles segments across the boundary. A line's provenance is that of
-// the segment that started it — log records aren't guaranteed to be
-// line-aligned, though a Dang `print` (Fprintln to the span's stdout) is.
-func assembleLines(segments []capturedLine) []capturedLine {
-	var lines []capturedLine
-	// pending accumulates a line across segment boundaries; its provenance is
-	// claimed by the first segment to contribute actual text, so the empty
-	// chunk that trails a newline-terminated record doesn't hand the next
-	// record's line to the wrong span.
-	var pending strings.Builder
-	var pendingDirect, pendingSet bool
-	for _, seg := range segments {
+// assembleLines joins fragments only within the same trace, span, and stdio
+// stream. Completed lines are ordered by their newline's record; unterminated
+// fragments are merged at their last contributing record. Lines from the same
+// record keep their text order. This is record order, not timestamp order.
+// A line retains the direct/nested attribution of its first actual text.
+func assembleLines(segments []capturedSegment) []capturedLine {
+	type partialLine struct {
+		text      strings.Builder
+		direct    bool
+		last      int
+		timestamp int64
+	}
+	type orderedLine struct {
+		capturedLine
+		record int
+	}
+	type producerKey struct {
+		logProducer
+		unknownRecord int
+	}
+	pending := map[producerKey]*partialLine{}
+	var ordered []orderedLine
+	for record, seg := range segments {
+		key := producerKey{logProducer: seg.producer}
+		if key.traceID == "" || key.spanID == "" {
+			// Without a complete producer identity, even adjacent records
+			// cannot safely be assumed to continue each other's output.
+			key.unknownRecord = record + 1
+		}
+		p := pending[key]
+		if p == nil {
+			p = &partialLine{}
+			pending[key] = p
+		}
 		chunks := strings.Split(seg.text, "\n")
 		for i, chunk := range chunks {
 			if chunk != "" {
-				if !pendingSet {
-					pendingDirect = seg.direct
-					pendingSet = true
+				if p.text.Len() == 0 {
+					p.direct = seg.direct
+					p.timestamp = seg.timestamp
 				}
-				pending.WriteString(chunk)
+				p.text.WriteString(chunk)
+				p.last = record
 			}
 			if i < len(chunks)-1 {
-				// a "\n" followed this chunk: the line is complete
-				direct := seg.direct
-				if pendingSet {
-					direct = pendingDirect
+				// A newline completes only this producer's pending line.
+				direct, timestamp := seg.direct, seg.timestamp
+				if p.text.Len() > 0 {
+					direct, timestamp = p.direct, p.timestamp
 				}
-				lines = append(lines, capturedLine{text: pending.String(), direct: direct})
-				pending.Reset()
-				pendingDirect, pendingSet = false, false
+				ordered = append(ordered, orderedLine{capturedLine{p.text.String(), direct, seg.producer, timestamp}, record})
+				p.text.Reset()
 			}
 		}
 	}
-	if pending.Len() > 0 {
-		lines = append(lines, capturedLine{text: pending.String(), direct: pendingDirect})
+	for key, p := range pending {
+		if p.text.Len() > 0 {
+			ordered = append(ordered, orderedLine{capturedLine{p.text.String(), p.direct, key.logProducer, p.timestamp}, p.last})
+		}
+	}
+	// Each record belongs to exactly one producer, so trailing fragments have
+	// distinct positions. Stable sorting keeps any completed lines from that
+	// record before its trailing fragment, independent of map iteration order.
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].record < ordered[j].record })
+	var lines []capturedLine
+	for _, line := range ordered {
+		lines = append(lines, line.capturedLine)
 	}
 	// ensure trailing linebreaks don't contribute to line limits
 	for len(lines) > 0 && lines[len(lines)-1].text == "" {
@@ -2459,7 +2510,7 @@ func assembleLines(segments []capturedLine) []capturedLine {
 // internal span. When skipServices is set, service exec spans
 // (dagger.io/service) are filtered the same way, keeping long-lived service
 // noise out of tool-result captures. Results are memoized per span so
-// captureLogs doesn't re-walk the parent chain for every log line.
+// captureLogLines doesn't re-walk the parent chain for every log line.
 type internalSpanFilter struct {
 	db           *clientdb.DB
 	root         string
@@ -2664,6 +2715,21 @@ func (m *MCP) toolErrorResponse(ctx context.Context, err error) string {
 
 func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
+		Name: "LoadTrace",
+		Description: "Load a historical trace from Dagger Cloud into this session for inspection. Use this when asked to investigate a trace ID, Cloud trace URL, or `dagger cloud traces view <id>`; do not run the interactive CLI.\n" +
+			"Uses the connecting client's Cloud authentication. No recipes are executed or agents restored. Returns root span IDs for ReadTrace and ReadLogs; FindSpans, FindCalls and InspectCall also see loaded traces. Repeated loads reuse the snapshot; failed loads import nothing.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"trace": map[string]any{"type": "string", "description": "Trace ID (32 hex characters), a pasted dagger cloud traces view <id> command, or a Dagger Cloud trace URL."},
+			},
+			"required":             []string{"trace"},
+			"additionalProperties": false,
+		},
+		Call: m.loadTraceTool(srv),
+	})
+	allTools.Add(LLMTool{
 		Name: "ReadLogs",
 		Description: "Read the logs beneath a span: exec output, service logs, prints. Can filter with grep pattern or read the last N lines." + "\n" +
 			"Span IDs come from tool results, ListServices, or [traceparent:traceID-spanID] markers in errors (pasting the whole marker works).",
@@ -2677,7 +2743,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "Number of lines to read from the end.",
+					"description": "Maximum output lines including context (capped at 500 and a byte budget). Reads the tail by default; fromLine reads forward. Returned calls page earlier/next.",
 					"minimum":     1,
 					"default":     100,
 				},
@@ -2686,9 +2752,21 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 					"description": "Number of lines to skip from the end. If not specified, starts from the end.",
 					"minimum":     0,
 				},
+				"fromLine": map[string]any{
+					"type": "integer", "minimum": 1,
+					"description": "One-based line address to read forward from (before grep); mutually exclusive with offset. Use with limit for a range. Stable for a fixed historical span/scope; live logs may grow.",
+				},
+				"context": map[string]any{
+					"type": "integer", "minimum": 0, "maximum": 100, "default": 0,
+					"description": "Lines before and after each grep match. Overlapping windows merge; limit includes context.",
+				},
+				"scope": map[string]any{
+					"type": "string", "enum": []string{"own", "descendants", "causal"}, "default": "causal",
+					"description": "own: only this producer; descendants: raw parent-child subtree; causal: also cause-linked work (legacy broad scope, not proof of error causality). Internal log filtering still applies.",
+				},
 				"grep": map[string]any{
 					"type":        "string",
-					"description": "Grep pattern to filter logs. If specified, only lines matching this pattern will be returned.",
+					"description": "Regex over log text; context includes neighboring lines. Addresses and producer span/stream/time are retained.",
 				},
 			},
 			"required":             []string{"span"},
@@ -2698,31 +2776,152 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
-		Description: "Render the trace report for a span, check, or test: the span tree, plus the CHECKS and TESTS sections, exactly as they appear at the end of a run." + "\n" +
-			"Tool results are abridged; this is how you see the full detail behind one - pass the span ID from a report's footer, or the name of a check or test you saw run." + "\n" +
-			"Prefer ReadTrace when you want the shape of what ran (which steps, which checks/tests, where it failed); use ReadLogs when you want the raw log lines of a span." + "\n" +
-			"When a name matches several spans, the most recent one is rendered.",
+		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of three views." + "\n" +
+			"- report (default): a bounded trace report with recorded error origins first, failed check/test links separately, and diagnostic output. Failed scopes collapse successful work; follow the supplied span IDs to expand a branch rather than searching again." + "\n" +
+			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
+			"- timings: the span's raw-parent subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included; cause links are not traversed. Durations are each span's own wall interval, may overlap, and are not total execution or CPU self time. Imported spans with unrecorded completion have unknown duration." + "\n" +
+			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here." + "\n" +
+			"Use ReadLogs when you want the raw log lines beneath a span.",
 		ReadOnly: true, // Read-only operation
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"span": map[string]any{
 					"type":        "string",
-					"description": "Span ID (hex) to render the report for, scoped to that span's subtree.",
+					"description": "Span ID (hex) to read, scoped to that span's subtree.",
 				},
-				"check": map[string]any{
+				"view": map[string]any{
 					"type":        "string",
-					"description": "Check name to render the report for, e.g. \"shellcheck:check\".",
+					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings},
+					"description": "Which view to render.",
+					"default":     traceViewReport,
 				},
-				"test": map[string]any{
+				"minDuration": map[string]any{
 					"type":        "string",
-					"description": "Test case or suite name to render the report for.",
+					"description": "timings view only: hide spans shorter than this Go duration, e.g. \"10ms\" or \"1s\". Spans with unknown timing are kept.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "timings view only: maximum number of rows (0 = unlimited).",
+					"minimum":     0,
+					"default":     200,
+				},
+			},
+			"required":             []string{"span"},
+			"additionalProperties": false,
+		},
+		Call: m.readTraceTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "FindSpans",
+		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
+			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call. Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
+			"Matching is a substring test on span name, full test identity/ancestor path, or service hostname. Rows include bounded breadcrumbs; matching uses the full text. Empty query matches all. Only the newest limit matches are returned; offset skips that many newest matches after filtering, and the result gives an exact next-page call. Status filtering is navigation, never proof of error causality.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Substring of span name, full test identity/ancestor path, or service hostname. Empty matches every span.",
+					"default":     "",
+				},
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Restrict the search to this span's subtree (hex span ID). Empty searches the whole session.",
+				},
+				"status": map[string]any{
+					"type": "string", "enum": []string{"", "ERROR", "FAIL", "failed", "run", "ok"}, "default": "",
+					"description": "Filter by displayed span status; failed includes ERROR and FAIL. Does not establish causality or classify a span as a test.",
+				},
+				"offset": map[string]any{
+					"type": "integer", "minimum": 0, "default": 0,
+					"description": "Matching spans to skip from newest after query/status filtering. Use the returned next-page call; ordering is fixed for historical traces, live results may grow.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Maximum matches to return; the newest are kept (also bounded by a byte budget).",
+					"minimum":     1,
+					"default":     findSpansDefaultLimit,
 				},
 			},
 			"required":             []string{},
 			"additionalProperties": false,
 		},
-		Call: m.readTraceTool(srv),
+		Call: m.findSpansTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "InspectCall",
+		Description: "Inspect the recipe (dagql call ID) behind a call in this session or a trace imported with LoadTrace: the whole chain of API calls that produced a value, rebuilt from telemetry." + "\n" +
+			"Pass the call digest (xxh3:...) named by an engine error, a FindCalls line, or ReadTrace's inspect view -- or the span ID of the call. Views:" + "\n" +
+			"- chain (default): every selector on the receiver chain, as the TUI renders it." + "\n" +
+			"- tree: the chain with ID-valued arguments expanded inline (each withDirectory/withTools/... argument hangs a whole other chain), numbered, with digests." + "\n" +
+			"- stats: distinct calls, chain depth, module provenance, and per-call expansion counts -- how many times a loader that walks the recipe without deduplicating would re-execute each call. The view for \"why did this run that call N times?\"." + "\n" +
+			"- find: every call in the recipe whose Type.field name matches `find` (a regexp), with its path, arguments and referrers." + "\n" +
+			"`diff` structurally compares this recipe against another digest's instead: size, where the chains diverge, calls only on either side. Use it for \"why did this miss the cache / how do these two differ\"." + "\n" +
+			"A frame the client never received is reported with the frame that referenced it.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"digest": map[string]any{
+					"type":        "string",
+					"description": "Call digest to inspect, e.g. \"xxh3:9d2f...\".",
+				},
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Alternatively, the span ID (hex) of the call to inspect.",
+				},
+				"view": map[string]any{
+					"type":        "string",
+					"enum":        []string{callViewChain, callViewTree, callViewStats, callViewFind},
+					"description": "Which view to render.",
+					"default":     callViewChain,
+				},
+				"find": map[string]any{
+					"type":        "string",
+					"description": "find view only: regexp matched against each call's Type.field name (e.g. \"withExec\" or \"Container\\\\.from\").",
+				},
+				"depth": map[string]any{
+					"type":        "integer",
+					"description": "tree view only: recurse at most this many levels into ID arguments (0 = unlimited).",
+					"minimum":     0,
+					"default":     0,
+				},
+				"diff": map[string]any{
+					"type":        "string",
+					"description": "Digest of another call to structurally diff this one against (ignores `view`).",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Call: m.inspectCallTool(srv),
+	})
+	allTools.Add(LLMTool{
+		Name: "FindCalls",
+		Description: "Content-search every dagql call in this session and traces imported with LoadTrace: one line per match -- \"<digest>  field(args) -> Type  recv=<receiver digest>\" -- sorted by digest." + "\n" +
+			"This is how you find which call references a path, image, module or value, and how you walk a chain: grep for the digest another line names as its receiver or argument, then InspectCall it." + "\n" +
+			"`query` searches the full rendered line before truncation. Displayed strings are capped at 200 characters, with excerpts around deep matches and explicit omitted-character counts. Lines are capped at 4 KiB and responses at 32 KiB; narrow the query if matches are omitted.",
+		ReadOnly: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Regexp matched against each full call line before display truncation.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Maximum matches to return.",
+					"minimum":     1,
+					"default":     findCallsDefaultLimit,
+				},
+			},
+			"required":             []string{"query"},
+			"additionalProperties": false,
+		},
+		Call: m.findCallsTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "ListServices",
@@ -2740,7 +2939,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call: m.listServicesTool(srv),
 	})
 	allTools.Add(LLMTool{
-		Name:        "Timeout",
+		Name:        timeoutToolName,
 		Description: "Run one currently exposed tool with a timeout.",
 		Schema: map[string]any{
 			"type": "object",
@@ -2765,6 +2964,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call: m.timeoutTool(allTools),
 	})
 }
+
+// timeoutToolName is the builtin that runs another tool under a deadline. The
+// planner schedules a Timeout call as the tool it wraps (planningTool).
+const timeoutToolName = "Timeout"
 
 // timeoutTool runs one of the currently exposed tools under a deadline. The
 // nested call is dispatched the way the loop dispatches every tool call, so it
@@ -2807,7 +3010,7 @@ func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
 		// and through MCP.Call, for the tool attributes, workspace binding and
 		// result bounding that path applies.
 		call := &LLMToolCall{CallID: toolName, Name: toolName, Arguments: JSON(encodedArgs)}
-		displays := newDisplayPhases(ctx, "")
+		displays := newDisplayPhases(ctx, "", allTools.Order)
 		displays.EmitToolCall(0, call.CallID, toolName, string(encodedArgs))
 		res := m.CallContent(toolCallCtx(ctx, displays.toolCalls, call.CallID), allTools.Order, call)
 		endToolCallDisplay(displays.toolCalls, call.CallID, res.Errored, res.ContentText())
@@ -2903,31 +3106,36 @@ func (m *MCP) listServicesTool(srv *dagql.Server) LLMToolFunc {
 
 func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span   string
-		Offset int    `default:"0"`
-		Limit  int    `default:"100"`
-		Grep   string `default:""`
+		Span     string
+		Offset   int    `default:"0"`
+		Limit    int    `default:"100"`
+		Grep     string `default:""`
+		FromLine int    `default:"0"`
+		Context  int    `default:"0"`
+		Scope    string `default:"causal"`
 	}) (any, error) {
+		if args.Scope != "causal" && args.Scope != "descendants" && args.Scope != "own" {
+			return nil, fmt.Errorf("invalid scope %q: want own, descendants or causal", args.Scope)
+		}
+		opts := logPageOpts{args.Scope, args.Grep, args.Offset, args.Limit, args.FromLine, args.Context}
+		if err := validateLogPageOpts(opts); err != nil {
+			return nil, err
+		}
 		spanID := normalizeSpanArg(args.Span)
+		if _, err := trace.SpanIDFromHex(spanID); err != nil {
+			return nil, fmt.Errorf("invalid span ID %q: %w", spanID, err)
+		}
 		// Include service logs: ReadLogs is the deliberate affordance for
 		// reading them (e.g. via span IDs from ListServices).
-		logs, err := m.captureLogs(ctx, spanID, false)
+		logs, err := m.captureLogLines(ctx, spanID, false, false, args.Scope)
 		if err != nil {
 			return nil, fmt.Errorf("failed to capture logs: %w", err)
 		}
-		if len(logs) == 0 {
-			// An empty capture is only an error when the span itself is
-			// unknown: a known span with nothing logged yet is a normal
-			// answer (e.g. tailing a service that hasn't printed).
-			known, err := m.spanKnown(ctx, spanID)
-			if err != nil {
-				slog.Warn("failed to check span existence", "span", spanID, "error", err)
-			} else if !known {
-				return nil, fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
-			}
-			return fmt.Sprintf("(no logs beneath span %s yet)", spanID), nil
+		if len(logs.lines) == 0 {
+			result, err := m.emptyLogsResult(ctx, spanID)
+			return fmt.Sprintf("scope=%s: %s", args.Scope, result), err
 		}
-		return renderReadLogs(spanID, logs, args.Offset, args.Limit, args.Grep)
+		return renderLogPage(spanID, logs.lines, opts)
 	})
 }
 
@@ -2965,145 +3173,196 @@ func isHexID(s string, length int) bool {
 	return true
 }
 
-// spanKnown reports whether the span ID appears in the session's recorded
-// telemetry, so an empty ReadLogs capture can distinguish a quiet span from a
-// mistyped one.
-func (m *MCP) spanKnown(ctx context.Context, spanID string) (bool, error) {
-	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	if !traceID.IsValid() {
-		// no trace to check against; treat the span as plausible
-		return true, nil
-	}
-	root, err := CurrentQuery(ctx)
+// emptyLogsResult distinguishes quiet live telemetry from a fixed historical
+// capture. Failure to inspect the store must not masquerade as "no logs".
+func (m *MCP) emptyLogsResult(ctx context.Context, spanID string) (string, error) {
+	store, err := traceReportClientDB(ctx)
 	if err != nil {
-		return false, err
+		return "", fmt.Errorf("check log availability for span %s: %w", spanID, err)
 	}
-	mainMeta, err := root.MainClientCallerMetadata(ctx)
-	if err != nil {
-		return false, fmt.Errorf("get main client caller metadata: %w", err)
-	}
-	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
-	if err != nil {
-		return false, err
-	}
-	defer q.Close()
-	if _, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
-		TraceID: traceID.String(),
-		SpanID:  spanID,
-	}); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
+	defer store.Close()
+	return emptyLogsResultIn(store, spanID)
 }
 
-// renderReadLogs shapes captured log lines into a ReadLogs result: trims the
-// last offset lines, applies the grep filter, numbers the lines, and caps the
-// output. The error and empty cases carry the numbers an agent needs to
-// recover — how many lines exist, how many were searched.
-func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern string) (string, error) {
-	if offset < 0 {
-		offset = 0
+func emptyLogsResultIn(store *clientdb.DB, spanID string) (string, error) {
+	selected := inspectionStoreForSpan(store, spanID)
+	if !selected.HasSpan(spanID) {
+		return "", fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
 	}
-	// Trim the last offset lines
-	if offset >= len(logs) {
-		return "", fmt.Errorf("offset %d skips all %d available lines; retry with a smaller offset (0 reads the tail)", offset, len(logs))
+	if selected != store {
+		return fmt.Sprintf("(no logs recorded beneath span %s in this historical trace)", spanID), nil
 	}
-	logs = logs[:len(logs)-offset]
-
-	// Apply grep filter if specified
-	if grepPattern != "" {
-		re, err := regexp.Compile(grepPattern)
-		if err != nil {
-			return "", fmt.Errorf("invalid grep pattern %q: %w", grepPattern, err)
-		}
-		var filteredLogs []string
-		for i, line := range logs {
-			if re.MatchString(line) {
-				filteredLogs = append(filteredLogs, fmt.Sprintf("%6d→%s", i+1, line))
-			}
-		}
-		if len(filteredLogs) == 0 {
-			return fmt.Sprintf("(no matches for %q in the %d lines beneath span %s)", grepPattern, len(logs), spanID), nil
-		}
-		logs = filteredLogs
-	} else {
-		for i, line := range logs {
-			logs[i] = fmt.Sprintf("%6d→%s", i+1, line)
-		}
-	}
-
-	// Apply line limit if specified
-	logs = limitLines(spanID, logs, limit, llmLogsMaxLineLen)
-
-	return strings.Join(logs, "\n"), nil
+	return fmt.Sprintf("(no logs beneath span %s yet)", spanID), nil
 }
 
-// readTraceTool renders the pretty trace report for a span, check or test --
-// in the same shape a tool call's own result is rendered as (the target's own
-// output, then the report), so what the reader gets back is in the vocabulary
-// it already sees, just scoped to the target it asked about.
+// readTraceTool reads the trace at a span in the requested
+// view. The report view renders the pretty trace report in the same shape a
+// tool call's own result is rendered as (the target's own output, then the
+// report), so what the reader gets back is in the vocabulary it already
+// sees, just scoped to the target it asked about. The inspect and timings
+// views are the TUI console's span views, answered from the engine.
 func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span  string `default:""`
-		Check string `default:""`
-		Test  string `default:""`
+		Span        string
+		View        string `default:"report"`
+		MinDuration string `default:""`
+		Limit       int    `default:"200"`
 	}) (any, error) {
-		target := traceTarget{
-			Span:  args.Span,
-			Check: args.Check,
-			Test:  args.Test,
+		var minDuration time.Duration
+		if args.MinDuration != "" {
+			var err error
+			minDuration, err = time.ParseDuration(args.MinDuration)
+			if err != nil || minDuration < 0 {
+				return nil, fmt.Errorf("invalid minDuration %q: want a non-negative Go duration such as \"10ms\"", args.MinDuration)
+			}
 		}
-		spanID, err := resolveTraceTarget(ctx, target)
+		switch args.View {
+		case traceViewReport, traceViewInspect, traceViewTimings:
+		default:
+			return nil, fmt.Errorf("unknown view %q: want %s, %s or %s", args.View, traceViewReport, traceViewInspect, traceViewTimings)
+		}
+		spanID, err := resolveTraceTarget(ctx, args.Span)
+		if err != nil {
+			return nil, fmt.Errorf("resolve trace target: %w", err)
+		}
+		switch args.View {
+		case traceViewInspect:
+			return inspectSpan(ctx, spanID)
+		case traceViewTimings:
+			return spanTimings(ctx, spanID, minDuration, args.Limit)
+		}
+		result, err := m.inspectSpanResult(ctx, spanID, readTraceReportOpts())
 		if err != nil {
 			return nil, err
 		}
-		if result := m.spanResult(ctx, spanID, readTraceReportOpts(target)); result != "" {
+		if result != "" {
 			return result, nil
 		}
 		// A subtree can legitimately render to nothing (dagui hides internal,
 		// passthrough and encapsulated spans); say so rather than returning an
-		// empty result, and point at the path that does show raw output.
-		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs)",
-			spanID, spanID), nil
+		// empty result, and point at the paths that do show something.
+		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs, or ReadTrace(span: %s, view: \"inspect\") to see the span itself)",
+			spanID, spanID, spanID), nil
 	})
 }
 
-// readTraceReportOpts picks the render options that suit the KIND of target
-// ReadTrace was given.
-//
-// A span target keeps the tool-call options: the caller named that subtree, so
-// it wants that subtree unwrapped.
-//
-// A test or check target does not. ExpandWrappers' unwrap ("descend through
-// wrapper spans to the first real work, then stop") is tuned for a tool-call
-// scope, where the scope root is a roll-up boundary that would otherwise
-// swallow the tool's output. A test or check span is not that: it is the head
-// of a roll-up the report already knows how to summarise, and force-expanding
-// it enumerates every dagql field call beneath -- measured on
-// ReadTrace(test: "TestToolLogsExcludeService") as hundreds of rows of
-// LLMMessage.role / LLMContentBlock.text micro-spans, which are the test's own
-// API traffic, not conversation. Left to the normal IsExpanded rules, those
-// collapse and the TESTS / CHECKS roll-ups (with their failing-case logs) are
-// what the reader gets -- the CLI's end-of-run report for that target. The
-// target's own logs still reach the reader: spanResult prints them as OUTPUT --
-// but only the records on the target span ITSELF (OwnOutputOnly). The depth-1
-// rule that OUTPUT normally uses exists because a module function's print lands
-// one hop below the tool-call span; a named target has no such indirection, and
-// its direct children ARE the nested work -- for a suite, its cases, whose logs
-// belong to the TESTS roll-up rather than hoisted into (and duplicated out of)
-// OUTPUT.
-func readTraceReportOpts(target traceTarget) traceReportOpts {
+// findSpansTool searches the session's trace by span name; see findSpans.
+func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Query  string `default:""`
+		Span   string `default:""`
+		Limit  int    `default:"100"`
+		Status string `default:""`
+		Offset int    `default:"0"`
+	}) (any, error) {
+		root := ""
+		if strings.TrimSpace(args.Span) != "" {
+			root = normalizeSpanArg(args.Span)
+			if !isHexID(root, 16) {
+				return nil, fmt.Errorf("invalid span ID %q: want a hex span ID", args.Span)
+			}
+		}
+		if args.Limit <= 0 {
+			args.Limit = findSpansDefaultLimit
+		}
+		return findSpans(ctx, args.Query, root, args.Status, args.Limit, args.Offset)
+	})
+}
+
+// inspectCallTool rebuilds and renders the recipe behind a call digest or a
+// call's span; see inspectCall.
+func (m *MCP) inspectCallTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Digest string `default:""`
+		Span   string `default:""`
+		View   string `default:"chain"`
+		Find   string `default:""`
+		Depth  int    `default:"0"`
+		Diff   string `default:""`
+	}) (any, error) {
+		opts := callInspectOpts{View: args.View, Depth: args.Depth, Diff: normalizeDigestArg(args.Diff)}
+		switch args.View {
+		case callViewChain, callViewTree, callViewStats, callViewFind:
+		default:
+			return nil, fmt.Errorf("unknown view %q: want %s, %s, %s or %s", args.View, callViewChain, callViewTree, callViewStats, callViewFind)
+		}
+		if args.Find != "" {
+			re, err := regexp.Compile(args.Find)
+			if err != nil {
+				return nil, fmt.Errorf("invalid find pattern %q: %w", args.Find, err)
+			}
+			opts.Find = re
+			if args.View == callViewChain {
+				// A pattern implies the view that uses it.
+				opts.View = callViewFind
+			}
+		}
+		digest := normalizeDigestArg(args.Digest)
+		span := strings.TrimSpace(args.Span)
+		switch {
+		case digest != "" && span != "":
+			return nil, fmt.Errorf("pass either digest or span, not both")
+		case digest == "" && span == "":
+			return nil, fmt.Errorf("pass a call digest (xxh3:...) or the span ID of a call")
+		case span != "":
+			span = normalizeSpanArg(span)
+			if !isHexID(span, 16) {
+				return nil, fmt.Errorf("invalid span ID %q: want a hex span ID", args.Span)
+			}
+			clientDB, err := traceReportClientDB(ctx)
+			if err != nil {
+				return nil, err
+			}
+			defer clientDB.Close()
+			read := inspectionStoreForSpan(clientDB, span)
+			digest, err = spanCallDigest(ctx, read, span)
+			if err != nil {
+				return nil, err
+			}
+			return inspectCallIn(ctx, clientDB, digest, opts)
+		}
+		return inspectCall(ctx, digest, opts)
+	})
+}
+
+// normalizeDigestArg accepts the forms a call digest gets pasted in: bare,
+// or with the "digest=" / "load " prefixes engine errors and tool output
+// wrap it in.
+func normalizeDigestArg(arg string) string {
+	arg = strings.TrimSpace(arg)
+	for _, prefix := range []string{"digest=", "digest:", "load "} {
+		arg = strings.TrimPrefix(arg, prefix)
+	}
+	return strings.TrimSpace(arg)
+}
+
+// findCallsTool content-searches the session's calls; see findCalls.
+func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Query string
+		Limit int `default:"200"`
+	}) (any, error) {
+		re, err := regexp.Compile(args.Query)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query %q: %w", args.Query, err)
+		}
+		if args.Limit <= 0 {
+			args.Limit = findCallsDefaultLimit
+		}
+		return findCalls(ctx, re, args.Limit)
+	})
+}
+
+// readTraceReportOpts keeps the requested subtree visible, with only the
+// target span's own logs in OUTPUT. Descendant logs belong in the report's
+// roll-ups rather than being duplicated in OUTPUT.
+func readTraceReportOpts() traceReportOpts {
 	opts := toolCallReportOpts()
 	opts.OwnOutputOnly = true
+	opts.FocusFailures = true
 	// ReadTrace is the "show me the shape of what ran" tool: it keeps the span
 	// tree the tool-call result drops.
 	opts.HideSpanTree = false
-	if target.Span == "" {
-		opts.ExpandWrappers = false
-	}
 	return opts
 }
 
@@ -3168,19 +3427,6 @@ func toolStructuredResponse(val any) (string, error) {
 		return "", fmt.Errorf("failed to encode response %T: %w", val, err)
 	}
 	return str.String(), nil
-}
-
-func limitLines(spanID string, logs []string, limit, maxLineLen int) []string {
-	if limit > 0 && len(logs) > limit {
-		snipped := fmt.Sprintf("... %d lines omitted (use ReadLogs(span: %s) to read more) ...", len(logs)-limit, spanID)
-		logs = append([]string{snipped}, logs[len(logs)-limit:]...)
-	}
-	for i, line := range logs {
-		if len(line) > maxLineLen {
-			logs[i] = line[:maxLineLen] + fmt.Sprintf("[... %d chars truncated]", len(line)-maxLineLen)
-		}
-	}
-	return logs
 }
 
 // limitIndirectLines abridges a captured log stream for a tool result: lines

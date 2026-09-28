@@ -2248,9 +2248,11 @@ type Mod interface {
 	// Source returns the ModuleSource for this module
 	GetSource() *ModuleSource
 
-	// ResultCallModule returns the native module provenance attached to calls
-	// provided by this module.
-	ResultCallModule(context.Context) (*dagql.ResultCallModule, error)
+	// FieldModule returns the module provenance to install on fields provided
+	// by this module: its static description, and the provider that supplies
+	// its result reference whenever a call to such a field is prepared. Both
+	// are nil for core.
+	FieldModule() (*dagql.ResultCallModule, dagql.FieldModuleProvider, error)
 
 	// ModuleResult returns the wrapped module result for user modules, or the
 	// zero value for non-module implementations like core.
@@ -2331,25 +2333,13 @@ func (mod *userMod) GetSource() *ModuleSource {
 	return self.GetSource()
 }
 
-func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModule, error) {
+func (mod *userMod) FieldModule() (*dagql.ResultCallModule, dagql.FieldModuleProvider, error) {
 	self := mod.self()
 	if self == nil {
-		return nil, fmt.Errorf("module provenance: missing module result wrapper")
+		return nil, nil, fmt.Errorf("module provenance: missing module result wrapper")
 	}
 	if !self.Source.Valid {
-		return nil, fmt.Errorf("module provenance: module %q has no source", self.Name())
-	}
-
-	scoped, err := ImplementationScopedModule(ctx, mod.res)
-	if err != nil {
-		return nil, fmt.Errorf("module provenance: implementation-scoped module %q: %w", self.Name(), err)
-	}
-	scopedID, err := scoped.ID()
-	if err != nil {
-		return nil, fmt.Errorf("module provenance: module %q handle ID: %w", self.Name(), err)
-	}
-	if scopedID == nil || scopedID.EngineResultID() == 0 {
-		return nil, fmt.Errorf("module provenance: implementation-scoped module %q is not attached", self.Name())
+		return nil, nil, fmt.Errorf("module provenance: module %q has no source", self.Name())
 	}
 
 	src := self.Source.Value.Self()
@@ -2368,15 +2358,53 @@ func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModu
 		pin = src.Git.Commit
 	case ModuleSourceKindDir:
 	default:
-		return nil, fmt.Errorf("module provenance: unexpected module source kind %q", src.Kind)
+		return nil, nil, fmt.Errorf("module provenance: unexpected module source kind %q", src.Kind)
 	}
 
-	return &dagql.ResultCallModule{
-		ResultRef: &dagql.ResultCallRef{ResultID: scopedID.EngineResultID()},
-		Name:      self.Name(),
-		Ref:       ref,
-		Pin:       pin,
-	}, nil
+	desc := dagql.ResultCallModule{
+		Name: self.Name(),
+		Ref:  ref,
+		Pin:  pin,
+	}
+	res := mod.res
+	// The installed schema can outlive the session that installed it, so it
+	// must not hold that session's implementation-scoped result. The provider
+	// captures only the operational module, which every holder of the schema
+	// (cached module objects, tool bindings, the dependency lists of dependent
+	// modules) owns explicitly, and scopes it in the session making each call:
+	// the scoped row is then owned by that session and by the resulting call.
+	provider := func(ctx context.Context, srv *dagql.Server) (*dagql.ResultCallModule, error) {
+		var scoped dagql.ObjectResult[*Module]
+		if err := srv.Select(ctx, res, &scoped, dagql.Selector{Field: "_implementationScoped"}); err != nil {
+			return nil, fmt.Errorf("module provenance: implementation-scoped module %q: %w", desc.Name, err)
+		}
+		scopedID, err := scoped.ID()
+		if err != nil {
+			return nil, fmt.Errorf("module provenance: module %q handle ID: %w", desc.Name, err)
+		}
+		if scopedID == nil || scopedID.EngineResultID() == 0 {
+			return nil, fmt.Errorf("module provenance: implementation-scoped module %q is not attached", desc.Name)
+		}
+		module := desc
+		module.ResultRef = &dagql.ResultCallRef{ResultID: scopedID.EngineResultID()}
+		return &module, nil
+	}
+	return &desc, provider, nil
+}
+
+// ModuleObjectTypeModule returns the operational module captured by a module
+// object class: the module whose schema installed objType and whose result
+// the class's resolvers and provider use. It reports false for classes that
+// are not module object classes (core types) or that carry no attached module.
+func ModuleObjectTypeModule(objType dagql.ObjectType) (dagql.ObjectResult[*Module], bool) {
+	if objType == nil {
+		return dagql.ObjectResult[*Module]{}, false
+	}
+	obj, ok := objType.Typed().(*ModuleObject)
+	if !ok || obj == nil || obj.Module.Self() == nil {
+		return dagql.ObjectResult[*Module]{}, false
+	}
+	return obj.Module, true
 }
 
 func (mod *userMod) ModuleResult() dagql.ObjectResult[*Module] {

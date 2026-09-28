@@ -208,6 +208,22 @@ func (s *workspaceSchema) checkpointClientLocal(
 	if int64(len(bundle)) != metadata.BundleBytes {
 		return inst, fmt.Errorf("workspace snapshot bundle is %d bytes, capture reported %d", len(bundle), metadata.BundleBytes)
 	}
+	// Capturing the owning client's checkout also authorizes reconstructing its
+	// SSH origin. Reuse push's lazy host key discovery when no agent is running;
+	// ordinary Git reads must not start agents or unlock the owner's keys.
+	// Composition binds the prepared agent as a session socket scoped to its SSH
+	// identities, and the snapshot's recipe references it for the rest of the
+	// session, just as it would an agent from the owner's SSH_AUTH_SOCK.
+	if remote, err := gitutil.ParseURL(metadata.RemoteUrl); err == nil && remote.Scheme == gitutil.SSHProtocol && caller.SSHAuthSocketPath == "" {
+		socketPath, err := bk.PrepareGitSSHAuth(clientCtx, metadata.RemoteUrl)
+		if err != nil {
+			return inst, fmt.Errorf("prepare workspace snapshot SSH authentication: %w", err)
+		}
+		snapshotCaller := *caller
+		snapshotCaller.SSHAuthSocketPath = socketPath
+		clientCtx = engine.ContextWithClientMetadata(clientCtx, &snapshotCaller)
+	}
+
 	workspaceEnv, _ := selectedWorkspaceEnv(clientCtx, ws)
 	inst, err = s.checkpointCapturedGitComposition(clientCtx, srv, ws, metadata, bundle, workspaceEnv)
 	if err != nil {
@@ -300,7 +316,7 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	prerequisiteRef := metadata.RemoteRef
 	// A local filesystem remote is available only to the capturing client,
 	// just like a repository with no remote at all.
-	_, remoteErr := gitutil.ParseURL(metadata.RemoteUrl)
+	remote, remoteErr := gitutil.ParseURL(metadata.RemoteUrl)
 	if repo.Self() != nil {
 		// The caller proved this immutable local repository owns the captured
 		// HEAD. Import still isolates and validates the exact prerequisites;
@@ -323,11 +339,18 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 		if err := srv.Select(ctx, gitDir, &repo, dagql.Selector{Field: "asGit"}); err != nil {
 			return inst, err
 		}
-	} else if err := srv.Select(ctx, srv.Root(), &repo, dagql.Selector{
-		Field: "git",
-		Args:  []dagql.NamedInput{{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)}},
-	}); err != nil {
-		return inst, fmt.Errorf("load workspace snapshot remote: %w", err)
+	} else {
+		args := []dagql.NamedInput{{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)}}
+		if remote.Scheme == gitutil.SSHProtocol {
+			sshArgs, err := checkpointSSHAuthArgs(ctx, srv)
+			if err != nil {
+				return inst, err
+			}
+			args = append(args, sshArgs...)
+		}
+		if err := srv.Select(ctx, srv.Root(), &repo, dagql.Selector{Field: "git", Args: args}); err != nil {
+			return inst, fmt.Errorf("load workspace snapshot remote: %w", err)
+		}
 	}
 
 	if len(bundleBytes) > 0 {
@@ -446,6 +469,35 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 
 	nextPhase("checkpoint compose metadata")
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, captured, workspaceEnv)
+}
+
+func checkpointSSHAuthArgs(ctx context.Context, srv *dagql.Server) ([]dagql.NamedInput, error) {
+	caller, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if caller.SSHAuthSocketPath == "" {
+		return nil, nil
+	}
+
+	// Pass a scoped socket explicitly so a previously cached, unauthenticated
+	// Query.git cannot hide the prepared agent, and this capture does not
+	// authenticate unrelated reads through that same per-client cache entry.
+	var socket dagql.ObjectResult[*core.Socket]
+	if err := srv.Select(ctx, srv.Root(), &socket,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{Field: "_sshAuthSocket"},
+	); err != nil {
+		return nil, fmt.Errorf("scope workspace snapshot SSH authentication: %w", err)
+	}
+	socketID, err := socket.ID()
+	if err != nil {
+		return nil, err
+	}
+	return []dagql.NamedInput{
+		{Name: "sshAuthSocket", Value: dagql.Opt(dagql.NewID[*core.Socket](socketID))},
+		{Name: "sshAuthSocketScoped", Value: dagql.NewBoolean(true)},
+	}, nil
 }
 
 func checkpointWorkspaceMetadataComposition(

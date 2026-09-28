@@ -277,6 +277,7 @@ func (f *settlementFixture) requireSettled(t *testing.T, firstBase, secondBase i
 func TestOfferSettlementReplacement(t *testing.T) {
 	t.Run("replacement during the winning acquisition is retired", func(t *testing.T) {
 		f := newSettlementFixture(t)
+		attemptReleased := armLazyAttemptReleased(f.cache)
 		firstBase, secondBase := f.counts()
 		done := f.acquire(nil, nil)
 		waitWithinT(t, f.entered, done)
@@ -295,12 +296,14 @@ func TestOfferSettlementReplacement(t *testing.T) {
 		require.Equal(t, int64(1), holds, "the admitted acquisition keeps its own hold")
 		f.resume()
 		require.NoError(t, within(t, done))
+		waitLazyAttemptReleased(t, attemptReleased)
 		// The winner's owner ended with its acquisition; the replacement
 		// ended at settlement.
 		f.requireSettled(t, firstBase-1, secondBase)
 	})
 	t.Run("acceptance after commit is already complete", func(t *testing.T) {
 		f := newSettlementFixture(t)
+		attemptReleased := armLazyAttemptReleased(f.cache)
 		firstBase, secondBase := f.counts()
 		finishBody, committed := make(chan struct{}), make(chan struct{})
 		releaseBody := sync.OnceFunc(func() { close(finishBody) })
@@ -327,6 +330,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 		require.Equal(t, 1, offerCount, "the older slot waits for settlement")
 		releaseBody()
 		require.NoError(t, within(t, done))
+		waitLazyAttemptReleased(t, attemptReleased)
 		f.requireSettled(t, firstBase-1, secondBase)
 	})
 	for _, backref := range []bool{false, true} {
@@ -336,6 +340,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			f := newSettlementFixture(t)
+			attemptReleased := armLazyAttemptReleased(f.cache)
 			if backref {
 				transferTestDependency(f.cache, f.ctx, f.first, f.receiver)
 			}
@@ -343,6 +348,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 			f.resume()
 			f.manager.fail.Store(true)
 			require.ErrorIs(t, within(t, f.acquire(nil, nil)), errLifetimeSync)
+			waitLazyAttemptReleased(t, attemptReleased)
 			row := f.receiver.cacheSharedResult()
 			key, _ := partAddressKey(f.address)
 			f.cache.egraphMu.RLock()
@@ -367,6 +373,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 			// A later demand retries bookkeeping only; settlement then retires
 			// the slot once.
 			require.NoError(t, f.cache.joinPartInstallation(f.ctx, f.receiver, state.task))
+			waitLazyAttemptReleased(t, attemptReleased)
 			f.requireSettled(t, firstBase-1, secondBase)
 		})
 	}

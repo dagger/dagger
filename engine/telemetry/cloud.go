@@ -2,22 +2,15 @@ package telemetry
 
 import (
 	"context"
-	"fmt"
-	"maps"
+	"errors"
 	"net/url"
-	"os"
 	"sync"
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cloud/auth"
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"golang.org/x/oauth2"
 )
 
 var (
@@ -28,333 +21,93 @@ var (
 	configuredCloudExportersOnce   sync.Once
 )
 
+// ConfiguredCloudExporters returns this process's Dagger Cloud exporters,
+// built once by NewCloudExporters from the process's Cloud credential:
+// DAGGER_CLOUD_TOKEN, or the `dagger login` token with its current
+// organization, refreshed and persisted as it expires.
 func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 	configuredCloudExportersOnce.Do(func() {
-		var (
-			authHeader string
-			token      *oauth2.Token
-			org        *auth.Org
-			err        error
-		)
-
-		// Try token auth first
-		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
-			authHeader, err = auth.GetDaggerCloudAuth(ctx, cloudToken)
-			if err != nil {
-				slog.Warn("failed to parse DAGGER_CLOUD_TOKEN", "error", err)
-				return
-			}
+		cloudAuth, status := cloudEmitAuth(ctx)
+		if status.Err != nil {
+			slog.Warn("cloud telemetry disabled", "error", status.Err)
+			return
 		}
-
-		// Try OAuth next
-		if authHeader == "" {
-			var err error
-			token, err = auth.Token(ctx)
-			if err != nil {
-				return
-			}
-			authHeader = token.Type() + " " + token.AccessToken
-			org, err = auth.CurrentOrg()
-			if err != nil {
-				return
-			}
-		}
-
-		// No auth provided, abort
-		if authHeader == "" {
+		if !status.Emitting {
 			return
 		}
 
-		cloudURL := os.Getenv("DAGGER_CLOUD_URL")
-		if cloudURL == "" {
-			cloudURL = "https://api.dagger.cloud"
-		}
-
-		cloudEndpoint, err := url.Parse(cloudURL)
+		spans, logs, metrics, err := NewCloudExporters(ctx, cloudAuth, BoundedTokenRefresh(auth.Token), "")
 		if err != nil {
-			slog.Warn("bad cloud URL", "error", err)
+			slog.Warn("failed to configure cloud exporters", "error", err)
 			return
 		}
-
-		tracesURL := cloudEndpoint.JoinPath("v1", "traces")
-		logsURL := cloudEndpoint.JoinPath("v1", "logs")
-		metricsURL := cloudEndpoint.JoinPath("v1", "metrics")
-		spanSequencer := newExportSequencer()
-		logSequencer := newExportSequencer()
-		metricSequencer := newExportSequencer()
-
-		headers := map[string]string{
-			"Authorization": authHeader,
-		}
-		if org != nil {
-			headers["X-Dagger-Org"] = org.ID
-		}
-
-		configuredCloudSpanExporter, err = otlptracehttp.New(ctx,
-			otlptracehttp.WithEndpointURL(tracesURL.String()),
-			otlptracehttp.WithHeaders(headers),
-			otlptracehttp.WithHTTPClient(spanSequencer.httpClient()))
-		if err != nil {
-			slog.Warn("failed to configure cloud tracing", "error", err)
-			return
-		}
-
-		configuredCloudLogsExporter, err = otlploghttp.New(ctx,
-			otlploghttp.WithEndpointURL(logsURL.String()),
-			otlploghttp.WithHeaders(headers),
-			otlploghttp.WithHTTPClient(logSequencer.httpClient()))
-		if err != nil {
-			slog.Warn("failed to configure cloud tracing", "error", err)
-			return
-		}
-
-		configuredCloudMetricsExporter, err = otlpmetrichttp.New(ctx,
-			otlpmetrichttp.WithEndpointURL(metricsURL.String()),
-			otlpmetrichttp.WithHeaders(headers),
-			otlpmetrichttp.WithHTTPClient(metricSequencer.httpClient()))
-		if err != nil {
-			slog.Warn("failed to configure cloud metrics", "error", err)
-			return
-		}
-
-		// If we're using token based auth, we need to wrap the exporter to handle
-		// token expiration
-		if token != nil {
-			configuredCloudSpanExporter = &refreshingSpanExporter{
-				Factory: func(token *oauth2.Token) (sdktrace.SpanExporter, error) {
-					authHeader := token.Type() + " " + token.AccessToken
-					newHeaders := map[string]string{}
-					maps.Copy(newHeaders, headers)
-					newHeaders["Authorization"] = authHeader
-					return otlptracehttp.New(ctx,
-						otlptracehttp.WithEndpointURL(tracesURL.String()),
-						otlptracehttp.WithHeaders(newHeaders),
-						otlptracehttp.WithHTTPClient(spanSequencer.httpClient()))
-				},
-				token: token,
-				exp:   configuredCloudSpanExporter,
-			}
-			configuredCloudLogsExporter = &refreshingLogExporter{
-				Factory: func(token *oauth2.Token) (sdklog.Exporter, error) {
-					authHeader := token.Type() + " " + token.AccessToken
-					newHeaders := map[string]string{}
-					maps.Copy(newHeaders, headers)
-					newHeaders["Authorization"] = authHeader
-					return otlploghttp.New(ctx,
-						otlploghttp.WithEndpointURL(logsURL.String()),
-						otlploghttp.WithHeaders(newHeaders),
-						otlploghttp.WithHTTPClient(logSequencer.httpClient()))
-				},
-				token: token,
-				exp:   configuredCloudLogsExporter,
-			}
-			configuredCloudMetricsExporter = &refreshingMetricExporter{
-				Factory: func(token *oauth2.Token) (sdkmetric.Exporter, error) {
-					authHeader := token.Type() + " " + token.AccessToken
-					newHeaders := map[string]string{}
-					maps.Copy(newHeaders, headers)
-					newHeaders["Authorization"] = authHeader
-					return otlpmetrichttp.New(ctx,
-						otlpmetrichttp.WithEndpointURL(metricsURL.String()),
-						otlpmetrichttp.WithHeaders(newHeaders),
-						otlpmetrichttp.WithHTTPClient(metricSequencer.httpClient()))
-				},
-				token: token,
-				exp:   configuredCloudMetricsExporter,
-			}
-		}
-
-		configuredCloudSpanExporter = &sequencedSpanExporter{
-			sequencer: spanSequencer,
-			exporter:  configuredCloudSpanExporter,
-		}
-		configuredCloudLogsExporter = &sequencedLogExporter{
-			sequencer: logSequencer,
-			exporter:  configuredCloudLogsExporter,
-		}
-		configuredCloudMetricsExporter = &sequencedMetricExporter{
-			sequencer: metricSequencer,
-			exporter:  configuredCloudMetricsExporter,
-		}
-
+		configuredCloudSpanExporter = spans
+		configuredCloudLogsExporter = logs
+		configuredCloudMetricsExporter = metrics
 		configuredCloudTelemetry = true
 	})
 
-	return NewSpanHeartbeater(configuredCloudSpanExporter),
+	return configuredCloudSpanExporter,
 		configuredCloudLogsExporter,
 		configuredCloudMetricsExporter,
 		configuredCloudTelemetry
 }
 
-type refreshingSpanExporter struct {
-	Factory func(*oauth2.Token) (sdktrace.SpanExporter, error)
-
-	token *oauth2.Token
-	exp   sdktrace.SpanExporter
-
-	mu sync.Mutex
+// CloudEmitStatus says whether this process sends telemetry to Dagger Cloud,
+// and why. It applies the same rules as ConfiguredCloudExporters.
+type CloudEmitStatus struct {
+	Emitting bool
+	// Credential is the credential in use: "DAGGER_CLOUD_TOKEN" or
+	// "dagger login". Empty when there is none.
+	Credential string
+	// Org is the org the telemetry goes to, when the credential names one.
+	Org string
+	// Err is set when the credential cannot be read, or the Cloud URL is not
+	// valid (ErrInvalidCloudURL).
+	Err error
 }
 
-var _ sdktrace.SpanExporter = (*refreshingSpanExporter)(nil)
+// ErrInvalidCloudURL is the CloudEmitStatus error when DAGGER_CLOUD_URL is not
+// a valid URL.
+var ErrInvalidCloudURL = errors.New("DAGGER_CLOUD_URL is not a valid URL")
 
-func (e *refreshingSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
-	}
-	return e.exp.ExportSpans(ctx, spans)
+// CloudEmitStatusFor returns this process's CloudEmitStatus. It does not ask
+// Dagger Cloud if the credential is valid, but it can refresh an expired login
+// token.
+func CloudEmitStatusFor(ctx context.Context) CloudEmitStatus {
+	_, status := cloudEmitAuth(ctx)
+	return status
 }
 
-func (e *refreshingSpanExporter) Shutdown(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
-	}
-	return e.exp.Shutdown(ctx)
-}
-
-func (e *refreshingSpanExporter) refreshIfNecessary(ctx context.Context) error {
-	if e.token.Valid() {
-		return nil
-	}
-	if err := e.exp.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown old exporter: %w", err)
-	}
-	var err error
-	e.token, err = auth.Token(ctx)
+func cloudEmitAuth(ctx context.Context) (*auth.Cloud, CloudEmitStatus) {
+	var status CloudEmitStatus
+	cloudAuth, err := auth.GetCloudAuth(ctx)
 	if err != nil {
-		return fmt.Errorf("get new token: %w", err)
+		status.Err = err
+		return nil, status
 	}
-	exp, err := e.Factory(e.token)
-	if err != nil {
-		return fmt.Errorf("create new exporter: %w", err)
+	if cloudAuth == nil || cloudAuth.Token == nil {
+		return nil, status
 	}
-	e.exp = exp
-	return nil
-}
-
-type refreshingLogExporter struct {
-	Factory func(*oauth2.Token) (sdklog.Exporter, error)
-
-	token *oauth2.Token
-	exp   sdklog.Exporter
-
-	mu sync.Mutex
-}
-
-var _ sdklog.Exporter = (*refreshingLogExporter)(nil)
-
-func (e *refreshingLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
+	if cloudAuthHasStaticHeader(cloudAuth) {
+		// DAGGER_CLOUD_TOKEN. An engine token names its org; an OIDC token's
+		// org is known only to Dagger Cloud.
+		status.Credential = "DAGGER_CLOUD_TOKEN"
+		if token, ok := auth.ParseDaggerToken(cloudAuth.Token.AccessToken); ok {
+			status.Org = token.OrgName()
+		}
+	} else {
+		status.Credential = "dagger login"
+		if cloudAuth.Org == nil {
+			// A user's login token names no organization by itself.
+			return cloudAuth, status
+		}
+		status.Org = cloudAuth.Org.Name
 	}
-	return e.exp.Export(ctx, logs)
-}
-
-func (e *refreshingLogExporter) Shutdown(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
+	if _, err := url.Parse(ResolveCloudURL("")); err != nil {
+		status.Err = ErrInvalidCloudURL
+		return cloudAuth, status
 	}
-	return e.exp.Shutdown(ctx)
-}
-
-func (e *refreshingLogExporter) ForceFlush(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
-	}
-	return e.exp.ForceFlush(ctx)
-}
-
-func (e *refreshingLogExporter) refreshIfNecessary(ctx context.Context) error {
-	if e.token.Valid() {
-		return nil
-	}
-	if err := e.exp.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown old exporter: %w", err)
-	}
-	var err error
-	e.token, err = auth.Token(ctx)
-	if err != nil {
-		return fmt.Errorf("get new token: %w", err)
-	}
-	exp, err := e.Factory(e.token)
-	if err != nil {
-		return fmt.Errorf("create new exporter: %w", err)
-	}
-	e.exp = exp
-	return nil
-}
-
-type refreshingMetricExporter struct {
-	Factory func(*oauth2.Token) (sdkmetric.Exporter, error)
-
-	token *oauth2.Token
-	exp   sdkmetric.Exporter
-
-	mu sync.Mutex
-}
-
-var _ sdkmetric.Exporter = (*refreshingMetricExporter)(nil)
-
-func (e *refreshingMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
-	return e.exp.Temporality(ik)
-}
-
-func (e *refreshingMetricExporter) Aggregation(ik sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	return e.exp.Aggregation(ik)
-}
-
-func (e *refreshingMetricExporter) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
-	}
-	return e.exp.Export(ctx, metrics)
-}
-
-func (e *refreshingMetricExporter) Shutdown(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
-	}
-	return e.exp.Shutdown(ctx)
-}
-
-func (e *refreshingMetricExporter) ForceFlush(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
-	}
-	return e.exp.ForceFlush(ctx)
-}
-
-func (e *refreshingMetricExporter) refreshIfNecessary(ctx context.Context) error {
-	if e.token.Valid() {
-		return nil
-	}
-	if err := e.exp.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown old exporter: %w", err)
-	}
-	var err error
-	e.token, err = auth.Token(ctx)
-	if err != nil {
-		return fmt.Errorf("get new token: %w", err)
-	}
-	exp, err := e.Factory(e.token)
-	if err != nil {
-		return fmt.Errorf("create new exporter: %w", err)
-	}
-	e.exp = exp
-	return nil
+	status.Emitting = true
+	return cloudAuth, status
 }

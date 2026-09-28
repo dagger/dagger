@@ -334,18 +334,36 @@ func (c *Client) LocalFileExport(
 // IOReaderExport exports the contents of an io.Reader to the caller's local fs as a file
 // TODO: de-dupe this with the above method to extent possible
 func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath string, destMode os.FileMode) (rerr error) {
+	return c.ioReaderExport(ctx, r, engine.LocalExportOpts{
+		Path:             destPath,
+		IsFileStream:     true,
+		FileOriginalName: filepath.Base(destPath),
+		FileMode:         destMode,
+	})
+}
+
+// ReplaceCallerHostFile replaces a file on the caller's host with data, by a
+// temporary file renamed into place, so concurrent readers and writers of the
+// file never see a partial or interleaved one.
+func (c *Client) ReplaceCallerHostFile(ctx context.Context, data []byte, destPath string, destMode os.FileMode) error {
+	return c.ioReaderExport(ctx, bytes.NewReader(data), engine.LocalExportOpts{
+		Path:              destPath,
+		IsFileStream:      true,
+		FileOriginalName:  filepath.Base(destPath),
+		FileMode:          destMode,
+		ReplaceAtomically: true,
+	})
+}
+
+func (c *Client) ioReaderExport(ctx context.Context, r io.Reader, opts engine.LocalExportOpts) (rerr error) {
+	destPath := opts.Path
 	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With("export_path", destPath))
 	slog.DebugContext(ctx, "exporting bytes")
 	defer func() {
 		slog.TraceContext(ctx, "finished exporting bytes", "err", rerr)
 	}()
 
-	ctx = engine.LocalExportOpts{
-		Path:             destPath,
-		IsFileStream:     true,
-		FileOriginalName: filepath.Base(destPath),
-		FileMode:         destMode,
-	}.AppendToOutgoingContext(ctx)
+	ctx = opts.AppendToOutgoingContext(ctx)
 
 	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {

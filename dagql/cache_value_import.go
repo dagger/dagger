@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -364,11 +365,30 @@ func (c *Cache) ImportValues(ctx context.Context, input ValueBundle) ([]Imported
 	for id, owner := range private.offerOwners {
 		c.offerOwners[id] = owner
 	}
+	// Edges and identity are installed without their per-hook facts: each row
+	// is announced below by one complete result fact.
 	for _, root := range bundle.Roots {
-		c.upsertPersistedEdgeLocked(ctx, private.resultsByID[sharedResultID(firstID+uint64(root.Ordinal)-1)], root.ExpiresAtUnix, false)
+		c.upsertPersistedEdgeNoFactLocked(ctx, private.resultsByID[sharedResultID(firstID+uint64(root.Ordinal)-1)], root.ExpiresAtUnix, false)
 	}
-	for _, plan := range plans {
-		c.applyPreparedResultIdentityLocked(ctx, plan.row, plan.row.loadResultCall(), plan.recipe, plan.self, plan.inputs, plan.provenance, plan.recipe)
+	var identities []cachefact.Identity
+	if c.factsEnabled() {
+		identities = make([]cachefact.Identity, len(plans))
+	}
+	for i, plan := range plans {
+		identity, _ := c.applyPreparedResultIdentityLocked(ctx, plan.row, plan.row.loadResultCall(), plan.recipe, plan.self, plan.inputs, plan.provenance, plan.recipe)
+		if identities != nil {
+			identities[i] = identity
+		}
+	}
+	if c.factsEnabled() {
+		// Bundle order is dependencies first.
+		for i, plan := range plans {
+			fact := cachefact.Result{Origin: cachefact.OriginImported, Digests: identities[i].Digests, Terms: []cachefact.Term{factTerm(plan.self, plan.inputs, plan.provenance)}}
+			factResultDescription(plan.row, &fact)
+			fact.Deps = sortedResultIDs(plan.row.deps)
+			c.factRetentionLocked(plan.row.id, &fact)
+			c.announceResultLocked(plan.row, fact)
+		}
 	}
 	// After every identity application: notify each final class the imported
 	// rows now belong to, together with the interval's union and membership

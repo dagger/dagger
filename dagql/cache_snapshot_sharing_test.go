@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -690,6 +691,7 @@ func TestSnapshotSharingReleaseThenExternalFinish(t *testing.T) {
 		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
 		map[string]sharePartState{"fs": {}},
 	)
+	attemptReleased := armLazyAttemptReleased(c)
 	donorRow := donor.cacheSharedResult()
 	c.egraphMu.RLock()
 	donorBefore := donorRow.incomingOwnershipCount
@@ -710,6 +712,7 @@ func TestSnapshotSharingReleaseThenExternalFinish(t *testing.T) {
 	// successor pass follows and takes its own member holds. Wait for it to
 	// drain before comparing the balance.
 	require.Equal(t, 0, barrier.awaitPass(t), "the completion trigger queued an empty successor")
+	waitLazyAttemptReleased(t, attemptReleased)
 	c.egraphMu.RLock()
 	after := donorRow.incomingOwnershipCount
 	c.egraphMu.RUnlock()
@@ -1015,24 +1018,35 @@ func TestSnapshotSharingTypedReceiverFillsOnePartPerPass(t *testing.T) {
 // preparing one inside it would leave the worker waiting for a lock it holds,
 // and every later cache operation waiting for the worker.
 func TestSnapshotSharingSelectsRestoredFrame(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
-	barrier := newSharePassBarrier(c)
-	parent := persistedListTestResult(t, ctx, c, srv, "share-parent", String("parent"))
-	donor, receiver := shareTestPair(t, ctx, c, srv,
-		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
-		map[string]sharePartState{"fs": {}})
-	shareTestUnite(t, ctx, c, "restored-frame", donor, receiver)
-	require.Equal(t, 1, barrier.awaitPass(t), "the live frame shares as usual")
-	require.Equal(t, 0, barrier.awaitPass(t), "and its completion finds nothing left")
+	synctest.Test(t, func(t *testing.T) {
+		ctx, c, srv, _ := shareTestCache(t)
+		barrier := newSharePassBarrier(c)
+		parent := persistedListTestResult(t, ctx, c, srv, "share-parent", String("parent"))
+		donor, receiver := shareTestPair(t, ctx, c, srv,
+			map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+			map[string]sharePartState{"fs": {}})
+		shareTestUnite(t, ctx, c, "restored-frame", donor, receiver)
+		require.Equal(t, 1, barrier.awaitPass(t), "the live frame shares as usual")
+		require.Equal(t, 0, barrier.awaitPass(t), "and its completion finds nothing left")
 
-	row := receiver.cacheSharedResult()
-	restored := row.loadResultCall().clone()
-	restored.Receiver = &ResultCallRef{ResultID: uint64(parent.cacheSharedResult().id)}
-	row.storeResultCall(restored)
-	c.notifySnapshotShareCompletion(ctx, row)
-	require.Equal(t, 0, barrier.awaitPass(t), "the restored frame is resolved and the pass ends")
-	pending, _ := shareTestQueueDepth(c)
-	require.Zero(t, pending, "the graph lock is free again")
+		// A pass can finish before its lazy attempt queues completion work.
+		// Drain setup before replacing the frame so no old pass can satisfy
+		// the restored-frame wait below.
+		synctest.Wait()
+		for range len(barrier.passes) {
+			require.Zero(t, barrier.awaitPass(t), "remaining setup passes have no slots")
+		}
+
+		row := receiver.cacheSharedResult()
+		restored := row.loadResultCall().clone()
+		restored.Receiver = &ResultCallRef{ResultID: uint64(parent.cacheSharedResult().id)}
+		row.storeResultCall(restored)
+		c.notifySnapshotShareCompletion(ctx, row)
+		require.Equal(t, 0, barrier.awaitPass(t), "the restored frame is resolved and the pass ends")
+		synctest.Wait()
+		pending, _ := shareTestQueueDepth(c)
+		require.Zero(t, pending, "the graph lock is free again")
+	})
 }
 
 // A slot runs as the ordinary obtain task of its address, so an ordinary
@@ -1143,6 +1157,7 @@ func TestSnapshotSharingAbortReportsAfterCleanup(t *testing.T) {
 		map[string]sharePartState{"fs": {}},
 	)
 	donorHolds := shareTestHolds(c, donor)
+	attemptReleased := armLazyAttemptReleased(c)
 	releasing, resume := make(chan struct{}), make(chan struct{})
 	unblock := sync.OnceFunc(func() { close(resume) })
 	defer unblock()
@@ -1160,6 +1175,7 @@ func TestSnapshotSharingAbortReportsAfterCleanup(t *testing.T) {
 	require.Greater(t, shareTestHolds(c, donor), donorHolds, "member release waits for the abort's cleanup")
 	unblock()
 	require.Equal(t, 1, barrier.awaitPass(t))
+	waitLazyAttemptReleased(t, attemptReleased)
 	require.False(t, shareTestHasLink(receiver, "fs-snap"))
 	require.Equal(t, manager.pins.Load(), manager.released.Load())
 	require.Equal(t, donorHolds, shareTestHolds(c, donor))
@@ -1183,6 +1199,7 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	c.egraphMu.Unlock()
 	partTestEquivalent(t, c, receiver, donor)
 	receiverHolds := shareTestHolds(c, receiver)
+	attemptReleased := armLazyAttemptReleased(c)
 
 	// Commit's last act, after every lock is released, is its fixture event.
 	// Holding the fixture's mutex parks the Body between publication and its
@@ -1217,6 +1234,8 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	require.True(t, publishedInTime, "the slot never published")
 	require.False(t, completedEarly, "the pass completed while its Body still held an undelivered receipt")
 	require.Equal(t, 1, barrier.awaitPass(t))
+	// The pass joins the launcher, not the worker's deferred receiver release.
+	waitLazyAttemptReleased(t, attemptReleased)
 
 	key, _ := partAddressKey(PersistedPartAddress{Part: "fs"})
 	gate := row.partGate.gate.Load()
@@ -1242,6 +1261,7 @@ func TestSnapshotSharingFailedFinishLastOwner(t *testing.T) {
 		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
 		map[string]sharePartState{"fs": {}},
 	)
+	attemptReleased := armLazyAttemptReleased(c)
 	row := receiver.cacheSharedResult()
 	attachErr := errors.New("attach lease failed")
 	manager.attachErr.Store(&attachErr)
@@ -1273,6 +1293,7 @@ func TestSnapshotSharingFailedFinishLastOwner(t *testing.T) {
 
 	resumeFinish()
 	require.Equal(t, 1, barrier.awaitPass(t))
+	waitLazyAttemptReleased(t, attemptReleased)
 	select {
 	case <-released:
 	case <-time.After(10 * time.Second):

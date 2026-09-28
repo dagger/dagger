@@ -803,7 +803,7 @@ sleep infinity
 	sock := filepath.Join(tmp, "agent.sock")
 	l, err := net.Listen("unix", sock)
 	require.NoError(t, err)
-	defer l.Close()
+	t.Cleanup(func() { require.NoError(t, l.Close()) })
 
 	go func() {
 		for {
@@ -827,11 +827,20 @@ sleep infinity
 	}()
 
 	sshPort := 2222
-	sshSvc := hostKeyGen.
+	// Keep one sshd running until every subtest finishes: start.sh creates
+	// the repository's commits on startup, so a restarted service would
+	// advertise a different main than the checkout cloned below.
+	sshSvc, err := hostKeyGen.
 		WithMountedFile("/root/start.sh", setupScript).
 		WithExposedPort(sshPort).
 		WithDefaultArgs([]string{"sh", "/root/start.sh"}).
-		AsService()
+		AsService().
+		Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := sshSvc.Stop(ctx)
+		require.NoError(t, err)
+	})
 
 	sshHost, err := sshSvc.Hostname(ctx)
 	require.NoError(t, err)
@@ -879,6 +888,80 @@ sleep infinity
 	_, err = cli.With(daggerQuery(`{ git(url: %q, experimentalServiceHost: %q) { head { commitSHA } } }`, repoURL, serviceID)).Sync(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "SSH URLs are not supported without an SSH socket")
+
+	// Capture must reconstruct the remote baseline while the checkout's client
+	// still owns its SSH credentials. Use the service hostname in origin (not
+	// just the container's binding alias), since the engine fetches it too.
+	checkout := cli.
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithServiceBinding("snapshot-ssh", sshSvc).
+		WithNewFile("/root/.ssh/known_hosts", fmt.Sprintf("[%s]:%d %s\n", sshHost, sshPort, strings.TrimSpace(hostPubKey))).
+		WithExec([]string{"git", "clone", repoURL, "/checkout"}).
+		WithWorkdir("/checkout").
+		WithNewFile("local.txt", "local commit\n").
+		WithExec([]string{"git", "add", "local.txt"}).
+		WithExec([]string{"git", "commit", "-m", "unpushed local commit"}).
+		WithNewFile("README.md", "test\ndirty tracked file\n")
+	localSHA, err := checkout.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	remoteSHA, err := repo.Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, remoteSHA, strings.TrimSpace(localSHA))
+
+	for _, existingAgent := range []bool{false, true} {
+		name := "snapshot with identity file"
+		if existingAgent {
+			name = "snapshot with existing agent"
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			client := checkout
+			if existingAgent {
+				client = client.
+					WithoutFile("/root/.ssh/id_rsa").
+					WithUnixSocket("/tmp/snapshot-agent.sock", c.Host().UnixSocket(sock)).
+					WithEnvVariable("SSH_AUTH_SOCK", "/tmp/snapshot-agent.sock")
+			}
+			out, err := client.With(daggerQuery(`{
+				currentWorkspace {
+					snapshot {
+						id
+						tracked: file(path: "README.md") { contents }
+						local: file(path: "local.txt") { contents }
+						git {
+							head { commitSHA }
+							uncommitted { modifiedPaths }
+						}
+					}
+				}
+			}`)).Stdout(ctx)
+			require.NoError(t, err)
+			var response struct {
+				CurrentWorkspace struct {
+					Snapshot struct{ ID string }
+				}
+			}
+			require.NoError(t, json.Unmarshal([]byte(out), &response))
+			id := response.CurrentWorkspace.Snapshot.ID
+			require.NotEmpty(t, id)
+			// A failed client-side remote probe silently falls back to copying
+			// local Git data; that must not mask missing reconstruction auth.
+			require.NotContains(t, workspaceRecipeFields(ctx, t, c, id), "__gitDir")
+			require.JSONEq(t, fmt.Sprintf(`{
+				"currentWorkspace": {
+					"snapshot": {
+						"id": %q,
+						"tracked": {"contents": "test\ndirty tracked file\n"},
+						"local": {"contents": "local commit\n"},
+						"git": {
+							"head": {"commitSHA": %q},
+							"uncommitted": {"modifiedPaths": ["README.md"]}
+						}
+					}
+				}
+			}`, id, strings.TrimSpace(localSHA)), out)
+		})
+	}
 }
 
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {

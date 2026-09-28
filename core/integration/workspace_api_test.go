@@ -1116,7 +1116,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceExportFromGitWorktree(ctx context.Cont
 
 // TestWorkspaceExportStaysOnCurrentClient locks in the Workspace.export
 // contract from dagger/dagger#14007: a module handed the caller's workspace
-// exports into its own sandbox, never onto the caller's host.
+// cannot use that workspace as a default destination on the caller's host.
 func (WorkspaceAPISuite) TestWorkspaceExportStaysOnCurrentClient(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
@@ -1125,8 +1125,8 @@ func (WorkspaceAPISuite) TestWorkspaceExportStaysOnCurrentClient(ctx context.Con
 
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export")
 	require.NoError(t, err, string(out))
-	require.Equal(t, "exported", strings.TrimSpace(string(out)),
-		"a module's export succeeds against its own sandboxed environment")
+	require.Equal(t, "refused", strings.TrimSpace(string(out)),
+		"an inherited workspace is not a default export destination on the calling client")
 
 	_, err = os.Stat(filepath.Join(workdir, "sneaky.txt"))
 	require.ErrorIs(t, err, os.ErrNotExist,

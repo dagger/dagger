@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -2125,6 +2126,71 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 			require.Equal(t, fmt.Sprintf("content from changeset %d", i), content)
 		}
 	})
+}
+
+// TestMergedDirectoryReplay restores the actual merge output embedded in a
+// conversation on a different engine. Replaying on the producing engine would
+// let its cache hide a directory with synthetic, non-replayable provenance.
+func (ChangesetSuite) TestMergedDirectoryReplay(ctx context.Context, t *testctx.T) {
+	for _, mode := range []string{"two-way", "octopus", "chained"} {
+		t.Run(mode, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			before := c.Directory().WithNewFile("base.txt", "base\n")
+			ours := before.WithNewFile("base.txt", "ours\n").Changes(before)
+			theirs := before.WithNewFile("added.txt", "theirs\n").Changes(before)
+			third := before.WithNewFile("third.txt", "third\n").Changes(before)
+			var merged *dagger.Changeset
+			wantBase := "ours\n"
+			switch mode {
+			case "two-way":
+				// Preserve non-default conflict resolution in the recipe too.
+				theirs = before.WithNewFile("base.txt", "theirs\n").
+					WithNewFile("added.txt", "theirs\n").Changes(before)
+				merged = ours.WithChangeset(theirs, dagger.ChangesetWithChangesetOpts{
+					OnConflict: dagger.ChangesetMergeConflictPreferTheirs,
+				})
+				wantBase = "theirs\n"
+			case "octopus":
+				merged = ours.WithChangesets([]*dagger.Changeset{theirs, third})
+			case "chained":
+				merged = ours.WithChangeset(theirs).WithChangeset(third)
+			}
+			after, err := merged.After().Sync(ctx)
+			require.NoError(t, err)
+			portable, err := c.LLM().WithWorkspace(after.AsWorkspace()).PortableID(ctx)
+			require.NoError(t, err)
+
+			engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngineContainer(c))).Start(ctx)
+			require.NoError(t, err)
+			t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+			endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+			require.NoError(t, err)
+			target, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, target.Close()) })
+
+			restored := dagger.Ref[*dagger.LLM](target, portable).Workspace()
+			content, err := restored.File("base.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, wantBase, content)
+			content, err = restored.File("added.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "theirs\n", content)
+			if mode != "two-way" {
+				content, err = restored.File("third.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "third\n", content)
+			}
+
+			var id call.ID
+			require.NoError(t, id.Decode(string(portable)))
+			dag, err := id.ToProto()
+			require.NoError(t, err)
+			for _, vertex := range dag.GetRecipe().CallsByDigest {
+				require.NotEqual(t, "changeset_merge_output", vertex.Field)
+			}
+		})
+	}
 }
 
 // Changesets that modify different regions of the same file must all survive

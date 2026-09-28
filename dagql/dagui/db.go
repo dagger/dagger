@@ -181,14 +181,13 @@ type DB struct {
 	// new span data.
 	mutations uint64
 
-	// The surfacing memos below are single-entry and key on BOTH db.mutations
-	// and the root the walk was relative to (see surfaceRoot): a zoom change
-	// doesn't bump mutations, so without the root in the key a render zoomed
-	// to one span would be served the tree built for another.
-	surfacedChecks     []*CheckNode
-	surfacedChecksAt   uint64
-	surfacedChecksRoot SpanID
-	surfacedChecksInit bool
+	// The surfacing memos below key on BOTH db.mutations and the root the walk
+	// was relative to (see surfaceRoot): a zoom change doesn't bump mutations,
+	// so without the root in the key a render zoomed to one span would be
+	// served the tree built for another. Checks, generators and services keep
+	// a memo per root (surfacedTreeMemo), since tool-call rows ask about their
+	// own subtrees in the same frame; the rest are single-entry.
+	surfacedChecks surfacedTreeMemo[CheckNode]
 
 	surfacedConversation     []*MessageNode
 	surfacedConversationAt   uint64
@@ -204,15 +203,9 @@ type DB struct {
 	agentConversationID   string
 	agentConversationInit bool
 
-	surfacedGenerators     []*GeneratorNode
-	surfacedGeneratorsAt   uint64
-	surfacedGeneratorsRoot SpanID
-	surfacedGeneratorsInit bool
+	surfacedGenerators surfacedTreeMemo[GeneratorNode]
 
-	surfacedServices     []*ServiceNode
-	surfacedServicesAt   uint64
-	surfacedServicesRoot SpanID
-	surfacedServicesInit bool
+	surfacedServices surfacedTreeMemo[ServiceNode]
 
 	serviceDisplays     []*Span
 	serviceDisplaysAt   uint64
@@ -226,6 +219,13 @@ type DB struct {
 	agents     []*AgentNode
 	agentsAt   uint64
 	agentsInit bool
+
+	// Rewinds are session-wide for the same reason as the roster, and their
+	// memo doubles as the superseded-message index (see DB.Rewinds).
+	rewinds     []*Rewind
+	superseded  map[SpanID]*Rewind
+	rewindsAt   uint64
+	rewindsInit bool
 
 	testIndex *TestIndex
 }

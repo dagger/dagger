@@ -30,7 +30,7 @@ type AnthropicClient struct {
 // latest and an installed copy is often below the floor a new model needs.
 // Between Dagger releases, users can override it with
 // ANTHROPIC_CLAUDE_CODE_VERSION (see LLMRouter.LoadConfig).
-const defaultClaudeCodeVersion = "2.1.273"
+const defaultClaudeCodeVersion = "2.1.281"
 
 // claudeCodeVersionPattern is the shape ANTHROPIC_CLAUDE_CODE_VERSION must
 // take: a bare X.Y.Z, exactly as Claude Code itself reports it.
@@ -104,7 +104,7 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (res *LLMResponse, rerr error) {
 	// Stream this turn's content into per-block display spans (thinking, text
 	// response, tool-call arguments) as it arrives.
-	dp := newDisplayPhases(ctx, opts.CallDigest)
+	dp := newDisplayPhases(ctx, opts.CallDigest, tools)
 	defer func() {
 		dp.CloseAll()
 		if rerr != nil {

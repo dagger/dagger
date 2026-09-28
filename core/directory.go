@@ -3301,6 +3301,14 @@ func (dir *Directory) applyChangesToSnapshot(
 	}
 	defer newRef.Release(context.WithoutCancel(ctx))
 
+	// Structural diffs can contain metadata-only changes that the changeset
+	// excludes. Copy only its declared paths so those extra files cannot
+	// overwrite independent edits in the target.
+	changedPaths := make(map[string]struct{})
+	for _, p := range slices.Concat(paths.Added, paths.Modified) {
+		changedPaths[p] = struct{}{}
+	}
+
 	var usage snapshots.Usage
 	err = MountRef(ctx, newRef, func(root string, destMnt *mount.Mount) error {
 		copier, err := layercopy.NewCopier(layercopy.Mount{Root: root, Mount: destMnt})
@@ -3322,6 +3330,9 @@ func (dir *Directory) applyChangesToSnapshot(
 					layercopy.CopyOptions{
 						CopyDirContents: true,
 						ReplaceExisting: true,
+						Filter: layercopy.Filter{
+							Only: changedPaths,
+						},
 					},
 				)
 			}, mountRefAsReadOnly)

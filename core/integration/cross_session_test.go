@@ -282,6 +282,61 @@ func (ModuleSuite) TestCrossSessionPrivateFieldResultRetention(ctx context.Conte
 	require.Equal(t, token1, token2)
 }
 
+// A module object cached by one session keeps its module's class usable by
+// later sessions after the first session closes: the cached object owns the
+// operational module, and every call scopes that module in the calling
+// session. The method runs in the module's container runtime and exercises
+// the operational context that must survive: currentModule, a contextual
+// default path, and a module-scoped cache volume.
+func (ModuleSuite) TestCrossSessionHolderRuntimeAfterSessionClose(ctx context.Context, t *testctx.T) {
+	seed := identity.NewID()
+	callMod := func(c *dagger.Client, salt string) (string, error) {
+		return moduleFixture(t, c, "go/cross-session-holder-runtime").
+			WithNewFile("marker.txt", "marker-"+seed).
+			WithNewFile("data/hello.txt", "hello-"+seed).
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			With(daggerCall("holder", "--seed", seed, "use", "--salt", salt)).
+			Stdout(ctx)
+	}
+	type holderOutput struct {
+		seed, nonce, salt, marker, contextual, seen string
+	}
+	parse := func(out string) holderOutput {
+		t.Helper()
+		parts := strings.Split(strings.TrimSpace(out), "|")
+		require.Len(t, parts, 6, "unexpected output %q", out)
+		return holderOutput{parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]}
+	}
+
+	c1 := connect(ctx, t)
+	salt1 := identity.NewID()
+	out1, err := callMod(c1, salt1)
+	require.NoError(t, err)
+	first := parse(out1)
+	require.Equal(t, seed, first.seed)
+	require.NotEmpty(t, first.nonce)
+	require.Equal(t, salt1, first.salt)
+	require.Equal(t, "marker-"+seed, first.marker)
+	require.Equal(t, "hello-"+seed, first.contextual)
+	require.Equal(t, salt1, first.seen)
+
+	// Close the first session: the module it loaded and installed loses its
+	// session ownership, and only the cached holder result can retain it.
+	require.NoError(t, c1.Close())
+
+	c2 := connect(ctx, t)
+	salt2 := identity.NewID()
+	out2, err := callMod(c2, salt2)
+	require.NoError(t, err)
+	second := parse(out2)
+	require.Equal(t, seed, second.seed)
+	require.Equal(t, first.nonce, second.nonce, "the second session must reuse the cached holder, not reconstruct it")
+	require.Equal(t, salt2, second.salt)
+	require.Equal(t, "marker-"+seed, second.marker, "currentModule must resolve the module source")
+	require.Equal(t, "hello-"+seed, second.contextual, "the contextual default must resolve from the module context")
+	require.Equal(t, salt1+","+salt2, second.seen, "the module-scoped cache volume must be shared across sessions")
+}
+
 func ptr[T any](v T) *T {
 	return &v
 }

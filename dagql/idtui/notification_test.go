@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -9,8 +10,129 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
+	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 )
+
+func TestNotificationToggle(t *testing.T) {
+	for _, mode := range []string{"prompt", "navigation"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "1")
+			fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+			fe.setupTUI()
+			fe.startShell(context.Background(), &stubShellHandler{})
+			fe.tui.Step()
+			fe.textInput.SetValue("unfinished draft")
+			if mode == "navigation" {
+				fe.tui.Inject(tuist.ParseKey("esc"))
+				fe.tui.Step()
+			}
+			focused := fe.tui.Focused()
+			require.Contains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "ctrl+h toggle hud")
+
+			setSection := func(title, body string) {
+				fe.SetSidebarContent(SidebarSection{
+					Title:       title,
+					ContentFunc: func(int) string { return body },
+				})
+			}
+			screen := func() string { return strings.Join(fe.tui.Step(), "\n") }
+			toggle := func() string {
+				fe.tui.Inject(tuist.ParseKey("ctrl+h"))
+				frame := screen()
+				require.Equal(t, "unfinished draft", fe.textInput.Value())
+				require.Same(t, focused, fe.tui.Focused(), "toggle must not change focus")
+				return frame
+			}
+
+			// Remember the preference even before the first bubble arrives.
+			toggle()
+			setSection("Changes", "original change")
+			setSection("References", "original reference")
+			require.NotContains(t, screen(), "original change")
+			require.NotContains(t, screen(), "original reference")
+
+			frame := toggle()
+			require.Contains(t, frame, "original change")
+			require.Contains(t, frame, "original reference")
+			frame = toggle()
+			require.NotContains(t, frame, "original change")
+			require.NotContains(t, frame, "original reference")
+
+			// Both existing and new bubbles keep updating without reappearing.
+			setSection("Changes", "updated change")
+			setSection("References", "updated reference")
+			setSection("", "new untitled bubble")
+			frame = screen()
+			require.NotContains(t, frame, "updated change")
+			require.NotContains(t, frame, "updated reference")
+			require.NotContains(t, frame, "new untitled bubble")
+			frame = toggle()
+			require.Contains(t, frame, "updated change")
+			require.Contains(t, frame, "updated reference")
+			require.Contains(t, frame, "new untitled bubble")
+			require.NotContains(t, frame, "original change")
+		})
+	}
+}
+
+// TestKeymapBubble: the shell trades the keymap bar for a hint above the
+// prompt, and ctrl+? toggles a HUD bubble listing every key available right
+// now -- pinned first in the HUD so taller bubbles can't push it offscreen --
+// from the prompt and from nav mode alike, without touching the draft or focus.
+func TestKeymapBubble(t *testing.T) {
+	for _, mode := range []string{"prompt", "navigation"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "1")
+			fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+			fe.setupTUI()
+			fe.startShell(context.Background(), &stubShellHandler{})
+			fe.textInput.SetValue("unfinished draft")
+			wantKey := "nav mode"
+			if mode == "navigation" {
+				fe.tui.Inject(tuist.ParseKey("esc"))
+				wantKey = "input mode"
+			}
+			screen := func() string { return stripANSICodes(strings.Join(fe.tui.Step(), "\n")) }
+			frame := screen()
+			require.Contains(t, frame, "ctrl+? toggle keymap · ctrl+h toggle hud")
+			require.NotContains(t, frame, wantKey, "the full keymap waits for ctrl+?")
+			focused := fe.tui.Focused()
+
+			// A tall bubble arrives first; the keymap still lands on top.
+			fe.SetSidebarContent(SidebarSection{
+				Title:   "Changes",
+				Content: strings.Repeat("change\n", 20),
+			})
+			fe.tui.Step()
+
+			for _, keyStr := range []string{"ctrl+?", "ctrl+shift+/"} {
+				fe.tui.Inject(tuist.ParseKey(keyStr))
+				frame = screen()
+				require.Contains(t, frame, wantKey, "%s shows the keymap", keyStr)
+				require.Contains(t, frame, "ctrl+?  toggle keymap", "the bubble names its own key")
+				keymapAt := strings.Index(frame, "Keymap")
+				changesAt := strings.Index(frame, "Changes")
+				require.True(t, keymapAt >= 0 && keymapAt < changesAt, "keymap is pinned above other bubbles:\n%s", frame)
+				require.Equal(t, "unfinished draft", fe.textInput.Value())
+				require.Same(t, focused, fe.tui.Focused(), "toggle must not change focus")
+
+				fe.tui.Inject(tuist.ParseKey(keyStr))
+				frame = screen()
+				require.NotContains(t, frame, wantKey, "%s dismisses the keymap", keyStr)
+				require.Contains(t, frame, "Changes", "dismissing the keymap leaves the rest of the HUD")
+			}
+
+			// Asking for the keymap reveals a hidden HUD.
+			fe.tui.Inject(tuist.ParseKey("ctrl+h"))
+			require.NotContains(t, screen(), "Changes")
+			fe.tui.Inject(tuist.ParseKey("ctrl+?"))
+			frame = screen()
+			require.Contains(t, frame, wantKey)
+			require.Contains(t, frame, "Changes")
+		})
+	}
+}
 
 // TestNotificationTopBorderWidth guards against a width miscalculation in the
 // notification bubble's top border. When the title + keymap nearly fill the

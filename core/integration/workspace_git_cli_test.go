@@ -243,8 +243,7 @@ done
 
 			t.Run("URL without origin", func(ctx context.Context, t *testctx.T) {
 				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "git", "url"}, dagger.ContainerWithExecOpts{
-					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
+					Expect: dagger.ReturnTypeFailure,
 				})
 				out, err := result.Stdout(ctx)
 				require.NoError(t, err)
@@ -289,8 +288,7 @@ done
 		for _, command := range []string{"ref", "sha", "dirty", "log", "url"} {
 			t.Run(command, func(ctx context.Context, t *testctx.T) {
 				result := ctr.WithExec([]string{"dagger", "-W", "/plain", "ws", "git", command}, dagger.ContainerWithExecOpts{
-					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
+					Expect: dagger.ReturnTypeFailure,
 				})
 				out, err := result.Stdout(ctx)
 				require.NoError(t, err)

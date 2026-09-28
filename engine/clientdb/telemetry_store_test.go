@@ -296,6 +296,24 @@ func TestScopedSpanSelectors(t *testing.T) {
 	checks, tests := store.CheckTestSpanIDs()
 	require.ElementsMatch(t, []string{"check"}, keysOf(checks))
 	require.ElementsMatch(t, []string{"test"}, keysOf(tests))
+
+	// Every span the index has seen, once, regardless of snapshot count.
+	require.ElementsMatch(t, []string{"root", "mid", "leaf", "check", "test"}, keysOf(store.SpanIDs()))
+
+	// Direct children only: one edge down, over parent edges and cause
+	// links alike, never the whole subtree.
+	require.ElementsMatch(t, []string{"mid", "check", "test"}, keysOf(store.ChildSpanIDs("root")))
+	require.ElementsMatch(t, []string{"leaf"}, keysOf(store.ChildSpanIDs("mid")))
+	require.Empty(t, store.ChildSpanIDs("leaf"))
+	require.Empty(t, store.ChildSpanIDs("missing"))
+	// Cause links are edges too (the helper needs real hex IDs).
+	const traceHex, targetHex = "0102030405060708090a0b0c0d0e0f10", "0102030405060708"
+	_, err = store.AppendSpans([]Span{
+		{TraceID: traceHex, SpanID: targetHex},
+		{TraceID: traceHex, SpanID: "linker", Links: linksJSON(t, spanLink(t, traceHex, targetHex, telemetry.LinkPurposeCause))},
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"linker"}, keysOf(store.ChildSpanIDs(targetHex)))
 }
 
 // TestSelectLogsForSpans covers the scoped log fetch: append order across

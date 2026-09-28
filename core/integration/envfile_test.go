@@ -408,7 +408,6 @@ func (EnvFileSuite) TestSystemVariables(ctx context.Context, t *testctx.T) {
 	output1, err := ctr.
 		WithExec([]string{
 			"dagger", "core", "host", "file", "--path=.env", "as-env-file", "get", "--name", "GREETING"},
-			nestedExec,
 		).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -416,7 +415,6 @@ func (EnvFileSuite) TestSystemVariables(ctx context.Context, t *testctx.T) {
 	output2, err := ctr.
 		WithExec([]string{
 			"dagger", "core", "host", "file", "--path=.env", "as-env-file", "variables", "value"},
-			nestedExec,
 		).
 		Stdout(ctx)
 	require.NoError(t, err)

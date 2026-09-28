@@ -57,8 +57,7 @@ func (WorkspaceSuite) TestCatCLI(ctx context.Context, t *testctx.T) {
 			for _, target := range []string{"missing", "."} {
 				t.Run("invalid file "+target, func(ctx context.Context, t *testctx.T) {
 					result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "cat", target}, dagger.ContainerWithExecOpts{
-						ExperimentalPrivilegedNesting: true,
-						Expect:                        dagger.ReturnTypeFailure,
+						Expect: dagger.ReturnTypeFailure,
 					})
 					out, err := result.Stdout(ctx)
 					require.NoError(t, err)
@@ -81,8 +80,7 @@ func (WorkspaceSuite) TestCatCLI(ctx context.Context, t *testctx.T) {
 
 			t.Run("continue after missing file", func(ctx context.Context, t *testctx.T) {
 				result := ctr.WithExec([]string{"dagger", "-W", workspace, "ws", "cat", "no-newline.txt", "missing", "/root.txt"}, dagger.ContainerWithExecOpts{
-					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
+					Expect: dagger.ReturnTypeFailure,
 				})
 				out, err := result.Stdout(ctx)
 				require.NoError(t, err)

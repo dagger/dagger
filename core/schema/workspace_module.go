@@ -147,12 +147,19 @@ func (s *workspaceSchema) moduleSource(
 		return inst, err
 	}
 
+	workspaceID, err := parent.ID()
+	if err != nil {
+		return inst, err
+	}
 	// asModuleSource errors if the resolved path holds no module config, so it
-	// doubles as the "path is not an initialized module" check.
+	// doubles as the "path is not an initialized module" check. Keep the
+	// workspace as explicit provenance: the materialized directory changes on
+	// every source edit, but it still belongs to the same workspace.
 	if err := srv.Select(ctx, root, &inst, dagql.Selector{
 		Field: "asModuleSource",
 		Args: []dagql.NamedInput{
 			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
+			{Name: "workspace", Value: dagql.Opt(dagql.NewID[*core.Workspace](workspaceID))},
 		},
 	}); err != nil {
 		return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)

@@ -158,6 +158,14 @@ func NormalizeVersion(version string) string {
 	}
 }
 
+// APIViewVersion returns the API view for a client or module that declares
+// version. Views are base-version granular: every prerelease of a version,
+// such as v1.0.0-beta.12 and v1.0.0-beta.15, shares that version's view, so a
+// view gate cannot tell prereleases of the same version apart.
+func APIViewVersion(version string) string {
+	return BaseVersion(NormalizeVersion(version))
+}
+
 func BaseVersion(version string) string {
 	version = strings.TrimSuffix(version, semver.Build(version))
 	version = strings.TrimSuffix(version, semver.Prerelease(version))

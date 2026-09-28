@@ -158,8 +158,7 @@ func (WorkspaceSuite) TestGrepCLI(ctx context.Context, t *testctx.T) {
 				t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 					args := append([]string{"dagger", "-W", workspace, "ws", "grep"}, tc.args...)
 					result := ctr.WithExec(args, dagger.ContainerWithExecOpts{
-						ExperimentalPrivilegedNesting: true,
-						Expect:                        dagger.ReturnTypeFailure,
+						Expect: dagger.ReturnTypeFailure,
 					})
 					status, err := result.ExitCode(ctx)
 					require.NoError(t, err)

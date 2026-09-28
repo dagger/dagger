@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/opencontainers/go-digest"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -104,16 +105,11 @@ func (x *dagExtractor) extractCall(callDigest string, via frameRef) {
 		x.missing = append(x.missing, missingCall{digest: callDigest, ref: via})
 		return
 	}
-	call = &callpbv1.Call{
-		ReceiverDigest: call.ReceiverDigest,
-		Type:           call.Type,
-		Field:          call.Field,
-		Args:           call.Args,
-		Nth:            call.Nth,
-		Module:         call.Module,
-		Digest:         callDigest,
-		View:           call.View,
-	}
+	// Keep the complete telemetry frame, including cache identity metadata.
+	// Clone before assigning the lookup digest: creator fallback can resolve
+	// a different frame, and extraction must not mutate the DB's copy.
+	call = proto.CloneOf(call)
+	call.Digest = callDigest
 	x.recipe.CallsByDigest[callDigest] = call
 
 	if call.ReceiverDigest != "" {
@@ -124,6 +120,14 @@ func (x *dagExtractor) extractCall(callDigest string, via frameRef) {
 			x.extractLit(arg.Value, frameRef{
 				call: call,
 				rel:  fmt.Sprintf("argument %q", arg.GetName()),
+			})
+		}
+	}
+	for _, input := range call.ImplicitInputs {
+		if input.GetValue() != nil {
+			x.extractLit(input.GetValue(), frameRef{
+				call: call,
+				rel:  fmt.Sprintf("implicit input %q", input.GetName()),
 			})
 		}
 	}

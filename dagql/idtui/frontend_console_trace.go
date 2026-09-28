@@ -141,6 +141,8 @@ func decodeConsoleCheckpoint(db *dagui.DB, agent consoleAgent) (consoleAgentSnap
 			continue
 		case "withoutDefaultSystemPrompt", "withMCPServer", "withSkills", "withTools", "withWorkspace", "withModel", "withReasoningEffort":
 			continue // Binding/configuration, not message data. Do not follow IDs.
+		case "__withCompositionOwner":
+			continue // Legacy recorded checkpoints; no longer emitted or evaluated.
 		case "withPrompt", "withSystemPrompt", "withResponse", "withToolResult":
 		default:
 			return result, fmt.Errorf("unsupported checkpoint selector %q: refusing an incomplete transcript", frame.Field)

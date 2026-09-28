@@ -78,10 +78,15 @@ type TestView struct {
 	AgentStyle bool
 
 	// TraceID, when set (by 'dagger trace'), lets a failing entry's capped log
-	// tail point at 'dagger cloud logs <trace> <span>' for the full output.
+	// tail point at 'dagger cloud traces view <trace> --log' for the full output.
 	TraceID string
 
 	sidebar *testSidebarView
+
+	// excluding marks an inline rollup whose View is pinned to a view filtered
+	// by a sibling rollup's claims (see renderInlineTests), so it can be reset
+	// to the live view once nothing is excluded.
+	excluding bool
 
 	// MaxHeight caps the rendered height. A zero value means fullscreen mode:
 	// use the terminal height, leaving room for the keymap sibling.
@@ -1491,9 +1496,7 @@ func (fe *frontendPretty) toggleTestsMode() {
 	tv.ensureFocusedTest(tv.currentView())
 	fe.testsFocus = fe.tui.PushFocus(tv)
 	fe.syncHardwareCursor()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 	fe.Update()
 }
 
@@ -1621,9 +1624,7 @@ func (fe *frontendPretty) closeTestsMode() {
 		fe.focusNavigationTarget()
 	}
 	fe.syncHardwareCursor()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
+	fe.refreshKeymap()
 	fe.Update()
 }
 
@@ -1750,15 +1751,30 @@ func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
 	return fe.db.TestViewForSpan(row.Span).HasTests()
 }
 
-func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *dagui.TraceRow) []string {
+// inlineTestsView is the test view a row's TESTS rollup renders: every case
+// beneath it, minus those exclude itself claimed (see renderClaims.fork) --
+// a tool call's CHECKS rollup, which nests its checks' tests under them. The
+// rest (tests the tool ran outside any check) still get their own rollup, so
+// deduping never hides a case.
+func (fe *frontendPretty) inlineTestsView(span *dagui.Span, exclude *renderClaims) *dagui.TestView {
+	view := fe.db.TestViewForSpan(span)
+	if !exclude.ownsAnyTestCases() || !view.HasTests() {
+		return view
+	}
+	return view.FilterCases(func(node *dagui.TestNode) bool {
+		return node.Span == nil || !exclude.ownsTestCase(node.Span.ID)
+	})
+}
+
+func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *dagui.TraceRow, exclude *renderClaims) []string {
 	if !s.fe.shouldRenderInlineTests(row) {
 		return nil
 	}
+	view := s.fe.inlineTestsView(row.Span, exclude)
+	if !view.HasTests() {
+		return nil
+	}
 	if s.fe.reportOnly && s.fe.finalRender {
-		view := s.fe.db.TestViewForSpan(row.Span)
-		if !view.HasTests() {
-			return nil
-		}
 		tv := &TestView{
 			Profile:         s.fe.profile,
 			AgentStyle:      s.fe.agentStyle(),
@@ -1780,7 +1796,28 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		return append([]string{""}, lines...)
 	}
 	tv := s.fe.inlineTestView(row.Span.ID)
+	// Pin the component to the filtered view while checks claim some of the
+	// cases; the row re-renders (and re-pins) on every span export, like the
+	// component itself (updateTestViews).
+	if exclude.ownsAnyTestCases() {
+		tv.View = func() *dagui.TestView { return view }
+		tv.excluding = true
+		tv.Update()
+	} else if tv.excluding {
+		spanID := row.Span.ID
+		tv.View = func() *dagui.TestView {
+			return s.fe.db.TestViewForSpan(s.fe.db.Spans.Map[spanID])
+		}
+		tv.excluding = false
+		tv.Update()
+	}
+	// Indent the summary so its TESTS heading lines up with the row's name. A
+	// shell tool call's pipe already sits under its dot (inlineReportPrefix), a
+	// cell short of the name, so it needs no extra indent.
 	summaryIndent := 2
+	if s.fe.shellToolRow(row) {
+		summaryIndent = 0
+	}
 	if tv.SummaryIndent != summaryIndent {
 		tv.SummaryIndent = summaryIndent
 		tv.Update()
@@ -1815,19 +1852,13 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		tv.Update()
 	}
 
+	// The live tree hangs the rollup off the row's pipe, as does the transcript
+	// a shell session reprints on exit; the plain final report sets it apart
+	// with a blank line instead.
+	framed := !s.fe.finalRender || s.fe.shellTranscript()
 	var prefix string
-	if !s.fe.finalRender {
-		prefixBuf := new(strings.Builder)
-		prefixOut := NewOutput(prefixBuf, termenv.WithProfile(s.fe.profile))
-		r.indentFunc = s.indentFunc(prefixOut)
-		r.fancyIndent(prefixOut, row, false, false)
-		pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
-		if s.focused {
-			pipe = hl(pipe)
-		}
-		fmt.Fprint(prefixOut, pipe.String())
-		fmt.Fprint(prefixOut, " ")
-		prefix = prefixBuf.String()
+	if framed {
+		prefix = s.inlineReportPrefix(r, row)
 	}
 
 	ctxWidth := ctx.Width
@@ -1835,7 +1866,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		ctxWidth = finalRenderTestsWidth + lipgloss.Width(prefix)
 	}
 	width := max(ctxWidth-lipgloss.Width(prefix), 1)
-	if s.fe.finalRender {
+	if s.fe.finalRender && !framed {
 		width = max(width, finalRenderTestsWidth)
 	}
 	result := s.RenderChildResult(ctx.Resize(width, limit), tv)
@@ -1843,10 +1874,10 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		s.fe.claims.claimTestReport(row.Span, tv.currentView())
 	}
 	lines := make([]string, 0, len(result.Lines)+1)
-	if s.fe.finalRender {
-		lines = append(lines, "")
-	} else if prefix != "" {
+	if framed {
 		lines = append(lines, strings.TrimRight(prefix, " "))
+	} else {
+		lines = append(lines, "")
 	}
 	for _, line := range result.Lines {
 		lines = append(lines, prefix+line)
@@ -2130,7 +2161,7 @@ func failingLeafTestCases(view *dagui.TestView) []*dagui.TestNode {
 // errorTailFallbackLines bounds the window when no fail/error keyword matches
 // (a panic, a timeout's goroutine dump, a non-English tool): show the last N
 // lines rather than dumping the entire log into the report. The trimmed-lines
-// marker and the 'dagger cloud logs' hint point at the rest.
+// marker and the '--log' hint point at the rest.
 const errorTailFallbackLines = 40
 
 // errorTailStart returns the line index to start rendering a failed test's
@@ -2169,10 +2200,9 @@ func errorTailStart(lines []string, context int) int {
 	return max(anchor-context, 0)
 }
 
-// cloudLogsTarget returns the 'dagger cloud logs' selector that addresses span
-// by name when possible (--test/--check), else by --span. Empty for a nil span.
-// Also used verbatim in 'dagger trace' drill-in suggestions, so it must only
-// emit selectors both commands accept.
+// cloudLogsTarget returns the 'dagger cloud traces view' selector that
+// addresses span by name when possible (--test/--check), else by --span. Empty
+// for a nil span. The drill-in suggestions and the "full:" log hint both use it.
 func cloudLogsTarget(span *dagui.Span) string {
 	switch {
 	case span == nil:
@@ -2188,9 +2218,8 @@ func cloudLogsTarget(span *dagui.Span) string {
 
 // cloudLogsHintTarget is cloudLogsTarget plus --descendants when the span
 // rolls up its subtree's logs, so the "full:" hint fetches at least the scope
-// the window above it rendered ('dagger cloud logs --span' is otherwise just
-// that span). Only for cloud-logs hints -- 'dagger trace' resolves roll-up on
-// its own and has no such flag.
+// the window above it rendered ('--log --span' is otherwise just that span).
+// Only for the log hint: without --log, the view resolves roll-up on its own.
 func cloudLogsHintTarget(span *dagui.Span) string {
 	target := cloudLogsTarget(span)
 	if span != nil && span.RollUpLogs && span.TestCaseName == "" && span.CheckName == "" {
@@ -2201,7 +2230,7 @@ func cloudLogsHintTarget(span *dagui.Span) string {
 
 // errorWindowLines renders a failed span's rolled-up logs for a final report:
 // the error-anchored window (errorTailStart) prefixed with a marker for any
-// trimmed lines, then a 'dagger cloud logs' hint for the full output when a
+// trimmed lines, then a '--log' hint for the full output when a
 // trace ID and selector target are known. Lines are prefixed with indent and
 // left unclipped -- the hint is a copy-paste command.
 func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target string) []string {
@@ -2215,7 +2244,7 @@ func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target
 		lines = append(lines, indent+line)
 	}
 	if traceID != "" && target != "" {
-		hint := out.String(fmt.Sprintf("full: dagger cloud logs %s %s", traceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+		hint := out.String(fmt.Sprintf("full: dagger cloud traces view %s --log %s", traceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 		lines = append(lines, indent+hint)
 	}
 	return lines

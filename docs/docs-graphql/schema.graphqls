@@ -417,6 +417,37 @@ type AgentMiddlewareGroup implements Node {
   list: [AgentMiddleware!]! @experimental(reason: "Agent APIs are likely to change.")
 
   """
+  Recompose the selected agent middlewares onto an existing LLM, replacing their
+  modules' owned system prompts, skills, and tool bindings while preserving tool
+  object state.
+
+  Contributions belong to the installed module calling withSystemPrompt,
+  withSkills, or withTools, independently of the bound object's module or
+  middleware entrypoint. Ownership follows the installed module name, not its
+  source location. Moving a module between remote, local, or forked sources
+  preserves compatible state when its installation name and intrinsic module and
+  object identities stay the same.
+
+  Contributions from selected modules are removed once before running the
+  selected entrypoints. Unowned contributions and contributions from other
+  modules are retained. Nested modules own their own contributions; use
+  recompose explicitly to refresh them. Other middleware effects retain compose
+  semantics; this is not a general rollback of arbitrary middleware changes.
+
+  Existing field values win over new defaults; fields added by the new revision
+  take its defaults. Changing a binding's withTools version resets that object's
+  state to the new defaults instead. With an unchanged version, visibly
+  incompatible state (a public field that changed type, or a value whose shape
+  differs from the new default) is an error. Discarded bindings or changed
+  module or object identities are errors regardless of version. Ownership checks
+  still apply. The base workspace is preserved.
+  """
+  recompose(
+    """The existing conversation whose tool state should be preserved."""
+    base: ID! @expectedType(name: "LLM")
+  ): LLM! @experimental(reason: "Agent APIs are likely to change.")
+
+  """
   Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
   """
   compose(
@@ -1500,8 +1531,12 @@ type Container implements Exportable & Node & Syncer {
     """Exit codes this command is allowed to exit with without error"""
     expect: ReturnType = SUCCESS
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. Like --privileged in Docker
@@ -1912,8 +1947,12 @@ type Container implements Exportable & Node & Syncer {
     """The args of the command."""
     args: [String!]!
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -1935,8 +1974,12 @@ type Container implements Exportable & Node & Syncer {
     """
     cmd: [String!] = []
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -1949,8 +1992,13 @@ type Container implements Exportable & Node & Syncer {
   ): Container!
 
   """
-  EXPERIMENTAL API! Subject to change/removal at any time.
+  Configures all GPUs available on the host to be accessible to this container.
 
+  This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+  """
+  withGPU: Container!
+
+  """
   Configures the provided list of devices to be accessible to this container.
 
   This currently works for Nvidia devices only.
@@ -1958,16 +2006,14 @@ type Container implements Exportable & Node & Syncer {
   experimentalWithGPU(
     """List of devices to be accessible to this container."""
     devices: [String!]!
-  ): Container!
+  ): Container! @deprecated(reason: "Use \"withGPU\" instead, which exposes all GPUs available on the host.")
 
   """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
   Configures all available GPUs on the host to be accessible to this container.
 
   This currently works for Nvidia devices only.
   """
-  experimentalWithAllGPUs: Container!
+  experimentalWithAllGPUs: Container! @deprecated(reason: "Use \"withGPU\" instead.")
 
   """
   Turn the container into a Service.
@@ -1985,8 +2031,12 @@ type Container implements Exportable & Node & Syncer {
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2039,8 +2089,12 @@ type Container implements Exportable & Node & Syncer {
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -2573,8 +2627,12 @@ type Directory implements Exportable & Node & Syncer {
     """
     cmd: [String!] = []
 
-    """Provides Dagger access to the executed command."""
-    experimentalPrivilegedNesting: Boolean = false
+    """
+    Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+    """
+    disableDaggerInDagger: Boolean = false
+
+    experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -4405,6 +4463,15 @@ type LLM implements Node & Syncer {
     Method names to exclude from the toolset (e.g. constructors, entrypoints).
     """
     except: [String!] = []
+
+    """
+    Version of this binding's state contract. Recomposition preserves compatible
+    state when the version is unchanged and resets to the newly bound object's
+    defaults when it differs. Change this when the state layout changes
+    incompatibly. Same-type tool returns retain the version. Module identity and
+    ownership checks still apply.
+    """
+    version: Int = 0
   ): LLM!
 
   """Disable the default system prompt"""
@@ -6077,6 +6144,16 @@ type Terminal implements Node & Syncer {
   sync: ID! @expectedType(name: "Terminal")
 }
 
+input TerminalCopy {
+  """
+  Location of the copied directory. A relative path is relative to the container's working directory.
+  """
+  path: String!
+
+  """The directory to copy."""
+  source: ID! @expectedType(name: "Directory")
+}
+
 type TerminalGroup implements Node {
   """A unique identifier for this TerminalGroup."""
   id: ID!
@@ -6085,7 +6162,37 @@ type TerminalGroup implements Node {
   list: [TerminalTarget!]!
 
   """Open the selected terminal target"""
-  run: TerminalGroup!
+  run(
+    """Directories to copy into the container, in order."""
+    copy: [TerminalCopy!] = []
+
+    """
+    Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+    """
+    init: [String!] = []
+  ): TerminalGroup!
+
+  """
+  Run the selected terminal target's command non-interactively, and return the
+  container after execution. Any exit code is allowed.
+  """
+  exec(
+    """
+    Arguments to append to the terminal command. Example: ["-c", "go test ./..."]
+    """
+    args: [String!] = []
+
+    """Content to write to the command's standard input."""
+    stdin: String = ""
+
+    """Directories to copy into the container, in order."""
+    copy: [TerminalCopy!] = []
+
+    """
+    Commands to run after copy, in order, with the terminal command and -c. Only their changes to the filesystem are kept.
+    """
+    init: [String!] = []
+  ): Container!
 }
 
 type TerminalTarget implements Node {
@@ -7201,27 +7308,36 @@ type Workspace implements Node {
   """
   Write this workspace's commits and pending changes to a checkout on the calling client.
 
-  With path, accept a frozen source, integrate divergent commits by
-  cherry-picking, preserve unrelated checkout edits, and refuse conflicts. The
-  source is unchanged. Pass from to save only work since an earlier source
-  value, including previously saved pending edits that are now committed.
+  Path selects the destination; omitting it uses the calling client's current
+  local workspace root, including when exporting a snapshot or committed
+  workspace. Exported file paths are relative to the workspace root regardless
+  of its working directory. This writes only to the client making the call,
+  never the source's client.
 
-  Without path, apply a local workspace's overlay changes at its host root. Pass
-  from to apply only changes since an earlier local workspace state. Export
-  paths are relative to the workspace root regardless of its working directory.
-  Like Directory.export, this writes only to the client making the call, never
-  the source's client.
+  A live workspace exported to its own checkout applies only its overlay edits,
+  without capturing the whole checkout. This also applies with an explicit path.
+  Pass from with the same live base to apply only changes since that overlay
+  state.
+
+  Other exports integrate divergent commits by cherry-picking, preserve
+  unrelated checkout edits, and refuse conflicts. Live inputs are snapshotted
+  automatically; capturing untracked source files requires interactive approval.
+  Stable inputs retain their baseline. Pass from to save only work since an
+  earlier source value, including previously saved pending edits that are now
+  committed.
   """
   export(
     """
     Destination checkout path on the calling client. Relative paths start at the
-    client's working directory. Omit to apply a local workspace's overlay
-    changes at its host root.
+    client's working directory. Omit to use the calling client's current local
+    workspace root.
     """
     path: String = ""
 
     """
-    Earlier workspace state to compare against. With path, this must be a previously exported frozen source workspace.
+    Earlier workspace state to compare against. For Git integration, live inputs
+    are snapshotted at export time; use a snapshot to retain the baseline of a
+    previous export.
     """
     from: ID @expectedType(name: "Workspace")
   ): Void!

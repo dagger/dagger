@@ -33,17 +33,14 @@ func TestWorkspaceSelection(t *testing.T) {
 
 func workspaceSelectionDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec(append([]string{"dagger"}, args...))
 	}
 }
 
 func workspaceSelectionDaggerCall(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
+			UseEntrypoint: true,
 		})
 	}
 }
@@ -51,9 +48,8 @@ func workspaceSelectionDaggerCall(args ...string) dagger.WithContainerFunc {
 func workspaceSelectionDaggerCallFail(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			UseEntrypoint: true,
+			Expect:        dagger.ReturnTypeFailure,
 		})
 	}
 }
@@ -61,8 +57,7 @@ func workspaceSelectionDaggerCallFail(args ...string) dagger.WithContainerFunc {
 func workspaceSelectionDaggerQuery(query string, args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
-			Stdin:                         query,
-			ExperimentalPrivilegedNesting: true,
+			Stdin: query,
 		})
 	}
 }
@@ -70,9 +65,8 @@ func workspaceSelectionDaggerQuery(query string, args ...string) dagger.WithCont
 func workspaceSelectionDaggerQueryFail(query string, args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
-			Stdin:                         query,
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
+			Stdin:  query,
+			Expect: dagger.ReturnTypeFailure,
 		})
 	}
 }

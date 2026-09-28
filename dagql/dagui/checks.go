@@ -1,13 +1,16 @@
 package dagui
 
 // CheckNode is a surfaced trace-level check (deduped by check name), with any
-// nested child checks beneath it.
+// nested child checks beneath it. Its status is its representative span's.
 type CheckNode struct {
 	Name     string
 	Span     *Span // representative span (a failed one when the check failed)
-	Failed   bool
 	Children []*CheckNode
 }
+
+// Failed reports whether the check failed: its representative span is a
+// failed one whenever any of its spans failed.
+func (n *CheckNode) Failed() bool { return n.Span.IsFailedOrCausedFailure() }
 
 // SurfacedChecks returns the whole trace's checks as a tree, independent of
 // the `reveal` mechanism. It is SurfacedChecksForSpan relative to the trace
@@ -44,31 +47,27 @@ func (db *DB) SurfacedChecks() []*CheckNode {
 // nested under the nearest surfaced ancestor check. Roots and children are
 // ordered failed-first, then by name.
 //
-// The result is cached per DB mutation AND per root: every other input (check
-// names, ancestor chains, boundaries, statuses) only changes when a span is
-// added or updated, and a render frame re-reads the tree for every check row.
-// Callers must treat the returned nodes as read-only.
+// The result is cached per DB mutation AND per root (see surfacedTreeMemo):
+// every other input (check names, ancestor chains, boundaries, statuses) only
+// changes when a span is added or updated, and a render frame re-reads the
+// tree for every check and tool-call row. Callers must treat the returned
+// nodes as read-only.
 func (db *DB) SurfacedChecksForSpan(root *Span) []*CheckNode {
-	r := db.surfaceRoot(root)
-	key := surfaceRootID(r)
-	if db.surfacedChecksInit && db.surfacedChecksAt == db.mutations && db.surfacedChecksRoot == key {
-		return db.surfacedChecks
-	}
-	db.surfacedChecks = db.buildSurfacedChecks(r)
-	db.surfacedChecksAt = db.mutations
-	db.surfacedChecksRoot = key
-	db.surfacedChecksInit = true
-	return db.surfacedChecks
+	return db.surfacedChecks.get(db, db.surfaceRoot(root), isCheckSpan, buildSurfacedChecks)
 }
 
-func (db *DB) buildSurfacedChecks(root *Span) []*CheckNode {
-	return buildSurfacedTree(db, root,
-		func(s *Span) string { return s.CheckName },
-		func(name string, span *Span, failed bool) *CheckNode {
-			return &CheckNode{Name: name, Span: span, Failed: failed}
+func checkNameOf(s *Span) string { return s.CheckName }
+
+func isCheckSpan(s *Span) bool { return s.CheckName != "" }
+
+func buildSurfacedChecks(candidates []*Span, root *Span) []*CheckNode {
+	return buildSurfacedTree(candidates, root,
+		checkNameOf,
+		func(name string, span *Span) *CheckNode {
+			return &CheckNode{Name: name, Span: span}
 		},
 		func(n *CheckNode) *[]*CheckNode { return &n.Children },
-		func(n *CheckNode) (bool, string) { return n.Failed, n.Name },
+		func(n *CheckNode) (bool, string) { return n.Failed(), n.Name },
 	)
 }
 
@@ -76,7 +75,7 @@ func (db *DB) buildSurfacedChecks(root *Span) []*CheckNode {
 // parent check can defer its own error detail to the children that explain it.
 func (n *CheckNode) HasFailedChild() bool {
 	for _, c := range n.Children {
-		if c.Failed || c.HasFailedChild() {
+		if c.Failed() || c.HasFailedChild() {
 			return true
 		}
 	}

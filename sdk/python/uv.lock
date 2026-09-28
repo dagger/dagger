@@ -361,7 +361,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "graphql-core", specifier = ">=3.2.3" }]
+requires-dist = [{ name = "graphql-core", specifier = ">=3.2.3,<3.3" }]
 
 [[package]]
 name = "colorama"

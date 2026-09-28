@@ -35,13 +35,36 @@ func TestReplaceSection(t *testing.T) {
 }
 
 func TestRenderSection(t *testing.T) {
-	empty := renderSection("", "base", "head", false)
+	empty := renderSection(schemaDiff{}, "base", "head", false)
 	if !strings.Contains(empty, "No semantic API changes.") || !strings.Contains(empty, "go -C hack/sdl-diff run . -descriptions=false base:"+schemaPath+" head:"+schemaPath) {
 		t.Fatal(empty)
 	}
-	got := renderSection("# docs with ``` and ````\n", "base", "head", true)
+	got := renderSection(schemaDiff{summary: "# docs with ``` and ````\n", details: "-</details>\n-`````\n+new\n"}, "base", "head", true)
 	if !strings.Contains(got, "`````graphql\n") || !strings.Contains(got, "`go -C hack/sdl-diff run . base:"+schemaPath+" head:"+schemaPath+"`") {
 		t.Fatal(got)
+	}
+	if !strings.Contains(got, "<details>\n<summary>Detailed diff</summary>\n\n``````diff\n-</details>\n-`````\n+new\n``````\n\n</details>") {
+		t.Fatal("unsafe or missing detailed fence:\n" + got)
+	}
+	if strings.Contains(empty, "<details>") {
+		t.Fatal("no-op should not contain empty details")
+	}
+}
+
+func TestPRReservedMarkersInOldDescriptions(t *testing.T) {
+	for _, marker := range []string{sectionStart, sectionEnd} {
+		for _, after := range []string{`type Query { "new" value: String }`, `scalar Query`} {
+			pr := pullRequest{State: "open"}
+			pr.Base.SHA, pr.Head.SHA = strings.Repeat("a", 40), strings.Repeat("b", 40)
+			api := &prTestAPI{pr: pr, merge: strings.Repeat("c", 40)}
+			_, err := api.client(t).updatePR(context.Background(), "dagger/dagger", "42", true, true,
+				func(context.Context, string, string, string) (string, string, error) {
+					return `type Query { "` + marker + `" value: String }`, after, nil
+				})
+			if err == nil || !strings.Contains(err.Error(), "reserved section markers") || api.writes != 0 {
+				t.Fatalf("old-only marker must prevent publishing: %v (writes=%d)", err, api.writes)
+			}
+		}
 	}
 }
 
@@ -79,7 +102,7 @@ func TestPRWorkflow(t *testing.T) {
 			oldSDL := `type Query { "old description" value: String }`
 			newSDL := `type Query { "new description" value: String }`
 			if tc.noOp {
-				pr.Body = renderSection("", merge, head, false)
+				pr.Body = renderSection(schemaDiff{}, merge, head, false)
 			}
 			api := &prTestAPI{pr: pr, merge: merge, changeOnRead: tc.changed}
 			g := api.client(t)
@@ -104,8 +127,12 @@ func TestPRWorkflow(t *testing.T) {
 			if api.writes == 1 && (!strings.HasPrefix(api.written, pr.Body+"\n\n") || !strings.Contains(api.written, "No semantic API changes.")) {
 				t.Fatal(api.written)
 			}
-			if tc.descriptions && !strings.Contains(result, "new description") {
-				t.Fatal(result)
+			if tc.descriptions {
+				primary, details, ok := strings.Cut(result, "<details>")
+				if !ok || !strings.Contains(primary, "# Description changed") || strings.Contains(primary, "old description") ||
+					!strings.Contains(primary, "new description") || !strings.Contains(details, "-  old description\n+  new description") {
+					t.Fatal(result)
+				}
 			}
 		})
 	}

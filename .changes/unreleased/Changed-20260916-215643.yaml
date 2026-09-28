@@ -1,0 +1,6 @@
+kind: Changed
+body: '`dagger generate -y` no longer computes a diff summary it never displays. Generators that write large outputs apply their changes faster.'
+time: 2026-09-16T21:56:43-07:00
+custom:
+    Author: grouville
+    PR: "14185"

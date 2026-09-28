@@ -354,6 +354,15 @@ type SpanSnapshot struct {
 	AgentSnapshotDigest   string `json:",omitempty"`
 	AgentPreTeardownState string `json:",omitempty"`
 
+	// AgentRewindFrom and AgentRewindTo mark a rewind marker: a message span
+	// the engine emits beneath the loop span when an agent's conversation is
+	// replaced by one of its own ancestors (inline prompt editing). From is
+	// the recipe digest of the abandoned conversation, To the adopted one;
+	// the messages between them are no longer in the model's history (see
+	// DB.Rewinds).
+	AgentRewindFrom string `json:",omitempty"`
+	AgentRewindTo   string `json:",omitempty"`
+
 	ActorEmoji  string `json:",omitempty"`
 	Message     string `json:",omitempty"`
 	ContentType string `json:",omitempty"`
@@ -463,6 +472,14 @@ func (snapshot *SpanSnapshot) LLMEventOriginMessage() bool {
 	return snapshot.LLMOriginKind == telemetryattrs.LLMMessageOriginKindEvent
 }
 
+// AgentRewindMarker reports whether this span is a rewind marker: the row at
+// which an agent's conversation forked away from the messages above it.
+// Frontends render it as a resume point and treat the messages it abandoned
+// (DB.SupersededBy) as no longer part of the conversation.
+func (snapshot *SpanSnapshot) AgentRewindMarker() bool {
+	return snapshot.AgentRewindFrom != "" && snapshot.AgentRewindTo != ""
+}
+
 func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint: gocyclo
 	defer func() {
 		// a bit of a shortcut, but there shouldn't be much going on
@@ -566,6 +583,12 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.AgentCallDigestAttr:
 		snapshot.AgentCallDigest = val.(string)
+
+	case telemetryattrs.AgentRewindFromDigestAttr:
+		snapshot.AgentRewindFrom = val.(string)
+
+	case telemetryattrs.AgentRewindToDigestAttr:
+		snapshot.AgentRewindTo = val.(string)
 
 	case telemetry.LLMRoleAttr:
 		snapshot.LLMRole = val.(string)

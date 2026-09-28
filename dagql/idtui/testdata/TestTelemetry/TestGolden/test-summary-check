@@ -1,20 +1,27 @@
 Expected stderr:
 
-CHECKS  ✔ 1 passed
-✔ test-summary X.Xs OK
+CHECKS  ✘ 1 failed
+✘ test-summary X.Xs ERROR
   TESTS
-    ✘ viztest summary suite › failed test 01 FAIL
-          failed test 01 log line 1
-          failed test 01 log line 2
+    ✘ github.com/dagger/dagger/dagql/idtui/viztest FAIL
+    ✘ viztest › TestProvision FAIL
+    ✘ viztest › TestProvision › TestEngineGC FAIL
+    ✘ viztest › TestProvision › TestEngineGC › docker FAIL
 
-    ∅ viztest summary suite › skipped test 01 SKIP
+    ✘ viztest › TestProvision › TestEngineGC › docker › cleanup FAIL
+          cleanup: unable to garbage collect engine
+
+    ∅ viztest › TestProvision › skipped test 01 SKIP
           skipped test 01 log line 1
           skipped test 01 log line 2
 
-    ∅ viztest summary suite › skipped test 02 SKIP
+    ∅ viztest › TestProvision › skipped test 02 SKIP
           skipped test 02 log line 1
           skipped test 02 log line 2
 
     ✘ 1 failed
     ∅ 2 skipped
     ✔ 2 passed
+
+RUN LOCALLY
+  dagger check "test-summary"

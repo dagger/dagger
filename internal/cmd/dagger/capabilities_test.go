@@ -305,7 +305,8 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger workspace root",
 		"dagger workspace doctor",
 		"dagger doctor",
-		"dagger workspace update",
+		"dagger lock list",
+		"dagger lock update",
 	}
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayCallEngine))
 
@@ -606,7 +607,8 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 		"dagger workspace entrypoint",
 		"dagger workspace exec",
 		"dagger workspace migrate",
-		"dagger workspace update",
+		"dagger lock list",
+		"dagger lock update",
 	}
 	require.ElementsMatch(t, readers, commandsDeclaringCapability(rootCmd, mayReadWorkspaceConfig))
 
@@ -676,6 +678,8 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger script",
 		"dagger shell",
 		"dagger trace",
+		"dagger cloud traces view",
+		"dagger cloud logs",
 		"dagger up",
 		"dagger workspace exec",
 		"dagger workspace migrate",

@@ -8,6 +8,7 @@ package core
 
 import (
 	"context"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
@@ -128,9 +129,10 @@ func (LLMSuite) TestSkillsSurviveWorkspaceReset(ctx context.Context, t *testctx.
 func (LLMSuite) TestSkillTools(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	description := "How to deploy this project. " + strings.Repeat("Detailed deployment triggers. ", 20) + "Release rollback guidance."
 	skillsDir := c.Directory().
 		WithNewFile("deploy/SKILL.md",
-			"---\nname: deploy\ndescription: How to deploy this project.\n---\n\n# Deploying\nFollow reference/checklist.md before shipping.\n").
+			"---\nname: deploy\ndescription: "+description+"\n---\n\n# Deploying\nFollow reference/checklist.md before shipping.\n").
 		WithNewFile("deploy/reference/checklist.md",
 			"# Checklist\n- run the tests\n- ship it\n")
 
@@ -162,10 +164,15 @@ func (LLMSuite) TestSkillTools(ctx context.Context, t *testctx.T) {
 		WithPrompt(prompt).
 		Loop()
 
+	require.Equal(t, description, skillIndex(ctx, t, llm)["deploy"],
+		"LLM.skills should retain the full description")
 	transcript, err := llm.Transcript(ctx)
 	require.NoError(t, err)
-	require.Contains(t, transcript, "How to deploy this project.",
-		"the live ListSkills result should carry the installed skill's description")
+	require.Contains(t, transcript, "- deploy: How to deploy this project.",
+		"ListSkills should render a compact text index rather than JSON")
+	require.Contains(t, transcript, "ReadSkill gives full guidance and triggers")
+	require.Contains(t, transcript, description,
+		"ReadSkill should retain the full description, including detailed triggers")
 	require.Contains(t, transcript, "# Deploying",
 		"the live ReadSkill result should carry the SKILL.md body")
 	require.Contains(t, transcript, "- ship it",

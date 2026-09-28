@@ -21,7 +21,34 @@ The machine-readable schema is published at [dagger-workspace.schema.json](/refe
 | `defaults_from_dotenv` | bool | Read module constructor defaults from a `.env` file. |
 | `check-generated` | bool | Run generators as checks during `dagger check`, failing when generated files are stale. Defaults to `true`; CLI flags override it. |
 
-Resolved image and Git lookups are pinned in `dagger.lock` alongside the config, and refreshed with `dagger workspace update`.
+## `dagger.lock`
+
+Resolved image, Git, and vanity URL lookups are pinned in `dagger.lock` alongside the config. A workspace with multiple `dagger.toml` files can therefore contain multiple lockfiles.
+
+Run `dagger lock update` without selectors to refresh every supported entry in the selected lockfile. Selectors refresh matching resources:
+
+```shell
+dagger lock update node
+dagger lock update 'node:lts*'
+dagger lock update 'dagger@m*'
+dagger lock update github.com/dagger/dagger@refs/heads/main
+```
+
+The `node` selector matches OCI references whose repository name is `node`, including `docker.io/library/node:lts-alpine`. The `node:lts*` pattern also matches the tag without requiring the registry path. Git identities omit the transport scheme and `.git` suffix. The `dagger@m*` pattern matches both `refs/heads/main` and `refs/tags/main` in repositories named `dagger`. A fully qualified ref selects only that branch or tag.
+
+Shell-style patterns can match the full resource identity, and `*` spans `/`. Multiple selectors are ORed together, but each selector must match at least one entry. Quote patterns to keep the shell from expanding them:
+
+```shell
+dagger lock update '*node*' '*python*'
+```
+
+Use `dagger lock list` to print matching canonical identities without resolving or changing the lockfile. `dagger lock update --list` produces the same output, so an update can be checked and then applied by removing `--list`:
+
+```shell
+dagger lock list dagger
+dagger lock update --list dagger
+dagger lock update dagger
+```
 
 ## `[modules.<name>]`
 

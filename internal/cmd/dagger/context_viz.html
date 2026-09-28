@@ -116,6 +116,27 @@
   }
   .skills { color: var(--dim); font-size: 12px; }
   .skills b { color: var(--fg); font-weight: 600; }
+
+  .tool-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .tool-controls input, .tool-controls select {
+    background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 4px; font: inherit; padding: 6px 8px; min-width: 0;
+  }
+  .tool-controls input { flex: 1; min-width: 180px; }
+  .tool-controls select { max-width: 100%; }
+  :focus-visible { outline: 2px solid var(--c-tools); outline-offset: 2px; }
+  .tool-list { max-height: 560px; overflow: auto; border: 1px solid var(--border); border-radius: 5px; }
+  .tool { border-bottom: 1px solid var(--border); }
+  .tool:last-child { border-bottom: none; }
+  .tool summary { cursor: pointer; padding: 10px 12px; overflow-wrap: anywhere; }
+  .tool summary:hover, .tool[open] summary { background: var(--panel); }
+  .tool-name { color: var(--c-tools); font-weight: 600; }
+  .tool-badge { display: inline-block; margin-left: 10px; font-size: 11px; color: var(--dim); }
+  .tool-preview { display: block; margin-top: 4px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tool-body { padding: 0 12px 12px; background: var(--panel); }
+  .tool-description { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding-top: 10px; }
+  .tool-body pre { margin: 8px 0 0; padding: 10px; background: #0b0e11; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+  .tool-empty { padding: 14px; color: var(--dim); }
 </style>
 </head>
 <body>
@@ -139,6 +160,24 @@
   <div class="calls" id="calls"></div>
   <div class="cache-note" id="cacheNote"></div>
 
+  <h2 id="toolsHead">Available tools</h2>
+  <div class="tool-controls">
+    <input id="toolSearch" type="search" aria-label="Search tools" placeholder="Search names, descriptions, parameters…">
+    <select id="toolPrefix" aria-label="Filter tools by name prefix"><option value="">All name prefixes</option></select>
+    <select id="toolUsage" aria-label="Filter tools by usage">
+      <option value="all">All tools</option>
+      <option value="unused">Not called</option>
+      <option value="used">Called</option>
+    </select>
+    <button id="toolsExpand">expand shown</button>
+    <button id="toolsCollapse">collapse all</button>
+  </div>
+  <div class="tool-list" id="tools"></div>
+  <div class="cache-note" id="toolsNote"></div>
+
+  <h2 id="skillsHead" style="display:none">Available skills</h2>
+  <div class="skills" id="skills"></div>
+
   <h2>Transcript</h2>
   <div class="items" id="items"></div>
   <div class="cache-note">
@@ -147,9 +186,6 @@
     newer than the last call, sized by the chars/4 heuristic until the next
     call measures them.
   </div>
-
-  <h2 id="skillsHead" style="display:none">Available skills</h2>
-  <div class="skills" id="skills"></div>
 </div>
 
 <script>
@@ -175,6 +211,10 @@ const SHORT = {
 let snap = null;
 let lastBody = "";
 const expanded = new Set();
+const expandedTools = new Set();
+let rawToolsExpanded = false;
+let toolsKey = "";
+let toolsAgent = null;
 
 function fmt(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
@@ -329,6 +369,7 @@ function renderSummary(s) {
   }
   parts.push(s.items.length + " blocks");
   parts.push(s.calls.length + " API calls");
+  parts.push(s.toolsError ? "tool inventory unavailable" : (s.tools || []).length + " tools available");
   document.getElementById("summary").innerHTML = parts.join(" · ");
 }
 
@@ -451,6 +492,116 @@ function renderItems(s) {
   }
 }
 
+// Prefixes are a naming aid, not authoritative module/provenance metadata.
+function toolPrefix(name) {
+  const i = name.indexOf("_");
+  return i > 0 ? name.slice(0, i) : "";
+}
+
+function visibleTools(s) {
+  const search = document.getElementById("toolSearch").value.trim().toLowerCase();
+  const prefix = document.getElementById("toolPrefix").value;
+  const usage = document.getElementById("toolUsage").value;
+  return (s.tools || []).filter(t => {
+    if (prefix && toolPrefix(t.name) !== prefix) return false;
+    if (usage === "unused" && t.calls > 0) return false;
+    if (usage === "used" && !t.calls) return false;
+    return !search || (t.name + "\n" + t.description + "\n" + JSON.stringify(t.schema)).toLowerCase().includes(search);
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function renderTools(s, force = false) {
+  const rawText = s.toolsError ? s.items.find(it => it.fixed && it.category === "tools")?.text : null;
+  const key = JSON.stringify([s.agent, s.tools, s.toolsError, rawText]);
+  // Avoid replacing focused details / resetting schema scroll on every poll.
+  if (!force && key === toolsKey) return;
+  toolsKey = key;
+  const box = document.getElementById("tools");
+  const agentChanged = toolsAgent !== s.agent;
+  const scroll = agentChanged ? 0 : box.scrollTop;
+  const focusedDetails = !agentChanged && box.contains(document.activeElement) ? document.activeElement.closest("details") : null;
+  const focused = focusedDetails?.dataset.name;
+  const rawFocused = focusedDetails?.dataset.raw === "true";
+  const prefix = document.getElementById("toolPrefix");
+  if (agentChanged) {
+    toolsAgent = s.agent;
+    expandedTools.clear();
+    rawToolsExpanded = false;
+    document.getElementById("toolSearch").value = "";
+    document.getElementById("toolUsage").value = "all";
+    prefix.value = "";
+  }
+  const selectedPrefix = prefix.value;
+  prefix.replaceChildren(el("option", "", "All name prefixes"));
+  prefix.firstChild.value = "";
+  const prefixes = new Map();
+  for (const t of s.tools || []) {
+    const p = toolPrefix(t.name);
+    if (p) prefixes.set(p, (prefixes.get(p) || 0) + 1);
+  }
+  for (const [p, count] of [...prefixes].sort(([a], [b]) => a.localeCompare(b))) {
+    const option = el("option", "", p + "_* (" + count + ")");
+    option.value = p;
+    prefix.appendChild(option);
+  }
+  prefix.value = prefixes.has(selectedPrefix) ? selectedPrefix : "";
+  box.replaceChildren();
+  const head = document.getElementById("toolsHead");
+  const note = document.getElementById("toolsNote");
+  if (s.toolsError) {
+    head.textContent = "Available tools · inventory unavailable";
+    box.appendChild(el("div", "error", s.toolsError));
+    // Never silently hide tools if the engine's documentation format changes.
+    const raw = el("details", "tool");
+    raw.dataset.raw = "true";
+    raw.open = rawToolsExpanded;
+    const summary = el("summary", "", "Raw tool definitions");
+    raw.appendChild(summary);
+    const body = el("div", "tool-body");
+    body.appendChild(el("pre", "", rawText || "(no tool definitions)"));
+    raw.appendChild(body);
+    raw.ontoggle = () => { if (raw.isConnected) rawToolsExpanded = raw.open; };
+    box.appendChild(raw);
+    if (rawFocused) summary.focus({ preventScroll: true });
+    box.scrollTop = scroll;
+    note.textContent = "The structured inventory could not be read. The original definitions are shown above.";
+    return;
+  }
+  const tools = s.tools || [];
+  const shown = visibleTools(s);
+  head.textContent = "Available tools · " + shown.length + " / " + tools.length;
+  note.textContent = "Current tools exposed to the focused agent, including tools it has never called. " +
+    "Call counts cover only the retained transcript. Prefixes group names, not verified origins.";
+  if (!shown.length) {
+    box.appendChild(el("div", "tool-empty", tools.length ? "No tools match these filters." : "No tools are exposed to this agent."));
+  }
+  for (const t of shown) {
+    const details = el("details", "tool");
+    details.dataset.name = t.name;
+    details.open = expandedTools.has(t.name);
+    const summary = el("summary");
+    summary.appendChild(el("span", "tool-name", t.name));
+    const params = Object.keys(t.schema?.properties || {}).length;
+    summary.appendChild(el("span", "tool-badge", params + (params === 1 ? " parameter" : " parameters")));
+    summary.appendChild(el("span", "tool-badge", t.calls ? t.calls + (t.calls === 1 ? " call" : " calls") : "not called"));
+    summary.appendChild(el("span", "tool-preview", t.description || "No description provided."));
+    details.appendChild(summary);
+    const body = el("div", "tool-body");
+    body.appendChild(el("p", "tool-description", t.description || "No description provided."));
+    body.appendChild(el("div", "cache-note", "Input schema · required parameters are listed in “required”"));
+    body.appendChild(el("pre", "", JSON.stringify(t.schema, null, 2)));
+    details.appendChild(body);
+    details.ontoggle = () => {
+      if (!details.isConnected) return;
+      if (details.open) expandedTools.add(t.name);
+      else expandedTools.delete(t.name);
+    };
+    box.appendChild(details);
+    if (focused === t.name) summary.focus({ preventScroll: true });
+  }
+  box.scrollTop = scroll;
+}
+
 function renderSkills(s) {
   const head = document.getElementById("skillsHead");
   const box = document.getElementById("skills");
@@ -475,6 +626,7 @@ function render(s) {
   renderLegend(s);
   renderCalls(s);
   renderItems(s);
+  renderTools(s);
   renderSkills(s);
 }
 
@@ -499,6 +651,22 @@ async function refresh() {
   }
 }
 
+document.getElementById("toolSearch").oninput = () => { if (snap) renderTools(snap, true); };
+for (const id of ["toolPrefix", "toolUsage"]) {
+  document.getElementById(id).onchange = () => { if (snap) renderTools(snap, true); };
+}
+document.getElementById("toolsExpand").onclick = () => {
+  if (!snap) return;
+  rawToolsExpanded = true;
+  for (const t of visibleTools(snap)) expandedTools.add(t.name);
+  renderTools(snap, true);
+};
+document.getElementById("toolsCollapse").onclick = () => {
+  if (!snap) return;
+  expandedTools.clear();
+  rawToolsExpanded = false;
+  renderTools(snap, true);
+};
 document.getElementById("refresh").onclick = refresh;
 setInterval(() => {
   if (document.getElementById("auto").checked && !document.hidden) refresh();

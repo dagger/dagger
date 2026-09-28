@@ -34,6 +34,22 @@ class AgentMiddlewareGroup extends Client\AbstractObject implements Client\IdAbl
     }
 
     /**
+     * Recompose the selected agent middlewares onto an existing LLM, replacing their modules' owned system prompts, skills, and tool bindings while preserving tool object state.
+     *
+     * Contributions belong to the installed module calling withSystemPrompt, withSkills, or withTools, independently of the bound object's module or middleware entrypoint. Ownership follows the installed module name, not its source location. Moving a module between remote, local, or forked sources preserves compatible state when its installation name and intrinsic module and object identities stay the same.
+     *
+     * Contributions from selected modules are removed once before running the selected entrypoints. Unowned contributions and contributions from other modules are retained. Nested modules own their own contributions; use recompose explicitly to refresh them. Other middleware effects retain compose semantics; this is not a general rollback of arbitrary middleware changes.
+     *
+     * Existing field values win over new defaults; fields added by the new revision take its defaults. Changing a binding's withTools version resets that object's state to the new defaults instead. With an unchanged version, visibly incompatible state (a public field that changed type, or a value whose shape differs from the new default) is an error. Discarded bindings or changed module or object identities are errors regardless of version. Ownership checks still apply. The base workspace is preserved.
+     */
+    public function recompose(LLM $base): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('recompose');
+        $innerQueryBuilder->setArgument('base', $base);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
      */
     public function compose(?LLM $base = null): LLM

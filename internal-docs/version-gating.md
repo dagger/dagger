@@ -10,6 +10,16 @@ Dagger serves a schema view for each module based on that module's configured
 `engineVersion`. A module pinned to an older engine version should see the API
 surface that existed for that version, even when running on a newer engine.
 
+Views are base-version granular. `engine.APIViewVersion` drops the prerelease
+and build suffixes, so every prerelease of a version shares that version's view:
+modules and clients declaring `v1.0.0-beta.12`, `v1.0.0-beta.15`, or
+`v1.0.0-0` all get the `v1.0.0` view. A view gate at a prerelease boundary such
+as `AfterVersion("v1.0.0-beta.15")` therefore cannot separate earlier betas
+from later ones; it behaves exactly like `AfterVersion("v1.0.0-0")`. When
+behavior must differ between prereleases, compare the caller's exact declared
+engine version instead, as `callerPastChangesetCwdCutover` in
+`core/schema/workspace.go` does.
+
 The view is carried by dagql calls and IDs, and codegen consumes introspection
 for that view. That means a new public API leaking into an old view can change
 generated SDK/runtime files for old fixtures and modules.
@@ -46,7 +56,10 @@ interface:
 
 1. Decide the first module engine version that should see it.
 2. Gate new future API with `View(AfterVersion("<version>"))`. For unreleased
-   v1 API surface, the current pattern is `AfterVersion("v1.0.0-0")`.
+   v1 API surface, the current pattern is `AfterVersion("v1.0.0-0")`; a later
+   v1.0.0 prerelease boundary would not change which callers see it.
+   In tests, build views from declared versions with `engine.APIViewVersion`,
+   not raw prerelease strings, so they match what callers actually get.
 3. If replacing old shape with new shape, gate the legacy shape with
    `View(BeforeVersion("<cutover>"))` and the new shape with
    `View(AfterVersion("<cutover>"))`.
@@ -92,8 +105,8 @@ give that module a v1 engine view in `dagger.json`:
 }
 ```
 
-Use the matching `v1.0.0-*` prerelease view when the fixture is explicitly
-testing a prerelease API view. Do not leave a fixture pinned to `v0.21.x` if it
+A prerelease `engineVersion` such as `v1.0.0-beta.12` gets the same `v1.0.0`
+view, so it does not select an older slice of the v1 API. Do not leave a fixture pinned to `v0.21.x` if it
 uses v1-only workspace fields; it may fail before the test reaches its
 assertions because SDK/runtime generation uses the older schema view.
 

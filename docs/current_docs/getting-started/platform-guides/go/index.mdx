@@ -338,7 +338,7 @@ git add dagger.toml dagger.lock .dagger
 git commit -m "Daggerize"
 ```
 
-`dagger.lock` pins every image and Git ref the workspace resolved, including the `golang` tag behind `version` and the images the custom module uses. Any Dagger command may add to it, and entries for images the workspace no longer uses, such as a previous `version`, stay in the file. Those stale pins are expected and harmless. `dagger workspace update` refreshes the pinned versions.
+`dagger.lock` pins every image and Git ref the workspace resolved, including the `golang` tag behind `version` and the images the custom module uses. Any Dagger command may add to it, and entries for images the workspace no longer uses, such as a previous `version`, stay in the file. Those stale pins are expected and harmless. `dagger lock update` refreshes the pinned versions.
 
 ## Next steps
 

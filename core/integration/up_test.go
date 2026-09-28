@@ -37,7 +37,7 @@ func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs i
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec([]string{"sh", "-c", upVerifyScript(upArgs, url, expectBodyContains, okMsg, upVerifyBounds{
 			prepare: 300, ready: timeoutSecs, probe: 5, shutdown: 30,
-		})}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+		})})
 	}
 }
 

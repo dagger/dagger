@@ -2,8 +2,14 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"io/fs"
+	"os"
+	"path"
+	"strings"
 	"testing"
 	"testing/fstest"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -150,6 +156,81 @@ func TestListSkillsDedupAndSort(t *testing.T) {
 	}, metas)
 }
 
+func TestSkillDescriptionExcerpt(t *testing.T) {
+	for _, tc := range []struct {
+		name, description, want string
+	}{
+		{"empty", "", ""},
+		{"whitespace", "  Use when\n running\t tests.\r\n", "Use when running tests."},
+		{"abbreviations and paths", "Use e.g. core/llm.go and dagger.json. Read more.", "Use e.g. core/llm.go and dagger.json. Read more."},
+		{"at limit", strings.Repeat("x", 160), strings.Repeat("x", 160)},
+		{"long token", strings.Repeat("x", 161), strings.Repeat("x", 159) + "…"},
+		{"word boundary", strings.Repeat("word ", 40), strings.TrimSpace(strings.Repeat("word ", 32)) + "…"},
+		{"partial word", strings.Repeat("word ", 31) + "longword", strings.TrimSpace(strings.Repeat("word ", 31)) + "…"},
+		{"unicode", strings.Repeat("界", 161), strings.Repeat("界", 159) + "…"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := skillDescriptionExcerpt(tc.description)
+			require.Equal(t, tc.want, got)
+			require.True(t, utf8.ValidString(got))
+			require.LessOrEqual(t, utf8.RuneCountInString(got), 160)
+		})
+	}
+}
+
+func TestRenderSkillList(t *testing.T) {
+	require.Equal(t, "No skills available.", renderSkillList(nil))
+	name := "skill-" + strings.Repeat("long-name-", 20)
+	description := "Use when testing. " + strings.Repeat("Detailed trigger. ", 40)
+	content := "---\ndescription: " + description + "\n---\nFull guidance.\n"
+	src := embeddedSkillSource{
+		fsys:  fstest.MapFS{name + "/SKILL.md": {Data: []byte(content)}},
+		allow: []string{name},
+	}
+	skills, err := listSkills(t.Context(), []skillSource{src})
+	require.NoError(t, err)
+	out := renderSkillList(skills)
+	require.Contains(t, out, "ReadSkill gives full guidance and triggers")
+	require.Contains(t, out, "\n- "+name+": Use when testing.")
+	require.True(t, strings.HasSuffix(out, "…"))
+	require.Equal(t, strings.TrimSpace(description), skills[0].Description,
+		"rendering must not mutate LLM.skills metadata")
+	full, err := readSkill(t.Context(), []skillSource{src}, name, "")
+	require.NoError(t, err)
+	require.Equal(t, content, full, "ReadSkill must preserve all triggers and guidance")
+}
+
+// Keep the actual repository's roster discoverable within a small tool result,
+// including engine-debugging, which was hidden by verbose JSON descriptions.
+func TestRenderRepositorySkillList(t *testing.T) {
+	sources := []skillSource{engineSkills, daggerSkills}
+	root := os.DirFS("..")
+	for _, pattern := range []string{"skills/*/SKILL.md", ".dagger/modules/*/skills/*/SKILL.md"} {
+		paths, err := fs.Glob(root, pattern)
+		require.NoError(t, err)
+		if len(paths) == 0 {
+			t.Skip("requires the full repository; engine-dev filters out workspace skills")
+		}
+		for _, p := range paths {
+			dir := path.Dir(p)
+			fsys, err := fs.Sub(root, path.Dir(dir))
+			require.NoError(t, err)
+			sources = append(sources, embeddedSkillSource{fsys: fsys, allow: []string{path.Base(dir)}})
+		}
+	}
+	skills, err := listSkills(t.Context(), sources)
+	require.NoError(t, err)
+	out := renderSkillList(skills)
+	for _, skill := range skills {
+		require.Contains(t, out, "\n- "+skill.Name+": ")
+	}
+	require.Contains(t, out, "- engine-debugging: Run Dagger repo tests and debug Dagger engine")
+	require.Less(t, len(out), 3072, "the current roster should fit in a 3 KiB result")
+	full, err := json.Marshal(skills)
+	require.NoError(t, err)
+	t.Logf("%d skills: full JSON %d bytes, compact index %d bytes:\n%s", len(skills), len(full), len(out), out)
+}
+
 func TestReadSkillFallthrough(t *testing.T) {
 	ctx := context.Background()
 	src := embeddedSkillSource{fsys: testSkillsFS(), allow: []string{"dang-language"}}
@@ -224,6 +305,61 @@ func TestSkillSourcesOrder(t *testing.T) {
 	require.IsType(t, directorySkillSource{}, sources[2])
 	require.IsType(t, directorySkillSource{}, sources[3])
 	require.IsType(t, workspaceSkillSource{}, sources[4])
+}
+
+func TestLLMSkillOwnership(t *testing.T) {
+	ctx := llmTestContext()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := newCoreDagqlServerForTest(t, LLMTestQuery{})
+	srv.InstallObject(dagql.NewClass[*Directory](srv))
+	dir := newTypeDefAttachedResult(t, ctx, cache, srv, "skills", &Directory{})
+	replacement := newTypeDefAttachedResult(t, ctx, cache, srv, "attached-skills", &Directory{})
+	base, err := (&Query{}).NewLLM(ctx, "test-model", "")
+	require.NoError(t, err)
+	base = base.WithSkills(dir).
+		WithSkillsOwner(dir, "outer").
+		WithSkillsOwner(dir, "inner").
+		WithSkillsOwner(dir, "outer")
+	owners := func(llm *LLM) []string {
+		var owners []string
+		for _, dir := range llm.mcp.skillDirs {
+			owners = append(owners, dir.Owner)
+		}
+		return owners
+	}
+	require.Equal(t, []string{"", "outer", "inner", "outer"}, owners(base))
+	require.Equal(t, owners(base), owners(base.WithoutComposition("")))
+	removed := base.WithoutComposition("outer")
+	require.Equal(t, []string{"", "inner"}, owners(removed))
+	require.Len(t, base.mcp.skillDirs, 4, "removal must not mutate the base")
+	require.Len(t, removed.mcp.skillSources(), 5, "unowned and nested module skills survive")
+
+	clone := base.Clone()
+	deps, err := clone.AttachDependencyResults(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+		attached, ok := res.(dagql.ObjectResult[*Directory])
+		require.True(t, ok)
+		require.Same(t, dir.Self(), attached.Self())
+		return replacement, nil
+	})
+	require.NoError(t, err)
+	require.Len(t, deps, 4)
+	require.Equal(t, owners(base), owners(clone), "attachment retains owners")
+	for i := range base.mcp.skillDirs {
+		require.Same(t, dir.Self(), base.mcp.skillDirs[i].Directory.Self())
+		require.Same(t, replacement.Self(), clone.mcp.skillDirs[i].Directory.Self())
+	}
+
+	sels, err := clone.recipeSelectors(ctx)
+	require.NoError(t, err)
+	var replayOwners []string
+	for _, sel := range sels {
+		if sel.Field == "withSkills" {
+			replayOwners = append(replayOwners, compositionSelectorOwner(t, sel))
+		}
+	}
+	require.Equal(t, owners(base), replayOwners, "replay records explicit owners, including empty")
 }
 
 // TestEngineSkills checks the real embedded source: the dang-language skill is

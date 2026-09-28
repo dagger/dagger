@@ -1,6 +1,9 @@
 package dagui
 
 import (
+	"encoding/binary"
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -392,6 +395,107 @@ func TestTestViewsRespectRootRelativeContainment(t *testing.T) {
 	}
 }
 
+// Test producers mark every test as a boundary to contain its implementation
+// work. Those boundaries must not hide the subtests that make up the test report.
+func TestTestViewsRollUpThroughTestBoundaries(t *testing.T) {
+	for _, toolOwned := range []bool{false, true} {
+		for _, incremental := range []bool{false, true} {
+			t.Run(fmt.Sprintf("tool=%t/incremental=%t", toolOwned, incremental), func(t *testing.T) {
+				root := checkSnapshot(1, "root", SpanID{}, "")
+				if toolOwned {
+					root = toolCallSnapshot(1, 0, "test")
+				}
+				suite := testSnapshot(2, "suite", root.ID, TestStatusFailure)
+				suite.TestCaseName = ""
+				suite.TestSuiteName = "suite"
+				suite.Boundary = true
+				parent := testSnapshot(3, "parent", suite.ID, TestStatusFailure)
+				parent.Boundary = true
+				nested := testSnapshot(4, "nested", parent.ID, TestStatusFailure)
+				nested.Boundary = true
+				failed := testSnapshot(5, "failed", nested.ID, TestStatusFailure)
+				failed.Boundary = true
+				passed := testSnapshot(6, "passed", nested.ID, TestStatusSuccess)
+				skipped := testSnapshot(7, "skipped", nested.ID, TestStatusSkipped)
+				snapshots := []SpanSnapshot{root, suite, parent, nested, failed, passed, skipped}
+				db := NewDB()
+				if incremental {
+					db.TestView()
+					for _, snapshot := range snapshots {
+						db.ImportSnapshots([]SpanSnapshot{snapshot})
+						db.TestView()
+					}
+				} else {
+					db.ImportSnapshots(snapshots)
+				}
+
+				want := TestCounts{Failing: 1, Passing: 1, Skipped: 1}
+				assertView := func(view *TestView) {
+					t.Helper()
+					if view.Counts != want {
+						t.Fatalf("expected leaf counts %+v, got %+v", want, view.Counts)
+					}
+					for _, snapshot := range []SpanSnapshot{parent, nested, failed, passed, skipped} {
+						if view.BySpan[snapshot.ID] == nil {
+							t.Fatalf("lost test %q", snapshot.Name)
+						}
+					}
+					if view.BySpan[failed.ID].Parent != view.BySpan[nested.ID] || view.BySpan[nested.ID].Parent != view.BySpan[parent.ID] {
+						t.Fatal("lost subtest hierarchy")
+					}
+				}
+				if toolOwned {
+					if db.HasTests() {
+						t.Fatal("tool-owned tests escaped into the global report")
+					}
+				} else {
+					assertView(db.TestView())
+				}
+				assertView(db.TestViewForSpan(db.Spans.Map[root.ID]))
+				assertView(db.TestViewForSpan(db.Spans.Map[parent.ID]))
+				if spanMayRollUp(db.Spans.Map[failed.ID], db.Spans.Map[root.ID], nil) {
+					t.Fatal("test boundaries must still contain ordinary work roll-ups")
+				}
+			})
+		}
+	}
+}
+
+func TestTestBoundaryMetadataUpdates(t *testing.T) {
+	db := NewDB()
+	boundary := boundarySnapshot(1, 0)
+	child := testSnapshot(2, "child", boundary.ID, TestStatusFailure)
+	db.ImportSnapshots([]SpanSnapshot{boundary, child})
+	if db.HasTests() {
+		t.Fatal("ordinary boundary must contain its tests")
+	}
+
+	for _, suite := range []bool{false, true} {
+		if suite {
+			boundary.TestSuiteName = "suite"
+		} else {
+			boundary.TestCaseName = "parent"
+		}
+		db.ImportSnapshots([]SpanSnapshot{boundary})
+		view := db.TestView()
+		if view.BySpan[child.ID] == nil || view.BySpan[child.ID].Parent != view.BySpan[boundary.ID] {
+			t.Fatal("adding test metadata must reveal and adopt the subtest")
+		}
+		if view.Counts != (TestCounts{Failing: 1}) {
+			t.Fatalf("expected one failed leaf, got %+v", view.Counts)
+		}
+		boundary.TestCaseName = ""
+		boundary.TestSuiteName = ""
+		db.ImportSnapshots([]SpanSnapshot{boundary})
+		if db.HasTests() {
+			t.Fatal("removing test metadata must restore boundary containment")
+		}
+		if db.TestViewForSpan(db.Spans.Map[boundary.ID]).BySpan[child.ID] == nil {
+			t.Fatal("contained test must remain visible in its owning scope")
+		}
+	}
+}
+
 func TestTestViewRebuildsWhenAncestorBecomesBoundary(t *testing.T) {
 	db := NewDB()
 	root := SpanSnapshot{ID: testID(1), TraceID: TraceID{TraceID: trace.TraceID{1}}, Name: "root"}
@@ -621,5 +725,236 @@ func TestViewForSpanMemoizedPerFrame(t *testing.T) {
 	}
 	if fresh.Counts.Failing != 1 {
 		t.Fatalf("fresh view must include the new failing case, got %+v", fresh.Counts)
+	}
+}
+
+// The suite and ordinary ancestor both receive propagated status updates. The
+// number of sibling tests must not affect the index work of those notifications.
+func sharedAncestorTests(count int) (*DB, SpanSnapshot) {
+	db := NewDB()
+	suite := testSnapshot(1, "suite", SpanID{}, TestStatusUnset)
+	suite.TestCaseName = ""
+	suite.TestSuiteName = "suite"
+	ancestor := testSnapshot(2, "shared ancestor", suite.ID, TestStatusUnset)
+	ancestor.TestCaseName = ""
+	snapshots := []SpanSnapshot{suite, ancestor}
+	for i := range count {
+		test := testSnapshot(3, fmt.Sprintf("case-%06d", i), ancestor.ID, TestStatusUnset)
+		binary.BigEndian.PutUint64(test.ID.SpanID[:], uint64(i+100))
+		snapshots = append(snapshots, test)
+	}
+	work := testSnapshot(4, "work", snapshots[2].ID, TestStatusUnset)
+	work.TestCaseName = ""
+	snapshots = append(snapshots, work)
+	db.ImportSnapshots(snapshots)
+	// The work is also a causal continuation of the case, so its activity and
+	// failures affect the case's aggregate rather than only RunningSpans.
+	db.Spans.Map[work.ID].causesViaLinks.Add(db.Spans.Map[work.ParentID])
+	db.TestView()
+	return db, work
+}
+
+func TestTestIndexStatusUpdatesSkipStructuralWork(t *testing.T) {
+	for _, count := range []int{1, 128, 2048} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			db, work := sharedAncestorTests(count)
+			view := db.TestView()
+			idx := db.testIndex
+			checks, reindexes, rebuilds := idx.structureCheckCount, idx.ancestorReindexCount, idx.structuralRebuildCount
+			for i := range 10 {
+				running := i%2 == 0
+				if running {
+					work.EndTime = work.StartTime.Add(-time.Second)
+				} else {
+					work.EndTime = work.StartTime.Add(time.Second)
+				}
+				db.ImportSnapshots([]SpanSnapshot{work})
+				if db.TestView() != view {
+					t.Fatal("aggregate update replaced the global view")
+				}
+				want := TestCounts{Passing: count}
+				category := TestCategoryPassing
+				if running {
+					want = TestCounts{Passing: count - 1, Running: 1}
+					category = TestCategoryRunning
+				}
+				if view.Counts != want || view.FindSuiteByName("suite").Category != category {
+					t.Fatalf("stale aggregates: counts=%+v suite=%s, want %+v/%s", view.Counts, view.FindSuiteByName("suite").Category, want, category)
+				}
+			}
+			// Causal failures also arrive via db.update rather than a test's own
+			// metadata. They must still dirty the test's aggregate.
+			work.Status.Code = codes.Error
+			db.ImportSnapshots([]SpanSnapshot{work})
+			if db.TestView().Counts != (TestCounts{Passing: count - 1, Failing: 1}) {
+				t.Fatalf("causal failure was lost: %+v", view.Counts)
+			}
+			if idx.structureCheckCount != checks || idx.ancestorReindexCount != reindexes || idx.structuralRebuildCount != rebuilds {
+				t.Fatalf("status updates did structural work: checks %d -> %d, reindexes %d -> %d, rebuilds %d -> %d", checks, idx.structureCheckCount, reindexes, idx.ancestorReindexCount, rebuilds, idx.structuralRebuildCount)
+			}
+		})
+	}
+}
+
+func BenchmarkTestIndexDescendantStatusUpdates(b *testing.B) {
+	for _, count := range []int{1, 128, 2048} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			db, work := sharedAncestorTests(count)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if i%2 == 0 {
+					work.EndTime = work.StartTime.Add(-time.Second)
+				} else {
+					work.EndTime = work.StartTime.Add(time.Second)
+				}
+				// Measure ingestion, not rendering or aggregate tree traversal.
+				db.ImportSnapshots([]SpanSnapshot{work})
+			}
+		})
+	}
+}
+
+func TestTestIndexReparentingWithoutGlobalRebuild(t *testing.T) {
+	db := NewDB()
+	left := testSnapshot(1, "left", SpanID{}, TestStatusUnset)
+	left.TestCaseName = ""
+	right := testSnapshot(2, "right", SpanID{}, TestStatusUnset)
+	right.TestCaseName = ""
+	bridge := testSnapshot(3, "bridge", left.ID, TestStatusUnset)
+	bridge.TestCaseName = ""
+	test := testSnapshot(4, "test", bridge.ID, TestStatusSuccess)
+	db.ImportSnapshots([]SpanSnapshot{left, right, bridge, test})
+	global := db.TestView()
+	leftSpan, rightSpan := db.Spans.Map[left.ID], db.Spans.Map[right.ID]
+	if !db.TestViewForSpan(leftSpan).HasTests() || db.TestViewForSpan(rightSpan).HasTests() {
+		t.Fatal("incorrect initial scope")
+	}
+	bridge.ParentID = right.ID
+	db.ImportSnapshots([]SpanSnapshot{bridge})
+	if db.TestView() != global {
+		t.Fatal("reparenting between ordinary ancestors need not rebuild the global view")
+	}
+	if db.TestViewForSpan(leftSpan).HasTests() || !db.TestViewForSpan(rightSpan).HasTests() {
+		t.Fatal("scoped views did not follow reparenting")
+	}
+	if got := db.testIndex.ancestorIDsByTest[test.ID]; !slices.Equal(got, []SpanID{bridge.ID, right.ID}) {
+		t.Fatalf("ancestry index did not follow reparenting: %v", got)
+	}
+	if _, stale := db.testIndex.testsByAncestor[left.ID][test.ID]; stale {
+		t.Fatal("old reverse ancestry entry survived reparenting")
+	}
+	// The new ancestor must now be able to hide the test, even though the
+	// preceding reparent did not change its global containment signature.
+	right.Boundary = true
+	db.ImportSnapshots([]SpanSnapshot{right})
+	if db.TestView().HasTests() || !db.TestViewForSpan(rightSpan).HasTests() {
+		t.Fatal("new ancestor's boundary did not contain the reparented test")
+	}
+}
+
+func TestTestIndexLateAncestorAndMetadataChanges(t *testing.T) {
+	db := NewDB()
+	test := testSnapshot(3, "test", testID(2), TestStatusSuccess)
+	db.ImportSnapshots([]SpanSnapshot{test})
+	global := db.TestView()
+	// Fill the placeholder with an ordinary span pointing to another missing
+	// ancestor. No global structure changes, but the ancestry index must grow.
+	bridge := testSnapshot(2, "bridge", testID(1), TestStatusUnset)
+	bridge.TestCaseName = ""
+	db.ImportSnapshots([]SpanSnapshot{bridge})
+	if db.TestView() != global {
+		t.Fatal("extending an ordinary ancestor chain rebuilt the global view")
+	}
+	if got := db.testIndex.ancestorIDsByTest[test.ID]; !slices.Equal(got, []SpanID{bridge.ID, testID(1)}) {
+		t.Fatalf("missing extended ancestry: %v", got)
+	}
+	ancestor := testSnapshot(1, "late suite", SpanID{}, TestStatusSuccess)
+	ancestor.TestCaseName = ""
+	ancestor.TestSuiteName = "late suite"
+	db.ImportSnapshots([]SpanSnapshot{ancestor})
+	view := db.TestView()
+	if node := view.BySpan[test.ID]; node == nil || node.Parent != view.BySpan[ancestor.ID] {
+		t.Fatal("late suite did not adopt its descendant")
+	}
+	ancestor.TestSuiteName = ""
+	db.ImportSnapshots([]SpanSnapshot{ancestor})
+	view = db.TestView()
+	if view.BySpan[ancestor.ID] != nil || view.BySpan[test.ID].Parent != nil {
+		t.Fatal("removed suite metadata left stale parentage")
+	}
+	bridge.TestCaseName = "new parent case"
+	db.ImportSnapshots([]SpanSnapshot{bridge})
+	view = db.TestView()
+	if view.BySpan[test.ID].Parent != view.BySpan[bridge.ID] {
+		t.Fatal("new case metadata did not reparent its descendant")
+	}
+	bridge.TestCaseName = "renamed case"
+	bridge.Name = "renamed"
+	db.ImportSnapshots([]SpanSnapshot{bridge})
+	view = db.TestView()
+	if view.FindCaseByName("new parent case") != nil || view.FindCaseByName("renamed case") == nil {
+		t.Fatal("metadata rename did not update name indexes")
+	}
+}
+
+func TestTestIndexContainedChangesKeepAncestry(t *testing.T) {
+	for _, flag := range []string{"Boundary", "Encapsulate"} {
+		t.Run(flag, func(t *testing.T) {
+			db := NewDB()
+			outer := boundarySnapshot(1, 0)
+			inner := testSnapshot(2, "inner", outer.ID, TestStatusSuccess)
+			test := testSnapshot(3, "test", inner.ID, TestStatusSuccess)
+			db.ImportSnapshots([]SpanSnapshot{outer, inner, test})
+			global := db.TestView()
+			idx := db.testIndex
+			reindexes := idx.ancestorReindexCount
+			if flag == "Boundary" {
+				inner.Boundary = true
+			} else {
+				inner.Encapsulate = true
+			}
+			db.ImportSnapshots([]SpanSnapshot{inner})
+			if db.TestView() != global || idx.ancestorReindexCount != reindexes {
+				t.Fatal("unchanged containment/ancestry caused rebuilding or reindexing")
+			}
+			contained := db.TestViewForSpan(db.Spans.Map[outer.ID]).BySpan[test.ID] == nil
+			if contained != (flag == "Encapsulate") {
+				t.Fatal("test boundaries must admit subtests; encapsulation must still contain them")
+			}
+			// Simultaneous metadata and flag removal must still process descendants.
+			inner.TestCaseName = ""
+			inner.Boundary = false
+			inner.Encapsulate = false
+			db.ImportSnapshots([]SpanSnapshot{inner})
+			if db.TestView() != global || db.TestViewForSpan(db.Spans.Map[outer.ID]).BySpan[test.ID] == nil {
+				t.Fatal("contained metadata/flag removal was not reflected in scoped view")
+			}
+			// Re-add metadata under the boundary without rebuilding globally, then
+			// remove the boundary. The test must have been reindexed on re-add.
+			inner.TestCaseName = "inner"
+			db.ImportSnapshots([]SpanSnapshot{inner})
+			if db.TestView() != global {
+				t.Fatal("contained metadata addition rebuilt global view")
+			}
+			// Also remove/re-add a leaf, which has no affected descendants to
+			// refresh its local signature on removal.
+			test.TestCaseName = ""
+			db.ImportSnapshots([]SpanSnapshot{test})
+			if db.TestViewForSpan(db.Spans.Map[outer.ID]).BySpan[test.ID] != nil {
+				t.Fatal("removed contained leaf remained in scoped view")
+			}
+			test.TestCaseName = "test"
+			db.ImportSnapshots([]SpanSnapshot{test})
+			if _, indexed := idx.testsByAncestor[outer.ID][test.ID]; !indexed {
+				t.Fatal("re-added contained leaf was not reindexed")
+			}
+			outer.Boundary = false
+			db.ImportSnapshots([]SpanSnapshot{outer})
+			view := db.TestView()
+			if view.BySpan[inner.ID] == nil || view.BySpan[test.ID].Parent != view.BySpan[inner.ID] {
+				t.Fatal("boundary removal lost the re-added test parent")
+			}
+		})
 	}
 }

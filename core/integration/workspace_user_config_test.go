@@ -402,8 +402,7 @@ region = "us-east-1"
 
 	userConfigDaggerExec := func(ctr *dagger.Container, args ...string) *dagger.Container {
 		return ctr.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
+			UseEntrypoint: true,
 		})
 	}
 

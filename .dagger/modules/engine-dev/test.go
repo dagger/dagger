@@ -122,6 +122,9 @@ func (dev *EngineDev) TestTelemetry(
 	// +optional
 	ebpfProgs []string,
 ) (*dagger.Changeset, error) {
+	// Goldens compare a warmed cache with the following CLI invocation.
+	// Keep warmup results available after its session closes.
+	dev = dev.WithEngineConfig("worker.oci", "gc = false")
 	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
 		return nil, err
@@ -246,7 +249,7 @@ func (dev *EngineDev) test(
 
 	return container.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithExec(args)
+		WithExec(withoutOuterSession(args...))
 }
 
 // Use direct HTTP from the runner: asking the engine to execute a dump command

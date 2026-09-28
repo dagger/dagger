@@ -10,7 +10,7 @@ import (
 )
 
 // A Wolfi Linux configuration
-func (r *Query) Wolfi() *Wolfi { // wolfi (../../../../../modules/wolfi/main.go:10:6)
+func (r *Query) Wolfi() *Wolfi { // wolfi (https://github.com/dagger/wolfi/tree/b480244fdace9a9c23eb61f3aec164bba9575242/main.go#L10)
 	q := r.query.Select("wolfi")
 
 	return &Wolfi{
@@ -19,7 +19,7 @@ func (r *Query) Wolfi() *Wolfi { // wolfi (../../../../../modules/wolfi/main.go:
 }
 
 // A Wolfi Linux configuration
-type Wolfi struct { // wolfi (../../../../../modules/wolfi/main.go:10:6)
+type Wolfi struct { // wolfi (https://github.com/dagger/wolfi/tree/b480244fdace9a9c23eb61f3aec164bba9575242/main.go#L10)
 	query *querybuilder.Selection
 
 	id *ID
@@ -36,28 +36,28 @@ type WolfiContainerOpts struct {
 	//
 	// APK packages to install
 	//
-	Packages []string // wolfi (../../../../../modules/wolfi/main.go:16:2)
+	Packages []string // wolfi (https://github.com/dagger/wolfi/tree/b480244fdace9a9c23eb61f3aec164bba9575242/main.go#L16)
 	//
 	// Hardware architecture to target
 	//
-	Arch string // wolfi (../../../../../modules/wolfi/main.go:19:2)
+	Arch string // wolfi (https://github.com/dagger/wolfi/tree/b480244fdace9a9c23eb61f3aec164bba9575242/main.go#L19)
 	//
 	// Extra repositories to add to the package resolver
 	//
-	ExtraRepositories []string // wolfi (../../../../../modules/wolfi/main.go:22:2)
+	ExtraRepositories []string // wolfi (https://github.com/dagger/wolfi/tree/b480244fdace9a9c23eb61f3aec164bba9575242/main.go#L22)
 	//
 	// Extra keys needed to authenticate the extra repositories
 	//
-	ExtraKeyUrls []string // wolfi (../../../../../modules/wolfi/main.go:25:2)
+	ExtraKeyUrls []string // wolfi (https://github.com/dagger/wolfi/tree/b480244fdace9a9c23eb61f3aec164bba9575242/main.go#L25)
 	//
 	// Overlay images to merge on top of the base.
 	// See https://twitter.com/ibuildthecloud/status/1721306361999597884
 	//
-	Overlays []*Container // wolfi (../../../../../modules/wolfi/main.go:29:2)
+	Overlays []*Container // wolfi (https://github.com/dagger/wolfi/tree/b480244fdace9a9c23eb61f3aec164bba9575242/main.go#L29)
 }
 
 // Build a Wolfi Linux container
-func (r *Wolfi) Container(opts ...WolfiContainerOpts) *Container { // wolfi (../../../../../modules/wolfi/main.go:13:1)
+func (r *Wolfi) Container(opts ...WolfiContainerOpts) *Container { // wolfi (https://github.com/dagger/wolfi/tree/b480244fdace9a9c23eb61f3aec164bba9575242/main.go#L13)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `packages` optional argument

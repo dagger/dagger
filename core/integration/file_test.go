@@ -108,65 +108,63 @@ func (FileSuite) TestBlobBinaryRoundTripAndReload(ctx context.Context, t *testct
 	different := bytes.Clone(contents)
 	different[len(different)-2] ^= 0xff
 
-	sink := newAgentTraceSink(t)
-	creator := connect(ctx, t, sink.clientOpts()...)
-	var created struct {
-		Original struct {
-			ID string
-		} `json:"original"`
-		Same struct {
-			ID string
-		} `json:"same"`
-		Different struct {
-			ID string
-		} `json:"different"`
-	}
-	err := creator.Do(ctx, &dagger.Request{
-		Query: `query Blob($contents: Bytes!, $different: Bytes!) {
-			original: blob(name: "binary.dat", contents: $contents, permissions: 384) { id }
-			same: blob(name: "binary.dat", contents: $contents, permissions: 384) { id }
-			different: blob(name: "binary.dat", contents: $different, permissions: 384) { id }
-		}`,
-		Variables: map[string]any{
-			"contents":  base64.StdEncoding.EncodeToString(contents),
-			"different": base64.StdEncoding.EncodeToString(different),
-		},
-	}, &dagger.Response{Data: &created})
-	require.NoError(t, err)
-	require.NotEmpty(t, created.Original.ID)
-	require.Equal(t, created.Original.ID, created.Same.ID)
-	require.NotEqual(t, created.Original.ID, created.Different.ID)
-
-	var (
-		recipeID   string
-		rebuildErr error
-	)
-	require.EventuallyWithT(t, func(ct *assert.CollectT) {
-		sink.read(func(db *dagui.DB) {
-			for _, span := range db.Spans.Map {
-				if span.Name != "Query.blob" {
-					continue
-				}
-				id, err := span.CallID()
-				if err != nil {
-					rebuildErr = err
-					continue
-				}
-				arg := id.Arg("contents")
-				if arg == nil {
-					continue
-				}
-				lit, ok := arg.Value().(*call.LiteralBytes)
-				if !ok || !bytes.Equal(lit.Value(), contents) {
-					continue
-				}
-				recipeID, rebuildErr = id.Encode()
-				return
+	// Runtime handles are not semantic identities: the cache intentionally
+	// permits redundant concurrent executions. Reconstruct each creation's
+	// portable recipe in an independent session and compare those instead.
+	var recipeIDs []string
+	for _, payload := range [][]byte{contents, contents, different} {
+		sink := newAgentTraceSink(t)
+		creator := connect(ctx, t, sink.clientOpts()...)
+		var created struct {
+			Blob struct {
+				ID string
 			}
-		})
-		assert.NoError(ct, rebuildErr)
-		assert.NotEmpty(ct, recipeID, "binary blob recipe was not rebuildable from call payloads")
-	}, 120*time.Second, 100*time.Millisecond)
+		}
+		err := creator.Do(ctx, &dagger.Request{
+			Query: `query Blob($contents: Bytes!) {
+				blob(name: "binary.dat", contents: $contents, permissions: 384) { id }
+			}`,
+			Variables: map[string]any{
+				"contents": base64.StdEncoding.EncodeToString(payload),
+			},
+		}, &dagger.Response{Data: &created})
+		require.NoError(t, err)
+		require.NotEmpty(t, created.Blob.ID)
+
+		var (
+			recipeID   string
+			rebuildErr error
+		)
+		require.EventuallyWithT(t, func(ct *assert.CollectT) {
+			sink.read(func(db *dagui.DB) {
+				for _, span := range db.Spans.Map {
+					if span.Name != "Query.blob" {
+						continue
+					}
+					id, err := span.CallID()
+					if err != nil {
+						rebuildErr = err
+						continue
+					}
+					arg := id.Arg("contents")
+					if arg == nil {
+						continue
+					}
+					lit, ok := arg.Value().(*call.LiteralBytes)
+					if !ok || !bytes.Equal(lit.Value(), payload) {
+						continue
+					}
+					recipeID, rebuildErr = id.Encode()
+					return
+				}
+			})
+			assert.NoError(ct, rebuildErr)
+			assert.NotEmpty(ct, recipeID, "binary blob recipe was not rebuildable from call payloads")
+		}, 120*time.Second, 100*time.Millisecond)
+		recipeIDs = append(recipeIDs, recipeID)
+	}
+	require.Equal(t, recipeIDs[0], recipeIDs[1])
+	require.NotEqual(t, recipeIDs[0], recipeIDs[2])
 
 	// Send the reconstructed public recipe through a separate client and force
 	// evaluation by mounting the reconstructed File. This exercises arbitrary
@@ -184,7 +182,7 @@ func (FileSuite) TestBlobBinaryRoundTripAndReload(ctx context.Context, t *testct
 			}
 		}
 	}
-	err = loader.Do(ctx, &dagger.Request{
+	err := loader.Do(ctx, &dagger.Request{
 		Query: `query ReloadBlob($file: ID!, $image: String!) {
 			container {
 				from(address: $image) {
@@ -197,7 +195,7 @@ func (FileSuite) TestBlobBinaryRoundTripAndReload(ctx context.Context, t *testct
 			}
 		}`,
 		Variables: map[string]any{
-			"file":  recipeID,
+			"file":  recipeIDs[0],
 			"image": alpineImage,
 		},
 	}, &dagger.Response{Data: &loaded})

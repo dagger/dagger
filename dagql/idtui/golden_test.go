@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
@@ -166,6 +168,37 @@ entrypoint = true
 	os.Create(filepath.Join(listDir, "test2.txt"))
 	os.Create(filepath.Join(listDir, "test3.txt"))
 
+	testSummaryDB := func(t *testctx.T, db *dagui.DB) {
+		view := db.TestView()
+		require.Equal(t, dagui.TestCounts{Failing: 1, Passing: 2, Skipped: 2}, view.Counts)
+		var parent *dagui.TestNode
+		var fullName string
+		for _, name := range []string{"TestProvision", "TestEngineGC", "docker", "cleanup"} {
+			fullName = strings.TrimPrefix(fullName+"/"+name, "/")
+			node := view.FindCaseByName(fullName)
+			require.NotNil(t, node, "the root report must include %s, not just its ancestors", fullName)
+			require.True(t, node.Span.Boundary)
+			require.Equal(t, codes.Unset, node.Span.Status.Code, "setup must not carry the continuation's failure")
+			require.Equal(t, dagui.TestStatusUnset, node.Span.TestStatus)
+			require.True(t, node.Span.IsFailedOrCausedFailure(), "linked continuation failure must reach %s", fullName)
+			require.Equal(t, dagui.TestCategoryFailing, node.Category)
+			if parent != nil {
+				require.Same(t, parent, node.Parent)
+			}
+			parent = node
+		}
+		require.Empty(t, parent.Children, "cleanup must be a failing leaf")
+	}
+	testSummaryOutput := func(t *testctx.T, out string) {
+		_, tests, found := strings.Cut(out, "TESTS\n")
+		require.True(t, found, "the initial root report must include its test summary")
+		require.Contains(t, tests, "viztest › TestProvision › TestEngineGC › docker › cleanup FAIL")
+		require.Contains(t, tests, "cleanup: unable to garbage collect engine")
+		require.Contains(t, tests, "1 failed")
+		require.Contains(t, tests, "2 passed")
+		require.Contains(t, tests, "2 skipped")
+	}
+
 	for _, ex := range []Example{
 		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
@@ -243,8 +276,8 @@ entrypoint = true
 		{Function: "call-bubbling-dep", Fail: true},
 		{Function: "fail-multi", Fail: true},
 		{Name: "fail-multi-noexpand", Function: "fail-multi", Fail: true, NoExpand: true},
-		{Name: "test-summary-check", Function: "test-summary", Check: true, NoExpand: true},
-		{Name: "test-summary-call", Function: "test-summary", NoExpand: true},
+		{Name: "test-summary-check", Function: "test-summary", Check: true, NoExpand: true, Fail: true, DBTest: testSummaryDB, OutputTest: testSummaryOutput},
+		{Name: "test-summary-call", Function: "test-summary", NoExpand: true, Fail: true, DBTest: testSummaryDB, OutputTest: testSummaryOutput},
 
 		// Used to be marked as flaky
 		{Function: "cached-execs"},
@@ -355,6 +388,9 @@ entrypoint = true
 		t.Run(testName, func(ctx context.Context, t *testctx.T) {
 			goldFile := `TestTelemetry/TestGolden/` + goldFile
 			out, db := ex.Run(ctx, t, s)
+			if ex.OutputTest != nil {
+				ex.OutputTest(t, out)
+			}
 			switch {
 			case ex.Flaky != "":
 				cmp := golden.String(out, goldFile)()
@@ -405,11 +441,19 @@ type Example struct {
 	Flaky  string
 	Env    []string
 	DBTest func(*testctx.T, *dagui.DB)
+	// Additional output assertions that must hold even when updating goldens.
+	OutputTest func(*testctx.T, string)
 	// Using fuzzytest will eschew golden assertions and testdata and allow string assertions instead
 	FuzzyTest func(*testctx.T, string)
 }
 
 func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB) {
+	// Each CLI must establish its own session rooted at the fixture's working
+	// directory, not reuse the test runner's nested session and workspace.
+	// Keep the runner host so the new session still uses the test engine.
+	testEnv := slices.DeleteFunc(os.Environ(), func(env string) bool {
+		return strings.HasPrefix(env, "DAGGER_SESSION_PORT=") || strings.HasPrefix(env, "DAGGER_SESSION_TOKEN=")
+	})
 	db, otlpL := testDB(t)
 
 	if ex.Module == "" {
@@ -462,7 +506,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		defer span.End()
 		warmup := exec.Command(daggerBin, daggerArgs...)
 		warmup.Env = append(
-			os.Environ(),
+			slices.Clone(testEnv),
 			fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
 		)
 		warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
@@ -491,7 +535,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 
 	cmd := exec.Command(daggerBin, daggerArgs...)
 	cmd.Env = append(
-		os.Environ(),
+		slices.Clone(testEnv),
 		fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
 		"NO_COLOR=1",
 		"OTEL_EXPORTER_OTLP_TRACES_LIVE=1",

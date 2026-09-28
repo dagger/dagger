@@ -95,12 +95,79 @@ const llmsTxtPlugin = async function pluginLlmsTxt(
       }
 
       // this route config has a `props` property that contains the current documentation.
-      const currentVersionDocsRoutes = (
-        allDocsRouteConfig.props.version as Record<string, unknown>
-      ).docs as Record<string, Record<string, unknown>>;
+      const versionProps = allDocsRouteConfig.props.version as Record<string, unknown>;
+      const currentVersionDocsRoutes = versionProps.docs as Record<
+        string,
+        Record<string, unknown>
+      >;
+
+      // Docusaurus keys `docs` by doc id, so `Object.entries` yields an
+      // alphabetical-by-id order. That buries "Getting Started" (the first
+      // thing a coding agent reads) below entries like `config/*` and
+      // `reference/*`. Instead, follow the sidebar order so the reading order
+      // matches what humans and agents see in the navigation.
+      type SidebarItem = {
+        type?: string;
+        href?: string;
+        docId?: string;
+        items?: SidebarItem[];
+      };
+      const docsSidebars = (versionProps.docsSidebars ?? {}) as Record<
+        string,
+        SidebarItem[]
+      >;
+
+      // Resolve a sidebar item to a doc-record key (doc id) when it points at a
+      // doc. Leaf links expose `docId` directly; category index links only
+      // expose a permalink via `href` (e.g. "/config"), so derive the doc id
+      // from it (e.g. "config/index" or "config").
+      const resolveDocId = (item: SidebarItem): string | undefined => {
+        if (typeof item.docId === "string" && item.docId in currentVersionDocsRoutes) {
+          return item.docId;
+        }
+        if (typeof item.href === "string") {
+          const slug = item.href.replace(/^\/+/, "").replace(/\/+$/, "");
+          for (const candidate of [`${slug}/index`, slug || "index"]) {
+            if (candidate in currentVersionDocsRoutes) {
+              return candidate;
+            }
+          }
+        }
+        return undefined;
+      };
+
+      const orderedPaths: string[] = [];
+      const seen = new Set<string>();
+      const collectSidebarLinks = (items: SidebarItem[] | undefined) => {
+        if (!items) return;
+        for (const item of items) {
+          const docId = resolveDocId(item);
+          if (docId && !seen.has(docId)) {
+            seen.add(docId);
+            orderedPaths.push(docId);
+          }
+          if (item.items) {
+            collectSidebarLinks(item.items);
+          }
+        }
+      };
+      for (const sidebarItems of Object.values(docsSidebars)) {
+        collectSidebarLinks(sidebarItems);
+      }
+
+      // Order the records by sidebar order, then append any docs that are not
+      // referenced by a sidebar (sorted by id) so nothing is dropped.
+      const orderedEntries: [string, Record<string, unknown>][] = [
+        ...orderedPaths.map(
+          (p) => [p, currentVersionDocsRoutes[p]] as [string, Record<string, unknown>]
+        ),
+        ...Object.entries(currentVersionDocsRoutes)
+          .filter(([p]) => !seen.has(p))
+          .sort(([a], [b]) => a.localeCompare(b)),
+      ];
 
       // for every single docs route we now parse a path (which is the key) and a title
-      const docsRecords = Object.entries(currentVersionDocsRoutes).map(([path, record]) => {
+      const docsRecords = orderedEntries.map(([path, record]) => {
         return `- [${record.title}](${path}): ${record.description}`;
       });
 
