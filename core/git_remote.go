@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/hashutil"
@@ -637,8 +638,14 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		return err
 	}
 	locker := query.Locker()
-	locker.Lock(remoteGitLockPrefix + repo.URL.Remote())
-	defer locker.Unlock(remoteGitLockPrefix + repo.URL.Remote())
+	lockKey := remoteGitLockPrefix + repo.URL.Remote()
+	var profWait *wcprof.Wait
+	if wcprof.Enabled(ctx) {
+		profWait = wcprof.BeginWaitIdent(ctx, lockKey, wcprof.WaitReasonLock)
+	}
+	locker.Lock(lockKey)
+	profWait.End()
+	defer locker.Unlock(lockKey)
 
 	if repo.Mirror.Self() == nil {
 		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
