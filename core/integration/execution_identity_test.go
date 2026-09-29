@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,14 @@ func (EngineSuite) TestExecutionDigestMatchesCacheHits(ctx context.Context, t *t
 	c := connect(ctx, t)
 	// The client forwards the session telemetry to the fake Cloud.
 	cloud := newTelemetrySplitCloud(t, c)
-	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+	// Keep the first session's result available even when the CI host is low
+	// on disk space: this test requires a cache hit in the second session.
+	gcEnabled := false
+	engineCtr := devEngineContainer(c, engineWithConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg config.Config) config.Config {
+		cfg.GC.Enabled = &gcEnabled
+		return cfg
+	}))
+	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, engineCtr)).Start(ctx)
 	require.NoError(t, err)
 
 	marker := identity.NewID()
