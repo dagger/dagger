@@ -195,6 +195,82 @@ func TestDiffViewer(t *testing.T) {
 	require.Nil(t, fe.diffViewer)
 }
 
+// TestDiffViewerMouse: like the tests view, the sidebar follows the mouse --
+// hover highlights, clicks select, the wheel steps -- and the wheel scrolls
+// the patch, all through tuist's positional dispatch.
+func TestDiffViewerMouse(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.startShell(context.Background(), &stubShellHandler{})
+	fe.tui.Step()
+	entry := func(id, group, label, title, patch string) DiffEntry {
+		return DiffEntry{ID: id, Group: group, Label: label, Title: title,
+			Load: func() (DiffDetail, error) { return DiffDetail{Patch: patch}, nil }}
+	}
+	fe.SetSidebarContent(SidebarSection{
+		Title: "Changes",
+		Diffs: []DiffEntry{
+			entry("uncommitted", "", "", "Uncommitted changes", testPatch("pending.go")),
+			entry("aaaaaaa1", "Commits to save", "aaaaaaa", "first commit", testPatch("one.go", "two.go")),
+			entry("bbbbbbb2", "Commits to save", "bbbbbbb", "second commit", testPatch("three.go")),
+		},
+	})
+	fe.tui.Step()
+	fe.tui.Inject(tuist.ParseKey(diffViewerKey))
+	screen := func() string { return stripANSICodes(strings.Join(fe.tui.Step(), "\n")) }
+	screen()
+	v := fe.diffViewer
+	require.NotNil(t, v)
+
+	// Screen rows of each entry: the viewer is the top of the frame.
+	rowOf := func(idx int) int {
+		for row, entry := range v.rowByLine {
+			if entry == idx {
+				return row
+			}
+		}
+		t.Fatalf("entry %d not in the sidebar", idx)
+		return -1
+	}
+	sidebarX, patchX := 5, v.leftWidth+10
+	mouse := func(ev uv.Event) string {
+		fe.tui.Inject(ev)
+		return screen()
+	}
+
+	// Hover highlights sidebar entries, and leaving the sidebar clears it.
+	mouse(uv.MouseMotionEvent{X: sidebarX, Y: rowOf(2)})
+	require.Equal(t, 2, v.hovered)
+	mouse(uv.MouseMotionEvent{X: patchX, Y: rowOf(2)})
+	require.Equal(t, -1, v.hovered)
+
+	// Clicking an entry selects it.
+	frame := mouse(uv.MouseClickEvent{X: sidebarX, Y: rowOf(1), Button: uv.MouseLeft})
+	require.Equal(t, "aaaaaaa1", v.selected)
+	require.Contains(t, frame, "▶ aaaaaaa first commit")
+
+	// The wheel scrolls the patch under it...
+	require.Eventually(t, func() bool { screen(); return v.current != nil && !v.current.loading }, 5*time.Second, 5*time.Millisecond)
+	mouse(uv.MouseWheelEvent{X: patchX, Y: 10, Button: uv.MouseWheelDown})
+	require.Equal(t, diffWheelLines, v.scroll)
+	mouse(uv.MouseWheelEvent{X: patchX, Y: 10, Button: uv.MouseWheelUp})
+	require.Zero(t, v.scroll)
+
+	// ...and steps through the list under it.
+	mouse(uv.MouseWheelEvent{X: sidebarX, Y: 10, Button: uv.MouseWheelDown})
+	require.Equal(t, "bbbbbbb2", v.selected)
+	mouse(uv.MouseWheelEvent{X: sidebarX, Y: 10, Button: uv.MouseWheelUp})
+	require.Equal(t, "aaaaaaa1", v.selected)
+
+	// Clicking the patch focuses it for the keys; a sidebar click comes back.
+	mouse(uv.MouseClickEvent{X: patchX, Y: 10, Button: uv.MouseLeft})
+	require.True(t, v.PatchFocused())
+	mouse(uv.MouseClickEvent{X: sidebarX, Y: rowOf(0), Button: uv.MouseLeft})
+	require.False(t, v.PatchFocused())
+	require.Equal(t, "uncommitted", v.selected)
+}
+
 func TestNotificationBottomBorderWidth(t *testing.T) {
 	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 20))
 	fe.profile = termenv.ANSI

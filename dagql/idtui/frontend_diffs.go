@@ -98,6 +98,9 @@ type DiffViewer struct {
 	selected string
 	scroll   int
 
+	// hovered is the sidebar entry under the mouse, or -1.
+	hovered int
+
 	details map[string]*diffDetailState
 
 	// Layout of the last render, for key and mouse handling.
@@ -113,6 +116,7 @@ var (
 	_ tuist.Focusable    = (*DiffViewer)(nil)
 	_ tuist.Dismounter   = (*DiffViewer)(nil)
 	_ tuist.MouseEnabled = (*DiffViewer)(nil)
+	_ tuist.Hoverable    = (*DiffViewer)(nil)
 )
 
 // diffDetailState is an entry's loaded (or loading) detail, prepared for
@@ -477,7 +481,7 @@ func (v *DiffViewer) renderSidebar(out *termenv.Output, sec SidebarSection, entr
 			continue
 		}
 		v.rowByLine[len(lines)] = row.entry
-		lines = append(lines, v.renderSidebarEntry(out, entries[row.entry], row.entry == selected, width))
+		lines = append(lines, v.renderSidebarEntry(out, entries[row.entry], row.entry == selected, row.entry == v.hovered, width))
 	}
 	if bottom {
 		lines = append(lines, faint(clipPlain(fmt.Sprintf("… %d more", len(rows)-end), width)))
@@ -485,7 +489,7 @@ func (v *DiffViewer) renderSidebar(out *termenv.Output, sec SidebarSection, entr
 	return cropLines(lines, height)
 }
 
-func (v *DiffViewer) renderSidebarEntry(out *termenv.Output, entry DiffEntry, selected bool, width int) string {
+func (v *DiffViewer) renderSidebarEntry(out *termenv.Output, entry DiffEntry, selected, hovered bool, width int) string {
 	selector := " "
 	if selected {
 		selector = CaretRightFilled
@@ -497,14 +501,14 @@ func (v *DiffViewer) renderSidebarEntry(out *termenv.Output, entry DiffEntry, se
 	const gutter = 2 // selector + space
 	label = clipPlain(label, max(width-gutter, 0))
 	title := clipPlain(sanitizeDiffLine(entry.Title), max(width-gutter-tuist.VisibleWidth(label), 0))
-	if !selected {
+	if !selected && !hovered {
 		return selector + " " + out.String(label).Foreground(termenv.ANSIYellow).String() + title
 	}
-	sidebarFocused := v.area == diffFocusSidebar
+	bold := selected && v.area == diffFocusSidebar
 	var b strings.Builder
-	b.WriteString(sidebarSelectedSegment(out, selector+" ", termenv.ANSIWhite, sidebarFocused, false))
+	b.WriteString(sidebarSelectedSegment(out, selector+" ", termenv.ANSIWhite, bold, false))
 	b.WriteString(sidebarSelectedSegment(out, label, termenv.ANSIYellow, false, false))
-	b.WriteString(sidebarSelectedSegment(out, title, termenv.ANSIWhite, sidebarFocused, false))
+	b.WriteString(sidebarSelectedSegment(out, title, termenv.ANSIWhite, bold, false))
 	if pad := width - gutter - tuist.VisibleWidth(label) - tuist.VisibleWidth(title); pad > 0 {
 		b.WriteString(sidebarSelectedSegment(out, strings.Repeat(" ", pad), nil, false, false))
 	}
@@ -767,6 +771,13 @@ func sanitizeDiffLine(s string) string {
 func (v *DiffViewer) HandleMouse(ctx tuist.Context, ev tuist.MouseEvent) bool {
 	onSidebar := ev.Col < v.leftWidth
 	switch ev.MouseEvent.(type) {
+	case uv.MouseMotionEvent:
+		hovered := -1
+		if idx, ok := v.rowByLine[ev.Row]; ok && onSidebar {
+			hovered = idx
+		}
+		v.setHovered(hovered)
+		return true
 	case uv.MouseWheelEvent:
 		delta := 1
 		if ev.Mouse().Button == uv.MouseWheelUp {
@@ -793,6 +804,20 @@ func (v *DiffViewer) HandleMouse(ctx tuist.Context, ev tuist.MouseEvent) bool {
 		return true
 	}
 	return false
+}
+
+// SetHovered clears the hover highlight when the mouse leaves the viewer.
+func (v *DiffViewer) SetHovered(_ tuist.Context, hovered bool) {
+	if !hovered {
+		v.setHovered(-1)
+	}
+}
+
+func (v *DiffViewer) setHovered(idx int) {
+	if v.hovered != idx {
+		v.hovered = idx
+		v.Update()
+	}
 }
 
 // ---------- frontend integration --------------------------------------------
@@ -843,6 +868,7 @@ func (fe *frontendPretty) toggleDiffViewer() bool {
 		},
 		Dispatch: fe.dispatch,
 		Hint:     fe.diffViewerHint,
+		hovered:  -1,
 	}
 	fe.diffViewerTitle = title
 	fe.diffViewerFocus = fe.tui.PushFocus(fe.diffViewer)
