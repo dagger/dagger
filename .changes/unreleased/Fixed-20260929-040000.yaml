@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Reloading an agent after bumping a remote module's pin in a pending
+  `dagger.lock` edit now loads the newly pinned commit, instead of keeping the
+  module the session served from the on-disk lock.
+time: 2026-09-29T04:00:00Z
+custom:
+  Author: vito

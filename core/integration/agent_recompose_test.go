@@ -293,6 +293,79 @@ func (LLMSuite) TestRecomposeRemoteToLocalStateAndReplay(ctx context.Context, t 
 	require.NotContains(t, transcript, "is not available")
 }
 
+// Bumping a remote module's pin in a live workspace's pending dagger.lock and
+// reloading must load the newly pinned commit, not the session's served one.
+func (LLMSuite) TestRecomposeOverlayLockRepinsRemoteModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	initial := fmt.Sprintf(recomposeSource, "")
+	bumped := strings.ReplaceAll(initial, "Read the original private state.", "Read the bumped private state.")
+
+	// A remote module with two commits on main, without depending on an
+	// external repository: A, then B at the branch head.
+	repo := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithDirectory("/repo", recomposeFixture(c, initial).Directory(".dagger/modules/swapper")).
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-c", `set -e
+git init -q -b main
+git -c user.email=root@localhost -c user.name=Test add -A
+git -c user.email=root@localhost -c user.name=Test commit -q -m A`}).
+		WithNewFile("/repo/main.dang", bumped).
+		WithExec([]string{"sh", "-c", `git -c user.email=root@localhost -c user.name=Test commit -q -am B`})
+	commits, err := repo.WithExec([]string{"git", "rev-parse", "HEAD~1", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	shas := strings.Fields(commits)
+	require.Len(t, shas, 2)
+	commitA, commitB := shas[0], shas[1]
+	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, repo.Directory("/repo"))
+
+	config := fmt.Sprintf("[modules.swapper]\nsource = %q\n", remoteRef)
+	// A live, host-backed workspace: overlays on it re-resolve only what they
+	// touch, on top of the modules the session serves from disk.
+	base := workspaceBase(t, c).WithNewFile("dagger.toml", config)
+	const selectCommit = `artifacts(include: ["swapper"]) { filterTypes(types: ["Expertise"]) { asExpertise { originalModule { source { commit } } } } }`
+	commitOf := func(ctx context.Context, t *testctx.T, ctr *dagger.Container, query string, args ...any) string {
+		t.Helper()
+		out, err := ctr.With(daggerQuery(query, args...)).Stdout(ctx)
+		require.NoError(t, err)
+		switch {
+		case strings.Contains(out, commitA) && !strings.Contains(out, commitB):
+			return commitA
+		case strings.Contains(out, commitB) && !strings.Contains(out, commitA):
+			return commitB
+		}
+		t.Fatalf("expected exactly one of %s and %s: %s", commitA, commitB, out)
+		return ""
+	}
+
+	// Let the engine write the lock for the branch head (B), then pin A on
+	// disk: the served module follows the on-disk pin.
+	locked := base.With(daggerQuery(`{ currentWorkspace { %s } }`, selectCommit))
+	lockB, err := locked.File("dagger.lock").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, lockB, commitB)
+	lockA := strings.ReplaceAll(lockB, commitB, commitA)
+	base = base.WithNewFile("dagger.lock", lockA)
+	require.Equal(t, commitA, commitOf(ctx, t, base, `{ currentWorkspace { %s } }`, selectCommit))
+
+	t.Run("lock edit", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, commitB, commitOf(ctx, t, base,
+			`{ currentWorkspace { withNewFile(path: "dagger.lock", contents: %q) { %s } } }`, lockB, selectCommit))
+	})
+
+	t.Run("config and lock edit", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, commitB, commitOf(ctx, t, base,
+			`{ currentWorkspace { withNewFile(path: "dagger.toml", contents: %q) { withNewFile(path: "dagger.lock", contents: %q) { %s } } } }`,
+			config+"# touched\n", lockB, selectCommit))
+	})
+
+	t.Run("config edit keeps the on-disk pin", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, commitA, commitOf(ctx, t, base,
+			`{ currentWorkspace { withNewFile(path: "dagger.toml", contents: %q) { %s } } }`,
+			config+"# touched\n", selectCommit))
+	})
+}
+
 func (LLMSuite) TestRecomposeFailureKeepsOldState(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct{ name, source string }{
 		{"broken source", "this is not a Dang module"},
