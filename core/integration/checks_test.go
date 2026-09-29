@@ -14,11 +14,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/buildkit/identity"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 type ChecksSuite struct{}
@@ -558,17 +562,65 @@ engineVersion = "v0.21.9"
 }
 
 func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	modGen, err := checksTestEnv(t, c)
 	require.NoError(t, err)
 	modGen = modGen.WithWorkdir("hello-with-checks")
 	// run all checks with --failfast; should fail because there are failing checks
 	out, err := modGen.
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		With(daggerExecFail("--progress=report", "check", "--failfast")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "ERROR")
-	require.Contains(t, out, "context canceled")
+
+	// The report may show a failed descendant instead of the check's cancellation.
+	// Observe the returned check outcome before cleanup can cancel any work.
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	for {
+		sink.mu.Lock()
+		spans := map[string]*tracepb.Span{}
+		for _, req := range sink.traces {
+			for _, resource := range req.ResourceSpans {
+				for _, scope := range resource.ScopeSpans {
+					for _, span := range scope.Spans {
+						key := string(span.TraceId) + string(span.SpanId)
+						if previous := spans[key]; previous == nil || span.EndTimeUnixNano >= previous.EndTimeUnixNano {
+							spans[key] = span
+						}
+					}
+				}
+			}
+		}
+		canceled := false
+		for _, span := range spans {
+			if span.EndTimeUnixNano <= span.StartTimeUnixNano || span.GetStatus().GetCode() != tracepb.Status_STATUS_CODE_ERROR || !strings.Contains(span.GetStatus().GetMessage(), "context canceled") {
+				continue
+			}
+			for _, attr := range span.Attributes {
+				if attr.Key != telemetry.CheckNameAttr || attr.GetValue().GetStringValue() == "" {
+					continue
+				}
+				for parent := span; parent != nil; parent = spans[string(parent.TraceId)+string(parent.ParentSpanId)] {
+					if parent.Name == "dagger --progress=report check --failfast" {
+						canceled = true
+						break
+					}
+				}
+			}
+		}
+		changed := sink.changed
+		sink.mu.Unlock()
+		if canceled {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			require.NoError(t, ctx.Err(), "no canceled check outcome received from dagger check --failfast")
+		case <-changed:
+		}
+	}
 }
 
 func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
