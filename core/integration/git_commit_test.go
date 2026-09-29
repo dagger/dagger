@@ -11,6 +11,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -55,6 +56,54 @@ func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) 
 	require.NoError(t, c.Close())
 
 	traces, _ := sink.capture()
+	require.Positive(t, nativeCommitFallbacks(traces, "ref-storage"), "must reject reftable storage before native publication")
+}
+
+// The native result selects the .git directory itself, so a symlink that
+// stayed inside the source directory (here, a hook pointing into the worktree)
+// would escape the result and fail withContents' self-containment check.
+// Such storage must take the legacy path, which writes a fresh .git.
+func (GitSuite) TestGitRefWithCommitGitDirSymlink(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-ec", `
+		git init -b main
+		git config user.name Author
+		git config user.email author@example.com
+		mkdir scripts
+		printf '#!/bin/sh\n' > scripts/pre-commit
+		chmod +x scripts/pre-commit
+		printf 'base\n' > file.txt
+		git add .
+		git commit -m base
+		ln -s ../../scripts/pre-commit .git/hooks/pre-commit
+		`}).Directory("/repo")
+	base := fixture.AsGit().Head()
+	baseSHA, err := base.CommitSHA(ctx)
+	require.NoError(t, err)
+	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	changes := before.WithNewFile("file.txt", "edited\n").Changes(before)
+	_, err = changes.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	result := base.WithCommit(changes, "edit symlinked hooks source", workspaceCommitDate, "Author", "author@example.com")
+	parents, err := result.TargetCommit().ParentShas(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{baseSHA}, parents)
+	contents, err := result.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "edited\n", contents)
+	require.NoError(t, c.Close())
+
+	traces, _ := sink.capture()
+	require.Positive(t, nativeCommitFallbacks(traces, "git-directory-symlink"), "must reject symlinks in .git before native publication")
+}
+
+// nativeCommitFallbacks counts native commit transactions that fell back for
+// the given reason.
+func nativeCommitFallbacks(traces []*coltracepb.ExportTraceServiceRequest, reason string) int {
 	fallbacks := 0
 	for _, request := range traces {
 		for _, resource := range request.ResourceSpans {
@@ -64,7 +113,7 @@ func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) 
 						continue
 					}
 					for _, attr := range span.Attributes {
-						if attr.Key == "dagger.git.native.fallback_reason" && attr.Value.GetStringValue() == "ref-storage" {
+						if attr.Key == "dagger.git.native.fallback_reason" && attr.Value.GetStringValue() == reason {
 							fallbacks++
 						}
 					}
@@ -72,7 +121,7 @@ func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) 
 			}
 		}
 	}
-	require.Positive(t, fallbacks, "must reject reftable storage before native publication")
+	return fallbacks
 }
 
 // Native transactions must produce the same commit object as the general

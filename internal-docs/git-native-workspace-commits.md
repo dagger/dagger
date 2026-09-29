@@ -36,6 +36,7 @@ The span `git native commit transaction` records `dagger.git.native.supported`, 
 Unsupported inputs are rejected with a fixed `nativeCommitUnsupportedReason` code, never a path or ref:
 
 - `git-directory-layout`, `object-directory-layout`: `.git` is a gitfile or symlink, or `objects` is not a directory
+- `git-directory-symlink`: a symlink anywhere in the Git directory. The result selects the Git directory itself, so a link that resolved inside the source (such as a hook pointing into the worktree) would escape it and fail the self-containment check.
 - `linked-worktree`, `shallow-history`, `object-alternates`, `partial-repository`: storage the snapshot does not fully own
 - `object-format`: anything but SHA-1
 - `ref-storage`: reftable refs, which loose-ref publication and the replaced config would lose

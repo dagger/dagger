@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -366,6 +367,22 @@ func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
 	}
 	if len(promisors) != 0 {
 		return "", nativeCommitUnsupportedReason("partial-repository")
+	}
+	// The result selects gitDir itself, not the directory around it, so a
+	// symlink that stayed inside the source (a hook pointing into the worktree,
+	// say) would escape the result and fail withContents' self-containment
+	// check after the fallback point. Git never creates symlinks here.
+	err = filepath.WalkDir(gitDir, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			return nativeCommitUnsupportedReason("git-directory-symlink")
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
 	format, err := runWorkspaceCommitGit(ctx, root, []string{"GIT_NO_LAZY_FETCH=1"}, "rev-parse", "--show-object-format")
 	if err != nil {
