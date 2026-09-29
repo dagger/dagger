@@ -5,8 +5,11 @@ package core
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -46,6 +49,7 @@ type SchemaBuilder struct {
 
 	lazilyLoadedServer *dagql.Server
 	loadSchemaErr      error
+	loadSchemaFailed   atomic.Bool
 	loadSchemaLock     sync.Mutex
 }
 
@@ -96,6 +100,79 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 		root:    b.root,
 		entries: append(slices.Clone(b.entries), extra...),
 	}
+}
+
+// SchemaBuilderMemo shares one builder, and so one built schema server, per
+// module set. Loading a handle resolves the module set its value references
+// (Query.ModDepsForCall) on every load; without a memo, each load would build
+// a server and reinstall every module. ModDepsForCall also backs the server's
+// resultServerForCall hook, so the memo serves cold recipe loads with module
+// provenance, ObjectTypeAndServerForID, and persisted-envelope decoding too.
+//
+// The engine keeps one memo per client and drops it with the client's other
+// heavy state, so its entries live exactly as long as the client that loaded
+// them. It is unbounded by design: entries are only created for module sets
+// the client actually loads through, that count grows with distinct module
+// results (e.g. one per reload in a dev loop) rather than with load volume,
+// and an entry costs roughly one forked core schema plus its modules' types.
+// A built server is an immutable type registry; the dagql result cache is
+// engine-wide and never held by a server, so sharing one shares no results.
+type SchemaBuilderMemo struct {
+	mu       sync.Mutex
+	builders map[string]*SchemaBuilder
+}
+
+func NewSchemaBuilderMemo() *SchemaBuilderMemo {
+	return &SchemaBuilderMemo{builders: map[string]*SchemaBuilder{}}
+}
+
+// Get returns the builder memoized for exactly b's root and entries, or
+// memoizes b. A nil memo returns b.
+//
+// A builder whose schema failed to load is replaced rather than returned, so
+// a failed build is retried by the next load instead of sticking.
+func (m *SchemaBuilderMemo) Get(b *SchemaBuilder) *SchemaBuilder {
+	if m == nil || b == nil {
+		return b
+	}
+	key, ok := b.memoKey()
+	if !ok {
+		return b
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if cached := m.builders[key]; cached != nil && !cached.loadSchemaFailed.Load() {
+		return cached
+	}
+	m.builders[key] = b
+	return b
+}
+
+// memoKey identifies b's root and entries: user modules by attached result,
+// anything else (core) by instance. Entry order and install options are part
+// of the key, since both shape the built schema.
+func (b *SchemaBuilder) memoKey() (string, bool) {
+	var key strings.Builder
+	fmt.Fprintf(&key, "r%p;", b.root)
+	for _, e := range b.entries {
+		switch mod := e.mod.(type) {
+		case *userMod:
+			id, err := mod.res.ID()
+			if err != nil || id == nil || id.EngineResultID() == 0 {
+				return "", false
+			}
+			fmt.Fprintf(&key, "m%d", id.EngineResultID())
+		default:
+			if reflect.ValueOf(mod).Kind() != reflect.Pointer {
+				return "", false
+			}
+			fmt.Fprintf(&key, "p%p", mod)
+		}
+		// Format the whole struct so a field added to InstallOpts later is
+		// part of the key without anyone remembering to add it here.
+		fmt.Fprintf(&key, ":%+v;", e.opts)
+	}
+	return key.String(), true
 }
 
 func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
@@ -235,8 +312,19 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 		return nil, b.loadSchemaErr
 	}
 	defer func() {
+		if rerr != nil && ctx.Err() != nil {
+			// This caller gave up, which says nothing about the schema.
+			// Leave the builder unloaded so callers sharing it build
+			// with their own contexts instead of inheriting the
+			// cancellation. This applies to every builder, not only
+			// memoized ones: a Module's Deps sits on a cached Module
+			// result that later sessions reuse, and a client's served
+			// schema builder outlives the request that first built it.
+			return
+		}
 		b.lazilyLoadedServer = loadedSchema
 		b.loadSchemaErr = rerr
+		b.loadSchemaFailed.Store(rerr != nil)
 	}()
 
 	var nonEntrypoints, entrypoints []modDepEntry

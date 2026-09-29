@@ -161,7 +161,10 @@ func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.Cl
 	return nil, nil
 }
 func (ms *mockServer) DefaultDeps(context.Context) (*SchemaBuilder, error) { return nil, nil }
-func (ms *mockServer) Cache(context.Context) (*dagql.Cache, error)         { return nil, nil }
+func (ms *mockServer) SchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error) {
+	return nil, nil
+}
+func (ms *mockServer) Cache(context.Context) (*dagql.Cache, error) { return nil, nil }
 func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
 	return nil, nil
 }

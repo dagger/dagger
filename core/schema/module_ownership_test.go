@@ -19,10 +19,17 @@ import (
 type moduleOwnershipSchemaServer struct {
 	*currentTypeDefsTestServer
 	root *core.Query
+	// memo, when set, is the client memo schema recovery shares builders
+	// through.
+	memo *core.SchemaBuilderMemo
 }
 
 func (s *moduleOwnershipSchemaServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
 	return core.NewSchemaBuilder(s.root, nil), nil
+}
+
+func (s *moduleOwnershipSchemaServer) SchemaBuilderMemo(context.Context) (*core.SchemaBuilderMemo, error) {
+	return s.memo, nil
 }
 
 // moduleOwnershipScopedTest runs the production implementation-scoped resolver

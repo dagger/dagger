@@ -320,6 +320,10 @@ type clientRuntime struct {
 	servedMods *core.SchemaBuilder
 	// the default deps that each client/module starts out with (currently just core)
 	defaultDeps *core.SchemaBuilder
+	// schema builders memoized per module set for this client's handle
+	// loads (core.Query.ModDepsForCall); dropped with the client's heavy
+	// state so the servers it holds never outlive the client
+	schemaBuilderMemo *core.SchemaBuilderMemo
 
 	// If the client is itself from a function call in a user module, this is set with the
 	// metadata of that ongoing function call
@@ -434,6 +438,7 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.mod = dagql.ObjectResult[*core.Module]{}
 	client.servedMods = nil
 	client.defaultDeps = nil
+	client.schemaBuilderMemo = nil
 	client.fnCall = nil
 	client.spanExporter = nil
 	client.logExporter = nil
@@ -1398,6 +1403,7 @@ func (srv *Server) initializeClientRuntime(
 	coreMod := coreSchemaBase.CoreMod(coreView)
 	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
+	client.schemaBuilderMemo = core.NewSchemaBuilderMemo()
 
 	if opts.ModuleContext.Self() != nil {
 		cache, err := dagql.EngineCache(ctx)
@@ -3543,6 +3549,17 @@ func (srv *Server) DefaultDeps(ctx context.Context) (*core.SchemaBuilder, error)
 		return nil, err
 	}
 	return client.defaultDeps.Clone(), nil
+}
+
+// SchemaBuilderMemo returns the current client's memo of schema builders by
+// module set. Builders derived from DefaultDeps do not carry it, so a builder
+// stored in a long-lived value (a decoded Module's Deps) cannot pin it.
+func (srv *Server) SchemaBuilderMemo(ctx context.Context) (*core.SchemaBuilderMemo, error) {
+	client, err := srv.executableClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.schemaBuilderMemo, nil
 }
 
 func (srv *Server) TelemetrySeenKeyStore(ctx context.Context) (dagql.TelemetrySeenKeyStore, error) {
