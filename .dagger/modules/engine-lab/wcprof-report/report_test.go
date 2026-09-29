@@ -427,6 +427,122 @@ func TestCompare(t *testing.T) {
 	}
 }
 
+// critDump builds a root with overlapping children, a singleflight join into
+// another caller's shared execution, a folded call and a lock wait:
+//
+//	1 call Workspace.withCommit        [0,100)
+//	  2 call Query.a                   [0,30)   overlaps 3; only [0,10) is on the path
+//	  3 call Query.b [joined]          [10,60)  ⏳ singleflight → 20 [10,60)
+//	  4 call Query.c (exec 5)          [70,90)
+//	  ⏳ lock lock:foo                  [90,95)
+//	21 call Query.b [executed]         [5,60)   the executor, another root
+//	  20 call_exec Query.b             [5,60)
+//	    22 lazy Directory.sync         [20,55)
+func critDump(t *testing.T) *Graph {
+	t.Helper()
+	b := newDump(t)
+	b.op(1, 0, "call", "Workspace.withCommit", "c", "do_not_cache", 0, 100)
+	b.op(2, 1, "call", "Query.a", "c", "hit", 0, 30)
+	b.op(3, 1, "call", "Query.b", "c", "joined", 10, 60)
+	b.wait(3, 20, "singleflight", "", 10, 60)
+	b.call(4, 1, "Query.c", "c", 70, 90) // exec op 5
+	b.wait(1, 0, "lock", "lock:foo", 90, 95)
+	b.op(21, 0, "call", "Query.b", "d", "executed", 5, 60)
+	b.op(20, 21, "call_exec", "Query.b", "d", "ok", 5, 60)
+	b.wait(21, 20, "call_exec", "", 5, 60)
+	b.op(22, 20, "lazy", "Directory.sync", "d", "ok", 20, 55)
+	return b.graph()
+}
+
+func TestCritpath(t *testing.T) {
+	g := critDump(t)
+	out := report(t, g, Options{View: "critpath", Op: 1})
+	// On-path time sums to the root's 100ms. Query.a overlaps Query.b, so
+	// only its first 10ms count; the joiner's 50ms go to the shared exec
+	// and the lazy op under it, not to the joining call.
+	assertContains(t, out,
+		"critpath of op 1: 100.00ms",
+		"     35.00ms  35.0%        1  lazy Directory.sync\n",
+		"     20.00ms  20.0%        1  call Query.c\n",
+		"     15.00ms  15.0%        1  call Workspace.withCommit\n",
+		"     15.00ms  15.0%        1  call_exec Query.b\n",
+		"     10.00ms  10.0%        1  call Query.a\n",
+		"      5.00ms   5.0%        1  wait lock lock:foo\n",
+		"         0ns   0.0%        1  call Query.b\n",
+	)
+	// The path, in time order, following the join into the shared exec.
+	want := []string{
+		"\n+0ns dur 100.00ms own 15.00ms  1 call Workspace.withCommit [do_not_cache]\n",
+		"\n  +0ns dur 10.00ms own 10.00ms  2 call Query.a [hit]\n",
+		"\n  +10.00ms dur 50.00ms own 0ns  3 call Query.b [joined]\n",
+		"\n    +10.00ms dur 50.00ms own 15.00ms  ⏳ singleflight → 20 call_exec Query.b [ok]\n",
+		"\n      +20.00ms dur 35.00ms own 35.00ms  22 lazy Directory.sync [ok]\n",
+		"\n  +70.00ms dur 20.00ms own 20.00ms  4 call Query.c [executed] (exec 5)\n",
+		"\n  +90.00ms dur 5.00ms own 5.00ms  ⏳ lock → lock:foo\n",
+	}
+	pos := -1
+	for _, w := range want {
+		i := strings.Index(out, w)
+		if i < 0 {
+			t.Fatalf("output missing %q:\n%s", w, out)
+		}
+		if i < pos {
+			t.Errorf("%q is out of order:\n%s", w, out)
+		}
+		pos = i
+	}
+
+	// Without an op, every outermost matching op is walked and summed.
+	out = report(t, g, Options{View: "critpath", Filter: Filter{Class: regexp.MustCompile(`^Query\.b$`), Kind: "call"}})
+	assertContains(t, out,
+		"critpath of 2 ops matching",
+		"105.00ms summed",
+		"     70.00ms  66.7%        2  lazy Directory.sync\n",
+		"+0ns dur 55.00ms own 20.00ms  21 call Query.b [executed] (exec 20)",
+	)
+
+	// Depth bounds the printed path, not the attribution.
+	out = report(t, g, Options{View: "critpath", Op: 1, Depth: 1})
+	assertContains(t, out, "3 call Query.b [joined] ▸ 1", "35.00ms  35.0%")
+	if strings.Contains(out, "22 lazy Directory.sync [ok]") {
+		t.Errorf("depth 1 printed a grandchild:\n%s", out)
+	}
+}
+
+func TestCritpathShortSegments(t *testing.T) {
+	b := newDump(t)
+	b.op(1, 0, "call", "Query.root", "c", "do_not_cache", 0, 1000)
+	for i := range int64(5) {
+		b.op(uint64(10+i), 1, "call", "Query.tiny", "c", "hit", 100+2*i, 101+2*i)
+	}
+	b.op(20, 1, "call", "Query.big", "c", "hit", 200, 900)
+	out := report(t, b.graph(), Options{View: "critpath", Op: 1})
+	assertContains(t, out,
+		"  +100.00ms..+109.00ms … 5 shorter segments, 5.00ms: call Query.tiny:5\n",
+		"  +200.00ms dur 700.00ms own 700.00ms  20 call Query.big [hit]\n",
+	)
+}
+
+func TestWaits(t *testing.T) {
+	g := critDump(t)
+	out := report(t, g, Options{View: "waits"})
+	assertContains(t, out,
+		"waits: 2 (waiters matching all ops), 55.00ms summed",
+		"(left out: 2 waits of a call on its own call_exec child",
+		"by reason: singleflight 1 (50.00ms), lock 1 (5.00ms)",
+		"        1       1    50.00ms   50.00ms   50.00ms  singleflight call_exec Query.b\n",
+		"        1       1     5.00ms    5.00ms    5.00ms  lock         lock:foo\n",
+		"        1    50.00ms   50.00ms   50.00ms  singleflight call Query.b → call_exec Query.b\n",
+		"        1     5.00ms    5.00ms    5.00ms  lock         call Workspace.withCommit → lock:foo\n",
+	)
+	// Filters select waits by their waiter.
+	out = report(t, g, Options{View: "waits", Filter: Filter{ExcludeClass: regexp.MustCompile(`withCommit`)}})
+	assertContains(t, out, "waits: 1 (")
+	if strings.Contains(out, "lock:foo") {
+		t.Errorf("excludeClass on the waiter leaked the lock wait:\n%s", out)
+	}
+}
+
 func TestEvents(t *testing.T) {
 	g := syntheticDump(t)
 	var buf bytes.Buffer

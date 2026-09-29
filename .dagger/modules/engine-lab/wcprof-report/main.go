@@ -1,8 +1,9 @@
 // Command wcprof-report turns an engine wcprof dump (see engine/wcprof) into
 // small, agent-sized reports: per-class self time, per-parent child
 // breakdowns grouped into shapes, per-client activity over time, one op's
-// subtree or direct-children table, a per-class comparison against a
-// baseline dump, or name-resolved NDJSON events for jq.
+// subtree or direct-children table, its critical path, aggregated waits, a
+// per-class comparison against a baseline dump, or name-resolved NDJSON
+// events for jq.
 //
 // It lives in the engine-lab module rather than the repo (the offline
 // analyzer moved out of tree in #13588); engine-lab builds it at tool-call
@@ -30,8 +31,8 @@ func main() {
 	flag.StringVar(&excludeClass, "exclude-class", "", "regexp over op classes to leave out (e.g. '^Query\\.')")
 	flag.StringVar(&opts.Filter.Client, "client", "", "substring of the client ID")
 	flag.StringVar(&opts.Filter.Kind, "kind", "", "exact op kind (call, call_exec, lazy, exec, ...)")
-	flag.Uint64Var(&opts.Op, "op", 0, "tree/children views: root op ID (default: slowest matching op)")
-	flag.IntVar(&opts.Depth, "depth", 6, "tree view: levels to expand below the root")
+	flag.Uint64Var(&opts.Op, "op", 0, "tree/children/critpath views: root op ID (default: slowest matching op; critpath: every outermost matching op)")
+	flag.IntVar(&opts.Depth, "depth", 6, "tree/critpath views: levels to print below the root")
 	flag.IntVar(&opts.Top, "top", 30, "rows per ranking")
 	flag.StringVar(&opts.Sort, "sort", "", "classes view: self (default), count or dur; children view: start (default), dur or self")
 	flag.IntVar(&opts.Buckets, "buckets", 10, "clients view: number of time buckets")

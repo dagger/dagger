@@ -38,7 +38,7 @@ type Options struct {
 }
 
 // Views lists the supported report views.
-var Views = []string{"summary", "classes", "breakdown", "clients", "tree", "children", "compare", "events"}
+var Views = []string{"summary", "classes", "breakdown", "clients", "tree", "children", "critpath", "waits", "compare", "events"}
 
 // Report writes the selected view of g to w.
 func Report(w io.Writer, g *Graph, opts Options) error {
@@ -68,6 +68,10 @@ func Report(w io.Writer, g *Graph, opts Options) error {
 		err = childrenView(o, g, opts)
 	case "compare":
 		err = compare(o, g, opts)
+	case "critpath":
+		err = critpath(o, g, opts)
+	case "waits":
+		waitsView(o, g, opts)
 	default:
 		err = fmt.Errorf("unknown view %q (want one of %s)", opts.View, strings.Join(Views, ", "))
 	}

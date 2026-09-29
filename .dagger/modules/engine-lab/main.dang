@@ -569,6 +569,19 @@ type EngineLab {
     matching op) direct children and waits — id, start offset from the
     parent, duration, self, outcome, class — the view for "where did this
     op's time go?". `sortBy` start (default), dur or self.
+  - `critpath`: the critical path — the chain of work an op's end actually
+    waited on. Walking back from its end, each step takes the child or wait
+    that ran latest, and recurses into it; waits into shared work (a
+    singleflight join, a lazy result, an exec) follow that work. Time no
+    blocker covers is the op's own. Roots are `op`, or every outermost op
+    matching the filters; per class, their on-path own time (which sums to
+    the roots' duration, unlike summed self time), then the longest root's
+    path, `depth` levels deep, with segments under 1% folded.
+  - `waits`: recorded waits (waiters matching the filters) by reason, by
+    target (op class or resource, e.g. a lock) and by waiter → target, with
+    count, total, p50 and max — lock contention, singleflight joins, lazy
+    results everyone blocks on. A call waiting on its own call_exec is left
+    out.
   - `jq`: one JSON object per event with names resolved, piped through the
     jq `filter` (with `slurp`, over the whole array). Ops look like
     {"type":"op","id","kind","class","client","parent","parent_class",
@@ -595,7 +608,8 @@ type EngineLab {
   wcprofReport(
     source: Workspace!,
     """
-    classes, breakdown, clients, tree, children, compare, jq or summary.
+    classes, breakdown, clients, tree, children, critpath, waits, compare,
+    jq or summary.
     """
     view: String! = "classes",
     """
@@ -624,11 +638,12 @@ type EngineLab {
     """
     kind: String! = "",
     """
-    tree/children: root op ID (0 = the slowest op matching the filters).
+    tree/children/critpath: root op ID (0 = the slowest op matching the
+    filters; critpath: every outermost matching op).
     """
     op: Int! = 0,
     """
-    tree: levels to expand below the root (1 = its direct children).
+    tree/critpath: levels to print below the root (1 = its direct children).
     """
     depth: Int! = 6,
     """

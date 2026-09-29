@@ -101,6 +101,20 @@ The loop:
      start offset, duration, self, outcome, class — for "where did this
      op's time go?". `sortBy` start (default), dur or self. Walk down by
      re-rooting with `op`.
+   - `critpath`: the chain of work an op's end actually waited on — the
+     view for "what would make this faster?". Walking back from the end,
+     each step takes the child or wait that ran latest and recurses into it,
+     following waits into shared work (singleflight joins, lazy results,
+     execs) rather than the waiter's own subtree. Per class it reports
+     on-path own time, which sums to the roots' duration: concurrent work
+     that never held anything up gets nothing, unlike summed self time.
+     Roots are `op`, or every outermost op matching the filters (e.g.
+     `class: "^Workspace[.]withCommit$", kind: "call"` for all of them);
+     the longest root's path prints `depth` levels deep.
+   - `waits`: who blocks on what — waits by reason, by target (op class or
+     resource such as a lock) and by waiter → target, with count, total,
+     p50 and max. Filters select waiters. Calls waiting on their own
+     call_exec are left out (that time is the child's).
    - `jq`: name-resolved events (`{"type":"op","class":…,"client":…,
      "parent_class":…,"start_ms":…,"dur_ms":…,"self_ms":…,"outcome":…}`,
      plus waits and links) through your jq `filter`; `slurp` for
@@ -123,7 +137,8 @@ is replaced), so:
    starts with recording off) and `wcprofCapture` to flush.
 3. Reproduce the same workload, `wcprofCapture(name: "after")`.
 4. `wcprofReport(view: "compare", capture: "after", against: "before")`,
-   then drill into the classes that moved with `classes`/`breakdown`/`tree`
+   then drill into the classes that moved with `critpath` (did the change
+   shorten what the workload waits on?), `classes`, `breakdown` or `tree`
    on either capture.
 
 Captures are lost when the module state resets (e.g. a new session).
