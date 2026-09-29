@@ -32,6 +32,67 @@ type LocalGitRepository struct {
 type GitCheckoutBase struct {
 	Parent    dagql.ObjectResult[*GitRef]
 	CommitSHA string
+	// Remote parents additionally pin their exact evaluated canonical tree.
+	// Reusing it must never require another fetch after mirror/cache eviction.
+	Tree dagql.ObjectResult[*Directory]
+}
+
+// validateTree checks the producer recipe, not filesystem equality. Completed
+// Directories may retain only snapshot-backed evaluation state after restart;
+// their call frame still proves the exact parent and source-only tree selector.
+func (base *GitCheckoutBase) validateTree(ctx context.Context) error {
+	if base == nil || base.Tree.Self() == nil {
+		return nil
+	}
+	frame, err := base.Tree.ResultCall()
+	if err != nil {
+		return err
+	}
+	if frame == nil || frame.Field != "tree" || frame.Receiver == nil {
+		return fmt.Errorf("git checkout base tree must be the canonical parent tree")
+	}
+	discard := false
+	for _, arg := range frame.Args {
+		if arg.Name == "discardGitDir" && arg.Value != nil && arg.Value.Kind == dagql.ResultCallLiteralKindBool {
+			discard = arg.Value.BoolValue
+		}
+	}
+	if !discard {
+		return fmt.Errorf("git checkout base tree must discard Git metadata")
+	}
+	receiver, err := frame.ReceiverCall(ctx)
+	if err != nil {
+		return err
+	}
+	if receiver == nil {
+		return fmt.Errorf("git checkout base tree has no parent recipe")
+	}
+	got, err := receiver.RecipeDigest(ctx)
+	if err != nil {
+		return err
+	}
+	want, err := base.Parent.RecipeDigest(ctx)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf("git checkout base tree has a different parent recipe")
+	}
+	return nil
+}
+
+// provenTree returns Tree only when validateTree accepts it. The engine cache
+// may answer tree() on a content-equivalent GitRef (keepGitDir, service hosts
+// and known hosts are outside its content digest) with another recipe's result
+// and frame. Such a tree cannot prove this parent, so it is dropped rather than
+// failing the repository: the parent provenance stays, and only the incremental
+// checkout of a remote parent, which needs the pinned tree, falls back to a
+// full checkout.
+func (base *GitCheckoutBase) provenTree(ctx context.Context) dagql.ObjectResult[*Directory] {
+	if base == nil || base.validateTree(ctx) != nil {
+		return dagql.ObjectResult[*Directory]{}
+	}
+	return base.Tree
 }
 
 var _ GitRepositoryBackend = (*LocalGitRepository)(nil)

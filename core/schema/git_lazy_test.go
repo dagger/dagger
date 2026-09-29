@@ -10,10 +10,57 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNativeCommitBaseCacheScope(t *testing.T) {
+	ctx, srv, cache, _ := resolverOutputFixture(t)
+	s := &gitSchema{}
+	calls := 0
+	dagql.Fields[*core.GitRef]{dagql.NodeFuncWithDynamicInputs("__nativeCommitBase", func(ctx context.Context, _ dagql.ObjectResult[*core.GitRef], _ gitRefNativeCommitBaseArgs) (dagql.ObjectResult[*core.Directory], error) {
+		calls++
+		dir := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory])}
+		dir.SetPath("/")
+		dir.SetSnapshot(nil)
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	}, s.gitRefNativeCommitBaseKey).IsPersistable()}.Install(srv)
+	url, err := gitutil.ParseURL("https://example.test/repo.git")
+	require.NoError(t, err)
+	refs := make([]dagql.ObjectResult[*core.GitRef], 2)
+	for i, username := range []string{"alice", "bob"} {
+		remote := &core.RemoteGitRepository{URL: url, AuthUsername: username}
+		repo := resolverAttach(t, ctx, srv, cache, username+"-repo", &core.GitRepository{Backend: remote, Remote: &gitutil.Remote{}})
+		ref := &gitutil.Ref{SHA: strings.Repeat("a", 40)}
+		backend, err := remote.Get(ctx, ref)
+		require.NoError(t, err)
+		refs[i] = resolverAttach(t, ctx, srv, cache, username+"-ref", &core.GitRef{Repo: repo, Ref: ref, Backend: backend})
+		// Stronger than production auth digests: deliberately equate content.
+		// The dynamic recipe input must still partition owned promotions.
+		refs[i], err = refs[i].WithContentDigest(ctx, hashutil.HashStrings("same-content"), call.ExtraDigestLabelRemoteCache)
+		require.NoError(t, err)
+	}
+	firstRecipe, err := refs[0].RecipeDigest(ctx)
+	require.NoError(t, err)
+	for _, ref := range []dagql.ObjectResult[*core.GitRef]{refs[0], refs[0], refs[1], refs[1]} {
+		var output dagql.ObjectResult[*core.Directory]
+		// A caller cannot force Bob into Alice's cache entry with this input.
+		require.NoError(t, srv.Select(ctx, ref, &output, dagql.Selector{Field: "__nativeCommitBase", Args: []dagql.NamedInput{{Name: "parentRecipe", Value: dagql.String(firstRecipe.String())}}}))
+		frame, err := output.ResultCall()
+		require.NoError(t, err)
+		want, err := ref.RecipeDigest(ctx)
+		require.NoError(t, err)
+		for _, arg := range frame.Args {
+			if arg.Name == "parentRecipe" {
+				require.Equal(t, want.String(), arg.Value.StringValue)
+			}
+		}
+	}
+	require.Equal(t, 2, calls, "exact recipes deduplicate, equal contents do not authorize reuse")
+}
 
 func TestGitResolvedFrames(t *testing.T) {
 	sha := strings.Repeat("a", 40)

@@ -31,13 +31,17 @@ func (ref *LocalGitRef) incrementalCheckoutEligible() bool {
 		return false
 	}
 	_, local := parent.Backend.(*LocalGitRef)
-	return local
+	if local {
+		return true
+	}
+	_, remote := parent.Backend.(*RemoteGitRef)
+	return remote && base.Tree.Self() != nil
 }
 
 // incrementalTree applies only the commit's delta to a COW child of the parent
 // tree. False means the caller must use the full checkout: unsupported inputs,
-// a snapshot chain that is already too deep, or any other failure (see
-// nativeFallback). Only the caller's cancellation surfaces.
+// a snapshot chain that is already too deep, an unusable parent tree, or any
+// other failure (see nativeFallback). Only the caller's cancellation surfaces.
 func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "materialize incremental git checkout", telemetry.Internal())
 	defer func() {
@@ -47,6 +51,9 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		span.SetAttributes(attribute.Bool("dagger.git.checkout.incremental.supported", supported))
 		telemetry.EndWithCause(span, &rerr)
 	}()
+	if err := ref.repo.CheckoutBase.validateTree(ctx); err != nil {
+		return nil, false, err
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, false, err
@@ -65,9 +72,11 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		}
 		supported = true
 		span.SetAttributes(attribute.Int("dagger.git.checkout.incremental.changed_paths", len(plan.changed)))
-		var parent dagql.ObjectResult[*Directory]
-		if err := srv.Select(ctx, ref.repo.CheckoutBase.Parent, &parent, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
-			return err
+		parent := ref.repo.CheckoutBase.Tree
+		if parent.Self() == nil {
+			if err := srv.Select(ctx, ref.repo.CheckoutBase.Parent, &parent, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
+				return err
+			}
 		}
 		snapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
 		if err != nil {

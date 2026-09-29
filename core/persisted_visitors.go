@@ -474,6 +474,9 @@ var persistedGitRepositoryVisitor = persistedStructVisitor("", func(p *persisted
 			if err := w.at("local").at("checkoutBase").child("parentResultID", &p.Local.CheckoutBase.ParentResultID); err != nil {
 				return err
 			}
+			if err := w.at("local").at("checkoutBase").child("treeResultID", &p.Local.CheckoutBase.TreeResultID); err != nil {
+				return err
+			}
 		}
 	}
 	if p.Remote != nil {
