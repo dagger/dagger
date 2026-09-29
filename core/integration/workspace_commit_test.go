@@ -157,14 +157,20 @@ func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Cont
 	// Source-only trees created while committing also borrow local objects.
 	// Retained full checkouts still fetch to own their history independently.
 	require.NotEmpty(t, discardedCheckouts, "must exercise real local tree checkouts")
+	var checkoutGitCommands int
 	for id, name := range names {
 		for parent := parents[id]; parent != ""; parent = parents[parent] {
 			if discardedCheckouts[parent] {
 				require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "local source tree fetched objects: %s", name)
+				if strings.HasPrefix(name, "git checkout") {
+					checkoutGitCommands++
+				}
 				break
 			}
 		}
 	}
+	// Without Git spans beneath the checkouts, the fetch check above is vacuous.
+	require.NotZero(t, checkoutGitCommands, "must observe git commands beneath local tree checkouts")
 	var walks int
 	for id, name := range names {
 		for parent := parents[id]; parent != ""; parent = parents[parent] {
