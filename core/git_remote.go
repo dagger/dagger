@@ -446,6 +446,21 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 		return err
 	}
 
+	// A depth limit only saves transfer on an empty or already-shallow mirror.
+	// Fetching a new tip with --depth into a complete mirror records shallow
+	// boundaries over history it already has, and removing them again for the
+	// next full-history read can resend that entire history. Fetching the tip
+	// completely costs only the commits it adds.
+	if depth > 0 {
+		complete, err := gitMirrorIsComplete(ctx, git, gitDir)
+		if err != nil {
+			return err
+		}
+		if complete {
+			depth = 0
+		}
+	}
+
 	shaRefSpecs := make([]string, len(refs))
 	for i, ref := range refs {
 		// FETCH_HEAD alone is not a negotiation tip. Keep each pinned commit
@@ -562,6 +577,27 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 	}
 
 	return nil
+}
+
+// gitMirrorIsComplete reports whether the mirror holds history and none of it
+// is shallow. Mirrors written by older engines may only reference their
+// objects from FETCH_HEAD.
+func gitMirrorIsComplete(ctx context.Context, git *gitutil.GitCLI, gitDir string) (bool, error) {
+	if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	if _, err := os.Lstat(filepath.Join(gitDir, "FETCH_HEAD")); err == nil {
+		return true, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	out, err := git.Run(ctx, "for-each-ref", "--count=1", "--format=%(refname)")
+	if err != nil {
+		return false, fmt.Errorf("list mirror refs: %w", err)
+	}
+	return strings.TrimSpace(string(out)) != "", nil
 }
 
 // fetchedGitRef is private to the mutable mirror, never a checkout refspec.
