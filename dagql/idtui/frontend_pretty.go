@@ -1613,7 +1613,7 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 			if logged {
 				fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
 			} else if !skipLoggedOutTraceMsg() {
-				fmt.Fprintf(&fe.msgPreFinalRender, loggedOutTraceMsg, url)
+				fe.msgPreFinalRender.WriteString(loggedOutTraceMsg)
 			}
 		}
 		fe.Update()
