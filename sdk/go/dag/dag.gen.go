@@ -262,6 +262,16 @@ func SetSecret(name string, plaintext string) *dagger.Secret {
 	return client.SetSecret(name, plaintext)
 }
 
+// Name the current session.
+//
+// The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+//
+// Experimental: Session APIs are likely to change.
+func SetSessionTitle(ctx context.Context, title string) error {
+	client := initClient()
+	return client.SetSessionTitle(ctx, title)
+}
+
 // Creates source map metadata.
 func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	client := initClient()

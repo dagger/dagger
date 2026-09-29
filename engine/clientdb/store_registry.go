@@ -210,8 +210,49 @@ func (r *DBs) GC(keep map[string]bool) error {
 	return result
 }
 
+// Remove deletes a store only when no live writer or reader holds a reference.
+// The same per-store lock serializes reopening, so GC cannot unlink a newly
+// reopened archive stream.
+func (r *DBs) Remove(clientID string) (bool, error) {
+	r.perStoreLock.Lock(clientID)
+	defer r.perStoreLock.Unlock(clientID)
+	r.mu.RLock()
+	used := r.open[clientID] != nil
+	r.mu.RUnlock()
+	if used {
+		return false, nil
+	}
+	var result error
+	for _, suffix := range storeStreamSuffixes {
+		err := os.Remove(filepath.Join(r.Root, clientID+suffix))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			result = errors.Join(result, err)
+		}
+	}
+	return result == nil, result
+}
+
+// StoreSize is the on-disk size of a client's store streams, measured without
+// opening (and replaying) the store. Missing streams count as empty.
+func (r *DBs) StoreSize(clientID string) (int64, error) {
+	var total int64
+	for _, suffix := range storeStreamSuffixes {
+		info, err := os.Stat(filepath.Join(r.Root, clientID+suffix))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+		total += info.Size()
+	}
+	return total, nil
+}
+
+var storeStreamSuffixes = []string{".spans.log", ".logs.log", ".metrics.log"}
+
 func storeFileClientID(name string) (string, bool) {
-	for _, suffix := range []string{".spans.log", ".logs.log", ".metrics.log"} {
+	for _, suffix := range storeStreamSuffixes {
 		if clientID, found := strings.CutSuffix(name, suffix); found && clientID != "" {
 			return clientID, true
 		}

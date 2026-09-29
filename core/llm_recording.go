@@ -188,10 +188,8 @@ func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLM
 	// tool call would run under the shared loop context and every
 	// recording-driven test would exercise a shape production never has.
 	//
-	// Note this is the *live loop* path (model `recording/…`), which is distinct
-	// from LLM.EmitHistory: that one re-emits spans for an already-recorded
-	// conversation for display only, and never runs tools. The two never both
-	// emit spans for the same tool call.
+	// This is the live loop path (model `recording/…`), not restored history.
+	// Trace restore imports the original telemetry rather than re-emitting it.
 	var callDigest string
 	if opts != nil {
 		callDigest = opts.CallDigest

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
@@ -73,10 +74,12 @@ func focusConversationDB(t *testing.T) *dagui.DB {
 	)
 	// The terminal message and lifecycle record describe the same scout
 	// failure. The message stays in its conversation after the loop ends.
-	snapshots[2].AgentState = "FAILED"
 	snapshots[2].Status = sdktrace.Status{Code: codes.Error, Description: "context limit reached"}
 
 	db.ImportSnapshots(append([]dagui.SpanSnapshot{root}, snapshots...))
+	publishAgentControl(t, db, "agent-scout", func(a *agentcontrol.Agent) {
+		a.State, a.Failure = "FAILED", "context limit reached"
+	})
 	return db
 }
 

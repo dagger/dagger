@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -46,17 +47,22 @@ import (
 
 // cloudReceiver is an OTLP/HTTP receiver standing in for Dagger Cloud. It
 // records what arrives and the Authorization header of every request. Until
-// release is closed, when hold is set, it reads each request and then waits.
+// release is closed (open, or the test's end), when hold is set, it reads each
+// request and then waits; a request still connected then is recorded.
 type cloudReceiver struct {
 	*httptest.Server
 	hold    bool
 	release chan struct{}
+	opened  sync.Once
+	// refuse, while set, fails every export at once, recording nothing.
+	refuse atomic.Bool
 	// entered receives a value as each request arrives, when there is room.
 	entered chan struct{}
 
 	mu             sync.Mutex
 	auths          []string
 	spanNames      []string
+	spanFrames     []string
 	logBodies      []string
 	payloadDigests []string
 	metricNames    []string
@@ -66,10 +72,15 @@ func newCloudReceiver(t *testing.T, hold bool) *cloudReceiver {
 	r := &cloudReceiver{hold: hold, release: make(chan struct{}), entered: make(chan struct{}, 16)}
 	r.Server = httptest.NewServer(http.HandlerFunc(r.serve))
 	t.Cleanup(func() {
-		close(r.release)
+		r.open()
 		r.Server.Close()
 	})
 	return r
+}
+
+// open ends the hold: Cloud answers again.
+func (r *cloudReceiver) open() {
+	r.opened.Do(func() { close(r.release) })
 }
 
 func (r *cloudReceiver) serve(w http.ResponseWriter, req *http.Request) {
@@ -87,12 +98,16 @@ func (r *cloudReceiver) serve(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if r.refuse.Load() {
+		http.Error(w, "outage", http.StatusInternalServerError)
+		return
+	}
 	if r.hold {
 		select {
 		case <-r.release:
 		case <-req.Context().Done():
+			return
 		}
-		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -108,6 +123,11 @@ func (r *cloudReceiver) serve(w http.ResponseWriter, req *http.Request) {
 			for _, ss := range rs.GetScopeSpans() {
 				for _, span := range ss.GetSpans() {
 					r.spanNames = append(r.spanNames, span.GetName())
+					for _, kv := range span.GetAttributes() {
+						if kv.GetKey() == telemetry.DagCallAttr {
+							r.spanFrames = append(r.spanFrames, kv.GetValue().GetStringValue())
+						}
+					}
 				}
 			}
 		}
@@ -175,10 +195,28 @@ func newCloudTestSession(t *testing.T, srv *Server, md *engine.ClientMetadata) (
 	root.daggerSession = sess
 	installTestClientRecords(sess)
 	srv.initializeSessionTelemetry(sess, md)
+	if f := sess.cloudForwarder; f != nil {
+		// A forwarder still publishing when the test ends stops with it.
+		t.Cleanup(func() {
+			f.stop(errors.New("test done"))
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			require.NoError(t, f.waitReleased(ctx))
+		})
+	}
 	root.spanExporter = originSpanExporter{origin: root.clientID, next: sess.spanExporter}
 	root.logExporter = originLogExporter{origin: root.clientID, next: sess.logExporter}
 	srv.initializeClientMetrics(root)
 	return sess, root
+}
+
+// publishRestToCloud ends the session's telemetry and waits for its forwarder
+// to publish the rest of the store to Cloud and release.
+func publishRestToCloud(ctx context.Context, t *testing.T, sess *daggerSession) {
+	t.Helper()
+	require.NoError(t, sess.shutdownTelemetry(ctx))
+	require.NotNil(t, sess.cloudForwarder)
+	require.NoError(t, sess.cloudForwarder.waitReleased(ctx))
 }
 
 // emitCloudTestTelemetry emits one span, one log record and one metric point
@@ -215,13 +253,13 @@ func TestSessionPublishesTelemetryToCloud(t *testing.T) {
 		CloudURL:                receiver.URL,
 		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 	})
-	require.NotNil(t, sess.cloudSpans)
-	require.Equal(t, 5, sess.telemetryDebug.ConfiguredSpanProcessors)
+	require.NotNil(t, sess.cloudForwarder)
+	require.Equal(t, 5, sess.telemetryDebug.ConfiguredSpanProcessors, "Cloud reads the store, not the providers")
 	require.Equal(t, 4, sess.telemetryDebug.ConfiguredLogProcessors)
 
 	emitCloudTestTelemetry(t, sess, root)
 	sess.flushSessionCloudTelemetry(ctx)
-	require.NoError(t, sess.shutdownTelemetry(ctx))
+	publishRestToCloud(ctx, t, sess)
 
 	auths, spans, logs, metrics := receiver.snapshot()
 	require.Equal(t, []string{"cloud-span"}, dedupe(spans), "the live snapshot and the end may both arrive")
@@ -231,6 +269,56 @@ func TestSessionPublishesTelemetryToCloud(t *testing.T) {
 	require.NotEmpty(t, auths)
 	for _, got := range auths {
 		require.Equal(t, want, got)
+	}
+}
+
+// A call span carries its call's frame and is the frame's only delivery: the
+// session exports it on the protected call span lane to the client's store —
+// where it settles the payload claim — and the forwarder publishes it from
+// there to Cloud, frame included.
+func TestSessionDeliversCallSpansToStoreAndCloud(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	receiver := newCloudReceiver(t, false)
+	srv := &Server{}
+	sess, root := newCloudTestSession(t, srv, &engine.ClientMetadata{
+		CloudAuth:               basicCloudAuth("dag_test_token"),
+		CloudURL:                receiver.URL,
+		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+	})
+	body, digest := serverCallPayload(t, "lookup", "cloud")
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{root.clientID}}
+	require.True(t, store.ClaimCallPayload(digest))
+
+	spanCtx := engine.ContextWithClientMetadata(t.Context(), root.clientMetadata)
+	_, span := sess.tracerProvider.Tracer("test").Start(spanCtx, "Thing.lookup", trace.WithAttributes(
+		attribute.String(telemetry.DagDigestAttr, digest),
+		attribute.String(telemetry.DagCallAttr, base64.StdEncoding.EncodeToString(body)),
+	))
+	span.End()
+	require.NoError(t, sess.FlushTelemetry(ctx, "test"))
+	require.Empty(t, sess.callPayloadMissingTargets(digest, store.targets),
+		"a persisted call span delivers its frame")
+
+	sess.flushSessionCloudTelemetry(ctx)
+	publishRestToCloud(ctx, t, sess)
+	auths, spans, _, _ := receiver.snapshot()
+	require.NotEmpty(t, auths)
+	require.Equal(t, []string{"Thing.lookup"}, dedupe(spans))
+	receiver.mu.Lock()
+	frames := slices.Clone(receiver.spanFrames)
+	receiver.mu.Unlock()
+	require.Contains(t, frames, base64.StdEncoding.EncodeToString(body), "the frame rides the span to Cloud")
+
+	db, err := srv.clientDBs.Open(ctx, root.clientID)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.NotEmpty(t, rows)
+	for _, row := range rows {
+		require.Equal(t, "Thing.lookup", row.Name)
 	}
 }
 
@@ -262,10 +350,11 @@ func TestSessionWithoutPublisherStaysSilent(t *testing.T) {
 			receiver := newCloudReceiver(t, false)
 			md.CloudURL = receiver.URL
 			sess, root := newCloudTestSession(t, &Server{}, md)
-			require.Nil(t, sess.cloudSpans)
-			require.Nil(t, sess.cloudLogs)
+			require.Nil(t, sess.cloudForwarder)
 			require.Nil(t, sess.cloudMetrics)
-			require.Equal(t, 4, sess.telemetryDebug.ConfiguredSpanProcessors)
+			require.Empty(t, sess.cloudFlushers)
+			require.Equal(t, 5, sess.telemetryDebug.ConfiguredSpanProcessors)
+			require.Equal(t, 4, sess.telemetryDebug.ConfiguredLogProcessors)
 
 			emitCloudTestTelemetry(t, sess, root)
 			sess.flushSessionCloudTelemetry(ctx)
@@ -277,11 +366,13 @@ func TestSessionWithoutPublisherStaysSilent(t *testing.T) {
 }
 
 // Against a Cloud that accepts requests and never answers, the main client's
-// whole shutdown request (the Cloud flush, the providers' and every client's
+// whole shutdown request (the Cloud drain, the providers' and every client's
 // metric flush, and the cleanup that reclaims the client when its last lease
 // goes) waits on Cloud for one bound in total, not one per wait, and the
 // final span still reaches the client's stream. The session's teardown
-// afterwards is bounded as well.
+// afterwards waits on Cloud only to release the metric exporter, and the
+// forwarder keeps holding its one batch in the background, the rest waiting
+// in the store.
 func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
@@ -294,7 +385,7 @@ func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 	})
 	emitCloudTestTelemetry(t, sess, root)
-	// A call payload too: its path waits on Cloud no longer than the rest.
+	// A call payload too: it waits in the store like everything else.
 	payloadCtx := engine.ContextWithClientMetadata(ctx, root.clientMetadata)
 	payloadCtx = telemetry.WithLoggerProvider(payloadCtx, sess.loggerProvider)
 	telemetry.Logger(payloadCtx, "test").Emit(payloadCtx, cloudPayloadRecordValue("xxh3:bounded"))
@@ -328,20 +419,29 @@ func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 
 	start = time.Now()
 	require.NoError(t, sess.shutdownTelemetry(ctx))
-	require.Less(t, time.Since(start), 4*bound+time.Second, "teardown waits one bound per exporter at most")
+	require.Less(t, time.Since(start), bound+time.Second, "teardown waits on Cloud for the metric exporter's bound at most")
+	select {
+	case <-sess.cloudForwarder.done:
+		t.Fatal("the forwarder gave up on the rest of the store while Cloud hangs")
+	default:
+	}
+	spanCursor, _ := sess.cloudForwarder.lanes[0].position()
+	require.Zero(t, spanCursor, "nothing Cloud did not take is counted as published")
 }
 
 // A publishing session asks its scale-out engine to publish too, with its
-// main client's Cloud URL and credentials path. If the remote does not, the
-// client uses EngineTrace and EngineLogs, which reach Cloud through the
-// session's processors; the WithoutCloud ones do not. A session that does
-// not publish does not ask.
+// main client's Cloud URL and credentials path. Both of the remote's streams
+// reach the client routing: the one the remote confirms (the WithoutCloud
+// exporters) marked as published, which the forwarder leaves out, the one it
+// does not (EngineTrace and EngineLogs) as the session's own, which the
+// forwarder publishes. A session that does not publish does not ask.
 func TestScaleOutTelemetryFollowsTheSession(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	receiver := newCloudReceiver(t, false)
-	sess, root := newCloudTestSession(t, &Server{}, &engine.ClientMetadata{
+	srv := &Server{}
+	sess, root := newCloudTestSession(t, srv, &engine.ClientMetadata{
 		CloudAuth:               basicCloudAuth("dag_test_token"),
 		CloudURL:                receiver.URL,
 		CredentialsPath:         "/home/user/.config/dagger/credentials.json",
@@ -352,8 +452,8 @@ func TestScaleOutTelemetryFollowsTheSession(t *testing.T) {
 	require.True(t, params.EngineCloudTelemetry)
 	require.Equal(t, receiver.URL, params.CloudURL)
 	require.Equal(t, "/home/user/.config/dagger/credentials.json", params.CloudCredentialsPath)
-	require.Equal(t, root.spanExporter, params.EngineTraceWithoutCloud)
-	require.Equal(t, root.logExporter, params.EngineLogsWithoutCloud)
+	require.Equal(t, root.spanExporter, params.EngineTrace)
+	require.Equal(t, root.logExporter, params.EngineLogs)
 
 	remote := tracetest.SpanStub{
 		Name: "remote-span",
@@ -364,15 +464,33 @@ func TestScaleOutTelemetryFollowsTheSession(t *testing.T) {
 		EndTime:   time.Now(),
 	}
 	require.NoError(t, params.EngineTraceWithoutCloud.ExportSpans(ctx, []sdktrace.ReadOnlySpan{
-		tracetest.SpanStub{Name: "not-to-cloud", SpanContext: remote.SpanContext, StartTime: remote.StartTime, EndTime: remote.EndTime}.Snapshot(),
+		tracetest.SpanStub{
+			Name: "not-to-cloud",
+			SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}, TraceFlags: trace.FlagsSampled,
+			}),
+			StartTime: remote.StartTime, EndTime: remote.EndTime,
+		}.Snapshot(),
 	}))
 	require.NoError(t, params.EngineTrace.ExportSpans(ctx, []sdktrace.ReadOnlySpan{remote.Snapshot()}))
-	var rec sdklog.Record
+	var rec, published otellog.Record
 	rec.SetBody(otellog.StringValue("remote-log"))
-	require.NoError(t, params.EngineLogs.Export(ctx, []sdklog.Record{rec}))
-	sess.flushSessionCloudTelemetry(ctx)
-	require.NoError(t, sess.shutdownTelemetry(ctx))
+	published.SetBody(otellog.StringValue("published-log"))
+	require.NoError(t, params.EngineLogsWithoutCloud.Export(ctx, []sdklog.Record{controlTestRecord(t, published)}))
+	require.NoError(t, params.EngineLogs.Export(ctx, []sdklog.Record{controlTestRecord(t, rec)}))
 
+	db, err := srv.clientDBs.Open(ctx, root.clientID)
+	require.NoError(t, err)
+	storedSpans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{Limit: 100})
+	require.NoError(t, err)
+	storedLogs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{Limit: 100})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	require.Len(t, storedSpans, 2, "the client sees both streams")
+	require.Len(t, storedLogs, 2, "the client sees both streams")
+
+	sess.flushSessionCloudTelemetry(ctx)
+	publishRestToCloud(ctx, t, sess)
 	_, spans, logs, _ := receiver.snapshot()
 	require.Equal(t, []string{"remote-span"}, spans)
 	require.Equal(t, []string{"remote-log"}, logs)
@@ -461,6 +579,8 @@ func postTelemetry(t *testing.T, ps *PubSub, sessionID, clientID string) {
 			Resource: resourcePB,
 			ScopeLogs: []*otlplogsv1.ScopeLogs{{LogRecords: []*otlplogsv1.LogRecord{{
 				TimeUnixNano: now,
+				TraceId:      []byte{7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				SpanId:       []byte{7, 0, 0, 0, 0, 0, 0, 0},
 				Body:         &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: "posted-log"}},
 			}}}},
 		}}},
@@ -487,8 +607,8 @@ func postTelemetry(t *testing.T, ps *PubSub, sessionID, clientID string) {
 }
 
 // Telemetry a process in a container posts reaches the client routing once
-// and, when the session publishes, Cloud once: posted telemetry never passes
-// the session's providers, where the Cloud processors sit.
+// and, when the session publishes, Cloud once, from the main client's store:
+// posted telemetry never passes the session's providers.
 func TestPostedTelemetryReachesCloudOnce(t *testing.T) {
 	t.Parallel()
 	for _, publishing := range []bool{true, false} {
@@ -545,6 +665,9 @@ func TestPostedTelemetryReachesCloudOnce(t *testing.T) {
 			require.Equal(t, 1, clientMetrics, "client metric delivery")
 
 			require.NoError(t, sess.shutdownTelemetry(ctx))
+			if publishing {
+				require.NoError(t, sess.cloudForwarder.waitReleased(ctx))
+			}
 			_, cloudSpans, cloudLogs, cloudMetrics := receiver.snapshot()
 			count := func(names []string, name string) int {
 				n := 0
@@ -695,7 +818,8 @@ func TestCloudRefreshGateWaitsForInflight(t *testing.T) {
 
 // A call payload the engine emitted and a nested CLI then posted back reaches
 // Cloud once, as it reaches the client once: the client routing suppresses a
-// payload it already delivered, and so does the Cloud path.
+// payload it already delivered, and Cloud is published from the client's
+// store.
 func TestCallPayloadReachesCloudOnce(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
@@ -711,9 +835,12 @@ func TestCallPayloadReachesCloudOnce(t *testing.T) {
 	srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
 	const digest = "xxh3:cloud-payload-once"
 
-	// The engine emits the payload once.
+	// The engine emits the payload once, in its call's span.
 	emitCtx := engine.ContextWithClientMetadata(ctx, root.clientMetadata)
 	emitCtx = telemetry.WithLoggerProvider(emitCtx, sess.loggerProvider)
+	emitCtx = trace.ContextWithSpanContext(emitCtx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{7}, SpanID: trace.SpanID{7}, TraceFlags: trace.FlagsSampled,
+	}))
 	var rec otellog.Record
 	rec.SetTimestamp(time.Now())
 	rec.SetBody(otellog.BytesValue([]byte("payload")))
@@ -729,6 +856,8 @@ func TestCallPayloadReachesCloudOnce(t *testing.T) {
 		Resource: telemetry.ResourcePtrToPB(resource.NewSchemaless(attribute.String("service.name", "nested-cli"))),
 		ScopeLogs: []*otlplogsv1.ScopeLogs{{LogRecords: []*otlplogsv1.LogRecord{{
 			TimeUnixNano: uint64(time.Now().UnixNano()),
+			TraceId:      []byte{7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			SpanId:       []byte{7, 0, 0, 0, 0, 0, 0, 0},
 			Body:         &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: []byte("payload")}},
 			Attributes: []*otlpcommonv1.KeyValue{
 				{Key: telemetry.ContentTypeAttr, Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: telemetryattrs.CallPayloadContentType}}},
@@ -753,69 +882,10 @@ func TestCallPayloadReachesCloudOnce(t *testing.T) {
 	require.Len(t, logs, 1, "the client gets the payload once")
 
 	sess.flushSessionCloudTelemetry(ctx)
-	require.NoError(t, sess.shutdownTelemetry(ctx))
+	publishRestToCloud(ctx, t, sess)
 	receiver.mu.Lock()
 	defer receiver.mu.Unlock()
 	require.Equal(t, []string{digest}, receiver.payloadDigests, "Cloud gets the payload once")
-}
-
-// cloudLogTestExporter records what reaches it. Until open is closed its
-// exports wait; while failPayloads is positive, an export carrying a call
-// payload fails and decrements it.
-type cloudLogTestExporter struct {
-	open chan struct{}
-
-	mu           sync.Mutex
-	failPayloads int
-	payloads     []string
-	others       int
-}
-
-func newCloudLogTestExporter(gated bool) *cloudLogTestExporter {
-	e := &cloudLogTestExporter{open: make(chan struct{})}
-	if !gated {
-		close(e.open)
-	}
-	return e
-}
-
-func (e *cloudLogTestExporter) Export(ctx context.Context, records []sdklog.Record) error {
-	select {
-	case <-e.open:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	var digests []string
-	for _, rec := range records {
-		if digest, payload, err := classifyCallPayloadRecord(rec); err == nil && payload {
-			digests = append(digests, digest)
-		} else {
-			e.others++
-		}
-	}
-	if len(digests) > 0 && e.failPayloads > 0 {
-		e.failPayloads--
-		return fmt.Errorf("cloud unavailable")
-	}
-	e.payloads = append(e.payloads, digests...)
-	return nil
-}
-
-func (e *cloudLogTestExporter) Shutdown(context.Context) error   { return nil }
-func (e *cloudLogTestExporter) ForceFlush(context.Context) error { return nil }
-
-func (e *cloudLogTestExporter) received() (payloads []string, others int) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return append([]string(nil), e.payloads...), e.others
-}
-
-// cloudTestLogger emits through a provider whose one processor is p, so the
-// records carry their attributes as the session's do.
-func cloudTestLogger(p sdklog.Processor) otellog.Logger {
-	return sdklog.NewLoggerProvider(sdklog.WithProcessor(p)).Logger("test")
 }
 
 // cloudPayloadRecordValue is a call payload as an API record, to emit.
@@ -835,153 +905,6 @@ func cloudOtherRecord(i int) otellog.Record {
 	rec.SetTimestamp(time.Now())
 	rec.SetBody(otellog.StringValue(fmt.Sprintf("exec output %d", i)))
 	return rec
-}
-
-// A call payload reaches Cloud through a burst of other records larger than
-// the batch processor's queue, which drops its oldest record when full, and a
-// repeated payload is sent once.
-func TestCloudLogPipelineKeepsPayloadsThroughBurst(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	exporter := newCloudLogTestExporter(true)
-	pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
-	logger := cloudTestLogger(pipeline)
-
-	// The batch processor hands at most three batches of 512 records to its
-	// exporter (one exporting, one buffered, one waiting) while exports wait;
-	// the payload queues behind them, and the burst then overflows the queue
-	// of 2048.
-	const lead, burst = 2000, 5000
-	for i := range lead {
-		logger.Emit(ctx, cloudOtherRecord(i))
-	}
-	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:first"))
-	for i := range burst {
-		logger.Emit(ctx, cloudOtherRecord(lead+i))
-	}
-	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:second"))
-	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:first"))
-	close(exporter.open)
-
-	require.NoError(t, pipeline.ForceFlush(ctx))
-	require.NoError(t, pipeline.Shutdown(ctx))
-	payloads, others := exporter.received()
-	require.Less(t, others, lead+burst, "the burst overflowed the batch queue")
-	require.ElementsMatch(t, []string{"xxh3:first", "xxh3:second"}, payloads, "each payload arrives once")
-}
-
-// A call payload whose export fails is retried until Cloud takes it, once.
-func TestCloudLogPipelineRetriesPayloads(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	exporter := newCloudLogTestExporter(false)
-	exporter.failPayloads = 3
-	pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
-	logger := cloudTestLogger(pipeline)
-
-	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:retried"))
-	require.Eventually(t, func() bool {
-		payloads, _ := exporter.received()
-		return len(payloads) > 0
-	}, 10*time.Second, 10*time.Millisecond, "the payload lands once Cloud recovers")
-	logger.Emit(ctx, cloudPayloadRecordValue("xxh3:retried"))
-	require.NoError(t, pipeline.Shutdown(ctx))
-	payloads, _ := exporter.received()
-	require.Equal(t, []string{"xxh3:retried"}, payloads)
-}
-
-// concurrencyLogExporter records the most exports it saw in flight at once,
-// and the call-payload exports in flight. Unless open is nil, each export
-// waits until open is closed or its context ends.
-type concurrencyLogExporter struct {
-	open             chan struct{}
-	inFlight         atomic.Int32
-	payloadsInFlight atomic.Int32
-	maxSeen          atomic.Int32
-	exports          atomic.Int32
-}
-
-func (e *concurrencyLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
-	n := e.inFlight.Add(1)
-	defer e.inFlight.Add(-1)
-	if len(records) > 0 {
-		if _, payload, _ := classifyCallPayloadRecord(records[0]); payload {
-			e.payloadsInFlight.Add(1)
-			defer e.payloadsInFlight.Add(-1)
-		}
-	}
-	e.exports.Add(1)
-	for {
-		seen := e.maxSeen.Load()
-		if n <= seen || e.maxSeen.CompareAndSwap(seen, n) {
-			break
-		}
-	}
-	if e.open != nil {
-		select {
-		case <-e.open:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	time.Sleep(time.Millisecond) // widen the window a concurrent export would use
-	return nil
-}
-
-func (*concurrencyLogExporter) Shutdown(context.Context) error   { return nil }
-func (*concurrencyLogExporter) ForceFlush(context.Context) error { return nil }
-
-// The payload path and the batch processor share one exporter, which must not
-// export concurrently: the pipeline hands it one export at a time.
-func TestCloudLogPipelineSerializesExports(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	exporter := &concurrencyLogExporter{}
-	pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
-	logger := cloudTestLogger(pipeline)
-
-	var wg sync.WaitGroup
-	for g := range 4 {
-		wg.Go(func() {
-			for i := range 300 {
-				logger.Emit(ctx, cloudPayloadRecordValue(fmt.Sprintf("xxh3:%d-%d", g, i)))
-				logger.Emit(ctx, cloudOtherRecord(g*1000+i))
-			}
-		})
-	}
-	wg.Wait()
-	require.NoError(t, pipeline.ForceFlush(ctx))
-	require.NoError(t, pipeline.Shutdown(ctx))
-	require.Greater(t, exporter.exports.Load(), int32(1))
-	require.Equal(t, int32(1), exporter.maxSeen.Load(), "one export at a time")
-}
-
-// With a payload export holding the exporter and another record waiting its
-// turn, the pipeline's shutdown still ends within its bound, and no payload
-// export outlives it. (The SDK batch processor's own export, run on the SDK's
-// export timeout, can outlive a shutdown that ran out of time, as before.)
-func TestCloudLogPipelineShutdownIsBounded(t *testing.T) {
-	t.Parallel()
-	exporter := &concurrencyLogExporter{open: make(chan struct{})}
-	defer close(exporter.open)
-	pipeline := newCloudPayloadOnce(newCloudLogPipeline(exporter))
-	logger := cloudTestLogger(pipeline)
-	logger.Emit(t.Context(), cloudPayloadRecordValue("xxh3:held"))
-	require.Eventually(t, func() bool { return exporter.payloadsInFlight.Load() > 0 },
-		5*time.Second, time.Millisecond, "a payload export holds the exporter")
-	logger.Emit(t.Context(), cloudOtherRecord(0))
-
-	const bound = 300 * time.Millisecond
-	ctx, cancel := context.WithTimeout(t.Context(), bound)
-	defer cancel()
-	start := time.Now()
-	_ = pipeline.Shutdown(ctx)
-	require.Less(t, time.Since(start), bound+time.Second)
-	require.Zero(t, exporter.payloadsInFlight.Load(), "no payload export outlives the shutdown")
-	require.Equal(t, int32(1), exporter.maxSeen.Load(), "one export at a time")
 }
 
 func histogramMetrics(counts []uint64, bounds []float64) *metricdata.ResourceMetrics {
@@ -1118,8 +1041,7 @@ func TestUnreachableCloudURLLeavesTheClientForwarding(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
 
 	require.False(t, sess.publishesToCloud())
-	require.Nil(t, sess.cloudSpans)
-	require.Nil(t, sess.cloudLogs)
+	require.Nil(t, sess.cloudForwarder)
 	require.Nil(t, sess.cloudMetrics)
 	require.Equal(t, []sdkmetric.Exporter{root.metricExporter}, sess.postedMetricExporters(root.metricExporter))
 

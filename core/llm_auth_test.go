@@ -74,6 +74,11 @@ func (e *llmEnv) readCount(uri string) int {
 // `secret(uri:){plaintext}` selection, reading from the returned llmEnv.
 func newLLMEndpointTestCtx(t *testing.T) (context.Context, *llmEnv) {
 	t.Helper()
+	return newLLMEndpointTestClientCtx(t, &engine.ClientMetadata{ClientID: "llm-test-client", SessionID: "llm-test-session"})
+}
+
+func newLLMEndpointTestClientCtx(t *testing.T, md *engine.ClientMetadata) (context.Context, *llmEnv) {
+	t.Helper()
 
 	env := &llmEnv{
 		vars: map[string]string{
@@ -105,7 +110,6 @@ func newLLMEndpointTestCtx(t *testing.T) (context.Context, *llmEnv) {
 	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
 	require.NoError(t, err)
 
-	md := &engine.ClientMetadata{ClientID: "llm-test-client", SessionID: "llm-test-session"}
 	query := &Query{Server: &llmEndpointTestServer{
 		mockServer: &mockServer{clientMetadata: md},
 		srv:        srv,
@@ -207,6 +211,72 @@ func TestLLMEndpointCredentialOutlivesRoutingScope(t *testing.T) {
 	ep.AuthTokenSource.Invalidate()
 	_, err = ep.AuthTokenSource.Credential(requestCtx)
 	require.ErrorContains(t, err, "client scope lease is not held")
+}
+
+func TestLLMEndpointCredentialsStayInSession(t *testing.T) {
+	for name, invalidate := range map[string]bool{"warm": false, "refresh": true} {
+		t.Run(name, func(t *testing.T) {
+			var mu sync.Mutex
+			var seen []string
+			ts := anthropicErrorServer(t, http.StatusBadRequest, func(auth string) {
+				mu.Lock()
+				defer mu.Unlock()
+				seen = append(seen, auth)
+			})
+			newSession := func(id string) context.Context {
+				md := &engine.ClientMetadata{ClientID: "client-" + id, SessionID: id}
+				ctx, env := newLLMEndpointTestClientCtx(t, md)
+				env.set("env://ANTHROPIC_BASE_URL", ts.URL)
+				env.set("env://ANTHROPIC_AUTH_TOKEN", "token-"+id)
+				var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+				newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
+					return engine.NewClientLifecycleLease(kind, owner, func() {}, func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+						return newLease(kind, owner), nil
+					})
+				}
+				lease := newLease(engine.ClientLeaseRequest, id)
+				t.Cleanup(lease.Release)
+				scope, err := engine.NewClientScope(md, lease)
+				require.NoError(t, err)
+				ctx, err = engine.ContextWithClientScope(ctx, scope)
+				require.NoError(t, err)
+				return ctx
+			}
+			ctxA, ctxB := newSession("a"), newSession("b")
+			query, err := CurrentQuery(ctxA)
+			require.NoError(t, err)
+			llm, err := query.NewLLM(ctxA, "claude-sonnet-4-5", "")
+			require.NoError(t, err)
+			send := func(ctx context.Context, llm *LLM) *LLMEndpoint {
+				ep, err := llm.Endpoint(ctx)
+				require.NoError(t, err)
+				_, err = ep.Client.SendQuery(ctx, llmTestHistory(), nil, &LLMCallOpts{})
+				require.ErrorContains(t, err, "400 Bad Request", "the request must reach the provider")
+				return ep
+			}
+			epA := send(ctxA, llm)
+			// A restored/cached value and its clones may still carry A's endpoint.
+			clone := llm.WithPrompt("continued")
+			cloneA := llm.Clone()
+			if invalidate {
+				epA.AuthTokenSource.Invalidate()
+			}
+			epB := send(ctxB, llm)
+			require.NotSame(t, epA, epB)
+			require.Same(t, epB, send(ctxB, llm), "same-session requests keep their endpoint")
+			send(ctxB, clone)
+			require.Same(t, epA, send(ctxA, cloneA), "rerouting the original must not change its clone")
+			epB.AuthTokenSource.Invalidate()
+			send(ctxB, llm)
+			send(ctxA, llm)
+			mu.Lock()
+			defer mu.Unlock()
+			require.Equal(t, []string{
+				"Bearer token-a", "Bearer token-b", "Bearer token-b",
+				"Bearer token-b", "Bearer token-a", "Bearer token-b", "Bearer token-a",
+			}, seen)
+		})
+	}
 }
 
 // TestLLMEndpointResolvesCredentialPerRequest is the core of the fix. The

@@ -14,6 +14,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -52,6 +53,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/dagger/dagger/engine/archive"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -64,7 +67,14 @@ import (
 
 type daggerSession struct {
 	sessionID          string
-	mainClientCallerID string
+	archiveMu          sync.Mutex
+	archiveManifest    *archive.Manifest
+	archiveExpected    agentcontrol.Expectation
+	archiveCloseErr    error
+	archiveRegisterErr error
+	// archivePendingTitle is a title published before the archive existed.
+	archivePendingTitle pendingArchiveTitle
+	mainClientCallerID  string
 
 	// wcprofEnabled means this session opted into wall-clock profiling
 	// (ClientMetadata.Profile); work for all its clients (including nested
@@ -133,25 +143,20 @@ type daggerSession struct {
 	logExporter    sdklog.Exporter
 	telemetryDebug LifecycleTelemetryCounts
 
-	// Dagger Cloud exporters, set when the main client asked the engine to
-	// publish the session's telemetry. The session's providers own the span
-	// and log exporters; the metric exporter is shared by every client's
-	// periodic reader, so the session shuts it down itself.
-	cloudSpans   sdktrace.SpanExporter
-	cloudLogs    sdklog.Exporter
-	cloudMetrics sdkmetric.Exporter
+	// Dagger Cloud publishing, set up when the main client asked the engine
+	// to publish the session's telemetry. cloudForwarder publishes the spans
+	// and logs from the main client's store and owns their exporters; the
+	// metric exporter is shared by every client's periodic reader, so the
+	// session shuts it down itself.
+	cloudForwarder *cloudForwarder
+	cloudMetrics   sdkmetric.Exporter
 	// cloudBound bounds every flush, shutdown and metric export of the Cloud
-	// exporters; cloudFlushers flush the session's Cloud processors.
+	// exporters; cloudFlushers publish what the session has sent so far.
 	cloudBound    cloudFlushBound
 	cloudFlushers []func(context.Context)
-	// cloudSpanProcessor and cloudLogProcessor carry the session's telemetry
-	// to Cloud; a scale-out engine that does not publish its own stream sends
-	// it through them.
 	// cloudRefresh admits OAuth token refreshes until the main client's
 	// shutdown starts.
-	cloudRefresh       *cloudRefreshGate
-	cloudSpanProcessor sdktrace.SpanProcessor
-	cloudLogProcessor  sdklog.Processor
+	cloudRefresh *cloudRefreshGate
 
 	// informed when a client goes away to prevent hanging on drain
 	telemetryPubSub *PubSub
@@ -160,8 +165,8 @@ type daggerSession struct {
 	// callPayloadTargets tracks, per immutable call payload digest, where each
 	// client delivery target stands in the payload pipeline (see
 	// callPayloadState). Producers claim under this lock before any recipe
-	// work; the log exporter takes and settles under it around each write. It
-	// is never held across I/O.
+	// work; the span and log exporters take and settle under it around each
+	// write. It is never held across I/O.
 	callPayloadMu      sync.Mutex
 	callPayloadTargets map[string]map[string]callPayloadState
 
@@ -716,6 +721,11 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	if sess.loggerProvider != nil {
 		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
 	}
+	if sess.cloudForwarder != nil {
+		// Nothing reaches the store anymore: the forwarder publishes the
+		// rest to Cloud in the background, never holding the teardown.
+		sess.cloudForwarder.finish()
+	}
 	if sess.cloudMetrics != nil {
 		metricDur += timedProviderOp(ctx, &errs, sess.cloudMetrics.Shutdown)
 	}
@@ -783,6 +793,9 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) er
 	start := time.Now()
 	var errs error
 	var traceDur, logDur, metricDur time.Duration
+	// A call's recipe closure spans both providers: a spanned call's own
+	// frame rides its protected call span, the rest of the closure rides
+	// payload logs. Flush both, spans first, before reporting.
 	if sess.tracerProvider != nil {
 		traceDur = timedProviderOp(ctx, &errs, sess.tracerProvider.ForceFlush)
 	}
@@ -839,15 +852,16 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	sess.logExporter = logExporter
 
 	// Keep the raised link limit used by wcprof wait edges. One bounded trace
-	// queue and an ordinary log queue plus a payload-only on-demand queue
-	// serve the entire session. Metric readers are owned by each client.
+	// queue plus a call-span-only protected queue, and an ordinary log queue
+	// plus payload-only and control-only protected queues, serve the entire
+	// session. Metric readers are owned by each client.
 	spanLimits := sdktrace.NewSpanLimits()
 	spanLimits.LinkCountLimit = 16384
 	tracerOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithRawSpanLimits(spanLimits),
 		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
 		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
-		// Stamp origin before the live processor freezes its start snapshot.
+		// Stamp origin before the live processors freeze their start snapshots.
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: sess.sessionID}),
 	}
 	// Every session span names this engine instance, so a span's
@@ -858,44 +872,42 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	} else {
 		tracerOpts = append(tracerOpts, sdktrace.WithResource(tracerResource))
 	}
+	// A call span is the only carrier of its call's frame (see
+	// core/telemetry.go), so it takes a lossless, retrying lane of its own,
+	// like call payload logs; the bounded live processor carries every other
+	// span and may drop them on overflow.
+	callSpans := enginetel.NewCallSpanProcessor(spanExporter)
 	tracerOpts = append(tracerOpts,
-		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter)),
+		sdktrace.WithSpanProcessor(callSpans),
+		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter))),
 	)
 	loggerResource, err := withEngineInstanceResource(telemetry.Resource, srv.engineInstanceID)
 	if err != nil {
 		slog.Warn("failed to create session log resource", "error", err)
 		loggerResource = telemetry.Resource
 	}
+	callPayloads := enginetel.NewCallPayloadBatchProcessor(logExporter)
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(loggerResource),
 		// Stamp origin before either batch processor copies the record. Call
 		// payloads take their own lossless, retrying, on-demand batch path so
 		// sparse closures reach clients before fast calls finish and recipe
 		// bursts never evict ordinary logs (exec output) from the bounded queue;
-		// the ordinary 250ms batch processor carries everything else.
+		// the ordinary 250ms batch processor carries everything else. Agent
+		// control records follow the call frames queued before them.
 		sdklog.WithProcessor(telemetryOriginLogProcessor{sessionID: sess.sessionID}),
-		sdklog.WithProcessor(enginetel.NewCallPayloadBatchProcessor(logExporter)),
+		sdklog.WithProcessor(callPayloads),
+		sdklog.WithProcessor(enginetel.NewControlBatchProcessor(controlAfterCallsExporter{
+			next:  logExporter,
+			calls: []func(context.Context) error{callSpans.ForceFlush, callPayloads.ForceFlush},
+		})),
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
-	spanProcessors, logProcessors := 4, 3
-	bound := sess.cloudBound
-	if sess.cloudSpans != nil {
-		// The engine publishes the session's telemetry to Cloud itself: every
-		// span, and every record including call payloads, as the client used
-		// to forward them.
-		processor := boundedCloudSpanProcessor{SpanProcessor: enginetel.NewLargeQueueLiveSpanProcessor(sess.cloudSpans), bound: bound}
-		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(processor))
-		sess.cloudSpanProcessor = processor
-		sess.cloudFlushers = append(sess.cloudFlushers, processor.flush)
-		spanProcessors++
-	}
-	if sess.cloudLogs != nil {
-		processor := boundedCloudLogProcessor{Processor: newCloudPayloadOnce(newCloudLogPipeline(sess.cloudLogs)), bound: bound}
-		loggerOpts = append(loggerOpts, sdklog.WithProcessor(processor))
-		sess.cloudLogProcessor = processor
-		sess.cloudFlushers = append(sess.cloudFlushers, processor.flush)
-		logProcessors++
-	}
+	// Span: wcprof lazy parent, wcprof count, origin, call spans, live.
+	// Log: origin, call payloads, controls, ordinary.
+	// A session that publishes to Cloud does so from the main client's
+	// store (see cloudForwarder), so Cloud adds no processor here.
+	spanProcessors, logProcessors := 5, 4
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	sess.telemetryDebug = LifecycleTelemetryCounts{
@@ -1051,10 +1063,19 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	slog.Debug("stopped services")
 
+	// Errors that make the archive's final cut untrustworthy; see
+	// finalizeSessionArchive. Other teardown errors do not affect sealing.
+	var archiveErrs error
+
 	if sess.agents != nil {
+		closeErr := sess.closeArchiveControl(ctx)
+		errs = errors.Join(errs, closeErr)
+		archiveErrs = errors.Join(archiveErrs, closeErr)
 		if err := sess.agents.KillAll(ctx, errors.New("session closed")); err != nil {
 			slog.Warn("error stopping agents", "error", err)
-			errs = errors.Join(errs, fmt.Errorf("stop session agents: %w", err))
+			killErr := fmt.Errorf("stop session agents: %w", err)
+			errs = errors.Join(errs, killErr)
+			archiveErrs = errors.Join(archiveErrs, killErr)
 		}
 	}
 
@@ -1147,7 +1168,10 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	defer cancelTelemetry()
 	srv.stampSessionComplete(telemetryCtx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
-	errs = errors.Join(errs, sess.shutdownTelemetry(telemetryCtx))
+	telemetryErr := sess.shutdownTelemetry(telemetryCtx)
+	errs = errors.Join(errs, telemetryErr)
+	archiveErrs = errors.Join(archiveErrs, telemetryErr)
+	errs = errors.Join(errs, srv.finalizeSessionArchive(telemetryCtx, sess, archiveErrs))
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
@@ -2267,6 +2291,14 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		"trace":         trace.SpanContextFromContext(ctx).TraceID().String(),
 		"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
 	}).Debug("handling http request")
+
+	if r.URL.Path == "/v1/telemetry/archives" || strings.HasPrefix(r.URL.Path, "/v1/telemetry/archives/") {
+		record, err := srv.archiveRequestRecord(clientMetadata.ClientID, clientMetadata.SessionID, clientMetadata.ClientSecretToken)
+		if err != nil {
+			return httpErr(err, http.StatusUnauthorized)
+		}
+		return srv.serveArchiveHTTP(w, r.WithContext(ctx), record)
+	}
 
 	mux := http.NewServeMux()
 	switch r.URL.Path {
@@ -3603,30 +3635,30 @@ func (s *callPayloadDeliveryStore) ClaimCallPayload(digest string) bool {
 	return len(s.session.claimCallPayload(digest, s.targets)) > 0
 }
 
-func (s *callPayloadDeliveryStore) CallPayloadDelivered(digest string) {
-	s.session.settleCallPayload(digest, s.targets, true)
-}
-
 // callPayloadState is one (digest, target) pair's position in the payload
-// pipeline. The producer claims a target before doing any recipe work; the
-// session log exporter takes the claim exclusively for the duration of a DB
-// write and then settles it, so overlapping records for the same digest
-// (sibling routes sharing an ancestor, a retried batch racing a fresh walk)
-// never write the same row twice and a failed write never leaves a target
-// stuck.
+// pipeline. The producer claims a target before doing any recipe work and
+// then hands the frame to exactly one carrier: its recording span (the
+// dagger.io/dag.call attribute, on the protected call span lane) or a payload
+// log record. That carrier's session exporter takes the claim exclusively for
+// the duration of a DB write and then settles it, so overlapping deliveries
+// of the same digest (sibling routes sharing an ancestor, a retried batch
+// racing a fresh walk, a span and a log for the same frame) never write the
+// same payload twice and a failed write never leaves a target stuck.
 type callPayloadState uint8
 
 const (
 	// callPayloadUnclaimed: no producer has claimed the target, or its last
-	// write failed. The failed record may still be queued for retry, but a
-	// fresh walk is free to emit it again; the exporter dedupes either way.
+	// write failed. The failed span or record may still be queued for retry,
+	// but a fresh walk is free to emit the frame again; the exporters dedupe
+	// either way.
 	callPayloadUnclaimed callPayloadState = iota
-	// callPayloadClaimed: a producer claimed the target and its record is
-	// queued for export.
+	// callPayloadClaimed: a producer claimed the target and its span or
+	// record is queued for export.
 	callPayloadClaimed
-	// callPayloadWriting: the log exporter owns the target while it writes.
+	// callPayloadWriting: a session exporter owns the target while it writes.
 	callPayloadWriting
-	// callPayloadDelivered: the target's DB holds the payload (or its span).
+	// callPayloadDelivered: the target's DB has appended the payload, on a
+	// call span or a payload log record.
 	callPayloadDelivered
 )
 
@@ -3691,10 +3723,9 @@ func (sess *daggerSession) takeCallPayloadForWrite(digest string, targets []stri
 
 // settleCallPayload records the outcome of a delivery attempt. delivered
 // marks each target done for good. Otherwise the targets are released so the
-// record's retry can deliver them — or, once the payload processor gives up
-// on it, a later closure walk, though only one that reaches the record via a
-// root not yet delivered to that target; a target a span delivered in the
-// meantime keeps that state.
+// span's or record's retry can deliver them — or, once the protected
+// processor gives up on it, a later closure walk, though only one that
+// reaches the frame via a root not yet delivered to that target.
 func (sess *daggerSession) settleCallPayload(digest string, targets []string, delivered bool) {
 	if digest == "" || len(targets) == 0 {
 		return

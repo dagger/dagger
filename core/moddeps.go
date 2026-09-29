@@ -24,6 +24,8 @@ var FieldsToIgnoreForModuleIntrospection = []string{
 	"Query.currentWorkspace",
 	"Query.engineVolume",
 	"Query.sshfsVolume",
+	// Only a session's main client may name it.
+	"Query.setSessionTitle",
 	"Address.volume",
 }
 

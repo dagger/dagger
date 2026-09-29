@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -205,7 +206,7 @@ type TraceFrontend interface {
 // a signature drift here would otherwise silently disable them.
 var _ TraceFrontend = (*frontendPretty)(nil)
 
-// AgentRestorer is the optional interface `dagger agent --trace` drives to
+// AgentRestorer is the optional interface `dagger agent -r` drives to
 // read a restore plan out of the frontend's DB
 // (hack/designs/resume-from-trace.md §5.1, "Reading the DB back").
 //
@@ -216,9 +217,15 @@ var _ TraceFrontend = (*frontendPretty)(nil)
 // lock is the frontend's, and only the frontend can take it.
 //
 // Only the pretty frontend implements it; a plain/dots/logs frontend holds no
-// span DB to restore from, so `--trace` fails there rather than silently
+// span DB to restore from, so `-r` fails there rather than silently
 // restoring nothing.
 type AgentRestorer interface {
+	// WaitForEventLoop acknowledges application of all previously enqueued telemetry,
+	// not just its delivery to the exporters. Call from outside the UI event loop.
+	WaitForEventLoop(context.Context) error
+	// AgentControl returns the canonical agent projections and subscription
+	// edges, including subscription removal records (empty state filters).
+	AgentControl() ([]agentcontrol.Agent, []agentcontrol.Subscription, error)
 	// AgentRestorePlan projects the imported trace's agents into what the
 	// restore needs to re-hydrate them, live-session agents excluded
 	// (dagui.DB.RestorePlan).

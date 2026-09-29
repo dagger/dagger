@@ -1,8 +1,10 @@
 package idtui
 
 import (
+	"bytes"
 	"context"
 	"io"
+	stdslog "log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -14,8 +16,13 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // The client half of roster focus (hack/designs/async-agents.md §5.1): who a
@@ -274,6 +281,30 @@ func TestCtrlCPreemptsTheFocusedAgent(t *testing.T) {
 	require.Empty(t, handler.DequeueMessage(), "Ctrl-C must drain the handler's queue")
 }
 
+// TestCtrlDExitsQuietly: Ctrl-D on an empty prompt is how a session is left,
+// so it tears the run down without the "canceling..." warning an interrupt
+// earns -- leaving is the expected outcome, not an aborted one.
+func TestCtrlDExitsQuietly(t *testing.T) {
+	var logged bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(stdslog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	handler := &focusShellHandler{}
+	fe := focusTestFrontend(t, dagui.NewDB(), handler)
+	fe.runCtx, fe.interrupt = context.WithCancelCause(context.Background())
+
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: 'd', Mod: uv.ModCtrl}))
+	require.ErrorIs(t, context.Cause(fe.runCtx), ErrShellExited, "Ctrl-D must end the run")
+	require.NotContains(t, logged.String(), "canceling", "leaving the session is not an interrupt")
+
+	// An actual interrupt still says what it is doing.
+	fe = focusTestFrontend(t, dagui.NewDB(), handler)
+	fe.runCtx, fe.interrupt = context.WithCancelCause(context.Background())
+	fe.quitAction(ErrInterrupted)
+	require.Contains(t, logged.String(), "canceling")
+}
+
 // rosterDB builds a trace with two agents, each with a loop span carrying its
 // identity plus the (internal) call span whose payload a client rebuilds the
 // agent's handle from.
@@ -347,7 +378,6 @@ func rosterTraceFor(names ...string) (map[string]*callpbv1.Call, []dagui.SpanSna
 				// The identity the loop span publishes, including the digest
 				// of the call that produced the agent value.
 				AgentCallDigest: digest,
-				AgentState:      "IDLE",
 			},
 			dagui.SpanSnapshot{
 				ID:         prettyTestSpanID(byte(2*i + 2)),
@@ -361,11 +391,65 @@ func rosterTraceFor(names ...string) (map[string]*callpbv1.Call, []dagui.SpanSna
 	return calls, snapshots
 }
 
+// publishAgentControl feeds an agent's next control revision through the DB's
+// log ingestion, the way the engine publishes one on every lifecycle change
+// and commit. The revision continues from whatever the DB already holds for
+// the agent; a first revision starts IDLE in the agent's newest loop span's
+// trace, carrying the identity its spans stamp.
+func publishAgentControl(t *testing.T, db *dagui.DB, handle string, revise func(*agentcontrol.Agent)) {
+	t.Helper()
+	var a agentcontrol.Agent
+	for _, node := range db.Agents() {
+		if node.ID != handle {
+			continue
+		}
+		if node.Control != nil {
+			a = *node.Control
+		} else {
+			traceID := prettyTestTraceID()
+			if span := node.Span(); span != nil {
+				traceID = span.TraceID
+			}
+			a = agentcontrol.Agent{
+				Key: agentcontrol.Key{
+					Namespace: agentcontrol.Namespace{Session: "session", Trace: traceID.String(), Incarnation: "incarnation"},
+					Handle:    handle,
+				},
+				Name: node.Name, CallDigest: node.CallDigest, State: "IDLE", Digest: "xxh3:" + handle + "-seed",
+			}
+		}
+	}
+	require.NotEmpty(t, a.Handle, "no agent %q on the roster", handle)
+	a.Revision++
+	a.Activity = time.Unix(a.Revision, 0).UTC()
+	revise(&a)
+	ingestAgentControl(t, db, a)
+}
+
+// ingestAgentControl feeds one control revision through the DB's log
+// ingestion, the way records arrive from the engine.
+func ingestAgentControl(t *testing.T, db *dagui.DB, a agentcontrol.Agent) {
+	t.Helper()
+	rec := a.Record()
+	var attrs []otellog.KeyValue
+	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+		attrs = append(attrs, kv)
+		return true
+	})
+	db.IngestLogs([]sdklog.Record{frontendTestLogRecord(trace.SpanID{}, otellog.StringValue(""), attrs...)})
+	_, _, err := db.AgentControl()
+	require.NoError(t, err, "fixture: control record rejected")
+}
+
 // TestFocusKeyRetargetsAndKeepsDrafts covers the switcher: a numbered jump
 // retargets the prompt through a handle rebuilt from the trace, the
 // half-typed line is parked against the agent being left, and the
 // last-focused toggle brings it back.
 func TestFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
+	runFocusTest(t, testFocusKeyRetargetsAndKeepsDrafts)
+}
+
+func testFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	fe := focusTestFrontend(t, rosterDB(t), handler)
 
@@ -383,11 +467,7 @@ func TestFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
 	// Half a sentence to the chief, then jump to the scout.
 	fe.textInput.SetValue("half a thought")
 	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
-	require.Eventually(t, func() bool {
-		focused := handler.focusedAgents()
-		return len(focused) == 1 && focused[0] == "agent-scout"
-	}, 5*time.Second, 10*time.Millisecond)
-	fe.tui.Step()
+	awaitFocus(t, fe, handler, "agent-scout")
 
 	require.Equal(t, "", fe.textInput.Value(), "the scout has no draft yet")
 	entries = fe.agentRosterEntries()
@@ -397,18 +477,11 @@ func TestFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
 	// the agent it was meant for.
 	fe.textInput.SetValue("for the scout")
 	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: 'l', Mod: uv.ModAlt}))
-	require.Eventually(t, func() bool {
-		focused := handler.focusedAgents()
-		return len(focused) == 2 && focused[1] == "agent-chief"
-	}, 5*time.Second, 10*time.Millisecond)
-	fe.tui.Step()
+	awaitFocus(t, fe, handler, "agent-scout", "agent-chief")
 	require.Equal(t, "half a thought", fe.textInput.Value())
 
 	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
-	require.Eventually(t, func() bool {
-		return len(handler.focusedAgents()) == 3
-	}, 5*time.Second, 10*time.Millisecond)
-	fe.tui.Step()
+	awaitFocus(t, fe, handler, "agent-scout", "agent-chief", "agent-scout")
 	require.Equal(t, "for the scout", fe.textInput.Value())
 }
 

@@ -71,16 +71,15 @@ func ShouldEmitTelemetry(ctx context.Context, store TelemetrySeenKeyStore, callK
 // still receives every frame on its first closure walk.
 //
 // ClaimCallPayload reports whether the payload for a digest still has to
-// cross the log channel for ANY target on the route, CLAIMING those targets
-// for the caller when so. It returns true at most once per digest per target
-// until the claim is released, so concurrent closure walks over a shared
-// chain build and encode each frame once rather than once per walk. The
-// engine's log exporter settles the claim per target after persistence: a
-// successful write marks the target delivered for good, a failed one releases
-// it so a later walk can repair the gap.
-//
-// CallPayloadDelivered marks the digest delivered to every route target
-// outright, for a payload that rode a recording span rather than a log.
+// be delivered to ANY target on the route, CLAIMING those targets for the
+// caller when so. It returns true at most once per digest per target until
+// the claim is released, so concurrent closure walks over a shared chain
+// build and encode each frame once rather than once per walk. The claimant
+// then delivers the frame on exactly one carrier — its recording span's
+// dagger.io/dag.call attribute, or a payload log record — and the engine's
+// exporter for that carrier settles the claim per target after persistence:
+// a successful write marks the target delivered for good, a failed one
+// releases it so a retry or a later walk can repair the gap.
 //
 // Unlike ShouldEmitTelemetry this is deliberately NOT sensitive to
 // WithRepeatedTelemetry or to DoNotCache. Both exist so the same work can be
@@ -89,5 +88,4 @@ func ShouldEmitTelemetry(ctx context.Context, store TelemetrySeenKeyStore, callK
 // client nothing it does not already have.
 type CallPayloadSeenKeyStore interface {
 	ClaimCallPayload(string) bool
-	CallPayloadDelivered(string)
 }

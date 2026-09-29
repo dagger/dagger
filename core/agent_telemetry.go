@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -20,14 +19,10 @@ import (
 //
 // hack/designs/async-agents.md §3.3 renounces a session-wide agent namespace
 // in favour of capability-based addressing, and nominates telemetry as the
-// discovery plane instead. This file is that plane's producer half: the loop
-// span carries who the agent is, and log records carry what it is doing.
-//
-// The split between the two is forced, not stylistic — see the
-// dagger.io/agent.* block in engine/telemetryattrs for why mutable state
-// cannot ride span attributes.
+// discovery plane instead. Loop spans carry immutable diagnostic identity;
+// agent_control.go publishes the complete revisioned mutable projection.
 
-// AgentInstrumentationScope names the logger emitting agent state records.
+// AgentInstrumentationScope names the logger emitting agent control records.
 const AgentInstrumentationScope = "dagger.io/agent"
 
 // agentSpanAttrs builds the identity attributes stamped on an agent's loop
@@ -81,51 +76,6 @@ func genAIAgentAttrsFromContext(ctx context.Context) []attribute.KeyValue {
 	return genAIAgentAttrs(self.Handle, self.Name)
 }
 
-// EmitAgentState publishes one agent-state record, attributed to the loop
-// span carried by ctx. Callers emit only on a real change of the projected
-// state (AgentRuntime.publishStateLocked), so the record stream is the
-// agent's transition history rather than a sampling of it.
-//
-// waitingOn is the question a WAITING_INPUT agent is parked on, and stopReason
-// is what ended a STOPPED one. Both are emitted as an explicit empty string
-// for every other state, so a consumer folding records latest-wins clears a
-// stale value instead of showing a question that has already been answered —
-// or attributing an earlier stop's reason to a later transition.
-func EmitAgentState(ctx context.Context, state AgentState, waitingOn string, stopReason AgentStopReason) {
-	rec := log.Record{}
-	rec.SetTimestamp(time.Now())
-	// Explicit empty body: an unset body does not survive the OTLP
-	// round-trip, and consumers skip empty-bodied records as text — this
-	// record is state, not output. (Same contract as EmitProgress.)
-	rec.SetBody(log.StringValue(""))
-	rec.AddAttributes(
-		log.String(telemetryattrs.AgentStateAttr, string(state)),
-		log.String(telemetryattrs.AgentWaitingOnAttr, waitingOn),
-		log.String(telemetryattrs.AgentStopReasonAttr, string(stopReason)),
-	)
-	telemetry.Logger(ctx, AgentInstrumentationScope).Emit(ctx, rec)
-}
-
-// EmitAgentSnapshot publishes the portable recipe digest of the agent's last
-// conversation, attributed to the loop span carried by ctx. Latest record
-// wins: this is the resume anchor a client re-hydrates the instance from.
-//
-// It is a record of its own rather than a field on the state record because
-// the two are triggered by different things — state records are edge-triggered
-// on the projected state, and most commits leave the state exactly where it
-// was while every commit moves the snapshot.
-func EmitAgentSnapshot(ctx context.Context, digest string) {
-	rec := log.Record{}
-	rec.SetTimestamp(time.Now())
-	// Explicit empty body, for the same reason as EmitAgentState: this is
-	// data about the agent, never text from it.
-	rec.SetBody(log.StringValue(""))
-	rec.AddAttributes(
-		log.String(telemetryattrs.AgentSnapshotDigestAttr, digest),
-	)
-	telemetry.Logger(ctx, AgentInstrumentationScope).Emit(ctx, rec)
-}
-
 // emitAgentFailure publishes a failed loop's terminal error as a permanent
 // conversation message beneath that loop. Its status description and stdio are
 // both the loop's actual error: the former keeps failure semantics in the trace,
@@ -160,9 +110,9 @@ const agentRewindMessage = "Conversation rewound: the messages above it are no l
 // replaced by its ancestor `to`, so everything the transcript shows between
 // the two is no longer in the model's history.
 //
-// It is a span rather than a state record because it is an EVENT with a place
-// in the transcript — the row at which the conversation forked — and its facts
-// are known at start and never change, which is all a span attribute can
+// It is a span rather than a control record because it is an EVENT with a
+// place in the transcript — the row at which the conversation forked — and its
+// facts are known at start and never change, which is all a span attribute can
 // express. Emitted as an engine lifecycle event (EVENT origin) rather than an
 // assistant message so a renderer that predates the marker collapses it to a
 // one-liner instead of showing it as something the model said.

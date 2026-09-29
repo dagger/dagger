@@ -106,6 +106,8 @@ defmodule Dagger.Agent do
 
   Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
 
+  A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
+
   Idempotent per subscriber; re-subscribing replaces the state set.
 
   > #### Experimental {: .warning}

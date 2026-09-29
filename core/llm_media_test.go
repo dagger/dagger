@@ -76,18 +76,6 @@ func TestLLMContentAttributionOrder(t *testing.T) {
 			require.Equal(t, LLMContentText, rendered[0].Content[0].Kind)
 			require.True(t, strings.HasPrefix(rendered[0].Content[0].Text, origin.AttributionHeader()))
 			require.Equal(t, before, llm.Messages[0], "rendering must not mutate stored content")
-			sels, err := llm.recipeSelectors(context.Background())
-			require.NoError(t, err)
-			require.Len(t, sels, 2)
-			require.Equal(t, "withContent", sels[1].Field)
-			inputs := sels[1].Args[0].Value.(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]])
-			restoredOrigin := sels[1].Args[1].Value.(dagql.Optional[dagql.InputObject[LLMMessageOriginInput]]).Value.Value.ToLLMMessageOrigin()
-			require.Equal(t, origin, restoredOrigin)
-			restored := &LLMMessage{Role: LLMMessageRoleUser, Origin: restoredOrigin}
-			for _, input := range inputs {
-				restored.Content = append(restored.Content, input.Value.ToLLMContentBlock())
-			}
-			require.Equal(t, rendered, renderMessagesForModel([]*LLMMessage{restored}))
 		})
 	}
 }
@@ -195,26 +183,6 @@ func TestLLMContentRoundTrip(t *testing.T) {
 	call.Clone().Arguments[0] = '['
 	require.Equal(t, byte('{'), call.Arguments[0])
 
-	sels, err := llm.recipeSelectors(context.Background())
-	require.NoError(t, err)
-	require.Len(t, sels, 3)
-	require.Equal(t, "withContent", sels[1].Field)
-	require.Equal(t, "withToolResult", sels[2].Field)
-	for _, sel := range sels[1:] {
-		for _, arg := range sel.Args {
-			if arg.Name != "content" && arg.Name != "blocks" {
-				continue
-			}
-			inputs, ok := arg.Value.(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]])
-			if !ok {
-				continue
-			} // legacy tool-result text
-			require.Len(t, inputs, 2)
-			require.Equal(t, image.Data, inputs[1].Value.Data)
-			require.Equal(t, image.MIMEType, inputs[1].Value.MIMEType)
-			require.NotPanics(t, func() { inputs.ToLiteral() })
-		}
-	}
 	inputs, err := contentBlockInputs(llm.Messages[1].Content)
 	require.NoError(t, err)
 	resolved, err := inputs[0].Value.Resolve(context.Background())

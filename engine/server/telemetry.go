@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -32,6 +35,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -213,16 +217,41 @@ type sessionSpanExporter struct {
 	ps   *PubSub
 }
 
+// ExportSpans fans spans out to the per-client DBs on each span's route.
+//
+// A call span (one carrying its frame as dagger.io/dag.call) is also the
+// delivery of that frame's payload, so it settles the same per-(digest,
+// target) state the log exporter does: the targets it takes are marked
+// delivered once their DB appended the span, or released when the write
+// failed, so the protected span processor's retry — or a later closure walk
+// over the log lane — can still deliver the frame. Unlike payload logs, the
+// span itself is written to every target on its route regardless: it is
+// also the span, and a repeated snapshot is harmless.
 func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	// A span that cannot be routed is skipped, not fatal: a missing or
+	// unknown origin never resolves on retry, and failing the batch would
+	// have the protected call span processor retry it and then drop its
+	// routable siblings too. Only store writes, which can succeed on retry,
+	// fail the batch.
 	byTarget := map[string][]sdktrace.ReadOnlySpan{}
+	payloadsByTarget := map[string][]string{}
 	for _, span := range spans {
 		origin := spanOriginClientID(span)
 		if origin == "" {
-			return fmt.Errorf("span %s is missing telemetry origin client ID", span.SpanContext().SpanID())
+			slog.Warn("dropping span without telemetry origin client ID", "span", span.SpanContext().SpanID(), "name", span.Name())
+			continue
 		}
 		route, err := exp.sess.telemetryRouteOriginClientID(origin)
 		if err != nil {
-			return err
+			slog.Warn("dropping unroutable span", "origin", origin, "span", span.SpanContext().SpanID(), "name", span.Name(), "err", err)
+			continue
+		}
+		if digest, ok := enginetel.CallSpanDigest(span); ok && digest != "" {
+			// Taking is also the in-batch dedupe: a second snapshot of the
+			// same call finds its targets already owned by the first.
+			for _, target := range exp.sess.takeCallPayloadForWrite(digest, route) {
+				payloadsByTarget[target] = append(payloadsByTarget[target], digest)
+			}
 		}
 		span = withoutSpanOrigin(span)
 		for _, target := range route {
@@ -232,7 +261,11 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 	var eg errgroup.Group
 	for target, targetSpans := range byTarget {
 		eg.Go(func() error {
-			if err := exp.ps.Spans(target).ExportSpans(ctx, targetSpans); err != nil {
+			err := exp.ps.Spans(target).ExportSpans(ctx, targetSpans)
+			for _, digest := range payloadsByTarget[target] {
+				exp.sess.settleCallPayload(digest, []string{target}, err == nil)
+			}
+			if err != nil {
 				return fmt.Errorf("export spans to %s: %w", target, err)
 			}
 			return nil
@@ -271,7 +304,10 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	// missing or unknown origin never resolves on retry, and failing the whole
 	// batch would have the payload processor retry it for seconds and then
 	// drop its routable siblings too — with their producer claims still held,
-	// so no later walk could re-emit them either.
+	// so no later walk could re-emit them either. The same holds for a
+	// malformed control record: failing its batch would drop other agents'
+	// revisions with it. Only store writes, which can succeed on retry, fail
+	// the batch.
 	routed := make([]routedLogRecord, 0, len(records))
 	for _, rec := range records {
 		digest, payload, err := classifyCallPayloadRecord(rec)
@@ -279,15 +315,49 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			slog.Warn("dropping malformed call payload record", "err", err)
 			continue
 		}
+		control := agentcontrol.IsRecord(rec)
 		origin := logOriginClientID(rec)
 		if origin == "" {
-			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "digest", digest)
+			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "control", control, "digest", digest)
 			continue
 		}
 		route, err := exp.sess.telemetryRouteOriginClientID(origin)
 		if err != nil {
-			slog.Warn("dropping unroutable log record", "origin", origin, "payload", payload, "digest", digest, "err", err)
+			slog.Warn("dropping unroutable log record", "origin", origin, "payload", payload, "control", control, "digest", digest, "err", err)
 			continue
+		}
+		if control {
+			a, edge, err := agentcontrol.Decode(rec)
+			if err != nil {
+				slog.Warn("dropping malformed control record", "origin", origin, "err", err)
+				continue
+			}
+			var ns agentcontrol.Namespace
+			var projection any
+			if a != nil {
+				ns, projection = a.Namespace, a
+			} else {
+				ns, projection = edge.Namespace, edge
+			}
+			if ns.Session != exp.sess.sessionID || ns.Trace != rec.TraceID().String() {
+				slog.Warn("dropping control record outside its emission session/trace",
+					"origin", origin,
+					"session", ns.Session, "trace", ns.Trace,
+					"emissionSession", exp.sess.sessionID, "emissionTrace", rec.TraceID().String())
+				continue
+			}
+			if err := exp.sess.ensureArchive(ns.Trace); err != nil {
+				// Archive availability is not authority to suppress the live roster.
+				// The registration failure is retained separately for finalization.
+				slog.Warn("register agent archive", "err", err)
+			}
+			encoded, err := json.Marshal(projection)
+			if err != nil {
+				slog.Warn("dropping unencodable control record", "origin", origin, "err", err)
+				continue
+			}
+			digest = fmt.Sprintf("control:%x", sha256.Sum256(encoded))
+			payload = true // reuse post-persistence per-target settlement, in a disjoint key space
 		}
 		if !payload {
 			digest = ""
@@ -327,8 +397,44 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	}
 	return eg.Wait()
 }
+
 func (sessionLogExporter) ForceFlush(context.Context) error { return nil }
 func (sessionLogExporter) Shutdown(context.Context) error   { return nil }
+
+// controlAfterCallsExporter persists the call frames queued before a batch of
+// agent control records ahead of the records themselves. A control record
+// names a committed recipe whose frames ride other lanes — call spans and
+// payload logs, each on its own protected processor — and nothing else orders
+// those lanes against the control lane. Draining them first means a control
+// row never lands before the frames that preceded it, so the tail flush its
+// write triggers (clientLogs.Export) also puts them on file: an engine killed
+// right after cannot leave an unsealed archive naming a conversation it never
+// persisted. Control records are rare, so the extra drains are cheap.
+type controlAfterCallsExporter struct {
+	next  sdklog.Exporter
+	calls []func(context.Context) error
+}
+
+func (exp controlAfterCallsExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	for _, flush := range exp.calls {
+		if err := flush(ctx); err != nil {
+			// The control records still go out: withholding them would lose
+			// the roster too. Whatever this drain could not deliver stays
+			// with its protected processor, retried or, once dropped,
+			// reported by its Shutdown.
+			slog.Warn("call telemetry not persisted ahead of agent control records", "err", err)
+		}
+	}
+	return exp.next.Export(ctx, records)
+}
+
+func (exp controlAfterCallsExporter) ForceFlush(ctx context.Context) error {
+	return exp.next.ForceFlush(ctx)
+}
+
+func (exp controlAfterCallsExporter) Shutdown(ctx context.Context) error {
+	return exp.next.Shutdown(ctx)
+}
 
 // clientMetricExporter binds one live client's metric stream to its immutable
 // record. Measurements therefore need no routing attribute: each provider
@@ -598,45 +704,76 @@ func logTelemetryWrite(clientID, what string, rows int, totalStart, appendStart 
 	}
 }
 
+// fetchSpanBatch reads up to limit span rows after the since cursor as one
+// OTLP request. rows counts every row read and next is the last one's ID, so
+// the caller advances past all of them; keep, when set, selects the rows the
+// request carries. With no rows left it returns since, no request and 0.
+func fetchSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Span) bool) (next int64, req *coltracepb.ExportTraceServiceRequest, rows int, err error) {
+	spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
+		ID:    since,
+		Limit: int64(limit),
+	})
+	if err != nil {
+		return 0, nil, 0, fmt.Errorf("select spans: %w", err)
+	}
+	if len(spans) == 0 {
+		return since, nil, 0, nil
+	}
+	roSpans := make([]sdktrace.ReadOnlySpan, 0, len(spans))
+	for i := range spans {
+		if keep == nil || keep(&spans[i]) {
+			roSpans = append(roSpans, spans[i].ReadOnly())
+		}
+	}
+	return spans[len(spans)-1].ID, &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: telemetry.SpansToPB(roSpans),
+	}, len(spans), nil
+}
+
+// fetchLogBatch is fetchSpanBatch for log records.
+func fetchLogBatch(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Log) bool) (next int64, req *collogspb.ExportLogsServiceRequest, rows int, err error) {
+	logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
+		ID:    since,
+		Limit: int64(limit),
+	})
+	if err != nil {
+		return 0, nil, 0, fmt.Errorf("select logs: %w", err)
+	}
+	if len(logs) == 0 {
+		return since, nil, 0, nil
+	}
+	next = logs[len(logs)-1].ID
+	kept := logs
+	if keep != nil {
+		kept = make([]clientdb.Log, 0, len(logs))
+		for i := range logs {
+			if keep(&logs[i]) {
+				kept = append(kept, logs[i])
+			}
+		}
+	}
+	return next, &collogspb.ExportLogsServiceRequest{
+		ResourceLogs: clientdb.LogsToPB(kept),
+	}, len(logs), nil
+}
+
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
-			ID:    since,
-			Limit: int64(limit),
-		})
-		if err != nil {
-			return 0, nil, 0, fmt.Errorf("select spans: %w", err)
+		next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, nil)
+		if req == nil {
+			return next, nil, rows, err
 		}
-		if len(spans) == 0 {
-			return since, nil, 0, nil
-		}
-		roSpans := make([]sdktrace.ReadOnlySpan, len(spans))
-		for i, span := range spans {
-			roSpans[i] = span.ReadOnly()
-			since = span.ID
-		}
-		return since, &coltracepb.ExportTraceServiceRequest{
-			ResourceSpans: telemetry.SpansToPB(roSpans),
-		}, len(spans), nil
+		return next, req, rows, err
 	})
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
-			ID:    since,
-			Limit: int64(limit),
-		})
-		if err != nil {
-			return 0, nil, 0, fmt.Errorf("select logs: %w", err)
+		next, req, rows, err := fetchLogBatch(ctx, db, since, limit, nil)
+		if req == nil {
+			return next, nil, rows, err
 		}
-		if len(logs) == 0 {
-			return since, nil, 0, nil
-		}
-		since = logs[len(logs)-1].ID
-		return since, &collogspb.ExportLogsServiceRequest{
-			ResourceLogs: clientdb.LogsToPB(logs),
-		}, len(logs), nil
+		return next, req, rows, err
 	})
 }
 
@@ -804,8 +941,31 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	appendStart := time.Now()
 	stats, appendErr := db.AppendLogs(inserts)
+	if appendErr == nil && hasControlRecord(logs) {
+		// Agent control rows must reach the file before the engine can be
+		// killed, or an unsealed archive has no roster to restore from. A
+		// write is enough for that; fsync is left to the session-end seal.
+		//
+		// Only control rows (rare, agent sessions only) pay for this: every
+		// call emits payloads, and flushing for them would drain the
+		// in-memory tail on nearly every batch, pushing live readers onto
+		// file scans. Payloads and call spans spill with the ordinary tails,
+		// and any already appended ahead of a control row are written by its
+		// flush too — the span tail included, since a spanned call's frame
+		// (a snapshot's committed leaf, typically) rides its call span alone.
+		appendErr = errors.Join(db.FlushSpans(ctx), db.FlushLogs(ctx))
+	}
 	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
 	return appendErr
+}
+
+func hasControlRecord(logs []sdklog.Record) bool {
+	for _, rec := range logs {
+		if agentcontrol.IsRecord(rec) {
+			return true
+		}
+	}
+	return false
 }
 
 func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }

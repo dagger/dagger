@@ -27,8 +27,8 @@ import (
 // misbehave in the ways a real Cloud stream has been seen to:
 //
 //   - the stall watchdog: a stored trace is a bounded download that should
-//     always be transferring, and the fetch runs BEFORE `dagger agent
-//     --trace`'s interactive loop starts — so a connection the server's edge
+//     always be transferring, and the fetch runs BEFORE `dagger agent -r`'s
+//     interactive loop starts — so a connection the server's edge
 //     drops without a FIN or RST must become a prompt, named error rather
 //     than a command wedged on "restoring trace" forever;
 //   - the protocol tripwire: Cloud replaced the SSE-of-protojson endpoints

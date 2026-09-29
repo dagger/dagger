@@ -298,9 +298,9 @@ func TestAroundFuncCacheEvidenceLifecycle(t *testing.T) {
 		}
 	}
 	assert.Assert(t, sawDigest, "call span must retain its digest")
-	// Legacy CLIs only read the span-carried payload; without it they walk
-	// creator spans and recurse forever. Keep it alongside the log records.
-	assert.Assert(t, sawCall, "call span must carry a legacy call payload")
+	// A recording span is the carrier of its own call frame: clients render
+	// the call from it, and the engine delivers it on a protected span lane.
+	assert.Assert(t, sawCall, "call span must carry its call payload")
 	got := evidenceTestCacheAttrs(t, ended[0].Attributes())
 	assert.Equal(t, got[telemetryattrs.CacheContractAttr], telemetryattrs.CacheContractV1)
 	assert.Equal(t, got[telemetryattrs.CacheOutcomeAttr], "executed")

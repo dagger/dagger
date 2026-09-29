@@ -657,7 +657,7 @@ func (fe *frontendPretty) SetLLMToolsProvider(fn LLMToolsProvider) {
 }
 
 // Agent extraction is deliberately request-driven and console-only. Discovery
-// uses the same roster as --trace restoration; transcripts come from committed
+// uses the same roster as -r restoration; transcripts come from committed
 // checkpoints or runtime snapshots, never log buffers or rendered rows.
 // No observers, buffers, or callbacks are installed on the production path.
 type consoleAgent struct {
@@ -707,7 +707,7 @@ func (fe *frontendPretty) consoleAgentsHandler(w http.ResponseWriter, _ *http.Re
 		LoadedSpansOnly bool           `json:"loadedSpansOnly"`
 		EngineConnected bool           `json:"engineConnected"`
 		Note            string         `json:"note"`
-	}{agents, true, connected, "Use dagger agent --trace to restore the full roster before reading transcripts. Discovery does not start agents."})
+	}{agents, true, connected, "Use dagger agent -r <trace-id> to restore the full roster before reading transcripts. Discovery does not start agents."})
 }
 
 type consoleTranscriptBlock struct {
@@ -857,7 +857,7 @@ func serveConsoleTranscript(w http.ResponseWriter, r *http.Request, agents []con
 		return
 	}
 	if read == nil {
-		http.Error(w, "transcripts require an engine session: use dagger agent --trace <trace-id> without prompting the agents", http.StatusConflict)
+		http.Error(w, "transcripts require an engine session: use dagger agent -r <trace-id> without prompting the agents", http.StatusConflict)
 		return
 	}
 	// The network read must not hold consoleMu, change focus, or drive a turn.

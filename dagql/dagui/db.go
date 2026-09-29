@@ -21,6 +21,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
@@ -216,9 +217,11 @@ type DB struct {
 	// DB.Agents: an agent born inside a module call is precisely what the
 	// roster exists to surface), so unlike the surfacing memos above it
 	// keys on db.mutations alone.
-	agents     []*AgentNode
-	agentsAt   uint64
-	agentsInit bool
+	agents          []*AgentNode
+	agentsAt        uint64
+	agentsInit      bool
+	agentControl    agentcontrol.Index
+	agentControlErr error
 
 	// Rewinds are session-wide for the same reason as the roster, and their
 	// memo doubles as the superseded-message index (see DB.Rewinds).
@@ -563,12 +566,8 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 			// streaming progress data, not log text
 			continue
 		}
-		if db.ingestAgentState(log) {
+		if db.ingestAgentControl(log) {
 			// agent lifecycle state, not log text
-			continue
-		}
-		if db.ingestAgentSnapshot(log) {
-			// agent resume anchor, not log text
 			continue
 		}
 		if db.ingestCallPayload(log) {
@@ -1110,14 +1109,14 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	if span.CallDigest != "" && span.CallPayload != "" {
-		// Legacy channel: older engines carry a base64 payload on the span
+		// Span channel: a spanned call carries its base64 payload on the span
 		// itself. Decode eagerly into the same store the log channel fills so
 		// nothing downstream has to know which channel carried a call.
-		var legacy callpbv1.Call
-		if err := legacy.Decode(span.CallPayload); err == nil {
-			db.addCall(span.CallDigest, &legacy)
+		var spanCall callpbv1.Call
+		if err := spanCall.Decode(span.CallPayload); err == nil {
+			db.addCall(span.CallDigest, &spanCall)
 		} else {
-			slog.Warn("failed to decode legacy call payload", "digest", span.CallDigest, "err", err)
+			slog.Warn("failed to decode span call payload", "digest", span.CallDigest, "err", err)
 		}
 	}
 
