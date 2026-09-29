@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/util/gitutil"
@@ -51,6 +52,147 @@ func mountOwnedShallowParentHistory(ctx context.Context, refs []*GitRef, fn func
 			})
 		})
 		return handled, err
+	}
+	return false, nil
+}
+
+// mountRefsWithLocalDonor answers a joined history read (log ranges, merge
+// bases) from complete local object stores, without touching a remote mirror.
+//
+// A remote ref, or an owned shallow checkout's boundary, is covered when a
+// plain local repository among the refs (typically the host checkout the
+// agent started from) has that commit and a complete, non-partial history. A
+// commit's ancestry is fixed by its SHA, so the donor's closure is exactly
+// what the remote would serve. The view is private and lasts only for this read:
+// no remote-to-local alias is published and the mirror is neither fetched nor
+// locked. Anything not covered reports unhandled and takes the existing path.
+func mountRefsWithLocalDonor(ctx context.Context, refs []*GitRef, fn func(*gitutil.GitCLI, []string) error) (bool, error) {
+	var sources []*donorHistorySource
+	seen := map[*LocalGitRepository]bool{}
+	var needed []string
+	shas := make([]string, len(refs))
+	for i, ref := range refs {
+		if ref == nil || ref.Ref == nil || !IsFullGitSHA(ref.Ref.SHA) {
+			return false, nil
+		}
+		shas[i] = ref.Ref.SHA
+		switch backend := ref.Backend.(type) {
+		case *RemoteGitRef:
+			needed = append(needed, ref.Ref.SHA)
+		case *LocalGitRef:
+			repo := backend.repo
+			if repo == nil {
+				return false, nil
+			}
+			if seen[repo] {
+				continue
+			}
+			seen[repo] = true
+			// Raw storage: a complete-history mount of an owned checkout
+			// would hydrate through the remote, which this path avoids.
+			src := &donorHistorySource{mount: func(ctx context.Context, fn func(*gitutil.GitCLI) error) error {
+				return repo.mount(ctx, 0, false, nil, fn)
+			}}
+			if hs := repo.HistorySource.Self(); hs != nil {
+				if hs.Ref == nil {
+					return false, nil
+				}
+				src.anchor = hs.Ref.SHA
+				src.gitDir = repo.nativeGitDir
+			} else {
+				src.donor = true
+				src.gitDir = nativeCommitGitDir
+			}
+			sources = append(sources, src)
+		default:
+			return false, nil
+		}
+	}
+	return joinDonorHistory(ctx, sources, needed, shas, fn)
+}
+
+type donorHistorySource struct {
+	mount func(context.Context, func(*gitutil.GitCLI) error) error
+	// gitDir validates the mounted storage and returns its git directory.
+	gitDir func(context.Context, string) (string, error)
+	// donor: complete local history that may cover other refs.
+	donor bool
+	// anchor: an owned shallow boundary a donor must cover.
+	anchor string
+}
+
+func joinDonorHistory(ctx context.Context, sources []*donorHistorySource, needed, shas []string, fn func(*gitutil.GitCLI, []string) error) (bool, error) {
+	// Only engage when there is something to cover and something to cover it;
+	// purely local comparisons keep their existing path.
+	hasDonor := slices.ContainsFunc(sources, func(s *donorHistorySource) bool { return s.donor })
+	hasAnchor := slices.ContainsFunc(sources, func(s *donorHistorySource) bool { return s.anchor != "" })
+	if !hasDonor || (len(needed) == 0 && !hasAnchor) {
+		return false, nil
+	}
+	var objects []string
+	var donors []*gitutil.GitCLI
+	anchors := make([]string, len(sources))
+	handled := false
+	var mountNext func(int) error
+	mountNext = func(i int) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if i == len(sources) {
+			for _, sha := range append(slices.Clone(needed), anchors...) {
+				if sha == "" {
+					continue
+				}
+				ok, err := donorHasCommit(ctx, donors, sha)
+				if err != nil || !ok {
+					return err
+				}
+			}
+			handled = true
+			return withGitObjectView(ctx, objects, "sha1", func(view *gitutil.GitCLI) error {
+				return fn(view, shas)
+			})
+		}
+		src := sources[i]
+		return src.mount(ctx, func(git *gitutil.GitCLI) error {
+			dir, err := src.gitDir(ctx, git.Dir())
+			if err != nil {
+				if nativeCommitFallback(err) {
+					return nil // unsupported layout: leave the read to refJoin
+				}
+				return err
+			}
+			if src.donor {
+				donors = append(donors, gitutil.NewGitCLI(gitutil.WithDir(git.Dir()), gitutil.WithGitDir(dir)))
+			} else {
+				// A boundary other than the recorded anchor is not ours to drop.
+				shallow, err := ownedShallowBoundary(dir, src.anchor)
+				if err != nil {
+					return nil
+				}
+				if shallow {
+					anchors[i] = src.anchor
+				}
+			}
+			objects = append(objects, filepath.Join(dir, "objects"))
+			return mountNext(i + 1)
+		})
+	}
+	err := mountNext(0)
+	return handled, err
+}
+
+// donorHasCommit checks raw objects only: replacement refs must not let a
+// donor vouch for a different commit.
+func donorHasCommit(ctx context.Context, donors []*gitutil.GitCLI, sha string) (bool, error) {
+	for _, donor := range donors {
+		out, err := donor.New(gitutil.WithIgnoreError(), gitutil.WithArgs("--no-replace-objects")).Run(ctx, "cat-file", "-t", sha)
+		if err != nil {
+			return false, err
+		}
+		if strings.TrimSpace(string(out)) == "commit" {
+			return true, nil
+		}
 	}
 	return false, nil
 }

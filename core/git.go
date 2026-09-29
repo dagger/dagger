@@ -1429,6 +1429,9 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 	if handled, err := mountOwnedShallowParentHistory(ctx, refs, fn); err != nil || handled {
 		return err
 	}
+	if handled, err := mountRefsWithLocalDonor(ctx, refs, fn); err != nil || handled {
+		return err
+	}
 	historyRefs, err := nativeParentHistoryRefs(ctx, refs)
 	if err != nil {
 		return err
