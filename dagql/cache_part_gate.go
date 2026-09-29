@@ -30,6 +30,90 @@ func (cell *PartGateCell) loadOrCreate() *PartWriterGate {
 	return cell.gate.Load()
 }
 
+// rowCompleteParts is a row's complete parts as read from the record of one
+// revision of its value.
+type rowCompleteParts struct {
+	version *capturedRowRevision
+	keys    []string
+}
+
+// completePartKeys returns the address keys of the row's complete parts,
+// sorted: the parts dagql's part probe reports locally complete in the row's
+// current record, as part acquisition reads them, whether the row was
+// computed, imported or restored. The record is captured once per revision of
+// the row's value. When it cannot be captured now, because an evaluation or
+// its bookkeeping is in flight, the parts the row's gate has settled, a
+// subset, are returned instead. It never waits on another row.
+func (c *Cache) completePartKeys(ctx context.Context, row *sharedResult) []string {
+	if cached := row.completeParts.Load(); cached != nil && cached.version.check(row) == nil {
+		return cached.keys
+	}
+	record, version, err := c.captureRowRecord(ctx, row)
+	if err != nil {
+		return row.settledPartKeys()
+	}
+	probes, err := describePartRecord(record)
+	if err != nil {
+		return row.settledPartKeys()
+	}
+	var keys []string
+	for _, probe := range probes {
+		if !probe.LocalComplete {
+			continue
+		}
+		if key, err := partAddressKey(probe.Descriptor.Address); err == nil {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	keys = slices.Compact(keys)
+	row.completeParts.Store(&rowCompleteParts{version: version, keys: keys})
+	return keys
+}
+
+// taskSettledPartKeys returns the address keys of the outputs task installed
+// that the row's gate has settled for that installation, sorted.
+func (res *sharedResult) taskSettledPartKeys(task *PartTaskToken) []string {
+	installed := task.installed.Load()
+	gate := res.partGate.gate.Load()
+	if installed == nil || gate == nil {
+		return nil
+	}
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	var keys []string
+	for _, output := range installed.outputs {
+		key, err := partAddressKey(output.address)
+		if err != nil {
+			continue
+		}
+		if current := gate.outputs[key]; current.phase == PartComplete && current.installation == output.installation {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// settledPartKeys returns the address keys of the outputs the row's gate has
+// settled, sorted.
+func (res *sharedResult) settledPartKeys() []string {
+	gate := res.partGate.gate.Load()
+	if gate == nil {
+		return nil
+	}
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	var keys []string
+	for key, state := range gate.outputs {
+		if state.phase == PartComplete {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
 type LazyGroupAddress struct {
 	OutputPath PersistedRefPath
 	Group      LazyGroupKey

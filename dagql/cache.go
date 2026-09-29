@@ -13,18 +13,19 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/google/uuid"
 	set "github.com/hashicorp/go-set/v3"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	_ "modernc.org/sqlite"
 
-	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/dagql/call"
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	"github.com/dagger/dagger/engine"
@@ -80,6 +81,17 @@ type CachePrunePolicy struct {
 type CachePruneReport struct {
 	Entries        []CacheUsageEntry
 	ReclaimedBytes int64
+	// DroppedEdges are the retention edges the run dropped, in order.
+	DroppedEdges []CacheRetentionDrop
+}
+
+// CacheRetentionDrop is one retention edge a prune run dropped: the entry's
+// result number, and the engine's clock under the graph lock that deleted the
+// edge. A run drops its edges one by one and releases the lock between them,
+// so each drop has its own time.
+type CacheRetentionDrop struct {
+	ResultID  uint64
+	DroppedAt time.Time
 }
 
 const (
@@ -122,6 +134,8 @@ type CacheMetadataPruneReport struct {
 	SimulatedStructuralBytes      int64
 	RemovedPersistedRootCount     int
 	CandidatesExhausted           bool
+	// DroppedEdges are the retention edges the pass dropped, in order.
+	DroppedEdges []CacheRetentionDrop
 
 	SnapshotGCAttempted bool
 	SnapshotGCSucceeded bool
@@ -468,6 +482,7 @@ func NewCache(
 		c.persistenceResetReason = CachePersistenceResetSchemaMismatch
 		c.tracePersistStoreWipedSchemaMismatch(ctx, cachePersistenceSchemaVersion, schemaVersionVal)
 		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", cachePersistenceSchemaVersion, "actual", schemaVersionVal)
+		c.readWipedCacheID(ctx)
 		if err := c.reopenWiped(ctx, dbPath, "close db before schema-version wipe", "wipe schema-mismatched persistence db"); err != nil {
 			return nil, err
 		}
@@ -485,6 +500,7 @@ func NewCache(
 		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
+		c.readWipedCacheID(ctx)
 		if err := c.reopenWiped(ctx, dbPath, "close db before wipe", "wipe unclean persistence db"); err != nil {
 			return nil, err
 		}
@@ -497,6 +513,7 @@ func NewCache(
 		c.persistenceResetReason = CachePersistenceResetImportFailure
 		c.tracePersistStoreWipedImportFailure(ctx, err)
 		slog.Warn("dagql persistence import failed; wiping and cold-starting", "err", err)
+		c.readWipedCacheID(ctx)
 		if err := c.reopenWiped(ctx, dbPath, "close db before import-wipe", "wipe persistence db after import failure"); err != nil {
 			return nil, err
 		}
@@ -512,7 +529,7 @@ func NewCache(
 		if err := runOnReleaseFuncs(context.WithoutCancel(ctx), releases); err != nil {
 			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
 		}
-		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, partContentSource: c.partContentSource, persistenceResetReason: CachePersistenceResetImportFailure, sqlDB: db, pdb: persistDB}
+		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, partContentSource: c.partContentSource, persistenceResetReason: CachePersistenceResetImportFailure, wipedCacheID: c.wipedCacheID, sqlDB: db, pdb: persistDB}
 		for _, opt := range opts {
 			opt(c)
 		}
@@ -533,11 +550,150 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
 	}
-	// The restore fully succeeded: describe what it installed, once.
-	c.egraphMu.Lock()
-	c.announceBootLocked()
-	c.egraphMu.Unlock()
+	if err := c.openIdentity(ctx); err != nil {
+		return nil, errors.Join(err, closeCacheDBs(db, c.pdb))
+	}
+	c.countBootRestored()
 	return c, nil
+}
+
+// countBootRestored counts, once the restore has fully succeeded, the entries
+// it installed, type definitions aside.
+func (c *Cache) countBootRestored() {
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	for _, res := range c.resultsByID {
+		if !res.profileSkip() {
+			c.bootRestoredResults++
+		}
+	}
+}
+
+// CacheOption configures a Cache at construction.
+type CacheOption func(*Cache)
+
+// WithEngineInstanceID names the engine instance that owns the cache. The
+// debug snapshot reports it as engine_instance.
+func WithEngineInstanceID(id string) CacheOption {
+	return func(c *Cache) {
+		c.engineInstanceID = id
+	}
+}
+
+// BootRestoredResults returns the number of entries the cache's boot restore
+// installed, not counting type definitions: entries whose call is
+// profile-skipped.
+func (c *Cache) BootRestoredResults() int {
+	if c == nil {
+		return 0
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.bootRestoredResults
+}
+
+// PersistedResults returns the number of entries the cache's last successful
+// persistence, normally at Close, wrote.
+func (c *Cache) PersistedResults() int {
+	if c == nil {
+		return 0
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.persistedResults
+}
+
+// CacheIdentity names a persistent cache across the engine processes that open
+// it: ID is a random ID created with the cache's database, and Generation
+// counts the opens of that database, 1 for the first.
+type CacheIdentity struct {
+	ID         string
+	Generation uint64
+}
+
+// String is the identity as telemetry carries it: "<ID>/<Generation>".
+func (id CacheIdentity) String() string {
+	return id.ID + "/" + strconv.FormatUint(id.Generation, 10)
+}
+
+// Identity returns the cache's identity, zero for a cache without a
+// persistence database.
+func (c *Cache) Identity() CacheIdentity {
+	if c == nil {
+		return CacheIdentity{}
+	}
+	return c.identity
+}
+
+// OpenedExisting reports that the cache opened an existing database rather
+// than creating one or wiping the one it found.
+func (c *Cache) OpenedExisting() bool {
+	return c != nil && c.openedExisting
+}
+
+// WipedCacheID returns the identity of the persistence database the cache
+// wiped when it opened, if it wiped one that had an identity.
+func (c *Cache) WipedCacheID() string {
+	if c == nil {
+		return ""
+	}
+	return c.wipedCacheID
+}
+
+// readWipedCacheID remembers the identity of the database about to be wiped.
+// The first wipe's identity is the one the previous process used.
+func (c *Cache) readWipedCacheID(ctx context.Context) {
+	if c.wipedCacheID != "" || c.pdb == nil {
+		return
+	}
+	if id, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCacheID); err == nil && found {
+		c.wipedCacheID = id
+	}
+}
+
+// openIdentity reads the cache's identity, creating it for a new database,
+// and records this open as the identity's next generation. It moves the
+// result counter past the numbers the previous process allocated, saved or
+// not, so a number names one entry for the life of the identity.
+func (c *Cache) openIdentity(ctx context.Context) error {
+	id, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCacheID)
+	if err != nil {
+		return fmt.Errorf("read cache_id metadata: %w", err)
+	}
+	if !found {
+		id = uuid.NewString()
+		if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCacheID, id); err != nil {
+			return fmt.Errorf("set cache_id metadata: %w", err)
+		}
+	}
+	var generation uint64
+	if val, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyGeneration); err != nil {
+		return fmt.Errorf("read generation metadata: %w", err)
+	} else if found {
+		if generation, err = strconv.ParseUint(val, 10, 64); err != nil {
+			return fmt.Errorf("parse generation metadata %q: %w", val, err)
+		}
+	}
+	generation++
+	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyGeneration, strconv.FormatUint(generation, 10)); err != nil {
+		return fmt.Errorf("set generation metadata: %w", err)
+	}
+	if val, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyNextResultID); err != nil {
+		return fmt.Errorf("read next_result_id metadata: %w", err)
+	} else if found {
+		next, err := strconv.ParseUint(val, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse next_result_id metadata %q: %w", val, err)
+		}
+		c.egraphMu.Lock()
+		if c.nextSharedResultID < sharedResultID(next) {
+			c.nextSharedResultID = sharedResultID(next)
+		}
+		c.egraphMu.Unlock()
+	}
+	c.identity = CacheIdentity{ID: id, Generation: generation}
+	c.openedExisting = found
+	return nil
 }
 
 // reopenWiped closes the persistence databases, deletes their files and opens
@@ -1300,7 +1456,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 		queue, err = c.removeSessionResultLocked(ctx, plan.sessionID, resultID, len(plan.resultIDs), queue)
 		rerr = errors.Join(rerr, err)
 	}
-	collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(ctx, queue, cachefact.RemovedSessionRelease)
+	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
 	c.egraphMu.Unlock()
@@ -1391,30 +1547,20 @@ func (c *Cache) snapshotSessionResultIDsCancelable(checker *pruneCancellationChe
 	return roots, nil
 }
 
-// upsertPersistedEdgeLocked requires egraphMu for writing. It emits a
-// retention fact when the edge is created or changes.
+// upsertPersistedEdgeLocked requires egraphMu for writing.
 func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) {
-	if edge, changed := c.upsertPersistedEdgeNoFactLocked(ctx, res, expiresAtUnix, unpruneable); changed {
-		c.emitRetentionLocked(res, edge, true)
-	}
-}
-
-// upsertPersistedEdgeNoFactLocked requires egraphMu for writing. It reports
-// the resulting edge and whether the edge was created or changed.
-func (c *Cache) upsertPersistedEdgeNoFactLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) (persistedEdge, bool) {
 	if c == nil || res == nil || res.id == 0 {
-		return persistedEdge{}, false
+		return
 	}
 	// Collection can legitimately win a race with deferred callers, so a stale
 	// upsert is a no-op rather than an error.
 	if _, found := c.resultsByID[res.id]; !found {
-		return persistedEdge{}, false
+		return
 	}
 	if c.persistedEdgesByResult == nil {
 		c.persistedEdgesByResult = make(map[sharedResultID]persistedEdge)
 	}
 	edge, found := c.persistedEdgesByResult[res.id]
-	oldEdge := edge
 	if !found {
 		createdAtUnixNano := res.loadPayloadState().createdAtUnixNano
 		if createdAtUnixNano == 0 {
@@ -1435,7 +1581,42 @@ func (c *Cache) upsertPersistedEdgeNoFactLocked(ctx context.Context, res *shared
 		edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
 	}
 	c.persistedEdgesByResult[res.id] = edge
-	return edge, !found || edge != oldEdge
+}
+
+// resultState reads what a span reports of res: its complete parts, then,
+// under the graph lock, its dependencies, its own expiry, and its retention:
+// the edge, merged with the call's publication's edge while that is still to
+// be created, as the creation will merge it. Once created, only the edge
+// counts, so a prune that drops it is seen. It reports false once res has
+// left the cache.
+func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge *pendingRetention) (CacheResultState, bool) {
+	parts := c.completePartKeys(ctx, res)
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	if c.resultsByID[res.id] != res {
+		return CacheResultState{}, false
+	}
+	state := CacheResultState{
+		Deps:          sortedResultIDs(res.deps),
+		ExpiresAtUnix: res.expiresAtUnix,
+		Parts:         parts,
+	}
+	edge, found := c.persistedEdgesByResult[res.id]
+	pending := pendingEdge != nil && !pendingEdge.created
+	switch {
+	case found && edge.unpruneable:
+		state.Retained = true
+	case found && pending:
+		state.Retained = true
+		state.RetentionExpiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, pendingEdge.expiresAtUnix)
+	case found:
+		state.Retained = true
+		state.RetentionExpiresAtUnix = edge.expiresAtUnix
+	case pending:
+		state.Retained = true
+		state.RetentionExpiresAtUnix = pendingEdge.expiresAtUnix
+	}
+	return state, true
 }
 
 func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error {
@@ -1460,9 +1641,13 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 	return nil
 }
 
-func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) (bool, error) {
+// removePersistedEdge drops the result's retention edge, the only place an edge
+// is deleted, and collects what that leaves unowned. It reports whether it
+// dropped an edge, and when: the engine's clock under the graph lock that
+// deleted it.
+func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, _ error) {
 	if c == nil || resultID == 0 {
-		return false, nil
+		return time.Time{}, false, nil
 	}
 
 	var (
@@ -1475,22 +1660,25 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 	edge, found := c.persistedEdgesByResult[resultID]
 	if !found || edge.unpruneable {
 		c.egraphMu.Unlock()
-		return false, nil
+		return time.Time{}, false, nil
 	}
 	delete(c.persistedEdgesByResult, resultID)
+	droppedAt = time.Now()
 	res = c.resultsByID[resultID]
 	if res != nil {
-		c.emitRetentionLocked(res, edge, false)
 		var err error
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, res, queue)
 		rerr = errors.Join(rerr, err)
 	}
-	collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(ctx, queue, cachefact.RemovedPrune)
+	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
 	c.egraphMu.Unlock()
+	if c.testAfterRetentionDrop != nil {
+		c.testAfterRetentionDrop(resultID)
+	}
 
-	return true, errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
+	return droppedAt, true, errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
 }
 
 func (c *Cache) incrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult) {
@@ -1528,12 +1716,6 @@ func (c *Cache) decrementIncomingOwnershipLocked(ctx context.Context, res *share
 }
 
 func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*sharedResult) ([]OnReleaseFunc, error) {
-	return c.collectUnownedResultsForReasonLocked(ctx, queue, cachefact.RemovedReleased)
-}
-
-// collectUnownedResultsForReasonLocked collects like collectUnownedResultsLocked
-// and emits one removed fact with reason for the results it removed.
-func (c *Cache) collectUnownedResultsForReasonLocked(ctx context.Context, queue []*sharedResult, reason cachefact.RemovedReason) ([]OnReleaseFunc, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -1541,11 +1723,7 @@ func (c *Cache) collectUnownedResultsForReasonLocked(ctx context.Context, queue 
 	var (
 		rerr       error
 		onReleases []OnReleaseFunc
-		removed    []*sharedResult
 	)
-	defer func() {
-		c.emitRemovedLocked(removed, reason)
-	}()
 
 	for len(queue) > 0 {
 		res := queue[len(queue)-1]
@@ -1570,9 +1748,6 @@ func (c *Cache) collectUnownedResultsForReasonLocked(ctx context.Context, queue 
 		}
 
 		c.removeResultFromEgraphLocked(ctx, res)
-		if c.factsEnabled() {
-			removed = append(removed, res)
-		}
 		if res.onRelease != nil {
 			onReleases = append(onReleases, res.onRelease)
 		}
@@ -1877,8 +2052,19 @@ func closeCacheDBs(db *sql.DB, persistDB *persistdb.Queries) error {
 	return err
 }
 
-func RemoveCachePersistenceStore(dbPath string) error {
-	return wipeSQLiteFiles(dbPath)
+// RemoveCachePersistenceStore deletes the cache's persistence database. It
+// returns the identity the database had, if it could be read, so the caller
+// can name the cache it wiped.
+func RemoveCachePersistenceStore(ctx context.Context, dbPath string) (wipedCacheID string, _ error) {
+	if _, err := os.Stat(dbPath); err == nil {
+		if db, q, err := prepareCacheDBs(ctx, dbPath); err == nil {
+			if id, found, err := q.SelectMetaValue(ctx, persistdb.MetaKeyCacheID); err == nil && found {
+				wipedCacheID = id
+			}
+			_ = closeCacheDBs(db, q)
+		}
+	}
+	return wipedCacheID, wipeSQLiteFiles(dbPath)
 }
 
 func wipeSQLiteFiles(dbPath string) error {
@@ -1919,12 +2105,21 @@ type Cache struct {
 	// egraphMu protects all e-graph state and indexes.
 	egraphMu sync.RWMutex
 
-	// Cache fact emission, guarded by egraphMu. See cache_facts.go.
-	cacheFactState
-	// remoteEntries maps the key of each remote entry, a result another engine
-	// announced in its facts, to its entry here. Guarded by egraphMu. See
+	// engineInstanceID names the engine instance that owns the cache, for the
+	// debug snapshot. bootRestoredResults counts the entries the boot restore
+	// installed that are not type definitions, and persistedResults the
+	// entries the last successful persistence wrote. The counts are guarded by
+	// egraphMu.
+	engineInstanceID    string
+	bootRestoredResults int
+	persistedResults    int
+	// holderEntries maps each holding's key to the entry it sits on, and
+	// entriesByRecipe each recipe digest to its entry. remoteCaches keeps each
+	// held engine cache's own indexes. All guarded by egraphMu. See
 	// cache_remote_entries.go.
-	remoteEntries map[RemoteEntryKey]sharedResultID
+	holderEntries   map[HolderKey]sharedResultID
+	entriesByRecipe map[digest.Digest]sharedResultID
+	remoteCaches    map[CacheID]*remoteCacheState
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
@@ -1944,6 +2139,9 @@ type Cache struct {
 	// shareDuplicateHolds are member holds dropped by coalescing, released
 	// through the ordinary unlocked path by the next queue operation.
 	shareDuplicateHolds []*sharedResult
+	// shareReport receives the parts each pass completed; see
+	// WithSnapshotShareReport. Set at construction.
+	shareReport func([]SnapshotSharedPart)
 	// partPreparation is the engine's registered preparation-context
 	// callback, nil on a cache that cannot reconstruct persisted services.
 	partPreparation PartPreparationContext
@@ -1957,6 +2155,13 @@ type Cache struct {
 	releaseCleanupErr   error
 
 	persistenceResetReason CachePersistenceResetReason
+	// identity names the cache's persistence database across the engine
+	// processes that open it, and openedExisting reports that this open found
+	// the database's identity already there. wipedCacheID is the identity of a
+	// database this open wiped. Set by NewCache.
+	identity       CacheIdentity
+	openedExisting bool
+	wipedCacheID   string
 
 	// calls that are in progress, keyed by a combination of the call key and the concurrency key
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
@@ -1986,6 +2191,15 @@ type Cache struct {
 	// the rank of the given eqClassID, slice is index by eqClassID so it's
 	// conceptually a map of eqClassID->rank
 	egraphRanks []uint8
+
+	// The Cloud's compaction checks (CollectRemoteHoldings): when the last
+	// check ran and the class slots it left, whether a collection has removed
+	// entries since, the clock (time.Now when nil), and a count of checks.
+	eqClassCheckedAt    time.Time
+	eqClassCheckedSlots int
+	eqClassRemoved      bool
+	eqClassClock        func() time.Time
+	eqClassChecks       int
 
 	//
 	// indexes for terms
@@ -2096,6 +2310,12 @@ type Cache struct {
 	// row hold is released and before its operation ends: the point after
 	// which a caller returned by attempt.done can count ownership.
 	testAfterLazyAttemptReleased func(*lazyEvalAttempt)
+	// testBeforeWaiterLeave runs in each waiter of a published call, before it
+	// leaves; the last to leave commits the call's retention edge.
+	testBeforeWaiterLeave func()
+	// testAfterRetentionDrop runs after a retention edge is dropped, with no
+	// lock held.
+	testAfterRetentionDrop func(sharedResultID)
 	// persisted-decode singleflight hooks (ensurePersistedHitValueLoaded):
 	// before acquiring persistDecodeMu in the join-or-lead region, after a
 	// joiner captured the published channel, and after a leader published
@@ -2243,15 +2463,11 @@ type sharedResult struct {
 	offerParents map[offerOwnerID]struct{}
 	// id is the stable cache-local identity for this materialized result.
 	id sharedResultID
-	// factAnnounced records that a result fact announced this result and no
-	// removed fact has retracted it; factDepsAnnounced that its dependency set
-	// was announced, so later explicit dependencies emit the grown set. Both
-	// are guarded by egraphMu.
-	factAnnounced     bool
-	factDepsAnnounced bool
-	// remote is set on a remote entry: a result of another engine known
-	// from its facts, with no value. Guarded by egraphMu.
-	remote *remoteEntryState
+	// holders are what the cache knows about other engine caches' copies of
+	// this entry, by holding key. recipeKeys are the entriesByRecipe keys
+	// that name it. Both guarded by egraphMu.
+	holders    map[HolderKey]*holding
+	recipeKeys []digest.Digest
 
 	// Immutable payload shared by all per-call Result values.
 	self     Typed
@@ -2318,6 +2534,9 @@ type sharedResult struct {
 	// persistedEnvelope is populated for imported rows and decoded lazily on
 	// first cache-hit use in a server-aware context.
 	persistedEnvelope *PersistedResultEnvelope
+	// completeParts caches the row's complete parts for the revision of its
+	// value they were read from (see completePartKeys).
+	completeParts atomic.Pointer[rowCompleteParts]
 
 	// Prune-accounting metadata. Sizes are unknown until explicitly measured.
 	createdAtUnixNano        int64
@@ -2717,6 +2936,16 @@ func wrapSharedResultWithResolver(ctx context.Context, res *sharedResult, hitCac
 
 // ongoingCall tracks one in-flight GetOrInitCall execution and points at the
 // shared result payload that will be returned to waiters.
+// pendingRetention is a persistable publication's retention edge until the
+// last of the call's waiters creates it: the candidate expiry the edge is
+// created with, and whether it has been created. Every waiter's evidence
+// shares it, so a span reads it together with the edge, under the graph lock:
+// once created, only the edge itself counts. created is guarded by egraphMu.
+type pendingRetention struct {
+	expiresAtUnix int64
+	created       bool
+}
+
 type ongoingCall struct {
 	callConcurrencyKeys callConcurrencyKeys
 	// isPersistable is monotonic persistence intent aggregated from every
@@ -2727,10 +2956,13 @@ type ongoingCall struct {
 	// aggregate persistence intent before dropping its handoff ownership.
 	needsPersistedEdge         bool
 	persistedEdgeExpiresAtUnix int64
-	ttlSeconds                 int64
-	initCompletedResultOnce    sync.Once
-	handoffHoldActive          bool
-	initCompletedResultErr     error
+	// pendingEdge is that edge until the last waiter creates it, shared with
+	// every waiter's cache evidence. Set with needsPersistedEdge.
+	pendingEdge             *pendingRetention
+	ttlSeconds              int64
+	initCompletedResultOnce sync.Once
+	handoffHoldActive       bool
+	initCompletedResultErr  error
 
 	waitCh                      chan struct{}
 	cancel                      context.CancelCauseFunc
@@ -3117,12 +3349,6 @@ func (c *Cache) addExplicitDependencyLocked(
 	c.rememberDependencyEdgeLocked(parentRes, depRes)
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
-	// During publication the parent's set is still being attached; the deps
-	// fact at the end of publication covers it. Afterwards, announce the
-	// grown set.
-	if parentRes.factDepsAnnounced {
-		c.emitDepsLocked(parentRes)
-	}
 
 	// The new dep can extend the parent's stored required set, and every
 	// result already depending on the parent derives its own stored set from
@@ -4631,10 +4857,14 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				// Lazy evaluation may have learned content since the API span
 				// ended. Read the latest frame outside the cache locks.
 				frame := shared.loadResultCall()
-				if frame != nil && lazySpan.IsRecording() {
-					RecordContentPreferredDigest(lazyCallbackCtx, lazySpan, frame, res)
+				var cacheState lazySpanCacheState
+				if lazySpan.IsRecording() {
+					if frame != nil {
+						RecordContentPreferredDigest(lazyCallbackCtx, lazySpan, frame, res)
+					}
+					cacheState = c.lazySpanCacheState(context.WithoutCancel(lazyCallbackCtx), shared, frame)
 				}
-				endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, abandoned, storedPart, &err)
+				endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, abandoned, storedPart, cacheState, &err)
 			}
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
@@ -5284,6 +5514,9 @@ func (c *Cache) getOrInitCallInner(
 	// Cache-evidence carrier for this invocation (nil unless core armed it);
 	// all writes below are plain field writes on the invoking goroutine.
 	ev := req.CacheEvidence
+	if ev != nil {
+		ev.cache = c
+	}
 
 	if req.DoNotCache {
 		// don't cache, don't dedupe calls, just call it
@@ -5781,6 +6014,9 @@ func (c *Cache) wait(
 		oc.needsPersistedEdge = oc.initCompletedResultErr == nil &&
 			oc.res != nil &&
 			oc.isPersistable.Load()
+		if oc.needsPersistedEdge {
+			oc.pendingEdge = &pendingRetention{expiresAtUnix: oc.persistedEdgeExpiresAtUnix}
+		}
 		delete(c.ongoingCalls, oc.callConcurrencyKeys)
 		c.callsMu.Unlock()
 	})
@@ -5810,6 +6046,11 @@ func (c *Cache) wait(
 	}
 
 	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
+	if ev := req.CacheEvidence; ev != nil {
+		// The last waiter creates the edge, possibly after this call's span
+		// ends; until then the span reports it as the publication's.
+		ev.pendingEdge = oc.pendingEdge
+	}
 
 	retRes := Result[Typed]{
 		shared:   oc.res,
@@ -5819,6 +6060,9 @@ func (c *Cache) wait(
 	if claimErr == nil {
 		c.captureSessionLazySpanContext(ctx, sessionID, retRes)
 		c.captureSessionResultInstallSpan(ctx, sessionID, retRes)
+	}
+	if c.testBeforeWaiterLeave != nil {
+		c.testBeforeWaiterLeave()
 	}
 	c.callsMu.Lock()
 	oc.waiters--
@@ -5856,6 +6100,7 @@ func (c *Cache) releaseOngoingCallHandoff(ctx context.Context, oc *ongoingCall) 
 	c.egraphMu.Lock()
 	if oc.needsPersistedEdge {
 		c.upsertPersistedEdgeLocked(ctx, oc.res, oc.persistedEdgeExpiresAtUnix, false)
+		oc.pendingEdge.created = true
 	}
 	queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
 	collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
@@ -5886,7 +6131,6 @@ func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *share
 		depIDs = append(depIDs, depID)
 	}
 	c.removeResultFromEgraphLocked(ctx, res)
-	c.emitRemovedLocked([]*sharedResult{res}, cachefact.RemovedRollback)
 	res.deps = nil
 	res.depParents = nil
 
@@ -5904,7 +6148,7 @@ func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *share
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, depRes, queue)
 		rerr = errors.Join(rerr, err)
 	}
-	collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(ctx, queue, cachefact.RemovedRollback)
+	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	rerr = errors.Join(rerr, collectErr)
 	if res.onRelease != nil {
 		collectReleases = append([]OnReleaseFunc{res.onRelease}, collectReleases...)
@@ -6297,7 +6541,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if err := c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
 			c.egraphMu.Lock()
 			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-			collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(context.WithoutCancel(ctx), queue, cachefact.RemovedRollback)
+			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
 			c.egraphMu.Unlock()
 			oc.handoffHoldActive = false
 			attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
@@ -6325,7 +6569,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}(); err != nil {
 		c.egraphMu.Lock()
 		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-		collectReleases, collectErr := c.collectUnownedResultsForReasonLocked(context.WithoutCancel(ctx), queue, cachefact.RemovedRollback)
+		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
 		c.egraphMu.Unlock()
 		oc.handoffHoldActive = false
 		attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
@@ -6333,13 +6577,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		return attachErr
 	}
 	c.registerLazyEvaluation(oc.res, oc.val, resolver)
-	if !resWasCacheBacked && c.factsEnabled() {
-		// The dependency set is complete: announce it before the barrier
-		// opens, under the lock that orders it with the cache's other facts.
-		c.egraphMu.Lock()
-		c.emitDepsLocked(oc.res)
-		c.egraphMu.Unlock()
-	}
 	finishAttachDeps(nil)
 	// Eager completion: attachment, lease synchronization and lazy
 	// registration have all succeeded, and the publication handoff hold still
@@ -6452,6 +6689,15 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	}
 
 	return nil
+}
+
+func sortedResultIDs(ids map[sharedResultID]struct{}) []uint64 {
+	out := make([]uint64, 0, len(ids))
+	for id := range ids {
+		out = append(out, uint64(id))
+	}
+	slices.Sort(out)
+	return out
 }
 
 func candidateSharedResultExpiryUnix(nowUnix, ttlSeconds int64) int64 {

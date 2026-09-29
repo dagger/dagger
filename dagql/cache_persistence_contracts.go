@@ -45,6 +45,7 @@ type persistResultSnapshot struct {
 }
 
 type persistStateSnapshot struct {
+	nextResultID          sharedResultID
 	persistedEdges        []persistdb.MirrorPersistedEdge
 	eqClasses             []persistdb.MirrorEqClass
 	eqClassDigests        []persistdb.MirrorEqClassDigest

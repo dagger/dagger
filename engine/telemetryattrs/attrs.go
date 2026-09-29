@@ -21,6 +21,20 @@ const (
 	// Engine. It is a resource attribute on client and engine telemetry. (bool)
 	CloudEngineAttr = "dagger.io/cloud.engine"
 
+	// EngineSessionAttr is the ID of the engine session whose telemetry this
+	// is. It is a resource attribute on a session's own spans and logs, so
+	// sessions that share one trace stay apart. (string)
+	EngineSessionAttr = "dagger.io/engine.session"
+
+	// EngineCacheAttr names the engine's dagql cache: its identity, a random
+	// ID kept in the cache's database across the engine's restarts, and the
+	// generation, the number of engine starts on that identity, as
+	// "<identity>/<generation>". It is a resource attribute on a session's
+	// spans and logs, and an attribute of every engine cache event. Together
+	// with dagger.io/cache.result.id it names one entry of one cache for the
+	// cache's lifetime. (string)
+	EngineCacheAttr = "dagger.io/engine.cache"
+
 	// TelemetryOriginClientIDAttr records the immutable client identity captured
 	// from the emission context. Session-owned trace and log exporters use it to
 	// route each record to the origin client's DB and every validated ancestor
@@ -466,10 +480,11 @@ const (
 // quoted strings round-trip as strings). The value tokens below are chosen
 // so that trip is loss-free: enum tokens and digest values
 // (algorithm-prefixed) can never collide with true/false/null or a leading
-// digit; the two boolean facts are emitted as "true" only when true (absent
+// digit; the boolean facts are emitted as "true" only when true (absent
 // means false) and intentionally decode into real bools; the unknown-input
-// index is a decimal-string. The array value survives the same trip as a
-// JSON array of strings, which is exactly how consumers read it back.
+// index, result numbers and Unix times are decimal strings. The array values
+// (structural inputs, dependencies, parts) survive the same trip as JSON
+// arrays of strings, which is exactly how consumers read them back.
 //
 // Producer condition: the attributes are stamped by core.AroundFunc's completion
 // callback from a request-only evidence carrier (dagql.CacheDecision) that
@@ -578,8 +593,125 @@ const (
 
 	// CacheResultIDAttr is the decimal-string engine-local result number of
 	// the call's cache-backed result, stamped for any stamped outcome that
-	// returned one. Together with the engine instance resource attribute
-	// (service.instance.id) it names the result the engine's cache facts
-	// (dagql/cachefact) describe, so a span can be joined with them.
+	// returned one. Together with the cache identity resource attribute
+	// (EngineCacheAttr) it names one entry of one cache for the cache's
+	// lifetime.
 	CacheResultIDAttr = "dagger.io/cache.result.id"
+
+	// The entry's state in its cache, stamped beside CacheResultIDAttr when
+	// the span ends, so a consumer can follow the cache's ownership without
+	// the engine's internals. A lazy-evaluation span carries CacheResultIDAttr,
+	// CacheDepsAttr, CachePartsAttr and CacheOutputContentDigestAttr for the
+	// entry it evaluated, and no CacheOutcomeAttr.
+
+	// CacheDepsAttr lists the result numbers of the entry's dependencies, of
+	// every kind, as decimal strings (native string array). An empty list
+	// records that the entry has none.
+	CacheDepsAttr = "dagger.io/cache.deps"
+	// CacheRetainedAttr is "true" when the entry has a retention edge, the
+	// record that keeps it after its session, or when this call's publication
+	// adds one; absent otherwise. It states the edge at the span's end.
+	CacheRetainedAttr = "dagger.io/cache.retained"
+	// CacheRetentionExpiresAttr is the retention edge's expiry, in decimal
+	// Unix seconds, when retained and the edge expires.
+	CacheRetentionExpiresAttr = "dagger.io/cache.retention.expires"
+	// CacheExpiresAttr is the entry's own expiry, when it stops serving as a
+	// cache hit, in decimal Unix seconds, when it has one.
+	CacheExpiresAttr = "dagger.io/cache.expires"
+	// CachePartsAttr lists the entry's complete parts: the parts its record
+	// reports complete, including absent and metadata ones, which own no
+	// filesystem bytes. Each is its part address (native string array). On a
+	// lazy-evaluation span, it lists them as the attempt left them. The
+	// attribute is omitted when there are none.
+	CachePartsAttr = "dagger.io/cache.parts"
+	// CacheTypeAttr is the name of the entry's type, such as "Container".
+	CacheTypeAttr = "dagger.io/cache.type"
+
+	// CacheSessionSpansAttr is the decimal-string count of the spans of one
+	// session that carry CacheResultIDAttr, stamped on the session's
+	// WcprofSessionCompleteAttr carrier span, which marks the session's end.
+	CacheSessionSpansAttr = "dagger.io/cache.session.spans"
 )
+
+// Engine cache events (dagger.io/engine.cache).
+//
+// Outside any session, the engine reports what happens to its dagql cache as
+// OpenTelemetry log records on its own logger provider, exported to Dagger
+// Cloud under the engine's own token when the engine-events switch is on.
+// Each record's instrumentation scope is EngineEventScope, its body is the
+// JSON encoding of the event's type below (an OTLP string), and it carries
+// EngineEventAttr (the event's kind) and EngineCacheAttr (the cache's
+// identity and generation). The record's timestamp is the engine's clock when
+// the event happened; the process resource names the engine instance
+// (service.instance.id).
+const (
+	// EngineEventScope is the instrumentation scope of engine cache events.
+	EngineEventScope = "dagger.io/engine.cache"
+	// EngineEventAttr is the record attribute holding the event's kind.
+	EngineEventAttr = "dagger.io/engine.event"
+
+	// EngineEventStart: the engine opened, and possibly restored, its cache
+	// (EngineStartEvent).
+	EngineEventStart = "engine.start"
+	// EngineEventPrune: a prune run dropped retention edges
+	// (EnginePruneEvent). Runs that drop none send nothing.
+	EngineEventPrune = "engine.prune"
+	// EngineEventShare: a snapshot-sharing pass completed parts
+	// (EngineShareEvent).
+	EngineEventShare = "engine.share"
+	// EngineEventStop: the engine closed its cache (EngineStopEvent).
+	EngineEventStop = "engine.stop"
+)
+
+// EngineStartEvent is the body of an engine.start event.
+type EngineStartEvent struct {
+	EngineVersion string `json:"engineVersion"`
+	EngineName    string `json:"engineName"`
+	// Restored reports that the engine opened the cache's existing database
+	// rather than starting empty.
+	Restored bool `json:"restored"`
+	// RestoredEntries counts the entries the restore installed, not
+	// counting type definitions.
+	RestoredEntries int `json:"restoredEntries"`
+	// WipedCache is the identity of a cache database this start wiped, if
+	// any.
+	WipedCache string `json:"wipedCache,omitempty"`
+}
+
+// EnginePruneEvent is the body of an engine.prune event: every retention
+// edge one prune run dropped.
+type EnginePruneEvent struct {
+	Drops []EngineRetentionDrop `json:"drops"`
+}
+
+// EngineRetentionDrop is one retention edge a prune run dropped.
+type EngineRetentionDrop struct {
+	// ResultID is the entry's result number.
+	ResultID uint64 `json:"resultId"`
+	// DroppedAtUnixNano is the engine's clock when it dropped the edge.
+	DroppedAtUnixNano int64 `json:"droppedAtUnixNano"`
+}
+
+// EngineShareEvent is the body of an engine.share event: every part one
+// snapshot-sharing pass completed.
+type EngineShareEvent struct {
+	Parts []EngineSharedPart `json:"parts"`
+}
+
+// EngineSharedPart is one part a snapshot-sharing pass completed.
+type EngineSharedPart struct {
+	// ResultID is the entry's result number.
+	ResultID uint64 `json:"resultId"`
+	// Part is the part's address, as in dagger.io/cache.parts.
+	Part string `json:"part"`
+	// Deps are the result numbers of the entry's dependencies.
+	Deps []uint64 `json:"deps"`
+}
+
+// EngineStopEvent is the body of an engine.stop event.
+type EngineStopEvent struct {
+	// Clean reports that the engine saved its cache for its next start.
+	Clean bool `json:"clean"`
+	// SavedEntries counts the entries the save wrote.
+	SavedEntries int `json:"savedEntries"`
+}

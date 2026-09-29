@@ -254,7 +254,7 @@ func TestSessionPublishesTelemetryToCloud(t *testing.T) {
 		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 	})
 	require.NotNil(t, sess.cloudForwarder)
-	require.Equal(t, 5, sess.telemetryDebug.ConfiguredSpanProcessors, "Cloud reads the store, not the providers")
+	require.Equal(t, 6, sess.telemetryDebug.ConfiguredSpanProcessors, "Cloud reads the store, not the providers")
 	require.Equal(t, 4, sess.telemetryDebug.ConfiguredLogProcessors)
 
 	emitCloudTestTelemetry(t, sess, root)
@@ -353,7 +353,7 @@ func TestSessionWithoutPublisherStaysSilent(t *testing.T) {
 			require.Nil(t, sess.cloudForwarder)
 			require.Nil(t, sess.cloudMetrics)
 			require.Empty(t, sess.cloudFlushers)
-			require.Equal(t, 5, sess.telemetryDebug.ConfiguredSpanProcessors)
+			require.Equal(t, 6, sess.telemetryDebug.ConfiguredSpanProcessors)
 			require.Equal(t, 4, sess.telemetryDebug.ConfiguredLogProcessors)
 
 			emitCloudTestTelemetry(t, sess, root)

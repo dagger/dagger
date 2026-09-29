@@ -39,20 +39,13 @@ type EGraphDebugSnapshot struct {
 
 // CacheDebugSnapshot is the streamed /debug/dagql/cache snapshot.
 //
-// EngineInstance names the engine instance whose cache facts describe this
-// cache, when the cache was given one. FactSeq is the sequence number of the
-// last cache fact emitted when the snapshot was taken. Every fact with a
-// sequence at most FactSeq describes a mutation the snapshot contains, and no
-// such fact describes a later mutation. The converse does not hold while work
-// is in flight: a mutation can be visible before its fact is emitted, for
-// example a publication's dependency edges before its deps fact. Compare a
-// snapshot with the facts up to FactSeq only when the cache is quiescent.
+// EngineInstance names the engine instance that owns the cache, when the
+// cache was given one: the service.instance.id of its telemetry.
 type CacheDebugSnapshot struct {
 	OfferOwners             []CacheDebugOfferOwner        `json:"offer_owners,omitempty"`
 	TraceFormatVersion      int                           `json:"trace_format_version"`
 	BootID                  string                        `json:"boot_id"`
 	EngineInstance          string                        `json:"engine_instance,omitempty"`
-	FactSeq                 uint64                        `json:"fact_seq"`
 	CapturedAtSeq           uint64                        `json:"captured_at_seq"`
 	CapturedAtTime          string                        `json:"captured_at_time"`
 	SessionResults          []CacheDebugSessionResults    `json:"session_results,omitempty"`
@@ -1261,12 +1254,6 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 		return err
 	}
 	if err := writeValue(c.engineInstanceID); err != nil {
-		return err
-	}
-	if err := writeField("fact_seq"); err != nil {
-		return err
-	}
-	if err := writeValue(c.factSeq); err != nil {
 		return err
 	}
 	if err := writeField("captured_at_seq"); err != nil {

@@ -476,7 +476,7 @@ func TestRemovePersistedEdgeRechecksUnpruneableAfterPlanning(t *testing.T) {
 			assert.Assert(t, cmp.Len(plan, 1))
 
 			assert.NilError(t, c.MakeResultUnpruneable(ctx, res))
-			removed, err := c.removePersistedEdge(ctx, plan[0].candidate.resultID)
+			_, removed, err := c.removePersistedEdge(ctx, plan[0].candidate.resultID)
 			assert.NilError(t, err)
 			assert.Assert(t, !removed)
 

@@ -321,11 +321,11 @@ func main() { //nolint:gocyclo
 	var resourceMetrics *sdkmetric.MeterProvider
 
 	// One random ID names this engine process in all its telemetry
-	// (service.instance.id), its cache facts included, and marks the epoch
+	// (service.instance.id), its cache events included, and marks the epoch
 	// of its cumulative cgroup counters. It is created before the process
 	// telemetry so the process resource carries it.
 	engineInstanceID := uuid.NewString()
-	var factExport *cacheFactExport
+	var eventExport *engineEventExport
 	var workloadExport *enginetel.WorkloadExport
 
 	app.Action = func(c *cli.Context) error {
@@ -379,7 +379,7 @@ func main() { //nolint:gocyclo
 			}
 		}
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
-		factExport = newCacheFactExport(ctx, processResource, cfg.Telemetry)
+		eventExport = newEngineEventExport(ctx, processResource, cfg.Telemetry)
 
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancelCause(context.Background())
@@ -504,7 +504,7 @@ func main() { //nolint:gocyclo
 			Config:           &cfg,
 			BuildkitConfig:   &bkcfg,
 			EngineInstanceID: engineInstanceID,
-			CacheFactExport:  serverCacheFactExport(factExport),
+			EngineEvents:     serverEngineEventExport(eventExport),
 			WorkloadExport:   workloadExport,
 		})
 		if err != nil {
@@ -619,9 +619,9 @@ func main() { //nolint:gocyclo
 	app.After = func(*cli.Context) error {
 		fmt.Println("shutting down telemetry...")
 		defer fmt.Println("telemetry shut down complete")
-		// The server's close emitted engine.stop and queued every fact on the
-		// fact provider; flush them before the global providers close.
-		factExport.shutdownAtExit(ctx)
+		// The server's close emitted engine.stop and queued every event on the
+		// event provider; flush them before the global providers close.
+		eventExport.shutdownAtExit(ctx)
 		closeResourceMetrics(ctx, resourceMetrics)
 		// Providers finish before the engine-owned workload export drains.
 		// Their shared processor/exporter wrappers do not close it.

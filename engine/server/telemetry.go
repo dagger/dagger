@@ -16,7 +16,6 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 
-	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -25,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -90,8 +90,9 @@ func cloudEngineTelemetryResource() (*sdkresource.Resource, error) {
 }
 
 // sessionTracerResource is the resource of a session's spans: the SDK default
-// plus the engine instance, and the Cloud engine marker on Cloud engines.
-func sessionTracerResource(engineInstanceID string, cloudEngine bool) (*sdkresource.Resource, error) {
+// plus the session's own attributes (sessionResourceAttrs), and the Cloud
+// engine marker on Cloud engines.
+func sessionTracerResource(attrs []attribute.KeyValue, cloudEngine bool) (*sdkresource.Resource, error) {
 	base := sdkresource.Default()
 	if cloudEngine {
 		var err error
@@ -100,15 +101,35 @@ func sessionTracerResource(engineInstanceID string, cloudEngine bool) (*sdkresou
 			return nil, err
 		}
 	}
-	return withEngineInstanceResource(base, engineInstanceID)
+	return withSessionResource(base, attrs)
 }
 
-// withEngineInstanceResource adds the engine instance attribute to base.
-func withEngineInstanceResource(base *sdkresource.Resource, engineInstanceID string) (*sdkresource.Resource, error) {
-	if engineInstanceID == "" {
+// withSessionResource adds a session's own attributes to base.
+func withSessionResource(base *sdkresource.Resource, attrs []attribute.KeyValue) (*sdkresource.Resource, error) {
+	if len(attrs) == 0 {
 		return base, nil
 	}
-	return sdkresource.Merge(base, sdkresource.NewSchemaless(attribute.String(cachefact.ResourceEngineInstance, engineInstanceID)))
+	return sdkresource.Merge(base, sdkresource.NewSchemaless(attrs...))
+}
+
+// sessionResourceAttrs names, on every span and log record a session emits,
+// the engine process (service.instance.id), the session, and the engine's
+// cache with its generation. A span's dagger.io/cache.result.id then names one
+// entry of one cache, and sessions that share a trace stay apart.
+func (srv *Server) sessionResourceAttrs(sessionID string) []attribute.KeyValue {
+	var attrs []attribute.KeyValue
+	if srv.engineInstanceID != "" {
+		attrs = append(attrs, semconv.ServiceInstanceID(srv.engineInstanceID))
+	}
+	if sessionID != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.EngineSessionAttr, sessionID))
+	}
+	if srv.engineCache != nil {
+		if identity := srv.engineCache.Identity(); identity.ID != "" {
+			attrs = append(attrs, attribute.String(telemetryattrs.EngineCacheAttr, identity.String()))
+		}
+	}
+	return attrs
 }
 
 type telemetryOriginLogProcessor struct {

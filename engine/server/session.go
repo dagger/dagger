@@ -126,6 +126,9 @@ type daggerSession struct {
 	wcprofTraceID    trace.TraceID
 	wcprofRootSpanID trace.SpanID
 	wcprofTraceOnce  sync.Once
+	// cacheSpans counts the session's cache spans, which the same carrier
+	// declares (see cacheSpanCounter).
+	cacheSpans *cacheSpanCounter
 
 	// closed after the shutdown endpoint is called
 	shutdownCh        chan struct{}
@@ -882,16 +885,20 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	// session. Metric readers are owned by each client.
 	spanLimits := sdktrace.NewSpanLimits()
 	spanLimits.LinkCountLimit = 16384
+	sess.cacheSpans = &cacheSpanCounter{}
 	tracerOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithRawSpanLimits(spanLimits),
 		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
 		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
+		sdktrace.WithSpanProcessor(sess.cacheSpans),
 		// Stamp origin before the live processors freeze their start snapshots.
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: sess.sessionID}),
 	}
-	// Every session span names this engine instance, so a span's
-	// dagger.io/cache.result.id joins the instance's cache facts.
-	tracerResource, err := sessionTracerResource(srv.engineInstanceID, cloudEngine)
+	// Every session span and log record names this engine instance, the
+	// session and the engine's cache, so a span's dagger.io/cache.result.id
+	// names one entry of one cache.
+	resourceAttrs := srv.sessionResourceAttrs(sess.sessionID)
+	tracerResource, err := sessionTracerResource(resourceAttrs, cloudEngine)
 	if err != nil {
 		slog.Warn("failed to create session telemetry resource", "error", err)
 	} else {
@@ -906,7 +913,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		sdktrace.WithSpanProcessor(callSpans),
 		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter))),
 	)
-	loggerResource, err := withEngineInstanceResource(telemetry.Resource, srv.engineInstanceID)
+	loggerResource, err := withSessionResource(telemetry.Resource, resourceAttrs)
 	if err != nil {
 		slog.Warn("failed to create session log resource", "error", err)
 		loggerResource = telemetry.Resource
@@ -928,12 +935,12 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		})),
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
-	// Span: wcprof lazy parent, wcprof count, origin, call spans, live, and
-	// workload export when enabled.
+	// Span: wcprof lazy parent, wcprof count, cache spans, origin, call
+	// spans, live, and workload export when enabled.
 	// Log: origin, call payloads, controls, ordinary.
 	// A session that publishes to Cloud does so from the main client's
 	// store (see cloudForwarder), so Cloud adds no processor here.
-	spanProcessors, logProcessors := 5, 4
+	spanProcessors, logProcessors := 6, 4
 	if processor := srv.workloadExport.SpanProcessor(sess.sessionID); processor != nil {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(processor))
 		spanProcessors++
@@ -1266,14 +1273,23 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // wcprofSessionCompleteSpanName so the counter excludes it from the total and the
 // loader drops it from the compiled ops. The session's final trace/log barrier
 // flushes the carrier after all cleanup producers have stopped. A trace that
-// never ran a traced main query, or whose count is zero, gets no carrier
-// and so fails the loader's completeness check by default (unverifiable → refused).
+// never ran a traced main query gets no carrier and so fails the loader's
+// completeness check by default (unverifiable → refused).
+//
+// The carrier also marks the session's end for its cache spans: it declares
+// how many spans of this session named a cache entry
+// (dagger.io/cache.session.spans). The wcprof count is per trace, and the
+// first session to end in a shared trace reaps it, so a later session can
+// have cache spans and a zero wcprof count. The carrier is sent when either
+// count is above zero, and carries the wcprof count only when it is; the
+// loader ignores a carrier with no count.
 func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) {
 	if !sess.wcprofTraceID.IsValid() || !sess.wcprofRootSpanID.IsValid() {
 		return
 	}
 	n := srv.wcprofSpanCount.Final(sess.wcprofTraceID)
-	if n == 0 {
+	cacheSpans := sess.cacheSpans.Count()
+	if n == 0 && cacheSpans == 0 {
 		return
 	}
 	sess.clientMu.RLock()
@@ -1291,16 +1307,20 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 		TraceFlags: trace.FlagsSampled,
 	}))
 	parentCtx = engine.ContextWithClientMetadata(parentCtx, mainRecord.clientMetadata)
+	attrs := []attribute.KeyValue{
+		attribute.Bool(telemetryattrs.WcprofSessionCompleteAttr, true),
+		attribute.String(telemetryattrs.CacheSessionSpansAttr, strconv.FormatInt(cacheSpans, 10)),
+		// The carrier is protocol bookkeeping, not a unit of work: keep it
+		// out of rendered trees (TUI and Cloud); the loader reads its
+		// attributes regardless.
+		attribute.Bool(telemetry.UIInternalAttr, true),
+	}
+	if n > 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.WcprofSessionSpanCountAttr, strconv.Itoa(n)))
+	}
 	_, span := sess.tracerProvider.Tracer(InstrumentationLibrary).Start(
 		parentCtx, wcprofSessionCompleteSpanName,
-		trace.WithAttributes(
-			attribute.Bool(telemetryattrs.WcprofSessionCompleteAttr, true),
-			attribute.String(telemetryattrs.WcprofSessionSpanCountAttr, strconv.Itoa(n)),
-			// The carrier is protocol bookkeeping, not a unit of work: keep it
-			// out of rendered trees (TUI and Cloud); the loader reads its
-			// attributes regardless.
-			attribute.Bool(telemetry.UIInternalAttr, true),
-		),
+		trace.WithAttributes(attrs...),
 	)
 	span.End()
 }

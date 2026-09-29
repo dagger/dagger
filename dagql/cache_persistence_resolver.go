@@ -76,16 +76,20 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	if sessionID == "" {
 		c.egraphMu.RLock()
 		res := c.resultsByID[resultID]
-		var requiredGenAtCheck uint64
+		var (
+			requiredGenAtCheck uint64
+			noValue            bool
+		)
 		if res != nil {
 			requiredGenAtCheck = res.requiredSessionResourcesGen.Load()
+			noValue = res.noValueLocked()
 		}
 		c.egraphMu.RUnlock()
 		if res == nil {
 			return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)
 		}
-		if res.remote != nil {
-			return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errRemoteEntryHasNoValue)
+		if noValue {
+			return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errEntryHasNoValue)
 		}
 		return sharedResultLookup{res: res, requiredGenAtCheck: requiredGenAtCheck}, nil
 	}
@@ -96,11 +100,11 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		c.egraphMu.Unlock()
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
-	if res.remote != nil {
-		// Not even as a starting point for an equivalent: a remote entry is
-		// no result of this engine.
+	if res.noValueLocked() {
+		// Not even as a starting point for an equivalent: an entry known only
+		// through holdings has no value of this engine.
 		c.egraphMu.Unlock()
-		return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errRemoteEntryHasNoValue)
+		return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errEntryHasNoValue)
 	}
 	if mode != sharedResultLookupExact {
 		// Require clean attachment, as publication adoption does: without it

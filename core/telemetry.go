@@ -192,7 +192,7 @@ func AroundFunc(
 		recordStatus(ctx, res, span, cached, req.ResultCall)
 		dagql.RecordContentPreferredDigest(ctx, span, req.ResultCall, res)
 		recordPending(res, span)
-		recordCacheEvidence(span, req.CacheEvidence, res)
+		recordCacheEvidence(ctx, span, req.CacheEvidence, res)
 		logResult(ctx, res, req.ResultCall)
 	}
 }
@@ -235,7 +235,7 @@ func initCacheEvidence(span trace.Span, req *dagql.CallRequest) {
 // the call. An empty Outcome means the invocation never reached a cache
 // decision (validation/derivation error) — nothing is stamped then, so the
 // contract marker never rides a fact-free span.
-func recordCacheEvidence(span trace.Span, ev *dagql.CacheDecision, res dagql.AnyResult) {
+func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDecision, res dagql.AnyResult) {
 	if ev == nil || ev.Outcome == "" {
 		return
 	}
@@ -288,9 +288,41 @@ func recordCacheEvidence(span trace.Span, ev *dagql.CacheDecision, res dagql.Any
 			if contentDig := frame.ContentDigest(); contentDig != "" {
 				attrs = append(attrs, attribute.String(telemetryattrs.CacheOutputContentDigestAttr, contentDig.String()))
 			}
+			if frame.Type != nil && frame.Type.NamedType != "" {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheTypeAttr, frame.Type.NamedType))
+			}
 		}
 	}
+	// The entry's state in the cache, read as the span ends: only logResult
+	// runs between this read and the span's end. A canceled call still
+	// reports the state its result is in.
+	if state, ok := ev.ResultState(context.WithoutCancel(ctx), res); ok {
+		attrs = append(attrs, cacheStateAttrs(state)...)
+	}
 	span.SetAttributes(attrs...)
+}
+
+// cacheStateAttrs maps an entry's cache state onto the dagger.io/cache.*
+// contract.
+func cacheStateAttrs(state dagql.CacheResultState) []attribute.KeyValue {
+	deps := make([]string, len(state.Deps))
+	for i, dep := range state.Deps {
+		deps[i] = strconv.FormatUint(dep, 10)
+	}
+	attrs := []attribute.KeyValue{attribute.StringSlice(telemetryattrs.CacheDepsAttr, deps)}
+	if state.Retained {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheRetainedAttr, "true"))
+		if state.RetentionExpiresAtUnix != 0 {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheRetentionExpiresAttr, strconv.FormatInt(state.RetentionExpiresAtUnix, 10)))
+		}
+	}
+	if state.ExpiresAtUnix != 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheExpiresAttr, strconv.FormatInt(state.ExpiresAtUnix, 10)))
+	}
+	if len(state.Parts) > 0 {
+		attrs = append(attrs, attribute.StringSlice(telemetryattrs.CachePartsAttr, state.Parts))
+	}
+	return attrs
 }
 
 type moduleCallRef struct {

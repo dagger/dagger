@@ -13,36 +13,42 @@ import (
 // portable graph: callers must separately capture and relocate its references.
 // A row being evaluated reports ErrPersistStateNotReady; unstarted work is
 // encoded with its original inputs.
-func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_ PersistedRecord, rerr error) {
-	op, err := c.beginCacheOperation()
-	if err != nil {
-		return PersistedRecord{}, err
-	}
-	defer op.finish(false)
-	if err := context.Cause(ctx); err != nil {
-		return PersistedRecord{}, err
-	}
+func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (PersistedRecord, error) {
 	if result == nil || result.cacheSharedResult() == nil {
 		return PersistedRecord{}, fmt.Errorf("capture persisted record: detached result")
 	}
-	shared := result.cacheSharedResult()
+	record, _, err := c.captureRowRecord(ctx, result.cacheSharedResult())
+	return record, err
+}
+
+// captureRowRecord is CapturePersistedRecord for a row, also returning the
+// revision the record describes.
+func (c *Cache) captureRowRecord(ctx context.Context, shared *sharedResult) (_ PersistedRecord, _ *capturedRowRevision, rerr error) {
+	op, err := c.beginCacheOperation()
+	if err != nil {
+		return PersistedRecord{}, nil, err
+	}
+	defer op.finish(false)
+	if err := context.Cause(ctx); err != nil {
+		return PersistedRecord{}, nil, err
+	}
 	c.egraphMu.Lock()
 	if shared.id == 0 || c.resultsByID[shared.id] != shared {
 		c.egraphMu.Unlock()
-		return PersistedRecord{}, fmt.Errorf("capture persisted record: result %d is not registered in this cache", shared.id)
+		return PersistedRecord{}, nil, fmt.Errorf("capture persisted record: result %d is not registered in this cache", shared.id)
 	}
 	switch shared.attachmentState() {
 	case resultAttachmentOpen:
 		c.egraphMu.Unlock()
-		return PersistedRecord{}, fmt.Errorf("%w: result %d dependency attachment", ErrPersistStateNotReady, shared.id)
+		return PersistedRecord{}, nil, fmt.Errorf("%w: result %d dependency attachment", ErrPersistStateNotReady, shared.id)
 	case resultAttachmentFailed:
 		c.egraphMu.Unlock()
-		return PersistedRecord{}, fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
+		return PersistedRecord{}, nil, fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
 	}
 	offers, err := shared.pendingOffersLocked()
 	if err != nil {
 		c.egraphMu.Unlock()
-		return PersistedRecord{}, err
+		return PersistedRecord{}, nil, err
 	}
 	imported := shared.imported
 	c.incrementIncomingOwnershipLocked(ctx, shared)
@@ -59,12 +65,12 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (_
 	version := new(capturedRowRevision)
 	record, err := c.captureHeldPersistedRecord(ctx, shared, imported, offers, version)
 	if err != nil {
-		return PersistedRecord{}, err
+		return PersistedRecord{}, nil, err
 	}
 	if err := version.check(shared); err != nil {
-		return PersistedRecord{}, err
+		return PersistedRecord{}, nil, err
 	}
-	return record, nil
+	return record, version, nil
 }
 
 // The operation and row ownership are already held by the caller. Only this

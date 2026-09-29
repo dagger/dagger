@@ -233,7 +233,7 @@ func TestOfferPartsAcceptedCleanupFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-	_, err = c.removePersistedEdge(ctx, dep.cacheSharedResult().id)
+	_, _, err = c.removePersistedEdge(ctx, dep.cacheSharedResult().id)
 	require.NoError(t, err)
 	replacement := testLiveOffer()
 	replacement.Value.Path = "/next"

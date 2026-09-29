@@ -132,7 +132,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				require.NoError(t, runOnReleaseFuncs(ctx, callbacks))
 			case "donor-collected":
 				require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-				_, err := c.removePersistedEdge(ctx, donor.cacheSharedResult().id)
+				_, _, err := c.removePersistedEdge(ctx, donor.cacheSharedResult().id)
 				require.NoError(t, err)
 				c.egraphMu.RLock()
 				donorCollected := c.resultsByID[donor.cacheSharedResult().id] == nil
@@ -176,7 +176,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				cachetest.ReleaseSessionAndWait(t, ctx, c, sessionID)
 			}
 			for _, res := range []AnyResult{donor, dependency, receiver} {
-				_, err := c.removePersistedEdge(ctx, res.cacheSharedResult().id)
+				_, _, err := c.removePersistedEdge(ctx, res.cacheSharedResult().id)
 				require.NoError(t, err)
 			}
 			c.egraphMu.RLock()
@@ -297,7 +297,7 @@ func TestPartImportChainRefCleanupHandoff(t *testing.T) {
 			// finishes delegated session cleanup. Wait before removing the final
 			// persisted root so collection and its retained cleanup have finished.
 			cachetest.ReleaseSessionAndWait(t, ctx, c, "test-session")
-			_, err = c.removePersistedEdge(ctx, row.id)
+			_, _, err = c.removePersistedEdge(ctx, row.id)
 			require.NoError(t, err)
 			require.False(t, leasePresent(), "collection retries retained cleanup without a graph self-hold")
 			require.EqualValues(t, 2, manager.releases.Load())

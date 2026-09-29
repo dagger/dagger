@@ -2,7 +2,7 @@ package main
 
 // Fake Dagger Cloud for integration tests. It records OTLP request bodies
 // under /events/<request path>.json, with per-record lines for spans, log
-// records and cache facts, and answers scale-out engine requests.
+// records and engine cache events, and answers scale-out engine requests.
 //
 // It doubles as the OAuth token endpoint: a path ending in /oauth/token
 // exchanges the expected refresh token for a sequential, short-lived access
@@ -91,26 +91,18 @@ func main() {
 		}
 		if strings.HasSuffix(r.URL.Path, "/v1/logs") {
 			appendLines(eventsFp+".records", logRecordLines(r, body))
-			facts := cacheFactLines(r, body)
-			if len(facts) > 0 {
-				// Refuse the first request carrying cache facts once, so a test
-				// can show that the exporter's retry delivers it.
-				failedFp := eventsFp + ".facts-refused"
-				if _, err := os.Stat(failedFp); os.IsNotExist(err) {
-					if err := os.WriteFile(failedFp, nil, 0644); err != nil {
+			if events := engineEventLines(r, body); len(events) > 0 {
+				// Refuse the first request carrying engine cache events once,
+				// so a test can show that the exporter's retry delivers it.
+				refusedFp := eventsFp + ".engine-events-refused"
+				if _, err := os.Stat(refusedFp); os.IsNotExist(err) {
+					if err := os.WriteFile(refusedFp, nil, 0644); err != nil {
 						panic(err)
 					}
 					w.WriteHeader(http.StatusServiceUnavailable)
 					return
 				}
-				factsF, err := os.OpenFile(eventsFp+".facts", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-				if err != nil {
-					panic(err)
-				}
-				defer factsF.Close()
-				for _, line := range facts {
-					fmt.Fprintln(factsF, line)
-				}
+				appendLines(eventsFp+".engine-events", events)
 			}
 		}
 
@@ -150,17 +142,21 @@ func main() {
 	}
 }
 
-// cacheFactLine is one engine cache fact as the fake cloud received it.
-type cacheFactLine struct {
-	Export   string            `json:"export"`
-	Resource map[string]string `json:"resource"`
-	Attrs    map[string]string `json:"attrs"`
-	Body     string            `json:"body"`
+// engineEventScope is the instrumentation scope of the engine's cache events.
+const engineEventScope = "dagger.io/engine.cache"
+
+// engineEventLine is one engine cache event as the fake cloud received it.
+type engineEventLine struct {
+	Export       string            `json:"export"`
+	Resource     map[string]string `json:"resource"`
+	Attrs        map[string]string `json:"attrs"`
+	TimeUnixNano uint64            `json:"timeUnixNano"`
+	Body         string            `json:"body"`
 }
 
-// cacheFactLines returns one JSON line per log record of the engine's cache
-// fact scope in an OTLP logs export.
-func cacheFactLines(r *http.Request, body []byte) []string {
+// engineEventLines returns one JSON line per log record of the engine cache
+// event scope in an OTLP logs export.
+func engineEventLines(r *http.Request, body []byte) []string {
 	var req collogspb.ExportLogsServiceRequest
 	if err := proto.Unmarshal(body, &req); err != nil {
 		panic(err)
@@ -172,7 +168,7 @@ func cacheFactLines(r *http.Request, body []byte) []string {
 			resource[kv.Key] = kv.Value.GetStringValue()
 		}
 		for _, scopeLogs := range resourceLogs.ScopeLogs {
-			if scopeLogs.GetScope().GetName() != "dagger.io/cache" {
+			if scopeLogs.GetScope().GetName() != engineEventScope {
 				continue
 			}
 			for _, rec := range scopeLogs.LogRecords {
@@ -180,16 +176,13 @@ func cacheFactLines(r *http.Request, body []byte) []string {
 				for _, kv := range rec.Attributes {
 					attrs[kv.Key] = kv.Value.GetStringValue()
 				}
-				line, err := json.Marshal(cacheFactLine{
-					Export:   r.Header.Get("X-Dagger-Export"),
-					Resource: resource,
-					Attrs:    attrs,
-					Body:     rec.GetBody().GetStringValue(),
-				})
-				if err != nil {
-					panic(err)
-				}
-				lines = append(lines, string(line))
+				lines = append(lines, jsonLine(engineEventLine{
+					Export:       r.Header.Get("X-Dagger-Export"),
+					Resource:     resource,
+					Attrs:        attrs,
+					TimeUnixNano: rec.GetTimeUnixNano(),
+					Body:         rec.GetBody().GetStringValue(),
+				}))
 			}
 		}
 	}
@@ -204,15 +197,21 @@ func exportWriter(r *http.Request) string {
 }
 
 // spanLine is one exported span as the fake cloud received it. A running
-// span may be exported again when it ends.
+// span may be exported again when it ends. Session and Cache are the engine
+// session and cache its resource names. Attrs holds its string attributes, and
+// CacheAttrs, with their types, those that report cache state and span counts:
+// those of the dagger.io/cache. and wcprof. namespaces.
 type spanLine struct {
-	Writer   string `json:"writer"`
-	Service  string `json:"service"`
-	Instance string `json:"instance"`
-	SpanID   string `json:"spanID"`
-	Name     string `json:"name"`
-	// Attrs holds the span's string attributes.
-	Attrs map[string]string `json:"attrs,omitempty"`
+	Writer     string            `json:"writer"`
+	Service    string            `json:"service"`
+	Instance   string            `json:"instance"`
+	Session    string            `json:"session,omitempty"`
+	Cache      string            `json:"cache,omitempty"`
+	TraceID    string            `json:"traceID"`
+	SpanID     string            `json:"spanID"`
+	Name       string            `json:"name"`
+	Attrs      map[string]string `json:"attrs,omitempty"`
+	CacheAttrs map[string]any    `json:"cacheAttrs,omitempty"`
 }
 
 func spanLines(r *http.Request, req *coltracepb.ExportTraceServiceRequest) []string {
@@ -222,17 +221,57 @@ func spanLines(r *http.Request, req *coltracepb.ExportTraceServiceRequest) []str
 		for _, scopeSpans := range resourceSpans.ScopeSpans {
 			for _, span := range scopeSpans.Spans {
 				lines = append(lines, jsonLine(spanLine{
-					Writer:   exportWriter(r),
-					Service:  resourceAttr(attrs, "service.name"),
-					Instance: resourceAttr(attrs, "service.instance.id"),
-					SpanID:   hex.EncodeToString(span.SpanId),
-					Name:     span.Name,
-					Attrs:    stringAttrs(span.Attributes),
+					Writer:     exportWriter(r),
+					Service:    resourceAttr(attrs, "service.name"),
+					Instance:   resourceAttr(attrs, "service.instance.id"),
+					Session:    resourceAttr(attrs, "dagger.io/engine.session"),
+					Cache:      resourceAttr(attrs, "dagger.io/engine.cache"),
+					TraceID:    hex.EncodeToString(span.TraceId),
+					SpanID:     hex.EncodeToString(span.SpanId),
+					Name:       span.Name,
+					Attrs:      stringAttrs(span.Attributes),
+					CacheAttrs: cacheStateAttrs(span.Attributes),
 				}))
 			}
 		}
 	}
 	return lines
+}
+
+// cacheStateAttrs returns a span's attributes that report cache state or span
+// counts, or nil when it has none.
+func cacheStateAttrs(kvs []*commonpb.KeyValue) map[string]any {
+	var attrs map[string]any
+	for _, kv := range kvs {
+		if !strings.HasPrefix(kv.Key, "dagger.io/cache.") && !strings.HasPrefix(kv.Key, "wcprof.") {
+			continue
+		}
+		if attrs == nil {
+			attrs = map[string]any{}
+		}
+		attrs[kv.Key] = anyValue(kv.Value)
+	}
+	return attrs
+}
+
+func anyValue(v *commonpb.AnyValue) any {
+	switch v := v.GetValue().(type) {
+	case *commonpb.AnyValue_StringValue:
+		return v.StringValue
+	case *commonpb.AnyValue_BoolValue:
+		return v.BoolValue
+	case *commonpb.AnyValue_IntValue:
+		return v.IntValue
+	case *commonpb.AnyValue_DoubleValue:
+		return v.DoubleValue
+	case *commonpb.AnyValue_ArrayValue:
+		values := []any{}
+		for _, elem := range v.ArrayValue.GetValues() {
+			values = append(values, anyValue(elem))
+		}
+		return values
+	}
+	return nil
 }
 
 // metricWriterLine is the writer and service of one resource's metrics in a
@@ -257,8 +296,8 @@ func metricWriterLines(r *http.Request, body []byte) []string {
 	return lines
 }
 
-// logRecordLine is one exported log record, other than a cache fact, as the
-// fake cloud received it.
+// logRecordLine is one exported log record, other than an engine cache
+// event, as the fake cloud received it.
 type logRecordLine struct {
 	Writer   string `json:"writer"`
 	Service  string `json:"service"`
@@ -278,7 +317,7 @@ func logRecordLines(r *http.Request, body []byte) []string {
 		service := resourceAttr(attrs, "service.name")
 		instance := resourceAttr(attrs, "service.instance.id")
 		for _, scopeLogs := range resourceLogs.ScopeLogs {
-			if scopeLogs.GetScope().GetName() == "dagger.io/cache" {
+			if scopeLogs.GetScope().GetName() == engineEventScope {
 				continue
 			}
 			for _, rec := range scopeLogs.LogRecords {

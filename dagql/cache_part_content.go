@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
-	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
@@ -709,9 +708,6 @@ func (c *Cache) settlePart(ctx context.Context, row *sharedResult, address Persi
 		state.phase = PartComplete
 		gate.outputs[key] = state
 		gate.revision++
-		if row.factAnnounced {
-			c.emitFactLocked(cachefact.Part{ID: uint64(row.id), OutputPath: address.OutputPath.String(), Part: string(address.Part), State: cachefact.PartStateCompleted})
-		}
 	}
 	gate.mu.Unlock()
 	callbacks, collectErr := c.collectUnownedResultsLocked(ctx, queue)
