@@ -230,6 +230,28 @@ defmodule Dagger.Agent do
   end
 
   @doc """
+  The conversation the agent was spawned from: the tools, workspace and message history its loop started with.
+
+  Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.
+
+  For an agent restored under a handle, this is the conversation it was restored from.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
+  """
+  @spec seed(t()) :: Dagger.LLM.t()
+  def seed(%__MODULE__{} = agent) do
+    query_builder =
+      agent.query_builder |> QB.select("seed")
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: agent.client
+    }
+  end
+
+  @doc """
   Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
 
   Never blocks, never drops; concurrent sends queue in order.

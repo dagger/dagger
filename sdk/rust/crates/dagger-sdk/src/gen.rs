@@ -633,6 +633,17 @@ impl Agent {
         let query = self.selection.select("error");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The conversation the agent was spawned from: the tools, workspace and message history its loop started with.
+    /// Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.
+    /// For an agent restored under a handle, this is the conversation it was restored from.
+    pub fn seed(&self) -> Llm {
+        let query = self.selection.select("seed");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The conversation as of the last committed step: immutable, branchable, persistable.
     /// The seed conversation if the agent never stepped.
     /// Branching from it does not affect the agent.
