@@ -66,15 +66,17 @@ func TestModDepsForCallInstalledPreference(t *testing.T) {
 			query.Server = facade
 			var mapping []dagql.ImportedValue
 			if before {
-				mapping, err = cache.ImportValues(ctx, bundle)
+				merged, err := cache.MergeValues(ctx, dagql.CloudCacheID, bundle)
 				require.NoError(t, err)
+				mapping = merged.Imported()
 			}
 			dep := preferenceModule(t, b, ctx, cache, srv, "consumer-dep", "dependency")
 			installed := preferenceModule(t, b, ctx, cache, srv, "consumer", "probe", dep)
 			facade.served = NewSchemaBuilder(query, []Mod{NewUserMod(installed), NewUserMod(dep)})
 			if !before {
-				mapping, err = cache.ImportValues(ctx, bundle)
+				merged, err := cache.MergeValues(ctx, dagql.CloudCacheID, bundle)
 				require.NoError(t, err)
+				mapping = merged.Imported()
 			}
 			recorded := mapping[0].ResultID
 			candidates, err := query.installedSchemaModuleCandidates(ctx, cache)

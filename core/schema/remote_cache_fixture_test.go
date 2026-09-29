@@ -72,7 +72,8 @@ func TestRemoteCacheFixture(t *testing.T) {
 	require.Equal(t, dagql.CachePersistenceResetUncleanShutdown, report.Persistence.PersistenceResetReason)
 	require.Equal(t, "dagql_unclean_shutdown", report.Persistence.LocalCacheResetReason)
 	require.Equal(t, 3, report.Persistence.RemovedPersistedRootCount)
-	// Repeating the same GraphQL import must allocate another fresh root.
+	// A merge lands on the recipe's current entry, and merging the same bundle
+	// again changes nothing: both imports name the exported entry itself.
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Address]{}))
 	address := &core.Address{Value: "recorded"}
 	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "fixtureAddress", Type: dagql.NewResultCallType(address.Type())}
@@ -106,7 +107,8 @@ func TestRemoteCacheFixture(t *testing.T) {
 	first, second := execute("import", []string{}), execute("import", []string{})
 	require.Len(t, first, 1)
 	require.Len(t, second, 1)
-	require.NotEqual(t, first[0].ResultID, second[0].ResultID)
+	require.Equal(t, first[0].ResultID, second[0].ResultID)
+	require.Equal(t, id.EngineResultID(), first[0].ResultID)
 	values, err := srv.Query(ctx, `query($ids:[ID!]!){_remoteCacheFixture(operation:"evaluate",ids:$ids)}`, map[string]any{"ids": []any{first[0].Handle}})
 	require.NoError(t, err)
 	evaluatedJSON, err := json.Marshal(values["_remoteCacheFixture"])
@@ -146,17 +148,20 @@ func TestRemoteCacheFixture(t *testing.T) {
 	require.Equal(t, "fixtureChild", byID[closure[0].ResultID].Call.Field)
 	require.Equal(t, closure[1].ResultID, byID[closure[0].ResultID].Call.Receiver.ResultID)
 	require.Equal(t, "fixtureAddress", byID[closure[1].ResultID].Call.Field)
-	// Root IDs alone cannot establish the dependency mapping. Validate the
-	// base against an independently reported non-root row, then corrupt it.
+	// The merge reply names every record's entry. Validate the mapping
+	// against the independently reported rows, then lose the non-root row.
 	bundleRaw, err = os.ReadFile(filepath.Join(root, "bundles", "value.json"))
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(bundleRaw, &bundle))
-	importedRoots := []dagql.ImportedValue{{Ordinal: closure[0].Ordinal, ResultID: closure[0].ResultID}}
+	merged := dagql.MergeReply{
+		Roots:  []dagql.MergedRoot{{Ordinal: closure[0].Ordinal, Number: closure[0].ResultID}},
+		Values: []dagql.MergedValue{{Ordinal: closure[0].Ordinal, Number: closure[0].ResultID}, {Ordinal: closure[1].Ordinal, Number: closure[1].ResultID}},
+	}
 	reported := []dagql.TransferFixtureRow{byID[closure[0].ResultID], byID[closure[1].ResultID]}
-	_, err = fixtureImportedMappings(bundle, importedRoots, reported)
+	_, err = fixtureImportedMappings(bundle, merged, reported)
 	require.NoError(t, err)
 	reported[1].ResultID += 1000
-	_, err = fixtureImportedMappings(bundle, importedRoots, reported)
+	_, err = fixtureImportedMappings(bundle, merged, reported)
 	require.ErrorContains(t, err, "reported non-root")
 	const count = 16
 	var wg sync.WaitGroup

@@ -21,10 +21,13 @@ type capturedTransferRow struct {
 	deps                                    []uint64
 	offers                                  []PersistedPartOffer
 	transferRev, dependencyRev, requiredRev uint64
-	expiry                                  int64
-	record                                  PersistedRecord
-	outputs                                 []CapturedCodecOutput
-	ordinal                                 TransferOrdinal
+	// replacements is the entry's replacement count, read with the rest of
+	// the row; a replacement also moves transferRev.
+	replacements uint64
+	expiry       int64
+	record       PersistedRecord
+	outputs      []CapturedCodecOutput
+	ordinal      TransferOrdinal
 }
 
 // HeldCapturedClosure protects every exact source row and offer while storage
@@ -94,7 +97,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 			return err
 		}
 		c.incrementIncomingOwnershipLocked(ctx, res)
-		row := &capturedTransferRow{shared: res, imported: res.imported, frame: frame, offers: offers, expiry: res.expiresAtUnix, transferRev: res.transferRevision, dependencyRev: res.dependencyOwnershipRevision, requiredRev: res.requiredSessionResourcesGen.Load()}
+		row := &capturedTransferRow{shared: res, imported: res.imported, frame: frame, offers: offers, expiry: res.expiresAtUnix, replacements: res.replacements, transferRev: res.transferRevision, dependencyRev: res.dependencyOwnershipRevision, requiredRev: res.requiredSessionResourcesGen.Load()}
 		capture.rows[res.id] = row
 		for id := range res.deps {
 			row.deps = append(row.deps, uint64(id))
@@ -395,7 +398,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		if err != nil {
 			return err
 		}
-		value := TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), Record: rec, ExpiresAtUnix: row.expiry}
+		value := TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), SenderReplacements: row.replacements, Record: rec, ExpiresAtUnix: row.expiry}
 		for _, id := range row.deps {
 			value.DependencyIDs = append(value.DependencyIDs, uint64(capture.rows[sharedResultID(id)].ordinal))
 		}

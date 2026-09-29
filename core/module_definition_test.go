@@ -89,8 +89,9 @@ func TestModuleDefinitionTravelsInBundle(t *testing.T) {
 	for i := range 5 {
 		attachTransferObject(t, bctx, b, srvB, "b", "padding", &Module{NameField: string(rune('p' + i))})
 	}
-	mapping, err := b.ImportValues(bctx, bundle)
+	reply, err := b.MergeValues(bctx, dagql.CloudCacheID, bundle)
 	require.NoError(t, err)
+	mapping := reply.Imported()
 	require.Len(t, mapping, 1)
 	loaded, err := b.LoadResultByResultID(bctx, "b", srvB, mapping[0].ResultID)
 	require.NoError(t, err)

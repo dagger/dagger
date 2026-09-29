@@ -69,7 +69,8 @@ func TestLazyStoredResultsWithoutBacking(t *testing.T) {
 	roots := []dagql.AnyResult{contents, search, stdout}
 	require.NoError(t, a.WithExportedValues(actx, dagql.ValueSelection{Roots: roots}, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
 		require.Empty(t, exported.Chains.Entries, "this proof transfers only stored values")
-		imported, err := b.ImportValues(bctx, exported.Bundle)
+		importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		imported := importedReply.Imported()
 		require.NoError(t, err)
 		require.Len(t, imported, 3)
 		var fileParent dagql.ObjectResult[*core.File]

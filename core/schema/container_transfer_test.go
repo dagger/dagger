@@ -24,7 +24,8 @@ func TestContainerTransferPendingChild(t *testing.T) {
 	b := &persistedSchemaTestEnv{dbPath: filepath.Join(t.TempDir(), "b.db")}
 	ctx, cache, srv := b.open(t)
 	srv.View = "v0.21.0"
-	imported, err := cache.ImportValues(ctx, bundle)
+	importedReply, err := cache.MergeValues(ctx, dagql.CloudCacheID, bundle)
+	imported := importedReply.Imported()
 	require.NoError(t, err)
 	require.Len(t, imported, 1)
 	id := call.NewEngineResultID(imported[0].ResultID, call.NewType(ctr.Type()))

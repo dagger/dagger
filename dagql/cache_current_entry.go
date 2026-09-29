@@ -103,12 +103,13 @@ type replacedValue struct {
 // entry that nothing uses (D9), or one with no value. cur keeps its identity:
 // its number, its recipe index key, its retention edge, its e-graph identity
 // and other caches' holdings. It takes the new value, its call frame,
-// requirements and accounting, clears imported, drops its offers, which
-// belonged to the old value, and counts the replacement of a value. The new
-// value's expiry is set by the
-// publication; the retention edge's expiry restarts from the new value's,
-// because the edge keeps the earlier of two expiries and the old one has
-// passed. Its dependency edges are forgotten here; the caller decrements them
+// requirements and accounting, and whether the value came from a record: a
+// computed value clears imported, a merged record sets it with its envelope.
+// It drops its offers, which belonged to the old value, and counts the
+// replacement of a value. The new value's expiry is set by the caller, a
+// publication or a merge; the retention edge's expiry restarts from the new
+// value's, because the edge keeps the earlier of two expiries and the old one
+// has passed. Its dependency edges are forgotten here; the caller decrements them
 // after adding the new value's, so a dependency both values share is never
 // collected in between. Requires egraphMu.
 func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh *sharedResult, retentionExpiresAtUnix int64) (replacedValue, collectionQueue, error) {
@@ -134,7 +135,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	if !cur.noValueLocked() {
 		cur.replacements++
 	}
-	cur.imported = false
+	cur.imported = fresh.imported
 	cur.inlineBorrow = fresh.inlineBorrow
 	cur.sessionResourceHandle = fresh.sessionResourceHandle
 	cur.requiredSessionResources = fresh.requiredSessionResources
@@ -149,7 +150,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.objClass = fresh.objClass
 	// A nil new value leaves hasValue false, as its fresh publication would.
 	cur.hasValue = fresh.hasValue
-	cur.persistedEnvelope = nil
+	cur.persistedEnvelope = fresh.persistedEnvelope
 	cur.payloadRevision++
 	// fresh was never registered, so its own lease cleanup does nothing.
 	cur.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(cur), fresh.onRelease)

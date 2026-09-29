@@ -2130,6 +2130,11 @@ type Cache struct {
 	holderEntries   map[HolderKey]sharedResultID
 	entriesByRecipe map[digest.Digest]sharedResultID
 	remoteCaches    map[CacheID]*remoteCacheState
+	// joinedEntries, while an operation on holdings runs, collects the
+	// entries that class unions join to another class, by number
+	// (trackJoinsLocked). It is nil at every other time, so no class ID it
+	// could name outlives the hold. Guarded by egraphMu.
+	joinedEntries map[sharedResultID]struct{}
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
@@ -2347,6 +2352,9 @@ type Cache struct {
 	// attaching and is about to wait for that attachment
 	// (initCompletedResult).
 	testPublicationWaitsOnAttachment func(*sharedResult)
+	// testMergeWaitsOnAttachment observes a merge waiting on a target whose
+	// dependency attachment is still open.
+	testMergeWaitsOnAttachment func(*sharedResult)
 	// snapshot sharing hooks: after a cohort is taken and its slots are
 	// planned but before the first preparation, and after the pass has
 	// finished every Finish and released every member hold.

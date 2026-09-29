@@ -228,6 +228,8 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			defer func() { stop(t, b) }()
 			var operational *dagger.Module
 			var err error
+			// warmScratchRow is B's own scratch Directory entry, when B is warm.
+			var warmScratchRow uint64
 			if !cold {
 				operational = b.client.ModuleSource(".").AsModule()
 				operational, err = operational.Sync(ctx)
@@ -251,6 +253,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				require.Equal(t, "snapshot", warmRow.SnapshotLinks[0].Role)
 				require.NotEmpty(t, warmRow.SnapshotLinks[0].RefKey)
 				t.Logf("acquisition warm scratch donor row=%d ref=%s order=%s", warmRow.ResultID, warmRow.SnapshotLinks[0].RefKey, order)
+				warmScratchRow = warmRow.ResultID
 			}
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"))
 			if order == "after" {
@@ -309,12 +312,12 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				assertColdPartDelegation(t, acquisition)
 				t.Logf("acquisition cold builtin route=%d", builtinRoute)
 			}
-			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold)
+			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold, warmScratchRow)
 			entries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(scratchHandle)).Entries(ctx)
 			require.NoError(t, err)
 			require.Empty(t, entries)
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
-			assertScratchAcquisition(t, acquisition, imported, cold)
+			assertScratchAcquisition(t, acquisition, imported, cold, warmScratchRow)
 			reportType := ""
 			for _, value := range imported {
 				if strings.HasSuffix(value.Type.NamedType, "Report") {
@@ -524,7 +527,10 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	})
 }
 
-func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, imported []transferFixtureMapping, cold bool) string {
+// assertScratchAcquisition finds the merged Query.directory row. When B was
+// warm (warmRow, its own scratch entry), the merge landed on that entry and
+// kept its value; otherwise the row is imported.
+func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, imported []transferFixtureMapping, cold bool, warmRow uint64) string {
 	t.Helper()
 	mapping := map[uint64]transferFixtureMapping{}
 	for _, value := range imported {
@@ -533,13 +539,19 @@ func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, import
 	var scratch *dagql.TransferFixtureRow
 	for i := range report.Rows {
 		row := &report.Rows[i]
-		if _, ok := mapping[row.ResultID]; !ok || !row.Imported || row.Call == nil || row.Call.Type.NamedType != "Directory" || row.Call.Field != "directory" || row.Call.Receiver != nil {
+		if _, ok := mapping[row.ResultID]; !ok || row.Call == nil || row.Call.Type.NamedType != "Directory" || row.Call.Field != "directory" || row.Call.Receiver != nil {
 			continue
 		}
-		require.Nil(t, scratch, "ambiguous imported Query.directory row")
+		require.Nil(t, scratch, "ambiguous merged Query.directory row")
 		scratch = row
 	}
 	require.NotNil(t, scratch)
+	if warmRow != 0 {
+		require.Equal(t, warmRow, scratch.ResultID, "the merge lands on B's warm scratch entry")
+		require.False(t, scratch.Imported, "which keeps its own value")
+	} else {
+		require.True(t, scratch.Imported)
+	}
 	platform := ""
 	for _, input := range scratch.Call.ImplicitInputs {
 		if input.Name == "engineDefaultPlatform" {

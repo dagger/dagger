@@ -225,7 +225,8 @@ func TestValueTransferReferences(t *testing.T) {
 	for i := range 7 {
 		persistedListTestResult(t, bctx, b, bsrv, "padding-"+string(rune('a'+i)), String("unrelated"))
 	}
-	mapping, err := b.ImportValues(bctx, bundle)
+	mappingReply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	require.Len(t, mapping, 1)
 	require.Greater(t, mapping[0].ResultID, uint64(7))
@@ -260,7 +261,7 @@ func TestValueTransferReferences(t *testing.T) {
 				broken.Roots[0].Ordinal = 1
 			}
 			before := len(b.resultsByID)
-			_, err = b.ImportValues(bctx, broken)
+			_, err = b.MergeValues(bctx, cloudCacheID, broken)
 			require.Error(t, err)
 			require.Len(t, b.resultsByID, before)
 		})
@@ -282,7 +283,7 @@ func TestValueTransferImportPublication(t *testing.T) {
 			}
 			return nil
 		}
-		_, err := b.ImportValues(ctx, bundle)
+		_, err := b.MergeValues(ctx, cloudCacheID, bundle)
 		require.ErrorIs(t, err, injected)
 		require.Empty(t, b.resultsByID)
 		require.Empty(t, b.persistedEdgesByResult)
@@ -301,7 +302,8 @@ func TestValueTransferImportPublication(t *testing.T) {
 			} else {
 				b.testBeforeTransferCommit = cancel
 			}
-			mapping, err := b.ImportValues(ctx, bundle)
+			mappingReply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+			mapping := mappingReply.Imported()
 			if committed {
 				require.NoError(t, err)
 				require.Len(t, mapping, 1)
@@ -316,7 +318,8 @@ func TestValueTransferImportPublication(t *testing.T) {
 		ctx, b, _ := transferTestCache(t)
 		expiry := time.Now().Add(time.Hour).Unix()
 		bundle.Roots[0].ExpiresAtUnix = expiry
-		mapping, err := b.ImportValues(ctx, bundle)
+		mappingReply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+		mapping := mappingReply.Imported()
 		require.NoError(t, err)
 		require.Equal(t, expiry, b.persistedEdgesByResult[sharedResultID(mapping[0].ResultID)].expiresAtUnix)
 	})
@@ -341,10 +344,10 @@ func TestValueTransferReferencesExtras(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filtered.Digest(), copied.Digest())
 	bctx, b, _ := transferTestCache(t)
-	_, err = b.ImportValues(bctx, bundle)
+	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
 	require.NoError(t, err)
 	bundle.Values[0].Record.Envelope.ObjectJSON = json.RawMessage(`{"text":"invalid","recipe":` + string(mustTransferJSON(t, raw)) + `}`)
-	_, err = b.ImportValues(bctx, bundle)
+	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
 	require.ErrorContains(t, err, "unmarked recipe ID extras")
 }
 func mustTransferJSON(t *testing.T, v any) []byte {
@@ -368,7 +371,8 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	source := persistedListTestResult(t, ctx, a, srv, "encoded-source", &transferTestValue{Text: "old"})
 	bundle := exportTestBundle(t, ctx, a, source)
 	ctx, b, srv := transferTestCache(t)
-	mapping, err := b.ImportValues(ctx, bundle)
+	mappingReply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	id := mapping[0].ResultID
 	row := b.resultsByID[sharedResultID(id)]

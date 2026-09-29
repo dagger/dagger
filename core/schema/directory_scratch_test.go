@@ -250,13 +250,19 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 			bStore.Manager = observed
 			path := filepath.Join(t.TempDir(), "b.db")
 			ctx, b, srv := scratchTestCache(t, bStore, path, "b")
-			var donor *scratchObservedRef
+			var (
+				donor   *scratchObservedRef
+				localID uint64
+			)
 			switch mode {
 			case "warm":
 				local := scratchSelect(t, ctx, srv)
 				require.NoError(t, b.Evaluate(ctx, local))
 				ref, _ := local.Self().Snapshot.Peek()
 				donor = ref.(*scratchObservedRef)
+				var err error
+				localID, err = b.PersistedResultID(local)
+				require.NoError(t, err)
 			case "canonical-only":
 				ref, err := observed.Scratch(ctx)
 				require.NoError(t, err)
@@ -265,9 +271,14 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 			observed.calls.Store(0)
 			// The imported row's arm64 platform must survive an amd64 B default.
 			srv.Root().(dagql.ObjectResult[*core.Query]).Self().Server.(*scratchTestServer).platform = core.Platform{OS: "linux", Architecture: "amd64"}
-			imported, err := b.ImportValues(ctx, *bundle)
+			importedReply, err := b.MergeValues(ctx, dagql.CloudCacheID, *bundle)
+			imported := importedReply.Imported()
 			require.NoError(t, err)
 			row := imported[0].ResultID
+			if mode == "warm" {
+				// B has the recipe's current entry, warm: the merge keeps it.
+				require.Equal(t, localID, row)
+			}
 			reopen := func() {
 				require.NoError(t, b.ReleaseSession(ctx, "b"))
 				require.NoError(t, b.Close(ctx))
@@ -363,12 +374,9 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 			require.NoError(t, a.CloseDiscardingPersistence())
 			require.NoError(t, aStore.Manager.Close())
 			if donor != nil {
-				require.NotSame(t, donor, installed)
-				cachetest.ReleaseSessionAndWait(t, ctx, b, "b")
-				_, err = b.Prune(ctx, []dagql.CachePrunePolicy{{All: true}})
-				require.NoError(t, err)
-				require.EqualValues(t, 1, donor.releases.Load())
-				ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "receiver", SessionID: "receiver"})
+				// The merged row is B's own warm entry, whose ref needs no
+				// acquisition.
+				require.Same(t, donor, installed)
 			}
 			entries = demandedDirectoryEntries(t, ctx, result)
 			require.Empty(t, entries)

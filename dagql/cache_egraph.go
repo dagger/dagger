@@ -352,6 +352,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
 	// results' forward entries to the winning canonical root.
 	dstResults := c.outputEqClassResults[ra]
 	srcResults := c.outputEqClassResults[rb]
+	joinsEntries := len(dstResults) > 0 && len(srcResults) > 0
 	if len(srcResults) > 0 {
 		if dstResults == nil {
 			dstResults = make(map[sharedResultID]struct{}, len(srcResults))
@@ -370,6 +371,9 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
 	// An actual union: the winner's membership and reverse indexes are in
 	// place. Pending queue keys are recanonicalized in the same union.
 	c.recordShareUnionLocked(ra, rb)
+	if joinsEntries {
+		c.noteJoinedEntriesLocked(ra)
+	}
 	return ra
 }
 

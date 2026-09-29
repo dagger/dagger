@@ -117,7 +117,8 @@ func TestPartDelegationRealStore(t *testing.T) {
 			require.NoError(t, a.WithExportedValues(actx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
 				provider := &testutil.Provider{InfoReaderProvider: exported.Chains.Entries[0].Provider}
 				b.SetPartContentSource(partTestContentSource{provider})
-				imported, err := b.ImportValues(bctx, exported.Bundle)
+				importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+				imported := importedReply.Imported()
 				require.NoError(t, err)
 				loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 				require.NoError(t, err)

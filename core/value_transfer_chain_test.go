@@ -70,7 +70,8 @@ func TestValueTransferPartsSelectedChain(t *testing.T) {
 	require.Len(t, bundle.Outputs, 1)
 	require.NotNil(t, bundle.Outputs[0].Owner)
 	bctx, b, bsrv := transferCache(t, consumer, filepath.Join(t.TempDir(), "b.db"), "b")
-	imported, err := b.ImportValues(bctx, bundle)
+	importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, bundle)
+	imported := importedReply.Imported()
 	require.NoError(t, err)
 	loaded, err := b.LoadResultByResultID(bctx, "b", bsrv, imported[0].ResultID)
 	require.NoError(t, err)
@@ -131,4 +132,106 @@ func TestValueTransferPartsContainerMount(t *testing.T) {
 		return nil
 	})
 	require.ErrorContains(t, err, "injected snapshot open failure")
+}
+
+// Spike 2 of the engine-service protocol design (6.2), kept as a test of
+// merge. A three-container chain's leaf is exported with only its fs: the
+// bundle carries the three records and the leaf's whole chain, opening only
+// the leaf's snapshot. Merged into B, the parent's fs is pending with no route
+// (these fixtures record no operation). A second bundle offering the parent's
+// own fs lands on the same parent entry, and the parent installs from its own
+// offer: from no layer reads once the leaf's chain is local, and from its two
+// layers otherwise.
+func TestValueMergeChainSecondBundleLandsOnTheParent(t *testing.T) {
+	for _, readLeaf := range []bool{true, false} {
+		name := "leaf read first"
+		if !readLeaf {
+			name = "leaf not read"
+		}
+		t.Run(name, func(t *testing.T) {
+			aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
+			s0, _ := aStore.Build(t, nil, "base.txt", "base bytes")
+			s1, _ := aStore.Build(t, s0, "one.txt", "step one")
+			s2, _ := aStore.Build(t, s1, "two.txt", "step two")
+			observed := &transferObservedSnapshots{SnapshotManager: aStore.Manager}
+			aStore.Manager = observed
+			actx, a, asrv := transferCache(t, aStore, "", "a")
+			platform := Platform{OS: "linux", Architecture: "amd64"}
+			base := NewContainer(platform)
+			base.FS.setValue(partTestDirectory(s0, "/"))
+			pBase := attachTransferObject(t, actx, a, asrv, "a", "chainBase", base)
+			c1 := NewContainer(platform)
+			c1.FS.setValue(partTestDirectory(s1, "/"))
+			p1 := attachDelegationChild(t, actx, a, asrv, "a", "chainStep", pBase, c1)
+			c2 := NewContainer(platform)
+			c2.FS.setValue(partTestDirectory(s2, "/"))
+			p2 := attachDelegationChild(t, actx, a, asrv, "a", "chainStep", p1, c2)
+			uncompressed := config.RefConfig{Compression: compression.New(compression.Uncompressed)}
+			bctx, b, bsrv := transferCache(t, bStore, "", "b")
+
+			observed.opens = nil
+			var parentID uint64
+			var parent dagql.AnyResult
+			leafSelection := dagql.ValueSelection{Roots: []dagql.AnyResult{p2}, Outputs: []dagql.SelectedValueOutput{{Result: p2, Address: dagql.PersistedPartAddress{Part: "fs"}}}}
+			require.NoError(t, a.WithExportedValues(actx, leafSelection, uncompressed, func(_ context.Context, ex *dagql.ExportedValues) error {
+				require.Len(t, ex.Bundle.Values, 3, "the records of the whole chain travel")
+				require.Len(t, ex.Chains.Entries, 1, "one selected part, one chain")
+				require.Len(t, ex.Chains.Entries[0].Layers, 3, "the leaf's chain is whole")
+				require.Equal(t, []string{s2.SnapshotID()}, observed.opens, "only the leaf's snapshot is opened")
+				require.Len(t, ex.Bundle.Outputs, 1)
+
+				leafProvider := &testutil.Provider{InfoReaderProvider: ex.Chains.Entries[0].Provider}
+				b.SetPartContentSource(partTestContentSource{leafProvider})
+				reply, err := b.MergeValues(bctx, dagql.CloudCacheID, ex.Bundle)
+				require.NoError(t, err)
+				leafID := reply.Imported()[0].ResultID
+				leafFrame, err := b.ResultCallByResultID(bctx, "", leafID)
+				require.NoError(t, err)
+				parentID = leafFrame.Receiver.ResultID
+				if readLeaf {
+					leaf, err := b.LoadResultByResultID(bctx, "", bsrv, leafID)
+					require.NoError(t, err)
+					require.NoError(t, b.EvaluateParts(bctx, leaf, ContainerPartFS))
+					require.Equal(t, int64(3), leafProvider.Reads.Load(), "the leaf's chain")
+					dir, ok := leaf.(dagql.ObjectResult[*Container]).Self().FS.Peek()
+					require.True(t, ok)
+					snap, ok := dir.Snapshot.Peek()
+					require.True(t, ok)
+					testutil.CheckFile(t, snap, "two.txt", "step two")
+					testutil.CheckFile(t, snap, "base.txt", "base bytes")
+				}
+				parent, err = b.LoadResultByResultID(bctx, "", bsrv, parentID)
+				require.NoError(t, err)
+				reads := leafProvider.Reads.Load()
+				require.ErrorIs(t, b.EvaluateParts(bctx, parent, ContainerPartFS), dagql.ErrUnavailablePart, "the parent's fs is pending")
+				require.Equal(t, reads, leafProvider.Reads.Load(), "no bytes fetched for the parent")
+				return nil
+			}))
+
+			observed.opens = nil
+			parentSelection := dagql.ValueSelection{Roots: []dagql.AnyResult{p1}, Outputs: []dagql.SelectedValueOutput{{Result: p1, Address: dagql.PersistedPartAddress{Part: "fs"}}}}
+			require.NoError(t, a.WithExportedValues(actx, parentSelection, uncompressed, func(_ context.Context, ex *dagql.ExportedValues) error {
+				require.Equal(t, []string{s1.SnapshotID()}, observed.opens)
+				parentProvider := &testutil.Provider{InfoReaderProvider: ex.Chains.Entries[0].Provider}
+				b.SetPartContentSource(partTestContentSource{parentProvider})
+				reply, err := b.MergeValues(bctx, dagql.CloudCacheID, ex.Bundle)
+				require.NoError(t, err)
+				require.Equal(t, parentID, reply.Imported()[0].ResultID, "the second bundle lands on the same parent entry")
+				require.Len(t, reply.Values[len(reply.Values)-1].OfferedParts, 1, "with an offer of its fs")
+				require.NoError(t, b.EvaluateParts(bctx, parent, ContainerPartFS))
+				want := int64(2)
+				if readLeaf {
+					want = 0
+				}
+				require.Equal(t, want, parentProvider.Reads.Load(), "layer reads for the parent's own offer")
+				dir, ok := parent.(dagql.ObjectResult[*Container]).Self().FS.Peek()
+				require.True(t, ok)
+				snap, ok := dir.Snapshot.Peek()
+				require.True(t, ok)
+				testutil.CheckFile(t, snap, "one.txt", "step one")
+				testutil.CheckFile(t, snap, "base.txt", "base bytes")
+				return nil
+			}))
+		})
+	}
 }

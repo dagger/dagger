@@ -109,7 +109,8 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	// A to B forwards the pending offer without typed decode or bytes.
 	path := filepath.Join(t.TempDir(), "b.db")
 	bctx, b := reopenTransferTestCache(t, path)
-	mapping, err := b.ImportValues(bctx, exportTestBundle(t, actx, a, receiver))
+	mappingReply, err := b.MergeValues(bctx, cloudCacheID, exportTestBundle(t, actx, a, receiver))
+	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	id := mapping[0].ResultID
 	before := requireForwardedOffer(t, b, id)
@@ -146,7 +147,8 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 
 	// B to C forwards the restored offer, still without any request.
 	cctx, c, _ := transferTestCache(t)
-	forwarded, err := c.ImportValues(cctx, exportTestBundle(t, bctx, b, Result[Typed]{shared: b.resultsByID[sharedResultID(id)]}))
+	forwardedReply, err := c.MergeValues(cctx, cloudCacheID, exportTestBundle(t, bctx, b, Result[Typed]{shared: b.resultsByID[sharedResultID(id)]}))
+	forwarded := forwardedReply.Imported()
 	require.NoError(t, err)
 	requireForwardedOffer(t, c, forwarded[0].ResultID)
 	require.Zero(t, transport.total())

@@ -94,7 +94,8 @@ func TestPartInlineAddress(t *testing.T) {
 					sources[index] = &testutil.Provider{InfoReaderProvider: entry.Provider}
 				}
 				b.SetPartContentSource(sources)
-				imported, err := b.ImportValues(bctx, exported.Bundle)
+				importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+				imported := importedReply.Imported()
 				require.NoError(t, err)
 				loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 				require.NoError(t, err)

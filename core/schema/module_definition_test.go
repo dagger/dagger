@@ -433,8 +433,9 @@ func TestModuleDefinitionImportedHit(t *testing.T) {
 	for i := range 7 {
 		attachDefinitionTestResult(t, bctx, b, srvB, "b", "padding", &core.Module{NameField: string(rune('p' + i))})
 	}
-	mapping, err := b.ImportValues(bctx, bundle)
+	reply, err := b.MergeValues(bctx, dagql.CloudCacheID, bundle)
 	require.NoError(t, err)
+	mapping := reply.Imported()
 	require.Len(t, mapping, 1)
 
 	// B reconstructs the inputs under its own recipes: the source under a

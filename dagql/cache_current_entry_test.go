@@ -650,7 +650,8 @@ func TestCachePublicationReplacementClearsImportAndOffers(t *testing.T) {
 	bundle := exportTestBundle(t, actx, a, exported)
 
 	bctx, b, bsrv := transferTestCache(t)
-	mapping, err := b.ImportValues(bctx, bundle)
+	mappingReply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	require.Len(t, mapping, 1)
 	importedID := sharedResultID(mapping[0].ResultID)
@@ -739,7 +740,8 @@ func TestCachePublicationRetiresAnExpiredEntryWithADependent(t *testing.T) {
 			bundle := exportTestBundle(t, actx, a, list)
 
 			bctx, b, bsrv := transferTestCache(t)
-			mapping, err := b.ImportValues(bctx, bundle)
+			mappingReply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+			mapping := mappingReply.Imported()
 			require.NoError(t, err)
 			require.Len(t, mapping, 1)
 			listID := sharedResultID(mapping[0].ResultID)

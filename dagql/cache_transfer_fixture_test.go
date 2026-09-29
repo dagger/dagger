@@ -173,7 +173,7 @@ func testValueTransferImportConcurrent(t *testing.T) {
 		entered, commit := make(chan struct{}), make(chan struct{})
 		b.testBeforeTransferCommit = func() { close(entered); <-commit }
 		done := make(chan error, 1)
-		go func() { _, err := b.ImportValues(ctx, bundle); done <- err }()
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
 		<-entered
 		for _, value := range bundle.Values {
 			_, err := b.LoadResultByResultID(ctx, "consumer", bsrv, uint64(value.Ordinal))
@@ -197,7 +197,7 @@ func testValueTransferImportConcurrent(t *testing.T) {
 		entered, commit := make(chan struct{}), make(chan struct{})
 		b.testBeforeTransferCommit = func() { close(entered); <-commit }
 		done := make(chan error, 1)
-		go func() { _, err := b.ImportValues(ctx, bundle); done <- err }()
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
 		<-entered
 		closed := make(chan error, 1)
 		go func() { closed <- b.Close(ctx) }()

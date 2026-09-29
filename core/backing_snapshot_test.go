@@ -66,7 +66,8 @@ func newImportedBacking(t *testing.T, kind string) *importedBacking {
 	path := filepath.Join(t.TempDir(), "b.db")
 	bCtx, b, bSrv := transferCache(t, bStore, path, "first")
 	installBackingClasses(bSrv)
-	imported, err := b.ImportValues(bCtx, bundle)
+	importedReply, err := b.MergeValues(bCtx, dagql.CloudCacheID, bundle)
+	imported := importedReply.Imported()
 	require.NoError(t, err)
 	return &importedBacking{kind: kind, store: bStore, path: path, rowID: imported[len(imported)-1].ResultID, ctx: bCtx, cache: b, srv: bSrv}
 }

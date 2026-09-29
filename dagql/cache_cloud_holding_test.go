@@ -258,7 +258,8 @@ func TestImportValuesKeepsTheSendersNumber(t *testing.T) {
 	require.Equal(t, uint64(receiver.cacheSharedResult().id), bundle.Values[0].SenderNumber)
 
 	bctx, b, _ := transferTestCache(t)
-	mapping, err := b.ImportValues(bctx, bundle)
+	mappingReply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	b.egraphMu.RLock()
 	row := b.resultsByID[sharedResultID(mapping[0].ResultID)]
@@ -271,7 +272,7 @@ func TestImportValuesKeepsTheSendersNumber(t *testing.T) {
 	require.Len(t, offers, 1)
 
 	bundle.Values[0].SenderNumber = 0
-	_, err = b.ImportValues(bctx, bundle)
+	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
 	require.ErrorContains(t, err, "no sender number")
 }
 
