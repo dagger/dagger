@@ -15,6 +15,7 @@ import {
   CHECK_DECORATOR,
   FUNCTION_DECORATOR,
   GENERATOR_DECORATOR,
+  GET_DECORATOR,
   UP_DECORATOR,
 } from "./decorator.js"
 import { Locatable } from "./locatable.js"
@@ -35,6 +36,7 @@ export class DaggerFunction extends Locatable {
   public isGenerator: boolean = false
   public isUp: boolean = false
   public isAgent: boolean = false
+  public isCollectionGet: boolean = false
 
   private signature: ts.Signature
   private symbol: ts.Symbol
@@ -48,6 +50,10 @@ export class DaggerFunction extends Locatable {
     this.symbol = this.ast.getSymbolOrThrow(node.name)
     this.signature = this.ast.getSignatureFromFunctionOrThrow(node)
     this.name = this.node.name.getText()
+    this.isCollectionGet = this.ast.isNodeDecoratedWith(
+      this.node,
+      GET_DECORATOR,
+    )
     const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
     this.description = description
     this.deprecated = deprecated

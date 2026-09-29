@@ -16,7 +16,7 @@ type artifactNamedPath struct {
 	dimensions []string
 }
 
-// One index serves input resolution and output naming.
+// One index serves input resolution and output naming. Empty collections count.
 type artifactNameIndex map[string][]artifactNamedPath
 
 func newArtifactNameIndex(paths []artifactListPath) (artifactNameIndex, error) {

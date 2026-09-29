@@ -202,6 +202,8 @@
                 "reference/api/check",
                 "reference/api/client-filesync-mirror",
                 "reference/api/cloud",
+                "reference/api/collection-delta",
+                "reference/api/collection-type-def",
                 "reference/api/command",
                 "reference/api/current-module",
                 "reference/api/diff-stat",

@@ -5,6 +5,7 @@ import { fileURLToPath } from "url"
 
 import { scan } from "../index.js"
 import { serializeIntrospection } from "../introspection_json.js"
+import { serializeModule } from "../typedef_json.js"
 import { listFiles } from "../utils/files.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -49,6 +50,61 @@ function fieldByName(t: IntrospectionType | undefined, name: string) {
 }
 
 describe("serializeIntrospection", function () {
+  it("projects collection members and retains the author registration", async function () {
+    const files = await listFiles(`${rootDirectory}/collections`)
+    const module = await scan(files, "collections")
+    const schema = serializeIntrospection(module as never).__schema
+    const collection = typeByName(schema, "CollectionsItems")
+    assert.deepEqual(collection?.fields?.map((f) => f.name).sort(), [
+      "batch",
+      "get",
+      "id",
+      "keys",
+      "list",
+      "subset",
+    ])
+    assert.equal(fieldByName(collection, "get")?.args[0]?.name, "key")
+    assert.equal(
+      fieldByName(collection, "batch")?.type.ofType?.name,
+      "CollectionsItems_Batch",
+    )
+    assert.deepEqual(
+      typeByName(schema, "CollectionsItems_Batch")
+        ?.fields?.map((f) => f.name)
+        .sort(),
+      ["id", "selected"],
+    )
+    assert.deepEqual(
+      fieldByName(collection, "keys")?.type,
+      fieldByName(collection, "subset")?.args[0]?.type,
+    )
+    const registration = serializeModule(module) as {
+      objects: Record<
+        string,
+        {
+          isCollection: boolean
+          properties: Record<
+            string,
+            { isCollectionKeys: boolean; isCollectionDelta: boolean }
+          >
+          methods: Record<string, { isCollectionGet: boolean }>
+        }
+      >
+    }
+    assert.equal(registration.objects.Items.isCollection, true)
+    assert.equal(
+      registration.objects.Items.properties.names.isCollectionKeys,
+      true,
+    )
+    assert.equal(
+      registration.objects.Items.properties.selection.isCollectionDelta,
+      true,
+    )
+    assert.equal(
+      registration.objects.Items.methods.lookup.isCollectionGet,
+      true,
+    )
+  })
   it("emits the main object, its methods and a Node id field", async function () {
     this.timeout(60000)
     const schema = await introspect("helloWorld")

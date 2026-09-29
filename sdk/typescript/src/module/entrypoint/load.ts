@@ -20,6 +20,9 @@ import {
 import { TypeDef } from "../introspector/typedef.js"
 import { InvokeCtx } from "./context.js"
 
+// Opaque engine state, excluded from the module schema.
+const collectionBaseField = "__daggerCollectionBase"
+
 /**
  * Import all given typescript files so that trigger their decorators
  * and register their class and functions inside the Registry.
@@ -125,6 +128,10 @@ export async function loadParentState(
   const parentState: Args = {}
 
   for (const [key, value] of Object.entries(ctx.parentArgs)) {
+    if (key === collectionBaseField) {
+      parentState[key] = value
+      continue
+    }
     const property = object.properties[key]
     if (!property) {
       throw new Error(`could not find parent property ${key}`)
@@ -287,6 +294,10 @@ export async function loadResult(
     const state: any = {}
 
     for (const [key, value] of Object.entries(result)) {
+      if (key === collectionBaseField) {
+        state[key] = value
+        continue
+      }
       const property = Object.values(object.properties).find(
         (p) => p.name === key,
       )

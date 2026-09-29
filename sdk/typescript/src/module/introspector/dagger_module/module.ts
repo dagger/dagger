@@ -4,7 +4,11 @@ import ts from "typescript"
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { IntrospectionError } from "../../../common/errors/index.js"
 import { AST, ResolvedNodeWithSymbol } from "../typescript_module/index.js"
-import { ENUM_DECORATOR, OBJECT_DECORATOR } from "./decorator.js"
+import {
+  COLLECTION_DECORATOR,
+  ENUM_DECORATOR,
+  OBJECT_DECORATOR,
+} from "./decorator.js"
 import { DaggerEnum } from "./enum.js"
 import { DaggerEnumsBase } from "./enumBase.js"
 import { DaggerEnumClass } from "./enumClass.js"
@@ -148,7 +152,10 @@ export class DaggerModule {
           continue
         }
 
-        if (this.ast.isNodeDecoratedWith(classRef.node, OBJECT_DECORATOR)) {
+        if (
+          this.ast.isNodeDecoratedWith(classRef.node, OBJECT_DECORATOR) ||
+          this.ast.isNodeDecoratedWith(classRef.node, COLLECTION_DECORATOR)
+        ) {
           const daggerObject = new DaggerObject(classRef.node, this.ast)
           this.objects[daggerObject.name] = daggerObject
           this.references[daggerObject.name] = {
@@ -359,7 +366,10 @@ export class DaggerModule {
       }
 
       // or we return all classes decorated with @object
-      if (this.ast.isNodeDecoratedWith(classDecl.node, OBJECT_DECORATOR)) {
+      if (
+        this.ast.isNodeDecoratedWith(classDecl.node, OBJECT_DECORATOR) ||
+        this.ast.isNodeDecoratedWith(classDecl.node, COLLECTION_DECORATOR)
+      ) {
         allClasses.push(convertedDecl)
       }
     }

@@ -30,7 +30,7 @@ func (*ArtifactDimensionKey) Type() *ast.Type {
 	return &ast.Type{NamedType: "ArtifactDimensionKey", NonNull: true}
 }
 
-// ArtifactPath describes a schema path.
+// ArtifactPath describes a schema path without constructing its collections.
 type ArtifactPath struct {
 	ModuleName  string   `field:"true" doc:"The installed module name."`
 	URI         string   `field:"true" doc:"The DAG address of this path, without dimension keys."`
@@ -44,20 +44,21 @@ func (*ArtifactPath) Type() *ast.Type {
 }
 
 func (*ArtifactPath) TypeDescription() string {
-	return "A schema path and its dimensions."
+	return "A schema path and its dimensions. The path can exist even when its collections have no runtime items."
 }
 
 // Artifact holds a complete address and its deferred object value. The module
 // tree and workspace are retained so evaluation does not depend on the caller.
 type Artifact struct {
-	ModuleName    string                  `field:"true" doc:"The installed module name."`
-	Path          []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
-	DimensionKeys []*ArtifactDimensionKey `field:"true" doc:"The module name, and the full path key in the artifact type dimension."`
-	TypeName      string
-	Directives    []string `field:"true" doc:"The directives carried by this artifact."`
-	LoadFailure   *ModuleLoadFailure
-	Node          *ModTreeNode
-	Workspace     dagql.ObjectResult[*Workspace]
+	ModuleName     string `field:"true" doc:"The installed module name."`
+	DimensionNames map[string]string
+	Path           []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
+	DimensionKeys  []*ArtifactDimensionKey `field:"true" doc:"The module name, collection keys, and full path key in the artifact type dimension."`
+	TypeName       string
+	Directives     []string `field:"true" doc:"The directives carried by this artifact."`
+	LoadFailure    *ModuleLoadFailure
+	Node           *ModTreeNode
+	Workspace      dagql.ObjectResult[*Workspace]
 }
 
 // Clone gives each API result its own writable dependency wrappers. Attachment
@@ -85,7 +86,8 @@ type ArtifactURIOpts struct {
 	TypeAssertion bool
 }
 
-// URI is the artifact's DAG address. See the dagaddress package.
+// URI is the artifact's DAG address. See hack/designs/collections-issue.md,
+// section 4.
 func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 	addr := &dagaddress.Address{HasScheme: true, Path: strings.Join(a.Path, "/")}
 	if opts.TypeAssertion {
@@ -96,7 +98,7 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 			if artifact.IsStaticDimension(key.Dimension) {
 				continue
 			}
-			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: key.Dimension, Key: key.Key, HasKey: true})
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
 		}
 	}
 	if opts.Absolute {
@@ -169,6 +171,11 @@ type ArtifactSelector struct {
 	Dimensions []ArtifactDimensionFilter
 	// Each group requires any one dimension; separate groups use AND.
 	DimensionAlternatives [][]string
+	// Explicit collection endpoints select the collection unless its own
+	// dimension is requested. Keep this distinct from normalized path patterns.
+	CollectionPaths []string
+	// Apply keyed exclusions after collection expansion.
+	ExcludedURIs []string
 }
 
 // Artifacts is an immutable selection. Filtering changes only the entry list
@@ -203,8 +210,10 @@ func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
 
 func (sel ArtifactSelector) clone() ArtifactSelector {
 	cloned := ArtifactSelector{
-		Paths: slices.Clone(sel.Paths),
-		Types: slices.Clone(sel.Types),
+		Paths:           slices.Clone(sel.Paths),
+		Types:           slices.Clone(sel.Types),
+		CollectionPaths: slices.Clone(sel.CollectionPaths),
+		ExcludedURIs:    slices.Clone(sel.ExcludedURIs),
 	}
 	for _, dim := range sel.Dimensions {
 		cloned.Dimensions = append(cloned.Dimensions, ArtifactDimensionFilter{Dimension: dim.Dimension, Keys: slices.Clone(dim.Keys)})
@@ -383,6 +392,7 @@ func (a *Artifacts) FilterPath(path []string) *Artifacts {
 	// A literal path is not a pattern. Record only the matching paths so an
 	// empty path, glob character, or different case cannot broaden URI().
 	selected.Selector.Paths = selected.exactPaths()
+	selected.Selector.CollectionPaths = append(selected.Selector.CollectionPaths, strings.Join(path, "/"))
 	return selected
 }
 
@@ -402,6 +412,9 @@ func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
 	}, []string{pattern})
 	if matchErr != nil {
 		return nil, matchErr
+	}
+	if !strings.ContainsAny(pattern, "*?[{") {
+		selected.Selector.CollectionPaths = append(selected.Selector.CollectionPaths, selected.exactPaths()...)
 	}
 	return selected, nil
 }
@@ -543,6 +556,11 @@ func (a *Artifacts) URI() string {
 	case 0:
 	case 1:
 		addr.Path = sel.Paths[0]
+		// A normalized wildcard can leave one collection endpoint. Preserve
+		// its pattern form so a URI round trip still includes the items.
+		if !strings.ContainsAny(addr.Path, "*?[{") && !slices.Contains(sel.CollectionPaths, addr.Path) && a.hasCollections() {
+			addr.Path = "{" + addr.Path + "}"
+		}
 	default:
 		addr.Path = "{" + strings.Join(sel.Paths, ",") + "}"
 	}
@@ -658,14 +676,15 @@ func ArtifactNodes(ctx context.Context, root *ModTreeNode) ([]*ModTreeNode, erro
 // Persist both individual artifacts and selections. One tree encoding shares
 // module and type references across all entries in a selection.
 type persistedArtifact struct {
-	ModuleName    string
-	LoadFailure   *ModuleLoadFailure
-	Path          []string
-	DimensionKeys []*ArtifactDimensionKey
-	TypeName      string
-	Directives    []string
-	Node          int
-	Workspace     uint64
+	ModuleName     string
+	DimensionNames map[string]string
+	LoadFailure    *ModuleLoadFailure
+	Path           []string
+	DimensionKeys  []*ArtifactDimensionKey
+	TypeName       string
+	Directives     []string
+	Node           int
+	Workspace      uint64
 }
 type persistedArtifacts struct {
 	Tree     persistedModTree
@@ -678,6 +697,7 @@ func encodeArtifacts(enc *dagql.PersistEncodeContext, entries []*Artifact, selec
 	payload := persistedArtifacts{Selector: selector}
 	for _, a := range entries {
 		p := persistedArtifact{ModuleName: a.ModuleName, LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, Directives: a.Directives}
+		p.DimensionNames = a.DimensionNames
 		var err error
 		p.Node, err = tree.Add(a.Node)
 		if err != nil {
@@ -706,6 +726,7 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 	result := &Artifacts{Selector: payload.Selector}
 	for _, p := range payload.Entries {
 		a := &Artifact{ModuleName: p.ModuleName, LoadFailure: p.LoadFailure, Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, Directives: p.Directives, Node: nodes[p.Node]}
+		a.DimensionNames = p.DimensionNames
 		if a.DimensionKeys == nil {
 			a.DimensionKeys = []*ArtifactDimensionKey{}
 		}
@@ -771,6 +792,22 @@ func (a *Artifacts) AttachDependencyResults(ctx context.Context, _ dagql.AnyResu
 }
 
 func (a *Artifacts) WithoutURI(address *dagaddress.Address) (*Artifacts, error) {
+	if a.hasCollections() {
+		for _, filter := range address.DimensionFilters() {
+			if filter.Keys == nil {
+				continue
+			}
+			dimension, err := a.ResolveDimension(filter.Dimension)
+			if err != nil {
+				return nil, err
+			}
+			if !strings.HasPrefix(dimension, "type:") {
+				selected := a.filter(func(*Artifact) bool { return true })
+				selected.Selector.ExcludedURIs = append(selected.Selector.ExcludedURIs, address.String())
+				return selected, nil
+			}
+		}
+	}
 	excluded, err := a.FilterURI(address)
 	if err != nil {
 		return nil, err

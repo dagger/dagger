@@ -16,6 +16,17 @@ defmodule Dagger.ArtifactDimension do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The collection type, or null for a static dimension.
+  """
+  @spec collection_type(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def collection_type(%__MODULE__{} = artifact_dimension) do
+    query_builder =
+      artifact_dimension.query_builder |> QB.select("collectionType")
+
+    Client.execute(artifact_dimension.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this ArtifactDimension.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
@@ -27,7 +38,7 @@ defmodule Dagger.ArtifactDimension do
   end
 
   @doc """
-  Stable identifier: type:TypeName for an artifact type, or module.
+  Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
   """
   @spec identifier(t()) :: {:ok, String.t()} | {:error, term()}
   def identifier(%__MODULE__{} = artifact_dimension) do
@@ -38,12 +49,34 @@ defmodule Dagger.ArtifactDimension do
   end
 
   @doc """
-  The artifact type name, or empty for the module dimension.
+  The collection item or artifact type name, or empty for the module dimension.
   """
   @spec item_type(t()) :: {:ok, String.t()} | {:error, term()}
   def item_type(%__MODULE__{} = artifact_dimension) do
     query_builder =
       artifact_dimension.query_builder |> QB.select("itemType")
+
+    Client.execute(artifact_dimension.client, query_builder)
+  end
+
+  @doc """
+  The collection key argument description, or empty for a static dimension.
+  """
+  @spec key_description(t()) :: {:ok, String.t()} | {:error, term()}
+  def key_description(%__MODULE__{} = artifact_dimension) do
+    query_builder =
+      artifact_dimension.query_builder |> QB.select("keyDescription")
+
+    Client.execute(artifact_dimension.client, query_builder)
+  end
+
+  @doc """
+  The collection key argument name, or name for a static dimension.
+  """
+  @spec key_name(t()) :: {:ok, String.t()} | {:error, term()}
+  def key_name(%__MODULE__{} = artifact_dimension) do
+    query_builder =
+      artifact_dimension.query_builder |> QB.select("keyName")
 
     Client.execute(artifact_dimension.client, query_builder)
   end

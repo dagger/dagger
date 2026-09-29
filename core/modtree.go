@@ -31,11 +31,18 @@ type ModTreeNode struct {
 	// WorkspaceEntrypoint is set on the module root when its targets are
 	// exposed without a module prefix. Path retains the qualified identity.
 	WorkspaceEntrypoint bool
+	CollectionDimension *ArtifactDimension
+	CollectionKey       *string
+	// CollectionKeys selects the subset used by an implicit batch node.
+	CollectionKeys []string
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
 	if node.Parent == nil {
 		return nil
+	}
+	if node.CollectionDimension != nil {
+		return node.Parent.Path()
 	}
 	var path ModTreePath
 	path = append(path, node.Parent.Path()...)
@@ -175,6 +182,43 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 		args, err := boundWorkspaceArgs(ctx, srv, fn)
 		if err != nil {
 			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
+		}
+		if node.CollectionDimension != nil && node.Name == "batch" {
+			members, err := parentObjType.CollectionMembers()
+			if err != nil {
+				return err
+			}
+			keys := node.CollectionKeys
+			if node.CollectionKey != nil {
+				keys = []string{*node.CollectionKey}
+			}
+			inputs := make([]dagql.Input, 0, len(keys))
+			for _, text := range keys {
+				key, err := collectionInputFromText(members.Get.Args[0].Self().TypeDef.Self(), text)
+				if err != nil {
+					return err
+				}
+				inputs = append(inputs, key)
+			}
+			keyList := dagql.DynamicArrayInput{Elem: members.Get.Args[0].Self().TypeDef.Self().ToInput(), Values: inputs}
+			if err := srv.Select(ctx, parentObjValue, &parentObjValue, dagql.Selector{
+				Field: "subset", Args: []dagql.NamedInput{{Name: "keys", Value: keyList}},
+			}); err != nil {
+				return err
+			}
+		} else if node.CollectionDimension != nil {
+			if node.CollectionKey == nil {
+				return fmt.Errorf("collection item %q has no key", node.CollectionDimension.Identifier)
+			}
+			members, err := parentObjType.CollectionMembers()
+			if err != nil {
+				return err
+			}
+			key, err := collectionInputFromText(members.Get.Args[0].Self().TypeDef.Self(), *node.CollectionKey)
+			if err != nil {
+				return err
+			}
+			args = append(args, dagql.NamedInput{Name: "key", Value: key})
 		}
 		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{
 			Field: node.Name,
@@ -510,15 +554,18 @@ type persistedModTree struct {
 }
 
 type persistedModTreeNode struct {
-	RootValueResultID      uint64   `json:"rootValueResultID,omitempty"`
-	ID                     int      `json:"id"`
-	ParentID               int      `json:"parentID,omitempty"`
-	Name                   string   `json:"name,omitempty"`
-	Description            string   `json:"description,omitempty"`
-	ModuleResultID         uint64   `json:"moduleResultID,omitempty"`
-	OriginalModuleResultID uint64   `json:"originalModuleResultID,omitempty"`
-	TypeResultID           uint64   `json:"typeResultID,omitempty"`
-	Directives             []string `json:"directives,omitempty"`
+	CollectionDimension    *ArtifactDimension `json:"collectionDimension,omitempty"`
+	CollectionKey          *string            `json:"collectionKey,omitempty"`
+	CollectionKeys         []string           `json:"collectionKeys,omitempty"`
+	RootValueResultID      uint64             `json:"rootValueResultID,omitempty"`
+	ID                     int                `json:"id"`
+	ParentID               int                `json:"parentID,omitempty"`
+	Name                   string             `json:"name,omitempty"`
+	Description            string             `json:"description,omitempty"`
+	ModuleResultID         uint64             `json:"moduleResultID,omitempty"`
+	OriginalModuleResultID uint64             `json:"originalModuleResultID,omitempty"`
+	TypeResultID           uint64             `json:"typeResultID,omitempty"`
+	Directives             []string           `json:"directives,omitempty"`
 }
 
 type persistedModTreeEncoder struct {
@@ -557,11 +604,14 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 	id := len(enc.tree.Nodes) + 1
 	enc.ids[node] = id
 	persisted := persistedModTreeNode{
-		ID:          id,
-		ParentID:    parentID,
-		Name:        node.Name,
-		Description: node.Description,
-		Directives:  node.Directives,
+		CollectionDimension: node.CollectionDimension,
+		CollectionKey:       node.CollectionKey,
+		CollectionKeys:      node.CollectionKeys,
+		ID:                  id,
+		ParentID:            parentID,
+		Name:                node.Name,
+		Description:         node.Description,
+		Directives:          node.Directives,
 	}
 	if node.RootValue != nil {
 		persisted.RootValueResultID, err = encodePersistedObjectRef(enc.encCtx, node.RootValue, "artifact root value")
@@ -607,9 +657,12 @@ func decodePersistedModTree(ctx context.Context, dec *dagql.PersistDecodeContext
 		}
 
 		node := &ModTreeNode{
-			Name:        persisted.Name,
-			Description: persisted.Description,
-			Directives:  persisted.Directives,
+			CollectionDimension: persisted.CollectionDimension,
+			CollectionKey:       persisted.CollectionKey,
+			CollectionKeys:      persisted.CollectionKeys,
+			Name:                persisted.Name,
+			Description:         persisted.Description,
+			Directives:          persisted.Directives,
 		}
 		if persisted.RootValueResultID != 0 {
 			value, err := loadPersistedResultByResultID(ctx, dec, persisted.RootValueResultID, "artifact root value")
