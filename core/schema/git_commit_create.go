@@ -65,6 +65,7 @@ func (args gitRefWithCommitArgs) selectors() []dagql.NamedInput {
 }
 
 type gitRefNativeCommitBaseArgs struct {
+	Depth        int    `default:"0"`
 	ParentRecipe string `internal:"true" default:""`
 }
 
@@ -78,12 +79,55 @@ func (s *gitSchema) gitRefNativeCommitBaseKey(ctx context.Context, parent dagql.
 	return req.SetArgInput(ctx, "parentRecipe", dagql.String(digest.String()), false)
 }
 
-func (s *gitSchema) gitRefNativeCommitBase(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], _ gitRefNativeCommitBaseArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+func (s *gitSchema) gitRefNativeCommitBase(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args gitRefNativeCommitBaseArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
-	dir, err := core.GitRemoteCommitBase(ctx, parent)
+	dir, err := core.GitRemoteCommitBase(ctx, parent, args.Depth)
+	if err != nil {
+		return inst, err
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		return inst, errors.Join(err, dir.OnRelease(context.WithoutCancel(ctx)))
+	}
+	return inst, nil
+}
+
+type gitRefHydrateRepositoryArgs struct {
+	Directory dagql.ID[*core.Directory]
+	Scope     string `internal:"true" default:""`
+}
+
+func (s *gitSchema) gitRefHydrateRepositoryKey(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], _ gitRefHydrateRepositoryArgs, req *dagql.CallRequest) error {
+	sourceKey, err := parent.RecipeDigest(ctx)
+	if err != nil {
+		return err
+	}
+	arg := req.Arg("directory")
+	if arg == nil || arg.Value == nil || arg.Value.ResultRef == nil {
+		return fmt.Errorf("hydrate repository requires an exact directory recipe")
+	}
+	// Use the request's structural input, not ID.Load's content-equivalent
+	// value: aliases may share a snapshot but must not share owned provenance.
+	dirKey, err := (dagql.ResultCallStructuralInputRef{Result: arg.Value.ResultRef}).InputDigest(ctx)
+	if err != nil {
+		return err
+	}
+	return req.SetArgInput(ctx, "scope", dagql.String(sourceKey.String()+" "+dirKey.String()), false)
+}
+
+func (s *gitSchema) gitRefHydrateRepository(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args gitRefHydrateRepositoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	local, err := args.Directory.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := core.HydrateGitRepository(ctx, parent, local)
 	if err != nil {
 		return inst, err
 	}
@@ -152,8 +196,15 @@ func (s *gitSchema) gitRefWithCommitRepository(ctx context.Context, parent dagql
 	if err != nil {
 		return inst, fmt.Errorf("resolve committed repository HEAD: %w", err)
 	}
+	var historySource dagql.ObjectResult[*core.GitRef]
+	if _, remote := parent.Self().Backend.(*core.RemoteGitRef); remote {
+		historySource = checkoutParent
+	} else if local, ok := parent.Self().Repo.Self().Backend.(*core.LocalGitRepository); ok {
+		historySource = local.HistorySource
+	}
 	backend := &core.LocalGitRepository{
-		Directory: dir,
+		Directory:     dir,
+		HistorySource: historySource,
 		CheckoutBase: &core.GitCheckoutBase{
 			Parent: checkoutParent, CommitSHA: head.SHA, Tree: parentTree,
 		},
