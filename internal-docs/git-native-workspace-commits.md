@@ -8,6 +8,7 @@ The source of truth is the code, mainly:
 
 - `core/git_commit_create.go`: native commit construction, eligibility and the fallback policy
 - `core/changeset_native.go`: native workspace reconciliation
+- `core/git_local_incremental.go`, `core/git_local.go`: incremental source checkout and checkout provenance
 - `core/schema/git_commit_create.go`, `core/schema/workspace_commit.go`: the `GitRef.withCommit` and `Workspace.withCommit` resolvers
 
 ## Native Commit Construction
@@ -78,15 +79,43 @@ Eligibility is checked only on declared paths and the materialized deltas, with 
 
 The span `git native workspace merge` records `dagger.git.native_merge.supported`, `dagger.git.native_merge.fallback_reason` and `dagger.git.native_merge.scoped_stage_paths`.
 
+## Incremental Source Checkout
+
+Entry points: `GitCheckoutBase` in `core/git_local.go`; `incrementalTree`, `planIncrementalGitCheckout` and `applyIncrementalGitCheckout` in `core/git_local_incremental.go`; `gitRefWithCommitRepository` in `core/schema/git_commit_create.go`.
+
+`GitRef.withCommit` selects the private, persistable `__withCommitRepository` recipe. For a local parent it records checkout provenance on the resulting `LocalGitRepository`:
+
+```go
+type GitCheckoutBase struct {
+	Parent    dagql.ObjectResult[*GitRef] // exact parent recipe
+	CommitSHA string                      // resolved HEAD of the new commit
+}
+```
+
+`Parent` is an owned DAG dependency, attached and persisted with the repository, never a mount path or a guess from a dirty worktree. Public `withContents` never infers it from supplied storage.
+
+When `LocalGitRef.Tree(discardGitDir: true)` is requested for exactly `CommitSHA`, and both SHAs are full SHA-1s, `incrementalTree`:
+
+1. Plans from Git metadata alone, before evaluating the parent tree. The storage must pass the native commit layout gates, and the commit's raw headers (read with `cat-file`, bypassing replace refs and grafts) must name `Parent` as its single parent. `diff-tree` supplies the delta.
+2. Selects the parent's canonical `tree(discardGitDir: true)` and creates a COW child of its snapshot.
+3. Initializes a private scratch Git directory and index with the same borrowed objects and clean checkout config as a full source checkout, never the source repository's config, attributes or worktree. It removes old leaves deepest first and `checkout-index`es only the added and modified paths, below verified directory ancestors.
+4. Normalizes the rewritten paths, their ancestors and the root to mtime 1, as a full checkout would, without following symlinks (`normalizeIncrementalGitCheckout`). Untouched inodes are left alone.
+
+Other refs of the same repository never inherit the annotated tip's materialization, and retained `.git` checkouts keep the full path. A cold parent may still need one full materialization; after that, each commit costs its delta.
+
+Unsupported inputs fall back to the full checkout with a fixed reason code: `commit-format`, `repository-layout`, `parent-mismatch`, `gitlinks` (a gitlink anywhere in either tree), `unsafe-path` and `checkout-controls` (a changed `.gitattributes` or `.gitmodules`, which could change the checkout of unchanged files).
+
+The span `materialize incremental git checkout` records `dagger.git.checkout.incremental.supported`, `dagger.git.checkout.incremental.fallback` and `dagger.git.checkout.incremental.changed_paths`.
+
 ## Fallback Policy
 
 Native paths are optimizations; the legacy path is always correct. `nativeFallback` is the shared policy:
 
-- **Any error falls back**, not only unsupported inputs: unanticipated repository states, missing objects and internal timeouts included. The error is recorded as the span's fallback reason, and the caller takes the legacy path: the checkout-based `GitCommitChangeset` for commits, the general `__mergeWithChangeset` for workspace reconciliation. A `merge-tree` conflict falls back too, so the legacy merge reports it.
+- **Any error falls back**, not only unsupported inputs: unanticipated repository states, missing objects and internal timeouts included. The error is recorded as the span's fallback reason, and the caller takes the legacy path: the checkout-based `GitCommitChangeset` for commits, the general `__mergeWithChangeset` for workspace reconciliation, a full checkout for incremental source checkout. A `merge-tree` conflict falls back too, so the legacy merge reports it.
 - **The caller's own cancellation is returned**, decided by the caller's `ctx.Err()`. An error that merely wraps a deadline from some internal context still falls back.
 - **`ErrNothingToCommit` is returned as-is.** It is the commit's answer, not a failure, and the legacy path would reach it only after a full checkout.
-- **Produced snapshots are released first.** A failure or cancellation observed after the child snapshot was committed releases it, with an uncancelled cleanup context, before the error is returned or discarded. This applies to a reconciliation result as well as a commit.
-- **Snapshot chains are bounded.** Each native commit is a COW child of its parent's storage, so a long session stacks overlay layers. `checkNativeSnapshotDepth` rejects a child whose overlay mount has more than 64 `lowerdir` entries (`maxNativeSnapshotDepth`); the legacy path starts from a fresh snapshot and resets the chain. Non-overlay snapshotters have no such limit.
+- **Produced snapshots are released first.** A failure or cancellation observed after the child snapshot was committed releases it, with an uncancelled cleanup context, before the error is returned or discarded. This applies to reconciliation and incremental checkout results as well as a commit.
+- **Snapshot chains are bounded.** Each native commit is a COW child of its parent's storage, and each incremental checkout a COW child of its parent's tree, so a long session stacks overlay layers. `checkNativeSnapshotDepth` rejects a child whose overlay mount has more than 64 `lowerdir` entries (`maxNativeSnapshotDepth`); the legacy path starts from a fresh snapshot and resets the chain. Non-overlay snapshotters have no such limit.
 
 ## Testing
 
@@ -95,8 +124,9 @@ Unit tests (`go test ./core -count=1`):
 - `core/git_commit_test.go`: `TestGitNativeCommitMatchesCheckout` (exact commit SHAs against `git commit`, including attributes, ignore rules, signoff, packed parents and detached SHA-named refs), `TestGitNativeCommitPublicationIsRooted`, `TestGitNativeCommitLargeFile`, `TestGitNativeCommitRejectsGitlinks`, `TestGitNativeCommitObjectMetrics`, `TestGitNativeCommitRefStorageEligibility`, `TestGitNativeCommitStorageEligibility`.
 - `core/git_commit_create_test.go`: `TestNativeCommitFallback`, `TestNativeFallbackPolicy`, `TestNativeSnapshotDepthBound`.
 - `core/changeset_native_test.go`: `TestNativeWorkspaceMergeMatchesCheckout` (complete filesystem manifests against the legacy checkout sequence under umasks 022 and 000, including attributes, ownership, xattrs, replacements, renames, noops, conflicts and packed storage), `TestNativeWorkspaceMergeFallbacksAndErrors`, `TestNativeWorkspaceMergeBaseEvidence`, `TestNativeWorkspaceDeltaReplacedAncestors`, `TestNativeWorkspaceDeltaMetadataFallback`.
+- `core/git_local_incremental_test.go`: `TestIncrementalGitCheckout` (complete source manifests against a fresh full checkout under umasks 022 and 000, including attributes, type replacements, symlinks, same-tree commits, untouched inodes and pack mtimes), `TestIncrementalGitCheckoutGates`, `TestIncrementalGitCheckoutActualParent` (grafts and replace refs), `TestIncrementalGitCheckoutProvenance`. `core/git_persistence_test.go`: `TestGitCheckoutBasePersistence` (dependency retention across cache restarts, malformed payloads).
 
 Integration tests run against a from-source engine, e.g. `dagger call engine-dev test --pkg ./core/integration --run 'TestGit/TestGitRefWithCommitNative'`:
 
-- `core/integration/git_commit_test.go` (`TestGit`): `TestGitRefWithCommitNative` compares native and legacy commit objects, follow-up and concurrent SHA-named commits, and asserts from telemetry that native transactions ran without fetching and left source packs untouched. `TestGitRefWithCommitReftable` exercises the public `ref-storage` fallback.
-- `core/integration/workspace_commit_test.go` (`TestWorkspace`): `TestWorkspaceWithCommitReconciliationOracle` compares exact commits, parentage, pending paths and consumer filesystem manifests against an identity-wrapped legacy merge on the same receiver, across overlapping edits, conflicts, type changes, attributes, ignored files and rich metadata. `TestWorkspaceWithCommitNativeReconciliationTrace` requires the native merge to run `merge-tree` without fetching or checking out the baseline. `TestWorkspaceScopedCommitPerformance` is a latency harness over a 12,000-file packed repository with three sequential scoped commits. It verifies committed paths, parentage, preserved pending edits and host isolation, and requires native commits and native reconciliation without commit-time fetches or general merges.
+- `core/integration/git_commit_test.go` (`TestGit`): `TestGitRefWithCommitNative` compares native and legacy commit objects, follow-up and concurrent SHA-named commits, and asserts from telemetry that native transactions ran without fetching and left source packs untouched. `TestGitRefWithCommitReftable` exercises the public `ref-storage` fallback. `TestGitRefIncrementalCheckoutOracle` compares committed trees against unannotated full-checkout oracles, including attributes, dirty inputs and path replacements; `TestGitRefIncrementalCheckoutTrace` requires a warmed single-path commit to check out only its delta; `TestGitRefNativeCommitHistory` runs 56 sequential and concurrent commits with fsck, ancestry and checkout equivalence, and allows at most one full parent checkout; `TestGitRefRetainedCheckoutSurvivesSourceScope` covers retained `.git` checkouts.
+- `core/integration/workspace_commit_test.go` (`TestWorkspace`): `TestWorkspaceWithCommitReconciliationOracle` compares exact commits, parentage, pending paths and consumer filesystem manifests against an identity-wrapped legacy merge on the same receiver, across overlapping edits, conflicts, type changes, attributes, ignored files and rich metadata. `TestWorkspaceWithCommitNativeReconciliationTrace` requires the native merge to run `merge-tree` without fetching or checking out the baseline. `TestWorkspaceScopedCommitPerformance` is a latency harness over a 12,000-file packed repository with three sequential scoped commits. It verifies committed paths, parentage, preserved pending edits and host isolation, and requires native commits, native reconciliation and incremental source checkouts without commit-time fetches, general merges or full source checkouts.
