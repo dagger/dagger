@@ -912,13 +912,15 @@ func (svc *Service) startContainer(
 	}
 
 	var exitErr error
+	var cleanupErr error
 	go func() {
 		defer func() {
 			opts.IO.Close()
 			close(exited)
 		}()
 
-		exitErr = trackOriginIfMissing(<-runErr, originCtx)
+		runResult := <-runErr
+		exitErr = trackOriginIfMissing(runResult, originCtx)
 		slog.Info("service exited", "err", exitErr)
 
 		// show the exit status; doing so won't fail anything, and is
@@ -928,14 +930,17 @@ func (svc *Service) startContainer(
 		defer func() {
 			if err := getServiceErr(); err != nil {
 				telemetryErr = err
+			} else if cleanupErr != nil {
+				telemetryErr = cleanupErr
 			} else if !stopped.Load() {
 				// we only care about the exit result (likely 137) if we weren't stopped
 				telemetryErr = exitErr
 			}
 		}()
 
-		// run all cleanups, discarding container
-		cleanup.Run()
+		// Publish cleanup failures before exited closes. A requested signal may
+		// explain the process exit, but it cannot excuse resource cleanup.
+		exitErr, cleanupErr = classifyContainerServiceExit(runResult, cleanup.Run(), originCtx)
 	}()
 
 	signalSvc := func(ctx context.Context, sig syscall.Signal) error {
@@ -953,15 +958,13 @@ func (svc *Service) startContainer(
 	}
 
 	waitSvc := func(ctx context.Context) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-exited:
+		_, err := waitContainerServiceResult(ctx, exited, func() error {
 			if err := getServiceErr(); err != nil {
 				return err
 			}
 			return exitErr
-		}
+		})
+		return err
 	}
 
 	stopSvc := func(ctx context.Context, force bool) error {
@@ -974,14 +977,13 @@ func (svc *Service) startContainer(
 		if err != nil {
 			return err
 		}
-		select {
-		case <-ctx.Done():
-			slog.Info("service stop interrupted", "err", ctx.Err())
-			return ctx.Err()
-		case <-exited:
+		finished, err := waitContainerServiceStop(ctx, exited, &cleanupErr)
+		if finished {
 			slog.Info("service exited in stop", "err", exitErr)
-			return nil
+		} else {
+			slog.Info("service stop interrupted", "err", err)
 		}
+		return err
 	}
 
 	stopDueToDependencyExit := func(depErr error) error {
@@ -1749,4 +1751,26 @@ func (bndp *ServiceBindings) Merge(other ServiceBindings) {
 	}
 
 	*bndp = merged
+}
+
+// classifyContainerServiceExit keeps expected process status available to Wait,
+// while Stop receives only failures to release resources.
+func classifyContainerServiceExit(runErr, localCleanupErr error, origin trace.SpanContext) (error, error) {
+	cleanupErr := trackOriginIfMissing(errors.Join(engineutil.ExecCleanupErrors(runErr), localCleanupErr), origin)
+	exitErr := trackOriginIfMissing(errors.Join(runErr, localCleanupErr), origin)
+	return exitErr, cleanupErr
+}
+
+// waitContainerServiceStop observes the cleanup result only after exited closes.
+func waitContainerServiceStop(ctx context.Context, exited <-chan struct{}, cleanupErr *error) (bool, error) {
+	return waitContainerServiceResult(ctx, exited, func() error { return *cleanupErr })
+}
+
+func waitContainerServiceResult(ctx context.Context, exited <-chan struct{}, result func() error) (bool, error) {
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-exited:
+		return true, result()
+	}
 }
