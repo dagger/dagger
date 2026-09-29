@@ -38,7 +38,7 @@ source = "dagger.io/go@pull/45/head"
 legacy-default-path = true
 
 [modules.golang.settings]
-base = "go-base"
+base = "dag://dagger-dev/go-base"
 generate = [
   "dagql/**",
   "engine/**",
