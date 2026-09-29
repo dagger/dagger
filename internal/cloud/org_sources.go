@@ -387,23 +387,6 @@ func (c *Client) OrgHasPaymentMethod(ctx context.Context, orgName string) (bool,
 	return data.Org.HasPaymentMethod, nil
 }
 
-const startFeatureTrialOperation = `
-mutation StartFeatureTrial($org: ID!, $features: [FeatureName!]!, $durationDays: Int!) {
-	startFeatureTrial(org: $org, features: $features, durationDays: $durationDays)
-}
-`
-
-// StartFeatureTrial starts a single trial covering the given features (e.g.
-// CLOUD_CHECKS and CLOUD_MODULES together) for the org. Requires org
-// membership.
-func (c *Client) StartFeatureTrial(ctx context.Context, orgID string, features []string, durationDays int) error {
-	return c.doGraphQL(ctx, "StartFeatureTrial", startFeatureTrialOperation, map[string]any{
-		"org":          orgID,
-		"features":     features,
-		"durationDays": durationDays,
-	}, nil)
-}
-
 const createPaymentCheckoutSessionOperation = `
 mutation CreatePaymentCheckoutSession($org: ID!) {
 	createPaymentCheckoutSession(org: $org)

@@ -62,29 +62,27 @@ var cloudCheckStatusCmd = &cobra.Command{
 func init() {
 	cloudCheckListCmd.Flags().BoolVar(&cloudCheckListFailed, "failed", false, "Only list failed checks")
 	requireCloudFeatures(cloudCheckOnCmd, cloudChecksRequiredFeatures...)
-	cloudCheckOnCmd.Flags().Bool(startTrialFlag, false, "Start a free trial when a required Cloud feature is not enabled yet")
 	cloudCheckCmd.AddCommand(cloudCheckOnCmd, cloudCheckOffCmd, cloudCheckListCmd, cloudCheckStatusCmd)
 	cloudCmd.AddCommand(cloudCheckCmd)
 }
 
 // cloudChecksRequiredFeatures are the org features enabling a Cloud check
-// needs: Cloud Checks itself, Cloud Modules (org-scoped source lookups are
-// gated on it), and Cloud Engines. Missing ones are offered together as one
-// trial at enforcement time. Other commands can declare their own
-// requirements the same way via requireCloudFeatures.
-var cloudChecksRequiredFeatures = []cloudFeature{featureCloudChecks, featureCloudModules, featureCloudEngines}
+// needs: Cloud Checks itself and Cloud Modules (org-scoped source lookups are
+// gated on it). Cloud enables them for organizations created from the CLI.
+// Other commands can declare their own requirements
+// the same way via requireCloudFeatures.
+var cloudChecksRequiredFeatures = []cloudFeature{featureCloudChecks, featureCloudModules}
 
 // runCloudCheckSet returns a RunE that sets the workspace autocheck flag for
 // the selected remote. The optional name arg is accepted but not used —
 // today's underlying API only models a single autocheck per remote.
 func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		// The feature requirements (and their trial gate) are declared as
-		// annotations on the checks-on command itself. This flow can also run
-		// under a different command — e.g. the `dagger init` next-steps offer
-		// invokes it with init's cobra command — so carry the requirements
-		// over, otherwise the gate silently no-ops and the trial prompt never
-		// appears.
+		// The feature requirements are declared as annotations on the
+		// checks-on command itself. This flow can also run under a different
+		// command — e.g. the `dagger init` next-steps offer invokes it with
+		// init's cobra command — so carry the requirements over, otherwise
+		// the gate silently no-ops.
 		if enabled && len(commandCloudFeatures(cmd)) == 0 {
 			requireCloudFeatures(cmd, cloudChecksRequiredFeatures...)
 		}

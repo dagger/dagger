@@ -1,11 +1,11 @@
 package daggercmd
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"io"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 
@@ -117,7 +117,11 @@ func finishCloudLogin(cmd *cobra.Command, orgName string, client *cloud.Client) 
 	var selectedOrg *auth.Org
 	switch len(user.Orgs) {
 	case 0:
-		selectedOrg, err = createNewOrg(ctx, client, user, orgName, errW)
+		selectedOrg, err = createNewOrg(cmd, client, user, orgName)
+		if errors.Is(err, errTrialDeclined) {
+			fmt.Fprintln(errW, "No organization was created. Run `dagger cloud signup` to start your free trial.")
+			return idtui.Fail
+		}
 		if err != nil {
 			fmt.Fprintf(errW, "Error setting up new organization: %v\n", err)
 			return idtui.Fail
@@ -160,18 +164,37 @@ func finishCloudLogin(cmd *cobra.Command, orgName string, client *cloud.Client) 
 	return nil
 }
 
-// createNewOrg creates a free Dagger Cloud organization entirely from the CLI
-// (no browser round-trip). The org name is taken from the requested name when
-// provided, otherwise derived from the account so the user isn't forced to
-// invent one. The server may adjust the name (e.g. to resolve collisions), so
-// the returned org reflects the actual name.
-func createNewOrg(ctx context.Context, cli *cloud.Client, user *cloud.UserResponse, requestedName string, w io.Writer) (*auth.Org, error) {
+// cloudTrialDays is the length of the free trial an organization created from
+// the CLI starts with.
+const cloudTrialDays = 7
+
+// errTrialDeclined is returned by createNewOrg when the user chose not to
+// start the trial, so no organization was created.
+var errTrialDeclined = errors.New("free trial declined")
+
+// createNewOrg creates a Dagger Cloud organization entirely from the CLI (no
+// browser round-trip), after the user agrees to start its free trial. Cloud
+// creates it on the Individual plan, with the features Cloud checks need
+// enabled. The org name is taken from the requested name when provided,
+// otherwise derived from the account so the user isn't forced to invent one.
+// The server may adjust the name (e.g. to resolve collisions), so the returned
+// org reflects the actual name.
+func createNewOrg(cmd *cobra.Command, cli *cloud.Client, user *cloud.UserResponse, requestedName string) (*auth.Org, error) {
+	ctx := cmd.Context()
+	w := cmd.ErrOrStderr()
 	name := requestedName
 	if name == "" {
 		name = defaultOrgName(user)
 	}
 
 	fmt.Fprintln(w, "You are not a member of any Dagger Cloud organizations.")
+	start, err := confirmTrial(cmd, name)
+	if err != nil {
+		return nil, err
+	}
+	if !start {
+		return nil, errTrialDeclined
+	}
 	fmt.Fprintf(w, "Creating a new organization %q...\n", name)
 
 	org, err := cli.CreateQuickstartOrg(ctx, name)
@@ -181,7 +204,41 @@ func createNewOrg(ctx context.Context, cli *cloud.Client, user *cloud.UserRespon
 	if org.Name != name {
 		fmt.Fprintf(w, "Created organization %q.\n", org.Name)
 	}
+	fmt.Fprintf(w, "Started a free %d-day Individual plan trial for organization %q.\n", cloudTrialDays, org.Name)
 	return &auth.Org{ID: org.ID, Name: org.Name}, nil
+}
+
+type trialChoice string
+
+const (
+	trialStart  trialChoice = "start"
+	trialNotNow trialChoice = "not-now"
+)
+
+// confirmTrial asks whether to create the organization and start its free
+// trial, with the same explicit-choice prompt as the other Cloud setup steps.
+// Without a terminal to ask in, or with --auto-apply, it proceeds: creating
+// the organization is what login and signup are for. It is a variable so
+// tests can answer the prompt.
+var confirmTrial = func(cmd *cobra.Command, orgName string) (bool, error) {
+	if autoApply || !stdinIsTTY || cloudJSON {
+		return true, nil
+	}
+	choice := trialStart
+	form := huh.NewForm(huh.NewGroup(
+		idtui.NewExplicitChoice(
+			&choice,
+			huh.NewOption("Start trial", trialStart),
+			huh.NewOption("Not now", trialNotNow),
+		).
+			Title(fmt.Sprintf("Start a free %d-day Individual plan trial?", cloudTrialDays)).
+			TitleLink("https://dagger.io/pricing").
+			Description(fmt.Sprintf("This creates the organization %q.\nMore info: https://dagger.io/pricing", orgName)),
+	))
+	if err := idtui.RunStandaloneForm(cmd.Context(), Frontend, form); err != nil {
+		return false, err
+	}
+	return choice == trialStart, nil
 }
 
 // defaultOrgName derives an org name from the authenticated account, preferring

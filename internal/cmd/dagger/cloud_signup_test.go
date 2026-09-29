@@ -9,7 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
+
+	"github.com/dagger/dagger/internal/cloud"
+	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
 func TestCloudSignupUsesConfiguredToken(t *testing.T) {
@@ -63,7 +68,91 @@ func TestCloudSignupNonInteractiveCreatesOrganization(t *testing.T) {
 	daggerCloudWithConfig(t, []string{"DAGGER_CLOUD_URL=" + server.URL}, []string{"cloud", "signup"}, config, func(t *testing.T, err error, out, stderr *bytes.Buffer) {
 		require.NoError(t, err, stderr.String())
 		require.Contains(t, stderr.String(), `Creating a new organization "my-org"`)
+		require.Contains(t, stderr.String(), `Started a free 7-day Individual plan trial for organization "my-org"`)
 		require.NotContains(t, stderr.String(), "Unable to open browser")
 		require.Contains(t, out.String(), "Success.")
 	})
+}
+
+func TestCreateNewOrgStartsTrial(t *testing.T) {
+	newServer := func(t *testing.T, created *int) *cloud.Client {
+		t.Helper()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			if strings.Contains(string(body), "createQuickstartOrg") {
+				*created++
+				// The mutation takes only the name: Cloud picks the plan and
+				// the trial's features.
+				require.Contains(t, string(body), `"variables":{"name":"my-org"}`)
+				fmt.Fprint(w, `{"data":{"createQuickstartOrg":{"id":"org-1","name":"my-org"}}}`)
+				return
+			}
+			t.Errorf("unexpected request: %s", body)
+		}))
+		t.Cleanup(server.Close)
+		t.Setenv("DAGGER_CLOUD_URL", server.URL)
+		client, err := cloud.NewClient(t.Context(), &auth.Cloud{Token: &oauth2.Token{AccessToken: "tok", TokenType: "Basic"}})
+		require.NoError(t, err)
+		return client
+	}
+	answer := func(t *testing.T, start bool) *string {
+		t.Helper()
+		asked := new(string)
+		prev := confirmTrial
+		confirmTrial = func(cmd *cobra.Command, orgName string) (bool, error) {
+			*asked = orgName
+			return start, nil
+		}
+		t.Cleanup(func() { confirmTrial = prev })
+		return asked
+	}
+	newCmd := func(t *testing.T) (*cobra.Command, *bytes.Buffer) {
+		cmd := &cobra.Command{}
+		cmd.SetContext(t.Context())
+		var stderr bytes.Buffer
+		cmd.SetErr(&stderr)
+		return cmd, &stderr
+	}
+
+	t.Run("the trial is offered before the organization is created", func(t *testing.T) {
+		var created int
+		client := newServer(t, &created)
+		asked := answer(t, true)
+		cmd, stderr := newCmd(t)
+		org, err := createNewOrg(cmd, client, nil, "my-org")
+		require.NoError(t, err)
+		require.Equal(t, "my-org", *asked)
+		require.Equal(t, 1, created)
+		require.Equal(t, "my-org", org.Name)
+		require.Contains(t, stderr.String(), `Started a free 7-day Individual plan trial for organization "my-org"`)
+	})
+
+	t.Run("declining creates nothing", func(t *testing.T) {
+		var created int
+		client := newServer(t, &created)
+		answer(t, false)
+		cmd, stderr := newCmd(t)
+		_, err := createNewOrg(cmd, client, nil, "my-org")
+		require.ErrorIs(t, err, errTrialDeclined)
+		require.Zero(t, created)
+		require.NotContains(t, stderr.String(), "Creating a new organization")
+	})
+}
+
+func TestConfirmTrialWithoutATerminalProceeds(t *testing.T) {
+	prevTTY, prevApply := stdinIsTTY, autoApply
+	t.Cleanup(func() { stdinIsTTY, autoApply = prevTTY, prevApply })
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+
+	stdinIsTTY, autoApply = false, false
+	start, err := confirmTrial(cmd, "my-org")
+	require.NoError(t, err)
+	require.True(t, start)
+
+	stdinIsTTY, autoApply = true, true
+	start, err = confirmTrial(cmd, "my-org")
+	require.NoError(t, err)
+	require.True(t, start)
 }

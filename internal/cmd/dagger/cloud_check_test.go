@@ -207,13 +207,8 @@ func TestCloudChecksOnEnabledRepoStillEnforcesFeatures(t *testing.T) {
 			// Resolves the org owning the installation for the feature gate.
 			data = `{"sources":[{"id":"installation","name":"example","orgName":"example"}]}`
 		case "GetOrgDetails":
-			// Neither feature enabled -> the trial must be offered.
+			// Neither feature enabled -> checks on must fail, not report "on".
 			data = `{"org":{"id":"org-1","name":"example","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[{"name":"CLOUD_CHECKS","status":"UNUSED"}]}}`
-		case "StartFeatureTrial":
-			if got := request.Variables["features"]; !sameStrings(got, []string{"CLOUD_CHECKS", "CLOUD_MODULES"}) {
-				t.Errorf("trial features: %v", got)
-			}
-			data = `{"startFeatureTrial":true}`
 		default:
 			t.Errorf("unexpected Cloud operation: %s", operation)
 			http.Error(w, "unexpected operation", http.StatusBadRequest)
@@ -234,79 +229,99 @@ func TestCloudChecksOnEnabledRepoStillEnforcesFeatures(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	err := runCloudCheckSet(true)(cmd, []string{"github.com/example/project"})
-	require.NoError(t, err)
-	require.Contains(t, out.String(), "Started a 14-day CLOUD_CHECKS + CLOUD_MODULES trial")
-	require.Contains(t, out.String(), "checks for repo github.com/example/project enabled\n")
-	require.Equal(t, []string{"GetUserRepositories", "GetSources", "GetOrgDetails", "StartFeatureTrial"}, queries)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `CLOUD_CHECKS + CLOUD_MODULES are not enabled for organization "example"`)
+	require.NotContains(t, out.String(), "enabled\n")
+	require.Equal(t, []string{"GetUserRepositories", "GetSources", "GetOrgDetails"}, queries)
 }
 
-// An org missing the Cloud features must get the trial BEFORE the org-scoped
-// mapped-sources lookup: that query is feature-gated server-side, so without
-// this ordering, state resolution dies with "unauthorized" and the trial is
-// never offered (chicken-and-egg).
-func TestCloudChecksOnUntrackedRepoStartsTrialBeforeMappedSources(t *testing.T) {
-	var queries []string
-	trialStarted := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var request struct {
-			OperationName string         `json:"operationName"`
-			Variables     map[string]any `json:"variables"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Error(err)
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		operation := request.OperationName
-		if operation == "" {
-			operation = "User"
-		}
-		queries = append(queries, operation)
-		var data string
-		switch operation {
-		case "GetUserRepositories":
-			data = `{"user":{"repositories":[]}}`
-		case "GetSources":
-			data = `{"sources":[{"id":"installation","name":"example","orgName":"example"}]}`
-		case "User":
-			data = `{"user":{"id":"user","orgs":[{"id":"org","name":"example"}]}}`
-		case "GetOrgDetails":
-			data = `{"org":{"id":"org","name":"example","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[]}}`
-		case "StartFeatureTrial":
-			trialStarted = true
-			data = `{"startFeatureTrial":true}`
-		case "GetOrgMappedSources":
-			// Only reachable once the features are ensured (server-side gate).
-			if !trialStarted {
-				t.Error("mappedSources queried before the feature trial was ensured")
+// The org's Cloud features must be checked BEFORE the org-scoped
+// mapped-sources lookup: that query is feature-gated server-side, so an org
+// without the features would otherwise fail with a bare "unauthorized"
+// instead of the actionable feature error.
+func TestCloudChecksOnUntrackedRepoChecksFeaturesBeforeMappedSources(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		features string
+		wantErr  string
+		want     []string
+	}{
+		{
+			name:     "features in trial",
+			features: `{"name":"CLOUD_CHECKS","status":"IN_TRIAL"},{"name":"CLOUD_MODULES","status":"IN_TRIAL"}`,
+			want:     []string{"GetUserRepositories", "GetSources", "User", "GetOrgDetails", "GetOrgMappedSources", "ConfigureSource"},
+		},
+		{
+			name:    "features missing",
+			wantErr: `CLOUD_CHECKS + CLOUD_MODULES are not enabled for organization "example"`,
+			want:    []string{"GetUserRepositories", "GetSources", "User", "GetOrgDetails"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var queries []string
+			featuresChecked := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					OperationName string `json:"operationName"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+					http.Error(w, "invalid request", http.StatusBadRequest)
+					return
+				}
+				operation := request.OperationName
+				if operation == "" {
+					operation = "User"
+				}
+				queries = append(queries, operation)
+				var data string
+				switch operation {
+				case "GetUserRepositories":
+					data = `{"user":{"repositories":[]}}`
+				case "GetSources":
+					data = `{"sources":[{"id":"installation","name":"example","orgName":"example"}]}`
+				case "User":
+					data = `{"user":{"id":"user","orgs":[{"id":"org","name":"example"}]}}`
+				case "GetOrgDetails":
+					featuresChecked = true
+					data = `{"org":{"id":"org","name":"example","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[` + tc.features + `]}}`
+				case "GetOrgMappedSources":
+					// Only reachable once the features are ensured (server-side gate).
+					if !featuresChecked {
+						t.Error("mappedSources queried before the features were checked")
+					}
+					data = `{"org":{"mappedSources":[{"installationId":"installation","mode":"SELECTED","repositories":[]}]}}`
+				case "ConfigureSource":
+					data = `{"configureSource":{"installationId":"installation","mode":"SELECTED"}}`
+				default:
+					t.Errorf("unexpected Cloud operation: %s", operation)
+					http.Error(w, "unexpected operation", http.StatusBadRequest)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprintf(w, `{"data":%s}`, data)
+			}))
+			defer server.Close()
+			t.Setenv("DAGGER_CLOUD_URL", server.URL)
+			t.Setenv("DAGGER_CLOUD_TOKEN", "test-token")
+			oldTTY, oldWorkspace, oldOrg, oldApply := stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply
+			stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply = false, "", "", true
+			t.Cleanup(func() { stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply = oldTTY, oldWorkspace, oldOrg, oldApply })
+			cmd := &cobra.Command{}
+			cmd.SetContext(t.Context())
+			requireCloudFeatures(cmd, cloudChecksRequiredFeatures...)
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			err := runCloudCheckSet(true)(cmd, []string{"github.com/example/project"})
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+				require.Contains(t, out.String(), "checks for repo github.com/example/project enabled\n")
 			}
-			data = `{"org":{"mappedSources":[{"installationId":"installation","mode":"SELECTED","repositories":[]}]}}`
-		case "ConfigureSource":
-			data = `{"configureSource":{"installationId":"installation","mode":"SELECTED"}}`
-		default:
-			t.Errorf("unexpected Cloud operation: %s", operation)
-			http.Error(w, "unexpected operation", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"data":%s}`, data)
-	}))
-	defer server.Close()
-	t.Setenv("DAGGER_CLOUD_URL", server.URL)
-	t.Setenv("DAGGER_CLOUD_TOKEN", "test-token")
-	oldTTY, oldWorkspace, oldOrg, oldApply := stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply
-	stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply = false, "", "", true
-	t.Cleanup(func() { stdinIsTTY, workspaceRef, cloudOrgFlag, autoApply = oldTTY, oldWorkspace, oldOrg, oldApply })
-	cmd := &cobra.Command{}
-	cmd.SetContext(t.Context())
-	requireCloudFeatures(cmd, featureCloudChecks, featureCloudModules)
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	err := runCloudCheckSet(true)(cmd, []string{"github.com/example/project"})
-	require.NoError(t, err)
-	require.Contains(t, out.String(), "Started a 14-day CLOUD_CHECKS + CLOUD_MODULES trial")
-	require.Contains(t, out.String(), "checks for repo github.com/example/project enabled\n")
-	require.Equal(t, []string{"GetUserRepositories", "GetSources", "User", "GetOrgDetails", "StartFeatureTrial", "GetOrgMappedSources", "ConfigureSource"}, queries)
+			require.Equal(t, tc.want, queries)
+		})
+	}
 }
 
 // A ConfigureSource rejection for a repo the installation cannot access must
