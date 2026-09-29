@@ -122,9 +122,15 @@ func (s adapterTestServer) SnapshotManager() bkcache.SnapshotManager { return s.
 // until released.
 type pausingManager struct {
 	bkcache.SnapshotManager
-	armed   atomic.Bool
-	entered chan struct{}
-	release chan struct{}
+	armed       atomic.Bool
+	entered     chan struct{}
+	release     chan struct{}
+	releaseOnce sync.Once
+}
+
+// unpause lets a held body continue. It may be called more than once.
+func (m *pausingManager) unpause() {
+	m.releaseOnce.Do(func() { close(m.release) })
 }
 
 func (m *pausingManager) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
@@ -156,8 +162,7 @@ func newAdapterTestEngine(t *testing.T) *adapterTestEngine {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, cache.CloseDiscardingPersistence()) })
 	bodies := &pausingManager{SnapshotManager: store.Manager, entered: make(chan struct{}), release: make(chan struct{})}
-	var releaseOnce sync.Once
-	t.Cleanup(func() { releaseOnce.Do(func() { close(bodies.release) }) })
+	t.Cleanup(bodies.unpause)
 	query := &core.Query{Server: adapterTestServer{manager: bodies}}
 	ctx = core.ContextWithQuery(dagql.ContextWithCache(ctx, cache), query)
 	srv, err := dagql.NewServer(ctx, query)
@@ -203,7 +208,16 @@ func (e *adapterTestEngine) busyFile(t *testing.T, name string) dagql.ObjectResu
 	evaluated := make(chan error, 1)
 	go func() { evaluated <- e.cache.Evaluate(e.ctx, busy) }()
 	within(t, e.bodies.entered)
-	t.Cleanup(func() { within(t, evaluated) })
+	// The body runs in the cache's own task, so it outlives its caller once
+	// the test's context ends. Let it finish, and wait for it, before the
+	// cache and the snapshot store close.
+	t.Cleanup(func() {
+		e.bodies.unpause()
+		within(t, evaluated)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(e.ctx), 10*time.Second)
+		defer cancel()
+		require.NoError(t, e.cache.Evaluate(ctx, busy))
+	})
 	return busy
 }
 
