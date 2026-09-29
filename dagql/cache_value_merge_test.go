@@ -2228,3 +2228,50 @@ func TestMergeValuesOfferOwnerNamingOneEntryTwice(t *testing.T) {
 	}
 	require.NoError(t, a.ReleaseSession(ctx, "new-session"))
 }
+
+// A record the merge installs names the entry that takes it, whether the
+// merge creates that entry, stores the record on an entry with no value,
+// replaces an expired value in place or retires an entry in use; the entry
+// then exports. A record that lands on an entry the cache has names a number
+// other than its provisional one, so its relocation can't be skipped.
+func TestMergeValuesInstalledRecordNamesItsEntry(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []string{"created", "stored on an entry with no value", "replacing an expired value", "retiring an entry in use"} {
+		t.Run(tc, func(t *testing.T) {
+			t.Parallel()
+			bundle, recipe := mergeTestSource(t, "root", "sent")
+			var (
+				ctx  context.Context
+				into *Cache
+				from = cloudCacheID
+			)
+			switch tc {
+			case "stored on an entry with no value":
+				ctx, into = storedPartTestCache(t, WithBlobStore())
+				from = "cache-a"
+				_, err := into.AttachRemoteHolding(ctx, HolderKey{Cache: "cache-x", Number: 9}, RemoteHolding{Recipe: recipe, Field: "root", TypeName: "transferTestValue"})
+				require.NoError(t, err)
+			default:
+				bctx, b, bsrv := transferTestCache(t)
+				ctx, into = bctx, b
+				if tc != "created" {
+					local := persistedListTestResult(t, bctx, b, bsrv, "root", &transferTestValue{Text: "local"})
+					if tc == "replacing an expired value" {
+						require.NoError(t, b.ReleaseSession(bctx, "test-session"))
+					}
+					mergeTestExpire(b, local.cacheSharedResult())
+				}
+			}
+			reply, err := into.MergeValues(ctx, from, bundle)
+			require.NoError(t, err)
+			number := reply.Imported()[0].ResultID
+			into.egraphMu.RLock()
+			res := into.resultsByID[sharedResultID(number)]
+			envelope, frame := *res.persistedEnvelope, res.loadResultCall()
+			into.egraphMu.RUnlock()
+			require.Equal(t, number, envelope.ResultID, "the record names its entry")
+			_, err = normalizeTransferRecord(PersistedRecord{ResultID: number, Envelope: envelope, Call: frame})
+			require.NoError(t, err, "the entry exports")
+		})
+	}
+}
