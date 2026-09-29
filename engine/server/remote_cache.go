@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -38,26 +37,13 @@ type RemoteCacheAdapter struct {
 	runDone  chan struct{}
 	stopOnce sync.Once
 	stopErr  error
+	// mergeValues is the cache's MergeValues. A test replaces it to return a
+	// committed reply with a release error.
+	mergeValues func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error)
 }
 
 func newRemoteCacheAdapter(cache *dagql.Cache, bridge *dagql.RemoteCacheBridge) *RemoteCacheAdapter {
-	return &RemoteCacheAdapter{cache: cache, bridge: bridge, cancel: func(error) {}, runDone: make(chan struct{})}
-}
-
-// OfferParts is an engine control operation, not a user's GraphQL call. Its
-// receiver is already registered and held by the caller. Each offer names the
-// Cloud counterpart of the entry it lands on.
-func (a *RemoteCacheAdapter) OfferParts(ctx context.Context, receiver dagql.AnyResult, offers []dagql.CloudPartOffer) ([]dagql.OfferDisposition, error) {
-	if a.stopped.Load() {
-		out := make([]dagql.OfferDisposition, len(offers))
-		for i, offer := range offers {
-			address := offer.Offer.Address
-			address.OutputPath = slices.Clone(address.OutputPath)
-			out[i] = dagql.OfferDisposition{Address: address, Outcome: dagql.OfferUnavailable, Err: ErrRemoteCacheAdapterClosed}
-		}
-		return out, ErrRemoteCacheAdapterClosed
-	}
-	return a.cache.OfferParts(ctx, receiver, offers)
+	return &RemoteCacheAdapter{cache: cache, bridge: bridge, cancel: func(error) {}, runDone: make(chan struct{}), mergeValues: cache.MergeValues}
 }
 
 func (a *RemoteCacheAdapter) TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error) {

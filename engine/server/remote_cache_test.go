@@ -16,6 +16,8 @@ import (
 	bolt "go.etcd.io/bbolt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/remotecache"
+	"github.com/dagger/dagger/engine/remotecache/protocol"
 	"github.com/dagger/dagger/engine/snapshots"
 )
 
@@ -93,14 +95,15 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		require.Error(t, takeErr)
 		require.False(t, bridgeAttached(cache), "stop detaches the adapter's bridge")
 		require.NoError(t, adapter.Stop(boundedContext(t)), "stop is idempotent")
-		out, err := adapter.OfferParts(t.Context(), nil, []dagql.CloudPartOffer{{Offer: renewalOnlyOffer(), CloudNumber: 1}, {Offer: renewalOnlyOffer(), CloudNumber: 1}})
+		_, err := adapter.OfferParts(t.Context(), protocol.Offer{Items: []protocol.OfferItem{{Number: 1, Offers: []protocol.CloudPart{{Offer: renewalOnlyOffer(), CloudNumber: 1}}}}})
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
-		require.Len(t, out, 2)
-		for _, disposition := range out {
-			require.Equal(t, dagql.OfferUnavailable, disposition.Outcome)
-			require.ErrorIs(t, disposition.Err, ErrRemoteCacheAdapterClosed)
-			require.Equal(t, dagql.PersistedPartAddress{Part: "snapshot"}, disposition.Address)
-		}
+		_, err = adapter.Merge(t.Context(), protocol.Merge{})
+		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
+		err = adapter.Export(t.Context(), protocol.Export{Roots: []uint64{1}}, func(context.Context, remotecache.Export) error {
+			t.Fatal("a stopped adapter exports nothing")
+			return nil
+		})
+		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 		_, err = adapter.TakeRenewalRequest(t.Context())
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 		require.Equal(t, dagql.RenewalReplyDiscarded, adapter.ReplyRenewal(dagql.RenewalReply{Unavailable: true}))

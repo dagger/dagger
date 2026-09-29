@@ -21,6 +21,10 @@
           "$ref": "#/$defs/TelemetryConfig",
           "description": "Telemetry configures the engine's own telemetry, separate from client telemetry."
         },
+        "remoteCache": {
+          "$ref": "#/$defs/RemoteCacheConfig",
+          "description": "RemoteCache connects the engine's cache to a remote cache service."
+        },
         "gc": {
           "$ref": "#/$defs/GCConfig",
           "description": "GC configures the engine's garbage collector."
@@ -189,6 +193,16 @@
         "insecure",
         "ca"
       ]
+    },
+    "RemoteCacheConfig": {
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "URL is the remote cache service's URL. The engine connects to it when DAGGER_CLOUD_TOKEN holds an engine token, and then exports its cache events too. The _EXPERIMENTAL_DAGGER_REMOTE_CACHE_URL environment variable sets it too, and wins."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
     },
     "Security": {
       "properties": {

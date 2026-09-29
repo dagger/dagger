@@ -378,6 +378,7 @@ func main() { //nolint:gocyclo
 				return err
 			}
 		}
+		remoteCache := newRemoteCacheIntegration(&cfg)
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
 		eventExport = newEngineEventExport(ctx, processResource, cfg.Telemetry)
 
@@ -500,12 +501,13 @@ func main() { //nolint:gocyclo
 
 		bklog.G(ctx).Debug("creating engine server")
 		srv, err := server.NewServer(ctx, &server.NewServerOpts{
-			Name:             engineName,
-			Config:           &cfg,
-			BuildkitConfig:   &bkcfg,
-			EngineInstanceID: engineInstanceID,
-			EngineEvents:     serverEngineEventExport(eventExport),
-			WorkloadExport:   workloadExport,
+			Name:                   engineName,
+			Config:                 &cfg,
+			BuildkitConfig:         &bkcfg,
+			EngineInstanceID:       engineInstanceID,
+			EngineEvents:           serverEngineEventExport(eventExport),
+			WorkloadExport:         workloadExport,
+			RemoteCacheIntegration: remoteCache,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)

@@ -77,6 +77,33 @@ func (c *recordingConn) none(t *testing.T) {
 	}
 }
 
+// serviceConn is a recordingConn the test also writes to, as the service
+// would.
+type serviceConn struct {
+	*recordingConn
+	inbound chan []byte
+}
+
+func newServiceConn() *serviceConn {
+	return &serviceConn{recordingConn: newRecordingConn(), inbound: make(chan []byte, 8)}
+}
+
+func (c *serviceConn) Read(ctx context.Context) ([]byte, error) {
+	select {
+	case data := <-c.inbound:
+		return data, nil
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	}
+}
+
+func (c *serviceConn) send(t *testing.T, env protocol.Envelope) {
+	t.Helper()
+	data, err := json.Marshal(env)
+	require.NoError(t, err)
+	c.inbound <- data
+}
+
 type fakeAdapter struct {
 	export   func(context.Context, protocol.Export, func(context.Context, Export) error) error
 	merge    func(context.Context, protocol.Merge) (protocol.Merged, error)
@@ -644,6 +671,58 @@ func TestRunReturnsWhenCancelled(t *testing.T) {
 			t.Fatal("Run did not return")
 		}
 		require.True(t, conn.closed.Load())
+	})
+	// Run cancels the adapter's operations in flight and returns once they
+	// do, however long the service would have taken.
+	serving := func(t *testing.T, adapter *fakeAdapter, req protocol.Envelope, entered <-chan struct{}) {
+		t.Helper()
+		cfg := newSettings(Config{})
+		conn := newServiceConn()
+		cfg.dial = func(context.Context) (wsConn, error) { return conn, nil }
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- cfg.run(ctx, adapter) }()
+		hello := conn.next(t)
+		conn.send(t, protocol.Envelope{ID: 1, Re: hello.ID, Type: protocol.TypeWelcome, Body: json.RawMessage(`{}`)})
+		conn.send(t, req)
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the request never reached the adapter")
+		}
+		cancel()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("Run did not return")
+		}
+	}
+	t.Run("mid-merge", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		entered, returned := make(chan struct{}), make(chan error, 1)
+		adapter.merge = func(ctx context.Context, _ protocol.Merge) (protocol.Merged, error) {
+			close(entered)
+			<-ctx.Done()
+			returned <- context.Cause(ctx)
+			return protocol.Merged{}, context.Cause(ctx)
+		}
+		serving(t, adapter, request(t, 2, protocol.TypeMerge, protocol.Merge{}), entered)
+		require.Error(t, <-returned, "the merge's context was cancelled")
+	})
+	t.Run("mid-export", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		entered, returned := make(chan struct{}), make(chan error, 1)
+		adapter.export = func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+			close(entered)
+			// consume sends exported and waits for the service's upload.
+			err := consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{}})
+			returned <- err
+			return err
+		}
+		serving(t, adapter, request(t, 2, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}), entered)
+		require.Error(t, <-returned, "the wait for the upload ended, and the chains were released")
 	})
 }
 
