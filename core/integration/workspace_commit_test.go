@@ -319,12 +319,85 @@ func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t
 	// to. The amend flow recreates it from the uncommitted changes instead.
 	_, err = reset.WithReset(draftSHA).Git().Head().CommitSHA(ctx)
 	require.ErrorContains(t, err, "is not in this workspace's repository")
+	// Abbreviations resolve against the same frozen repository, so they
+	// cannot reach orphaned commits either.
+	_, err = reset.WithReset(draftSHA[:12]).Git().Head().CommitSHA(ctx)
+	require.ErrorContains(t, err, "in this workspace's repository")
 
-	_, err = committed.WithReset("main").Git().Head().CommitSHA(ctx)
-	require.ErrorContains(t, err, "full lowercase commit hash")
 	missing := strings.Repeat("ab", 20)
 	_, err = committed.WithReset(missing).Git().Head().CommitSHA(ctx)
 	require.ErrorContains(t, err, "is not in this workspace's repository")
+}
+
+func (WorkspaceSuite) TestWorkspaceWithResetRevisions(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
+	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	first := ws.WithNewFile("first.txt", "first").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "first", workspaceCommitDate)
+	})
+	firstSHA, err := first.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	second := first.WithNewFile("second.txt", "second").With(func(ws *dagger.Workspace) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), "second", workspaceCommitDate)
+	})
+	secondSHA, err := second.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+
+	// Targets resolve like GitRepository.ref against the frozen repository:
+	// abbreviated hashes, ref names and revision suffixes on either.
+	for _, tc := range []struct {
+		target string
+		want   string
+	}{
+		{secondSHA, secondSHA},
+		{firstSHA[:7], firstSHA},
+		{baseSHA[:12], baseSHA},
+		{"HEAD", secondSHA},
+		{"HEAD~", firstSHA},
+		{"HEAD^", firstSHA},
+		{"HEAD~2", baseSHA},
+		{"HEAD^^", baseSHA},
+		{"HEAD~1^1", baseSHA},
+		{secondSHA[:7] + "~1", firstSHA},
+		{firstSHA[:7] + "^", baseSHA},
+	} {
+		t.Run(tc.target, func(ctx context.Context, t *testctx.T) {
+			reset := second.WithReset(tc.target)
+			sha, err := reset.Git().Head().CommitSHA(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, sha)
+			// A mixed reset keeps the reverted commits' files uncommitted.
+			contents, err := reset.File("second.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "second", contents)
+		})
+	}
+
+	hard := second.WithReset("HEAD~2", dagger.WorkspaceWithResetOpts{Hard: true})
+	hardSHA, err := hard.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseSHA, hardSHA)
+	_, err = hard.File("first.txt").Contents(ctx)
+	require.Error(t, err)
+
+	for _, tc := range []struct {
+		target string
+		err    string
+	}{
+		{"HEAD~3", "is a root commit"},
+		{"HEAD^2", "cannot select parent 2"},
+		{"HEAD^{tree}", "invalid revision"},
+		{"HEAD@{1}", "invalid revision"},
+		{"no-such-branch", "in this workspace's repository"},
+	} {
+		t.Run(tc.target, func(ctx context.Context, t *testctx.T) {
+			_, err := second.WithReset(tc.target).Git().Head().CommitSHA(ctx)
+			require.ErrorContains(t, err, tc.err)
+		})
+	}
 }
 
 func (WorkspaceSuite) TestWorkspaceWithResetPreservesTree(ctx context.Context, t *testctx.T) {

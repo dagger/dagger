@@ -1704,6 +1704,93 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestRefRevisionSuffixes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// root - a - b ------ merge - head   (main)
+	//         \          /
+	//          side1 - side2              (side)
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"sh", "-c", `set -e
+git init -q -b main
+echo ` + identity.NewID() + ` > f && git add f && git commit -qm root
+echo a > f && git commit -qam a
+git checkout -qb side
+echo 1 > s && git add s && git commit -qm side1
+echo 2 > s && git commit -qam side2
+git checkout -q main
+echo b > f && git commit -qam b
+git merge -q --no-ff -m merge side
+echo head > f && git commit -qam head
+`})
+
+	exprs := []string{
+		"HEAD~0", "HEAD^0", "HEAD~", "HEAD~1", "HEAD~3", "HEAD~4",
+		"HEAD^", "HEAD^^", "HEAD^^2", "HEAD~1^2~1",
+		"main~2", "side~2", "refs/heads/side^",
+	}
+	out, err := ctr.WithExec(append([]string{"git", "rev-parse"}, exprs...)).Stdout(ctx)
+	require.NoError(t, err)
+	want := strings.Fields(out)
+	require.Len(t, want, len(exprs))
+	short, err := ctr.WithExec([]string{"git", "rev-parse", "--short=7", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	short = strings.TrimSpace(short)
+	shortWant, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~2"}).Stdout(ctx)
+	require.NoError(t, err)
+	shortWant = strings.TrimSpace(shortWant)
+
+	check := func(ctx context.Context, t *testctx.T, repo *dagger.GitRepository) {
+		for i, expr := range exprs {
+			ref := repo.Ref(expr)
+			sha, err := ref.CommitSHA(ctx)
+			require.NoError(t, err, expr)
+			require.Equal(t, want[i], sha, expr)
+			name, err := ref.Name(ctx)
+			require.NoError(t, err, expr)
+			require.Equal(t, sha, name, "%s resolves to a detached ref", expr)
+		}
+
+		// an abbreviated SHA base, expanded like ref(name: <prefix>)
+		sha, err := repo.Ref(short + "~2").CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, shortWant, sha)
+
+		// the walked commit checks out like any other
+		contents, err := repo.Ref("HEAD~1^2").Tree().File("s").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "2\n", contents)
+
+		_, err = repo.Ref("HEAD~5").CommitSHA(ctx)
+		requireErrOut(t, err, `resolve "HEAD~5": HEAD~4`)
+		requireErrOut(t, err, "is a root commit")
+
+		_, err = repo.Ref("HEAD^2").CommitSHA(ctx)
+		requireErrOut(t, err, `resolve "HEAD^2": HEAD`)
+		requireErrOut(t, err, "has 1 parent(s), cannot select parent 2")
+
+		_, err = repo.Ref("HEAD~x").CommitSHA(ctx)
+		requireErrOut(t, err, `invalid revision "HEAD~x"`)
+
+		_, err = repo.Ref("HEAD^{tree}").CommitSHA(ctx)
+		requireErrOut(t, err, "^{...} peeling is not supported")
+		requireErrOut(t, err, "supported forms are")
+	}
+
+	t.Run("local repository", func(ctx context.Context, t *testctx.T) {
+		check(ctx, t, ctr.Directory(".").AsGit())
+	})
+
+	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
+		svc, url := gitService(ctx, t, c, ctr.Directory("."))
+		check(ctx, t, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: svc}))
+	})
+}
+
 func (GitSuite) TestGitLatest(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := c.Container().
