@@ -289,7 +289,7 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanup(
 	}
 
 	sourceSchema := &moduleSourceSchema{}
-	generatedCode, err := sourceSchema.runSDKCodegen(ctx, source)
+	generatedCode, err := sourceSchema.runSDKCodegen(ctx, source, nil)
 	if err != nil {
 		var missingImpl ErrSDKCodegenNotImplemented
 		if errors.As(err, &missingImpl) {
