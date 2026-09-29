@@ -2,10 +2,58 @@ package core
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/util/gitutil"
 )
+
+// A direct-parent comparison is complete even with unknown older ancestry:
+// either range excludes the shared boundary. Borrow only the child's store and
+// its exact shallow file; never union independently shallow repositories.
+func mountOwnedShallowParentHistory(ctx context.Context, refs []*GitRef, fn func(*gitutil.GitCLI, []string) error) (bool, error) {
+	if len(refs) != 2 {
+		return false, nil
+	}
+	for i, child := range refs {
+		local, ok := child.Backend.(*LocalGitRef)
+		if !ok || local.repo.HistorySource.Self() == nil {
+			continue
+		}
+		parent := refs[1-i]
+		matches, err := nativeParentHistoryCandidate(ctx, child, parent)
+		if err != nil {
+			return false, err
+		}
+		if !matches {
+			continue
+		}
+		handled := false
+		err = local.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+			dir, err := local.repo.nativeGitDir(ctx, source.Dir())
+			if err != nil {
+				return err
+			}
+			shallow, err := ownedShallowBoundary(dir, local.repo.HistorySource.Self().Ref.SHA)
+			if err != nil || !shallow {
+				return err
+			}
+			valid, err := validateNativeParentHistory(ctx, source, parent.Ref.SHA, child.Ref.SHA, true)
+			if err != nil || !valid {
+				return err
+			}
+			handled = true
+			return withGitObjectView(ctx, []string{filepath.Join(dir, "objects")}, "sha1", func(view *gitutil.GitCLI) error {
+				if err := copyGitShallowBoundary(dir, view.Dir()); err != nil {
+					return err
+				}
+				return fn(view, []string{refs[0].Ref.SHA, refs[1].Ref.SHA})
+			})
+		})
+		return handled, err
+	}
+	return false, nil
+}
 
 // nativeParentHistoryRefs borrows an owned child's objects for comparisons with
 // its exact remote parent capability. It does not promote arbitrary remote refs
@@ -53,7 +101,12 @@ func nativeParentHistoryCandidate(ctx context.Context, child, remote *GitRef) (b
 	if !ok || local.repo == nil || child.Ref == nil || child.Repo.Self() == nil || child.Repo.Self().Backend != local.repo {
 		return false, nil
 	}
-	if _, ok := remote.Backend.(*RemoteGitRef); !ok || remote.Ref == nil || remote.Repo.Self() == nil {
+	if remote.Ref == nil || remote.Repo.Self() == nil {
+		return false, nil
+	}
+	switch remote.Backend.(type) {
+	case *RemoteGitRef, *LocalGitRef:
+	default:
 		return false, nil
 	}
 	base := local.repo.CheckoutBase
@@ -61,7 +114,12 @@ func nativeParentHistoryCandidate(ctx context.Context, child, remote *GitRef) (b
 		return false, nil
 	}
 	parent := base.Parent.Self()
-	if _, ok := parent.Backend.(*RemoteGitRef); !ok || parent.Ref == nil || parent.Repo.Self() == nil || parent.Ref.SHA != remote.Ref.SHA {
+	if parent.Ref == nil || parent.Repo.Self() == nil || parent.Ref.SHA != remote.Ref.SHA {
+		return false, nil
+	}
+	switch parent.Backend.(type) {
+	case *RemoteGitRef, *LocalGitRef:
+	default:
 		return false, nil
 	}
 	parentRecipe, err := parent.Repo.RecipeDigest(ctx)
@@ -75,11 +133,11 @@ func nativeParentHistoryCandidate(ctx context.Context, child, remote *GitRef) (b
 	return parentRecipe == remoteRecipe, nil
 }
 
-func validateNativeParentHistory(ctx context.Context, source *gitutil.GitCLI, parent, child string) (bool, error) {
+func validateNativeParentHistory(ctx context.Context, source *gitutil.GitCLI, parent, child string, ownedShallow ...bool) (bool, error) {
 	if len(parent) != 40 || len(child) != 40 || !IsFullGitSHA(parent) || !IsFullGitSHA(child) {
 		return false, nil
 	}
-	if _, err := nativeCommitGitDir(ctx, source.Dir()); err != nil {
+	if _, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), len(ownedShallow) > 0 && ownedShallow[0]); err != nil {
 		if nativeCommitFallback(err) {
 			return false, nil
 		}

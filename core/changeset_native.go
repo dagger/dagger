@@ -74,7 +74,7 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 		if err != nil {
 			return err
 		}
-		gitDir, err := nativeCommitGitDir(ctx, strings.TrimSuffix(string(out), "\n"))
+		gitDir, err := local.nativeGitDir(ctx, strings.TrimSuffix(string(out), "\n"))
 		if err != nil {
 			return err
 		}
@@ -250,6 +250,9 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 	defer os.RemoveAll(scratch)
 	meta := filepath.Join(scratch, "repo")
 	if _, err := runWorkspaceCommitGit(ctx, scratch, nil, "init", "--bare", "--template=", "--object-format=sha1", "--ref-format=files", meta); err != nil {
+		return err
+	}
+	if err := copyGitShallowBoundary(filepath.Dir(parentObjects), meta); err != nil {
 		return err
 	}
 	env := []string{
