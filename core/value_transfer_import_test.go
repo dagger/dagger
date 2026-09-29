@@ -33,7 +33,7 @@ func TestValueTransferForeignFormsImport(t *testing.T) {
 						envelope = dagql.PersistedResultEnvelope{Version: 5, ResultID: 1, Kind: "list", Items: []dagql.PersistedResultEnvelope{envelope}}
 						typ = &dagql.ResultCallType{Elem: typ, NonNull: true}
 					}
-					return dagql.ValueBundle{Version: 2, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{{Ordinal: 1, Record: dagql.PersistedRecord{ResultID: 1, Envelope: envelope, Call: &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "foreignForm", Type: typ}}}}}
+					return dagql.ValueBundle{Version: 3, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{{Ordinal: 1, SenderNumber: 1, Record: dagql.PersistedRecord{ResultID: 1, Envelope: envelope, Call: &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "foreignForm", Type: typ}}}}}
 				}
 				before := len(cache.DebugEGraphSnapshot().Results)
 				_, err := cache.ImportValues(ctx, makeBundle(json.RawMessage(tc.native)))

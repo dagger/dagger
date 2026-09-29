@@ -53,7 +53,10 @@ type PersistedPartOffer struct {
 	Owner   PersistedOfferOwner  `json:"owner"`
 }
 type TransferredValue struct {
-	Ordinal       TransferOrdinal `json:"ordinal"`
+	Ordinal TransferOrdinal `json:"ordinal"`
+	// SenderNumber is the entry's number in the sending cache. An engine that
+	// imports the value keeps it as its Cloud holding's number.
+	SenderNumber  uint64          `json:"senderNumber"`
 	Record        PersistedRecord `json:"record"`
 	DependencyIDs []uint64        `json:"dependencyIDs,omitempty"`
 	ExpiresAtUnix int64           `json:"expiresAtUnix,omitempty"`
@@ -81,7 +84,7 @@ type ImportedValue struct {
 	ResultID uint64
 }
 
-const valueBundleVersion = 2
+const valueBundleVersion = 3
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.

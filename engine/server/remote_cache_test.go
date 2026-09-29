@@ -93,7 +93,7 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		require.Error(t, takeErr)
 		require.False(t, bridgeAttached(cache), "stop detaches the adapter's bridge")
 		require.NoError(t, adapter.Stop(boundedContext(t)), "stop is idempotent")
-		out, err := adapter.OfferParts(t.Context(), nil, []dagql.PersistedPartOffer{renewalOnlyOffer(), renewalOnlyOffer()})
+		out, err := adapter.OfferParts(t.Context(), nil, []dagql.CloudPartOffer{{Offer: renewalOnlyOffer(), CloudNumber: 1}, {Offer: renewalOnlyOffer(), CloudNumber: 1}})
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 		require.Len(t, out, 2)
 		for _, disposition := range out {

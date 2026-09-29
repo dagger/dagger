@@ -164,7 +164,7 @@ func TestPartSettlementRetiresReplacement(t *testing.T) {
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	var queue []*sharedResult
 	if err == nil {
-		queue, err = c.replacePartOfferLocked(ctx, row, address, &partOffer{record: record, owner: owner})
+		queue, err = c.testReplacePartOfferLocked(ctx, row, address, &partOffer{record: record, owner: owner})
 	}
 	gate.mu.Unlock()
 	var callbacks []OnReleaseFunc
@@ -177,7 +177,7 @@ func TestPartSettlementRetiresReplacement(t *testing.T) {
 	require.NoError(t, c.settlePart(ctx, row, address, task, 9))
 	require.NoError(t, c.settlePart(ctx, row, address, task, 9))
 	c.egraphMu.RLock()
-	offerCount, ownerCount := len(row.partOffers), len(c.offerOwners)
+	offerCount, ownerCount := len(row.testPartOffers()), len(c.offerOwners)
 	c.egraphMu.RUnlock()
 	require.Zero(t, offerCount)
 	require.Zero(t, ownerCount)
@@ -249,7 +249,7 @@ func TestPartSourceScanFailureReleasesWinner(t *testing.T) {
 			for _, row := range []*sharedResult{winner.cacheSharedResult(), loser.cacheSharedResult()} {
 				owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{})
 				if err == nil {
-					err = c.attachPartOfferLocked(row, address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner})
+					err = c.testAttachPartOfferLocked(row, address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner})
 				}
 				if err != nil {
 					setupErr = err
@@ -300,7 +300,7 @@ func TestPartNativeCompletionRetiresOffer(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			return c.attachPartOfferLocked(receiver.cacheSharedResult(), address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner})
+			return c.testAttachPartOfferLocked(receiver.cacheSharedResult(), address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner})
 		})
 	}}
 	receiver = newPartsTestResult(t, c, ctx, obj)
@@ -309,7 +309,7 @@ func TestPartNativeCompletionRetiresOffer(t *testing.T) {
 	require.Equal(t, 1, bodies)
 	row := receiver.cacheSharedResult()
 	c.egraphMu.RLock()
-	offerCount, ownerCount := len(row.partOffers), len(c.offerOwners)
+	offerCount, ownerCount := len(row.testPartOffers()), len(c.offerOwners)
 	c.egraphMu.RUnlock()
 	require.Zero(t, offerCount)
 	require.Zero(t, ownerCount)

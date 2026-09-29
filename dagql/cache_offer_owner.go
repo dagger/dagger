@@ -40,7 +40,7 @@ func (c *Cache) resultOwnershipChildrenLocked(res *sharedResult) iter.Seq[result
 				return
 			}
 		}
-		for _, offer := range res.partOffers {
+		for _, offer := range res.partOffersLocked() {
 			if !yield(resultOwnershipChild{owner: offer.owner}) {
 				return
 			}
@@ -170,23 +170,28 @@ func (c *Cache) validateOfferAttachmentLocked(res *sharedResult, address Persist
 	return key, nil
 }
 
-// Slot publication transfers the preparation hold. Callers release a refused
+// Slot publication transfers the preparation hold. The offer goes into res's
+// Cloud holding, which the caller has noted. Callers release a refused
 // preparation and run any collection callbacks after leaving egraphMu.
 func (c *Cache) attachPartOfferLocked(res *sharedResult, address PersistedPartAddress, offer *partOffer) error {
 	key, err := c.validateOfferAttachmentLocked(res, address, offer)
 	if err != nil {
 		return err
 	}
-	if res.partOffers[key] != nil {
+	_, cloud := res.cloudHoldingLocked()
+	if cloud == nil {
+		return fmt.Errorf("offer attachment: result %d has no Cloud holding", res.id)
+	}
+	if cloud.parts[key].offer != nil {
 		return fmt.Errorf("offer attachment: occupied address %s", key)
 	}
 	if offer.owner.slots != 0 {
 		return fmt.Errorf("offer attachment: owner already attached")
 	}
-	if res.partOffers == nil {
-		res.partOffers = make(map[string]*partOffer)
+	if cloud.parts == nil {
+		cloud.parts = make(map[string]heldPart)
 	}
-	res.partOffers[key] = offer
+	cloud.parts[key] = heldPart{state: heldPartComplete, offer: offer}
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
 	res.transferRevision++
@@ -198,14 +203,15 @@ func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, a
 	if err != nil {
 		return nil, err
 	}
-	old := res.partOffers[key]
+	old := res.partOfferLocked(key)
 	if old == nil {
 		return nil, c.attachPartOfferLocked(res, address, offer)
 	}
 	if offer.owner != old.owner && offer.owner.slots != 0 {
 		return nil, fmt.Errorf("offer replacement: owner already attached")
 	}
-	res.partOffers[key] = offer
+	_, cloud := res.cloudHoldingLocked()
+	cloud.parts[key] = heldPart{state: heldPartComplete, offer: offer}
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
 	old.owner.slots--
@@ -218,11 +224,12 @@ func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, ad
 	if err != nil {
 		return nil, err
 	}
-	old := res.partOffers[key]
+	old := res.partOfferLocked(key)
 	if old == nil {
 		return nil, nil
 	}
-	delete(res.partOffers, key)
+	_, cloud := res.cloudHoldingLocked()
+	delete(cloud.parts, key)
 	old.owner.slots--
 	res.transferRevision++
 	res.dependencyOwnershipRevision++
@@ -279,17 +286,17 @@ func clonePartOffers(offers []PersistedPartOffer) ([]PersistedPartOffer, error) 
 	return cloned, nil
 }
 func (res *sharedResult) pendingOffersLocked() ([]PersistedPartOffer, error) {
-	if len(res.partOffers) == 0 {
-		return nil, nil
-	}
-	keys := make([]string, 0, len(res.partOffers))
-	for key := range res.partOffers {
+	var keys []string
+	for key := range res.partOffersLocked() {
 		keys = append(keys, key)
+	}
+	if len(keys) == 0 {
+		return nil, nil
 	}
 	slices.Sort(keys)
 	offers := make([]PersistedPartOffer, 0, len(keys))
 	for _, key := range keys {
-		offers = append(offers, res.partOffers[key].record)
+		offers = append(offers, res.partOfferLocked(key).record)
 	}
 	return clonePartOffers(offers)
 }

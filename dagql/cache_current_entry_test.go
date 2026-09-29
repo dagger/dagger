@@ -660,7 +660,7 @@ func TestCachePublicationReplacementClearsImportAndOffers(t *testing.T) {
 	transferTestOffer(t, b, bctx, imported, child)
 	b.egraphMu.RLock()
 	childOwners := b.resultsByID[child.cacheSharedResult().id].incomingOwnershipCount
-	require.Len(t, b.resultsByID[importedID].partOffers, 1)
+	require.Len(t, b.resultsByID[importedID].testPartOffers(), 1)
 	b.egraphMu.RUnlock()
 	currentEntryTestExpire(b, imported)
 
@@ -672,7 +672,7 @@ func TestCachePublicationReplacementClearsImportAndOffers(t *testing.T) {
 	shared := b.resultsByID[importedID]
 	require.Equal(t, uint64(1), shared.replacements)
 	require.False(t, shared.imported)
-	require.Empty(t, shared.partOffers)
+	require.Empty(t, shared.testPartOffers())
 	if childShared := b.resultsByID[child.cacheSharedResult().id]; childShared != nil {
 		require.Equal(t, childOwners-1, childShared.incomingOwnershipCount, "the dropped offer's owner no longer holds its dependency")
 	}
@@ -1273,10 +1273,9 @@ func TestCacheNilResultWithACloudHoldingIsStillServed(t *testing.T) {
 	}
 	first, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: key}, fn)
 	assert.NilError(t, err)
-	recipe, err := key.deriveRecipeDigest(c)
-	assert.NilError(t, err)
-	_, err = c.AttachRemoteHolding(ctx, HolderKey{Cache: cloudCacheID, Number: 1}, RemoteHolding{Recipe: recipe, Request: recipe, Field: key.Field, TypeName: "Int"})
-	assert.NilError(t, err)
+	c.egraphMu.Lock()
+	first.cacheSharedResult().noteCloudCopyLocked(1, true, 0)
+	c.egraphMu.Unlock()
 
 	second, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: key}, fn)
 	assert.NilError(t, err)

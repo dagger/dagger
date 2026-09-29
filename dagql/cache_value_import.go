@@ -27,6 +27,9 @@ func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
 		if _, exists := rows[id]; exists {
 			return nil, fmt.Errorf("duplicate ordinal %d", id)
 		}
+		if row.SenderNumber == 0 {
+			return nil, fmt.Errorf("row %d: no sender number", id)
+		}
 		if err := validateTransferRecord(row.Record, row.DependencyIDs); err != nil {
 			return nil, fmt.Errorf("row %d: %w", id, err)
 		}
@@ -286,6 +289,11 @@ func (c *Cache) ImportValues(ctx context.Context, input ValueBundle) ([]Imported
 		}
 		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle, createdAtUnixNano: time.Now().UnixNano()}
 		res.storeResultCall(rec.Call)
+		// The sender keeps the value as its entry SenderNumber, and this entry's
+		// Cloud holding names it, with the record's expiry: an engine has one
+		// other cache, the Cloud. The transfer fixture's sender is another
+		// engine standing in for it.
+		res.noteCloudCopyLocked(row.SenderNumber, true, row.ExpiresAtUnix)
 		private.resultsByID[res.id] = res
 	}
 	if err := private.validateStoredOwnershipLocked(); err != nil {

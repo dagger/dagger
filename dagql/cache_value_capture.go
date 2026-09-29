@@ -395,7 +395,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		if err != nil {
 			return err
 		}
-		value := TransferredValue{Ordinal: row.ordinal, Record: rec, ExpiresAtUnix: row.expiry}
+		value := TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), Record: rec, ExpiresAtUnix: row.expiry}
 		for _, id := range row.deps {
 			value.DependencyIDs = append(value.DependencyIDs, uint64(capture.rows[sharedResultID(id)].ordinal))
 		}

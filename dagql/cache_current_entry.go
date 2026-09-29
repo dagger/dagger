@@ -51,14 +51,20 @@ func (c *Cache) currentEntryForRecipeLocked(recipe digest.Digest) *sharedResult 
 
 // resultInUseLocked reports whether anything uses res: a session that still
 // records it, or any ownership unit besides its retention edge and other
-// caches' holdings. Those units are other entries' dependency edges and offer
-// owners, sessions, and the holds of tasks working on the entry: a
-// publication's handoff, a part task or demand, a capture, a sharing pass. A
-// lazy attempt or a decode runs for a caller that holds the entry through its
-// session or through a dependent, so it holds a unit too. Requires egraphMu;
-// nests sessionMu.
+// caches' holdings. An engine's Cloud holding is no unit: it owns nothing.
+// Those units are other entries' dependency edges and offer owners,
+// sessions, and the holds of tasks working on the entry: a publication's
+// handoff, a part task or demand, a capture, a sharing pass. A lazy attempt
+// or a decode runs for a caller that holds the entry through its session or
+// through a dependent, so it holds a unit too. Requires egraphMu; nests
+// sessionMu.
 func (c *Cache) resultInUseLocked(res *sharedResult) bool {
-	idle := int64(len(res.holders))
+	idle := int64(0)
+	for key := range res.holders {
+		if key.Cache != cloudCacheID {
+			idle++
+		}
+	}
 	if _, retained := c.persistedEdgesByResult[res.id]; retained {
 		idle++
 	}
@@ -110,7 +116,9 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		queue collectionQueue
 		rerr  error
 	)
-	for _, offer := range cur.partOffers {
+	// The stored parts, like the offers, belonged to the old value.
+	cur.storedParts = nil
+	for _, offer := range cur.partOffersLocked() {
 		more, err := c.retirePartOfferLocked(ctx, cur, offer.record.Address)
 		queue = append(queue, more...)
 		rerr = errors.Join(rerr, err)

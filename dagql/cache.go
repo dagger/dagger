@@ -1743,7 +1743,7 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 			continue
 		}
 
-		for _, offer := range res.partOffers {
+		for _, offer := range res.partOffersLocked() {
 			more, err := c.retirePartOfferLocked(ctx, res, offer.record.Address)
 			queue = append(queue, more...)
 			rerr = errors.Join(rerr, err)
@@ -2120,6 +2120,9 @@ type Cache struct {
 	engineInstanceID    string
 	bootRestoredResults int
 	persistedResults    int
+	// blobBacked marks a cache that keeps parts in a blob store: only it
+	// accepts SetStoredPart (WithBlobStore).
+	blobBacked bool
 	// holderEntries maps each holding's key to the entry it sits on, and
 	// entriesByRecipe each recipe digest to its entry. remoteCaches keeps each
 	// held engine cache's own indexes. All guarded by egraphMu. See
@@ -2466,8 +2469,11 @@ type cacheUsageMayChange interface {
 type sharedResult struct {
 	inlineBorrow *PartHost
 	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
-	imported                    bool
-	partOffers                  map[string]*partOffer
+	imported bool
+	// storedParts are the parts whose layer chains are in this cache's own
+	// blob store, by part address key. Only a blob-backed cache (the Cloud)
+	// sets them. Guarded by egraphMu.
+	storedParts                 map[string]PersistedPartOffer
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.

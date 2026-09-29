@@ -18,7 +18,7 @@ func TestContainerTransferPendingChild(t *testing.T) {
 	family, ok := dagql.PersistedObjectFamilyFor(ctr)
 	require.True(t, ok)
 	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "capturedContainer", Type: dagql.NewResultCallType(ctr.Type())}
-	bundle := dagql.ValueBundle{Version: 2, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{{Ordinal: 1, Record: dagql.PersistedRecord{
+	bundle := dagql.ValueBundle{Version: 3, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{{Ordinal: 1, SenderNumber: 1, Record: dagql.PersistedRecord{
 		ResultID: 1, Call: frame, Envelope: dagql.PersistedResultEnvelope{Version: 5, Kind: "object_self", TypeName: "Container", ObjectCodec: family.Name, ResultID: 1, ObjectJSON: payload},
 	}}}}
 	b := &persistedSchemaTestEnv{dbPath: filepath.Join(t.TempDir(), "b.db")}

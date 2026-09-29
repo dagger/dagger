@@ -557,12 +557,12 @@ func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
 		if res == nil {
 			continue
 		}
-		if len(res.holders) > 0 {
-			// An entry with a holding keeps its class's terms, expired or
-			// not: its identity is what the cache holds it for.
+		if res.hasUnexpiredHoldingLocked(nowUnix) {
+			// Another cache's unexpired stored copy keeps the class's
+			// terms: the equivalence stays usable while any value in it is.
 			return true
 		}
-		if c.resultExpiredAtLocked(res, nowUnix) {
+		if res.noValueLocked() || c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
 		return true

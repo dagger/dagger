@@ -177,6 +177,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			res.storeResultCall(frame)
 			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
+			if row.CloudHoldingNumber != 0 {
+				// The Cloud holding comes back before the saved offers attach
+				// to it.
+				res.noteCloudCopyLocked(uint64(row.CloudHoldingNumber), row.CloudHoldingStored, row.CloudHoldingExpiresAtUnix)
+			}
 
 			if env.Kind == persistedResultKindNull {
 				// An attached absent value keeps its row identity, recorded

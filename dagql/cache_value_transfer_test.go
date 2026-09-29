@@ -134,7 +134,7 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 	record := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(child.cacheSharedResult().id)}}}
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	if err == nil {
-		err = c.attachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{record: record, owner: owner})
+		err = c.testAttachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{record: record, owner: owner})
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)

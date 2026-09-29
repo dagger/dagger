@@ -137,7 +137,7 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 		if err == nil {
 			address := PersistedPartAddress{Part: "snapshot"}
 			var queue []*sharedResult
-			queue, err = c.replacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
+			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
 			if err == nil {
 				releases, err = c.collectUnownedResultsLocked(ctx, queue)
 			}

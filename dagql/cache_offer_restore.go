@@ -29,7 +29,7 @@ func (c *Cache) restoredFinalOffersLocked() ([]restoredFinalOffer, error) {
 			key, _ := partAddressKey(part.Address)
 			parts[key] = part
 		}
-		for key, offer := range row.partOffers {
+		for key, offer := range row.partOffersLocked() {
 			part, ok := parts[key]
 			if !ok {
 				return nil, fmt.Errorf("restore offer on result %d: unknown part %s", row.id, key)

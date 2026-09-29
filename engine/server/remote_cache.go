@@ -45,12 +45,13 @@ func newRemoteCacheAdapter(cache *dagql.Cache, bridge *dagql.RemoteCacheBridge) 
 }
 
 // OfferParts is an engine control operation, not a user's GraphQL call. Its
-// receiver is already registered and held by the caller.
-func (a *RemoteCacheAdapter) OfferParts(ctx context.Context, receiver dagql.AnyResult, offers []dagql.PersistedPartOffer) ([]dagql.OfferDisposition, error) {
+// receiver is already registered and held by the caller. Each offer names the
+// Cloud counterpart of the entry it lands on.
+func (a *RemoteCacheAdapter) OfferParts(ctx context.Context, receiver dagql.AnyResult, offers []dagql.CloudPartOffer) ([]dagql.OfferDisposition, error) {
 	if a.stopped.Load() {
 		out := make([]dagql.OfferDisposition, len(offers))
 		for i, offer := range offers {
-			address := offer.Address
+			address := offer.Offer.Address
 			address.OutputPath = slices.Clone(address.OutputPath)
 			out[i] = dagql.OfferDisposition{Address: address, Outcome: dagql.OfferUnavailable, Err: ErrRemoteCacheAdapterClosed}
 		}

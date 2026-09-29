@@ -40,7 +40,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	gate := row.partGate.gate.Load()
-	if !row.imported && !row.partGate.restoredDelegation.Load() && len(row.partOffers) == 0 && gate == nil {
+	if !row.imported && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() && gate == nil {
 		return false
 	}
 	if gate == nil {
@@ -51,7 +51,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if gate.managed {
 		return true
 	}
-	if !row.imported && !row.partGate.restoredDelegation.Load() && len(row.partOffers) == 0 {
+	if !row.imported && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
 		return false
 	}
 	for _, group := range gate.groups {

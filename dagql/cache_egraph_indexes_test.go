@@ -100,7 +100,8 @@ func cacheOutputEqClassInverseErrorLocked(c *Cache) error {
 
 // cacheOutputEqClassSurvivorErrorLocked checks that the survivor predicate
 // of every live output eq-class root agrees with the digest-posting
-// semantics at nowUnix.
+// semantics at nowUnix: a class survives while an entry posted under one of
+// its digests has an unexpired value, its own or another cache's copy.
 func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 	liveOutputRoots := make(map[eqClassID]struct{}, len(c.outputEqClassToTerms)+len(c.outputEqClassResults))
 	for outputEqID := range c.outputEqClassToTerms {
@@ -124,7 +125,7 @@ func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 			}
 			for resID := range posting.Items() {
 				res := c.resultsByID[resID]
-				if res != nil && !c.resultExpiredAtLocked(res, nowUnix) {
+				if res != nil && (!res.noValueLocked() && !c.resultExpiredAtLocked(res, nowUnix) || res.hasUnexpiredHoldingLocked(nowUnix)) {
 					oldSemanticsHasUnexpiredResult = true
 					break
 				}

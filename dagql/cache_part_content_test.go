@@ -945,7 +945,7 @@ func (f *exhaustionFixture) attach(t *testing.T, row AnyResult, offer PersistedP
 	f.cache.egraphMu.Lock()
 	owner, err := f.cache.newOfferOwnerLocked(f.ctx, offer.Owner)
 	if err == nil {
-		err = f.cache.attachPartOfferLocked(row.cacheSharedResult(), offer.Address, &partOffer{record: offer, owner: owner})
+		err = f.cache.testAttachPartOfferLocked(row.cacheSharedResult(), offer.Address, &partOffer{record: offer, owner: owner})
 	}
 	f.cache.egraphMu.Unlock()
 	require.NoError(t, err)
@@ -1060,7 +1060,7 @@ func TestRenewalExhaustion(t *testing.T) {
 				// The integration replaces the slot while the episode is pending.
 				copied, err := clonePartOffers([]PersistedPartOffer{offer})
 				require.NoError(t, err)
-				out, err := f.cache.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{replace(copied[0])})
+				out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{replace(copied[0])})
 				if err == nil {
 					replaced = &out[0]
 				}

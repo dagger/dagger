@@ -27,7 +27,7 @@ func TestValueTransferPersistence(t *testing.T) {
 	require.NotNil(t, row)
 	require.True(t, row.imported)
 	require.Empty(t, row.deps)
-	require.Len(t, row.partOffers, 1)
+	require.Len(t, row.testPartOffers(), 1)
 	require.Len(t, b.offerOwners, 1)
 	var forwarded ValueBundle
 	require.NoError(t, b.WithExportedValues(bctx, ValueSelection{Roots: []AnyResult{Result[Typed]{shared: row}}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {

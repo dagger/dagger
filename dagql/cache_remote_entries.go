@@ -158,14 +158,23 @@ const (
 
 type heldPart struct {
 	state heldPartState
+	// offer is set on an engine only, in its Cloud holding: the Cloud's copy
+	// of the part, with its download addresses, renewal key and owner.
+	offer *partOffer
 }
 
-// holding is what the cache knows about one engine cache's copy of an entry.
-// Guarded by egraphMu.
+// holding is what the cache knows about another cache's copy of an entry:
+// on the Cloud, one engine cache's copy; on an engine, the Cloud's (see
+// cloudHoldingLocked). Guarded by egraphMu.
 type holding struct {
 	// expiresAtUnix is the copy's own expiry in its cache; the earlier
 	// non-zero value wins, as the engine merges it.
 	expiresAtUnix int64
+	// unstored marks an engine's Cloud holding whose Cloud entry stores no
+	// record: the Cloud offers parts it keeps for another entry of the
+	// class. That copy has no value, so it keeps no terms (5.6). An engine
+	// cache's copy always has a value.
+	unstored bool
 	// parts are the copy's complete parts, by part address key.
 	parts map[string]heldPart
 	// unknownDeps are dependency numbers no holding of this cache has yet.
@@ -180,6 +189,21 @@ type holding struct {
 
 	typeName      string
 	contentDigest digest.Digest
+}
+
+// hasUnexpiredHoldingLocked reports whether another cache holds a copy of res
+// that has a value and has not expired: a holding whose own expiry is unset
+// or still ahead. Requires egraphMu.
+func (res *sharedResult) hasUnexpiredHoldingLocked(nowUnix int64) bool {
+	for _, h := range res.holders {
+		if h.unstored {
+			continue
+		}
+		if h.expiresAtUnix == 0 || nowUnix < h.expiresAtUnix {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *holding) owned() bool {
@@ -280,6 +304,10 @@ func (c *Cache) unindexRecipesLocked(res *sharedResult) {
 func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding) (candidates []HolderKey, _ error) {
 	if key.Cache == "" || key.Number == 0 || desc.Recipe == "" {
 		return nil, fmt.Errorf("attach remote holding: empty key or recipe")
+	}
+	if key.Cache == cloudCacheID {
+		// An engine's Cloud holding owns nothing; merges and offers keep it.
+		return nil, fmt.Errorf("attach remote holding: %q is not an engine cache", key.Cache)
 	}
 	parts, err := heldPartKeys(desc.Parts)
 	if err != nil {

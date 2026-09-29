@@ -3,17 +3,24 @@ package persistdb
 import "context"
 
 type MirrorResult struct {
-	ID                 int64
-	CallFrameJSON      string
-	SelfPayload        []byte
-	OutputEffectIDs    string
-	ExpiresAtUnix      int64
-	Replacements       int64
-	Indexed            bool
-	CreatedAtUnixNano  int64
-	LastUsedAtUnixNano int64
-	RecordType         string
-	Description        string
+	ID              int64
+	CallFrameJSON   string
+	SelfPayload     []byte
+	OutputEffectIDs string
+	ExpiresAtUnix   int64
+	Replacements    int64
+	Indexed         bool
+	// CloudHoldingNumber, CloudHoldingStored and CloudHoldingExpiresAtUnix
+	// are the entry's Cloud holding: the counterpart the latest message
+	// named, whether it stores a record, and that record's expiry. A number
+	// of 0 means none.
+	CloudHoldingNumber        int64
+	CloudHoldingStored        bool
+	CloudHoldingExpiresAtUnix int64
+	CreatedAtUnixNano         int64
+	LastUsedAtUnixNano        int64
+	RecordType                string
+	Description               string
 }
 
 type MirrorEqClass struct {
@@ -119,16 +126,19 @@ func (q *Queries) ClearMirrorState(ctx context.Context) error {
 const insertMirrorResult = `
 INSERT INTO results (
 	id, call_frame_json, self_payload, output_effect_ids_json,
-	expires_at_unix, replacements, indexed, created_at_unix_nano,
-	last_used_at_unix_nano, record_type, description
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	expires_at_unix, replacements, indexed, cloud_holding_number,
+	cloud_holding_stored, cloud_holding_expires_at_unix,
+	created_at_unix_nano, last_used_at_unix_nano, record_type, description
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 func (q *Queries) InsertMirrorResult(ctx context.Context, arg MirrorResult) error {
 	_, err := q.exec(ctx, nil, insertMirrorResult,
 		arg.ID, arg.CallFrameJSON, arg.SelfPayload, arg.OutputEffectIDs,
-		arg.ExpiresAtUnix, arg.Replacements, arg.Indexed, arg.CreatedAtUnixNano,
-		arg.LastUsedAtUnixNano, arg.RecordType, arg.Description,
+		arg.ExpiresAtUnix, arg.Replacements, arg.Indexed, arg.CloudHoldingNumber,
+		arg.CloudHoldingStored, arg.CloudHoldingExpiresAtUnix,
+		arg.CreatedAtUnixNano, arg.LastUsedAtUnixNano, arg.RecordType,
+		arg.Description,
 	)
 	return err
 }
@@ -233,8 +243,9 @@ func (q *Queries) InsertMirrorImportedLayerDiffIndex(ctx context.Context, arg Mi
 const listMirrorResults = `
 SELECT
 	id, call_frame_json, self_payload, output_effect_ids_json,
-	expires_at_unix, replacements, indexed, created_at_unix_nano,
-	last_used_at_unix_nano, record_type, description
+	expires_at_unix, replacements, indexed, cloud_holding_number,
+	cloud_holding_stored, cloud_holding_expires_at_unix,
+	created_at_unix_nano, last_used_at_unix_nano, record_type, description
 FROM results
 `
 
@@ -256,6 +267,9 @@ func (q *Queries) ListMirrorResults(ctx context.Context) ([]MirrorResult, error)
 			&row.ExpiresAtUnix,
 			&row.Replacements,
 			&row.Indexed,
+			&row.CloudHoldingNumber,
+			&row.CloudHoldingStored,
+			&row.CloudHoldingExpiresAtUnix,
 			&row.CreatedAtUnixNano,
 			&row.LastUsedAtUnixNano,
 			&row.RecordType,

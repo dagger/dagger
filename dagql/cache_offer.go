@@ -25,17 +25,34 @@ type OfferDisposition struct {
 	Err      error
 }
 
-func unavailableOffers(offers []PersistedPartOffer, err error) []OfferDisposition {
+// CloudPartOffer is one part the Cloud offers an engine: the offer, and the
+// Cloud counterpart of the entry the offer's address resolves to, the
+// receiver or one of its descendants. A part borrowed from another entry of
+// the Cloud's class still names that counterpart, not the donor. The entry
+// keeps the counterpart as its Cloud holding.
+type CloudPartOffer struct {
+	Offer PersistedPartOffer
+	// CloudNumber is the counterpart's number in the Cloud cache.
+	CloudNumber uint64
+	// CloudStored is whether the counterpart stores a record. It may not:
+	// the Cloud can offer a part it keeps for another entry of the class.
+	CloudStored bool
+	// CloudExpiresAtUnix is the stored record's expiry, 0 for none. It is
+	// ignored when the counterpart stores no record.
+	CloudExpiresAtUnix int64
+}
+
+func unavailableOffers(offers []CloudPartOffer, err error) []OfferDisposition {
 	out := make([]OfferDisposition, len(offers))
 	for i, offer := range offers {
-		out[i] = OfferDisposition{Address: clonePartAddress(offer.Address), Outcome: OfferUnavailable, Err: err}
+		out[i] = OfferDisposition{Address: clonePartAddress(offer.Offer.Address), Outcome: OfferUnavailable, Err: err}
 	}
 	return out
 }
 
 // OfferParts is an engine control operation. It publishes descriptions without
 // evaluating outputs or checking the control caller's session resources.
-func (c *Cache) OfferParts(ctx context.Context, receiver AnyResult, offers []PersistedPartOffer) (out []OfferDisposition, rerr error) {
+func (c *Cache) OfferParts(ctx context.Context, receiver AnyResult, offers []CloudPartOffer) (out []OfferDisposition, rerr error) {
 	out = unavailableOffers(offers, nil)
 	op, err := c.beginCacheOperation()
 	if err != nil {
@@ -97,10 +114,15 @@ type offerRowCapture struct {
 }
 
 //nolint:gocyclo // Offer admission validates and publishes under the graph and gate locks in one sequence; splitting it would cut across lock scopes.
-func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input PersistedPartOffer) (out OfferDisposition) {
+func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPartOffer) (out OfferDisposition) {
+	input := item.Offer
 	out.Address = clonePartAddress(input.Address)
 	if _, err := partAddressKey(input.Address); err != nil {
 		out.Outcome, out.Err = OfferInvalid, err
+		return out
+	}
+	if item.CloudNumber == 0 {
+		out.Outcome, out.Err = OfferInvalid, errors.New("offer: no Cloud entry number")
 		return out
 	}
 	copied, err := clonePartOffers([]PersistedPartOffer{input})
@@ -137,6 +159,11 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 		capture.gateRevision = gate.revision
 		if row == root {
 			out.Outcome = offerGateOutcomeLocked(gate, offer.Address)
+			if out.Outcome == OfferAlreadyComplete {
+				// The part is the root's own, and the offer still names the
+				// root's Cloud counterpart.
+				root.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+			}
 		}
 		gate.mu.Unlock()
 		c.egraphMu.Unlock()
@@ -200,7 +227,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 	// A preparation hold protects references across the two E sections.
 	c.egraphMu.Lock()
 	var owner *offerOwner
-	old := row.partOffers[key]
+	old := row.partOfferLocked(key)
 	if old != nil && sameOfferMeaning(old.record, offer) {
 		owner = old.owner
 		c.retainOfferOwnerLocked(owner)
@@ -253,23 +280,33 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, input Persist
 			}
 		}
 	}
+	if out.Outcome == OfferAlreadyComplete {
+		// The row's gate or its record has the part, and the offer still
+		// names the row's Cloud counterpart.
+		row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+	}
 	var queue collectionQueue
 	if out.Outcome == OfferAccepted {
-		current := row.partOffers[key]
+		current := row.partOfferLocked(key)
 		if current != old {
 			out.Outcome, out.Err = OfferUnavailable, ErrPersistStateNotReady
-		} else if current == nil || !reflect.DeepEqual(current.record, offer) {
-			// Both primitives validate the owner graph before any mutation.
-			next := &partOffer{record: offer, owner: owner}
-			if current == nil {
-				out.Err = c.attachPartOfferLocked(row, address, next)
-			} else {
-				queue, out.Err = c.replacePartOfferLocked(ctx, row, address, next)
-			}
-			transferred = row.partOffers[key] == next
-			out.Replaced = transferred && current != nil
-			if !transferred {
-				out.Outcome = OfferInvalid
+		} else {
+			// The offer names the row's Cloud counterpart, which may be a new
+			// entry, as after a service restart.
+			row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+			if current == nil || !reflect.DeepEqual(current.record, offer) {
+				// Both primitives validate the owner graph before any mutation.
+				next := &partOffer{record: offer, owner: owner}
+				if current == nil {
+					out.Err = c.attachPartOfferLocked(row, address, next)
+				} else {
+					queue, out.Err = c.replacePartOfferLocked(ctx, row, address, next)
+				}
+				transferred = row.partOfferLocked(key) == next
+				out.Replaced = transferred && current != nil
+				if !transferred {
+					out.Outcome = OfferInvalid
+				}
 			}
 		}
 	}

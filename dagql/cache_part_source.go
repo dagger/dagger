@@ -100,7 +100,7 @@ func (c *Cache) partDonatedFactsLocked(row *sharedResult, key string, address Pe
 		f.output = gate.outputs[key]
 		gate.mu.Unlock()
 	}
-	if offer := row.partOffers[key]; offer != nil && offer.owner != nil {
+	if offer := row.partOfferLocked(key); offer != nil && offer.owner != nil {
 		f.offerOwner = offer.owner.id
 	}
 	if snapshotID != "" {
@@ -498,7 +498,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		candidate.facts = c.partFactsLocked(candidate.row)
 		c.incrementIncomingOwnershipLocked(ctx, candidate.row)
 		held++
-		if offer := candidate.row.partOffers[key]; offer != nil && c.offerAllowedLocked(session, offer.owner) {
+		if offer := candidate.row.partOfferLocked(key); offer != nil && c.offerAllowedLocked(session, offer.owner) {
 			copies, err := clonePartOffers([]PersistedPartOffer{offer.record})
 			if err != nil {
 				c.egraphMu.Unlock()

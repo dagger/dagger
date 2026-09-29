@@ -177,7 +177,7 @@ func TestPartDecisionPreparationArrival(t *testing.T) {
 					c.egraphMu.Lock()
 					owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 					if err == nil {
-						err = c.attachPartOfferLocked(row, address, &partOffer{record: record, owner: owner})
+						err = c.testAttachPartOfferLocked(row, address, &partOffer{record: record, owner: owner})
 					}
 					c.egraphMu.Unlock()
 					require.NoError(t, err)
