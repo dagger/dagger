@@ -283,8 +283,9 @@ func TestDiffViewerFollowsAgentFocus(t *testing.T) {
 		screen := func() string { return stripANSICodes(strings.Join(fe.tui.Step(), "\n")) }
 		changes := func(agent, subject string) {
 			fe.SetSidebarContent(SidebarSection{
-				Title: "Changes",
-				Agent: agent,
+				Title:   "Changes",
+				Agent:   agent,
+				Content: "1 commit to save",
 				Diffs: []DiffEntry{{
 					ID: subject, Group: "Commits to save", Label: "abc1234", Title: subject,
 					Load: func() (DiffDetail, error) { return DiffDetail{Patch: testPatch(subject + ".go")}, nil },
@@ -299,7 +300,6 @@ func TestDiffViewerFollowsAgentFocus(t *testing.T) {
 		changes("agent-chief", "chief commit")
 		frame := screen()
 		require.Contains(t, frame, "draft for the chief")
-		require.Contains(t, frame, "ctrl+? toggle keymap")
 
 		// The prompt makes way; the status line with the roster stays.
 		require.True(t, fe.toggleDiffViewer())
@@ -321,13 +321,18 @@ func TestDiffViewerFollowsAgentFocus(t *testing.T) {
 		require.NotContains(t, screen(), "chief commit")
 
 		// A repaint of the chief's changes still in flight from before the
-		// switch doesn't pass for the scout's.
+		// switch doesn't pass for the scout's -- before the scout's changes
+		// arrive, or after (a turn ending just after the switch).
 		changes("agent-chief", "chief commit")
 		require.NotContains(t, screen(), "chief commit")
 		changes("agent-scout", "scout commit")
 		frame = screen()
 		require.Contains(t, frame, "abc1234 scout commit")
 		require.NotNil(t, fe.diffViewer, "switching agents keeps the viewer open")
+		changes("agent-chief", "chief commit")
+		frame = screen()
+		require.Contains(t, frame, "abc1234 scout commit")
+		require.NotContains(t, frame, "chief commit")
 
 		// alt+[ walks back.
 		press(uv.Key{Code: '[', Mod: uv.ModAlt})
@@ -353,7 +358,18 @@ func TestDiffViewerFollowsAgentFocus(t *testing.T) {
 		frame = screen()
 		require.True(t, fe.inputFocused(), "typing goes to the prompt again")
 		require.Contains(t, frame, "draft for the chief")
-		require.Contains(t, frame, "ctrl+? toggle keymap")
+
+		// The bubble, too, drops the agent focus left at once. (The failed
+		// switch marked the scout read-only; naming it by key retries.)
+		require.Contains(t, frame, "ctrl+g view diff")
+		handler.mu.Lock()
+		handler.focusErr = nil
+		handler.mu.Unlock()
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
+		require.NotContains(t, screen(), "ctrl+g view diff")
+		awaitFocus(t, fe, handler, "agent-scout", "agent-chief", "agent-scout")
+		changes("agent-scout", "scout commit")
+		require.Contains(t, screen(), "ctrl+g view diff")
 	})
 }
 

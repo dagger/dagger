@@ -892,7 +892,7 @@ func (fe *frontendPretty) toggleDiffViewer() bool {
 			}
 			return SidebarSection{Title: title}
 		},
-		Stale:    fe.diffViewerStale,
+		Stale:    fe.sectionStale,
 		Dispatch: fe.dispatch,
 		Hint:     fe.diffViewerHint,
 		hovered:  -1,
@@ -963,17 +963,18 @@ func (fe *frontendPretty) syncPromptHidden() {
 	}
 }
 
-// diffViewerStale reports whether sec still describes the agent focus just
-// moved away from. The viewer follows the focused agent's changes, which the
-// session repaints asynchronously after a switch; until a section naming the
-// new agent arrives, whatever is there -- the old agent's changes, or a
-// section naming no agent at all -- must not pass for the new one's. When a
-// switch fails and focus rolls back, the focused agent is no longer the one
-// awaited, and the section stands.
-func (fe *frontendPretty) diffViewerStale(sec SidebarSection) bool {
-	return fe.diffAwaitAgent != "" &&
-		fe.diffAwaitAgent == fe.focusedAgentID() &&
-		sec.Agent != fe.diffAwaitAgent
+// sectionStale reports whether sec, a section describing an agent (see
+// SidebarSection.Agent), still describes the agent focus just moved away
+// from. The session repaints the focused agent's sections asynchronously
+// after a switch; until one naming the new agent arrives, whatever is there
+// -- the old agent's, or a section naming no agent at all -- must not pass
+// for the new one's. When a switch fails and focus rolls back, the focused
+// agent is no longer the one awaited, and the section stands. (Paints from
+// an agent that is not focused never land at all; see SetSidebarContent.)
+func (fe *frontendPretty) sectionStale(sec SidebarSection) bool {
+	return fe.sectionAwaitAgent != "" &&
+		fe.sectionAwaitAgent == fe.focusedAgentID() &&
+		sec.Agent != fe.sectionAwaitAgent
 }
 
 func (fe *frontendPretty) renderDiffViewer(ctx tuist.Context) {

@@ -49,6 +49,11 @@ func (n *NotificationBubble) Render(ctx tuist.Context) {
 	if content == "" {
 		return
 	}
+	// Another agent's content goes the moment focus leaves it, rather than
+	// passing for the focused agent's until that one repaints.
+	if n.section.Agent != "" && n.fe.sectionStale(n.section) {
+		return
+	}
 
 	contentLines := strings.Split(strings.TrimRight(content, "\n"), "\n")
 

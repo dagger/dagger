@@ -400,9 +400,9 @@ type frontendPretty struct {
 	// diffViewerFromInput records that the prompt had focus when the viewer
 	// opened, to return it there on close.
 	diffViewerFromInput bool
-	// diffAwaitAgent is the agent focus last moved to, until a section
-	// describing it arrives (see diffViewerStale).
-	diffAwaitAgent string
+	// sectionAwaitAgent is the agent focus last moved to, until a section
+	// describing it arrives (see sectionStale).
+	sectionAwaitAgent string
 
 	// logStream holds logs a caller streams in whole (OpenLogStream), for a
 	// span whose rolled-up output the per-span log buffers can't show.
@@ -1143,8 +1143,18 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	fe.dispatch(func() {
 		title := section.Title
-		if section.Agent != "" && section.Agent == fe.diffAwaitAgent {
-			fe.diffAwaitAgent = ""
+		if section.Agent != "" {
+			// A conversation-scoped section describes the agent it names. A
+			// paint from an agent focus has left -- a refresh still in flight
+			// when the switch happened, e.g. at the end of its turn -- would
+			// otherwise land over the focused agent's, and stay there for as
+			// long as the focused agent has nothing new to paint.
+			if focused := fe.focusedAgentID(); focused != "" && section.Agent != focused {
+				return
+			}
+			if section.Agent == fe.sectionAwaitAgent {
+				fe.sectionAwaitAgent = ""
+			}
 		}
 
 		if bubble, ok := fe.notifications[title]; ok {
@@ -4895,7 +4905,7 @@ func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved boo
 	// yet. See focusedAgentID.
 	fe.pendingFocusAgent = entry.ID
 	// Until the new agent's changes arrive, the ones on screen are stale.
-	fe.diffAwaitAgent = entry.ID
+	fe.sectionAwaitAgent = entry.ID
 	fe.restoreAgentDraft(entry.ID)
 	fe.updateAgentRoster()
 
@@ -5089,8 +5099,14 @@ func (fe *frontendPretty) updateAgentRoster() {
 	if focused := fe.focusedAgentID(); focused != fe.lastRosterFocus {
 		fe.lastRosterFocus = focused
 		fe.viewDirty = true
-		// The diff viewer browses the focused agent's changes, and must not
-		// show the previous agent's while the new ones load.
+		// Sections describing an agent (the Changes bubble, and the diff
+		// viewer browsing it) must not show the previous agent's content
+		// while the new one's loads; see sectionStale.
+		for _, bubble := range fe.notifications {
+			if bubble.section.Agent != "" {
+				bubble.Update()
+			}
+		}
 		if fe.diffViewer != nil {
 			fe.diffViewer.Update()
 		}
