@@ -366,50 +366,41 @@ func rosterTraceFor(names ...string) (map[string]*callpbv1.Call, []dagui.SpanSna
 // half-typed line is parked against the agent being left, and the
 // last-focused toggle brings it back.
 func TestFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
-	handler := &focusShellHandler{target: "agent-chief"}
-	fe := focusTestFrontend(t, rosterDB(t), handler)
+	runFocusTest(t, func(t *testing.T) {
+		handler := &focusShellHandler{target: "agent-chief"}
+		fe := focusTestFrontend(t, rosterDB(t), handler)
 
-	entries := fe.agentRosterEntries()
-	require.Len(t, entries, 2)
-	require.True(t, entries[0].Focused, "the session's own agent starts focused")
-	require.False(t, entries[1].Focused)
+		entries := fe.agentRosterEntries()
+		require.Len(t, entries, 2)
+		require.True(t, entries[0].Focused, "the session's own agent starts focused")
+		require.False(t, entries[1].Focused)
 
-	help := navKeyHelp(fe.keys(NewOutput(io.Discard)))
-	require.Contains(t, help, "ctrl+1…9 focus agent")
-	require.NotContains(t, help, "alt+1…9 focus agent")
-	require.False(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}),
-		"the old Alt+digit binding must remain unclaimed")
+		help := navKeyHelp(fe.keys(NewOutput(io.Discard)))
+		require.Contains(t, help, "ctrl+1…9 focus agent")
+		require.NotContains(t, help, "alt+1…9 focus agent")
+		require.False(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}),
+			"the old Alt+digit binding must remain unclaimed")
 
-	// Half a sentence to the chief, then jump to the scout.
-	fe.textInput.SetValue("half a thought")
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
-	require.Eventually(t, func() bool {
-		focused := handler.focusedAgents()
-		return len(focused) == 1 && focused[0] == "agent-scout"
-	}, 5*time.Second, 10*time.Millisecond)
-	fe.tui.Step()
+		// Half a sentence to the chief, then jump to the scout.
+		fe.textInput.SetValue("half a thought")
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
+		awaitFocus(t, fe, handler, "agent-scout")
 
-	require.Equal(t, "", fe.textInput.Value(), "the scout has no draft yet")
-	entries = fe.agentRosterEntries()
-	require.True(t, entries[1].Focused, "focus follows the handler's target")
+		require.Equal(t, "", fe.textInput.Value(), "the scout has no draft yet")
+		entries = fe.agentRosterEntries()
+		require.True(t, entries[1].Focused, "focus follows the handler's target")
 
-	// Type at the scout, then toggle back to the chief: each draft returns to
-	// the agent it was meant for.
-	fe.textInput.SetValue("for the scout")
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: 'l', Mod: uv.ModAlt}))
-	require.Eventually(t, func() bool {
-		focused := handler.focusedAgents()
-		return len(focused) == 2 && focused[1] == "agent-chief"
-	}, 5*time.Second, 10*time.Millisecond)
-	fe.tui.Step()
-	require.Equal(t, "half a thought", fe.textInput.Value())
+		// Type at the scout, then toggle back to the chief: each draft returns to
+		// the agent it was meant for.
+		fe.textInput.SetValue("for the scout")
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: 'l', Mod: uv.ModAlt}))
+		awaitFocus(t, fe, handler, "agent-scout", "agent-chief")
+		require.Equal(t, "half a thought", fe.textInput.Value())
 
-	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
-	require.Eventually(t, func() bool {
-		return len(handler.focusedAgents()) == 3
-	}, 5*time.Second, 10*time.Millisecond)
-	fe.tui.Step()
-	require.Equal(t, "for the scout", fe.textInput.Value())
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
+		awaitFocus(t, fe, handler, "agent-scout", "agent-chief", "agent-scout")
+		require.Equal(t, "for the scout", fe.textInput.Value())
+	})
 }
 
 // TestUnaddressableAgentIsReadOnly: an agent whose handle cannot be rebuilt
