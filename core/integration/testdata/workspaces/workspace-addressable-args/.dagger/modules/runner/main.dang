@@ -30,7 +30,7 @@ type Runner {
   GitRef is address-liftable: a git URL with a #ref resolves to that ref.
   """
   commitOf(ref: GitRef!): String! {
-    "commit: " + ref.commit
+    "commit: " + ref.commitSHA
   }
 
   """

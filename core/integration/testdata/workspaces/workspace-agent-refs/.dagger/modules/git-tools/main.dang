@@ -1,0 +1,21 @@
+"""
+Git tools taking refs by address, shaped like vito/agents' committer module.
+"""
+type GitTools {
+  """
+  Show the commit a ref points to: its message and patch.
+  """
+  show(source: Workspace!, from: GitRef!): String! {
+    let sha = from.commitSHA
+    let commit = from.asRepository.commit(id: sha)
+    `commit ${sha}` + "\n\n" + commit.message + "\n\n" + commit.changes.asPatch.contents
+  }
+
+  """
+  Take the commits of a ref into the workspace, continuing the conversation
+  from the result.
+  """
+  adopt(llm: LLM!, source: Workspace!, ref: GitRef!): LLM! {
+    llm.withWorkspace(source.withCommitsFrom(source: ref.asWorkspace))
+  }
+}

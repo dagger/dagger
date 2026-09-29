@@ -1377,6 +1377,96 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// TestBoundCollectionRefs covers agent histories addressed through a bound
+// tool's collection, in the shape of vito/agents' staff and committer modules
+// (the workspace-agent-refs fixture mirrors them): a never-started chief
+// Agent is put on a Roster, and its committed history is addressed as
+// dag://roster/members/head?member=chief — which only resolves against the
+// BOUND Roster (or a View minted from it), since a fresh one has no members —
+// and handed to GitRef-taking tools of another module by the model.
+func (LLMSuite) TestBoundCollectionRefs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-agent-refs").
+		WithNewFile("README.md", "base\n").
+		WithExec([]string{"git", "add", "-A"}).
+		WithExec([]string{"git", "commit", "-m", "base"})
+	baseSHA, err := base.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	baseSHA = strings.TrimSpace(baseSHA)
+
+	// The chief works in a copy of the workspace with one more commit. It is
+	// spawned but never sent a message, so its loop never starts: its
+	// snapshot is just the conversation it was spawned with.
+	const chiefCommit = "chief: add chief.txt"
+	// Snapshot the local workspace up front: only its owning client (this
+	// shell) may capture it, and the git tools run as a module.
+	const setup = `ws=$(current-workspace | snapshot)
+chiefWs=$($ws | with-new-file chief.txt "from the chief")
+chiefWs=$($chiefWs | with-commit --changes $($chiefWs | git | uncommitted) --message "` + chiefCommit + `" --date 2026-09-05T12:00:00Z)
+chief=$(llm | with-workspace --workspace $chiefWs | spawn --name chief)
+roster=$(roster | with-worker --name chief --worker $chief)
+`
+	run := func(ctx context.Context, t *testctx.T, script string) string {
+		t.Helper()
+		out, err := base.With(daggerShell(setup + script)).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	// The commit is pinned (fixed date and identity), so every run of the
+	// setup produces the same chief commit.
+	chiefSHA := strings.TrimSpace(run(ctx, t, `$chiefWs | git | head | commit-sha`))
+	require.NotEqual(t, baseSHA, chiefSHA)
+
+	toolCall := func(id, name, args string) dagger.LLMContentBlockInput {
+		return dagger.LLMContentBlockInput{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: name, Arguments: dagger.JSON(args)}
+	}
+	const chiefHead = "dag://roster/members/head?member=chief"
+	conversation := func(prompt string, calls ...dagger.LLMContentBlockInput) string {
+		script := c.LLM().WithPrompt(prompt)
+		for _, call := range calls {
+			script = script.
+				WithResponse([]dagger.LLMContentBlockInput{call}).
+				WithToolResult(call.CallID, "", false)
+		}
+		return cannedRecordingModel(ctx, t, c, script.WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+	}
+	chat := func(model, tools, prompt string) string {
+		return fmt.Sprintf(`llm --model="%s" | with-workspace --workspace $ws | with-tools %s | with-tools $(git-tools) | with-prompt "%s" | loop`, model, tools, prompt)
+	}
+
+	t.Run("the bound roster resolves the address", func(ctx context.Context, t *testctx.T) {
+		const prompt = "look at the chief's work"
+		model := conversation(prompt,
+			toolCall("plain", "show", fmt.Sprintf(`{"from":%q}`, chiefHead)),
+			toolCall("typed", "show", `{"from":"dag+git-ref://roster/members/head?member=chief"}`),
+		)
+		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
+		// Both spellings reach the chief's HEAD, which only the bound roster
+		// knows.
+		require.Equal(t, 2, strings.Count(transcript, "commit "+chiefSHA), transcript)
+		require.Equal(t, 2, strings.Count(transcript, chiefCommit), transcript)
+		require.Contains(t, transcript, "+from the chief")
+	})
+
+	t.Run("an LLM-returning tool advances the bound workspace", func(ctx context.Context, t *testctx.T) {
+		// adopt returns an LLM: a continuation the loop resumes from, with
+		// the chief's commits in its workspace.
+		const prompt = "adopt the chief's work"
+		model := conversation(prompt,
+			toolCall("adopt", "adopt", fmt.Sprintf(`{"ref":%q}`, chiefHead)),
+		)
+		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
+		require.Contains(t, transcript, "Continuing from the returned conversation.")
+
+		require.Equal(t, chiefSHA, strings.TrimSpace(
+			run(ctx, t, chat(model, "$roster", prompt)+" | workspace | git | head | commit-sha")))
+		require.Equal(t, "from the chief", strings.TrimSpace(
+			run(ctx, t, chat(model, "$roster", prompt)+" | workspace | file chief.txt | contents")))
+	})
+}
+
 // TestAddressableToolArgs covers address lifting of object-typed tool args end
 // to end: a module function with a required arg of an addressable type still
 // becomes a tool — the arg renders as an address string, and a model-supplied
