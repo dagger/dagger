@@ -39,29 +39,29 @@ func NewArchive(reader ArchiveReader, manifest archive.Manifest) *Archive {
 // recipe, agent, or telemetry record is evaluated or imported. An archive
 // whose session ended without a seal is opened best-effort at the current end
 // of its store, as restore does.
-func OpenArchive(ctx context.Context, client *archive.Client, traceID string) (Source, func() error, error) {
+func OpenArchive(ctx context.Context, client *archive.Client, traceID string) (Source, error) {
 	manifest, err := client.Inspect(ctx, traceID)
 	if err == nil {
-		return NewArchive(client, manifest), nil, nil
+		return NewArchive(client, manifest), nil
 	}
 	var request *archive.RequestError
 	if !errors.As(err, &request) || !errors.Is(err, archive.ErrState) {
-		return nil, nil, err
+		return nil, err
 	}
 	if !request.State.Unsealed() {
 		// Still being captured: there is no fixed cut to display yet, so a
 		// live trace is Cloud's to show.
-		return nil, nil, fmt.Errorf("%w: engine archive for trace %s is %s", archive.ErrCleanMiss, traceID, request.State)
+		return nil, fmt.Errorf("%w: engine archive for trace %s is %s", archive.ErrCleanMiss, traceID, request.State)
 	}
 	unsealed, err := client.Unsealed(ctx, traceID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	return &Archive{
 		reader:   client,
 		manifest: archive.Manifest{TraceID: traceID, State: request.State, HighWater: unsealed.Cut},
 		unsealed: true,
-	}, nil, nil
+	}, nil
 }
 
 // FetchBootstrap imports the verified canonical roster and its recipe closure
