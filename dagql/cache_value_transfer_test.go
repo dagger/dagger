@@ -240,7 +240,7 @@ func TestValueTransferReferences(t *testing.T) {
 	require.NotEqual(t, value.cacheSharedResult().id, item.cacheSharedResult().id)
 	forward := exportTestBundle(t, bctx, b, imported)
 	require.Equal(t, bundle.Values[0].Record.Envelope.ScalarJSON, forward.Values[0].Record.Envelope.ScalarJSON)
-	for _, bad := range []string{"dangling", "cycle", "root", "extra", "body", "unreachable"} {
+	for _, bad := range []string{"dangling", "cycle", "root", "body", "unreachable"} {
 		t.Run(bad, func(t *testing.T) {
 			raw, err := json.Marshal(bundle)
 			require.NoError(t, err)
@@ -253,8 +253,6 @@ func TestValueTransferReferences(t *testing.T) {
 				broken.Values[0].DependencyIDs = []uint64{2}
 			case "root":
 				broken.Roots[0].Ordinal = 999
-			case "extra":
-				broken.Values[0].Record.Call.ExtraDigests = []call.ExtraDigest{{Digest: digest.FromString("unmarked"), Label: call.ExtraDigestLabelContent}}
 			case "body":
 				broken.Values[0].Record.Envelope.Items = []PersistedResultEnvelope{{}}
 			case "unreachable":
@@ -266,6 +264,25 @@ func TestValueTransferReferences(t *testing.T) {
 			require.Len(t, b.resultsByID, before)
 		})
 	}
+	// An extra digest on a frame merges with it, and classes the entry it
+	// arrives with.
+	t.Run("extra", func(t *testing.T) {
+		raw, err := json.Marshal(bundle)
+		require.NoError(t, err)
+		var withExtra ValueBundle
+		require.NoError(t, json.Unmarshal(raw, &withExtra))
+		extra := digest.FromString("carried")
+		withExtra.Values[0].Record.Call.ExtraDigests = []call.ExtraDigest{{Digest: extra, Label: call.ExtraDigestLabelContent}}
+		cctx, c, _ := transferTestCache(t)
+		_, err = c.MergeValues(cctx, cloudCacheID, withExtra)
+		require.NoError(t, err)
+		c.egraphMu.RLock()
+		class, known := c.egraphDigestToClass[extra.String()]
+		results := len(c.outputEqClassResults[c.eqClassRootLocked(class)])
+		c.egraphMu.RUnlock()
+		require.True(t, known)
+		require.Equal(t, 1, results)
+	})
 }
 
 func TestValueTransferImportPublication(t *testing.T) {
@@ -325,10 +342,14 @@ func TestValueTransferImportPublication(t *testing.T) {
 	})
 }
 
+// A recipe ID inside a payload travels with every extra digest of every
+// vertex: the receiver's content digest as well as the call's. The export
+// copies the DAG, so the original is untouched, and the receiving cache
+// accepts the recipe as it is.
 func TestValueTransferReferencesExtras(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
-	marked, unmarked := digest.FromString("marked"), digest.FromString("private")
-	recipe := call.New().Append(String("").Type(), "source").With(call.WithContentDigest(unmarked)).Append(String("").Type(), "child").With(call.WithExtraDigest(call.ExtraDigest{Digest: marked, Label: call.ExtraDigestLabelRemoteCache}), call.WithContentDigest(marked))
+	sourceContent, childContent := digest.FromString("source-content"), digest.FromString("child-content")
+	recipe := call.New().Append(String("").Type(), "source").With(call.WithContentDigest(sourceContent)).Append(String("").Type(), "child").With(call.WithContentDigest(childContent))
 	raw, err := recipe.Encode()
 	require.NoError(t, err)
 	value := persistedListTestResult(t, ctx, c, srv, "recipe", &transferTestValue{Text: "recipe", Recipe: raw})
@@ -337,18 +358,20 @@ func TestValueTransferReferencesExtras(t *testing.T) {
 	require.NoError(t, json.Unmarshal(bundle.Values[0].Record.Envelope.ObjectJSON, &payload))
 	var copied call.ID
 	require.NoError(t, copied.Decode(payload.Recipe))
-	require.Equal(t, marked, copied.ContentDigest())
-	require.Empty(t, copied.Receiver().ExtraDigests())
-	require.NotEmpty(t, recipe.Receiver().ExtraDigests(), "original DAG is untouched")
+	require.Equal(t, childContent, copied.ContentDigest())
+	require.Equal(t, sourceContent, copied.Receiver().ContentDigest(), "the receiver's content digest travels too")
+	require.Equal(t, recipe.Receiver().ExtraDigests(), copied.Receiver().ExtraDigests())
+	require.NotSame(t, recipe.Receiver(), copied.Receiver(), "the export copies the DAG")
 	filtered, err := recipe.FilterTransferDigests()
 	require.NoError(t, err)
 	require.Equal(t, filtered.Digest(), copied.Digest())
 	bctx, b, _ := transferTestCache(t)
 	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
 	require.NoError(t, err)
-	bundle.Values[0].Record.Envelope.ObjectJSON = json.RawMessage(`{"text":"invalid","recipe":` + string(mustTransferJSON(t, raw)) + `}`)
+	// The original recipe, as the sender holds it, is accepted as it is.
+	bundle.Values[0].Record.Envelope.ObjectJSON = json.RawMessage(`{"text":"original","recipe":` + string(mustTransferJSON(t, raw)) + `}`)
 	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
-	require.ErrorContains(t, err, "unmarked recipe ID extras")
+	require.NoError(t, err)
 }
 func mustTransferJSON(t *testing.T, v any) []byte {
 	t.Helper()

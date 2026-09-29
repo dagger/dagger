@@ -16,7 +16,7 @@ func TestValueTransferFixtureExactRoots(t *testing.T) {
 	lower := persistedListTestResult(t, ctx, c, srv, "lower", String("lower"))
 	exact := persistedListTestResult(t, ctx, c, srv, "exact", String("exact"))
 	for _, value := range []AnyResult{lower, exact} {
-		_, err := value.WithContentDigestAny(ctx, digest.FromString("same"), call.ExtraDigestLabelRemoteCache)
+		_, err := value.WithContentDigestAny(ctx, digest.FromString("same"))
 		require.NoError(t, err)
 	}
 	id, err := exact.ID()
@@ -48,7 +48,7 @@ func TestSchemaModuleSelectionFallback(t *testing.T) {
 	lower.cacheSharedResult().imported = true
 	exact := persistedListTestResult(t, ctx, c, srv, "native", String("native"))
 	for _, value := range []AnyResult{lower, exact} {
-		_, err := value.WithContentDigestAny(ctx, digest.FromString("implementation"), call.ExtraDigestLabelRemoteCache)
+		_, err := value.WithContentDigestAny(ctx, digest.FromString("implementation"))
 		require.NoError(t, err)
 	}
 	recorded := uint64(exact.cacheSharedResult().id)
@@ -91,7 +91,7 @@ func TestSchemaModuleSelectionSkipsInaccessibleInstalled(t *testing.T) {
 			operational := persistedListTestResult(t, ctx, c, srv, "operational", String("operational"))
 			scoped := persistedListTestResult(t, ctx, c, srv, "scoped", String("scoped"))
 			for _, value := range []AnyResult{lower, recorded, scoped} {
-				_, err := value.WithContentDigestAny(ctx, digest.FromString("implementation"), call.ExtraDigestLabelRemoteCache)
+				_, err := value.WithContentDigestAny(ctx, digest.FromString("implementation"))
 				require.NoError(t, err)
 			}
 			c.egraphMu.Lock()

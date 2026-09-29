@@ -1169,9 +1169,13 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		frame := baseFrame.fork()
 
 		replaced := false
+		var replacedDigest digest.Digest
 		for i, extra := range frame.ExtraDigests {
 			if extra.Label != call.ExtraDigestLabelContent {
 				continue
+			}
+			if extra.Digest != contentDigest {
+				replacedDigest = extra.Digest
 			}
 			frame.ExtraDigests[i].Digest = contentDigest
 			replaced = true
@@ -1182,6 +1186,14 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 				Label:  call.ExtraDigestLabelContent,
 				Digest: contentDigest,
 			})
+		}
+		// A replaced content digest still names this result. Keep it on the
+		// frame, so it travels with the result to other engines.
+		if replacedDigest != "" {
+			kept := call.ExtraDigest{Digest: replacedDigest, Label: call.ExtraDigestLabelReplacedContent}
+			if !slices.Contains(frame.ExtraDigests, kept) {
+				frame.ExtraDigests = append(frame.ExtraDigests, kept)
+			}
 		}
 
 		for _, label := range additionalLabels {
