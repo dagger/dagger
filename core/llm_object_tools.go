@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -587,8 +588,10 @@ type addressableType struct {
 
 // dagAddressHint documents DAG addresses in every hint. A dag:// address
 // names a value by its path from a module's main object, with a key for each
-// collection on the way.
-const dagAddressHint = `a dag:// address to a workspace module's value like "dag://<module>/<field>/<field>?<item>=<key>"`
+// collection on the way. A module bound as one of this conversation's tools
+// is addressed with its live state (see MCP.resolveBoundToolAddress); any
+// other module is constructed fresh from the workspace.
+const dagAddressHint = `a dag:// address to a value of one of your tool modules (with its current state) or of a workspace module, like "dag://<module>/<field>/<field>?<item>=<key>"`
 
 // addressableTypes lists every object type with an Address.<field> loader in
 // core/schema/address.go, except Workspace: a Workspace arg is always filled
@@ -885,14 +888,14 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 // selector for the module method. Workspace retains its contextual handling;
 // MCP directly adds the current LLM and calling Agent for hidden arguments.
 // These are explicit selector arguments, not GraphQL defaults or dynamic inputs.
-// An object-typed argument of a liftable type (see liftableObjectArg) additionally
-// accepts an address string: when the value fails to decode as an ID, it is
-// lifted into the object via the core Address API
-// (Workspace.resolve(value: <addr>).<field>) and the resulting object's ID is used
-// instead — the same lifting the CLI performs for object flags
-// (internal/cmd/dagger/flags.go). ctx and srv are the session's, so addresses
-// resolve against the workspace client schema with all installed modules
-// visible.
+// An object-typed argument of a liftable type (see liftableObjectArg)
+// additionally accepts an address string: when the value fails to decode as an
+// ID, it is lifted into the object (see MCP.liftObjectArg) and the resulting
+// object's ID is used instead — the same lifting the CLI performs for object
+// flags (internal/cmd/dagger/flags.go), except that a dag:// address naming a
+// bound tool module resolves against that tool's live object. ctx and srv are
+// the session's, so other addresses resolve against the workspace client
+// schema with all installed modules visible.
 func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType dagql.ObjectType, astField *ast.FieldDefinition, args map[string]any) (dagql.Selector, error) {
 	fieldName := astField.Name
 	sel := dagql.Selector{View: srv.View, Field: fieldName}
@@ -923,7 +926,7 @@ func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, 
 		if err != nil {
 			// Not a valid ID: for a liftable object arg, fall back to
 			// interpreting the string as an address.
-			lifted, ok, liftErr := liftObjectArg(ctx, srv, astField, arg, val, err)
+			lifted, ok, liftErr := m.liftObjectArg(ctx, srv, astField, arg, val, err)
 			if liftErr != nil {
 				return sel, fmt.Errorf("arg %q: %w", arg.Name, liftErr)
 			}
@@ -997,15 +1000,18 @@ func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefiniti
 }
 
 // liftObjectArg resolves an address string supplied for a liftable
-// object-typed argument into that object's ID. It selects
-// Workspace.resolve(value: <addr>).<addressField> on the session server, then
-// re-encodes the resulting object's ID through the argument's own decoder so
+// object-typed argument into that object's ID. A dag:// address whose first
+// path segment names the module of a bound tool object resolves against that
+// live object (see MCP.resolveBoundToolAddress); any other address selects
+// Workspace.resolve(value: <addr>).<addressField> on the session server. The
+// resulting object's ID is re-encoded through the argument's own decoder so
 // the input matches whatever ID type the field expects (including
 // optional-wrapped IDs). Returns ok=false — without an error — when the
 // argument is not a liftable object arg or the value is not a string, so
 // the caller surfaces the original ID decode error instead. idErr is that
-// original error, folded into the message when address resolution also fails.
-func liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDefinition, spec dagql.InputSpec, val any, idErr error) (dagql.Input, bool, error) {
+// original error, folded into the message when address resolution also fails
+// (unless the value is plainly a dag:// address rather than an ID).
+func (m *MCP) liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDefinition, spec dagql.InputSpec, val any, idErr error) (dagql.Input, bool, error) {
 	astArg := astField.Arguments.ForName(spec.Name)
 	if astArg == nil {
 		return nil, false, nil
@@ -1018,21 +1024,15 @@ func liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDe
 	if !ok {
 		return nil, false, nil
 	}
-	var obj dagql.AnyObjectResult
-	// Address resolution is user-facing work of the tool call — possibly an
-	// image pull — not engine bookkeeping: run it non-internal (matching the
-	// method call's Select in callObjectMethod) so it renders in the trace as
-	// part of the tool call instead of hiding as internal spans.
-	resolved, err := resolveUserAddress(ctx, srv, addr)
-	if err != nil {
-		return nil, false, err
+	obj, bound, err := m.resolveBoundToolAddress(ctx, srv, addr, typeName)
+	if !bound {
+		obj, err = resolveObjectAddress(ctx, srv, addr, addressableTypes[typeName].addressField)
 	}
-	if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), resolved, &obj,
-		dagql.Selector{
-			View:  srv.View,
-			Field: addressableTypes[typeName].addressField,
-		},
-	); err != nil {
+	if err != nil {
+		if dagaddress.IsAddress(addr) {
+			// Plainly not an ID: the decode error would only be noise.
+			return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w", addr, typeName, err)
+		}
 		return nil, false, fmt.Errorf("%q is neither a %s ID (%w) nor a resolvable %s address: %w",
 			addr, typeName, idErr, typeName, err)
 	}
@@ -1049,6 +1049,106 @@ func liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDe
 		return nil, false, fmt.Errorf("decode lifted %s ID for address %q: %w", typeName, addr, err)
 	}
 	return input, true, nil
+}
+
+// resolveObjectAddress loads an object from an address through the core
+// Address API: Workspace.resolve(value: <addr>).<addressField>, or
+// Query.address when no workspace is in scope (see resolveUserAddress).
+func resolveObjectAddress(ctx context.Context, srv *dagql.Server, addr, addressField string) (dagql.AnyObjectResult, error) {
+	var obj dagql.AnyObjectResult
+	resolved, err := resolveUserAddress(ctx, srv, addr)
+	if err != nil {
+		return nil, err
+	}
+	// Address resolution is user-facing work of the tool call — possibly an
+	// image pull — not engine bookkeeping: run it non-internal (matching the
+	// method call's Select in callObjectMethod) so it renders in the trace as
+	// part of the tool call instead of hiding as internal spans.
+	err = srv.Select(dagql.WithNonInternalTelemetry(ctx), resolved, &obj,
+		dagql.Selector{View: srv.View, Field: addressField})
+	return obj, err
+}
+
+// resolveBoundToolAddress resolves a dag:// address against the objects bound
+// as this conversation's tools. Workspace resolution evaluates an artifact
+// from a FRESH construction of its module's main object, but a bound tool
+// object carries live state — a roster, a history — that a fresh constructor
+// does not have. So when the address's first path segment names the module of
+// a bound object that is its module's main object, the rest of the path is
+// evaluated from that bound object instead, with the same artifact machinery
+// as workspace addresses: the path walks the module's schema, a collection
+// needs a key for its item dimension (dag://staff/members/head?staff-member=
+// chief selects members.get(key: "chief").head), and a type assertion
+// (dag+git-ref://...) behaves the same.
+//
+// Returns bound=false for any other address, which then resolves through the
+// workspace as before. Once a bound module matches, its errors are final: a
+// fallback to a fresh construction would silently resolve different state.
+func (m *MCP) resolveBoundToolAddress(ctx context.Context, srv *dagql.Server, addr, typeName string) (dagql.AnyObjectResult, bool, error) {
+	if !dagaddress.IsAddress(addr) {
+		return nil, false, nil
+	}
+	parsed, err := dagaddress.Parse(addr)
+	if err != nil || parsed.Absolute {
+		// A malformed address reports through workspace resolution; an
+		// absolute one names a workspace, never this conversation.
+		return nil, false, nil
+	}
+	moduleName, _, _ := strings.Cut(parsed.Path, "/")
+	boundType, mod, ok := m.boundToolModule(moduleName)
+	if !ok {
+		return nil, false, nil
+	}
+	root, ok, err := m.boundToolObject(ctx, srv, boundType)
+	if err == nil && !ok {
+		err = fmt.Errorf("no object of type %q is bound", boundType)
+	}
+	if err != nil {
+		return nil, true, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	artifacts, err := BoundArtifacts(ctx, mod, root)
+	if err != nil {
+		return nil, true, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	artifact, err := artifacts.ResolveURI(ctx, parsed, func(ctx context.Context, selected *Artifacts) (*Artifacts, error) {
+		return selected.Expand(ctx)
+	})
+	if err != nil {
+		return nil, true, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	if err := artifact.AssertType(parsed.Types); err != nil {
+		return nil, true, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	if artifact.TypeName != typeName {
+		return nil, true, fmt.Errorf("resolve %q: artifact is a %s, not a %s", addr, artifact.TypeName, typeName)
+	}
+	var obj dagql.AnyObjectResult
+	if err := artifact.Evaluate(ctx, &obj); err != nil {
+		return nil, true, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	return obj, true, nil
+}
+
+// boundToolModule finds the binding a DAG address's module segment names: an
+// object bound as a tool that is the main object of a module with that name
+// (compared in CLI case, as artifact paths are). It returns the bound type
+// name and the module.
+func (m *MCP) boundToolModule(name string) (string, dagql.ObjectResult[*Module], bool) {
+	want := ArtifactTypeName(name)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, b := range m.boundTools {
+		mod, ok := ModuleObjectTypeModule(b.objType)
+		if !ok || ArtifactTypeName(mod.Self().Name()) != want {
+			continue
+		}
+		main, ok := mod.Self().MainObject()
+		if !ok || main.Name != b.typeName() {
+			continue
+		}
+		return b.typeName(), mod, true
+	}
+	return "", dagql.ObjectResult[*Module]{}, false
 }
 
 // routeObjectMethodResult renders a method's result for the model, per the

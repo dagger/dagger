@@ -867,6 +867,20 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		require.Equal(t, "make in alpine:latest", out.String())
 	})
 
+	t.Run("dag addresses naming no bound tool module resolve as before", func(t *testing.T) {
+		// The bound runner is not a module's main object, so no binding
+		// claims the address: it goes through the Address API unchanged.
+		m := newMCP().WithTools(runner, srv.Schema(), nil)
+		sel, err := m.buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+			"cmd":     "make",
+			"sandbox": "dag://runner/sandbox",
+		})
+		require.NoError(t, err)
+		var out dagql.String
+		require.NoError(t, srv.Select(ctx, runner, &out, sel))
+		require.Equal(t, "make in dag://runner/sandbox", out.String())
+	})
+
 	t.Run("a real ID still decodes directly", func(t *testing.T) {
 		var ctr dagql.AnyObjectResult
 		require.NoError(t, srv.Select(ctx, srv.Root(), &ctr,

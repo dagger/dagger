@@ -1307,6 +1307,76 @@ type Swapper {
 	require.NotContains(t, transcript, "is not available")
 }
 
+// TestBoundToolAddresses covers dag:// addresses at tool dispatch that name a
+// module bound as a tool (MCP.resolveBoundToolAddress): the path is evaluated
+// from the LIVE bound object, so it sees state a fresh constructor lacks, and
+// collection items take their key from the address's dimension query.
+func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-bound-tool-addresses")
+
+	toolCall := func(id, name, args string) dagger.LLMContentBlockInput {
+		return dagger.LLMContentBlockInput{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: name, Arguments: dagger.JSON(args)}
+	}
+	show := func(id, addr string) dagger.LLMContentBlockInput {
+		return toolCall(id, "show", fmt.Sprintf(`{"dir":%q}`, addr))
+	}
+	calls := []struct {
+		block   dagger.LLMContentBlockInput
+		isError bool
+	}{
+		{block: toolCall("add", "withMember", `{"name":"a","contents":"hello from the roster"}`)},
+		{block: show("plain", "dag://roster/members/dir?member=a")},
+		{block: show("typed", "dag+directory://roster/members/dir?member=a")},
+		{block: show("wrong_type", "dag+file://roster/members/dir?member=a"), isError: true},
+		{block: show("missing", "dag://roster/members/dir?member=nobody"), isError: true},
+	}
+	script := c.LLM().WithPrompt("show the new member")
+	for _, call := range calls {
+		script = script.
+			WithResponse([]dagger.LLMContentBlockInput{call.block}).
+			WithToolResult(call.block.CallID, "", call.isError)
+	}
+	script = script.WithResponse([]dagger.LLMContentBlockInput{
+		{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+	})
+	model := cannedRecordingModel(ctx, t, c, script)
+
+	t.Run("the tool schema advertises tool module addresses", func(ctx context.Context, t *testctx.T) {
+		tools, err := base.With(daggerShell("llm | with-tools $(roster) | tools")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, tools, "## show\n")
+		require.Contains(t, tools, "(Directory address:")
+		require.Contains(t, tools, "one of your tool modules (with its current state)")
+	})
+
+	t.Run("addresses resolve against the bound object's state", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(roster) | with-prompt "show the new member" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// Both the plain and the type-asserted address reach the member the
+		// model added, which exists only in the bound roster.
+		require.Equal(t, 2, strings.Count(out, "shown: hello from the roster"), out)
+		// A type assertion that does not match reports like a workspace
+		// artifact's...
+		require.Contains(t, out, "is a Directory, not file")
+		// ...and an unknown key does not fall back to a fresh roster.
+		require.Contains(t, out, `resolve "dag://roster/members/dir?member=nobody": no artifact matches`)
+		require.Contains(t, out, "done")
+	})
+
+	t.Run("workspace resolution constructs a fresh roster", func(ctx context.Context, t *testctx.T) {
+		// The same address through Workspace.resolve evaluates a fresh
+		// Roster, which has no members.
+		_, err := base.With(daggerShell(
+			`current-workspace | resolve "dag://roster/members/dir?member=a" | directory | entries`,
+		)).Stdout(ctx)
+		requireErrOut(t, err, `resolve "dag://roster/members/dir?member=a": no artifact matches`)
+	})
+}
+
 // TestAddressableToolArgs covers address lifting of object-typed tool args end
 // to end: a module function with a required arg of an addressable type still
 // becomes a tool — the arg renders as an address string, and a model-supplied

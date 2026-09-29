@@ -97,25 +97,7 @@ func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.W
 	if err := checkArtifactAddressWorkspace(artifacts.Entries, parsed, uri); err != nil {
 		return nil, err
 	}
-	// Apply the type assertion as a filter only to choose among several
-	// matches, so a single artifact of another type reports the assertion.
-	untyped := *parsed
-	untyped.Types = nil
-	selected, err := artifacts.FilterURI(&untyped)
-	if err != nil {
-		return nil, fmt.Errorf("resolve %q: %w", uri, err)
-	}
-	if len(selected.Entries) > 1 && len(parsed.Types) > 0 {
-		selected = selected.FilterTypeNames(parsed.Types)
-	}
-	selected, err = expandArtifacts(ctx, selected)
-	if err != nil {
-		return nil, fmt.Errorf("resolve %q: %w", uri, err)
-	}
-	if len(selected.Entries) == 0 {
-		return nil, fmt.Errorf("resolve %q: no artifact matches", uri)
-	}
-	artifact, err := selected.One()
+	artifact, err := artifacts.ResolveURI(ctx, parsed, expandArtifacts)
 	if err != nil {
 		return nil, fmt.Errorf("resolve %q: %w", uri, err)
 	}
