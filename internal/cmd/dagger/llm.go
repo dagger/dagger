@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modelcatalog"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
@@ -352,12 +353,24 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	// originally synchronized from. Its current snapshot workspace is the safe
 	// best-effort baseline: it is portable with the snapshot and cannot trigger
 	// an unlike-host-root comparison. A later explicit save/reset advances it.
-	if workspace := snapshot.Workspace(); workspace != nil {
-		if _, err := workspace.ID(ctx); err != nil {
-			slog.Debug("attached agent snapshot has no workspace synchronization baseline", "error", err)
-		} else {
-			attached.setLastSynced(workspace)
+	//
+	// A live agent's handle does say where it started, though: it was spawned
+	// from a conversation whose workspace is the one it was handed. Measured
+	// from the snapshot instead, an agent first focused after finishing its
+	// work -- the usual case for a worker -- would show no changes at all.
+	baselines := []*dagger.Workspace{snapshot.Workspace()}
+	if !owned {
+		if seed := spawnWorkspace(s.dag, encodedID); seed != nil {
+			baselines = append([]*dagger.Workspace{seed}, baselines...)
 		}
+	}
+	for _, workspace := range baselines {
+		if _, err := workspace.ID(ctx); err != nil {
+			slog.Debug("attached agent workspace is not a usable synchronization baseline", "error", err)
+			continue
+		}
+		attached.setLastSynced(workspace)
+		break
 	}
 	if err := attached.setLLM(snapshot); err != nil {
 		return nil, fmt.Errorf("attach to agent %q: %w", name, err)
@@ -366,6 +379,36 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	s.agents = append(s.agents, attached)
 	s.mu.Unlock()
 	return attached, nil
+}
+
+// spawnWorkspace returns the workspace an agent was spawned with: that of the
+// conversation it was spawned from (see spawnSeed). It returns nil when the
+// handle does not say.
+func spawnWorkspace(dag *dagger.Client, encodedID string) *dagger.Workspace {
+	seed, ok := spawnSeed(encodedID)
+	if !ok {
+		return nil
+	}
+	return dagger.Ref[*dagger.LLM](dag, seed).Workspace()
+}
+
+// spawnSeed finds the conversation an agent was spawned from in its handle:
+// the receiver of the call that produced it (LLM.agent, LLM.spawn). It
+// reports false when the handle does not say, e.g. a bare engine-result ID.
+func spawnSeed(encodedID string) (dagger.ID, bool) {
+	var agent call.ID
+	if err := agent.Decode(encodedID); err != nil || agent.IsHandle() {
+		return "", false
+	}
+	seed := agent.Receiver()
+	if seed == nil || seed.IsHandle() || seed.Type() == nil || seed.Type().NamedType() != "LLM" {
+		return "", false
+	}
+	encoded, err := seed.Encode()
+	if err != nil {
+		return "", false
+	}
+	return dagger.ID(encoded), true
 }
 
 // SubmitToTarget offers a message to the target conversation's in-flight turn,
