@@ -1182,7 +1182,14 @@ func (c *Cache) HolderClosure(key HolderKey) []HolderKey {
 
 // RemoteEntryInfo describes an entry and every holding on it.
 type RemoteEntryInfo struct {
-	Field string
+	// Number is the entry's number in this cache.
+	Number uint64
+	// Stored reports that the entry stores a record, a value of its own, and
+	// StoredExpiresAtUnix is that record's own expiry (0: none, or no
+	// record).
+	Stored              bool
+	StoredExpiresAtUnix int64
+	Field               string
 	// Recipes are the recipe digests that name the entry.
 	Recipes []digest.Digest
 	// Digests are the digests the entry is posted under.
@@ -1216,7 +1223,8 @@ type RemoteHoldingInfo struct {
 	Replacements uint64
 }
 
-// RemoteEntryInfo returns what the cache holds for the entry of one holding.
+// RemoteEntryInfo returns what the cache holds for the entry of one holding,
+// read under one hold.
 func (c *Cache) RemoteEntryInfo(key HolderKey) (RemoteEntryInfo, bool) {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
@@ -1224,7 +1232,30 @@ func (c *Cache) RemoteEntryInfo(key HolderKey) (RemoteEntryInfo, bool) {
 	if h == nil {
 		return RemoteEntryInfo{}, false
 	}
-	info := RemoteEntryInfo{Field: entry.description, Recipes: slices.Clone(entry.recipeKeys)}
+	return c.remoteEntryInfoLocked(entry), true
+}
+
+// EntryInfo returns the same as RemoteEntryInfo for the entry numbered
+// number, read under one hold. It reports false when the cache has no such
+// entry.
+func (c *Cache) EntryInfo(number uint64) (RemoteEntryInfo, bool) {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	entry := c.resultsByID[sharedResultID(number)]
+	if entry == nil {
+		return RemoteEntryInfo{}, false
+	}
+	return c.remoteEntryInfoLocked(entry), true
+}
+
+// remoteEntryInfoLocked describes entry: its number, whether it stores a
+// record and that record's expiry, its identity and its holdings. Requires
+// egraphMu.
+func (c *Cache) remoteEntryInfoLocked(entry *sharedResult) RemoteEntryInfo {
+	info := RemoteEntryInfo{Number: uint64(entry.id), Field: entry.description, Recipes: slices.Clone(entry.recipeKeys)}
+	if !entry.noValueLocked() {
+		info.Stored, info.StoredExpiresAtUnix = true, entry.expiresAtUnix
+	}
 	slices.Sort(info.Recipes)
 	digests := map[string]struct{}{}
 	for _, dig := range c.resultIndexedDigests[entry.id] {
@@ -1248,7 +1279,7 @@ func (c *Cache) RemoteEntryInfo(key HolderKey) (RemoteEntryInfo, bool) {
 		info.Holdings = append(info.Holdings, holdingInfo(holderKey, held))
 	}
 	slices.SortFunc(info.Holdings, func(a, b RemoteHoldingInfo) int { return compareHolderKeys(a.Key, b.Key) })
-	return info, true
+	return info
 }
 
 func holdingInfo(key HolderKey, h *holding) RemoteHoldingInfo {

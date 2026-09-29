@@ -14,6 +14,9 @@ type TransferOrdinal uint64
 type ValueSelection struct {
 	Roots   []AnyResult
 	Outputs []SelectedValueOutput
+	// LeaveOutOutputsOutsideClosure leaves out a selected output whose entry
+	// the captured closure doesn't hold, instead of refusing the selection.
+	LeaveOutOutputsOutsideClosure bool
 }
 type SelectedValueOutput struct {
 	Result  AnyResult

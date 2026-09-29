@@ -501,3 +501,70 @@ func TestOfferAlreadyCompleteOnAReferencedRowRecordsItsCounterpart(t *testing.T)
 	require.Equal(t, leafOwners, gotLeafOwners)
 	require.Equal(t, listOwners, gotListOwners)
 }
+
+// Each disposition carries the receiver's replacement count and direct
+// dependencies, read where its outcome was decided: for an accepted offer, and
+// for a part the receiver already has.
+func TestOfferDispositionCarriesTheReceiversValueState(t *testing.T) {
+	t.Parallel()
+	t.Run("accepted, after a replacement", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		first := persistedListTestResult(t, ctx, c, srv, "offered-state", &transferTestValue{Text: "old"})
+		dep := persistedListTestResult(t, ctx, c, srv, "offered-state-dep", String("dep"))
+		row := first.cacheSharedResult()
+		require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+		mergeTestExpire(c, row)
+		frame := row.loadResultCall().clone()
+		replaced, err := c.GetOrInitCall(ctx, "second-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(&transferTestValue{Text: "pending"}, frame)
+		})
+		require.NoError(t, err)
+		require.Equal(t, row.id, replaced.cacheSharedResult().id, "replaced in place")
+		transferTestDependency(c, ctx, replaced, dep)
+
+		out, err := c.testOfferParts(ctx, replaced, []PersistedPartOffer{testLiveOffer()})
+		require.NoError(t, err)
+		require.Equal(t, OfferAccepted, out[0].Outcome)
+		require.Equal(t, uint64(1), out[0].Replacements)
+		require.Equal(t, []uint64{uint64(dep.cacheSharedResult().id)}, out[0].Deps)
+		require.NoError(t, c.ReleaseSession(ctx, "second-session"))
+	})
+	t.Run("already complete", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		res := persistedListTestResult(t, ctx, c, srv, "offered-complete", &transferTestValue{Text: "snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "complete-snapshot"}}})
+		dep := persistedListTestResult(t, ctx, c, srv, "offered-complete-dep", String("dep"))
+		transferTestDependency(c, ctx, res, dep)
+		c.completePartKeys(ctx, res.cacheSharedResult())
+
+		out, err := c.testOfferParts(ctx, res, []PersistedPartOffer{testLiveOffer()})
+		require.NoError(t, err)
+		require.Equal(t, OfferAlreadyComplete, out[0].Outcome)
+		require.Zero(t, out[0].Replacements)
+		require.Equal(t, []uint64{uint64(dep.cacheSharedResult().id)}, out[0].Deps)
+	})
+	t.Run("decided early, execution started", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		res := persistedListTestResult(t, ctx, c, srv, "offered-started", &transferTestValue{Text: "pending"})
+		dep := persistedListTestResult(t, ctx, c, srv, "offered-started-dep", String("dep"))
+		transferTestDependency(c, ctx, res, dep)
+		res.cacheSharedResult().partGate.loadOrCreate().groups[lazyGroupAddressKey(LazyGroupAddress{Group: "exec"})] = &partLazyEvaluationState{phase: LazyEvaluationRunning, writeSet: []PersistedPartAddress{{Part: "snapshot"}}}
+		out, err := c.testOfferParts(ctx, res, []PersistedPartOffer{testLiveOffer()})
+		require.NoError(t, err)
+		require.Equal(t, OfferExecutionStarted, out[0].Outcome)
+		require.Equal(t, []uint64{uint64(dep.cacheSharedResult().id)}, out[0].Deps)
+	})
+	t.Run("decided late, after a dependency is added", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		res := persistedListTestResult(t, ctx, c, srv, "offered-late", &transferTestValue{Text: "pending"})
+		dep := persistedListTestResult(t, ctx, c, srv, "offered-late-dep", String("dep"))
+		c.testOfferBeforeDecision = func(*sharedResult) { transferTestDependency(c, ctx, res, dep) }
+		out, err := c.testOfferParts(ctx, res, []PersistedPartOffer{testLiveOffer()})
+		require.NoError(t, err)
+		require.Equal(t, OfferAccepted, out[0].Outcome)
+		require.Equal(t, []uint64{uint64(dep.cacheSharedResult().id)}, out[0].Deps, "read under the lock that decided")
+	})
+}

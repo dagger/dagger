@@ -449,3 +449,59 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 func (v *transferTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink {
 	return cloneSnapshotRefLinks(v.links)
 }
+
+// A prefix candidate that delegates to a parent part the bundle offers gets
+// no prefix output; one that delegates to a part the bundle doesn't offer, or
+// doesn't delegate, gets one.
+func TestPrefixServedByDelegation(t *testing.T) {
+	t.Parallel()
+	rows := map[sharedResultID]*capturedTransferRow{7: {ordinal: 2}}
+	fs, err := partAddressKey(PersistedPartAddress{Part: "fs"})
+	require.NoError(t, err)
+	delegating := LazyOperationRoute{Delegation: &PartDelegation{ParentResultID: 7, Address: PersistedPartAddress{Part: "fs"}}}
+	for _, tc := range []struct {
+		name    string
+		route   LazyOperationRoute
+		offered map[string]bool
+		want    bool
+	}{
+		{"delegating, the parent part offered", delegating, map[string]bool{"2:" + fs: true}, true},
+		{"delegating, the parent part not offered", delegating, map[string]bool{}, false},
+		{"delegating, another part of the parent offered", delegating, map[string]bool{"2:other": true}, false},
+		{"delegating to a parent outside the capture", LazyOperationRoute{Delegation: &PartDelegation{ParentResultID: 9, Address: PersistedPartAddress{Part: "fs"}}}, map[string]bool{"2:" + fs: true}, false},
+		{"not delegating", LazyOperationRoute{}, map[string]bool{"2:" + fs: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, prefixServedByDelegation(tc.route, rows, tc.offered))
+		})
+	}
+}
+
+// A selected output whose entry the captured closure doesn't hold is refused,
+// unless the selection asks to leave such outputs out: then it is left out,
+// and the rest of the bundle is exported.
+func TestExportLeavesOutOutputsOutsideTheClosureOnRequest(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	inside := persistedListTestResult(t, ctx, c, srv, "inside", &transferTestValue{Text: "pending"})
+	outside := persistedListTestResult(t, ctx, c, srv, "outside", &transferTestValue{Text: "pending"})
+	selection := ValueSelection{
+		Roots: []AnyResult{inside},
+		Outputs: []SelectedValueOutput{
+			{Result: inside, Address: PersistedPartAddress{Part: "snapshot"}},
+			{Result: outside, Address: PersistedPartAddress{Part: "snapshot"}},
+		},
+	}
+	consume := func(context.Context, *ExportedValues) error { return nil }
+	require.ErrorContains(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, consume), "outside captured closure")
+
+	selection.LeaveOutOutputsOutsideClosure = true
+	var bundle ValueBundle
+	require.NoError(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle = values.Bundle
+		return nil
+	}))
+	require.Len(t, bundle.Values, 1)
+	require.Len(t, bundle.Outputs, 1, "only the output inside the closure")
+	require.Equal(t, bundle.Values[0].Ordinal, bundle.Outputs[0].Ordinal)
+}

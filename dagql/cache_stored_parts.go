@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -26,8 +27,12 @@ func WithBlobStore() CacheOption {
 // against the value the entry holds now, by the rule for attaching parts to
 // values: a copy that has not expired is interchangeable with it, and an
 // expired copy's part attaches only while the entry's value has expired too,
-// as the same expired value. It reports whether the part was stored. A
-// metadata part carries no bytes and is never stored.
+// as the same expired value. Storing a part adds the entries its owner and
+// services name as the entry's dependencies, as installing a part does on an
+// engine, so they live as long as the value; a part that names an entry the
+// cache doesn't have, or one that reaches the entry, is not stored. It
+// reports whether the part was stored. A metadata part carries no bytes and
+// is never stored.
 func (c *Cache) SetStoredPart(ctx context.Context, number uint64, part PersistedPartOffer, copyExpiresAtUnix int64) (bool, error) {
 	if !c.blobBacked {
 		return false, errors.New("set stored part: the cache has no blob store")
@@ -62,9 +67,39 @@ func (c *Cache) SetStoredPart(ctx context.Context, number uint64, part Persisted
 	if copyExpired && !c.resultExpiredAtLocked(res, now) {
 		return false, nil
 	}
+	named, ok := c.storedPartDependenciesLocked(res, copied[0])
+	if !ok {
+		return false, nil
+	}
 	if res.storedParts == nil {
 		res.storedParts = make(map[string]PersistedPartOffer)
 	}
 	res.storedParts[key] = copied[0]
+	// The Cloud serves no sessions, so there are no requirements to carry.
+	c.applyPartDependenciesLocked(ctx, res, named, nil)
 	return true, nil
+}
+
+// storedPartDependenciesLocked returns the entries part's owner and services
+// name, or false if one is missing or reaches res, which would close a cycle.
+// The check is an engine's part commit's; the session requirements it also
+// computes don't apply to the Cloud. Requires egraphMu.
+func (c *Cache) storedPartDependenciesLocked(res *sharedResult, part PersistedPartOffer) ([]*sharedResult, bool) {
+	ids := slices.Clone(part.Owner.DependencyIDs)
+	for _, service := range part.Value.Services {
+		ids = append(ids, service.ServiceResultID)
+	}
+	slices.Sort(ids)
+	named := make([]*sharedResult, 0, len(ids))
+	for _, id := range slices.Compact(ids) {
+		dep := c.resultsByID[sharedResultID(id)]
+		if dep == nil {
+			return nil, false
+		}
+		named = append(named, dep)
+	}
+	if _, err := c.preparePartDependenciesLocked(res, named); err != nil {
+		return nil, false
+	}
+	return named, true
 }

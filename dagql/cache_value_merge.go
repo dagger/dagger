@@ -71,6 +71,7 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 	}
 	for {
 		c.egraphMu.Lock()
+		locked := time.Now()
 		if target, wait := c.mergeAttachmentWaitLocked(prep); wait != nil {
 			c.egraphMu.Unlock()
 			if c.testMergeWaitsOnAttachment != nil {
@@ -89,6 +90,7 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 			return MergeReply{}, err
 		}
 		reply, finish := c.commitValueMergeLocked(ctx, commit)
+		reply.Committed, reply.CommitHold = true, time.Since(locked)
 		c.egraphMu.Unlock()
 		err = finish(ctx)
 		if c.testAfterTransferCommit != nil {
@@ -112,6 +114,13 @@ type MergeReply struct {
 	// Change is, on the Cloud, what the sender's holdings changed, for the
 	// service's next CollectRemoteHoldings.
 	Change RemoteChange
+	// Committed reports that the merge changed the cache. A committed merge
+	// can still return an error, from releasing a replaced value after the
+	// lock; the reply then describes what the cache holds all the same.
+	Committed bool
+	// CommitHold is how long the commit held egraphMu, from taking it to
+	// releasing it.
+	CommitHold time.Duration
 }
 
 // MergedValue is one merged record's target as the commit left it.

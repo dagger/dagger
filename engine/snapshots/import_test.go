@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -873,4 +875,49 @@ func TestStoreObservesDifferWrites(t *testing.T) {
 	store.BeforeWrite = func([]byte) error { writes.Add(1); return nil }
 	exportChain(t, a)
 	require.Positive(t, writes.Load(), "the differ's blob writes reach BeforeWrite")
+}
+
+// ExportChain maps every snapshot it walks to the prefix of its layers that
+// rebuilds it: an ancestor's part is a prefix of its descendant's chain. A
+// scratch root, or an empty one that adds no layer, maps to no layers.
+// Importing a prefix rebuilds that ancestor, without the layers after it.
+func TestExportChainPrefixes(t *testing.T) {
+	for _, root := range []string{"absent", "scratch", "empty"} {
+		t.Run(root, func(t *testing.T) {
+			ctx := context.Background()
+			producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+			var parent bkcache.ImmutableRef
+			switch root {
+			case "scratch":
+				var err error
+				parent, err = producer.Manager.Scratch(ctx)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, parent.Release(ctx)) })
+			case "empty":
+				parent, _ = producer.Build(t, nil, "", "")
+			}
+			a, _ := producer.Build(t, parent, "a.txt", "first")
+			ab, _ := producer.Build(t, a, "b.txt", "second")
+			chain := exportChain(t, ab)
+			require.Len(t, chain.Layers, 2)
+			want := map[string]int{a.SnapshotID(): 1, ab.SnapshotID(): 2}
+			if parent != nil {
+				want[parent.SnapshotID()] = 0
+			}
+			require.Equal(t, want, chain.Prefixes)
+
+			provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+			prefix := &bkcache.ExportChain{Layers: chain.Layers[:chain.Prefixes[a.SnapshotID()]], Provider: provider}
+			rebuilt := importChain(t, consumer, prefix)
+			require.EqualValues(t, 1, provider.Reads.Load())
+			testutil.CheckFile(t, rebuilt, "a.txt", "first")
+			_, err := os.Stat(filepath.Join(testutil.Root(t, rebuilt), "b.txt"))
+			require.ErrorIs(t, err, os.ErrNotExist, "the prefix stops at its snapshot")
+			whole := importChain(t, consumer, supplied(chain, provider))
+			require.EqualValues(t, 2, provider.Reads.Load(), "the whole chain reuses the prefix it rebuilt")
+			info, err := consumer.Snapshots.Stat(ctx, whole.SnapshotID())
+			require.NoError(t, err)
+			require.Equal(t, rebuilt.SnapshotID(), info.Parent)
+		})
+	}
 }

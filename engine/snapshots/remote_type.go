@@ -15,7 +15,12 @@ type ExportLayer struct {
 }
 
 type ExportChain struct {
-	Layers   []ExportLayer
+	Layers []ExportLayer
+	// Prefixes maps each snapshot the export walked, from the root to the
+	// exported one, to the number of Layers that rebuild it: the layers
+	// emitted up to and including it. A snapshot that added no layer maps to
+	// the prefix before it, and a scratch root to none.
+	Prefixes map[string]int
 	Provider content.InfoReaderProvider
 	pin      *resourcePin
 }

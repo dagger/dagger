@@ -2355,6 +2355,9 @@ type Cache struct {
 	// testMergeWaitsOnAttachment observes a merge waiting on a target whose
 	// dependency attachment is still open.
 	testMergeWaitsOnAttachment func(*sharedResult)
+	// testOfferBeforeDecision runs in offerPart between the capture of the
+	// offered row and the lock that decides the outcome.
+	testOfferBeforeDecision func(*sharedResult)
 	// snapshot sharing hooks: after a cohort is taken and its slots are
 	// planned but before the first preparation, and after the pass has
 	// finished every Finish and released every member hold.

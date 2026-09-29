@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -107,4 +108,58 @@ func BenchmarkMergeValues(b *testing.B) {
 	}
 	b.ReportMetric(float64(2*roots*b.N)/merging.Seconds(), "records/s")
 	b.ReportMetric(float64(longest.Microseconds())/1000, "longest-hold-ms")
+}
+
+// BenchmarkWithExportedValuesSharedClosure exports 32 roots that share one
+// closure in one call (design 11.1, 7.4 step 1): each root depends on the top
+// of a shared chain of 500 entries, so the bundle carries the chain's records
+// once. It reports the records and the bundle's JSON bytes per export.
+func BenchmarkWithExportedValuesSharedClosure(b *testing.B) {
+	const roots, chain = 32, 500
+	ctx := cacheTestContext(context.Background())
+	c, err := NewCache(ctx, filepath.Join(b.TempDir(), "a.db"), nil, nil)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, c.CloseDiscardingPersistence()) })
+	srv := newDagqlServerForTest(b, &persistCodecRoot{})
+	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
+	ctx = srvToContext(ContextWithCache(ctx, c), srv)
+	publish := func(field string) AnyResult {
+		value := &transferTestValue{Text: field}
+		frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(value.Type())}
+		res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(value, frame)
+		})
+		require.NoError(b, err)
+		return res
+	}
+	var top AnyResult
+	for i := range chain {
+		next := publish(fmt.Sprintf("chain-%d", i))
+		if top != nil {
+			transferTestDependency(c, ctx, next, top)
+		}
+		top = next
+	}
+	selection := ValueSelection{}
+	for i := range roots {
+		root := publish(fmt.Sprintf("root-%d", i))
+		transferTestDependency(c, ctx, root, top)
+		selection.Roots = append(selection.Roots, root)
+	}
+	var records, bytes int
+	b.ResetTimer()
+	for range b.N {
+		require.NoError(b, c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+			records = len(values.Bundle.Values)
+			b.StopTimer()
+			encoded, err := json.Marshal(values.Bundle)
+			require.NoError(b, err)
+			bytes = len(encoded)
+			b.StartTimer()
+			return nil
+		}))
+	}
+	require.Equal(b, roots+chain, records, "the shared closure travels once")
+	b.ReportMetric(float64(records), "records/export")
+	b.ReportMetric(float64(bytes), "bundle-bytes")
 }

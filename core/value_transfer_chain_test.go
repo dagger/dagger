@@ -3,9 +3,12 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -135,13 +138,13 @@ func TestValueTransferPartsContainerMount(t *testing.T) {
 }
 
 // Spike 2 of the engine-service protocol design (6.2), kept as a test of
-// merge. A three-container chain's leaf is exported with only its fs: the
-// bundle carries the three records and the leaf's whole chain, opening only
-// the leaf's snapshot. Merged into B, the parent's fs is pending with no route
-// (these fixtures record no operation). A second bundle offering the parent's
-// own fs lands on the same parent entry, and the parent installs from its own
-// offer: from no layer reads once the leaf's chain is local, and from its two
-// layers otherwise.
+// merge, with the ancestor prefixes of 6.1. A three-container chain's leaf is
+// exported with only its fs selected: the bundle carries the three records,
+// the leaf's whole chain, and the parent's and base's fs as prefixes of it,
+// opening only the leaf's snapshot. On B, a pipeline branching from the
+// middle reads the parent's fs from its prefix offer: from no layer reads
+// once the leaf's chain is local, and from its two layers otherwise. A second
+// bundle of the parent's own fs lands on the same parent entry.
 func TestValueMergeChainSecondBundleLandsOnTheParent(t *testing.T) {
 	for _, readLeaf := range []bool{true, false} {
 		name := "leaf read first"
@@ -178,7 +181,7 @@ func TestValueMergeChainSecondBundleLandsOnTheParent(t *testing.T) {
 				require.Len(t, ex.Chains.Entries, 1, "one selected part, one chain")
 				require.Len(t, ex.Chains.Entries[0].Layers, 3, "the leaf's chain is whole")
 				require.Equal(t, []string{s2.SnapshotID()}, observed.opens, "only the leaf's snapshot is opened")
-				require.Len(t, ex.Bundle.Outputs, 1)
+				require.Equal(t, []int{1, 2, 3}, transferOutputChainLengths(ex.Bundle), "the leaf's chain and its two prefixes")
 
 				leafProvider := &testutil.Provider{InfoReaderProvider: ex.Chains.Entries[0].Provider}
 				b.SetPartContentSource(partTestContentSource{leafProvider})
@@ -203,8 +206,20 @@ func TestValueMergeChainSecondBundleLandsOnTheParent(t *testing.T) {
 				parent, err = b.LoadResultByResultID(bctx, "", bsrv, parentID)
 				require.NoError(t, err)
 				reads := leafProvider.Reads.Load()
-				require.ErrorIs(t, b.EvaluateParts(bctx, parent, ContainerPartFS), dagql.ErrUnavailablePart, "the parent's fs is pending")
-				require.Equal(t, reads, leafProvider.Reads.Load(), "no bytes fetched for the parent")
+				require.NoError(t, b.EvaluateParts(bctx, parent, ContainerPartFS), "the parent's fs installs from its prefix offer")
+				want := int64(2)
+				if readLeaf {
+					want = 0
+				}
+				require.Equal(t, want, leafProvider.Reads.Load()-reads, "layer reads for the parent's prefix")
+				dir, ok := parent.(dagql.ObjectResult[*Container]).Self().FS.Peek()
+				require.True(t, ok)
+				snap, ok := dir.Snapshot.Peek()
+				require.True(t, ok)
+				testutil.CheckFile(t, snap, "one.txt", "step one")
+				testutil.CheckFile(t, snap, "base.txt", "base bytes")
+				_, err = os.Stat(filepath.Join(testutil.Root(t, snap), "two.txt"))
+				require.ErrorIs(t, err, os.ErrNotExist, "the parent's own snapshot, not the leaf's")
 				return nil
 			}))
 
@@ -212,26 +227,194 @@ func TestValueMergeChainSecondBundleLandsOnTheParent(t *testing.T) {
 			parentSelection := dagql.ValueSelection{Roots: []dagql.AnyResult{p1}, Outputs: []dagql.SelectedValueOutput{{Result: p1, Address: dagql.PersistedPartAddress{Part: "fs"}}}}
 			require.NoError(t, a.WithExportedValues(actx, parentSelection, uncompressed, func(_ context.Context, ex *dagql.ExportedValues) error {
 				require.Equal(t, []string{s1.SnapshotID()}, observed.opens)
-				parentProvider := &testutil.Provider{InfoReaderProvider: ex.Chains.Entries[0].Provider}
-				b.SetPartContentSource(partTestContentSource{parentProvider})
 				reply, err := b.MergeValues(bctx, dagql.CloudCacheID, ex.Bundle)
 				require.NoError(t, err)
 				require.Equal(t, parentID, reply.Imported()[0].ResultID, "the second bundle lands on the same parent entry")
-				require.Len(t, reply.Values[len(reply.Values)-1].OfferedParts, 1, "with an offer of its fs")
-				require.NoError(t, b.EvaluateParts(bctx, parent, ContainerPartFS))
-				want := int64(2)
-				if readLeaf {
-					want = 0
-				}
-				require.Equal(t, want, parentProvider.Reads.Load(), "layer reads for the parent's own offer")
-				dir, ok := parent.(dagql.ObjectResult[*Container]).Self().FS.Peek()
-				require.True(t, ok)
-				snap, ok := dir.Snapshot.Peek()
-				require.True(t, ok)
-				testutil.CheckFile(t, snap, "one.txt", "step one")
-				testutil.CheckFile(t, snap, "base.txt", "base bytes")
+				last := reply.Values[len(reply.Values)-1]
+				require.Contains(t, last.Parts, dagql.PersistedPartAddress{Part: "fs"}, "whose fs is complete")
+				require.Empty(t, last.OfferedParts, "and takes no offer for it")
 				return nil
 			}))
+		})
+	}
+}
+
+// transferOutputChainLengths returns the bundle's output chain lengths,
+// sorted.
+func transferOutputChainLengths(bundle dagql.ValueBundle) []int {
+	var lengths []int
+	for _, output := range bundle.Outputs {
+		if output.Chain != nil {
+			lengths = append(lengths, len(output.Chain.Layers))
+		}
+	}
+	slices.Sort(lengths)
+	return lengths
+}
+
+// transferOutputOrdinals returns the ordinals of the bundle's outputs with a
+// chain, by their chain length.
+func transferOutputOrdinals(bundle dagql.ValueBundle) map[dagql.TransferOrdinal]int {
+	out := map[dagql.TransferOrdinal]int{}
+	for _, output := range bundle.Outputs {
+		if output.Chain != nil {
+			out[output.Ordinal] = len(output.Chain.Layers)
+		}
+	}
+	return out
+}
+
+// transferOrdinalOf returns the bundle ordinal of a sending cache's entry.
+func transferOrdinalOf(t *testing.T, cache *dagql.Cache, bundle dagql.ValueBundle, res dagql.AnyResult) dagql.TransferOrdinal {
+	t.Helper()
+	id, err := cache.PersistedResultID(res)
+	require.NoError(t, err)
+	for _, value := range bundle.Values {
+		if value.SenderNumber == id {
+			return value.Ordinal
+		}
+	}
+	t.Fatalf("no record of sender entry %d", id)
+	return 0
+}
+
+// Exporting the tenth step of a chain of ten with its fs selected emits the
+// nine steps before it as prefixes, back to the first step's single layer,
+// and opens only the tenth step's snapshot.
+func TestValueExportPrefixesOfAChainOfTen(t *testing.T) {
+	store := testutil.NewStore(t)
+	observed := &transferObservedSnapshots{SnapshotManager: store.Manager}
+	store.Manager = observed
+	ctx, cache, srv := transferCache(t, store, "", "a")
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	var snapshot bkcache.ImmutableRef
+	var step dagql.ObjectResult[*Container]
+	for i := range 10 {
+		snapshot, _ = store.Build(t, snapshot, fmt.Sprintf("step-%d.txt", i), fmt.Sprintf("step %d", i))
+		ctr := NewContainer(platform)
+		ctr.FS.setValue(partTestDirectory(snapshot, "/"))
+		if i == 0 {
+			step = attachTransferObject(t, ctx, cache, srv, "a", "chainTenBase", ctr)
+		} else {
+			step = attachDelegationChild(t, ctx, cache, srv, "a", "chainTenStep", step, ctr)
+		}
+	}
+	observed.opens = nil
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{step}, Outputs: []dagql.SelectedValueOutput{{Result: step, Address: dagql.PersistedPartAddress{Part: "fs"}}}}
+	require.NoError(t, cache.WithExportedValues(ctx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, ex *dagql.ExportedValues) error {
+		require.Len(t, ex.Bundle.Values, 10)
+		require.Len(t, ex.Chains.Entries, 1, "only the selected part is a chain to upload")
+		require.Equal(t, []string{snapshot.SnapshotID()}, observed.opens, "only the tenth step's snapshot is opened")
+		require.Positive(t, ex.ChainTime, "the time opening the chain took")
+		require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, transferOutputChainLengths(ex.Bundle))
+		for _, output := range ex.Bundle.Outputs {
+			require.Equal(t, ex.Chains.Entries[0].Layers[:len(output.Chain.Layers)], output.Chain.Layers, "each is a prefix of the selected chain")
+		}
+		return nil
+	}))
+}
+
+// A root whose fs is its receiver's snapshot, such as a withWorkdir, is the
+// selected chain's tip: the receiver gets the whole chain as its prefix
+// output. A delegating child whose receiver's part the bundle offers gets no
+// prefix output of its own; delegation serves it.
+func TestValueExportPrefixesAndDelegation(t *testing.T) {
+	store := testutil.NewStore(t)
+	ctx, cache, srv := transferCache(t, store, "", "a")
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	s0, _ := store.Build(t, nil, "base.txt", "base bytes")
+	base := NewContainer(platform)
+	base.FS.setValue(partTestDirectory(s0, "/"))
+	receiver := attachTransferObject(t, ctx, cache, srv, "a", "prefixReceiver", base)
+	child := NewContainer(platform)
+	child.FS, _ = CloneContainerDirectoryAccessor(ctx, base.FS)
+	child.Config.WorkingDir = "/child"
+	workdir := attachDelegationChild(t, ctx, cache, srv, "a", "withWorkdir", receiver, child)
+	uncompressed := config.RefConfig{Compression: compression.New(compression.Uncompressed)}
+
+	t.Run("the receiver of the root", func(t *testing.T) {
+		selection := dagql.ValueSelection{Roots: []dagql.AnyResult{workdir}, Outputs: []dagql.SelectedValueOutput{{Result: workdir, Address: dagql.PersistedPartAddress{Part: "fs"}}}}
+		require.NoError(t, cache.WithExportedValues(ctx, selection, uncompressed, func(_ context.Context, ex *dagql.ExportedValues) error {
+			require.Equal(t, map[dagql.TransferOrdinal]int{
+				transferOrdinalOf(t, cache, ex.Bundle, workdir):  1,
+				transferOrdinalOf(t, cache, ex.Bundle, receiver): 1,
+			}, transferOutputOrdinals(ex.Bundle), "the selected part, and its receiver's whole chain")
+			return nil
+		}))
+	})
+	t.Run("a delegating child", func(t *testing.T) {
+		s1, _ := store.Build(t, s0, "leaf.txt", "leaf bytes")
+		next := NewContainer(platform)
+		next.FS.setValue(partTestDirectory(s1, "/"))
+		leaf := attachDelegationChild(t, ctx, cache, srv, "a", "prefixLeaf", workdir, next)
+		selection := dagql.ValueSelection{Roots: []dagql.AnyResult{leaf}, Outputs: []dagql.SelectedValueOutput{{Result: leaf, Address: dagql.PersistedPartAddress{Part: "fs"}}}}
+		require.NoError(t, cache.WithExportedValues(ctx, selection, uncompressed, func(_ context.Context, ex *dagql.ExportedValues) error {
+			require.Equal(t, map[dagql.TransferOrdinal]int{
+				transferOrdinalOf(t, cache, ex.Bundle, leaf):     2,
+				transferOrdinalOf(t, cache, ex.Bundle, receiver): 1,
+			}, transferOutputOrdinals(ex.Bundle), "the withWorkdir delegates to its receiver's prefix")
+			return nil
+		}))
+	})
+}
+
+// A part the stored record maps as absent, such as the exec metadata of a
+// container built without an exec, is absent on the Cloud and never stored,
+// and it stays absent when the record has expired: absence is part of the
+// value's structure. The expired case sets the container's record expiry in
+// the export, as the clock would, under a live root that depends on it.
+func TestAvailablePartAbsentFromAStoredRecord(t *testing.T) {
+	store := testutil.NewStore(t)
+	ctx, a, srv := transferCache(t, store, "", "a")
+	s0, _ := store.Build(t, nil, "base.txt", "base bytes")
+	base := NewContainer(Platform{OS: "linux", Architecture: "amd64"})
+	base.FS.setValue(partTestDirectory(s0, "/"))
+	ctr := attachTransferObject(t, ctx, a, srv, "a", "noExec", base)
+	child := NewContainer(base.Platform)
+	child.FS, _ = CloneContainerDirectoryAccessor(ctx, base.FS)
+	child.Config.WorkingDir = "/child"
+	root := attachDelegationChild(t, ctx, a, srv, "a", "withWorkdir", ctr, child)
+	var bundle dagql.ValueBundle
+	require.NoError(t, a.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{root}}, config.RefConfig{}, func(_ context.Context, ex *dagql.ExportedValues) error {
+		bundle = ex.Bundle
+		return nil
+	}))
+	ctrOrdinal := transferOrdinalOf(t, a, bundle, ctr)
+
+	for _, expired := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unexpired", true: "expired"}[expired], func(t *testing.T) {
+			sent := bundle
+			sent.Values = append([]dagql.TransferredValue(nil), bundle.Values...)
+			if expired {
+				for i := range sent.Values {
+					if sent.Values[i].Ordinal == ctrOrdinal {
+						sent.Values[i].ExpiresAtUnix = time.Now().Add(-time.Hour).Unix()
+					}
+				}
+			}
+			cloud, err := dagql.NewCache(ctx, "", nil, nil, dagql.WithBlobStore())
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, cloud.CloseDiscardingPersistence()) })
+			reply, err := cloud.MergeValues(ctx, "cache-a", sent)
+			require.NoError(t, err)
+			var number uint64
+			for _, value := range reply.Values {
+				if value.Ordinal == ctrOrdinal {
+					number = value.Number
+					if expired {
+						require.Positive(t, value.ExpiresAtUnix)
+						require.Less(t, value.ExpiresAtUnix, time.Now().Unix(), "the stored record has expired")
+					}
+				}
+			}
+			require.NotZero(t, number)
+			got, err := cloud.AvailablePart(number, dagql.PersistedPartAddress{Part: ContainerPartExecMeta})
+			require.NoError(t, err)
+			require.Equal(t, dagql.PartAbsent, got.State)
+			require.Equal(t, number, got.Donor)
+			fs, err := cloud.AvailablePart(number, dagql.PersistedPartAddress{Part: ContainerPartFS})
+			require.NoError(t, err)
+			require.Equal(t, dagql.PartUnavailable, fs.State, "the fs has bytes, and none are stored")
 		})
 	}
 }

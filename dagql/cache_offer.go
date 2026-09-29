@@ -23,6 +23,22 @@ type OfferDisposition struct {
 	Replaced bool
 	OfferRev uint64
 	Err      error
+	// Replacements and Deps are the receiver's replacement count and direct
+	// dependencies, read under the lock that decided Outcome: the value state
+	// the outcome describes.
+	Replacements uint64
+	Deps         []uint64
+}
+
+// noteReceiverLocked records the receiver's value state where the outcome is
+// decided. Requires egraphMu.
+func (out *OfferDisposition) noteReceiverLocked(root *sharedResult) {
+	out.Replacements = root.replacements
+	out.Deps = out.Deps[:0]
+	for dep := range root.deps {
+		out.Deps = append(out.Deps, uint64(dep))
+	}
+	slices.Sort(out.Deps)
 }
 
 // CloudPartOffer is one part the Cloud offers an engine: the offer, and the
@@ -159,6 +175,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		capture.gateRevision = gate.revision
 		if row == root {
 			out.Outcome = offerGateOutcomeLocked(gate, offer.Address)
+			out.noteReceiverLocked(root)
 			if out.Outcome == OfferAlreadyComplete {
 				// The part is the root's own, and the offer still names the
 				// root's Cloud counterpart.
@@ -262,10 +279,14 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		out.Outcome, out.Err = OfferUnavailable, err
 		return out
 	}
+	if c.testOfferBeforeDecision != nil {
+		c.testOfferBeforeDecision(root)
+	}
 	c.egraphMu.Lock()
 	gate := row.partGate.loadOrCreate()
 	gate.mu.Lock()
 	out.Outcome = offerGateOutcomeLocked(gate, address)
+	out.noteReceiverLocked(root)
 	if out.Outcome == OfferAccepted {
 		if c.resultsByID[row.id] != row || row.attachmentState() != resultAttachmentClean || gate.revision != capture.gateRevision {
 			out.Outcome, out.Err = OfferUnavailable, ErrPersistStateNotReady

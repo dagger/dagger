@@ -42,6 +42,7 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 
 	chain := &ExportChain{
 		Layers:   make([]ExportLayer, 0, len(snapshotIDs)),
+		Prefixes: make(map[string]int, len(snapshotIDs)),
 		Provider: sr.cm.ContentStore,
 		pin:      pin,
 	}
@@ -50,6 +51,7 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 	for _, snapshotID := range snapshotIDs {
 		if parentSnapshotID == "" && isScratchSnapshotID(snapshotID) {
 			parentSnapshotID = snapshotID
+			chain.Prefixes[snapshotID] = 0
 			continue
 		}
 		opened, err := sr.cm.GetBySnapshotID(ctx, snapshotID, NoUpdateLastUsed)
@@ -87,6 +89,7 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 				CreatedAt:   &createdAt,
 			})
 		}
+		chain.Prefixes[snapshotID] = len(chain.Layers)
 		// Only a root actually omitted from the chain has the empty reuse
 		// parent key. Keep its real ID for diffing the following snapshot.
 		parentSnapshotID = snapshotID
