@@ -1341,8 +1341,8 @@ func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, re
 // GitCLI positioned in a repository containing all of them, along with their
 // resolved commit SHAs (in the same order as refs).
 //
-// Refs sharing a repository are mounted together. Local repositories can share
-// their cached objects read-only; other repositories use refJoin.
+// Refs sharing a repository are mounted together. Refs from different local
+// repositories share their cached objects read-only; others use refJoin.
 func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI, shas []string) error) error {
 	if len(refs) == 0 {
 		return fmt.Errorf("mount refs: no refs given")
@@ -1354,27 +1354,17 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 		})
 	}
 
-	allLocal := true
-	for _, ref := range refs {
-		if _, ok := ref.Backend.(*LocalGitRef); !ok {
-			allLocal = false
-			break
-		}
-	}
-	if allLocal {
-		err := mountCachedGitRefs(ctx, refs, fn)
-		if !errors.Is(err, errShallowCachedGitHistory) {
-			return err
-		}
-	}
-
 	shas := make([]string, len(refs))
 	backends := make([]GitRefBackend, len(refs))
 	sameRepo := true
+	allLocal := true
 	var repoDgst digest.Digest
 	for i, ref := range refs {
 		shas[i] = ref.Ref.SHA
 		backends[i] = ref.Backend
+		if _, ok := ref.Backend.(*LocalGitRef); !ok {
+			allLocal = false
+		}
 
 		dgst, err := ref.Repo.RecipeDigest(ctx)
 		if err != nil {
@@ -1392,6 +1382,13 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 		return refs[0].Repo.Self().Backend.mount(ctx, 0, false, backends, func(git *gitutil.GitCLI) error {
 			return fn(git, shas)
 		})
+	}
+
+	if allLocal {
+		err := mountCachedGitRefs(ctx, refs, fn)
+		if !errors.Is(err, errShallowCachedGitHistory) {
+			return err
+		}
 	}
 
 	git, shas, cleanup, err := refJoin(ctx, refs)
@@ -1451,6 +1448,12 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 	}
 
 	var commits []*GitCommitMetadata
+	// Without filtering, at most Limit generations can contribute to the first
+	// Limit commits, so remote mirrors need only fetch that deep. Local
+	// repositories ignore depth: their first mount already has all the history
+	// there is, and a shallow boundary there cannot be deepened by retrying.
+	bounded := opts.Base == nil && len(opts.Paths) == 0
+	_, local := ref.Backend.(*LocalGitRef)
 	needsFullHistory := false
 	readLog := func(git *gitutil.GitCLI, shas []string) error {
 		args := []string{"rev-list", "-n", strconv.Itoa(opts.Limit), shas[0]}
@@ -1467,7 +1470,7 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 		}
 
 		logSHAs := strings.Fields(string(out))
-		if opts.Base == nil && len(opts.Paths) == 0 && !needsFullHistory {
+		if bounded && !local && !needsFullHistory {
 			// A shared mirror can have uneven shallow boundaries (for example,
 			// a merge's second parent fetched separately). The mount's depth
 			// estimate alone does not guarantee this walk is complete.
@@ -1494,10 +1497,9 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 	}
 
 	var err error
-	if opts.Base == nil && len(opts.Paths) == 0 {
-		// Without filtering, at most Limit generations can contribute to the
-		// first Limit commits. Avoid unshallowing the entire remote just to
-		// read a short log. Path filters and base exclusions need full history.
+	if bounded {
+		// Avoid unshallowing an entire remote just to read a short log. Path
+		// filters and base exclusions need full history.
 		err = ref.Backend.mount(ctx, opts.Limit, false, func(git *gitutil.GitCLI) error {
 			return readLog(git, []string{ref.Ref.SHA})
 		})
