@@ -436,11 +436,9 @@ func doLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCL
 	if err != nil {
 		return err
 	}
-	// Alternates uses one C-quoted path per line, including paths with spaces,
-	// newlines, quotes or backslashes. Remove only Git's output terminator.
+	// Remove only Git's output terminator: whitespace can be part of a path.
 	objectPath := strings.TrimSuffix(string(objects), "\n")
-	quotedPath := `"` + strings.NewReplacer("\\", "\\\\", `"`, `\"`, "\n", `\n`).Replace(objectPath) + "\"\n"
-	if err := os.WriteFile(filepath.Join(gitDir, "objects", "info", "alternates"), []byte(quotedPath), 0600); err != nil {
+	if err := writeGitAlternates(filepath.Join(gitDir, "objects"), []string{objectPath}); err != nil {
 		return fmt.Errorf("write local git checkout alternates: %w", err)
 	}
 	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "")

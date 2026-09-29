@@ -1616,18 +1616,22 @@ func withGitObjectView(ctx context.Context, objects []string, format string, fn 
 	if _, err := git.Run(ctx, "-c", "init.defaultBranch=main", "init", "--bare", "--object-format="+format); err != nil {
 		return fmt.Errorf("initialize git history view: %w", err)
 	}
-	var alternates strings.Builder
-	for _, path := range objects {
-		// Git's alternates file accepts C-quoted paths, one per line. In
-		// particular, a newline or quote in a mount path must not add an entry.
-		alternates.WriteByte('"')
-		alternates.WriteString(strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n").Replace(path))
-		alternates.WriteString("\"\n")
-	}
-	if err := os.WriteFile(filepath.Join(tmp, "objects", "info", "alternates"), []byte(alternates.String()), 0600); err != nil {
+	if err := writeGitAlternates(filepath.Join(tmp, "objects"), objects); err != nil {
 		return fmt.Errorf("write git history alternates: %w", err)
 	}
 	return fn(git)
+}
+
+// writeGitAlternates points an object database at others. Git's alternates
+// file takes one C-quoted path per line, so spaces, newlines, quotes and
+// backslashes in a mount path cannot add or alter an entry.
+func writeGitAlternates(objectsDir string, paths []string) error {
+	quote := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
+	var alternates strings.Builder
+	for _, path := range paths {
+		alternates.WriteString(`"` + quote.Replace(path) + "\"\n")
+	}
+	return os.WriteFile(filepath.Join(objectsDir, "info", "alternates"), []byte(alternates.String()), 0600)
 }
 
 // refJoin creates a temporary git repository, adds the given refs as remotes,
