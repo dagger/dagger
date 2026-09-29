@@ -220,7 +220,14 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 
 	params.Profile = profileFlag
 
-	params.CloudURLCallback = Frontend.SetCloudURL
+	params.CloudURLCallback = func(ctx context.Context, url string, msg string, logged bool) {
+		Frontend.SetCloudURL(ctx, url, msg, logged)
+		// A trace goes to a Cloud org: remind the user after the command if
+		// the org is in its trial without a payment method.
+		if logged {
+			startTrialReminder(ctx, os.Stderr)
+		}
+	}
 
 	params.EngineTrace = telemetry.SpanForwarder{
 		Processors: telemetry.SpanProcessors,

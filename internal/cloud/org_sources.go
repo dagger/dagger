@@ -359,6 +359,34 @@ func (c *Client) OrgDetails(ctx context.Context, orgName string) (*OrgDetails, e
 	return data.Org, nil
 }
 
+const getOrgHasPaymentMethodOperation = `
+query GetOrgHasPaymentMethod($org: String!) {
+	org(name: $org) {
+		hasPaymentMethod
+	}
+}
+`
+
+// OrgHasPaymentMethod reports whether the org's billing customer has a
+// payment method to charge when its trial ends. Cloud looks it up in the
+// billing system on every request, so ask only for orgs in their trial.
+func (c *Client) OrgHasPaymentMethod(ctx context.Context, orgName string) (bool, error) {
+	var data struct {
+		Org *struct {
+			HasPaymentMethod bool `json:"hasPaymentMethod"`
+		} `json:"org"`
+	}
+	if err := c.doGraphQL(ctx, "GetOrgHasPaymentMethod", getOrgHasPaymentMethodOperation, map[string]any{
+		"org": orgName,
+	}, &data); err != nil {
+		return false, err
+	}
+	if data.Org == nil {
+		return false, fmt.Errorf("org %q not found", orgName)
+	}
+	return data.Org.HasPaymentMethod, nil
+}
+
 const startFeatureTrialOperation = `
 mutation StartFeatureTrial($org: ID!, $features: [FeatureName!]!, $durationDays: Int!) {
 	startFeatureTrial(org: $org, features: $features, durationDays: $durationDays)
