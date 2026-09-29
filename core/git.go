@@ -480,18 +480,7 @@ func (repo *GitRepository) AttachDependencyResults(
 	var owned []dagql.AnyResult
 	switch backend := repo.Backend.(type) {
 	case *LocalGitRepository:
-		if backend.Directory.Self() != nil {
-			attached, err := attach(backend.Directory)
-			if err != nil {
-				return nil, fmt.Errorf("attach git repository directory: %w", err)
-			}
-			typed, ok := attached.(dagql.ObjectResult[*Directory])
-			if !ok {
-				return nil, fmt.Errorf("attach git repository directory: unexpected result %T", attached)
-			}
-			backend.Directory = typed
-			owned = append(owned, typed)
-		}
+		return backend.attachDependencyResults(attach)
 	case *RemoteGitRepository:
 		if backend.Mirror.Self() != nil {
 			attached, err := attach(backend.Mirror)
@@ -561,6 +550,33 @@ func (repo *GitRepository) AttachDependencyResults(
 	return owned, nil
 }
 
+func (repo *LocalGitRepository) attachDependencyResults(
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	var owned []dagql.AnyResult
+	if repo.Directory.Self() != nil {
+		attached, err := attach(repo.Directory)
+		if err != nil {
+			return nil, fmt.Errorf("attach git repository directory: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach git repository directory: unexpected result %T", attached)
+		}
+		repo.Directory = typed
+		owned = append(owned, typed)
+	}
+	if repo.CheckoutBase != nil {
+		parent, err := attachLazyInput(attach, repo.CheckoutBase.Parent, "git checkout parent")
+		if err != nil {
+			return nil, err
+		}
+		repo.CheckoutBase = &GitCheckoutBase{Parent: parent, CommitSHA: repo.CheckoutBase.CommitSHA}
+		owned = append(owned, parent)
+	}
+	return owned, nil
+}
+
 func (ref *GitRef) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
@@ -626,7 +642,20 @@ type persistedGitRemotePayload struct {
 }
 
 type persistedLocalGitRepositoryPayload struct {
-	DirectoryResultID uint64 `json:"directoryResultID"`
+	DirectoryResultID uint64                    `json:"directoryResultID"`
+	CheckoutBase      *persistedGitCheckoutBase `json:"checkoutBase,omitempty"`
+}
+
+type persistedGitCheckoutBase struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	CommitSHA      string `json:"commitSHA"`
+}
+
+func (p *persistedGitCheckoutBase) validate() error {
+	if p.ParentResultID == 0 || !IsFullGitSHA(p.CommitSHA) {
+		return fmt.Errorf("git checkout base: expected parent result and complete commit SHA")
+	}
+	return nil
 }
 
 type persistedRemoteGitRepositoryPayload struct {
@@ -741,6 +770,16 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, enc *dagql
 		payload.Local = &persistedLocalGitRepositoryPayload{
 			DirectoryResultID: dirID,
 		}
+		if base := backend.CheckoutBase; base != nil {
+			parentID, err := encodePersistedObjectRef(enc, base.Parent, "git checkout parent")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			payload.Local.CheckoutBase = &persistedGitCheckoutBase{ParentResultID: parentID, CommitSHA: base.CommitSHA}
+			if err := payload.Local.CheckoutBase.validate(); err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+		}
 	case *RemoteGitRepository:
 		remote, err := encodePersistedRemoteGitRepository(enc, backend)
 		if err != nil {
@@ -789,7 +828,18 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 		if err != nil {
 			return nil, err
 		}
-		repo.Backend = &LocalGitRepository{Directory: dir}
+		backend := &LocalGitRepository{Directory: dir}
+		if base := persisted.Local.CheckoutBase; base != nil {
+			if err := base.validate(); err != nil {
+				return nil, err
+			}
+			parent, err := loadPersistedObjectResultByResultID[*GitRef](ctx, dec, base.ParentResultID, "git checkout parent")
+			if err != nil {
+				return nil, err
+			}
+			backend.CheckoutBase = &GitCheckoutBase{Parent: parent, CommitSHA: base.CommitSHA}
+		}
+		repo.Backend = backend
 	case persistedGitRepositoryFormRemote:
 		if persisted.Remote == nil {
 			return nil, fmt.Errorf("decode persisted git repository: missing remote payload")
