@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -573,13 +574,19 @@ func isObjectArg(arg *ast.ArgumentDefinition) bool {
 
 // addressableType describes an object type the core Address API loads: how a
 // plain address string supplied for a tool arg of the type resolves into the
-// object, and how to document the accepted syntaxes to the model.
+// object, which forms the model may supply, and how to document them.
 type addressableType struct {
 	// addressField is the Address field that loads the type:
 	// Workspace.resolve(value: <addr>).<addressField> — the same lifting the CLI
 	// performs for object-typed flags (internal/cmd/dagger/flags.go), see
 	// core/schema/address.go.
 	addressField string
+	// external vets a model-supplied address that is not a dag:// address
+	// before it reaches the Address decoder: it returns an error for any form
+	// that would reach the calling client's host. nil refuses every external
+	// form. dag:// addresses are always accepted: they name workspace or
+	// bound tool artifacts, never the host.
+	external func(addr string) error
 	// hint documents the accepted address syntaxes; the tool schema renders
 	// it as "(<Type> address: <hint>)" prefixed to the arg's own docstring,
 	// so each type carries its own syntax examples.
@@ -593,35 +600,59 @@ type addressableType struct {
 // other module is constructed fresh from the workspace.
 const dagAddressHint = `a dag:// address to a value of one of your tool modules (with its current state) or of a workspace module, like "dag://<module>/<field>/<field>?<item>=<key>"`
 
+// remoteGitSchemes are the git URL schemes a model may supply. The Address
+// git decoders read anything else from the calling client's host: a path is a
+// local directory or repository, and an ssh:// or scp-style URL borrows the
+// client's SSH agent socket.
+var remoteGitSchemes = []string{gitutil.HTTPSProtocol, gitutil.HTTPProtocol, gitutil.GitProtocol}
+
+// remoteGitURL accepts only a git URL with one of the remoteGitSchemes.
+func remoteGitURL(addr string) error {
+	u, err := gitutil.ParseURL(addr)
+	if err == nil && slices.Contains(remoteGitSchemes, u.Scheme) {
+		return nil
+	}
+	return errors.New("only an https://, http:// or git:// git URL or a dag:// address is accepted; local paths and ssh URLs would reach the calling client's host")
+}
+
 // addressableTypes lists every object type with an Address.<field> loader in
 // core/schema/address.go, except Workspace: a Workspace arg is always filled
 // by MCP from the bound workspace (implicitToolArgs.supplies), so the model
 // never supplies one. Which of these a model may lift is decided by
-// unliftableTypes.
+// unliftableTypes, and which forms by each type's external check.
 var addressableTypes = map[string]addressableType{
 	"Container": {
 		addressField: "container",
-		hint:         `an image ref like "golang:1.26", ` + dagAddressHint + `, or a Container ID from a prior tool result`,
+		// Image refs pull from registries on the engine's network; the
+		// decoder has no host fallback.
+		external: func(string) error { return nil },
+		hint:     `an image ref like "golang:1.26", ` + dagAddressHint + `, or a Container ID from a prior tool result`,
 	},
 	"Directory": {
 		addressField: "directory",
-		hint:         `a git URL with an optional #<ref>:<subdir> like "https://github.com/org/repo#main:docs", ` + dagAddressHint + `, or a Directory ID from a prior tool result`,
+		external:     remoteGitURL,
+		hint:         `an https:// or git:// git URL with an optional #<ref>:<subdir> like "https://github.com/org/repo#main:docs", ` + dagAddressHint + `, or a Directory ID from a prior tool result`,
 	},
 	"File": {
 		addressField: "file",
-		hint:         `a git URL with #<ref>:<path> like "https://github.com/org/repo#main:README.md", ` + dagAddressHint + `, or a File ID from a prior tool result`,
+		external:     remoteGitURL,
+		hint:         `an https:// or git:// git URL with #<ref>:<path> like "https://github.com/org/repo#main:README.md", ` + dagAddressHint + `, or a File ID from a prior tool result`,
 	},
 	"GitRef": {
 		addressField: "gitRef",
-		hint:         `a git URL with an optional #<branch, tag or commit> like "https://github.com/org/repo#main" (the default branch without one), ` + dagAddressHint + `, or a GitRef ID from a prior tool result`,
+		external:     remoteGitURL,
+		hint:         `an https:// or git:// git URL with an optional #<branch, tag or commit> like "https://github.com/org/repo#main" (the default branch without one), ` + dagAddressHint + `, or a GitRef ID from a prior tool result`,
 	},
 	"GitRepository": {
 		addressField: "gitRepository",
-		hint:         `a git URL without a #ref like "https://github.com/org/repo", ` + dagAddressHint + `, or a GitRepository ID from a prior tool result`,
+		external:     remoteGitURL,
+		hint:         `an https:// or git:// git URL without a #ref like "https://github.com/org/repo", ` + dagAddressHint + `, or a GitRepository ID from a prior tool result`,
 	},
 	"Service": {
 		addressField: "service",
-		hint:         `a tcp:// or udp:// host:port like "tcp://localhost:8080", ` + dagAddressHint + `, or a Service ID from a prior tool result`,
+		// No external form: tcp:// and udp:// addresses tunnel to a port on
+		// the calling client's host (Host.service).
+		hint: dagAddressHint + `, or a Service ID from a prior tool result`,
 	},
 	"Secret": {addressField: "secret"},
 	"Socket": {addressField: "socket"},
@@ -637,16 +668,30 @@ var addressableTypes = map[string]addressableType{
 // file:// and op:// URIs into secrets, Address.socket forwards a host
 // socket, and Address.volume mounts sshfs:// endpoints or engine volumes.
 //
-// The other addressable types only load content the model could fetch or
-// name anyway: images, git remotes, artifacts of its own tool and workspace
-// modules. Their decoders do fall back to the calling client's host for
-// non-URL strings (a local path for Directory/File, a local repo for
-// GitRef/GitRepository), the same reach the CLI grants its flags; tool
-// modules that must not read the host take an ID or a narrower type instead.
+// The other types lift, but a model-supplied string never reaches the
+// calling client's host: each type's external check admits only forms whose
+// decoding stays off the host (image refs, remote git URLs), besides dag://
+// addresses. The CLI's host fallbacks — local paths for Directory/File,
+// local repositories and SSH agents for the git types, host tunnels for
+// Service — are refused before the Address decoder runs.
 var unliftableTypes = map[string]bool{
 	"Secret": true,
 	"Socket": true,
 	"Volume": true,
+}
+
+// checkLiftableAddress refuses a model-supplied address for a liftable type
+// unless it is a dag:// address or an external form the type admits (see
+// addressableType.external).
+func checkLiftableAddress(typeName, addr string) error {
+	if dagaddress.IsAddress(addr) {
+		return nil
+	}
+	check := addressableTypes[typeName].external
+	if check == nil {
+		return errors.New("only a dag:// address is accepted; other addresses would reach the calling client's host")
+	}
+	return check(addr)
 }
 
 // liftableObjectArg returns the @expectedType name of an object-typed
@@ -1026,6 +1071,11 @@ func (m *MCP) liftObjectArg(ctx context.Context, srv *dagql.Server, astField *as
 	}
 	obj, bound, err := m.resolveBoundToolAddress(ctx, srv, addr, typeName)
 	if !bound {
+		// A model-typed string must never reach the calling client's host,
+		// whatever the Address decoder would fall back to for a human.
+		if err := checkLiftableAddress(typeName, addr); err != nil {
+			return nil, false, fmt.Errorf("%q is not a %s ID or an accepted %s address: %w", addr, typeName, typeName, err)
+		}
 		obj, err = resolveObjectAddress(ctx, srv, addr, addressableTypes[typeName].addressField)
 	}
 	if err != nil {

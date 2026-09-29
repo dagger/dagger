@@ -303,14 +303,15 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.Equal(t, "string", debug["type"])
 	require.Equal(t, containerHint, debugProperty["description"])
 
-	// Every liftable type carries its own hint: its external syntax, the
-	// dag:// form, and the ID fallback.
+	// Every liftable type carries its own hint: its accepted external syntax,
+	// the dag:// form, and the ID fallback. Forms that would reach the
+	// calling client's host are never advertised.
 	for field, want := range map[string]struct{ arg, typeName, external string }{
 		"withDir": {"dir", "Directory", `"https://github.com/org/repo#main:docs"`},
 		"cat":     {"file", "File", `"https://github.com/org/repo#main:README.md"`},
 		"rebase":  {"onto", "GitRef", `"https://github.com/org/repo#main"`},
 		"clone":   {"repo", "GitRepository", `"https://github.com/org/repo"`},
-		"probe":   {"svc", "Service", `"tcp://localhost:8080"`},
+		"probe":   {"svc", "Service", "dag://"},
 	} {
 		s, err := objectMethodSchema(schema, fieldByName(doug, field), conversationToolArgs)
 		require.NoError(t, err)
@@ -319,6 +320,9 @@ func TestObjectMethodSchema(t *testing.T) {
 		require.Contains(t, desc, want.external)
 		require.Contains(t, desc, "dag://<module>/")
 		require.Contains(t, desc, "or a "+want.typeName+" ID from a prior tool result")
+		for _, hostForm := range []string{"tcp://", "udp://", "ssh://", "file://", "local"} {
+			require.NotContains(t, desc, hostForm, field)
+		}
 	}
 
 	// A blocklisted type keeps the ID convention: the model may hand back an
@@ -966,6 +970,24 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		require.Contains(t, err.Error(), "nor a resolvable Directory address")
 	})
 
+	t.Run("host-reaching addresses are refused before resolution", func(t *testing.T) {
+		// A bare path would go through Host.directory for the CLI; for a
+		// model it is refused outright, naming the accepted forms, before
+		// any Address lookup (this server has no Address.directory, so a
+		// lookup would fail differently).
+		withDirField := fieldByName(srv.Schema().Types["LiftTestRunner"], "withDir")
+		require.NotNil(t, withDirField)
+		for _, addr := range []string{"/etc", "file:///etc", "git@github.com:org/repo"} {
+			_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), withDirField, map[string]any{
+				"dir": addr,
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), fmt.Sprintf("%q is not a Directory ID or an accepted Directory address", addr))
+			require.Contains(t, err.Error(), "https://, http:// or git:// git URL or a dag:// address")
+			require.NotContains(t, err.Error(), "nor a resolvable")
+		}
+	})
+
 	t.Run("blocklisted args do not lift", func(t *testing.T) {
 		// Secret is addressable in the CLI, but blocklisted for tool args
 		// (unliftableTypes): a plain string for a Secret arg surfaces the ID
@@ -1026,6 +1048,43 @@ func TestBoundToolRoot(t *testing.T) {
 	_, ok, err = boundToolRoot("staff/members/head", []boundToolCandidate{view, line, pulls})
 	require.True(t, ok)
 	require.ErrorContains(t, err, `"staff/members/head" is ambiguous: bound tools StaffPullTools, StaffView all have a "members" field`)
+}
+
+// TestCheckLiftableAddress covers the forms a model may supply for a liftable
+// arg: dag:// addresses and forms whose decoding stays off the calling
+// client's host. Everything the Address decoders would read from the host —
+// local paths, file:// URLs, ssh git URLs (the client's SSH agent), tcp://
+// tunnels — is refused before decoding.
+func TestCheckLiftableAddress(t *testing.T) {
+	accepted := map[string][]string{
+		"Container":     {"golang:1.26", "registry.example.com/org/img@sha256:abc", "dag://mod/ctr"},
+		"Directory":     {"https://github.com/org/repo#main:docs", "git://example.com/repo", "http://example.com/repo.git", "dag://staff/members/workspace?member=chief"},
+		"File":          {"https://github.com/org/repo#main:README.md", "dag+file://mod/readme"},
+		"GitRef":        {"https://github.com/org/repo#main", "https://github.com/org/repo", "dag://staff/members/head?member=chief", "dag+git-ref://committer/saved/head?saved-workspace=abc"},
+		"GitRepository": {"https://github.com/org/repo", "dag://mod/repo"},
+		"Service":       {"dag://mod/server"},
+	}
+	for typeName, addrs := range accepted {
+		for _, addr := range addrs {
+			require.NoError(t, checkLiftableAddress(typeName, addr), "%s %q", typeName, addr)
+		}
+	}
+
+	refused := map[string][]string{
+		"Directory":     {".", "/etc", "./src", "~/secrets", "file:///etc", "file:.", "ssh://git@github.com/org/repo", "git@github.com:org/repo.git"},
+		"File":          {"/etc/passwd", "README.md", "file:///etc/passwd", "git@github.com:org/repo#main:README.md"},
+		"GitRef":        {".", "/home/me/repo#main", "file:///home/me/repo#main", "ssh://git@github.com/org/repo#main", "git@github.com:org/repo#main"},
+		"GitRepository": {".", "../other", "file:///home/me/repo", "git@github.com:org/repo"},
+		"Service":       {"tcp://localhost:8080", "udp://127.0.0.1:53", "localhost:8080"},
+	}
+	for typeName, addrs := range refused {
+		for _, addr := range addrs {
+			err := checkLiftableAddress(typeName, addr)
+			require.Error(t, err, "%s %q", typeName, addr)
+			require.Contains(t, err.Error(), "dag://", "the refusal names the accepted forms")
+			require.Contains(t, err.Error(), "calling client's host")
+		}
+	}
 }
 
 // batchTestRunner is a receiver for deriving object tools from real dagql
