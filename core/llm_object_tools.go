@@ -1074,12 +1074,14 @@ func resolveObjectAddress(ctx context.Context, srv *dagql.Server, addr, addressF
 // from a FRESH construction of its module's main object, but a bound tool
 // object carries live state — a roster, a history — that a fresh constructor
 // does not have. So when the address's first path segment names the module of
-// a bound object that is its module's main object, the rest of the path is
-// evaluated from that bound object instead, with the same artifact machinery
-// as workspace addresses: the path walks the module's schema, a collection
-// needs a key for its item dimension (dag://staff/members/head?staff-member=
-// chief selects members.get(key: "chief").head), and a type assertion
-// (dag+git-ref://...) behaves the same.
+// a bound object (its main object, or else the one bound object of that
+// module with the next segment as a field — see boundToolRoot), the rest of
+// the path is evaluated from that bound object instead, with the same
+// artifact machinery as workspace addresses: the path walks the module's
+// schema, a collection needs a key for its item dimension
+// (dag://staff/members/head?member=chief selects
+// members.get(key: "chief").head), and a type assertion (dag+git-ref://...)
+// behaves the same.
 //
 // Returns bound=false for any other address, which then resolves through the
 // workspace as before. Once a bound module matches, its errors are final: a
@@ -1094,8 +1096,10 @@ func (m *MCP) resolveBoundToolAddress(ctx context.Context, srv *dagql.Server, ad
 		// absolute one names a workspace, never this conversation.
 		return nil, false, nil
 	}
-	moduleName, _, _ := strings.Cut(parsed.Path, "/")
-	boundType, mod, ok := m.boundToolModule(moduleName)
+	boundType, mod, ok, err := m.boundToolModule(parsed.Path)
+	if err != nil {
+		return nil, true, fmt.Errorf("resolve %q: %w", addr, err)
+	}
 	if !ok {
 		return nil, false, nil
 	}
@@ -1129,26 +1133,91 @@ func (m *MCP) resolveBoundToolAddress(ctx context.Context, srv *dagql.Server, ad
 	return obj, true, nil
 }
 
-// boundToolModule finds the binding a DAG address's module segment names: an
-// object bound as a tool that is the main object of a module with that name
-// (compared in CLI case, as artifact paths are). It returns the bound type
-// name and the module.
-func (m *MCP) boundToolModule(name string) (string, dagql.ObjectResult[*Module], bool) {
-	want := ArtifactTypeName(name)
+// boundToolModule finds the binding a DAG address's path roots at, among the
+// objects bound as tools whose module is named by the path's first segment
+// (compared in CLI case, as artifact paths are). See boundToolRoot for the
+// rule. It returns the bound type name and the module.
+func (m *MCP) boundToolModule(path string) (string, dagql.ObjectResult[*Module], bool, error) {
+	moduleName, _, _ := strings.Cut(path, "/")
+	want := ArtifactTypeName(moduleName)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var candidates []boundToolCandidate
+	var modules []dagql.ObjectResult[*Module]
 	for _, b := range m.boundTools {
 		mod, ok := ModuleObjectTypeModule(b.objType)
 		if !ok || ArtifactTypeName(mod.Self().Name()) != want {
 			continue
 		}
-		main, ok := mod.Self().MainObject()
-		if !ok || main.Name != b.typeName() {
-			continue
+		candidate := boundToolCandidate{typeName: b.typeName()}
+		if main, ok := mod.Self().MainObject(); ok && main.Name == candidate.typeName {
+			candidate.main = true
 		}
-		return b.typeName(), mod, true
+		if b.definingSchema != nil {
+			if def := b.definingSchema.Types[candidate.typeName]; def != nil {
+				for _, field := range def.Fields {
+					candidate.fields = append(candidate.fields, field.Name)
+				}
+			}
+		}
+		candidates = append(candidates, candidate)
+		modules = append(modules, mod)
 	}
-	return "", dagql.ObjectResult[*Module]{}, false
+	i, ok, err := boundToolRoot(path, candidates)
+	if !ok || err != nil {
+		return "", dagql.ObjectResult[*Module]{}, ok, err
+	}
+	return candidates[i].typeName, modules[i], true, nil
+}
+
+// boundToolCandidate is a bound tool object of the module a DAG address
+// names: its type, whether it is the module's main object, and its fields.
+type boundToolCandidate struct {
+	typeName string
+	main     bool
+	fields   []string
+}
+
+// boundToolRoot picks the bound object a DAG address path roots at, among
+// candidates bound from the module its first segment names. The module's
+// main object wins when it is bound: the path then reads exactly as a
+// workspace artifact's. Otherwise the path roots at the one bound object whose
+// type has the path's second segment as a field — e.g. a worker's
+// StaffPullTools, whose members field makes dag://staff/members/... resolve
+// without the full Staff being bound. Several such objects are ambiguous.
+// ok=false means no candidate applies, so the address resolves elsewhere.
+func boundToolRoot(path string, candidates []boundToolCandidate) (int, bool, error) {
+	for i, c := range candidates {
+		if c.main {
+			return i, true, nil
+		}
+	}
+	_, rest, _ := strings.Cut(path, "/")
+	field, _, _ := strings.Cut(rest, "/")
+	if field == "" {
+		return 0, false, nil
+	}
+	var matches []int
+	for i, c := range candidates {
+		if slices.ContainsFunc(c.fields, func(name string) bool {
+			return ArtifactTypeName(name) == ArtifactTypeName(field)
+		}) {
+			matches = append(matches, i)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return 0, false, nil
+	case 1:
+		return matches[0], true, nil
+	default:
+		types := make([]string, 0, len(matches))
+		for _, i := range matches {
+			types = append(types, candidates[i].typeName)
+		}
+		slices.Sort(types)
+		return 0, true, fmt.Errorf("%q is ambiguous: bound tools %s all have a %q field; bind only one of them", path, strings.Join(types, ", "), field)
+	}
 }
 
 // routeObjectMethodResult renders a method's result for the model, per the

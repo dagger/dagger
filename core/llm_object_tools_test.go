@@ -985,6 +985,49 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 	})
 }
 
+// TestBoundToolRoot covers which bound object a dag:// address roots at among
+// the tool objects bound from the module it names.
+func TestBoundToolRoot(t *testing.T) {
+	staff := boundToolCandidate{typeName: "Staff", main: true, fields: []string{"members", "spawn"}}
+	pulls := boundToolCandidate{typeName: "StaffPullTools", fields: []string{"members", "logOf"}}
+	line := boundToolCandidate{typeName: "StaffChiefLine", fields: []string{"askChief"}}
+	view := boundToolCandidate{typeName: "StaffView", fields: []string{"members"}}
+
+	// The main object wins whenever it is bound, even when another bound
+	// object has the field too.
+	i, ok, err := boundToolRoot("staff/members/head", []boundToolCandidate{pulls, staff})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, 1, i)
+
+	// Without it, the one bound object with the path's field roots it,
+	// compared in CLI case.
+	i, ok, err = boundToolRoot("staff/members/head", []boundToolCandidate{line, pulls})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, 1, i)
+	i, ok, err = boundToolRoot("staff/log-of", []boundToolCandidate{line, pulls})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, 1, i)
+
+	// No bound object with the field: the address resolves elsewhere.
+	_, ok, err = boundToolRoot("staff/members/head", []boundToolCandidate{line})
+	require.NoError(t, err)
+	require.False(t, ok)
+	_, ok, err = boundToolRoot("staff", []boundToolCandidate{pulls})
+	require.NoError(t, err)
+	require.False(t, ok)
+	_, ok, err = boundToolRoot("staff/members", nil)
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	// Several are ambiguous; the error names their types.
+	_, ok, err = boundToolRoot("staff/members/head", []boundToolCandidate{view, line, pulls})
+	require.True(t, ok)
+	require.ErrorContains(t, err, `"staff/members/head" is ambiguous: bound tools StaffPullTools, StaffView all have a "members" field`)
+}
+
 // batchTestRunner is a receiver for deriving object tools from real dagql
 // field specs, cache policy included.
 type batchTestRunner struct{}

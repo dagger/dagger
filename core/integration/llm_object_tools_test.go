@@ -1450,6 +1450,18 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		require.Contains(t, transcript, "+from the chief")
 	})
 
+	t.Run("a view of the roster roots the address", func(ctx context.Context, t *testctx.T) {
+		// A worker-shaped binding: only the View (not the Roster, the
+		// module's main object) is bound, and it has the members field.
+		const prompt = "look at the chief's work"
+		model := conversation(prompt,
+			toolCall("show", "show", fmt.Sprintf(`{"from":%q}`, chiefHead)),
+		)
+		transcript := run(ctx, t, chat(model, "$($roster | view)", prompt)+" | transcript")
+		require.Contains(t, transcript, "commit "+chiefSHA)
+		require.Contains(t, transcript, "+from the chief")
+	})
+
 	t.Run("an LLM-returning tool advances the bound workspace", func(ctx context.Context, t *testctx.T) {
 		// adopt returns an LLM: a continuation the loop resumes from, with
 		// the chief's commits in its workspace.

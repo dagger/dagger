@@ -639,16 +639,23 @@ func (a *Artifacts) ResolveURI(ctx context.Context, addr *dagaddress.Address, ex
 }
 
 // BoundArtifacts discovers the artifacts of a module rooted at a live value of
-// its main object rather than a fresh construction: evaluating one selects its
-// path from root. Paths are qualified with the module name, as a workspace
-// module's are, but never use entrypoint shorthand. Unlike workspace
-// discovery, a constructor that requires arguments does not hide the tree,
-// since it is never called.
+// one of its objects rather than a fresh construction of its main object:
+// evaluating one selects its path from root. Paths are qualified with the
+// module name, as a workspace module's are, but never use entrypoint
+// shorthand. Unlike workspace discovery, a constructor that requires
+// arguments does not hide the tree, since it is never called.
 func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root dagql.AnyObjectResult) (*Artifacts, error) {
 	tree, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
 	}
+	// Root the tree at the bound value's own type: the main object, or
+	// another object of the module (e.g. a narrower view of it).
+	rootType, ok := tree.types[root.Type().Name()]
+	if !ok {
+		return nil, fmt.Errorf("module %q has no object type %q", mod.Self().Name(), root.Type().Name())
+	}
+	tree.Type = rootType
 	var nodes []*ModTreeNode
 	if err := walkArtifactNodes(ctx, tree, func(node *ModTreeNode) { nodes = append(nodes, node) }, map[string]bool{}); err != nil {
 		return nil, err
