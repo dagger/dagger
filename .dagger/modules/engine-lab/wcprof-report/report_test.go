@@ -510,17 +510,44 @@ func TestCritpath(t *testing.T) {
 }
 
 func TestCritpathShortSegments(t *testing.T) {
+	// The threshold is 1% of the 10s path: 100ms.
 	b := newDump(t)
-	b.op(1, 0, "call", "Query.root", "c", "do_not_cache", 0, 1000)
+	b.op(1, 0, "call", "Query.root", "c", "do_not_cache", 0, 10000)
+	// A run of short segments totaling 5ms: hidden, and counted.
 	for i := range int64(5) {
 		b.op(uint64(10+i), 1, "call", "Query.tiny", "c", "hit", 100+2*i, 101+2*i)
 	}
-	b.op(20, 1, "call", "Query.big", "c", "hit", 200, 900)
+	b.op(20, 1, "call", "Query.big", "c", "hit", 200, 5000)
+	// A run of short segments totaling 170ms: its two largest print until
+	// the rest (90ms) is under the threshold, and the rest folds.
+	b.op(30, 1, "call", "Query.mid", "c", "hit", 5000, 5040)
+	for i := range int64(10) {
+		b.op(uint64(40+i), 1, "call", "Query.small", "c", "hit", 5040+5*i, 5045+5*i)
+	}
+	b.op(31, 1, "call", "Query.mid", "c", "hit", 5090, 5130)
+	b.op(32, 1, "call", "Query.mid", "c", "hit", 5130, 5170)
 	out := report(t, b.graph(), Options{View: "critpath", Op: 1})
-	assertContains(t, out,
-		"  +100.00ms..+109.00ms … 5 shorter segments, 5.00ms: call Query.tiny:5\n",
-		"  +200.00ms dur 700.00ms own 700.00ms  20 call Query.big [hit]\n",
-	)
+	want := []string{
+		"\n  +200.00ms dur 4.80s own 4.80s  20 call Query.big [hit]\n",
+		"\n  +5.00s dur 40.00ms own 40.00ms  30 call Query.mid [hit]\n",
+		"\n  +5.04s..+5.17s … 11 shorter segments, 90.00ms: call Query.small:10 call Query.mid:1\n",
+		"\n  +5.09s dur 40.00ms own 40.00ms  31 call Query.mid [hit]\n",
+		"\n(5 segments not shown: runs of them totaling under 1% of the path, 5.00ms)\n",
+	}
+	pos := -1
+	for _, w := range want {
+		i := strings.Index(out, w)
+		if i < 0 {
+			t.Fatalf("output missing %q:\n%s", w, out)
+		}
+		if i < pos {
+			t.Errorf("%q is out of order:\n%s", w, out)
+		}
+		pos = i
+	}
+	if strings.Contains(out, "Query.tiny [hit]") || strings.Contains(out, "32 call Query.mid") {
+		t.Errorf("printed a segment that should be hidden or folded:\n%s", out)
+	}
 }
 
 func TestWaits(t *testing.T) {

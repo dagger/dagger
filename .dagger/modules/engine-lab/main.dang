@@ -576,7 +576,9 @@ type EngineLab {
     blocker covers is the op's own. Roots are `op`, or every outermost op
     matching the filters; per class, their on-path own time (which sums to
     the roots' duration, unlike summed self time), then the longest root's
-    path, `depth` levels deep, with segments under 1% folded.
+    path, `depth` levels deep. Runs of segments under 1% of the path are
+    hidden when their total is too; otherwise their largest members print
+    and the rest fold into one line.
   - `waits`: recorded waits (waiters matching the filters) by reason, by
     target (op class or resource, e.g. a lock) and by waiter → target, with
     count, total, p50 and max — lock contention, singleflight joins, lazy

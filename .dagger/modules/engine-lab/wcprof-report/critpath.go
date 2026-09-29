@@ -217,7 +217,10 @@ func critpath(o *out, g *Graph, opts Options) error {
 	o.printf("path of the longest (offsets from its start; `dur` on the path, `own` not in any blocker):")
 	cp := &critPrinter{o: o, origin: shown.from, min: shown.dur() / 100}
 	cp.print(shown, "", depth)
-	o.printf("(segments under 1%% of the path fold into \"… N shorter\"; ▸ N: N segments not expanded, raise `depth` or re-root with `op`; (exec N): a call folded with its call_exec op N)")
+	if cp.hidden > 0 {
+		o.printf("(%d segments not shown: runs of them totaling under 1%% of the path, %s)", cp.hidden, fmtDur(cp.hiddenDur))
+	}
+	o.printf("(runs of sub-1%% segments totaling 1%%+ show their largest members, the rest as \"… N shorter\"; ▸ N: N segments not expanded, raise `depth` or re-root with `op`; (exec N): a call folded with its call_exec op N)")
 	return nil
 }
 
@@ -228,10 +231,17 @@ func pct(part, whole int64) float64 {
 	return 100 * float64(part) / float64(whole)
 }
 
+// critPicks bounds how many members of a run of short segments print on
+// their own lines.
+const critPicks = 5
+
 type critPrinter struct {
 	o      *out
 	origin int64
-	min    int64
+	// min is the segment (and run) duration worth a line: 1% of the path.
+	min       int64
+	hidden    int
+	hiddenDur int64
 }
 
 func (cp *critPrinter) label(p *pathNode) string {
@@ -269,31 +279,64 @@ func (cp *critPrinter) print(p *pathNode, indent string, depth int) {
 	cp.o.printf("%s", line)
 	sub := indent + "  "
 	var small []*pathNode
-	flush := func() {
-		switch len(small) {
-		case 0:
-			return
-		case 1:
-			cp.print(small[0], sub, depth-1)
-		default:
-			var sum int64
-			classes := map[string]int{}
-			for _, k := range small {
-				sum += k.dur()
-				classes[k.key()]++
-			}
-			cp.o.printf("%s%s..%s … %d shorter segments, %s: %s", sub, fmtRel(small[0].from-cp.origin),
-				fmtRel(small[len(small)-1].to-cp.origin), len(small), fmtDur(sum), counts(classes, 3))
-		}
-		small = small[:0]
-	}
 	for _, k := range p.kids {
 		if k.dur() < cp.min {
 			small = append(small, k)
 			continue
 		}
-		flush()
+		cp.run(small, sub, depth-1)
+		small = small[:0]
 		cp.print(k, sub, depth-1)
 	}
-	flush()
+	cp.run(small, sub, depth-1)
+}
+
+// run prints a run of consecutive short segments. A run totaling under the
+// threshold is hidden (and counted); otherwise its largest members print on
+// their own until the rest totals under the threshold (at most critPicks),
+// and the rest fold into one line.
+func (cp *critPrinter) run(small []*pathNode, indent string, depth int) {
+	if len(small) == 0 {
+		return
+	}
+	var sum int64
+	for _, k := range small {
+		sum += k.dur()
+	}
+	if sum < cp.min {
+		cp.hidden += len(small)
+		cp.hiddenDur += sum
+		return
+	}
+	bySize := slices.Clone(small)
+	slices.SortStableFunc(bySize, func(a, b *pathNode) int { return cmpInt64(b.dur(), a.dur()) })
+	picked := map[*pathNode]bool{}
+	rest := sum
+	for _, k := range bySize {
+		if rest < cp.min || len(picked) == critPicks {
+			break
+		}
+		picked[k] = true
+		rest -= k.dur()
+	}
+	var folded []*pathNode
+	for _, k := range small {
+		if !picked[k] {
+			folded = append(folded, k)
+		}
+	}
+	// In time order; the folded line sits where its first member starts.
+	for _, k := range small {
+		switch {
+		case picked[k] || len(folded) == 1:
+			cp.print(k, indent, depth)
+		case k == folded[0]:
+			classes := map[string]int{}
+			for _, f := range folded {
+				classes[f.key()]++
+			}
+			cp.o.printf("%s%s..%s … %d shorter segments, %s: %s", indent, fmtRel(folded[0].from-cp.origin),
+				fmtRel(folded[len(folded)-1].to-cp.origin), len(folded), fmtDur(rest), counts(classes, 3))
+		}
+	}
 }
