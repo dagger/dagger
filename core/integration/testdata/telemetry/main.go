@@ -211,6 +211,8 @@ type spanLine struct {
 	Instance string `json:"instance"`
 	SpanID   string `json:"spanID"`
 	Name     string `json:"name"`
+	// Attrs holds the span's string attributes.
+	Attrs map[string]string `json:"attrs,omitempty"`
 }
 
 func spanLines(r *http.Request, req *coltracepb.ExportTraceServiceRequest) []string {
@@ -225,6 +227,7 @@ func spanLines(r *http.Request, req *coltracepb.ExportTraceServiceRequest) []str
 					Instance: resourceAttr(attrs, "service.instance.id"),
 					SpanID:   hex.EncodeToString(span.SpanId),
 					Name:     span.Name,
+					Attrs:    stringAttrs(span.Attributes),
 				}))
 			}
 		}
@@ -294,6 +297,16 @@ func logRecordLines(r *http.Request, body []byte) []string {
 		}
 	}
 	return lines
+}
+
+func stringAttrs(attrs []*commonpb.KeyValue) map[string]string {
+	out := map[string]string{}
+	for _, kv := range attrs {
+		if v, ok := kv.Value.GetValue().(*commonpb.AnyValue_StringValue); ok {
+			out[kv.Key] = v.StringValue
+		}
+	}
+	return out
 }
 
 func resourceAttr(attrs []*commonpb.KeyValue, key string) string {

@@ -10,6 +10,13 @@ const (
 	// after evaluation. Consumers must not assume this is a cache-hit decision.
 	DagContentPreferredDigestAttr = "dagger.io/dag.content_preferred_digest"
 
+	// ExecutionContentPreferredDigestAttr is the content-preferred digest of
+	// the call that owns an execution, recorded on exec.run (string). It is read
+	// when the execution ends. Its inputs are evaluated by then, so it matches
+	// the digest that later cache hits of the same call report, also when an
+	// input learned its content lazily.
+	ExecutionContentPreferredDigestAttr = "dagger.io/execution.content_preferred_digest"
+
 	// CloudEngineAttr reports that telemetry was produced by a Dagger Cloud
 	// Engine. It is a resource attribute on client and engine telemetry. (bool)
 	CloudEngineAttr = "dagger.io/cloud.engine"

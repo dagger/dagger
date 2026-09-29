@@ -44,10 +44,11 @@ import (
 //
 // ident mirrors native's exec.run ident (executor.go): the call digest when
 // known, else the execution id — so the cross-source oracle can match per-exec.
-func beginOTelExecRun(ctx context.Context, ident string) (context.Context, trace.Span) {
+func beginOTelExecRun(ctx context.Context, ident string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
 	prev := trace.SpanContextFromContext(ctx)
 	runCtx, span := Tracer(ctx).Start(ctx, "exec.run",
 		telemetry.Passthrough(),
+		trace.WithAttributes(attrs...),
 		trace.WithAttributes(
 			attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindExec.String()),
 			attribute.String(telemetry.DagDigestAttr, ident),

@@ -24,6 +24,8 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -125,6 +127,14 @@ type ExecutionMetadata struct {
 	// core->executor hand-off is an in-process pointer, so excluding it from
 	// JSON cannot drop it before use.
 	HostAliasFQDNs map[string]string `json:"-"`
+
+	// ContentPreferredDigest returns the content-preferred digest of the call
+	// that owns this execution. The executor reads it when the execution ends,
+	// when the inputs are evaluated, and records it on exec.run.
+	//
+	// json:"-" is load-bearing for the same reason as ProfArgs above: this
+	// run-time-only value must never perturb an exec cache key.
+	ContentPreferredDigest func() digest.Digest `json:"-"`
 }
 
 func (c *Client) Run(
@@ -185,7 +195,14 @@ func (c *Client) Run(
 	// needs no nested-client link.
 	var execRunSpan trace.Span
 	if dagql.OTelProfActive(ctx) {
-		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent)
+		var attrs []attribute.KeyValue
+		if enginetel.HasWorkloadReadings(ctx) {
+			attrs = append(attrs,
+				attribute.String(enginetel.ExecutionIDAttr, state.id),
+				attribute.Bool(enginetel.ExecutionInternalAttr, execMD != nil && execMD.Internal),
+			)
+		}
+		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent, attrs...)
 	}
 	err := c.run(ctx, state,
 		namedSetupFunc{"setupNetwork", c.setupNetwork},
@@ -207,9 +224,23 @@ func (c *Client) Run(
 	)
 	execOp.EndErr(err)
 	if execRunSpan != nil {
+		recordExecContentPreferredDigest(execRunSpan, execMD)
 		endOTelExecRun(execRunSpan, &err)
 	}
 	return err
+}
+
+// recordExecContentPreferredDigest stamps the owning call's final
+// content-preferred digest on exec.run. The execution has
+// ended, so every input it mounted is evaluated and has any content identity
+// it will learn; a digest read at call completion can predate that.
+func recordExecContentPreferredDigest(span trace.Span, execMD *ExecutionMetadata) {
+	if execMD == nil || execMD.ContentPreferredDigest == nil {
+		return
+	}
+	if dig := execMD.ContentPreferredDigest(); dig != "" {
+		span.SetAttributes(attribute.String(telemetryattrs.ExecutionContentPreferredDigestAttr, dig.String()))
+	}
 }
 
 // namedSetupFunc pairs an executor setup phase with a stable name used for
