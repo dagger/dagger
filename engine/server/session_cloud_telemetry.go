@@ -56,8 +56,13 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 		slog.Warn("session telemetry not published to Cloud: the engine cannot reach the Cloud URL", "session", sess.sessionID, "url", cloudURL, "error", err)
 		return
 	}
+	sess.setCloudTokenExpiry(md.CloudAuth.Token.Expiry)
 	tokenRefresh := enginetel.BoundedTokenRefresh(func(ctx context.Context) (*oauth2.Token, error) {
-		return srv.refreshSessionCloudToken(ctx, sess, md.CredentialsPath)
+		token, err := srv.refreshSessionCloudToken(ctx, sess, md.CredentialsPath)
+		if err == nil && token != nil {
+			sess.setCloudTokenExpiry(token.Expiry)
+		}
+		return token, err
 	})
 	spans, logs, metrics, err := enginetel.NewCloudExporters(context.Background(), md.CloudAuth, tokenRefresh, md.CloudURL)
 	if err != nil {
@@ -664,10 +669,43 @@ func (q *cloudMetricQueue) run() {
 	}
 }
 
+// cloudTokenRefreshMargin is how close to its expiry a Cloud token counts as
+// possibly needing a refresh before the session's last telemetry is sent.
+const cloudTokenRefreshMargin = time.Minute
+
+func (sess *daggerSession) setCloudTokenExpiry(expiry time.Time) {
+	var nanos int64
+	if !expiry.IsZero() {
+		nanos = expiry.UnixNano()
+	}
+	sess.cloudTokenExpiry.Store(nanos)
+}
+
+// cloudFlushCanOutliveClient reports whether the session's last Cloud
+// telemetry can be sent after the main client has gone. Refreshing the
+// token reads the client's credentials file through its attachables, which
+// close with the client, so a token that may need a refresh before the
+// flush ends keeps the client waiting.
+func (sess *daggerSession) cloudFlushCanOutliveClient(now time.Time) bool {
+	expiry := sess.cloudTokenExpiry.Load()
+	return expiry == 0 || time.Unix(0, expiry).Sub(now) > cloudTokenRefreshMargin
+}
+
+// flushSessionCloudTelemetryForShutdown sends the session's last Cloud
+// telemetry for the main client's shutdown. The engine outlives the client,
+// so when the token allows it the engine finishes sending in the background
+// and the client does not wait on Cloud. Each wait stays bounded by the
+// session's Cloud flush timeout either way.
+func (sess *daggerSession) flushSessionCloudTelemetryForShutdown(ctx context.Context) {
+	if sess.cloudFlushCanOutliveClient(time.Now()) {
+		go sess.flushSessionCloudTelemetry(context.WithoutCancel(ctx))
+		return
+	}
+	sess.flushSessionCloudTelemetry(ctx)
+}
+
 // flushSessionCloudTelemetry publishes what the session has sent so far to
-// Cloud, within the bound. The main client's shutdown calls it once, before
-// the session's attachables close, because refreshing an OAuth token reads
-// the client's credentials file through them.
+// Cloud, within the bound.
 func (sess *daggerSession) flushSessionCloudTelemetry(ctx context.Context) {
 	var wg sync.WaitGroup
 	for _, flush := range sess.cloudFlushers {

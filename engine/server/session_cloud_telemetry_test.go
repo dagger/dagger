@@ -1137,3 +1137,89 @@ func TestCloudReachabilityCoalescesConcurrentChecks(t *testing.T) {
 		}
 	})
 }
+
+// The main client's shutdown leaves the last Cloud flush to the engine unless
+// the token may need a refresh first: that reads the client's credentials file
+// through attachables that close with the client.
+func TestCloudFlushCanOutliveClient(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	for _, tc := range []struct {
+		name   string
+		expiry time.Time
+		want   bool
+	}{
+		{"token without expiry", time.Time{}, true},
+		{"token valid for an hour", now.Add(time.Hour), true},
+		{"token expiring within the margin", now.Add(cloudTokenRefreshMargin / 2), false},
+		{"expired token", now.Add(-time.Minute), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sess := &daggerSession{}
+			sess.setCloudTokenExpiry(tc.expiry)
+			require.Equal(t, tc.want, sess.cloudFlushCanOutliveClient(now))
+		})
+	}
+
+	// A refresh extends the expiry, so a later shutdown need not wait.
+	sess := &daggerSession{}
+	sess.setCloudTokenExpiry(now.Add(time.Second))
+	require.False(t, sess.cloudFlushCanOutliveClient(now))
+	sess.setCloudTokenExpiry(now.Add(time.Hour))
+	require.True(t, sess.cloudFlushCanOutliveClient(now))
+}
+
+func TestShutdownCloudFlushWaitsOnlyWhenTheTokenMayNeedRefresh(t *testing.T) {
+	t.Parallel()
+	slowFlush := func() (*daggerSession, chan struct{}, chan struct{}) {
+		release, done := make(chan struct{}), make(chan struct{})
+		sess := &daggerSession{cloudFlushers: []func(context.Context){func(context.Context) {
+			<-release
+			close(done)
+		}}}
+		return sess, release, done
+	}
+
+	t.Run("fresh token: the client does not wait on Cloud", func(t *testing.T) {
+		sess, release, done := slowFlush()
+		sess.setCloudTokenExpiry(time.Now().Add(time.Hour))
+		returned := make(chan struct{})
+		go func() {
+			sess.flushSessionCloudTelemetryForShutdown(t.Context())
+			close(returned)
+		}()
+		select {
+		case <-returned:
+		case <-time.After(5 * time.Second):
+			t.Fatal("shutdown waited for Cloud")
+		}
+		close(release)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the flush did not finish after the client was released")
+		}
+	})
+
+	t.Run("token near expiry: the client waits for the flush", func(t *testing.T) {
+		sess, release, done := slowFlush()
+		sess.setCloudTokenExpiry(time.Now().Add(time.Second))
+		returned := make(chan struct{})
+		go func() {
+			sess.flushSessionCloudTelemetryForShutdown(t.Context())
+			close(returned)
+		}()
+		select {
+		case <-returned:
+			t.Fatal("shutdown returned before the flush finished")
+		case <-time.After(100 * time.Millisecond):
+		}
+		close(release)
+		<-done
+		select {
+		case <-returned:
+		case <-time.After(5 * time.Second):
+			t.Fatal("shutdown did not return after the flush")
+		}
+	})
+}
