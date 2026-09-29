@@ -1308,31 +1308,60 @@ type Swapper {
 }
 
 // TestAddressableToolArgs covers address lifting of object-typed tool args end
-// to end (hack/designs/sandboxes.md §4): a module function with a required
-// Container! arg still becomes a tool — the arg renders as an address string,
-// and a model-supplied image ref is lifted into a real container via
-// Query.address at dispatch — while a required arg of any other object type
-// (here Directory!) still disqualifies its function, since Container is the
-// only type to have passed the capability review for model-typed address
-// strings (liftableTypes in core/llm_object_tools.go).
+// to end: a module function with a required arg of an addressable type still
+// becomes a tool — the arg renders as an address string, and a model-supplied
+// address is lifted into the real object via the core Address API at
+// dispatch — unless the type is blocklisted (Secret, Socket, Volume mint
+// capabilities from a string), in which case a required arg still
+// disqualifies its function. See liftableObjectArg in
+// core/llm_object_tools.go.
 func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-addressable-args")
 
-	t.Run("a required Container arg renders as an address", func(ctx context.Context, t *testctx.T) {
+	t.Run("required liftable args render as addresses", func(ctx context.Context, t *testctx.T) {
 		tools, err := base.With(daggerShell("llm | with-tools $(runner) | tools")).Stdout(ctx)
 		require.NoError(t, err)
 
 		// exec IS a tool despite its required Container! arg...
 		require.Contains(t, tools, "## exec\n")
 		// ...and its sandbox parameter is described as an address — with the
-		// type's syntax hint from liftableTypes — not as a bare ID.
+		// type's syntax hint — not as a bare ID.
 		require.Contains(t, tools, "(Container address:")
 		require.Contains(t, tools, "or a Container ID from a prior tool result")
 
-		// lsDir's required Directory! arg is not liftable (host-path
-		// fallback), so lsDir is not exposed as a tool.
-		require.NotContains(t, tools, "## lsDir\n")
+		// Directory and GitRef are liftable as well.
+		require.Contains(t, tools, "## lsDir\n")
+		require.Contains(t, tools, "(Directory address:")
+		require.Contains(t, tools, "## commitOf\n")
+		require.Contains(t, tools, "(GitRef address:")
+
+		// useToken's required Secret! arg is blocklisted, so useToken is not
+		// exposed as a tool: an env:// address would mint a secret.
+		require.NotContains(t, tools, "## useToken\n")
+		require.NotContains(t, tools, "(Secret address:")
+	})
+
+	t.Run("a git URL lifts into a real git ref", func(ctx context.Context, t *testctx.T) {
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
+			WithPrompt("which commit is the tag?").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "commitOf",
+					Arguments: dagger.JSON(`{"ref":"https://github.com/dagger/dagger#v0.9.0"}`)},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-tools $(runner) | with-prompt "which commit is the tag?" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The commit SHA only exists in the resolved ref, never in the
+		// arguments, so it proves the address lifted into a real GitRef.
+		require.Regexp(t, `commit: [0-9a-f]{40}`, out)
 	})
 
 	t.Run("an image ref lifts into a real container", func(ctx context.Context, t *testctx.T) {

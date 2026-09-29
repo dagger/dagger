@@ -528,8 +528,8 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 // must be expressible without an object handle — a required object-typed arg
 // (other than those implicit supplies) disqualifies it, since the model has no
 // handle to pass. Exception: a required arg of a LIFTABLE type (see
-// liftableTypes) does not disqualify — the model can supply an address string,
-// lifted into the object at dispatch time via the core Address API.
+// liftableObjectArg) does not disqualify — the model can supply an address
+// string, lifted into the object at dispatch time via the core Address API.
 func objectToolEligible(field *ast.FieldDefinition, except []string, implicit implicitToolArgs) bool {
 	if slices.Contains(except, field.Name) {
 		return false
@@ -570,10 +570,10 @@ func isObjectArg(arg *ast.ArgumentDefinition) bool {
 	return arg.Directives.ForName("expectedType") != nil
 }
 
-// liftableType describes an object type admitted to address lifting: how a
-// plain address string supplied for an arg of the type resolves into the
+// addressableType describes an object type the core Address API loads: how a
+// plain address string supplied for a tool arg of the type resolves into the
 // object, and how to document the accepted syntaxes to the model.
-type liftableType struct {
+type addressableType struct {
 	// addressField is the Address field that loads the type:
 	// Workspace.resolve(value: <addr>).<addressField> — the same lifting the CLI
 	// performs for object-typed flags (internal/cmd/dagger/flags.go), see
@@ -585,30 +585,72 @@ type liftableType struct {
 	hint string
 }
 
-// liftableTypes is the allowlist of object types whose tool args accept a
-// plain address string. Admission is a CAPABILITY decision, not a convenience
-// one: a CLI flag is human-typed, but a tool arg is MODEL-typed, and several
-// Address decoders resolve strings into capabilities the model doesn't
-// otherwise hold — Address.secret mints secrets from env:// / file:// /
-// op:// URIs, Address.directory/.file/.socket fall back to HOST paths, and
-// the service/git decoders reach the host's network and local repos.
-// Container has no host fallback (image refs pull from registries, bare refs
-// resolve installed modules), so it is the only entry today. Admitting
-// another of the CLI's nine addressable types is a one-line change here plus
-// that type's own capability review — see hack/designs/sandboxes.md §4, "The
-// liftable set is a capability decision".
-var liftableTypes = map[string]liftableType{
+// dagAddressHint documents DAG addresses in every hint. A dag:// address
+// names a value by its path from a module's main object, with a key for each
+// collection on the way.
+const dagAddressHint = `a dag:// address to a workspace module's value like "dag://<module>/<field>/<field>?<item>=<key>"`
+
+// addressableTypes lists every object type with an Address.<field> loader in
+// core/schema/address.go, except Workspace: a Workspace arg is always filled
+// by MCP from the bound workspace (implicitToolArgs.supplies), so the model
+// never supplies one. Which of these a model may lift is decided by
+// unliftableTypes.
+var addressableTypes = map[string]addressableType{
 	"Container": {
 		addressField: "container",
-		hint:         `an image ref like "golang:1.26", an installed module function like "mymod:dev", or a Container ID from a prior tool result`,
+		hint:         `an image ref like "golang:1.26", ` + dagAddressHint + `, or a Container ID from a prior tool result`,
 	},
+	"Directory": {
+		addressField: "directory",
+		hint:         `a git URL with an optional #<ref>:<subdir> like "https://github.com/org/repo#main:docs", ` + dagAddressHint + `, or a Directory ID from a prior tool result`,
+	},
+	"File": {
+		addressField: "file",
+		hint:         `a git URL with #<ref>:<path> like "https://github.com/org/repo#main:README.md", ` + dagAddressHint + `, or a File ID from a prior tool result`,
+	},
+	"GitRef": {
+		addressField: "gitRef",
+		hint:         `a git URL with an optional #<branch, tag or commit> like "https://github.com/org/repo#main" (the default branch without one), ` + dagAddressHint + `, or a GitRef ID from a prior tool result`,
+	},
+	"GitRepository": {
+		addressField: "gitRepository",
+		hint:         `a git URL without a #ref like "https://github.com/org/repo", ` + dagAddressHint + `, or a GitRepository ID from a prior tool result`,
+	},
+	"Service": {
+		addressField: "service",
+		hint:         `a tcp:// or udp:// host:port like "tcp://localhost:8080", ` + dagAddressHint + `, or a Service ID from a prior tool result`,
+	},
+	"Secret": {addressField: "secret"},
+	"Socket": {addressField: "socket"},
+	"Volume": {addressField: "volume"},
+}
+
+// unliftableTypes is the blocklist of addressable types whose tool args do
+// NOT accept a plain address string: an ID from a prior tool result is the
+// only way to pass one. Lifting is a CAPABILITY decision, not a convenience
+// one: a CLI flag is human-typed, but a tool arg is MODEL-typed, so an
+// address the model can guess must not mint a capability it was not handed.
+// These three decoders do exactly that — Address.secret reads env://,
+// file:// and op:// URIs into secrets, Address.socket forwards a host
+// socket, and Address.volume mounts sshfs:// endpoints or engine volumes.
+//
+// The other addressable types only load content the model could fetch or
+// name anyway: images, git remotes, artifacts of its own tool and workspace
+// modules. Their decoders do fall back to the calling client's host for
+// non-URL strings (a local path for Directory/File, a local repo for
+// GitRef/GitRepository), the same reach the CLI grants its flags; tool
+// modules that must not read the host take an ID or a narrower type instead.
+var unliftableTypes = map[string]bool{
+	"Secret": true,
+	"Socket": true,
+	"Volume": true,
 }
 
 // liftableObjectArg returns the @expectedType name of an object-typed
 // argument when that type is liftable — resolvable from an address string via
-// the core Address API AND admitted by the liftableTypes capability
-// allowlist. Only single-object args qualify: a list of IDs ([ID!]! with
-// @expectedType) is not lifted.
+// the core Address API (addressableTypes) AND not in the unliftableTypes
+// capability blocklist. Only single-object args qualify: a list of IDs
+// ([ID!]! with @expectedType) is not lifted.
 func liftableObjectArg(arg *ast.ArgumentDefinition) (string, bool) {
 	if arg.Type == nil || arg.Type.NamedType != "ID" {
 		// Lists of object IDs (arg.Type.Elem != nil) are not liftable.
@@ -622,7 +664,7 @@ func liftableObjectArg(arg *ast.ArgumentDefinition) (string, bool) {
 	if name == nil || name.Value == nil {
 		return "", false
 	}
-	if _, ok := liftableTypes[name.Value.Raw]; !ok {
+	if _, ok := addressableTypes[name.Value.Raw]; !ok || unliftableTypes[name.Value.Raw] {
 		return "", false
 	}
 	return name.Value.Raw, true
@@ -701,11 +743,11 @@ func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition, implicit
 		if d := arg.Directives.ForName("expectedType"); d != nil {
 			if name := d.Arguments.ForName("name"); name != nil && name.Value != nil {
 				// A liftable arg accepts an address string (per the type's
-				// hint — see liftableTypes) as well as an ID from a previous
-				// tool result; anything else only accepts an ID.
+				// hint — see addressableTypes) as well as an ID from a
+				// previous tool result; anything else only accepts an ID.
 				prefix := fmt.Sprintf("(%s ID)", name.Value.Raw)
 				if typeName, ok := liftableObjectArg(arg); ok {
-					prefix = fmt.Sprintf("(%s address: %s)", typeName, liftableTypes[typeName].hint)
+					prefix = fmt.Sprintf("(%s address: %s)", typeName, addressableTypes[typeName].hint)
 				}
 				if desc == "" {
 					desc = prefix
@@ -843,7 +885,7 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 // selector for the module method. Workspace retains its contextual handling;
 // MCP directly adds the current LLM and calling Agent for hidden arguments.
 // These are explicit selector arguments, not GraphQL defaults or dynamic inputs.
-// An object-typed argument of a liftable type (see liftableTypes) additionally
+// An object-typed argument of a liftable type (see liftableObjectArg) additionally
 // accepts an address string: when the value fails to decode as an ID, it is
 // lifted into the object via the core Address API
 // (Workspace.resolve(value: <addr>).<field>) and the resulting object's ID is used
@@ -988,7 +1030,7 @@ func liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDe
 	if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), resolved, &obj,
 		dagql.Selector{
 			View:  srv.View,
-			Field: liftableTypes[typeName].addressField,
+			Field: addressableTypes[typeName].addressField,
 		},
 	); err != nil {
 		return nil, false, fmt.Errorf("%q is neither a %s ID (%w) nor a resolvable %s address: %w",
