@@ -170,7 +170,7 @@ func TestArchiveSpanPrioritySubtreeAndCut(t *testing.T) {
 	require.True(t, v.selected["8"])
 	_, err = db.ArchiveSpanView(t.Context(), selectionTrace, HighWater{Logs: -1}, nil)
 	require.ErrorContains(t, err, "invalid archive cut")
-	batch, next, err := db.SelectArchiveLogsRange(t.Context(), SelectLogsRangeParams{AfterID: 1, ThroughID: 1, Limit: math.MaxInt64}, selectionTrace, nil, nil, nil)
+	batch, next, err := db.SelectArchiveLogsRange(t.Context(), SelectLogsRangeParams{AfterID: 1, ThroughID: 1, Limit: math.MaxInt64}, selectionTrace, nil, nil, false)
 	require.NoError(t, err)
 	require.Empty(t, batch)
 	require.EqualValues(t, 1, next)
