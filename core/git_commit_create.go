@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -368,22 +367,6 @@ func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
 	if len(promisors) != 0 {
 		return "", nativeCommitUnsupportedReason("partial-repository")
 	}
-	// The result selects gitDir itself, not the directory around it, so a
-	// symlink that stayed inside the source (a hook pointing into the worktree,
-	// say) would escape the result and fail withContents' self-containment
-	// check after the fallback point. Git never creates symlinks here.
-	err = filepath.WalkDir(gitDir, func(_ string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.Type()&fs.ModeSymlink != 0 {
-			return nativeCommitUnsupportedReason("git-directory-symlink")
-		}
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
 	format, err := runWorkspaceCommitGit(ctx, root, []string{"GIT_NO_LAZY_FETCH=1"}, "rev-parse", "--show-object-format")
 	if err != nil {
 		return "", err
@@ -569,7 +552,11 @@ func publishNativeCommit(gitDir, meta, branchName, sha string, run func(...strin
 	if err := nativeCommitWriteFile(root, "config", config); err != nil {
 		return err
 	}
-	for _, name := range []string{"index", "logs", "ORIG_HEAD", "COMMIT_EDITMSG"} {
+	// hooks go too: the engine never runs them (every hook-triggering command
+	// disables them), and the result selects the Git directory itself, so a
+	// hook symlinked into the source worktree would escape it and fail
+	// withContents' self-containment check.
+	for _, name := range []string{"index", "logs", "hooks", "ORIG_HEAD", "COMMIT_EDITMSG"} {
 		if err := root.RemoveAll(name); err != nil {
 			return err
 		}

@@ -56,13 +56,14 @@ func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) 
 	require.NoError(t, c.Close())
 
 	traces, _ := sink.capture()
-	require.Positive(t, nativeCommitFallbacks(traces, "ref-storage"), "must reject reftable storage before native publication")
+	_, fallbacks := nativeCommitOutcomes(traces)
+	require.Positive(t, fallbacks["ref-storage"], "must reject reftable storage before native publication")
 }
 
-// The native result selects the .git directory itself, so a symlink that
-// stayed inside the source directory (here, a hook pointing into the worktree)
-// would escape the result and fail withContents' self-containment check.
-// Such storage must take the legacy path, which writes a fresh .git.
+// The native result selects the .git directory itself, so a hook symlinked
+// into the source worktree would escape it and fail withContents'
+// self-containment check. Publication drops hooks (the engine never runs
+// them), so such storage still commits natively.
 func (GitSuite) TestGitRefWithCommitGitDirSymlink(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
@@ -98,30 +99,36 @@ func (GitSuite) TestGitRefWithCommitGitDirSymlink(ctx context.Context, t *testct
 	require.NoError(t, c.Close())
 
 	traces, _ := sink.capture()
-	require.Positive(t, nativeCommitFallbacks(traces, "git-directory-symlink"), "must reject symlinks in .git before native publication")
+	supported, reasons := nativeCommitOutcomes(traces)
+	require.Positive(t, supported, "must commit natively; fallbacks: %v", reasons)
 }
 
-// nativeCommitFallbacks counts native commit transactions that fell back for
-// the given reason.
-func nativeCommitFallbacks(traces []*coltracepb.ExportTraceServiceRequest, reason string) int {
-	fallbacks := 0
+// nativeCommitOutcomes counts ended native commit transactions that
+// committed natively, and those that fell back, by reason.
+func nativeCommitOutcomes(traces []*coltracepb.ExportTraceServiceRequest) (supported int, fallbacks map[string]int) {
+	fallbacks = map[string]int{}
 	for _, request := range traces {
 		for _, resource := range request.ResourceSpans {
 			for _, scope := range resource.ScopeSpans {
 				for _, span := range scope.Spans {
-					if span.Name != "git native commit transaction" {
+					if span.Name != "git native commit transaction" || span.EndTimeUnixNano == 0 {
 						continue
 					}
 					for _, attr := range span.Attributes {
-						if attr.Key == "dagger.git.native.fallback_reason" && attr.Value.GetStringValue() == reason {
-							fallbacks++
+						switch attr.Key {
+						case "dagger.git.native.supported":
+							if attr.Value.GetBoolValue() {
+								supported++
+							}
+						case "dagger.git.native.fallback_reason":
+							fallbacks[attr.Value.GetStringValue()]++
 						}
 					}
 				}
 			}
 		}
 	}
-	return fallbacks
+	return supported, fallbacks
 }
 
 // Native transactions must produce the same commit object as the general

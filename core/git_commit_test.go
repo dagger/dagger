@@ -356,16 +356,6 @@ func TestGitNativeCommitStorageEligibility(t *testing.T) {
 			require.Equal(t, reason, string(unsupportedReason))
 		})
 	}
-	t.Run("symlink", func(t *testing.T) {
-		root := t.TempDir()
-		_, err := runWorkspaceCommitGit(t.Context(), root, nil, "init")
-		require.NoError(t, err)
-		require.NoError(t, os.Symlink("../../pre-commit", filepath.Join(root, ".git", "hooks", "pre-commit")))
-		_, err = nativeCommitGitDir(t.Context(), root)
-		var unsupportedReason nativeCommitUnsupportedReason
-		require.ErrorAs(t, err, &unsupportedReason)
-		require.Equal(t, "git-directory-symlink", string(unsupportedReason))
-	})
 }
 
 type boundedGitLogBackend struct {

@@ -23,7 +23,7 @@ The transaction then:
 4. Applies the changeset to the sparse worktree, runs `update-index --force-remove` for removals (including file/directory replacements) and `add -A` for additions and modifications.
 5. Runs `write-tree`, returning `ErrNothingToCommit` when the tree is unchanged and empty commits are not allowed, then `commit-tree` with explicit author/committer identity and dates. Signoff uses `git interpret-trailers --no-divider`, matching `git commit --trailer`, so a `---` line in the message stays text.
 6. `copyNativeCommitObjects` copies only the transaction's new objects into the child: loose objects, plus the pack (with `.idx`/`.rev`) that `git add` writes for blobs over `core.bigFileThreshold`. Writes use `O_EXCL` and never touch existing objects.
-7. `publishNativeCommit` advances the selected branch, or detaches `HEAD` for a commit-ID parent, writes a fresh config, and removes the index, logs, `ORIG_HEAD` and `COMMIT_EDITMSG`. All writes are rooted in the child and replace files rather than truncating them, so inherited symlinks and hardlinks cannot redirect them.
+7. `publishNativeCommit` advances the selected branch, or detaches `HEAD` for a commit-ID parent, writes a fresh config, and removes the index, logs, hooks, `ORIG_HEAD` and `COMMIT_EDITMSG`. The engine never runs hooks, and since the result selects the Git directory itself, a hook symlinked into the source worktree would otherwise escape it. All writes are rooted in the child and replace files rather than truncating them, so inherited symlinks and hardlinks cannot redirect them.
 
 The result is a `Directory` selecting the bare Git directory in the child snapshot. Snapshot ancestry shares every existing object, and no scratch index, ref or alternates file is persisted. New objects are written to scratch first because Git may freshen the mtime of an existing pack in its primary object store; pointed at the writable child, it could copy up a history-sized pack.
 
@@ -36,7 +36,6 @@ The span `git native commit transaction` records `dagger.git.native.supported`, 
 Unsupported inputs are rejected with a fixed `nativeCommitUnsupportedReason` code, never a path or ref:
 
 - `git-directory-layout`, `object-directory-layout`: `.git` is a gitfile or symlink, or `objects` is not a directory
-- `git-directory-symlink`: a symlink anywhere in the Git directory. The result selects the Git directory itself, so a link that resolved inside the source (such as a hook pointing into the worktree) would escape it and fail the self-containment check.
 - `linked-worktree`, `shallow-history`, `object-alternates`, `partial-repository`: storage the snapshot does not fully own
 - `object-format`: anything but SHA-1
 - `ref-storage`: reftable refs, which loose-ref publication and the replaced config would lose
