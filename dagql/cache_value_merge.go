@@ -171,6 +171,12 @@ type valueMergePrep struct {
 	index   map[uint64]*TransferredValue
 	firstID uint64
 	plans   map[uint64]transferIdentityPlan
+	// completeParts are the part keys each record proves complete, by
+	// ordinal. A part key is an address and its completeness, which the
+	// record's payload decides; relocation rewrites only reference numbers,
+	// never to or from zero, so the keys read at provisional numbers are the
+	// ones at the final numbers.
+	completeParts map[uint64][]string
 }
 
 // prepareValueMerge validates the bundle and derives each record's identity.
@@ -194,7 +200,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 	if err != nil {
 		return nil, err
 	}
-	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}}
+	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, completeParts: map[uint64][]string{}}
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
@@ -238,6 +244,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 		if err := validateTransferRecord(rec, relocatedDeps); err != nil {
 			return nil, err
 		}
+		prep.completeParts[id] = recordCompletePartKeys(rec)
 		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
 		res.storeResultCall(rec.Call)
 		if !c.blobBacked {
@@ -1118,14 +1125,22 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 // mergedCompletePartKeysLocked returns the complete parts of res as the merge
 // leaves it. For an entry that takes a record, they are what the record
 // proves, the part probe's LocalComplete over it, as the entry's own spans
-// report them. For an entry that keeps its value, they are completePartKeysLocked's.
-// Requires egraphMu.
+// report them, read outside the lock (valueMergePrep.completeParts). For an
+// entry that keeps its value, they are completePartKeysLocked's. Requires
+// egraphMu.
 func (c *Cache) mergedCompletePartKeysLocked(commit *valueMergeCommit, res *sharedResult) []string {
 	row := commit.installed[res]
 	if row == nil {
 		return completePartKeysLocked(res)
 	}
-	probes, err := describePartRecord(row.rec)
+	return commit.prep.completeParts[row.ordinal]
+}
+
+// recordCompletePartKeys returns the part keys record proves complete: the
+// part probe's LocalComplete over it, sorted, or none if the record doesn't
+// describe its parts.
+func recordCompletePartKeys(record PersistedRecord) []string {
+	probes, err := describePartRecord(record)
 	if err != nil {
 		return nil
 	}
