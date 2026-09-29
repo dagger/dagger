@@ -4269,7 +4269,7 @@ func TestExtraDigestLabelIsolation(t *testing.T) {
 	c := cacheIface
 
 	sharedBytes := digest.FromString("label-isolation-shared-bytes")
-	sharedA := call.ExtraDigest{Digest: sharedBytes, Label: call.ExtraDigestLabelRemoteCache}
+	sharedA := call.ExtraDigest{Digest: sharedBytes, Label: "label-a"}
 	sharedB := call.ExtraDigest{Digest: sharedBytes, Label: "label-b"}
 	noiseA := call.ExtraDigest{Digest: digest.FromString("label-isolation-noise-a"), Label: "noise-a"}
 	noiseB := call.ExtraDigest{Digest: digest.FromString("label-isolation-noise-b"), Label: "noise-b"}

@@ -279,7 +279,8 @@ func TestHTTPChainAvoidsOperation(t *testing.T) {
 		require.Len(t, exported.Chains.Entries, 1)
 		provider := &testutil.Provider{InfoReaderProvider: exported.Chains.Entries[0].Provider}
 		b.SetPartContentSource(partTestContentSource{provider})
-		imported, err := b.ImportValues(bctx, exported.Bundle)
+		importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		imported := importedReply.Imported()
 		require.NoError(t, err)
 		loaded, err := b.LoadResultByResultID(bctx, "http-chain", bsrv, imported[0].ResultID)
 		require.NoError(t, err)

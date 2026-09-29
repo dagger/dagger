@@ -166,7 +166,12 @@ type persistedEdge struct {
 // reused), so they are wiped rather than imported.
 // Schema 20 includes canonical output_path and the (result_id, output_path,
 // role) storage key. Earlier private schema-20 stores reset on import failure.
-const cachePersistenceSchemaVersion = "21"
+//
+// 22: results record each entry's replacement count and whether the recipe
+// index named it, so a restart restores one current entry per recipe. Older
+// stores cannot tell a recipe's current entry from others of its recipe and
+// are wiped on import.
+const cachePersistenceSchemaVersion = "22"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
@@ -1600,6 +1605,7 @@ func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge 
 		Deps:          sortedResultIDs(res.deps),
 		ExpiresAtUnix: res.expiresAtUnix,
 		Parts:         parts,
+		Replacements:  res.replacements,
 	}
 	edge, found := c.persistedEdgesByResult[res.id]
 	pending := pendingEdge != nil && !pendingEdge.created
@@ -1641,10 +1647,11 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 	return nil
 }
 
-// removePersistedEdge drops the result's retention edge, the only place an edge
-// is deleted, and collects what that leaves unowned. It reports whether it
-// dropped an edge, and when: the engine's clock under the graph lock that
-// deleted it.
+// removePersistedEdge drops the result's retention edge, the only place a
+// prune deletes an edge, and collects what that leaves unowned. It reports
+// whether it dropped an edge, and when: the engine's clock under the graph
+// lock that deleted it. The one other deletion is a failed in-place
+// replacement's, which collects its entry with the edge (cache_current_entry.go).
 func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, _ error) {
 	if c == nil || resultID == 0 {
 		return time.Time{}, false, nil
@@ -1736,7 +1743,7 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 			continue
 		}
 
-		for _, offer := range res.partOffers {
+		for _, offer := range res.partOffersLocked() {
 			more, err := c.retirePartOfferLocked(ctx, res, offer.record.Address)
 			queue = append(queue, more...)
 			rerr = errors.Join(rerr, err)
@@ -2113,6 +2120,9 @@ type Cache struct {
 	engineInstanceID    string
 	bootRestoredResults int
 	persistedResults    int
+	// blobBacked marks a cache that keeps parts in a blob store: only it
+	// accepts SetStoredPart (WithBlobStore).
+	blobBacked bool
 	// holderEntries maps each holding's key to the entry it sits on, and
 	// entriesByRecipe each recipe digest to its entry. remoteCaches keeps each
 	// held engine cache's own indexes. All guarded by egraphMu. See
@@ -2120,6 +2130,11 @@ type Cache struct {
 	holderEntries   map[HolderKey]sharedResultID
 	entriesByRecipe map[digest.Digest]sharedResultID
 	remoteCaches    map[CacheID]*remoteCacheState
+	// joinedEntries, while an operation on holdings runs, collects the
+	// entries that class unions join to another class, by number
+	// (trackJoinsLocked). It is nil at every other time, so no class ID it
+	// could name outlives the hold. Guarded by egraphMu.
+	joinedEntries map[sharedResultID]struct{}
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
@@ -2333,6 +2348,16 @@ type Cache struct {
 	// structural ref's target can be collected out from under the
 	// publication.
 	testBeforePublicationIndex func(*ongoingCall)
+	// publication hook: a publication found its recipe's current entry still
+	// attaching and is about to wait for that attachment
+	// (initCompletedResult).
+	testPublicationWaitsOnAttachment func(*sharedResult)
+	// testMergeWaitsOnAttachment observes a merge waiting on a target whose
+	// dependency attachment is still open.
+	testMergeWaitsOnAttachment func(*sharedResult)
+	// testOfferBeforeDecision runs in offerPart between the capture of the
+	// offered row and the lock that decides the outcome.
+	testOfferBeforeDecision func(*sharedResult)
 	// snapshot sharing hooks: after a cohort is taken and its slots are
 	// planned but before the first preparation, and after the pass has
 	// finished every Finish and released every member hold.
@@ -2455,14 +2480,22 @@ type cacheUsageMayChange interface {
 type sharedResult struct {
 	inlineBorrow *PartHost
 	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
-	imported                    bool
-	partOffers                  map[string]*partOffer
+	imported bool
+	// storedParts are the parts whose layer chains are in this cache's own
+	// blob store, by part address key. Only a blob-backed cache (the Cloud)
+	// sets them. Guarded by egraphMu.
+	storedParts                 map[string]PersistedPartOffer
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.
 	offerParents map[offerOwnerID]struct{}
 	// id is the stable cache-local identity for this materialized result.
 	id sharedResultID
+	// replacements counts how many times this entry's value was replaced in
+	// place (D9); it names the value that reports of its parts and
+	// dependencies describe. Persisted and guarded by egraphMu. See
+	// cache_current_entry.go.
+	replacements uint64
 	// holders are what the cache knows about other engine caches' copies of
 	// this entry, by holding key. recipeKeys are the entriesByRecipe keys
 	// that name it. Both guarded by egraphMu.
@@ -3254,7 +3287,12 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		val: res,
 	}
 	if err := c.initCompletedResult(ctx, resolver, oc, req, sessionID); err != nil {
-		return nil, fmt.Errorf("attach dependency result: %w", err)
+		// An adoption whose losing value failed to release still holds the
+		// adopted entry: release that hold, as the claim error below does.
+		return nil, errors.Join(
+			fmt.Errorf("attach dependency result: %w", err),
+			c.releaseOngoingCallHandoff(ctx, oc),
+		)
 	}
 	if oc.res == nil {
 		return nil, fmt.Errorf("attach dependency result: completed without initialized result")
@@ -6439,6 +6477,83 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.testBeforePublicationIndex(oc)
 	}
 	c.egraphMu.Lock()
+	// One current entry per recipe (cache_current_entry.go). A fresh value is
+	// indexed under the recipe of its stored frame, unless that recipe
+	// already has a current entry: then it adopts a live one (D1), waits for
+	// one still attaching, replaces an expired one that nothing uses in place,
+	// or retires an expired one that something uses (D9). An entry known only
+	// through holdings has no value to adopt: the new value is stored into
+	// it, as merge stores a record.
+	var (
+		adoptedCurrent  bool
+		replacedInPlace bool
+		unindexed       bool
+		replaced        replacedValue
+		discardedValue  OnReleaseFunc
+		releaseQueue    collectionQueue
+		replaceErr      error
+	)
+	// The recipe is the stored frame's: the value's own frame, or, for a call
+	// answered with nothing, the request frame indexing stores on the row.
+	recipeDigest := responseDigest
+	if recipeDigest == "" {
+		recipeDigest = requestDigest
+	}
+	for !resWasCacheBacked {
+		// Each decision reads the clock under the lock that makes it: an
+		// entry can expire while this publication waits for the lock or for
+		// an attachment, and the new value's expiries count from the
+		// decision.
+		now = time.Now()
+		oc.persistedEdgeExpiresAtUnix = candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds)
+		cur := c.currentEntryForRecipeLocked(recipeDigest)
+		if cur == nil {
+			break
+		}
+		if !cur.noValueLocked() && !c.resultExpiredAtLocked(cur, now.Unix()) {
+			if cur.attachmentState() == resultAttachmentOpen {
+				cur.attachDepsMu.Lock()
+				waitCh := cur.attachDepsWaitCh
+				cur.attachDepsMu.Unlock()
+				c.egraphMu.Unlock()
+				if c.testPublicationWaitsOnAttachment != nil {
+					c.testPublicationWaitsOnAttachment(cur)
+				}
+				<-waitCh
+				c.egraphMu.Lock()
+				continue
+			}
+			// A late explicit dependency can raise the entry's requirements
+			// without changing its recipe. A session that does not cover
+			// them publishes its own value, not indexed, as it would without
+			// D1, and hits it from then on.
+			if !c.sessionSatisfiesResourceRequirementsLocked(sessionID, cur) {
+				unindexed = true
+				break
+			}
+			// The adopted entry's handoff hold is taken in this critical
+			// section, as the cache-backed adoption above does.
+			discardedValue = oc.res.onRelease
+			resultCallDeps = nil
+			oc.res = cur
+			c.incrementIncomingOwnershipLocked(ctx, oc.res)
+			oc.handoffHoldActive = true
+			if c.testAfterHandoffHoldAcquired != nil {
+				c.testAfterHandoffHoldAcquired(oc)
+			}
+			resWasCacheBacked = true
+			adoptedCurrent = true
+			break
+		}
+		if c.resultInUseLocked(cur) {
+			c.retireResultLocked(cur)
+			break
+		}
+		replaced, releaseQueue, replaceErr = c.replaceResultValueInPlaceLocked(ctx, cur, oc.res, oc.persistedEdgeExpiresAtUnix)
+		oc.res = cur
+		replacedInPlace = true
+		break
+	}
 	// A returned cache-backed result can already be visible to lookups.
 	// TTL merge policy for shared results:
 	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
@@ -6475,19 +6590,41 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if resWasCacheBacked {
 			c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 			c.egraphMu.Unlock()
+			if adoptedCurrent {
+				cause = errors.Join(cause, runOnReleaseFuncs(context.WithoutCancel(ctx), []OnReleaseFunc{discardedValue}))
+			}
 			return cause
 		}
 		cleanupCtx := context.WithoutCancel(ctx)
+		var replacedErr error
+		if replacedInPlace {
+			// A replaced entry is rolled back like a fresh one: its retention
+			// edge, which kept the old value, goes with it, and so does the
+			// ownership its old value's dependency edges held.
+			delete(c.persistedEdgesByResult, oc.res.id)
+			releaseQueue, replacedErr = c.releaseReplacedDependenciesLocked(cleanupCtx, replaced, releaseQueue)
+		}
 		releases, rollbackErr := c.rollbackPartialPublicationLocked(cleanupCtx, oc.res)
+		if replacedInPlace {
+			collectReleases, collectErr := c.collectUnownedResultsLocked(cleanupCtx, releaseQueue)
+			releases = append(append(releases, replaced.release), collectReleases...)
+			replacedErr = errors.Join(replacedErr, collectErr)
+		}
 		// Roll back first, then flush: queueing enumerates each class's
 		// current registered members, so the removed row cannot be retained
 		// and the surviving members stay valid.
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
-		return errors.Join(cause, rollbackErr, runOnReleaseFuncs(cleanupCtx, releases))
+		return errors.Join(cause, rollbackErr, replacedErr, runOnReleaseFuncs(cleanupCtx, releases))
+	}
+	if replaceErr != nil {
+		return failPartialPublication(replaceErr)
 	}
 	if indexErr != nil {
 		return failPartialPublication(indexErr)
+	}
+	if !resWasCacheBacked && !replacedInPlace && !unindexed {
+		c.indexRecipeLocked(recipeDigest, oc.res)
 	}
 	for _, dep := range resultCallDeps {
 		depID := dep.resultID
@@ -6519,6 +6656,20 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			c.testAfterHandoffHoldAcquired(oc)
 		}
 	}
+	var replacedReleases []OnReleaseFunc
+	if replacedInPlace {
+		// The new value's dependency edges and the handoff hold are in place:
+		// the old value's edges can go now without collecting a dependency
+		// both values share, or the entry itself.
+		var depErr, collectErr error
+		releaseQueue, depErr = c.releaseReplacedDependenciesLocked(ctx, replaced, releaseQueue)
+		replacedReleases, collectErr = c.collectUnownedResultsLocked(context.WithoutCancel(ctx), releaseQueue)
+		if err := errors.Join(depErr, collectErr); err != nil {
+			c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
+			c.egraphMu.Unlock()
+			return errors.Join(err, runOnReleaseFuncs(context.WithoutCancel(ctx), replacedReleases))
+		}
+	}
 	if !resWasCacheBacked {
 		oc.res.attachDepsMu.Lock()
 		oc.res.attachDepsWaitCh = make(chan struct{})
@@ -6535,28 +6686,74 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	c.egraphMu.Unlock()
 	c.releaseShareDuplicateHolds(ctx, shareDuplicates)
 
+	// failAttachment rolls back a publication whose value failed to attach
+	// or sync after the critical section, and drops its handoff hold. An
+	// entry this publication registered or replaced leaves the recipe index,
+	// and a replaced one also loses the retention edge that kept its old
+	// value; either is collected unless a reader that hit it while its
+	// attachment was open still holds it. The barrier latches the error,
+	// classified when the publishing session's own release refused an
+	// attachment-time claim.
+	failAttachment := func(err error, refusedByRelease bool) error {
+		cleanupCtx := context.WithoutCancel(ctx)
+		c.egraphMu.Lock()
+		if !resWasCacheBacked {
+			c.unindexRecipesLocked(oc.res)
+		}
+		var (
+			queue  []*sharedResult
+			decErr error
+		)
+		if replacedInPlace {
+			if _, retained := c.persistedEdgesByResult[oc.res.id]; retained {
+				delete(c.persistedEdgesByResult, oc.res.id)
+				queue, decErr = c.decrementIncomingOwnershipLocked(ctx, oc.res, queue)
+			}
+		}
+		queue, holdErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, queue)
+		collectReleases, collectErr := c.collectUnownedResultsLocked(cleanupCtx, queue)
+		c.egraphMu.Unlock()
+		oc.handoffHoldActive = false
+		attachErr := errors.Join(err, decErr, holdErr, collectErr, runOnReleaseFuncs(cleanupCtx, collectReleases))
+		barrierErr := attachErr
+		if refusedByRelease {
+			barrierErr = fmt.Errorf("%w: %w", errAttachRefusedByProducerRelease, attachErr)
+		}
+		finishAttachDeps(barrierErr)
+		return attachErr
+	}
+
+	if adoptedCurrent {
+		// The recipe's live entry was adopted: the new value is not
+		// published, so it is released through its normal release path.
+		if objVal, ok := oc.val.(AnyObjectResult); ok {
+			oc.res.setObjClass(objVal.ObjectType())
+		}
+		if err := runOnReleaseFuncs(context.WithoutCancel(ctx), []OnReleaseFunc{discardedValue}); err != nil {
+			return err
+		}
+	}
+	if replacedInPlace {
+		err := errors.Join(
+			runOnReleaseFuncs(context.WithoutCancel(ctx), replacedReleases),
+			c.finishValueReplacement(context.WithoutCancel(ctx), oc.res, replaced.release),
+		)
+		if err != nil {
+			return failAttachment(err, false)
+		}
+	}
+
 	// Adoption reuses the existing dependency graph. Reattaching would mutate
 	// an object that other calls may already be reading.
 	if !resWasCacheBacked {
 		if err := c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
-			c.egraphMu.Lock()
-			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-			c.egraphMu.Unlock()
-			oc.handoffHoldActive = false
-			attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
 			// Attachment runs under the publishing session, so a session-release
 			// refusal in the hook's own error chain can only be that session's
 			// release. Latch the classified form on the barrier for parked
 			// readers; the classification reads the hook error alone, so the
 			// joined cleanup errors cannot reclassify a genuine failure. The
 			// publishing invocation keeps the unclassified attachment error.
-			barrierErr := attachErr
-			if errors.Is(err, ErrCacheSessionReleased) {
-				barrierErr = fmt.Errorf("%w: %w", errAttachRefusedByProducerRelease, attachErr)
-			}
-			finishAttachDeps(barrierErr)
-			return attachErr
+			return failAttachment(err, errors.Is(err, ErrCacheSessionReleased))
 		}
 	}
 	if err := func() error {
@@ -6567,22 +6764,21 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 		return c.syncResultSnapshotLeases(ctx, oc.res)
 	}(); err != nil {
-		c.egraphMu.Lock()
-		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
-		oc.handoffHoldActive = false
-		attachErr := errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
-		finishAttachDeps(attachErr)
-		return attachErr
+		return failAttachment(err, false)
 	}
-	c.registerLazyEvaluation(oc.res, oc.val, resolver)
+	if !adoptedCurrent {
+		// An adopted entry already carries its own value's registration.
+		c.registerLazyEvaluation(oc.res, oc.val, resolver)
+	}
 	finishAttachDeps(nil)
 	// Eager completion: attachment, lease synchronization and lazy
 	// registration have all succeeded, and the publication handoff hold still
 	// protects the row. An attachment or sync failure above returns before
-	// this point and produces no completion notification.
-	c.notifySnapshotShareCompletion(ctx, oc.res)
+	// this point and produces no completion notification. An adopted entry
+	// was announced when it was published.
+	if !adoptedCurrent {
+		c.notifySnapshotShareCompletion(ctx, oc.res)
+	}
 
 	return nil
 }

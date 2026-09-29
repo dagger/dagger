@@ -2,7 +2,7 @@
 
 ## Data transferred
 
-Describe selected live result rows using their existing persisted value representation, declared types, call frames, dependency references, safe transferable extra digests and snapshot-chain descriptions. Pending unevaluated rows carry their original inputs and no completed snapshot. Assign bundle-local ordinals; process-local result IDs and equivalence-class numbers are not portable identities.
+Describe selected live result rows using their existing persisted value representation, declared types, call frames with their extra digests, dependency references and snapshot-chain descriptions. Pending unevaluated rows carry their original inputs and no completed snapshot. Assign bundle-local ordinals; process-local result IDs and equivalence-class numbers are not portable identities.
 
 Use the declared-reference visitor to translate object payloads and call references. Opaque user JSON remains opaque.
 
@@ -14,7 +14,7 @@ The existing `Cache.Close` waits for quiescence before `persistCurrentState`; `s
 
 Hold rows and snapshots only for the actual capture and requested chain export. Encoding and chain export run outside the graph lock. Capture the extras known at that point; learning another extra later does not require changing the already captured bundle.
 
-Use the existing extra-digest label `remote-cache` to declare which extras may travel ahead of bytes. The pinned Container.from identity carries this label alongside its unchanged content label. Export includes marked extras and normal recipe identities; ordinary local equivalence and teaching still use every digest. Unmarked extras are omitted from remote metadata. No protobuf or local cache format change is needed for the label.
+Every extra digest transfers. Export includes each call frame's extra digests, and those of recipe IDs inside payloads, with their labels, and merge accepts them. An extra digest claims equivalence, which means the same on every engine of an organization as between sessions of one engine. Ordinary local equivalence and teaching are unchanged.
 
 Use the existing snapshot-chain export API. Export only chains requested by the caller; no extra retention while waiting for a service decision.
 

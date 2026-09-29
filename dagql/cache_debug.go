@@ -74,6 +74,8 @@ type EGraphDebugResult struct {
 	HasPersistedEdge           bool                       `json:"has_persisted_edge"`
 	PersistedEdgeUnpruneable   bool                       `json:"persisted_edge_unpruneable"`
 	PersistedEdgeExpiresAtUnix int64                      `json:"persisted_edge_expires_at_unix,omitempty"`
+	Replacements               uint64                     `json:"replacements,omitempty"`
+	Indexed                    bool                       `json:"indexed,omitempty"`
 	ExplicitDeps               []uint64                   `json:"explicit_dep_ids,omitempty"`
 	HeldDependencyResults      int                        `json:"held_dependency_results_count"`
 	SnapshotLinks              []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
@@ -1040,6 +1042,8 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			HasPersistedEdge:           c.persistedEdgesByResult[res.id].resultID != 0,
 			PersistedEdgeUnpruneable:   c.persistedEdgesByResult[res.id].unpruneable,
 			PersistedEdgeExpiresAtUnix: c.persistedEdgesByResult[res.id].expiresAtUnix,
+			Replacements:               res.replacements,
+			Indexed:                    len(res.recipeKeys) > 0,
 			ExplicitDeps:               depIDs,
 			HeldDependencyResults:      len(res.deps),
 			SnapshotLinks:              links,
@@ -1389,6 +1393,8 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					HasPersistedEdge:           c.persistedEdgesByResult[res.id].resultID != 0,
 					PersistedEdgeUnpruneable:   c.persistedEdgesByResult[res.id].unpruneable,
 					PersistedEdgeExpiresAtUnix: c.persistedEdgesByResult[res.id].expiresAtUnix,
+					Replacements:               res.replacements,
+					Indexed:                    len(res.recipeKeys) > 0,
 					ExplicitDeps:               depIDs,
 					HeldDependencyResults:      len(res.deps),
 					SnapshotLinks:              links,

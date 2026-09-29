@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -567,6 +568,46 @@ func (d *PartDemandState) exhaust(source *PartSourceLease, err error) {
 	d.revision++
 }
 
+// logOfferInstall records a part installed from an offer: the entry, the part,
+// the bytes downloaded for it and the time from the start of the import to
+// the install, over which the download and the layers' application
+// interleave. A layer the import reused or already had is not downloaded.
+func logOfferInstall(ctx context.Context, receiver AnyResult, source *PartSourceLease, downloaded int64, duration time.Duration) {
+	slog.InfoContext(ctx, "remote cache part installed",
+		"entry", uint64(receiver.cacheSharedResult().id),
+		"output", source.target.OutputPath.String(),
+		"part", string(source.target.Part),
+		"bytes", downloaded,
+		"duration", duration,
+		"source", "offer")
+}
+
+// countingProvider counts the bytes read through a provider. An import reads
+// a blob only when it has neither the snapshot nor the blob already.
+type countingProvider struct {
+	content.InfoReaderProvider
+	read atomic.Int64
+}
+
+func (p *countingProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	ra, err := p.InfoReaderProvider.ReaderAt(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	return countingReaderAt{ReaderAt: ra, read: &p.read}, nil
+}
+
+type countingReaderAt struct {
+	content.ReaderAt
+	read *atomic.Int64
+}
+
+func (r countingReaderAt) ReadAt(b []byte, off int64) (int, error) {
+	n, err := r.ReaderAt.ReadAt(b, off)
+	r.read.Add(int64(n))
+	return n, err
+}
+
 type partContentFailure struct {
 	source        uint64
 	address       PersistedPartAddress
@@ -585,6 +626,7 @@ func (d *PartDemandState) causes() error {
 }
 func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source *PartSourceLease, permit *PartPermit, demand *PartDemandState) (rerr error) {
 	defer func() { rerr = errors.Join(rerr, source.Release(ctx)); permit.Release() }()
+	start := time.Now()
 	// The content-source boundary: refuse before the offer clone and before
 	// the fixture's provider-read counter, so the sentinel precedes any
 	// observable read.
@@ -602,7 +644,8 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	if c.partFixture.Load() != nil {
 		provider = partFixtureProvider{InfoReaderProvider: provider, cache: c, row: receiver.cacheSharedResult(), address: source.target}
 	}
-	imported, err := c.snapshotManager.ImportChain(ctx, &snapshots.ExportChain{Layers: copied[0].Chain.Layers, Provider: provider})
+	downloaded := &countingProvider{InfoReaderProvider: provider}
+	imported, err := c.snapshotManager.ImportChain(ctx, &snapshots.ExportChain{Layers: copied[0].Chain.Layers, Provider: downloaded})
 	if err != nil {
 		if cause := context.Cause(ctx); cause != nil {
 			return cause
@@ -641,6 +684,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 			receipt, outcome, commitErr := c.CommitReadyPart(ctx, prepared)
 			err = commitErr
 			if outcome == PartInstalled {
+				logOfferInstall(ctx, receiver, source, downloaded.read.Load(), time.Since(start))
 				return errors.Join(err, c.finishReadyPartInline(ctx, receipt))
 			}
 			if outcome == PartInstallRefused && err == nil {

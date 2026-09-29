@@ -9,16 +9,13 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+// transferExtras is the extra digests a frame carries to another cache: all
+// of them. An extra digest claims equivalence, and that claim means the same
+// on every engine of an organization, as between sessions of one engine.
 func transferExtras(extras []call.ExtraDigest) []call.ExtraDigest {
-	marked := map[digest.Digest]bool{}
-	for _, extra := range extras {
-		if extra.Label == call.ExtraDigestLabelRemoteCache {
-			marked[extra.Digest] = true
-		}
-	}
 	var kept []call.ExtraDigest
 	for _, extra := range extras {
-		if extra.Digest != "" && marked[extra.Digest] && (extra.Label == call.ExtraDigestLabelRemoteCache || extra.Label == call.ExtraDigestLabelContent) {
+		if extra.Digest != "" {
 			kept = append(kept, extra)
 		}
 	}
@@ -194,14 +191,6 @@ func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
 	if len(rec.SnapshotLinks) != 0 {
 		return fmt.Errorf("bundle contains local storage links")
 	}
-	if err := walkTransferCalls(rec.Call, func(frame *ResultCall) error {
-		if !slices.Equal(frame.ExtraDigests, transferExtras(frame.ExtraDigests)) {
-			return fmt.Errorf("unmarked frame extra digest")
-		}
-		return nil
-	}, nil); err != nil {
-		return err
-	}
 	if err := walkTransferPayloads(&rec.Envelope, rec.Call, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer != nil {
 			if err := family.Transfer.ValidateForeign(v); err != nil {
@@ -228,21 +217,6 @@ func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
 	rec.Envelope.PendingOffers = nil
 	_, err := VisitEncodedReferences(rec, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
-			copy, err := ref.RecipeID.FilterTransferDigests()
-			if err != nil {
-				return err
-			}
-			before, err := ref.RecipeID.Encode()
-			if err != nil {
-				return err
-			}
-			after, err := copy.Encode()
-			if err != nil {
-				return err
-			}
-			if before != after {
-				return fmt.Errorf("unmarked recipe ID extras at %s", ref.Path)
-			}
 			return nil
 		}
 		if (ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall) && !direct[ref.ResultID] {

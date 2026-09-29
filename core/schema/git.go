@@ -1782,7 +1782,7 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 			dgstInputs = append(dgstInputs, "authHeader", string(remoteRepo.AuthHeader.Self().Handle))
 		}
 	}
-	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...), call.ExtraDigestLabelRemoteCache)
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
 	if err != nil {
 		return inst, err
 	}
@@ -2213,7 +2213,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if lazy, ok := inst.Self().Lazy.(*core.DirectoryGitTreeLazy); ok {
 			lazy.ContentDigest = dgst
 		} else {
-			inst, err = inst.WithContentDigest(ctx, dgst, call.ExtraDigestLabelRemoteCache)
+			inst, err = inst.WithContentDigest(ctx, dgst)
 			if err != nil {
 				return inst, err
 			}
@@ -2294,7 +2294,7 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 			dgstInputs = append(dgstInputs, "authHeader", string(remoteRepo.AuthHeader.Self().Handle))
 		}
 	}
-	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...), call.ExtraDigestLabelRemoteCache)
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
 	if err != nil {
 		return inst, err
 	}

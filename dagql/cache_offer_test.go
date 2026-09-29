@@ -23,14 +23,14 @@ func TestOfferPartsBeforeStart(t *testing.T) {
 			row := r.cacheSharedResult()
 			gate := row.partGate.loadOrCreate()
 			gate.groups[lazyGroupAddressKey(LazyGroupAddress{Group: "exec"})] = &partLazyEvaluationState{phase: phase, writeSet: []PersistedPartAddress{{Part: "snapshot"}}}
-			out, err := c.OfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
+			out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
 			require.NoError(t, err)
 			if phase == LazyEvaluationRunning || phase == LazyEvaluationEvaluated {
 				require.Equal(t, OfferExecutionStarted, out[0].Outcome)
-				require.Empty(t, row.partOffers)
+				require.Empty(t, row.testPartOffers())
 			} else {
 				require.Equal(t, OfferAccepted, out[0].Outcome)
-				require.Len(t, row.partOffers, 1)
+				require.Len(t, row.testPartOffers(), 1)
 			}
 		})
 	}
@@ -42,7 +42,7 @@ func TestOfferPartsBeforeStart(t *testing.T) {
 			group = LazyGroupWhole
 		}
 		r.cacheSharedResult().partGate.loadOrCreate().groups[lazyGroupAddressKey(LazyGroupAddress{Group: group})] = &partLazyEvaluationState{phase: LazyEvaluationRunning, writeSet: []PersistedPartAddress{{Part: "other"}}}
-		out, err := c.OfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
+		out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
 		require.NoError(t, err)
 		if whole {
 			require.Equal(t, OfferExecutionStarted, out[0].Outcome)
@@ -64,7 +64,7 @@ func TestOfferPartsInvalidatesSourceCheck(t *testing.T) {
 		scan, err := c.CheckPartSources(ctx, r, address, drain, &PartDemandState{})
 		require.NoError(t, err)
 		require.NotNil(t, scan.NoSource)
-		out, err := c.OfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
+		out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
 		require.NoError(t, err)
 		require.Equal(t, OfferAccepted, out[0].Outcome)
 		_, outcome, err = c.BeginOriginal(ctx, scan.NoSource)
@@ -85,36 +85,36 @@ func TestOfferPartsOwnership(t *testing.T) {
 	blob := digest.FromString("content")
 	offer.Chain.Layers = []snapshots.ExportLayer{{Descriptor: ocispec.Descriptor{Digest: blob, Size: 7, MediaType: "application/octet-stream"}}}
 	base := dep.cacheSharedResult().incomingOwnershipCount
-	out, err := c.OfferParts(ctx, r, []PersistedPartOffer{offer})
+	out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	key, _ := partAddressKey(offer.Address)
-	owner := row.partOffers[key].owner
+	owner := row.testPartOffers()[key].owner
 	require.Equal(t, int64(1), owner.holds)
 	require.Equal(t, base+1, dep.cacheSharedResult().incomingOwnershipCount)
 	rev := row.transferRevision
-	out, err = c.OfferParts(ctx, r, []PersistedPartOffer{offer})
+	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, rev, out[0].OfferRev)
 	offer.Value.Services[0].Aliases[0] = "caller mutation"
-	require.Equal(t, "a", row.partOffers[key].record.Value.Services[0].Aliases[0])
+	require.Equal(t, "a", row.testPartOffers()[key].record.Value.Services[0].Aliases[0])
 	offer.Value.Services[0].Aliases[0] = "a"
 	// An address refresh preserves the exact same owner.
 	offer.Chain.Addresses = map[digest.Digest]BlobAddress{blob: {URL: "https://example.invalid/blob"}}
-	out, err = c.OfferParts(ctx, r, []PersistedPartOffer{offer})
+	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.True(t, out[0].Replaced)
-	require.Same(t, owner, row.partOffers[key].owner)
+	require.Same(t, owner, row.testPartOffers()[key].owner)
 	require.Equal(t, int64(1), owner.holds)
 	require.Equal(t, base+1, dep.cacheSharedResult().incomingOwnershipCount)
 	bad := testLiveOffer()
 	bad.Owner.DependencyIDs = []uint64{uint64(row.id)}
-	out, err = c.OfferParts(ctx, r, []PersistedPartOffer{offer, bad})
+	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer, bad})
 	require.ErrorContains(t, err, "cycle")
 	require.Len(t, out, 2)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	require.Equal(t, OfferInvalid, out[1].Outcome)
-	require.Same(t, owner, row.partOffers[key].owner)
+	require.Same(t, owner, row.testPartOffers()[key].owner)
 }
 
 func TestOfferPartsResourcesAndSettlement(t *testing.T) {
@@ -128,7 +128,7 @@ func TestOfferPartsResourcesAndSettlement(t *testing.T) {
 	require.NoError(t, err)
 	offer := testLiveOffer()
 	offer.Owner.DependencyIDs = []uint64{uint64(dep.cacheSharedResult().id)}
-	out, err := c.OfferParts(ctx, r, []PersistedPartOffer{offer})
+	out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	require.Empty(t, r.cacheSharedResult().requiredSessionResources)
@@ -144,7 +144,7 @@ func TestOfferPartsResourcesAndSettlement(t *testing.T) {
 	old := source.offerOwner
 	replacement := testLiveOffer()
 	replacement.Value.Path = "/replacement"
-	out, err = c.OfferParts(ctx, r, []PersistedPartOffer{replacement})
+	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{replacement})
 	require.NoError(t, err)
 	require.True(t, out[0].Replaced)
 	require.Equal(t, int64(1), old.holds)
@@ -153,18 +153,18 @@ func TestOfferPartsResourcesAndSettlement(t *testing.T) {
 	key, _ := partAddressKey(offer.Address)
 	token := &PartTaskToken{row: row, generation: 1}
 	gate.outputs[key] = partOutputState{phase: PartOutputInstalled, task: token, installation: 1}
-	out, err = c.OfferParts(ctx, r, []PersistedPartOffer{offer})
+	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAlreadyComplete, out[0].Outcome)
 	require.NoError(t, c.settlePart(ctx, row, offer.Address, token, 1))
 	require.NoError(t, c.settlePart(ctx, row, offer.Address, token, 1))
-	require.Empty(t, row.partOffers)
+	require.Empty(t, row.testPartOffers())
 	require.Equal(t, int64(1), old.holds)
 	require.NoError(t, source.Release(ctx))
 	require.Empty(t, c.offerOwners)
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	out, err = c.OfferParts(canceled, r, []PersistedPartOffer{offer, offer})
+	out, err = c.testOfferParts(canceled, r, []PersistedPartOffer{offer, offer})
 	require.ErrorIs(t, err, context.Canceled)
 	require.Len(t, out, 2)
 	for _, d := range out {
@@ -193,7 +193,7 @@ func TestOfferPartsInlineAndReferencedRows(t *testing.T) {
 		}
 		offer := testLiveOffer()
 		offer.Address.OutputPath = PersistedRefPath{}.Field("items").Index(0)
-		out, err := c.OfferParts(ctx, list, []PersistedPartOffer{offer})
+		out, err := c.testOfferParts(ctx, list, []PersistedPartOffer{offer})
 		require.NoError(t, err)
 		require.Equal(t, OfferAccepted, out[0].Outcome)
 		require.Equal(t, offer.Address, out[0].Address)
@@ -204,7 +204,7 @@ func TestOfferPartsInlineAndReferencedRows(t *testing.T) {
 		}
 		key, err := partAddressKey(offer.Address)
 		require.NoError(t, err)
-		require.Contains(t, row.partOffers, key)
+		require.Contains(t, row.testPartOffers(), key)
 	}
 }
 
@@ -212,7 +212,7 @@ func TestOfferPartsClosesNativeAdmission(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	r := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
 	require.NoError(t, c.RunLazyTask(ctx, r, "lazy:late-native", LazyTaskSpec{Body: func(ctx context.Context) error {
-		out, err := c.OfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
+		out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
 		require.NoError(t, err)
 		require.Equal(t, OfferAccepted, out[0].Outcome)
 		err = c.partHostFor(r.cacheSharedResult()).RunNative(ctx, LazyGroupWhole, []PartKey{"snapshot"}, func(context.Context) error { t.Fatal("body entered after offer acceptance"); return nil })
@@ -229,7 +229,7 @@ func TestOfferPartsAcceptedCleanupFailure(t *testing.T) {
 	dep := persistedListTestResult(t, ctx, c, srv, "dep", &transferTestValue{Text: "dep", release: func(context.Context) error { releases++; return failure }})
 	offer := testLiveOffer()
 	offer.Owner.DependencyIDs = []uint64{uint64(dep.cacheSharedResult().id)}
-	out, err := c.OfferParts(ctx, r, []PersistedPartOffer{offer})
+	out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
@@ -237,7 +237,7 @@ func TestOfferPartsAcceptedCleanupFailure(t *testing.T) {
 	require.NoError(t, err)
 	replacement := testLiveOffer()
 	replacement.Value.Path = "/next"
-	out, err = c.OfferParts(ctx, r, []PersistedPartOffer{replacement})
+	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{replacement})
 	require.ErrorIs(t, err, failure)
 	require.ErrorIs(t, out[0].Err, failure)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
@@ -245,6 +245,6 @@ func TestOfferPartsAcceptedCleanupFailure(t *testing.T) {
 	require.Equal(t, 1, releases)
 	require.Len(t, c.offerOwners, 1)
 	key, _ := partAddressKey(offer.Address)
-	require.Equal(t, "/next", r.cacheSharedResult().partOffers[key].record.Value.Path)
-	require.Equal(t, int64(1), r.cacheSharedResult().partOffers[key].owner.holds)
+	require.Equal(t, "/next", r.cacheSharedResult().testPartOffers()[key].record.Value.Path)
+	require.Equal(t, int64(1), r.cacheSharedResult().testPartOffers()[key].owner.holds)
 }

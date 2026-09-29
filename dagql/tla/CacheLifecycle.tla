@@ -16,6 +16,10 @@
 (*   - persisted decode, import, flush, restart (ModelPersistence)         *)
 (*   - calls issued from inside a call executor, which the server's drain  *)
 (*     neither counts nor rejects (ModelNestedCalls)                       *)
+(*   - one current entry per recipe: publication adopts the recipe's live  *)
+(*     entry (D1); an expired entry is replaced in place when nothing      *)
+(*     uses it, and retired otherwise (D9, AllowExpire); a live merge of   *)
+(*     a bundle targets the recipe's current entry (ModelMerge)            *)
 (*   - per-session operation accounting: admission against the release     *)
 (*     tombstone, late refusal at the return boundary, deferred release    *)
 (*     cleanup by the last exiting operation, lazy callback attempt        *)
@@ -55,10 +59,14 @@
 (*     and                                                                 *)
 (*     ReturnedHitSatisfied encode intent - see the PROPERTIES header      *)
 (*     for their contract provenance.                                      *)
+(*   - Expiry is one flag per entry that Expire sets (AllowExpire): time   *)
+(*     passing, with no clock. An expired entry is never a lookup          *)
+(*     candidate; which entry is a call's current one ignores expiry.      *)
+(*     The model's call identity stands for the recipe digest.             *)
 (*   - Not yet modeled, each for a stated reason and none forbidden:       *)
-(*     TTL/expiry and DoNotCache (candidate-selection refinements folded   *)
-(*     into the lookup-miss over-approximation above; model them when an   *)
-(*     effort changes their behavior); the arbitrary-value cache           *)
+(*     DoNotCache (a candidate-selection refinement folded into the        *)
+(*     lookup-miss over-approximation above; model it when an effort       *)
+(*     changes its behavior); the arbitrary-value cache                    *)
 (*     (acquireSessionArbitraryLocked - the same atomic                    *)
 (*     record-and-count claim as the modeled result claim, under callsMu   *)
 (*     with sessionMu nested; it follows the same operation-accounting     *)
@@ -140,6 +148,11 @@ CONSTANTS
                         \* load-bearing for safety in both cases.
     AllowPruneCut,      \* enable the PruneCut action; off in configs that
                         \* isolate a question from prune races
+    AllowExpire,        \* enable Expire: an entry's value passes its TTL.
+                        \* Off: nothing expires, and the replacement and
+                        \* retirement actions are never enabled.
+    ModelMerge,         \* enable MergeLive: a bundle merged into the live
+                        \* cache outside any session (Cache.MergeValues)
 
     \* --- scenario scoping (run budget) -----------------------------------
     \* These narrow which external events a configuration explores, in the
@@ -255,6 +268,8 @@ ASSUME /\ DOMAIN ClassOf = Calls
        /\ Calls # {}
        /\ ReleaseSessions \subseteq Sessions
        /\ PersistableIntent \in BOOLEAN
+       /\ AllowExpire \in BOOLEAN
+       /\ ModelMerge \in BOOLEAN
 
 \* Part/group table sanity: every part maps to a group of the run, and the
 \* prerequisite relation stays inside the group set. GroupNeeds must be
@@ -585,9 +600,68 @@ LiveInClass(k) ==
 
 \* Lookup and canonical selection exclude an entry after dependency
 \* attachment closes with an error. An open barrier remains eligible because
-\* a reader may wait for its eventual outcome.
+\* a reader may wait for its eventual outcome. An expired entry is never a
+\* candidate (appendDigestResultsLocked, cache_egraph.go:628-633).
 LookupEligibleInClass(k) ==
-    {r \in LiveInClass(k) : res[r].barrier # "closedErr"}
+    {r \in LiveInClass(k) : res[r].barrier # "closedErr" /\ ~res[r].expired}
+
+(***************************************************************************)
+(* ONE CURRENT ENTRY PER RECIPE (D1, D9).                                  *)
+(*                                                                         *)
+(* The recipe index (Cache.entriesByRecipe) names each call's current      *)
+(* entry: a registered entry of the call that the index names (indexed)    *)
+(* and whose attachment has not failed. A failed publication               *)
+(* leaves the index in the critical section that drops its handoff hold    *)
+(* (PubAttachFailDropHold), before its barrier closes, so an entry whose   *)
+(* publication is closing on an error is not current either. Which entry  *)
+(* is current ignores expiry: an expired current entry is replaced or     *)
+(* retired when a new value of its call arrives.                          *)
+(***************************************************************************)
+FailingPublication(r) ==
+    \E o \in OngoingCallIds :
+        /\ ongoingCalls[o].resId = r
+        /\ ongoingCalls[o].pubState = "attachFailClosing"
+
+CurrentIn(rf, c) ==
+    {r \in DOMAIN rf :
+        /\ rf[r].registered
+        /\ rf[r].call = c
+        /\ rf[r].indexed
+        /\ rf[r].barrier # "closedErr"
+        /\ ~FailingPublication(r)}
+
+Current(c) == CurrentIn(res, c)
+
+\* "Nothing uses" an entry (D9, as refined for the implementation): no
+\* session records it, no other entry depends on it (decoded or not), and
+\* no task holds it. The task holds are the handoff hold of a publication,
+\* any lazy attempt, sweep or callback token on the entry, a running
+\* persisted decode, and any evaluator still demanding one of its parts.
+\* NoReplaceUnderUser judges replacements against this definition.
+InUse(r) ==
+    \/ \E s \in Sessions : <<s, r>> \in sessionEdges
+    \/ \E p \in ResultIds : res[p].registered /\ r \in res[p].deps
+    \/ HoldCount(r) > 0
+    \/ \E g \in LazyGroups :
+         \/ res[r].lazyPhase[g] # "idle"
+         \/ res[r].lazyWaiters[g] > 0
+         \/ res[r].lazyRunning[g] > 0
+         \/ res[r].lazyTokenSession[g] # 0
+         \/ res[r].lazySweepOwner[g] # "none"
+    \/ res[r].decodePhase = "running"
+    \/ \E e \in EvalIds :
+         /\ evals[e].target = r
+         /\ evals[e].phase \notin EvalTerminalPhases
+
+\* What publication and merge actually check, under egraphMu
+\* (resultInUseLocked): the entry is owned by more than its retention edge,
+\* or a session still records it. Every other use holds an ownership unit:
+\* a dependent's edge, a handoff hold, or the session of the caller whose
+\* lazy attempt, decode or evaluation works on the entry. NoReplaceUnderUser
+\* checks that this is enough.
+UsedByOwnership(r) ==
+    \/ \E s \in Sessions : <<s, r>> \in sessionEdges
+    \/ res[r].own # PersistedCount(r)
 
 \* r is pinned for session s: s claimed r directly (a counted session
 \* edge), or r is reachable through the dependency edges of a result s
@@ -678,6 +752,8 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, dirtyAtSnapshotFla
      decodeGen |-> 0, persistSyncPending |-> FALSE,
      dirtyAtSnapshot |-> dirtyAtSnapshotFlag,
      imported |-> TRUE,
+     \* D1/D9 state; restored rows override it (WithIndexState)
+     expired |-> FALSE, indexed |-> TRUE, replacements |-> 0,
      \* session-resource validation: handle mirrors sessionResourceHandle set by
      \* the import row (env.SessionResourceHandle), required is the STORED set
      \* from the import's dependency-first recompute.
@@ -712,6 +788,7 @@ DeadHusk ==
      decodeGen |-> 0, persistSyncPending |-> FALSE,
      dirtyAtSnapshot |-> FALSE,
      imported |-> TRUE,
+     expired |-> FALSE, indexed |-> FALSE, replacements |-> 0,
      handle |-> "none", required |-> {},
      savedParts |-> {}, partComputed |-> {}, absentParts |-> {},
      openDemand |-> {}, badCompute |-> FALSE, badOpen |-> FALSE, badReopen |-> FALSE,
@@ -729,17 +806,26 @@ DeadHusk ==
      lazyRunning |-> [g \in LazyGroups |-> 0],
      lazyTokenSession |-> [g \in LazyGroups |-> 0]]
 
+\* A restored row keeps its expiry, whether the recipe index named it, and
+\* its replacement count (results.expires_at_unix, indexed, replacements).
+WithIndexState(rec, expiredVal, indexedVal, replacementsVal) ==
+    [rec EXCEPT !.expired = expiredVal, !.indexed = indexedVal,
+                !.replacements = replacementsVal]
+
 \* The candidate import rows for position pos: any call, persisted or not,
 \* at most one dependency and only on an earlier row, payload decoded or
 \* still an envelope, and an own handle drawn from Handles or none. The own
-\* handle mirrors the row's env.SessionResourceHandle.
+\* handle mirrors the row's env.SessionResourceHandle. A row's indexed
+\* choice applies under AllowExpire only (ImportIndexed).
 ImportRowChoices(pos) ==
     [call : Calls, persisted : BOOLEAN,
      deps : {{}} \cup {{d} : d \in 1..(pos-1)},
      payload : {"decoded", "envelope"},
      handle : {"none"} \cup Handles,
      saved : IF ModelContainerPartPersistence THEN LegalSavedParts ELSE {{}},
-     absent : IF ModelContainerPartPersistence THEN SUBSET (LazyParts \cap {"pFS", "pXMeta"}) ELSE {{}}]
+     absent : IF ModelContainerPartPersistence THEN SUBSET (LazyParts \cap {"pFS", "pXMeta"}) ELSE {{}},
+     expired : IF AllowExpire THEN BOOLEAN ELSE {FALSE},
+     indexed : IF AllowExpire THEN BOOLEAN ELSE {TRUE}]
 
 \* Focus the two-result opening/sweep question on a completed parent and
 \* a child with one saved sibling and one pending copy. The empty initial
@@ -750,7 +836,30 @@ ContainerSweepImportRows(pos) ==
      deps : IF pos = 1 THEN {{}} ELSE {{1}},
      payload : {"decoded"}, handle : {"none"},
      saved : IF pos = 1 THEN {LazyParts} ELSE {{"pMeta", "pXMeta"}},
-     absent : {{}}]
+     absent : {{}}, expired : {FALSE}, indexed : {TRUE}]
+
+\* Focus the retirement-across-restart question on one dependency entry,
+\* unretained and possibly expired, and a retained dependent of another
+\* call that depends on it. Payloads are decoded: whether an encoded
+\* dependent counts as a use is recipe_expiry_deps's question. This scopes
+\* input rows, not transitions: expiry, retirement, publication, flush and
+\* restart all happen in the run.
+DependentImportRows(pos) ==
+    [call : Calls, persisted : {pos = 2},
+     deps : IF pos = 1 THEN {{}} ELSE {{1}},
+     payload : {"decoded"}, handle : {"none"},
+     saved : {{}}, absent : {{}},
+     expired : IF pos = 1 THEN BOOLEAN ELSE {FALSE}, indexed : {TRUE}]
+
+\* Focus the filter question on one restored current entry that carries a
+\* session-resource handle: a session that has not bound it cannot adopt
+\* the entry, and registers its own value beside it, not indexed. One row
+\* only; publication, flush and restart happen in the run.
+RequirementImportRows(pos) ==
+    IF pos # 1 THEN {}
+    ELSE [call : Calls, persisted : {TRUE}, deps : {{}},
+          payload : {"decoded"}, handle : Handles,
+          saved : {{}}, absent : {{}}, expired : {FALSE}, indexed : {TRUE}]
 
 \* Own-handle contribution of a row: {handle} unless the row has none.
 OwnHandleReq(h) == IF h = "none" THEN {} ELSE {h}
@@ -768,6 +877,19 @@ ImportRequiredFinal(D, handleOf, depsOf) ==
                       \cup UNION {reqOf(d) : d \in depsOf[x]}
     IN [x \in D |-> reqOf(x)]
 
+\* Whether row x of a saved store is its call's current (indexed) entry. A
+\* D1 engine saves one indexed entry per recipe and any number of unindexed
+\* ones: dependencies, entries the session filter kept out of the index, and
+\* retired entries. Under AllowExpire the row sets choose the flag. Without
+\* it, each call's first row is indexed and its later rows are not: exactly
+\* the import space of the model before the recipe index, with no index
+\* dimension added. That leaves out stores whose current entry is a later
+\* row of its call, or that have none; the recipe_* configurations' focused
+\* rows and recipe_expiry_deps cover those.
+ImportIndexed(g, x) ==
+    IF AllowExpire THEN g[x].indexed
+    ELSE \A y \in 1..(x-1) : g[y].call # g[x].call
+
 \* Every row must be retained: a persisted root, or a dependency of some
 \* row. (A flushed store contains only the retained graph.)
 ImportGraphRetained(g) ==
@@ -778,6 +900,10 @@ ImportGraphRetained(g) ==
                    p \in g[x].saved => p \in g[d].saved
     /\ \A x \in 1..Len(g) :
         g[x].persisted \/ \E y \in 1..Len(g) : x \in g[y].deps
+    \* A saved store holds at most one indexed (current) entry per call.
+    /\ \A x, y \in 1..Len(g) :
+        (x # y /\ g[x].call = g[y].call)
+            => ~(ImportIndexed(g, x) /\ ImportIndexed(g, y))
 
 ImportOwn(g, x) ==
     (IF g[x].persisted THEN 1 ELSE 0)
@@ -789,9 +915,11 @@ ImportGraphState(g) ==
         depsOf   == [x \in 1..n |-> g[x].deps]
         required == ImportRequiredFinal(1..n, handleOf, depsOf)
     IN [x \in 1..n |->
-        ImportedResult(g[x].call, g[x].persisted, g[x].deps,
-                       ImportOwn(g, x), g[x].payload, FALSE,
-                       g[x].handle, required[x], g[x].saved, g[x].absent, g[x].saved)]
+        WithIndexState(
+            ImportedResult(g[x].call, g[x].persisted, g[x].deps,
+                           ImportOwn(g, x), g[x].payload, FALSE,
+                           g[x].handle, required[x], g[x].saved, g[x].absent, g[x].saved),
+            g[x].expired, ImportIndexed(g, x), 0)]
 
 InitialResStates ==
     IF ModelPersistence /\ ImportInit
@@ -1040,7 +1168,11 @@ CreateOc(i) ==
              attachTarget |-> 0,
              \* an attachment-time claim was refused by release marking;
              \* consumed by the deterministic attach-failure branch
-             attachRefused |-> FALSE])
+             attachRefused |-> FALSE,
+             \* this publication replaced an expired entry's value in place
+             \* (PubReplaceInPlace); its attachment failure also drops the
+             \* entry's retention edge
+             replaced |-> FALSE])
        /\ ongoingCallIndex' = [ongoingCallIndex EXCEPT ![k] = Len(ongoingCalls) + 1]
        /\ invocations' = [invocations EXCEPT ![i].phase = "waiting", ![i].oc = Len(ongoingCalls) + 1,
                                ![i].path = "wait"]
@@ -1403,6 +1535,109 @@ PubBegin(o) ==
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
+\* The value a publication installs for a freshly computed result. The
+\* choices are the fn's: whether the value carries deferred lazy work
+\* (lazyArm), the publishing session's own handle for it (handleChoice), and
+\* its structural dependencies (deps). PubIndexFresh registers it as a new
+\* entry; PubReplaceInPlace installs it into an expired entry's number.
+FreshResult(o, lazyArm, handleChoice, deps) ==
+    [call |-> ongoingCalls[o].call, registered |-> TRUE,
+     released |-> FALSE,
+     own |-> 1,
+     deps |-> deps,
+     lateDeps |-> {},
+     persisted |-> FALSE,
+     barrier |-> "open",
+     attachErrRefusal |-> FALSE,
+     \* fresh results have their typed payload in memory;
+     \* only imported entries carry encoded envelopes
+     payload |-> "decoded",
+     decodePhase |-> "idle", decodeErr |-> "none",
+     decodeGen |-> 0, persistSyncPending |-> FALSE,
+     \* session-resource validation: own handle chosen above;
+     \* required is {own handle} union the deps' STORED
+     \* required sets (initCompletedResult's recompute, one
+     \* level deep off each dep's stored set).
+     handle |-> handleChoice,
+     required |-> OwnHandleReq(handleChoice)
+                    \cup UNION {res[d].required : d \in deps},
+     dirtyAtSnapshot |-> FALSE,
+     \* lazy-evaluation state, mirroring the lazyMu block
+     \* on sharedResult (cache.go:2032-2041), per group:
+     imported |-> FALSE,       \* fresh, not from the store
+     \* a new value is unexpired; its replacement count starts at 0
+     expired |-> FALSE, indexed |-> TRUE, replacements |-> 0,
+     \* group work armed? (the value's per-group callback)
+     savedParts |-> {}, absentParts |-> {}, openDemand |-> {},
+     partComputed |-> IF ModelContainerPartPersistence /\ lazyArm = "none"
+                      THEN LazyParts ELSE {},
+     badCompute |-> FALSE, badOpen |-> FALSE, badReopen |-> FALSE,
+     successfulOpens |-> {}, directVisited |-> FALSE,
+     lazyCb |-> [g \in LazyGroups |->
+          IF ModelContainerPartPersistence /\ g \notin OriginalGroups
+          THEN "none" ELSE lazyArm],
+     \* Object-side GroupConsumed is separate from the
+     \* cached callback. After a failed sweep, the next
+     \* demand rereads the consumed object-side state.
+     lazyConsumed |-> [g \in LazyGroups |-> lazyArm = "none"
+          \/ (ModelContainerPartPersistence /\ g \notin OriginalGroups)],
+     \* A direct copy borrows its owner's callback token
+     \* and bookkeeping. Zero eval means no copy is active.
+     lazySweepOwner |-> [g \in LazyGroups |-> "none"],
+     lazySweepEval |-> [g \in LazyGroups |-> 0],
+     \* per-group completion latch
+     lazyComplete |-> [g \in LazyGroups |-> FALSE],
+     \* published attempt lifecycle, per group
+     lazyPhase |-> [g \in LazyGroups |-> "idle"],
+     \* attempt cancel requested, per group
+     lazyCancel |-> [g \in LazyGroups |-> FALSE],
+     \* lazySyncPending, per group
+     lazySyncPending |-> [g \in LazyGroups |-> FALSE],
+     \* current attempt's waiters, per group
+     lazyWaiters |-> [g \in LazyGroups |-> 0],
+     \* callbacks actually running, per group
+     lazyRunning |-> [g \in LazyGroups |-> 0],
+     \* active callback token owner, per group
+     lazyTokenSession |-> [g \in LazyGroups |-> 0]]
+
+\* The fn's publication choices, shared by PubIndexFresh and
+\* PubReplaceInPlace. A fresh result may carry deferred lazy work (a value
+\* implementing HasLazyEvaluation, whose callback registerLazyEvaluation
+\* stores on the sharedResult at cache.go:3455). Which results are lazy is
+\* the producer's business, so the model picks nondeterministically. A lazy
+\* value arms every group of its one operation together (one Lazy op covers
+\* all groups; per-group work is consumed independently later), so the
+\* choice is all-or-nothing, never per group.
+LazyArmChoices == IF ModelLazy THEN {"none", "armed"} ELSE {"none"}
+
+\* The publishing session's own handle for this result: "none", or a
+\* handle the session has already bound. A handle leaf's resolver calls
+\* BindSessionResource before returning the leaf, so at publication the
+\* handle is present; PubIndexFresh mirrors initCompletedResult's
+\* recompute. A handle the session never bound is not publishable as this
+\* result's own.
+HandleChoices(o) ==
+    {"none"} \cup {h \in Handles : h \in sessionRelease[ongoingCalls[o].sess].handles}
+
+\* Structural deps are results the fn's resolver acquired through inner
+\* loads (FnInnerLoadClaim/Deliver): claim and session unit recorded there,
+\* so publication only adds the structural edge's unit and consumes
+\* possession - no liveness guard, because release marking does not revoke
+\* values the fn already holds. A dep collected after its session's release
+\* is skipped here; the code's structural-dep pass fails loudly there and
+\* rolls the partial publication back (rollbackPartialPublicationLocked).
+DepChoices(o) ==
+    {{}} \cup {{d} : d \in {r \in ongoingCalls[o].acq :
+                   /\ res[r].registered
+                   /\ res[r].barrier \in {"none", "closedOk"}}}
+
+\* Object finality permits an eager copy in this abstraction. It is
+\* conservative: real schema construction also waits for operational
+\* bookkeeping. Semantic partComputed evidence controls no action.
+FreshDepsFinal(lazyArm, deps) ==
+    (ModelContainerPartPersistence /\ lazyArm = "none") =>
+        \A d \in deps, p \in DelegationParts : ParentPartFinal(d, p)
+
 (***************************************************************************)
 (* PubIndexFresh: publish a freshly computed value. One egraphMu critical  *)
 (* section (ending at cache.go:5242) that does, in order:                  *)
@@ -1412,108 +1647,127 @@ PubBegin(o) ==
 (*      incrementing its dependency                                        *)
 (*   3. take the publication handoff hold                                  *)
 (*   4. arm the dependency-attachment barrier                              *)
+(* Registration indexes the result as its call's current entry, so it is   *)
+(* enabled when the call has no current entry, live or expired (D1).       *)
+(* Otherwise the publication adopts it (PubAdoptSameCall), replaces its    *)
+(* expired value in place (PubReplaceInPlace), retires it (PubRetire), or  *)
+(* waits for its attachment to settle - unless the current entry is live  *)
+(* and settled but its stored requirements are not covered by the         *)
+(* publishing session (a late retention edge can raise them without        *)
+(* changing the call): then the new value registers beside it, not         *)
+(* indexed, and the session's lookups find it there.                       *)
 (***************************************************************************)
+SessionRejectsCurrent(o) ==
+    \E r \in Current(ongoingCalls[o].call) :
+        /\ ~res[r].expired
+        /\ res[r].barrier \in {"none", "closedOk"}
+        /\ ~(res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles)
+
 PubIndexFresh(o) ==
     /\ ongoingCalls[o].pubState = "begun"
     /\ ongoingCalls[o].outcome = "fresh"
+    /\ Current(ongoingCalls[o].call) = {} \/ SessionRejectsCurrent(o)
     /\ Len(res) < MaxResults
-    \* A fresh result may carry deferred lazy work (a value implementing
-    \* HasLazyEvaluation, whose callback registerLazyEvaluation stores on
-    \* the sharedResult at cache.go:3455). Which results are lazy is the
-    \* producer's business, so the model picks nondeterministically. A lazy
-    \* value arms every group of its one operation together (one Lazy op
-    \* covers all groups; per-group work is consumed independently later),
-    \* so the choice is all-or-nothing, never per group.
-    /\ \E lazyArm \in IF ModelLazy THEN {"none", "armed"} ELSE {"none"} :
-       \* The publishing session's own handle for this result: "none", or a
-       \* handle the session has already bound. A handle leaf's resolver calls
-       \* BindSessionResource before returning the leaf, so at publication the
-       \* handle is present; PubIndexFresh mirrors initCompletedResult's
-       \* recompute. A handle the session never bound is not publishable as
-       \* this result's own.
-       \E handleChoice \in {"none"} \cup
-             {h \in Handles : h \in sessionRelease[ongoingCalls[o].sess].handles} :
-       \* Structural deps are results the fn's resolver acquired through
-       \* inner loads (FnInnerLoadClaim/Deliver): claim and session unit
-       \* recorded there, so publication only adds the structural edge's
-       \* unit and consumes possession - no liveness guard, because
-       \* release marking does not revoke values the fn already holds.
-       \* A dep collected after its session's release is skipped here;
-       \* the code's structural-dep pass fails loudly there and rolls the
-       \* partial publication back (rollbackPartialPublicationLocked).
-       \E deps \in {{}} \cup {{d} : d \in {r \in ongoingCalls[o].acq :
-                       /\ res[r].registered
-                       /\ res[r].barrier \in {"none", "closedOk"}}} :
+    /\ \E lazyArm \in LazyArmChoices, handleChoice \in HandleChoices(o),
+          deps \in DepChoices(o) :
         LET withDeps == [r \in DOMAIN res |->
                 IF r \in deps THEN [res[r] EXCEPT !.own = @ + 1]
                 ELSE res[r]]
-            newRes == [call |-> ongoingCalls[o].call, registered |-> TRUE,
-                       released |-> FALSE,
-                       own |-> 1,
-                       deps |-> deps,
-                       lateDeps |-> {},
-                       persisted |-> FALSE,
-                       barrier |-> "open",
-                       attachErrRefusal |-> FALSE,
-                       \* fresh results have their typed payload in memory;
-                       \* only imported entries carry encoded envelopes
-                       payload |-> "decoded",
-                       decodePhase |-> "idle", decodeErr |-> "none",
-                       decodeGen |-> 0, persistSyncPending |-> FALSE,
-                       \* session-resource validation: own handle chosen above;
-                       \* required is {own handle} union the deps' STORED
-                       \* required sets (initCompletedResult's recompute, one
-                       \* level deep off each dep's stored set).
-                       handle |-> handleChoice,
-                       required |-> OwnHandleReq(handleChoice)
-                                      \cup UNION {res[d].required : d \in deps},
-                       dirtyAtSnapshot |-> FALSE,
-                       \* lazy-evaluation state, mirroring the lazyMu block
-                       \* on sharedResult (cache.go:2032-2041), per group:
-                       imported |-> FALSE,       \* fresh, not from the store
-                       \* group work armed? (the value's per-group callback)
-                       savedParts |-> {}, absentParts |-> {}, openDemand |-> {},
-                       partComputed |-> IF ModelContainerPartPersistence /\ lazyArm = "none"
-                                        THEN LazyParts ELSE {},
-                       badCompute |-> FALSE, badOpen |-> FALSE, badReopen |-> FALSE,
-                       successfulOpens |-> {}, directVisited |-> FALSE,
-                       lazyCb |-> [g \in LazyGroups |->
-                            IF ModelContainerPartPersistence /\ g \notin OriginalGroups
-                            THEN "none" ELSE lazyArm],
-                       \* Object-side GroupConsumed is separate from the
-                       \* cached callback. After a failed sweep, the next
-                       \* demand rereads the consumed object-side state.
-                       lazyConsumed |-> [g \in LazyGroups |-> lazyArm = "none"
-                            \/ (ModelContainerPartPersistence /\ g \notin OriginalGroups)],
-                       \* A direct copy borrows its owner's callback token
-                       \* and bookkeeping. Zero eval means no copy is active.
-                       lazySweepOwner |-> [g \in LazyGroups |-> "none"],
-                       lazySweepEval |-> [g \in LazyGroups |-> 0],
-                       \* per-group completion latch
-                       lazyComplete |-> [g \in LazyGroups |-> FALSE],
-                       \* published attempt lifecycle, per group
-                       lazyPhase |-> [g \in LazyGroups |-> "idle"],
-                       \* attempt cancel requested, per group
-                       lazyCancel |-> [g \in LazyGroups |-> FALSE],
-                       \* lazySyncPending, per group
-                       lazySyncPending |-> [g \in LazyGroups |-> FALSE],
-                       \* current attempt's waiters, per group
-                       lazyWaiters |-> [g \in LazyGroups |-> 0],
-                       \* callbacks actually running, per group
-                       lazyRunning |-> [g \in LazyGroups |-> 0],
-                       \* active callback token owner, per group
-                       lazyTokenSession |-> [g \in LazyGroups |-> 0]]
-        \* Object finality permits an eager copy in this abstraction. It is
-        \* conservative: real schema construction also waits for operational
-        \* bookkeeping. Semantic partComputed evidence controls no action.
-        IN /\ (ModelContainerPartPersistence /\ lazyArm = "none") =>
-                  \A d \in deps, p \in DelegationParts : ParentPartFinal(d, p)
-           /\ res' = Append(withDeps, newRes)
+            fresh == [FreshResult(o, lazyArm, handleChoice, deps)
+                        EXCEPT !.indexed = ~SessionRejectsCurrent(o)]
+        IN /\ FreshDepsFinal(lazyArm, deps)
+           /\ res' = Append(withDeps, fresh)
            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "attaching",
                                  ![o].hold = TRUE,
                                  ![o].resId = Len(res) + 1]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
+
+(***************************************************************************)
+(* PubAdoptSameCall: the call's current entry is live - unexpired, its     *)
+(* attachment settled clean - so publication adopts it and releases its    *)
+(* own new value (D1). One egraphMu critical section takes the handoff     *)
+(* hold on the adopted entry, as PubAdopt does, so no concurrent release   *)
+(* can collect it; publication finishes through PubIndexReuse. The new     *)
+(* value has no record here: releasing it drops its snapshots and leases,  *)
+(* which the model does not track. While the current entry's attachment    *)
+(* is open no publication action is enabled: publication waits for it,    *)
+(* as a lookup hit waits at the read barrier. Adoption applies the         *)
+(* session filter that canonical adoption applies                          *)
+(* (sessionSatisfiesResourceRequirementsLocked): a session that does not   *)
+(* cover the entry's stored requirements registers its own value instead   *)
+(* (PubIndexFresh).                                                        *)
+(***************************************************************************)
+PubAdoptSameCall(o) ==
+    /\ ongoingCalls[o].pubState = "begun"
+    /\ ongoingCalls[o].outcome = "fresh"
+    /\ \E r \in Current(ongoingCalls[o].call) :
+        /\ ~res[r].expired
+        /\ res[r].barrier \in {"none", "closedOk"}
+        /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
+        /\ res' = [res EXCEPT ![r].own = @ + 1]
+        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "adopted",
+                              ![o].hold = TRUE, ![o].resId = r]
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+(***************************************************************************)
+(* PubReplaceInPlace: the call's current entry has expired and nothing     *)
+(* uses it (UsedByOwnership), so the new value replaces it under the same  *)
+(* number (D9). One egraphMu critical section: the entry keeps its         *)
+(* identity - its number, its retention edge - and takes the new value's   *)
+(* state; its                                                              *)
+(* replacement count goes up by one; the new value's dependency edges      *)
+(* replace the old value's, and a dependency the old value alone kept is   *)
+(* collected. Nothing else refers to the entry, so no ancestor's stored    *)
+(* requirement goes stale. The handoff hold is taken and the attachment    *)
+(* barrier armed, as for PubIndexFresh.                                    *)
+(***************************************************************************)
+PubReplaceInPlace(o) ==
+    /\ ongoingCalls[o].pubState = "begun"
+    /\ ongoingCalls[o].outcome = "fresh"
+    /\ \E r \in Current(ongoingCalls[o].call) :
+        /\ res[r].expired
+        /\ ~UsedByOwnership(r)
+        /\ \E lazyArm \in LazyArmChoices, handleChoice \in HandleChoices(o),
+              deps \in DepChoices(o) :
+            LET old == res[r].deps
+                fresh == FreshResult(o, lazyArm, handleChoice, deps)
+                replaced == [fresh EXCEPT !.own = res[r].own + 1,
+                                          !.persisted = res[r].persisted,
+                                          !.decodeGen = res[r].decodeGen,
+                                          !.replacements = res[r].replacements + 1]
+                rf == [x \in DOMAIN res |->
+                        IF x = r THEN replaced
+                        ELSE [res[x] EXCEPT !.own = @
+                                + (IF x \in deps /\ x \notin old THEN 1 ELSE 0)
+                                - (IF x \in old /\ x \notin deps THEN 1 ELSE 0)]]
+            IN /\ FreshDepsFinal(lazyArm, deps)
+               /\ r \notin deps
+               /\ res' = Cascade(rf)
+               /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "attaching",
+                                     ![o].hold = TRUE, ![o].resId = r,
+                                     ![o].replaced = TRUE]
+    /\ UNCHANGED <<invocations, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+(***************************************************************************)
+(* PubRetire: the call's current entry has expired and something still     *)
+(* uses it, so it leaves the index and keeps serving its existing users    *)
+(* only (D9). In Go the same critical section then registers the new       *)
+(* value; here PubIndexFresh does it in the next step, which is enabled    *)
+(* once no current entry is left. A retired entry is expired, so it is     *)
+(* never a lookup candidate again.                                         *)
+(***************************************************************************)
+PubRetire(o) ==
+    /\ ongoingCalls[o].pubState = "begun"
+    /\ ongoingCalls[o].outcome = "fresh"
+    /\ \E r \in Current(ongoingCalls[o].call) :
+        /\ res[r].expired
+        /\ UsedByOwnership(r)
+        /\ res' = [res EXCEPT ![r].indexed = FALSE]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
 (* ADOPTION BRANCH: the fn returned an already-attached result, so         *)
@@ -1540,6 +1794,7 @@ CanonicalPick(o) ==
        \* survivor, else falls back to the returned result rf when none passes.
        ELSE LET live == {r \in LiveInClass(ClassOf[res[rf].call]) :
                             /\ res[r].barrier \in {"none", "closedOk"}
+                            /\ ~res[r].expired
                             /\ res[r].required \subseteq sessionRelease[s].handles}
             IN IF live = {} THEN rf
                ELSE CHOOSE r \in live : \A q \in live : r <= q
@@ -1746,13 +2001,25 @@ PubAttachClaimRefused(o) ==
     /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
                    sessionRelease, evals, epoch, flushed>>
 
+\* The same critical section takes the failed entry out of the recipe index
+\* (it stops being current: FailingPublication). When the publication had
+\* replaced an expired entry's value in place, the value that entry's
+\* retention edge kept is gone, so the edge goes too, and the entry is
+\* collected like any failed publication. Only an entry that nothing used
+\* was replaced, so no dependent keeps it; a reader that hit it while its
+\* attachment was open keeps it until that session releases, as for any
+\* failed publication.
 PubAttachFailDropHold(o) ==
     \* an injected attachment failure, or the deterministic one: an
     \* attachment-time claim attempt was refused by release marking
     /\ \/ AttachCanFail
        \/ ongoingCalls[o].attachRefused
     /\ ongoingCalls[o].pubState = "attaching"
-    /\ res' = DecAndCascade(res, ongoingCalls[o].resId)
+    /\ LET r == ongoingCalls[o].resId
+           unretained == IF ongoingCalls[o].replaced /\ res[r].persisted
+                         THEN [res EXCEPT ![r].persisted = FALSE, ![r].own = @ - 1]
+                         ELSE res
+       IN res' = DecAndCascade(unretained, r)
     /\ ongoingCalls' = [ongoingCalls EXCEPT
          ![o].pubState = "attachFailClosing", ![o].hold = FALSE,
          ![o].attachTarget = 0]
@@ -2586,6 +2853,124 @@ PruneCut(r) ==
                    sessionRelease, evals, epoch, flushed>>
 
 (***************************************************************************)
+(* Expire: an entry's value passes its TTL (sharedResult.expiresAtUnix).    *)
+(* Time is not modeled; any registered entry may expire at any moment,     *)
+(* and it stays expired until a new value replaces it in place.            *)
+(***************************************************************************)
+Expire(r) ==
+    /\ AllowExpire
+    /\ r \in ResultIds
+    /\ res[r].registered
+    /\ ~res[r].expired
+    /\ res' = [res EXCEPT ![r].expired = TRUE]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+(***************************************************************************)
+(* MergeLive: Cache.MergeValues applies a bundle to the live cache, in no  *)
+(* session, in one egraphMu critical section (design 5.5). A bundle here   *)
+(* is one root record, optionally with one dependency record of another    *)
+(* call; every incoming record is unexpired (merge skips an expired root  *)
+(* and changes nothing for it). Merge first picks a target for every       *)
+(* record from the state before it, then changes anything:                 *)
+(*   - no current entry: create one, imported, its value an envelope;      *)
+(*   - the current entry is unexpired: keep its value;                     *)
+(*   - the current entry is expired: replace its value in place if nothing *)
+(*     uses it, otherwise retire it and create a new entry (D9);           *)
+(*   - the current entry's attachment is open: merge waits (settle first). *)
+(* A created or replaced root stores the incoming record and its           *)
+(* dependency on the dependency record's target; a kept root keeps its     *)
+(* own dependencies. Every root gets a retention edge. A created           *)
+(* dependency that no stored root depends on is collected at once.         *)
+(***************************************************************************)
+MergeTarget(c) ==
+    IF Current(c) = {} THEN [kind |-> "create", r |-> 0]
+    ELSE LET r == CHOOSE x \in Current(c) : TRUE IN
+         IF res[r].barrier = "open" THEN [kind |-> "wait", r |-> r]
+         ELSE IF ~res[r].expired THEN [kind |-> "keep", r |-> r]
+         ELSE IF UsedByOwnership(r) THEN [kind |-> "retire", r |-> r]
+         ELSE [kind |-> "replace", r |-> r]
+
+\* The value state a merged record gives an entry of call c: an encoded
+\* envelope, imported, unexpired, with the record's dependencies. The
+\* identity fields (persisted, own, replacements) are the caller's.
+MergedRecord(c, handleVal, deps, requiredVal) ==
+    ImportedResult(c, FALSE, deps, 0, "envelope", FALSE, handleVal,
+                   requiredVal, {}, {}, {})
+
+MergeLive ==
+    /\ ModelMerge
+    /\ ~flushed.closing
+    /\ \E c \in Calls, withDep \in BOOLEAN :
+       \E dc \in (IF withDep THEN Calls \ {c} ELSE {c}) :
+        LET tr == MergeTarget(c)
+            td == MergeTarget(dc)
+            depKind == IF withDep THEN td.kind ELSE "none"
+            n0 == Len(res)
+            depNew == depKind \in {"create", "retire"}
+            rootNew == tr.kind \in {"create", "retire"}
+            depId == CASE depNew -> n0 + 1
+                       [] depKind \in {"keep", "replace"} -> td.r
+                       [] OTHER -> 0
+            rootDeps == IF withDep THEN {depId} ELSE {}
+            \* a created, retired-and-created or replaced root stores the
+            \* incoming record; a kept root keeps its value
+            rootStores == tr.kind # "keep"
+            oldRootDeps == IF tr.kind = "replace" THEN res[tr.r].deps ELSE {}
+            oldDepDeps == IF depKind = "replace" THEN res[td.r].deps ELSE {}
+            \* the stored requirement of a root dependency after the merge
+            reqOf(d) == CASE d > n0 -> {}
+                          [] depKind = "replace" /\ d = td.r -> OwnHandleReq(res[d].handle)
+                          [] OTHER -> res[d].required
+            rootRequired(h) == OwnHandleReq(h) \cup UNION {reqOf(d) : d \in rootDeps}
+            \* ownership changes on the existing slots
+            delta(x) ==
+                  (IF x = tr.r /\ tr.kind \in {"keep", "replace"}
+                        /\ ~res[x].persisted THEN 1 ELSE 0)
+                + (IF rootStores /\ x \in rootDeps /\ x \notin oldRootDeps THEN 1 ELSE 0)
+                - (IF x \in oldRootDeps /\ x \notin rootDeps THEN 1 ELSE 0)
+                - (IF x \in oldDepDeps THEN 1 ELSE 0)
+            existing == [x \in DOMAIN res |->
+                CASE (tr.kind = "retire" /\ x = tr.r)
+                        \/ (depKind = "retire" /\ x = td.r) ->
+                         [res[x] EXCEPT !.indexed = FALSE, !.own = @ + delta(x)]
+                  [] depKind = "replace" /\ x = td.r ->
+                         [MergedRecord(dc, res[x].handle, {}, OwnHandleReq(res[x].handle))
+                            EXCEPT !.persisted = res[x].persisted,
+                                   !.own = res[x].own + delta(x),
+                                   !.decodeGen = res[x].decodeGen,
+                                   !.replacements = res[x].replacements + 1]
+                  [] tr.kind = "replace" /\ x = tr.r ->
+                         [MergedRecord(c, res[x].handle, rootDeps, rootRequired(res[x].handle))
+                            EXCEPT !.persisted = TRUE,
+                                   !.own = res[x].own + delta(x),
+                                   !.decodeGen = res[x].decodeGen,
+                                   !.replacements = res[x].replacements + 1]
+                  [] tr.kind = "keep" /\ x = tr.r ->
+                         [res[x] EXCEPT !.persisted = TRUE, !.own = @ + delta(x)]
+                  [] OTHER -> [res[x] EXCEPT !.own = @ + delta(x)]]
+            newDep == [MergedRecord(dc, "none", {}, {})
+                         EXCEPT !.own = IF rootStores THEN 1 ELSE 0]
+            newRoot == [MergedRecord(c, "none", rootDeps, rootRequired("none"))
+                          EXCEPT !.persisted = TRUE, !.own = 1]
+            merged == existing
+                        \o (IF depNew THEN <<newDep>> ELSE <<>>)
+                        \o (IF rootNew THEN <<newRoot>> ELSE <<>>)
+        IN /\ tr.kind # "wait"
+           /\ depKind # "wait"
+           /\ n0 + (IF depNew THEN 1 ELSE 0) + (IF rootNew THEN 1 ELSE 0) <= MaxResults
+           \* the replacement count is bounded by the run's scope
+           /\ tr.kind = "replace" => res[tr.r].replacements < MaxInvocations
+           /\ depKind = "replace" => res[td.r].replacements < MaxInvocations
+           \* the stated no-cycle assumption: a stored root's dependency
+           \* never reaches the root itself
+           /\ (tr.kind = "replace" /\ withDep /\ ~depNew)
+                => ~DepReachable(res, depId, tr.r)
+           /\ res' = Cascade(merged)
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+(***************************************************************************)
 (* FLUSH AND RESTART. Graceful shutdown calls ReleaseSession for every     *)
 (* session before Cache.Close begins. A returned release may still have a  *)
 (* deferred cleanup plan. Close atomically refuses new operations, waits   *)
@@ -2670,6 +3055,11 @@ Flush ==
           \* the row's own session-resource handle survives the flush
           \* (env.SessionResourceHandle); required is recomputed at import.
           handle    |-> res[r].handle,
+          \* the value's expiry, whether the recipe index names the entry,
+          \* and its replacement count are saved with it (results columns)
+          expired   |-> res[r].expired,
+          indexed   |-> res[r].indexed,
+          replacements |-> res[r].replacements,
           dirty     |-> res[r].barrier \in {"open", "closedErr"},
           ownClean  |-> res[r].own =
               PersistedCount(r) + DepParentCount(r)]]]
@@ -2710,7 +3100,9 @@ Restart ==
              IF flushed.rows[x].keep
              \* The stored projection and independent capture observation cross
              \* import separately, so a decoder error cannot replace its oracle.
-             THEN ImportedResult(
+             \* Every kept row is restored; the recipe index names exactly the
+             \* rows it named when they were saved (Current).
+             THEN WithIndexState(ImportedResult(
                     flushed.rows[x].call, flushed.rows[x].persisted, flushed.rows[x].deps,
                     (IF flushed.rows[x].persisted THEN 1 ELSE 0)
                       + Cardinality({y \in 1..Len(flushed.rows) :
@@ -2719,7 +3111,9 @@ Restart ==
                     flushed.rows[x].dirty,
                     flushed.rows[x].handle,
                     required[x], flushed.rows[x].parts, flushed.rows[x].absent,
-                    flushed.rows[x].observed)
+                    flushed.rows[x].observed),
+                    flushed.rows[x].expired, flushed.rows[x].indexed,
+                    flushed.rows[x].replacements)
              ELSE DeadHusk]
     /\ invocations' = invocations
     /\ ongoingCalls' = [o \in OngoingCallIds |->
@@ -2730,6 +3124,7 @@ Restart ==
                                  !.hold = FALSE, !.inIndex = FALSE,
                                  !.needsPersistedEdge = FALSE,
                                  !.sharedLease = FALSE,
+                                 !.replaced = FALSE,
                                  !.waiters = 0]]
     /\ ongoingCallIndex' = [k \in Calls \X Sessions |-> 0]
     \* A restart kills the process: evaluator goroutines die with it, so no
@@ -3492,6 +3887,7 @@ Next ==
          \/ FnInnerLoadDeliver(o) \/ FnInnerLoadRefused(o)
          \/ FnComplete(o) \/ PubBegin(o)
          \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
+         \/ PubAdoptSameCall(o) \/ PubReplaceInPlace(o) \/ PubRetire(o)
          \/ PubAttachTarget(o) \/ PubAttachClaimOk(o)
          \/ PubAttachClaimRefused(o)
          \/ PubAttachAddDep(o) \/ PubFinishOk(o)
@@ -3502,7 +3898,8 @@ Next ==
            \/ ReleaseSessionCollect(s) \/ ReleaseSessionDelete(s)
            \/ ReleaseSessionReturn(s) \/ ReleaseWaitBegin(s)
            \/ ReleaseWaitReturn(s)
-    \/ \E r \in 1..Len(res) : PruneCut(r)
+    \/ \E r \in 1..Len(res) : PruneCut(r) \/ Expire(r)
+    \/ MergeLive
     \/ BindResource
     \/ AddDepLate
     \/ EvalSpawn
@@ -3565,6 +3962,7 @@ SystemProgress(o) ==
     \/ PubAttachClaimOk(o) \/ PubAttachClaimRefused(o)
     \/ FnComplete(o) \/ PubBegin(o)
     \/ PubIndexFresh(o) \/ PubAdopt(o) \/ PubIndexReuse(o)
+    \/ PubAdoptSameCall(o) \/ PubReplaceInPlace(o) \/ PubRetire(o)
     \/ PubFinishOk(o) \/ PubAttachFailDropHold(o)
     \/ PubAttachFailCloseBarrier(o)
     \/ PubUnregister(o)
@@ -3760,6 +4158,7 @@ TypeOK ==
               => sessionRelease[s].snap = {}
     /\ \A o \in OngoingCallIds : ongoingCalls[o].waiters >= 0
     /\ \A o \in OngoingCallIds : ongoingCalls[o].sharedLease \in BOOLEAN
+    /\ \A o \in OngoingCallIds : ongoingCalls[o].replaced \in BOOLEAN
     /\ \A o \in OngoingCallIds : ongoingCalls[o].acq \subseteq 1..Len(res)
     /\ \A o \in OngoingCallIds : ongoingCalls[o].acqPending \in 0..Len(res)
     /\ \A o \in OngoingCallIds : ongoingCalls[o].attachTarget \in 0..Len(res)
@@ -3789,6 +4188,11 @@ TypeOK ==
          /\ res[r].successfulOpens \subseteq res[r].savedParts
          /\ res[r].directVisited \in BOOLEAN
          /\ res[r].imported \in BOOLEAN
+         /\ res[r].expired \in BOOLEAN
+         /\ res[r].indexed \in BOOLEAN
+         \* one replacement per publication, and merges replace up to the
+         \* same scope bound (MergeLive)
+         /\ res[r].replacements \in 0..(2 * MaxInvocations)
          /\ res[r].decodePhase \in {"idle", "running"}
          /\ res[r].decodeErr \in {"none", "fail", "cancel"}
          \* every finish or cancellation is by a distinct leader, and an
@@ -4031,11 +4435,31 @@ RefusedOnlyAfterRelease ==
 
 \* Attachment failure never gains a persisted edge. A concurrent hit may
 \* have claimed a session edge while the barrier was open, so the errored
-\* result can remain registered until that session releases it.
+\* result can remain registered until that session releases it. This is
+\* also the protocol design's NoRetainedFailedEntry: a live merge retains
+\* only targets whose attachment settled clean, and a replacement in place
+\* whose new attachment fails drops the entry's retention edge.
 NoPersistedAttachErroredResult ==
     \A r \in ResultIds :
         (res[r].registered /\ res[r].barrier = "closedErr") =>
             ~res[r].persisted
+
+\* A cache has at most one current entry per recipe (D1): no two
+\* entries of one call that the recipe index names (indexed) and whose
+\* attachment has not failed. An entry a session registered beside the
+\* current one, because it did not cover the current one's requirements,
+\* is live but not indexed, and does not count.
+OneLiveEntryPerCall ==
+    \A c \in Calls : Cardinality(Current(c)) <= 1
+
+\* An entry's value is replaced in place only while nothing uses it (D9):
+\* its replacement count never changes while a session, a dependent entry
+\* or a task holds it. An action property; a restart rebuilds the result
+\* records, so only steps within one process are judged.
+NoReplaceUnderUser ==
+    [][\A r \in 1..Len(res) :
+         (/\ epoch' = epoch
+          /\ res'[r].replacements # res[r].replacements) => ~InUse(r)]_vars
 
 \* The selection-time marker distinguishes a forbidden lookup made after an
 \* attachment error from a legitimate lookup that selected an open barrier

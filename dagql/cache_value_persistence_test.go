@@ -18,7 +18,8 @@ func TestValueTransferPersistence(t *testing.T) {
 	bundle := exportTestBundle(t, ctx, a, root)
 	path := filepath.Join(t.TempDir(), "b.db")
 	bctx, b, _ := persistedListTestCache(t, path)
-	mapping, err := b.ImportValues(bctx, bundle)
+	mappingReply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	require.NoError(t, b.Close(bctx))
 	bctx, b, _ = persistedListTestCache(t, path)
@@ -27,7 +28,7 @@ func TestValueTransferPersistence(t *testing.T) {
 	require.NotNil(t, row)
 	require.True(t, row.imported)
 	require.Empty(t, row.deps)
-	require.Len(t, row.partOffers, 1)
+	require.Len(t, row.testPartOffers(), 1)
 	require.Len(t, b.offerOwners, 1)
 	var forwarded ValueBundle
 	require.NoError(t, b.WithExportedValues(bctx, ValueSelection{Roots: []AnyResult{Result[Typed]{shared: row}}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
@@ -40,7 +41,8 @@ func TestValueTransferPersistence(t *testing.T) {
 	require.NotContains(t, string(raw), "owner_id")
 	require.NotContains(t, string(raw), "origin_result_id")
 	cctx, c, _ := transferTestCache(t)
-	third, err := c.ImportValues(cctx, forwarded)
+	thirdReply, err := c.MergeValues(cctx, cloudCacheID, forwarded)
+	third := thirdReply.Imported()
 	require.NoError(t, err)
 	require.Len(t, third, 1)
 	require.Len(t, c.offerOwners, 1)

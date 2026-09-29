@@ -62,7 +62,7 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 			collected = c.resultsByID[depRow.id] != depRow
 			c.egraphMu.RUnlock()
 		})
-		out, err := c.OfferParts(ctx, receiver, []PersistedPartOffer{offerWith(dep)})
+		out, err := c.testOfferParts(ctx, receiver, []PersistedPartOffer{offerWith(dep)})
 		require.NoError(t, err)
 		require.False(t, collected, "the preparation hold kept the reference registered")
 		require.Equal(t, OfferAccepted, out[0].Outcome)
@@ -93,10 +93,10 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 			initial := offerWith(dep)
 			var owner *offerOwner
 			if mode != "new offer" {
-				out, err := c.OfferParts(ctx, receiver, []PersistedPartOffer{initial})
+				out, err := c.testOfferParts(ctx, receiver, []PersistedPartOffer{initial})
 				require.NoError(t, err)
 				require.Equal(t, OfferAccepted, out[0].Outcome)
-				owner = row.partOffers[key].owner
+				owner = row.testPartOffers()[key].owner
 			}
 			next := offerWith(dep)
 			switch mode {
@@ -109,15 +109,15 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 			depBase, otherBase, revision := dep.cacheSharedResult().incomingOwnershipCount, other.cacheSharedResult().incomingOwnershipCount, row.transferRevision
 			c.egraphMu.RUnlock()
 			onSecondRevisionRead(object, func() { bumpGateRevision(c, row) })
-			out, err := c.OfferParts(ctx, receiver, []PersistedPartOffer{next})
+			out, err := c.testOfferParts(ctx, receiver, []PersistedPartOffer{next})
 			require.ErrorIs(t, err, ErrPersistStateNotReady)
 			require.Equal(t, OfferUnavailable, out[0].Outcome)
 			require.False(t, out[0].Replaced)
 			c.egraphMu.RLock()
 			currentRevision := row.transferRevision
 			depOwners, otherOwners := dep.cacheSharedResult().incomingOwnershipCount, other.cacheSharedResult().incomingOwnershipCount
-			offerCount, ownerCount := len(row.partOffers), len(c.offerOwners)
-			slot := row.partOffers[key]
+			offerCount, ownerCount := len(row.testPartOffers()), len(c.offerOwners)
+			slot := row.testPartOffers()[key]
 			var slotOwner *offerOwner
 			var record PersistedPartOffer
 			var holds int64
@@ -190,7 +190,7 @@ func newSettlementFixture(t *testing.T) *settlementFixture {
 	}}
 	c.SetPartContentSource(lifetimeChainSource{provider})
 	f.offer = PersistedPartOffer{Address: f.address, Value: SnapshotValue{Kind: "directory", Path: "/"}, Chain: OfferedChain{Layers: chain.lower.Layers}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(f.first.cacheSharedResult().id)}}}
-	out, err := c.OfferParts(ctx, f.receiver, []PersistedPartOffer{f.offer})
+	out, err := c.testOfferParts(ctx, f.receiver, []PersistedPartOffer{f.offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	return f
@@ -252,7 +252,7 @@ func (f *settlementFixture) requireSettled(t *testing.T, firstBase, secondBase i
 	t.Helper()
 	row := f.receiver.cacheSharedResult()
 	f.cache.egraphMu.RLock()
-	offerCount, ownerCount := len(row.partOffers), len(f.cache.offerOwners)
+	offerCount, ownerCount := len(row.testPartOffers()), len(f.cache.offerOwners)
 	f.cache.egraphMu.RUnlock()
 	require.Zero(t, offerCount, "settlement removed every current offer")
 	require.Zero(t, ownerCount)
@@ -265,11 +265,11 @@ func (f *settlementFixture) requireSettled(t *testing.T, firstBase, secondBase i
 	phase := gate.outputs[key].phase
 	gate.mu.Unlock()
 	require.Equal(t, PartComplete, phase)
-	out, err := f.cache.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
+	out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 	require.NoError(t, err)
 	require.Equal(t, OfferAlreadyComplete, out[0].Outcome)
 	f.cache.egraphMu.RLock()
-	finalOfferCount := len(row.partOffers)
+	finalOfferCount := len(row.testPartOffers())
 	f.cache.egraphMu.RUnlock()
 	require.Zero(t, finalOfferCount, "a final part attracts no offer")
 }
@@ -283,9 +283,9 @@ func TestOfferSettlementReplacement(t *testing.T) {
 		waitWithinT(t, f.entered, done)
 		key, _ := partAddressKey(f.address)
 		f.cache.egraphMu.RLock()
-		winner := f.receiver.cacheSharedResult().partOffers[key].owner
+		winner := f.receiver.cacheSharedResult().testPartOffers()[key].owner
 		f.cache.egraphMu.RUnlock()
-		out, err := f.cache.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
+		out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 		require.NoError(t, err)
 		require.Equal(t, OfferAccepted, out[0].Outcome)
 		require.True(t, out[0].Replaced)
@@ -321,11 +321,11 @@ func TestOfferSettlementReplacement(t *testing.T) {
 			}
 		})
 		waitWithinT(t, committed, done)
-		out, err := f.cache.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
+		out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 		require.NoError(t, err)
 		require.Equal(t, OfferAlreadyComplete, out[0].Outcome, "an installed output closes offer admission")
 		f.cache.egraphMu.RLock()
-		offerCount := len(f.receiver.cacheSharedResult().partOffers)
+		offerCount := len(f.receiver.cacheSharedResult().testPartOffers())
 		f.cache.egraphMu.RUnlock()
 		require.Equal(t, 1, offerCount, "the older slot waits for settlement")
 		releaseBody()
@@ -352,7 +352,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 			row := f.receiver.cacheSharedResult()
 			key, _ := partAddressKey(f.address)
 			f.cache.egraphMu.RLock()
-			slot := row.partOffers[key]
+			slot := row.testPartOffers()[key]
 			present := slot != nil
 			var slots, holds int64
 			if present {
@@ -362,7 +362,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 			require.True(t, present, "settlement has not run")
 			require.Equal(t, slots, holds, "the acquisition hold ended before sync")
 			require.NotEmpty(t, row.loadPayloadState().snapshotLinkIntent.Links, "the installed output is retained")
-			out, err := f.cache.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
+			out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 			require.NoError(t, err)
 			require.Equal(t, OfferAlreadyComplete, out[0].Outcome)
 			gate := row.partGate.loadOrCreate()
@@ -417,7 +417,7 @@ func TestOfferResourcesDoNotGateLookup(t *testing.T) {
 	socketID := uint64(socket.cacheSharedResult().id)
 	offer.Value.Services = []TransferredServiceBinding{{ServiceResultID: socketID, Hostname: "svc"}}
 	offer.Owner.DependencyIDs = []uint64{socketID}
-	out, err := c.OfferParts(f.ctx, f.receiver, []PersistedPartOffer{offer})
+	out, err := c.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	c.egraphMu.RLock()
@@ -432,7 +432,7 @@ func TestOfferResourcesDoNotGateLookup(t *testing.T) {
 	require.EqualValues(t, 1, f.operation.runs.Load())
 	require.Zero(t, f.transport.total())
 	c.egraphMu.RLock()
-	offerCount := len(row.partOffers)
+	offerCount := len(row.testPartOffers())
 	c.egraphMu.RUnlock()
 	require.Equal(t, 1, offerCount, "skipping does not remove the slot")
 

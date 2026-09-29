@@ -78,7 +78,7 @@ func TestPartOfferReplacementNotExhausted(t *testing.T) {
 		var callbacks []OnReleaseFunc
 		if err == nil {
 			var queue []*sharedResult
-			queue, err = c.replacePartOfferLocked(ctx, receiver.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
+			queue, err = c.testReplacePartOfferLocked(ctx, receiver.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
 			if err == nil {
 				callbacks, err = c.collectUnownedResultsLocked(ctx, queue)
 			}

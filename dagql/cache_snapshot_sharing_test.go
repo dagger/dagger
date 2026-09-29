@@ -1406,7 +1406,8 @@ func TestSnapshotSharingImportTriggers(t *testing.T) {
 	t.Run("live import queues the imported classes", func(t *testing.T) {
 		ctx, b, _, _ := shareTestCache(t)
 		barrier := newSharePassBarrier(b)
-		mapping, err := b.ImportValues(ctx, bundle)
+		mappingReply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+		mapping := mappingReply.Imported()
 		require.NoError(t, err)
 		require.Len(t, mapping, 1)
 		require.Equal(t, 0, barrier.awaitPass(t), "the import queued a cohort; with no donor it plans nothing")
@@ -1424,7 +1425,7 @@ func TestSnapshotSharingImportTriggers(t *testing.T) {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			arm(b, cancel)
-			_, err := b.ImportValues(ctx, bundle)
+			_, err := b.MergeValues(ctx, cloudCacheID, bundle)
 			require.Error(t, err)
 			b.egraphMu.RLock()
 			pendingCount := len(b.sharePending)

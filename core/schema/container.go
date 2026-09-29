@@ -28,7 +28,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
@@ -1305,7 +1304,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 				"container.from",
 				refName.Digest().String(),
 				ctr.Platform.Format(),
-			), call.ExtraDigestLabelRemoteCache)
+			))
 			if err != nil {
 				return inst, fmt.Errorf("failed to set content digest: %w", err)
 			}

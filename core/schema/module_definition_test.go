@@ -129,7 +129,7 @@ func definitionTestInputsFor(t *testing.T, ctx context.Context, cache *dagql.Cac
 	t.Helper()
 	dir := attachDefinitionTestResult(t, ctx, cache, srv, session, sourceField+"-context", &core.Directory{Platform: core.Platform{OS: "linux", Architecture: "arm64"}, Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]), Lazy: &core.DirectoryScratchLazy{LazyState: core.NewLazyState()}})
 	src := attachDefinitionTestResult(t, ctx, cache, srv, session, sourceField, &core.ModuleSource{Kind: core.ModuleSourceKindDir, ModuleName: "demo", ModuleOriginalName: "demo", ContextDirectory: dir})
-	src, err := src.WithContentDigest(ctx, scoped, call.ExtraDigestLabelRemoteCache)
+	src, err := src.WithContentDigest(ctx, scoped)
 	require.NoError(t, err)
 	runtime := attachDefinitionTestResult(t, ctx, cache, srv, session, runtimeField, &core.Container{Platform: core.Platform{OS: "linux", Architecture: "arm64"}, FS: new(core.LazyAccessor[*core.Directory, *core.Container]), MetaSnapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Container])})
 	schema := attachDefinitionTestResult(t, ctx, cache, srv, session, schemaField, &core.File{Platform: core.Platform{OS: "linux", Architecture: "arm64"}, File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Lazy: &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: schemaField + ".json", Contents: []byte("{}")}})
@@ -433,8 +433,9 @@ func TestModuleDefinitionImportedHit(t *testing.T) {
 	for i := range 7 {
 		attachDefinitionTestResult(t, bctx, b, srvB, "b", "padding", &core.Module{NameField: string(rune('p' + i))})
 	}
-	mapping, err := b.ImportValues(bctx, bundle)
+	reply, err := b.MergeValues(bctx, dagql.CloudCacheID, bundle)
 	require.NoError(t, err)
+	mapping := reply.Imported()
 	require.Len(t, mapping, 1)
 
 	// B reconstructs the inputs under its own recipes: the source under a

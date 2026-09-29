@@ -103,6 +103,9 @@ type CacheResultState struct {
 	ExpiresAtUnix int64
 	// Parts are the part addresses of the entry's complete parts, sorted.
 	Parts []string
+	// Replacements counts the replacements of the entry's value in place;
+	// the state above describes the current value.
+	Replacements uint64
 }
 
 // ResultState reads res's state in the cache that decided this call, with the

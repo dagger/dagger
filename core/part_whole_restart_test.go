@@ -65,7 +65,8 @@ func TestPartWholeLazyOperationMixedRestart(t *testing.T) {
 		payload.Parts[ContainerPartExecMeta] = persistedContainerPart{Kind: containerPartPending}
 		record.Envelope.ObjectJSON, err = json.Marshal(payload)
 		require.NoError(t, err)
-		imported, err := b.ImportValues(bctx, exported.Bundle)
+		importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		imported := importedReply.Imported()
 		require.NoError(t, err)
 		loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 		require.NoError(t, err)
@@ -135,7 +136,8 @@ func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 	child.Lazy = &ContainerFromImageRefLazy{LazyState: NewLazyState(), Parent: parent, CanonicalRef: "example.invalid/image@sha256:" + strings.Repeat("a", 64), Config: child.Config, Platform: platform}
 	original := attachTransferObject(t, actx, a, asrv, "a", "from", child)
 	require.NoError(t, a.WithExportedValues(actx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
-		imported, err := b.ImportValues(bctx, exported.Bundle)
+		importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		imported := importedReply.Imported()
 		require.NoError(t, err)
 		loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 		require.NoError(t, err)

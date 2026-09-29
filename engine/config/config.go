@@ -27,6 +27,9 @@ type Config struct {
 	// Telemetry configures the engine's own telemetry, separate from client telemetry.
 	Telemetry TelemetryConfig `json:"telemetry,omitempty"`
 
+	// RemoteCache connects the engine's cache to a remote cache service.
+	RemoteCache *RemoteCacheConfig `json:"remoteCache,omitempty"`
+
 	// GC configures the engine's garbage collector.
 	GC GCConfig `json:"gc,omitempty"`
 
@@ -56,6 +59,14 @@ type TelemetryConfig struct {
 	// environment, the credential it is sent under. The
 	// _EXPERIMENTAL_DAGGER_ENGINE_EVENTS environment variable enables it too.
 	EngineEvents bool `json:"engineEvents,omitempty" jsonschema:"default=false"`
+}
+
+type RemoteCacheConfig struct {
+	// URL is the remote cache service's URL. The engine connects to it when
+	// DAGGER_CLOUD_TOKEN holds an engine token, and then exports its cache
+	// events too. The _EXPERIMENTAL_DAGGER_REMOTE_CACHE_URL environment
+	// variable sets it too, and wins.
+	URL string `json:"url,omitempty"`
 }
 
 type LogLevel string

@@ -130,7 +130,8 @@ func TestPartAcquisitionRootRoutes(t *testing.T) {
 					}
 					b.SetPartContentSource(partTestContentSource{provider})
 				}
-				imported, err := b.ImportValues(bctx, exported.Bundle)
+				importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+				imported := importedReply.Imported()
 				require.NoError(t, err)
 				loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 				require.NoError(t, err)
@@ -248,7 +249,8 @@ func TestPartContainerMixedRestart(t *testing.T) {
 			providers[string(entry.Address.Part)] = p
 		}
 		b.SetPartContentSource(providers)
-		imported, err := b.ImportValues(bctx, exported.Bundle)
+		importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		imported := importedReply.Imported()
 		require.NoError(t, err)
 		loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 		require.NoError(t, err)
@@ -316,12 +318,20 @@ func TestPartMountReceiverRoles(t *testing.T) {
 		return ctr
 	}
 	original := attachTransferObject(t, actx, a, asrv, "a", "mounts", makeCtr(aStore, []string{"/a", "/b"}))
-	attachTransferObject(t, bctx, b, bsrv, "b", "mounts", makeCtr(bStore, []string{"/b", "/a"}))
+	// B's equivalent is another recipe, so the merged receiver is an entry of
+	// its own; B learns that both have one content, which makes them one
+	// class. A merge lands on the recipe's current entry when the cache has
+	// one.
+	local := attachTransferObject(t, bctx, b, bsrv, "b", "mountsReordered", makeCtr(bStore, []string{"/b", "/a"}))
+	content := digest.FromString("mount receiver roles")
+	require.NoError(t, b.TeachContentDigest(bctx, local, content))
 	require.NoError(t, a.WithExportedValues(actx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
-		imported, err := b.ImportValues(bctx, exported.Bundle)
+		importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		imported := importedReply.Imported()
 		require.NoError(t, err)
 		loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 		require.NoError(t, err)
+		require.NoError(t, b.TeachContentDigest(bctx, loaded, content))
 		result := loaded.(dagql.ObjectResult[*Container])
 		require.NoError(t, b.EvaluateParts(bctx, result, ContainerPartMount("/a")))
 		view := result.Self().acquiredOutput.Load()
@@ -352,13 +362,18 @@ func TestPartPrivateWholeBuiltin(t *testing.T) {
 	originalLazy := &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: platform, ManifestDigest: manifest.Digest}
 	ctr.Lazy = originalLazy
 	original := attachTransferObject(t, ctx, cache, srv, "operation-execution", "_builtinContainer", ctr)
+	// The receiver is another cache's: in this one the bundle's recipe is the
+	// original's own entry, which a merge keeps. Both have the builtin.
+	bctx, _, bcache, bsrv, bserver := executionFixture(t)
+	bserver.builtin = packaged
 	require.NoError(t, cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
-		imported, err := cache.ImportValues(ctx, exported.Bundle)
+		importedReply, err := bcache.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		imported := importedReply.Imported()
 		require.NoError(t, err)
-		loaded, err := cache.LoadResultByResultID(ctx, "", srv, imported[0].ResultID)
+		loaded, err := bcache.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 		require.NoError(t, err)
 		result := loaded.(dagql.ObjectResult[*Container])
-		require.NoError(t, cache.EvaluateParts(ctx, result, ContainerPartFS))
+		require.NoError(t, bcache.EvaluateParts(bctx, result, ContainerPartFS))
 		require.Equal(t, "/private", result.Self().Config.WorkingDir)
 		view := result.Self().acquiredOutput.Load()
 		require.NotNil(t, view)
@@ -367,7 +382,7 @@ func TestPartPrivateWholeBuiltin(t *testing.T) {
 		require.NotEmpty(t, view.Payload.LazyJSON)
 		require.False(t, originalLazy.lazyInitComplete.Load())
 		require.Same(t, originalLazy, ctr.Lazy)
-		require.NoError(t, cache.Evaluate(ctx, result))
+		require.NoError(t, bcache.Evaluate(bctx, result))
 		return nil
 	}))
 }

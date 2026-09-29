@@ -33,6 +33,14 @@ import (
 // database keeps across the engine's restarts.
 type CacheID string
 
+// cloudCacheID is the identity an engine keys its one Cloud holding by. The
+// Cloud's copy is not an engine cache's entry: an entry the Cloud holds still
+// has a value of its own, or is a cached nil result.
+const cloudCacheID CacheID = "cloud"
+
+// CloudCacheID is the sending cache an engine's merges name: the Cloud.
+const CloudCacheID = cloudCacheID
+
 // HolderKey names one entry of one engine cache: the cache's identity and the
 // entry's result number there.
 type HolderKey struct {
@@ -80,15 +88,57 @@ type RemoteHolding struct {
 	Deps []uint64
 	// Parts are the entry's complete parts in its cache.
 	Parts []PersistedPartAddress
+	// Replacements is the entry's replacement count in its cache, read with
+	// the value state above; it orders that state (HeldValueState).
+	Replacements uint64
 }
 
 // RemoteHoldingUpdate is what a later report adds to an existing holding: the
 // parts an evaluation completed, the content digest it learned and the
-// dependencies it added.
+// dependencies it added, at the entry's replacement count.
 type RemoteHoldingUpdate struct {
 	ContentDigest digest.Digest
 	Deps          []uint64
 	Parts         []PersistedPartAddress
+	Replacements  uint64
+}
+
+// RemoteChange is what one operation on the Cloud cache's holdings changed,
+// for the service to act on. Candidates are the holdings it created or
+// released an owner of, for the next CollectRemoteHoldings: no operation
+// collects by itself. Recipes are the recipe digests of the entries whose
+// reconciliation it may change: an entry it created or gave a new holding, one
+// whose holding's parts, count or expiry it changed, and every entry it
+// joined to another class of entries, directly or by congruence
+// (trackJoinsLocked). A recipe digest names the entry's class whenever
+// EquivalentHolders reads it, whatever renumbering the classes had in between.
+type RemoteChange struct {
+	Candidates []HolderKey
+	Recipes    []digest.Digest
+}
+
+func (ch *RemoteChange) addRecipeOf(entry *sharedResult) {
+	if len(entry.recipeKeys) > 0 && !slices.Contains(ch.Recipes, entry.recipeKeys[0]) {
+		ch.Recipes = append(ch.Recipes, entry.recipeKeys[0])
+	}
+}
+
+// HeldValueState is one observation of the value state of a holding's copy:
+// the counterpart entry's replacement count, read under the lock that read the
+// rest, and that value's dependencies, complete and offered parts, own expiry
+// (0: none) and content digest. A field the observation doesn't carry is
+// empty.
+//
+// The count orders observations of value state, whatever order they arrive
+// in (applyHeldValueStateLocked): an entry's parts go backward only when its
+// value is replaced, and each replacement raises its count.
+type HeldValueState struct {
+	Replacements  uint64
+	Deps          []uint64
+	Parts         []PersistedPartAddress
+	OfferedParts  []PersistedPartAddress
+	ExpiresAtUnix int64
+	ContentDigest digest.Digest
 }
 
 // RetentionObservation is one observation of an entry's retention edge in its
@@ -144,24 +194,43 @@ func (r *retentionRegister) observe(retained bool, expiresAtUnix int64, at obsTi
 	*r = retentionRegister{observed: true, retained: retained, expiresAtUnix: expiresAtUnix, at: at}
 }
 
+// heldPartState is how far a holding's cache has a part, in order of
+// advance: a part with no state is pending.
 type heldPartState uint8
 
 const (
+	// heldPartOffered: the holding's cache has an offer of the part, a
+	// download description, and not the bytes yet.
+	heldPartOffered heldPartState = iota + 1
 	// heldPartComplete: the holding's cache has the part's bytes.
-	heldPartComplete heldPartState = iota + 1
+	heldPartComplete
 )
 
 type heldPart struct {
 	state heldPartState
+	// offer is set on an engine only, in its Cloud holding: the Cloud's copy
+	// of the part, with its download addresses, renewal key and owner.
+	offer *partOffer
 }
 
-// holding is what the cache knows about one engine cache's copy of an entry.
-// Guarded by egraphMu.
+// holding is what the cache knows about another cache's copy of an entry:
+// on the Cloud, one engine cache's copy; on an engine, the Cloud's (see
+// cloudHoldingLocked). Guarded by egraphMu.
 type holding struct {
+	// replacements is the counterpart entry's replacement count that the
+	// value state describes: parts, expiresAtUnix, contentDigest and the
+	// dependencies (applyHeldValueStateLocked). An engine's Cloud holding
+	// doesn't use it.
+	replacements uint64
 	// expiresAtUnix is the copy's own expiry in its cache; the earlier
 	// non-zero value wins, as the engine merges it.
 	expiresAtUnix int64
-	// parts are the copy's complete parts, by part address key.
+	// unstored marks an engine's Cloud holding whose Cloud entry stores no
+	// record: the Cloud offers parts it keeps for another entry of the
+	// class. That copy has no value, so it keeps no terms (5.6). An engine
+	// cache's copy always has a value.
+	unstored bool
+	// parts are the copy's complete and offered parts, by part address key.
 	parts map[string]heldPart
 	// unknownDeps are dependency numbers no holding of this cache has yet.
 	unknownDeps map[uint64]struct{}
@@ -175,6 +244,21 @@ type holding struct {
 
 	typeName      string
 	contentDigest digest.Digest
+}
+
+// hasUnexpiredHoldingLocked reports whether another cache holds a copy of res
+// that has a value and has not expired: a holding whose own expiry is unset
+// or still ahead. Requires egraphMu.
+func (res *sharedResult) hasUnexpiredHoldingLocked(nowUnix int64) bool {
+	for _, h := range res.holders {
+		if h.unstored {
+			continue
+		}
+		if h.expiresAtUnix == 0 || nowUnix < h.expiresAtUnix {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *holding) owned() bool {
@@ -194,10 +278,18 @@ type remoteCacheState struct {
 
 // noValueLocked reports an entry known only through holdings: it has no value
 // of its own, neither decoded nor stored, so it is never served, loaded or
-// selected. The holdings tell it from an engine's cached nil result, which
-// also has neither but is served. Requires egraphMu.
+// selected. A holding of an engine cache tells it from a cached nil result,
+// which also has neither but is served, even when the Cloud holds it too.
+// Requires egraphMu.
 func (res *sharedResult) noValueLocked() bool {
-	if len(res.holders) == 0 {
+	engineHolding := false
+	for key := range res.holders {
+		if key.Cache != cloudCacheID {
+			engineHolding = true
+			break
+		}
+	}
+	if !engineHolding {
 		return false
 	}
 	res.payloadMu.RLock()
@@ -264,22 +356,30 @@ func (c *Cache) unindexRecipesLocked(res *sharedResult) {
 // and the content digest. The holding merges the expiry and adds the
 // dependencies and complete parts. A holding it creates is a candidate for
 // collection: it has no owner until a hold, retention or a dependent names it.
-func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding) (candidates []HolderKey, _ error) {
+func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding) (RemoteChange, error) {
+	var change RemoteChange
 	if key.Cache == "" || key.Number == 0 || desc.Recipe == "" {
-		return nil, fmt.Errorf("attach remote holding: empty key or recipe")
+		return change, fmt.Errorf("attach remote holding: empty key or recipe")
+	}
+	if key.Cache == cloudCacheID {
+		// An engine's Cloud holding owns nothing; merges and offers keep it.
+		return change, fmt.Errorf("attach remote holding: %q is not an engine cache", key.Cache)
 	}
 	parts, err := heldPartKeys(desc.Parts)
 	if err != nil {
-		return nil, fmt.Errorf("attach remote holding %s/%d: %w", key.Cache, key.Number, err)
+		return change, fmt.Errorf("attach remote holding %s/%d: %w", key.Cache, key.Number, err)
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	c.initEgraphLocked()
 	state := c.remoteCacheLocked(key.Cache)
+	joined := c.trackJoinsLocked()
 	entry, h := c.holdingLocked(key)
+	affected := false
 	if h == nil {
 		entry, h = c.newHoldingLocked(ctx, state, key, desc)
-		candidates = []HolderKey{key}
+		change.Candidates = []HolderKey{key}
+		affected = true
 	}
 	c.teachRemoteIdentityLocked(ctx, entry, desc.Field, desc.Recipe, desc.Request, desc.ContentDigest, desc.Term)
 	if desc.Request != "" && desc.Request != desc.Recipe {
@@ -287,16 +387,21 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 			c.indexRecipeLocked(desc.Request, entry)
 		}
 	}
-	h.expiresAtUnix = mergeSharedResultExpiryUnix(h.expiresAtUnix, desc.ExpiresAtUnix)
 	if desc.TypeName != "" {
 		h.typeName = desc.TypeName
 	}
-	if desc.ContentDigest != "" {
-		h.contentDigest = desc.ContentDigest
+	candidates, changed := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
+		Replacements:  desc.Replacements,
+		Deps:          desc.Deps,
+		ExpiresAtUnix: desc.ExpiresAtUnix,
+		ContentDigest: desc.ContentDigest,
+	}, parts, nil)
+	change.Candidates = append(change.Candidates, candidates...)
+	if affected || changed {
+		change.addRecipeOf(entry)
 	}
-	addHeldParts(h, parts)
-	c.addHoldingDepsLocked(state, key, h, desc.Deps)
-	return candidates, nil
+	joined(&change)
+	return change, nil
 }
 
 // newHoldingLocked attaches a new holding to the entry of desc's recipe and
@@ -312,6 +417,13 @@ func (c *Cache) newHoldingLocked(ctx context.Context, state *remoteCacheState, k
 		c.resultsByID[entry.id] = entry
 		c.indexRecipeLocked(desc.Recipe, entry)
 	}
+	return entry, c.addHoldingLocked(ctx, state, key, entry)
+}
+
+// addHoldingLocked attaches a new holding to entry and gives it its waiting
+// dependents: holdings of its cache that named its number before it existed.
+// Requires egraphMu for writing.
+func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult) *holding {
 	h := &holding{}
 	if entry.holders == nil {
 		entry.holders = make(map[HolderKey]*holding)
@@ -335,30 +447,245 @@ func (c *Cache) newHoldingLocked(ctx context.Context, state *remoteCacheState, k
 		}
 	}
 	delete(state.unknownDependents, key.Number)
-	return entry, h
+	return h
 }
 
-// UpdateRemoteHolding adds what a later report of an existing holding carries:
-// completed parts, a learned content digest and added dependencies. It reports
-// false, and changes nothing, when the cache has no such holding.
-func (c *Cache) UpdateRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate) (bool, error) {
+// ApplyMergedReply applies an engine cache's merged reply: for each record
+// the Cloud sent, the entry it landed on in that cache holds the value of the
+// record's Cloud entry, named by the record's SenderNumber. Merge on an engine
+// runs in no session and no span names what it made, so the reply creates a
+// holding that doesn't exist yet. Each target's value state is the reply's,
+// at the target's replacement count: its actual dependencies, its complete
+// and offered parts, and its own expiry. The roots' retention is one more
+// observation, at the reply's generation and engine time. A record whose
+// Cloud entry is gone is skipped.
+//
+// It collects nothing. It returns the holdings it created or released an
+// owner of, for the next CollectRemoteHoldings, and the recipes it affected.
+func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (RemoteChange, error) {
+	var change RemoteChange
+	if cache == "" || cache == cloudCacheID {
+		return change, fmt.Errorf("apply merged reply: %q is not an engine cache", cache)
+	}
+	cloudEntries := make(map[TransferOrdinal]sharedResultID, len(sent.Values))
+	for _, value := range sent.Values {
+		cloudEntries[value.Ordinal] = sharedResultID(value.SenderNumber)
+	}
+	type target struct {
+		value         MergedValue
+		parts, offers []string
+	}
+	targets := make([]target, 0, len(reply.Values))
+	for _, value := range reply.Values {
+		if value.Number == 0 {
+			return change, fmt.Errorf("apply merged reply: ordinal %d has no number", value.Ordinal)
+		}
+		if _, ok := cloudEntries[value.Ordinal]; !ok {
+			return change, fmt.Errorf("apply merged reply: ordinal %d was not sent", value.Ordinal)
+		}
+		parts, err := heldPartKeys(value.Parts)
+		if err != nil {
+			return change, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
+		}
+		offers, err := heldPartKeys(value.OfferedParts)
+		if err != nil {
+			return change, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
+		}
+		targets = append(targets, target{value: value, parts: parts, offers: offers})
+	}
+	at := obsTime{generation: reply.Generation, engineTime: reply.EngineTimeUnixNano}
+
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	c.initEgraphLocked()
+	state := c.remoteCacheLocked(cache)
+	for _, t := range targets {
+		key := HolderKey{Cache: cache, Number: t.value.Number}
+		entry, h := c.holdingLocked(key)
+		created := false
+		if h == nil {
+			entry = c.resultsByID[cloudEntries[t.value.Ordinal]]
+			if entry == nil {
+				continue
+			}
+			h = c.addHoldingLocked(ctx, state, key, entry)
+			change.Candidates = append(change.Candidates, key)
+			created = true
+		}
+		candidates, changed := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
+			Replacements:  t.value.Replacements,
+			Deps:          t.value.Deps,
+			ExpiresAtUnix: t.value.ExpiresAtUnix,
+		}, t.parts, t.offers)
+		change.Candidates = append(change.Candidates, candidates...)
+		if created || changed {
+			change.addRecipeOf(entry)
+		}
+	}
+	for _, root := range reply.Roots {
+		if root.Expired || root.Number == 0 {
+			continue
+		}
+		key := HolderKey{Cache: cache, Number: root.Number}
+		_, h := c.holdingLocked(key)
+		if h == nil {
+			continue
+		}
+		h.retention.observe(root.Retained, root.RetentionExpiresAtUnix, at)
+		if !h.retention.retained {
+			change.Candidates = append(change.Candidates, key)
+		}
+	}
+	return change, nil
+}
+
+// UpdateRemoteHolding applies what a later report of an existing holding
+// carries, completed parts, a learned content digest and dependencies, as one
+// observation of its value state at the report's replacement count. It
+// reports false, and changes nothing, when the cache has no such holding: a
+// lazy span or share event never creates one. A higher count can drop
+// dependencies, whose holdings it returns as candidates.
+func (c *Cache) UpdateRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate) (RemoteChange, bool, error) {
+	var change RemoteChange
 	parts, err := heldPartKeys(update.Parts)
 	if err != nil {
-		return false, fmt.Errorf("update remote holding %s/%d: %w", key.Cache, key.Number, err)
+		return change, false, fmt.Errorf("update remote holding %s/%d: %w", key.Cache, key.Number, err)
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	entry, h := c.holdingLocked(key)
 	if h == nil {
-		return false, nil
+		return change, false, nil
 	}
-	if update.ContentDigest != "" {
-		c.teachRemoteIdentityLocked(ctx, entry, entry.description, "", "", update.ContentDigest, nil)
-		h.contentDigest = update.ContentDigest
+	joined := c.trackJoinsLocked()
+	candidates, changed := c.applyHeldValueStateLocked(ctx, c.remoteCacheLocked(key.Cache), key, entry, h, HeldValueState{
+		Replacements:  update.Replacements,
+		Deps:          update.Deps,
+		ContentDigest: update.ContentDigest,
+	}, parts, nil)
+	change.Candidates = candidates
+	if changed {
+		change.addRecipeOf(entry)
 	}
-	addHeldParts(h, parts)
-	c.addHoldingDepsLocked(c.remoteCacheLocked(key.Cache), key, h, update.Deps)
-	return true, nil
+	joined(&change)
+	return change, true, nil
+}
+
+// trackJoinsLocked starts collecting the entries that class unions join to
+// another class of entries, the row's entry or any other, directly or by
+// congruence. A union with a class no entry is in, such as a newly taught
+// digest's, joins no entries: it changes no class's set of equivalent
+// holdings. The returned function adds each joined entry's recipe digest to
+// change and stops. Both run in one hold of egraphMu for writing.
+func (c *Cache) trackJoinsLocked() func(change *RemoteChange) {
+	c.joinedEntries = map[sharedResultID]struct{}{}
+	return func(change *RemoteChange) {
+		joined := make([]sharedResultID, 0, len(c.joinedEntries))
+		for id := range c.joinedEntries {
+			joined = append(joined, id)
+		}
+		c.joinedEntries = nil
+		slices.Sort(joined)
+		for _, id := range joined {
+			if entry := c.resultsByID[id]; entry != nil {
+				change.addRecipeOf(entry)
+			}
+		}
+	}
+}
+
+// noteJoinedEntriesLocked records, while trackJoinsLocked collects, the
+// entries of the class a union of two classes of entries has just formed:
+// every one of them has joined another class. Requires egraphMu for writing.
+func (c *Cache) noteJoinedEntriesLocked(root eqClassID) {
+	if c.joinedEntries == nil {
+		return
+	}
+	for id := range c.outputEqClassResults[root] {
+		c.joinedEntries[id] = struct{}{}
+	}
+}
+
+// applyHeldValueStateLocked applies one observation of h's value state by the
+// replacement count it carries.
+//   - A lower count describes a value the counterpart has replaced, and is
+//     ignored, but for its content digest's class identity: the class learns
+//     every observation's, whatever its count.
+//   - A higher count replaces the value state: the parts, expiry and content
+//     digest start from the observation's, and the dependencies become the
+//     observation's. The holding releases its ownership of the dependencies
+//     it drops, returned as candidates, and forgets its dropped unknown
+//     numbers. Every observation that can raise the count carries the value's
+//     dependencies, so they are never replaced with an empty set by mistake.
+//   - An equal count merges: each part takes the more advanced state, the
+//     earlier non-zero expiry wins, and the content digest and dependencies
+//     are added. Within one value, an entry's dependencies only grow.
+//
+// parts and offered are the observation's complete and offered part address
+// keys. It returns the dropped dependencies' holdings, and whether the
+// holding's count, parts or expiry changed: the value state reconciliation
+// reads. A content digest it teaches changes that only by joining classes,
+// which trackJoinsLocked reports. Requires egraphMu for writing.
+func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, obs HeldValueState, parts, offered []string) ([]HolderKey, bool) {
+	if obs.ContentDigest != "" && obs.ContentDigest != h.contentDigest {
+		// The class learns a content digest from every observation, whatever
+		// its count: a union is never undone, and gating it by count would
+		// only make the class depend on arrival order. The holding's own
+		// content digest follows the count below.
+		c.teachRemoteIdentityLocked(ctx, entry, entry.description, "", "", obs.ContentDigest, nil)
+	}
+	if obs.Replacements < h.replacements {
+		return nil, false
+	}
+	var candidates []HolderKey
+	changed := false
+	if obs.Replacements > h.replacements {
+		changed = true
+		h.replacements = obs.Replacements
+		h.parts = nil
+		h.expiresAtUnix = 0
+		h.contentDigest = ""
+		kept := make(map[uint64]struct{}, len(obs.Deps))
+		for _, number := range obs.Deps {
+			kept[number] = struct{}{}
+		}
+		for number := range h.deps {
+			if _, ok := kept[number]; ok {
+				continue
+			}
+			delete(h.deps, number)
+			depKey := HolderKey{Cache: key.Cache, Number: number}
+			if _, dep := c.holdingLocked(depKey); dep != nil {
+				dep.dependents--
+				candidates = append(candidates, depKey)
+			}
+		}
+		for number := range h.unknownDeps {
+			if _, ok := kept[number]; ok {
+				continue
+			}
+			delete(h.unknownDeps, number)
+			delete(state.unknownDependents[number], key.Number)
+			if len(state.unknownDependents[number]) == 0 {
+				delete(state.unknownDependents, number)
+			}
+		}
+	}
+	if expires := mergeSharedResultExpiryUnix(h.expiresAtUnix, obs.ExpiresAtUnix); expires != h.expiresAtUnix {
+		h.expiresAtUnix = expires
+		changed = true
+	}
+	if obs.ContentDigest != "" {
+		h.contentDigest = obs.ContentDigest
+	}
+	if advanceHeldParts(h, offered, heldPartOffered) {
+		changed = true
+	}
+	if advanceHeldParts(h, parts, heldPartComplete) {
+		changed = true
+	}
+	c.addHoldingDepsLocked(state, key, h, obs.Deps)
+	return candidates, changed
 }
 
 // AddRemoteHold records that session holds the holding.
@@ -495,26 +822,10 @@ func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKe
 		if h == nil || h.owned() {
 			continue
 		}
-		state := c.remoteCaches[key.Cache]
-		delete(entry.holders, key)
-		delete(c.holderEntries, key)
-		state.holdings--
-		for number := range h.deps {
-			depKey := HolderKey{Cache: key.Cache, Number: number}
-			if _, dep := c.holdingLocked(depKey); dep != nil {
-				dep.dependents--
-				queue = append(queue, depKey)
-			}
-		}
-		for number := range h.unknownDeps {
-			delete(state.unknownDependents[number], key.Number)
-			if len(state.unknownDependents[number]) == 0 {
-				delete(state.unknownDependents, number)
-			}
-		}
+		deps, more, err := c.removeHoldingLocked(ctx, c.remoteCaches[key.Cache], key, entry, h, entries)
+		queue = append(queue, deps...)
+		entries = more
 		collected = append(collected, key)
-		var err error
-		entries, err = c.decrementIncomingOwnershipLocked(ctx, entry, entries)
 		rerr = errors.Join(rerr, err)
 	}
 	for id, state := range c.remoteCaches {
@@ -585,6 +896,124 @@ func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
 		"duration", time.Since(start))
 }
 
+// removeHoldingLocked takes a holding off its entry: out of holderEntries and
+// its cache's count, releasing its ownership of its holding dependencies,
+// whose keys it returns, and forgetting its unknown numbers. It releases the
+// holding's unit on its entry, appending to entries those left to collect.
+// Requires egraphMu for writing.
+func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, entries []*sharedResult) ([]HolderKey, []*sharedResult, error) {
+	delete(entry.holders, key)
+	delete(c.holderEntries, key)
+	state.holdings--
+	var deps []HolderKey
+	for number := range h.deps {
+		depKey := HolderKey{Cache: key.Cache, Number: number}
+		if _, dep := c.holdingLocked(depKey); dep != nil {
+			dep.dependents--
+			deps = append(deps, depKey)
+		}
+	}
+	for number := range h.unknownDeps {
+		delete(state.unknownDependents[number], key.Number)
+		if len(state.unknownDependents[number]) == 0 {
+			delete(state.unknownDependents, number)
+		}
+	}
+	entries, err := c.decrementIncomingOwnershipLocked(ctx, entry, entries)
+	return deps, entries, err
+}
+
+// CollectRemoteHolding removes one holding outright, for a gone answer: its
+// cache no longer has the entry, and a number names one entry for the life of
+// its cache identity, so the answer is final. Its sessions' holds and its
+// retention go with it, and its dependents' edges to it become unknown
+// numbers, as for any dependency whose holding is gone. Its unit on its entry
+// is released, and dagql's collection removes the entry if nothing else owns
+// it. It returns as candidates the holdings it depended on, for the next
+// CollectRemoteHoldings, which cascades; it reports false when the cache has
+// no such holding. Entries it removes count toward the next check of the
+// classes' compaction, which only CollectRemoteHoldings runs
+// (compactEqClassesAfterCollectionLocked).
+func (c *Cache) CollectRemoteHolding(ctx context.Context, key HolderKey) ([]HolderKey, bool, error) {
+	c.egraphMu.Lock()
+	entry, h := c.holdingLocked(key)
+	if h == nil {
+		c.egraphMu.Unlock()
+		return nil, false, nil
+	}
+	entriesBefore := len(c.resultsByID)
+	state := c.remoteCaches[key.Cache]
+	if h.dependents > 0 {
+		for parentKey, id := range c.holderEntries {
+			if parentKey.Cache != key.Cache {
+				continue
+			}
+			parent := c.resultsByID[id].holders[parentKey]
+			if _, ok := parent.deps[key.Number]; !ok {
+				continue
+			}
+			delete(parent.deps, key.Number)
+			if parent.unknownDeps == nil {
+				parent.unknownDeps = make(map[uint64]struct{})
+			}
+			parent.unknownDeps[key.Number] = struct{}{}
+			parents := state.unknownDependents[key.Number]
+			if parents == nil {
+				parents = make(map[uint64]struct{})
+				state.unknownDependents[key.Number] = parents
+			}
+			parents[parentKey.Number] = struct{}{}
+		}
+	}
+	for session := range h.sessions {
+		delete(state.sessions[session], key.Number)
+		if len(state.sessions[session]) == 0 {
+			delete(state.sessions, session)
+		}
+	}
+	candidates, entries, err := c.removeHoldingLocked(ctx, state, key, entry, h, nil)
+	if state.holdings == 0 {
+		delete(c.remoteCaches, key.Cache)
+	}
+	releases, collectErr := c.collectUnownedResultsLocked(ctx, entries)
+	if len(c.resultsByID) < entriesBefore {
+		c.eqClassRemoved = true
+	}
+	c.egraphMu.Unlock()
+	slices.SortFunc(candidates, compareHolderKeys)
+	return candidates, true, errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases))
+}
+
+// ApplyHeldValueState applies one observation of an existing holding's value
+// state, such as an offered reply's, by its replacement count
+// (applyHeldValueStateLocked). It never creates a holding: an observation
+// about one that doesn't exist is dropped, and reports false.
+func (c *Cache) ApplyHeldValueState(ctx context.Context, key HolderKey, obs HeldValueState) (RemoteChange, bool, error) {
+	var change RemoteChange
+	parts, err := heldPartKeys(obs.Parts)
+	if err != nil {
+		return change, false, fmt.Errorf("apply held value state %s/%d: %w", key.Cache, key.Number, err)
+	}
+	offered, err := heldPartKeys(obs.OfferedParts)
+	if err != nil {
+		return change, false, fmt.Errorf("apply held value state %s/%d: %w", key.Cache, key.Number, err)
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	entry, h := c.holdingLocked(key)
+	if h == nil {
+		return change, false, nil
+	}
+	joined := c.trackJoinsLocked()
+	candidates, changed := c.applyHeldValueStateLocked(ctx, c.remoteCacheLocked(key.Cache), key, entry, h, obs, parts, offered)
+	change.Candidates = candidates
+	if changed {
+		change.addRecipeOf(entry)
+	}
+	joined(&change)
+	return change, true, nil
+}
+
 // addHoldingDepsLocked adds dependency numbers to a holding of the same cache:
 // a number the cache holds is owned through that holding's dependents, and
 // any other number waits in the reverse index until its holding is created.
@@ -633,13 +1062,21 @@ func heldPartKeys(addresses []PersistedPartAddress) ([]string, error) {
 	return keys, nil
 }
 
-func addHeldParts(h *holding, keys []string) {
+// advanceHeldParts raises each named part of h to at least state, complete
+// over offered over pending, and reports whether any rose.
+func advanceHeldParts(h *holding, keys []string, state heldPartState) bool {
+	advanced := false
 	for _, key := range keys {
 		if h.parts == nil {
 			h.parts = make(map[string]heldPart)
 		}
-		h.parts[key] = heldPart{state: heldPartComplete}
+		if part := h.parts[key]; part.state < state {
+			part.state = state
+			h.parts[key] = part
+			advanced = true
+		}
 	}
+	return advanced
 }
 
 // teachRemoteIdentityLocked makes the entry an output of the class of its
@@ -745,7 +1182,14 @@ func (c *Cache) HolderClosure(key HolderKey) []HolderKey {
 
 // RemoteEntryInfo describes an entry and every holding on it.
 type RemoteEntryInfo struct {
-	Field string
+	// Number is the entry's number in this cache.
+	Number uint64
+	// Stored reports that the entry stores a record, a value of its own, and
+	// StoredExpiresAtUnix is that record's own expiry (0: none, or no
+	// record).
+	Stored              bool
+	StoredExpiresAtUnix int64
+	Field               string
 	// Recipes are the recipe digests that name the entry.
 	Recipes []digest.Digest
 	// Digests are the digests the entry is posted under.
@@ -770,10 +1214,17 @@ type RemoteHoldingInfo struct {
 	Deps                   []uint64
 	UnknownDeps            []uint64
 	Dependents             int
-	Parts                  []PersistedPartAddress
+	// Parts are the copy's complete parts, and OfferedParts the ones its
+	// cache has an offer of and not the bytes.
+	Parts        []PersistedPartAddress
+	OfferedParts []PersistedPartAddress
+	// Replacements is the counterpart's replacement count the value state
+	// describes.
+	Replacements uint64
 }
 
-// RemoteEntryInfo returns what the cache holds for the entry of one holding.
+// RemoteEntryInfo returns what the cache holds for the entry of one holding,
+// read under one hold.
 func (c *Cache) RemoteEntryInfo(key HolderKey) (RemoteEntryInfo, bool) {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
@@ -781,7 +1232,30 @@ func (c *Cache) RemoteEntryInfo(key HolderKey) (RemoteEntryInfo, bool) {
 	if h == nil {
 		return RemoteEntryInfo{}, false
 	}
-	info := RemoteEntryInfo{Field: entry.description, Recipes: slices.Clone(entry.recipeKeys)}
+	return c.remoteEntryInfoLocked(entry), true
+}
+
+// EntryInfo returns the same as RemoteEntryInfo for the entry numbered
+// number, read under one hold. It reports false when the cache has no such
+// entry.
+func (c *Cache) EntryInfo(number uint64) (RemoteEntryInfo, bool) {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	entry := c.resultsByID[sharedResultID(number)]
+	if entry == nil {
+		return RemoteEntryInfo{}, false
+	}
+	return c.remoteEntryInfoLocked(entry), true
+}
+
+// remoteEntryInfoLocked describes entry: its number, whether it stores a
+// record and that record's expiry, its identity and its holdings. Requires
+// egraphMu.
+func (c *Cache) remoteEntryInfoLocked(entry *sharedResult) RemoteEntryInfo {
+	info := RemoteEntryInfo{Number: uint64(entry.id), Field: entry.description, Recipes: slices.Clone(entry.recipeKeys)}
+	if !entry.noValueLocked() {
+		info.Stored, info.StoredExpiresAtUnix = true, entry.expiresAtUnix
+	}
 	slices.Sort(info.Recipes)
 	digests := map[string]struct{}{}
 	for _, dig := range c.resultIndexedDigests[entry.id] {
@@ -805,7 +1279,7 @@ func (c *Cache) RemoteEntryInfo(key HolderKey) (RemoteEntryInfo, bool) {
 		info.Holdings = append(info.Holdings, holdingInfo(holderKey, held))
 	}
 	slices.SortFunc(info.Holdings, func(a, b RemoteHoldingInfo) int { return compareHolderKeys(a.Key, b.Key) })
-	return info, true
+	return info
 }
 
 func holdingInfo(key HolderKey, h *holding) RemoteHoldingInfo {
@@ -816,6 +1290,7 @@ func holdingInfo(key HolderKey, h *holding) RemoteHoldingInfo {
 		ExpiresAtUnix: h.expiresAtUnix,
 		Retained:      h.retention.retained,
 		Dependents:    h.dependents,
+		Replacements:  h.replacements,
 	}
 	if h.retention.retained {
 		info.RetentionExpiresAtUnix = h.retention.expiresAtUnix
@@ -839,8 +1314,13 @@ func holdingInfo(key HolderKey, h *holding) RemoteHoldingInfo {
 	slices.Sort(partKeys)
 	for _, partKey := range partKeys {
 		var address PersistedPartAddress
-		if err := json.Unmarshal([]byte(partKey), &address); err == nil {
+		if err := json.Unmarshal([]byte(partKey), &address); err != nil {
+			continue
+		}
+		if h.parts[partKey].state == heldPartComplete {
 			info.Parts = append(info.Parts, address)
+		} else {
+			info.OfferedParts = append(info.OfferedParts, address)
 		}
 	}
 	return info

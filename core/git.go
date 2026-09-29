@@ -21,7 +21,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -1570,7 +1569,7 @@ func deferGitTreeContentDigest(ctx context.Context, dir *Directory, contentDiges
 	if contentDigest == "" || dir == nil || dir.PartHostBinding() == nil {
 		return nil
 	}
-	return dir.PartHostBinding().SetContentDigestAfterEvaluation(ctx, contentDigest, call.ExtraDigestLabelRemoteCache)
+	return dir.PartHostBinding().SetContentDigestAfterEvaluation(ctx, contentDigest)
 }
 
 func deferPrivateGitTreeContentDigest(ctx context.Context, operation Lazy[*Directory]) error {
@@ -1584,7 +1583,7 @@ func deferPrivateGitTreeContentDigest(ctx context.Context, operation Lazy[*Direc
 	if contentDigest == "" {
 		return nil
 	}
-	return dagql.PartTaskFromContext(ctx).SetContentDigestAfterEvaluation(contentDigest, call.ExtraDigestLabelRemoteCache)
+	return dagql.PartTaskFromContext(ctx).SetContentDigestAfterEvaluation(contentDigest)
 }
 
 // evaluateGitTreeInto is the shared evaluation of the two git tree recipes:

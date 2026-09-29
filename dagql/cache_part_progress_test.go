@@ -294,7 +294,7 @@ func chainLoopFixture(t *testing.T, demand *PartDemandState, arm func(c *Cache, 
 	c.egraphMu.Lock()
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	if err == nil {
-		err = c.attachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
+		err = c.testAttachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)

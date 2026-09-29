@@ -20,7 +20,7 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	row := root.cacheSharedResult()
 	invalid := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
 	c.egraphMu.Lock()
-	for _, offer := range row.partOffers {
+	for _, offer := range row.testPartOffers() {
 		offer.record.Chain.Layers = []snapshots.ExportLayer{{CreatedAt: &invalid}}
 	}
 	before := row.incomingOwnershipCount
@@ -35,7 +35,7 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	// Both failed captures released the graph lock and leaked no capture hold.
 	c.egraphMu.Lock()
 	after := row.incomingOwnershipCount
-	for _, offer := range row.partOffers {
+	for _, offer := range row.testPartOffers() {
 		offer.record.Chain.Layers = nil
 	}
 	c.egraphMu.Unlock()
@@ -86,10 +86,10 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if err := c.attachPartOfferLocked(r, first.record.Address, first); err != nil {
+		if err := c.testAttachPartOfferLocked(r, first.record.Address, first); err != nil {
 			return err
 		}
-		if err := c.attachPartOfferLocked(r, second.record.Address, second); err != nil {
+		if err := c.testAttachPartOfferLocked(r, second.record.Address, second); err != nil {
 			return err
 		}
 		initialOwners = s.incomingOwnershipCount
@@ -105,7 +105,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		queue, err := c.replacePartOfferLocked(ctx, r, replacement.record.Address, replacement)
+		queue, err := c.testReplacePartOfferLocked(ctx, r, replacement.record.Address, replacement)
 		if err != nil {
 			return err
 		}
@@ -129,7 +129,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 			return err
 		}
 		before = r.transferRevision
-		_, cycleErr = c.replacePartOfferLocked(ctx, r, cycle.record.Address, cycle)
+		_, cycleErr = c.testReplacePartOfferLocked(ctx, r, cycle.record.Address, cycle)
 		after = r.transferRevision
 		if _, err := c.releaseOfferOwnerLocked(ctx, cycle.owner); err != nil {
 			return err
@@ -188,7 +188,7 @@ func TestValueTransferOwnerPersistence(t *testing.T) {
 	owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{DependencyIDs: []uint64{uint64(s.id)}})
 	if err == nil {
 		offer := &partOffer{owner: owner, record: PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}}
-		err = c.attachPartOfferLocked(r, offer.record.Address, offer)
+		err = c.testAttachPartOfferLocked(r, offer.record.Address, offer)
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestValueTransferOwnerPersistence(t *testing.T) {
 	require.NotNil(t, restored)
 	require.True(t, IsImportedResult(Result[Typed]{shared: restored}))
 	require.Empty(t, restored.deps)
-	require.Len(t, restored.partOffers, 1)
+	require.Len(t, restored.testPartOffers(), 1)
 	require.Equal(t, int64(1), c.resultsByID[s.id].incomingOwnershipCount)
 	require.Len(t, c.offerOwners, 1)
 	_, removed, err := c.removePersistedEdge(context.WithoutCancel(ctx), r.id)

@@ -67,7 +67,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 			c.egraphMu.Lock()
 			owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 			if err == nil {
-				err = c.attachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
+				err = c.testAttachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
 			}
 			c.egraphMu.Unlock()
 			require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestPartAdmittedChainLifetime(t *testing.T) {
 				var callbacks []OnReleaseFunc
 				if err == nil {
 					var q []*sharedResult
-					q, err = c.replacePartOfferLocked(ctx, donor.cacheSharedResult(), address, &partOffer{record: record, owner: replacement})
+					q, err = c.testReplacePartOfferLocked(ctx, donor.cacheSharedResult(), address, &partOffer{record: record, owner: replacement})
 					if err == nil {
 						callbacks, err = c.collectUnownedResultsLocked(ctx, q)
 					}
@@ -256,7 +256,7 @@ func TestPartImportChainRefCleanupHandoff(t *testing.T) {
 			c.egraphMu.Lock()
 			owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 			if err == nil {
-				err = c.attachPartOfferLocked(row, address, &partOffer{record: record, owner: owner})
+				err = c.testAttachPartOfferLocked(row, address, &partOffer{record: record, owner: owner})
 			}
 			c.egraphMu.Unlock()
 			require.NoError(t, err)

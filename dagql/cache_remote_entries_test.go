@@ -54,9 +54,9 @@ func newCloudApplier(t *testing.T, cloud *Cache) *cloudApplier {
 func (a *cloudApplier) call(row callRow) {
 	a.t.Helper()
 	ctx := a.t.Context()
-	candidates, err := a.cloud.AttachRemoteHolding(ctx, row.key, row.holding)
+	change, err := a.cloud.AttachRemoteHolding(ctx, row.key, row.holding)
 	require.NoError(a.t, err)
-	a.candidates = append(a.candidates, candidates...)
+	a.candidates = append(a.candidates, change.Candidates...)
 	if row.session != "" && !a.ended[row.session] {
 		require.NoError(a.t, a.cloud.AddRemoteHold(ctx, row.key, row.session))
 	}
@@ -778,7 +778,7 @@ func TestRemoteLazyUpdateBeforeHolding(t *testing.T) {
 	a := newCloudApplier(t, cloud)
 	key := HolderKey{"cache-a", 5}
 	update := RemoteHoldingUpdate{ContentDigest: testDigest("content"), Parts: []PersistedPartAddress{{Part: "fs"}}, Deps: []uint64{4}}
-	found, err := cloud.UpdateRemoteHolding(t.Context(), key, update)
+	_, found, err := cloud.UpdateRemoteHolding(t.Context(), key, update)
 	require.NoError(t, err)
 	require.False(t, found)
 	requireNoHolding(t, cloud, key)
@@ -797,7 +797,7 @@ func TestRemoteLazyUpdateBeforeHolding(t *testing.T) {
 	require.Equal(t, []HolderKey{key}, cloud.EquivalentHolders(testDigest("content").String()))
 
 	// A lazy row after the holding adds to it.
-	found, err = cloud.UpdateRemoteHolding(t.Context(), key, RemoteHoldingUpdate{Parts: []PersistedPartAddress{{OutputPath: PersistedRefPath{}.Field("rootfs"), Part: "snapshot"}}, Deps: []uint64{4}})
+	_, found, err = cloud.UpdateRemoteHolding(t.Context(), key, RemoteHoldingUpdate{Parts: []PersistedPartAddress{{OutputPath: PersistedRefPath{}.Field("rootfs"), Part: "snapshot"}}, Deps: []uint64{4}})
 	require.NoError(t, err)
 	require.True(t, found)
 	h = requireHolding(t, cloud, key)
@@ -1245,6 +1245,42 @@ func TestCollectionChecksAReleaseAfterTheInterval(t *testing.T) {
 	require.Equal(t, before, after)
 }
 
+// Gone answers remove entries too, and never check by themselves: their
+// removal counts toward the next collection's check after the interval, which
+// compacts the classes to the live ones though it collects nothing itself.
+func TestCollectionChecksGoneAnswersAfterTheInterval(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	advance := testEqClassClock(cloud)
+	a := newCloudApplier(t, cloud)
+	keep := HolderKey{"stays", 1}
+	a.call(callRow{key: keep, session: "stays", holding: holdingOf("stays")})
+	for i := range 200 {
+		a.call(callRow{key: HolderKey{"gone", uint64(i + 1)}, session: "running", holding: holdingOf(fmt.Sprintf("gone-%d", i))})
+	}
+	require.Empty(t, a.collect())
+	checks := testEqClassChecks(cloud)
+
+	advance(eqClassCheckInterval)
+	for i := range 200 {
+		_, found, err := cloud.CollectRemoteHolding(t.Context(), HolderKey{"gone", uint64(i + 1)})
+		require.NoError(t, err)
+		require.True(t, found)
+	}
+	require.Equal(t, checks, testEqClassChecks(cloud), "gone answers don't check, even after the interval")
+
+	collected, err := cloud.CollectRemoteHoldings(t.Context(), nil)
+	require.NoError(t, err)
+	require.Empty(t, collected)
+	cloud.egraphMu.Lock()
+	slots, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
+	cloud.egraphMu.Unlock()
+	require.Equal(t, checks+1, testEqClassChecks(cloud), "the next collection checks")
+	require.Equal(t, live, slots, "and compacts to the live classes")
+	_, ok := cloud.RemoteEntryInfo(keep)
+	require.True(t, ok)
+}
+
 // A term over many inputs whose holdings the Cloud never saw adds one class
 // per input. Releasing that one entry is a change even though it removes only
 // one entry and one term: the first collection after the interval checks and
@@ -1278,4 +1314,113 @@ func TestCollectionChecksAWideTermReleaseAfterTheInterval(t *testing.T) {
 	require.Equal(t, checks+1, testEqClassChecks(cloud))
 	require.Equal(t, 30, live)
 	require.Equal(t, live, slots, "the wide term's input classes are freed")
+}
+
+// A row returns the recipe digest of each entry it affected: one it created,
+// gave a new holding, or changed the holding's value state of (parts, count or
+// expiry), and every entry it joined to another class, directly or by
+// congruence. A row that does none of these returns no digest.
+func TestHoldingRowsReturnTheAffectedRecipes(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cloud := newCloudCache(t)
+	key := func(cache CacheID, n uint64) HolderKey { return HolderKey{Cache: cache, Number: n} }
+	attach := func(k HolderKey, h RemoteHolding) []digest.Digest {
+		t.Helper()
+		change, err := cloud.AttachRemoteHolding(ctx, k, h)
+		require.NoError(t, err)
+		return change.Recipes
+	}
+	update := func(k HolderKey, u RemoteHoldingUpdate) []digest.Digest {
+		t.Helper()
+		change, found, err := cloud.UpdateRemoteHolding(ctx, k, u)
+		require.NoError(t, err)
+		require.True(t, found)
+		return change.Recipes
+	}
+	parent := func(field, input string) RemoteHolding {
+		h := holdingOf(field)
+		h.Term = &RemoteTerm{Self: testDigest("parent-self"), Inputs: []digest.Digest{testDigest(input)}}
+		return h
+	}
+
+	require.Equal(t, []digest.Digest{testDigest("x")}, attach(key("a", 1), holdingOf("x")), "created")
+	require.Equal(t, []digest.Digest{testDigest("x")}, attach(key("b", 1), holdingOf("x")), "a new holding")
+	require.Empty(t, attach(key("a", 1), holdingOf("x")), "the same report again")
+	withExpiry := holdingOf("x")
+	withExpiry.ExpiresAtUnix = time.Now().Add(time.Hour).Unix()
+	require.Equal(t, []digest.Digest{testDigest("x")}, attach(key("a", 1), withExpiry), "the expiry")
+	require.Equal(t, []digest.Digest{testDigest("x")}, update(key("a", 1), RemoteHoldingUpdate{Parts: []PersistedPartAddress{{Part: "fs"}}}), "a part")
+	require.Equal(t, []digest.Digest{testDigest("x")}, update(key("a", 1), RemoteHoldingUpdate{Replacements: 1}), "the count")
+	require.Empty(t, update(key("a", 1), RemoteHoldingUpdate{Replacements: 1, Deps: []uint64{9}}), "dependencies only")
+
+	attach(key("a", 2), holdingOf("y"))
+	attach(key("a", 3), parent("parent-x", "x"))
+	attach(key("a", 4), parent("parent-y", "y"))
+	require.Empty(t, update(key("a", 1), RemoteHoldingUpdate{Replacements: 1, ContentDigest: testDigest("content")}), "a content digest no other entry has")
+	joined := update(key("a", 2), RemoteHoldingUpdate{ContentDigest: testDigest("content")})
+	require.ElementsMatch(t,
+		[]digest.Digest{testDigest("x"), testDigest("y"), testDigest("parent-x"), testDigest("parent-y")},
+		joined, "y joins x's class, and the parents join by congruence")
+	// Each returned digest names its entry's class for EquivalentHolders.
+	for _, dig := range joined {
+		want := []HolderKey{key("a", 1), key("a", 2), key("b", 1)}
+		if dig == testDigest("parent-x") || dig == testDigest("parent-y") {
+			want = []HolderKey{key("a", 3), key("a", 4)}
+		}
+		require.Equal(t, want, cloud.EquivalentHolders(dig.String()), "%s", dig)
+	}
+}
+
+// A content digest is class identity, which every observation teaches
+// whatever its count: R's class joins X's through an old value's content
+// digest, reported by a call span or a lazy span, before or after the
+// replacement's count-1 observation. R's holding keeps the count-1 value
+// state either way.
+func TestContentDigestIsTaughtWhateverTheCount(t *testing.T) {
+	t.Parallel()
+	for _, lazy := range []bool{false, true} {
+		for _, oldLast := range []bool{false, true} {
+			name := map[bool]string{false: "call", true: "lazy"}[lazy] + "/" + map[bool]string{false: "old first", true: "old last"}[oldLast]
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				ctx := t.Context()
+				cloud := newCloudCache(t)
+				r, x := HolderKey{Cache: "a", Number: 1}, HolderKey{Cache: "a", Number: 2}
+				other := holdingOf("x")
+				other.ContentDigest = testDigest("old-content")
+				_, err := cloud.AttachRemoteHolding(ctx, x, other)
+				require.NoError(t, err)
+				first := holdingOf("r")
+				_, err = cloud.AttachRemoteHolding(ctx, r, first)
+				require.NoError(t, err)
+				replaced := func() {
+					_, _, err := cloud.UpdateRemoteHolding(ctx, r, RemoteHoldingUpdate{Replacements: 1})
+					require.NoError(t, err)
+				}
+				oldValue := func() {
+					if lazy {
+						_, _, err := cloud.UpdateRemoteHolding(ctx, r, RemoteHoldingUpdate{ContentDigest: other.ContentDigest})
+						require.NoError(t, err)
+						return
+					}
+					old := holdingOf("r")
+					old.ContentDigest = other.ContentDigest
+					_, err := cloud.AttachRemoteHolding(ctx, r, old)
+					require.NoError(t, err)
+				}
+				if oldLast {
+					replaced()
+					oldValue()
+				} else {
+					oldValue()
+					replaced()
+				}
+				require.Equal(t, []HolderKey{r, x}, cloud.EquivalentHolders(first.Recipe.String()), "R's class learned the old content digest")
+				h := requireHolding(t, cloud, r)
+				require.Equal(t, uint64(1), h.Replacements)
+				require.Empty(t, h.ContentDigest, "the holding's value state follows the count")
+			})
+		}
+	}
 }

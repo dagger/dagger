@@ -352,6 +352,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
 	// results' forward entries to the winning canonical root.
 	dstResults := c.outputEqClassResults[ra]
 	srcResults := c.outputEqClassResults[rb]
+	joinsEntries := len(dstResults) > 0 && len(srcResults) > 0
 	if len(srcResults) > 0 {
 		if dstResults == nil {
 			dstResults = make(map[sharedResultID]struct{}, len(srcResults))
@@ -370,6 +371,9 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
 	// An actual union: the winner's membership and reverse indexes are in
 	// place. Pending queue keys are recanonicalized in the same union.
 	c.recordShareUnionLocked(ra, rb)
+	if joinsEntries {
+		c.noteJoinedEntriesLocked(ra)
+	}
 	return ra
 }
 
@@ -557,12 +561,12 @@ func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
 		if res == nil {
 			continue
 		}
-		if len(res.holders) > 0 {
-			// An entry with a holding keeps its class's terms, expired or
-			// not: its identity is what the cache holds it for.
+		if res.hasUnexpiredHoldingLocked(nowUnix) {
+			// Another cache's unexpired stored copy keeps the class's
+			// terms: the equivalence stays usable while any value in it is.
 			return true
 		}
-		if c.resultExpiredAtLocked(res, nowUnix) {
+		if res.noValueLocked() || c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
 		return true
@@ -1165,9 +1169,13 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		frame := baseFrame.fork()
 
 		replaced := false
+		var replacedDigest digest.Digest
 		for i, extra := range frame.ExtraDigests {
 			if extra.Label != call.ExtraDigestLabelContent {
 				continue
+			}
+			if extra.Digest != contentDigest {
+				replacedDigest = extra.Digest
 			}
 			frame.ExtraDigests[i].Digest = contentDigest
 			replaced = true
@@ -1178,6 +1186,14 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 				Label:  call.ExtraDigestLabelContent,
 				Digest: contentDigest,
 			})
+		}
+		// A replaced content digest still names this result. Keep it on the
+		// frame, so it travels with the result to other engines.
+		if replacedDigest != "" {
+			kept := call.ExtraDigest{Digest: replacedDigest, Label: call.ExtraDigestLabelReplacedContent}
+			if !slices.Contains(frame.ExtraDigests, kept) {
+				frame.ExtraDigests = append(frame.ExtraDigests, kept)
+			}
 		}
 
 		for _, label := range additionalLabels {

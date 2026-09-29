@@ -16,7 +16,7 @@ func TestValueTransferFixtureExactRoots(t *testing.T) {
 	lower := persistedListTestResult(t, ctx, c, srv, "lower", String("lower"))
 	exact := persistedListTestResult(t, ctx, c, srv, "exact", String("exact"))
 	for _, value := range []AnyResult{lower, exact} {
-		_, err := value.WithContentDigestAny(ctx, digest.FromString("same"), call.ExtraDigestLabelRemoteCache)
+		_, err := value.WithContentDigestAny(ctx, digest.FromString("same"))
 		require.NoError(t, err)
 	}
 	id, err := exact.ID()
@@ -48,7 +48,7 @@ func TestSchemaModuleSelectionFallback(t *testing.T) {
 	lower.cacheSharedResult().imported = true
 	exact := persistedListTestResult(t, ctx, c, srv, "native", String("native"))
 	for _, value := range []AnyResult{lower, exact} {
-		_, err := value.WithContentDigestAny(ctx, digest.FromString("implementation"), call.ExtraDigestLabelRemoteCache)
+		_, err := value.WithContentDigestAny(ctx, digest.FromString("implementation"))
 		require.NoError(t, err)
 	}
 	recorded := uint64(exact.cacheSharedResult().id)
@@ -91,7 +91,7 @@ func TestSchemaModuleSelectionSkipsInaccessibleInstalled(t *testing.T) {
 			operational := persistedListTestResult(t, ctx, c, srv, "operational", String("operational"))
 			scoped := persistedListTestResult(t, ctx, c, srv, "scoped", String("scoped"))
 			for _, value := range []AnyResult{lower, recorded, scoped} {
-				_, err := value.WithContentDigestAny(ctx, digest.FromString("implementation"), call.ExtraDigestLabelRemoteCache)
+				_, err := value.WithContentDigestAny(ctx, digest.FromString("implementation"))
 				require.NoError(t, err)
 			}
 			c.egraphMu.Lock()
@@ -137,7 +137,7 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 		if err == nil {
 			address := PersistedPartAddress{Part: "snapshot"}
 			var queue []*sharedResult
-			queue, err = c.replacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
+			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
 			if err == nil {
 				releases, err = c.collectUnownedResultsLocked(ctx, queue)
 			}
@@ -173,7 +173,7 @@ func testValueTransferImportConcurrent(t *testing.T) {
 		entered, commit := make(chan struct{}), make(chan struct{})
 		b.testBeforeTransferCommit = func() { close(entered); <-commit }
 		done := make(chan error, 1)
-		go func() { _, err := b.ImportValues(ctx, bundle); done <- err }()
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
 		<-entered
 		for _, value := range bundle.Values {
 			_, err := b.LoadResultByResultID(ctx, "consumer", bsrv, uint64(value.Ordinal))
@@ -197,7 +197,7 @@ func testValueTransferImportConcurrent(t *testing.T) {
 		entered, commit := make(chan struct{}), make(chan struct{})
 		b.testBeforeTransferCommit = func() { close(entered); <-commit }
 		done := make(chan error, 1)
-		go func() { _, err := b.ImportValues(ctx, bundle); done <- err }()
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
 		<-entered
 		closed := make(chan error, 1)
 		go func() { closed <- b.Close(ctx) }()
