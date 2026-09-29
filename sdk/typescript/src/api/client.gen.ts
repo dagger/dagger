@@ -18352,7 +18352,7 @@ export class Workspace extends BaseClient {
    * With hard, the working tree is reset to the commit and every uncommitted change is discarded.
    *
    * Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
-   * @param commit Full commit hash to reset HEAD to.
+   * @param commit Commit to reset HEAD to, resolved against this workspace's repository like GitRepository.ref: a full commit hash, an unambiguous hex prefix (4-40 characters), or a ref name, optionally followed by revision suffixes such as HEAD~1, main^2 or abc1234~2. Only the commit it resolves to is used: a ref name selects its commit, it does not check out that ref.
    * @param opts.hard Discard uncommitted changes, resetting the working tree to the commit.
    */
   withReset = (commit: string, opts?: WorkspaceWithResetOpts): Workspace => {

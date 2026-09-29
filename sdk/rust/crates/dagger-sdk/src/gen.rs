@@ -18167,7 +18167,7 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `commit` - Full commit hash to reset HEAD to.
+    /// * `commit` - Commit to reset HEAD to, resolved against this workspace's repository like GitRepository.ref: a full commit hash, an unambiguous hex prefix (4-40 characters), or a ref name, optionally followed by revision suffixes such as HEAD~1, main^2 or abc1234~2. Only the commit it resolves to is used: a ref name selects its commit, it does not check out that ref.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_reset(&self, commit: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withReset");
@@ -18185,7 +18185,7 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `commit` - Full commit hash to reset HEAD to.
+    /// * `commit` - Commit to reset HEAD to, resolved against this workspace's repository like GitRepository.ref: a full commit hash, an unambiguous hex prefix (4-40 characters), or a ref name, optionally followed by revision suffixes such as HEAD~1, main^2 or abc1234~2. Only the commit it resolves to is used: a ref name selects its commit, it does not check out that ref.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_reset_opts(
         &self,

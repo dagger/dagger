@@ -18694,7 +18694,12 @@ class Workspace(Type):
         Parameters
         ----------
         commit:
-            Full commit hash to reset HEAD to.
+            Commit to reset HEAD to, resolved against this workspace's
+            repository like GitRepository.ref: a full commit hash, an
+            unambiguous hex prefix (4-40 characters), or a ref name,
+            optionally followed by revision suffixes such as HEAD~1, main^2 or
+            abc1234~2. Only the commit it resolves to is used: a ref name
+            selects its commit, it does not check out that ref.
         hard:
             Discard uncommitted changes, resetting the working tree to the
             commit.

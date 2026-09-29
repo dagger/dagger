@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  `Workspace.withReset` accepts any target `GitRepository.ref` resolves:
+  abbreviated commit hashes, ref names and revision suffixes, e.g.
+  `abc1234`, `HEAD~1` or `main^2`. The target resolves against the
+  workspace's frozen repository, and HEAD moves to the resulting commit.
+time: 2026-09-29T12:00:00Z
+custom:
+  Author: vito
+  PR: 14359
