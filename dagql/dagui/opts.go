@@ -22,6 +22,10 @@ type FrontendOpts struct {
 	// Whether to leave steps expanded when they complete.
 	ExpandCompleted bool
 
+	// OnlyRunning hides spans that are not currently running, showing only
+	// spans that are in progress. Toggled from the TUI with the "C" shortcut.
+	OnlyRunning bool
+
 	// Don't show things that completed beneath this duration. (default 100ms)
 	TooFastThreshold time.Duration
 
@@ -139,6 +143,10 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	if opts.FocusedSpan == span.ID {
 		// prevent focused span from disappearing
 		return true
+	}
+	if opts.OnlyRunning && !span.IsRunningOrEffectsRunning() {
+		// only show spans that are currently running
+		return false
 	}
 	if span.Ignore {
 		// absolutely 100% boring spans, like 'id' and 'sync'
