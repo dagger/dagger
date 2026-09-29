@@ -904,10 +904,11 @@ func (fe *frontendPretty) toggleDiffViewer() bool {
 	fe.diffViewerFocus = fe.tui.PushFocus(fe.diffViewer)
 	fe.syncPromptHidden()
 	// The HUD's bubbles would cover the patch, and the one being browsed is
-	// what the viewer shows anyway. The HUD keys still reveal it.
-	if fe.notificationOverlay != nil {
-		fe.notificationOverlay.SetHidden(true)
-	}
+	// what the viewer shows anyway. Hide it the way ctrl+h does, so its keys
+	// say it is hidden and the first press shows it; the preference from
+	// before comes back on close.
+	fe.hudHiddenBeforeDiffs = fe.notificationsHidden
+	fe.setNotificationsHidden(true)
 	fe.syncHardwareCursor()
 	fe.refreshKeymap()
 	fe.Update()
@@ -923,9 +924,7 @@ func (fe *frontendPretty) closeDiffViewer() {
 	fe.diffViewer = nil
 	fe.diffViewerTitle = ""
 	fe.syncPromptHidden()
-	if fe.notificationOverlay != nil {
-		fe.notificationOverlay.SetHidden(fe.notificationsHidden)
-	}
+	fe.setNotificationsHidden(fe.hudHiddenBeforeDiffs)
 	fromInput := fe.diffViewerFromInput
 	fe.diffViewerFromInput = false
 	if fe.tui.Focused() == nil {

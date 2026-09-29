@@ -400,6 +400,9 @@ type frontendPretty struct {
 	// diffViewerFromInput records that the prompt had focus when the viewer
 	// opened, to return it there on close.
 	diffViewerFromInput bool
+	// hudHiddenBeforeDiffs is the HUD preference the viewer overrode, to
+	// restore on close.
+	hudHiddenBeforeDiffs bool
 	// sectionAwaitAgent is the agent focus last moved to, until a section
 	// describing it arrives (see sectionStale).
 	sectionAwaitAgent string
@@ -1250,17 +1253,35 @@ func (fe *frontendPretty) syncHUDWidth() {
 // content, so updates received while hidden are visible when they are shown
 // again.
 func (fe *frontendPretty) toggleNotifications() {
-	fe.notificationsHidden = !fe.notificationsHidden
+	fe.setNotificationsHidden(!fe.notificationsHidden)
+}
+
+// setNotificationsHidden shows or hides the HUD, and relabels the keys that
+// say which it is (see hudBinding).
+func (fe *frontendPretty) setNotificationsHidden(hidden bool) {
+	fe.notificationsHidden = hidden
 	if fe.notificationOverlay != nil {
-		fe.notificationOverlay.SetHidden(fe.notificationsHidden)
+		fe.notificationOverlay.SetHidden(hidden)
 	}
+	fe.refreshHUDKeys()
+}
+
+// refreshHUDKeys re-renders everything labelling the HUD keys after the HUD
+// or its keymap bubble is shown or hidden: the hint above the prompt, and the
+// keymap bar and bubble.
+func (fe *frontendPretty) refreshHUDKeys() {
+	if fe.promptFrame != nil {
+		fe.promptFrame.Update()
+	}
+	fe.refreshKeymap()
 }
 
 // toggleKeymap shows or dismisses the keymap bubble: every key available
 // right now, pinned at the top of the HUD. Showing it reveals a hidden HUD,
 // since asking for the keymap is asking to see it.
 func (fe *frontendPretty) toggleKeymap() {
-	if fe.keymapBubble != nil && !fe.notificationsHidden {
+	defer fe.refreshHUDKeys()
+	if fe.keymapShown() {
 		fe.notificationContainer.RemoveChild(fe.keymapBubble)
 		fe.keymapBubble = nil
 		fe.syncHUDWidth()
@@ -1314,10 +1335,31 @@ const hudToggleKey = "ctrl+h"
 // hudKeys are the keys governing the HUD, advertised by the shell's hint in
 // place of a full keymap.
 func (fe *frontendPretty) hudKeys() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys(keymapToggleKeys...), key.WithHelp("ctrl+?", "toggle keymap")),
-		key.NewBinding(key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, "toggle hud")),
+	return []key.Binding{fe.keymapBinding(), fe.hudBinding()}
+}
+
+// keymapShown reports whether the keymap bubble is on screen.
+func (fe *frontendPretty) keymapShown() bool {
+	return fe.keymapBubble != nil && !fe.notificationsHidden
+}
+
+// keymapBinding is the keymap bubble's key, labelled with what pressing it
+// does now -- which also tells whether the bubble is showing.
+func (fe *frontendPretty) keymapBinding() key.Binding {
+	help := "show keymap"
+	if fe.keymapShown() {
+		help = "hide keymap"
 	}
+	return key.NewBinding(key.WithKeys(keymapToggleKeys...), key.WithHelp("ctrl+?", help))
+}
+
+// hudBinding is the HUD's key, labelled with what pressing it does now.
+func (fe *frontendPretty) hudBinding(opts ...key.BindingOpt) key.Binding {
+	help := "hide hud"
+	if fe.notificationsHidden {
+		help = "show hud"
+	}
+	return key.NewBinding(append([]key.BindingOpt{key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, help)}, opts...)...)
 }
 
 // keymapHint renders the shell's compact key hint, shown above the prompt.
@@ -3333,7 +3375,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	if fe.inputFocused() {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
-			key.NewBinding(key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, "toggle hud")),
+			fe.hudBinding(),
 			key.NewBinding(key.WithKeys(diffViewerKey), key.WithHelp(diffViewerKey, "view diff"),
 				KeyEnabled(fe.hasDiffs())),
 		}
@@ -3363,9 +3405,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
 			KeyEnabled(fe.shell != nil)),
-		key.NewBinding(key.WithKeys(hudToggleKey),
-			key.WithHelp(hudToggleKey, "toggle hud"),
-			KeyEnabled(fe.shell != nil || fe.notificationOverlay != nil)),
+		fe.hudBinding(KeyEnabled(fe.shell != nil || fe.notificationOverlay != nil)),
 		key.NewBinding(key.WithKeys("w"),
 			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
 			KeyEnabled(fe.cloudURL != "")),

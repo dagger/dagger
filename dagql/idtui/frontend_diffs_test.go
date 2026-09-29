@@ -122,6 +122,10 @@ func TestDiffViewer(t *testing.T) {
 	require.Contains(t, frame, "pending.go +20 -20", "the patch has a diffstat")
 	require.NotContains(t, frame, "summary", "the HUD is hidden behind the viewer")
 	require.Equal(t, "unfinished draft", fe.textInput.Value())
+	// ...the way ctrl+h hides it: the key says so, and one press shows it.
+	require.Contains(t, navKeyHelp(fe.hudKeys()), "ctrl+h show hud")
+	require.Contains(t, press("ctrl+h"), "summary")
+	require.NotContains(t, press("ctrl+h"), "summary")
 
 	// Selecting a commit shows its header and patch.
 	press("down")
@@ -306,7 +310,7 @@ func TestDiffViewerFollowsAgentFocus(t *testing.T) {
 		frame = screen()
 		require.Contains(t, frame, "abc1234 chief commit")
 		require.NotContains(t, frame, "draft for the chief")
-		require.NotContains(t, frame, "ctrl+? toggle keymap")
+		require.NotContains(t, frame, "ctrl+? show keymap")
 		require.Contains(t, frame, "chief", "the roster is still on screen")
 		require.Contains(t, frame, "scout")
 		help := navKeyHelp(fe.keys(NewOutput(io.Discard)))
