@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	maxPendingWorkloadReadings = 65536
+	// One collection must fit the metric export queue, which admits whole batches.
+	maxPendingWorkloadReadings = LargeSpanQueueSize
 	SamplePhaseAttr            = "dagger.io/resource.sample.phase"
 	SampleIntervalAttr         = "dagger.io/resource.sample_interval_ms"
 	ExecutionIDAttr            = "dagger.io/execution.id"

@@ -1456,8 +1456,11 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	cgroupPath := state.spec.Linux.CgroupsPath
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
 	// that point; the final cleanup sample also covers short executions.
-	readingsStarted := make(chan struct{})
+	var readingsStarted chan struct{}
 	readWorkloads := enginetel.HasWorkloadReadings(ctx)
+	if readWorkloads {
+		readingsStarted = make(chan struct{})
+	}
 	hasCallDigest := state.execMD != nil && state.execMD.CallDigest != ""
 	if cgroupPath != "" && (hasCallDigest || readWorkloads) {
 		meter := telemetry.Meter(ctx, InstrumentationLibrary)
@@ -1466,7 +1469,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			meter = noop.NewMeterProvider().Meter(InstrumentationLibrary)
 		}
 		meter = enginetel.WorkloadReadingMeter(ctx, meter, InstrumentationLibrary)
-		interval := min(enginetel.WorkloadReadingInterval(ctx, cgroupSampleInterval), cgroupSampleInterval)
+		readingInterval := min(enginetel.WorkloadReadingInterval(ctx, cgroupSampleInterval), cgroupSampleInterval)
 
 		var commonAttrs []attribute.KeyValue
 		if hasCallDigest {
@@ -1484,13 +1487,15 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			)
 		}
 
-		// Keep workload export dimensions out of the SDK gauge's series identity.
-		workloadAttrs := append(slices.Clone(commonAttrs),
-			attribute.String(enginetel.ExecutionIDAttr, state.id),
-			attribute.Bool(enginetel.ExecutionInternalAttr, state.execMD != nil && state.execMD.Internal),
-			attribute.Int64(enginetel.SampleIntervalAttr, interval.Milliseconds()),
-		)
-		ctx = enginetel.WithWorkloadReadingAttributes(ctx, attribute.NewSet(workloadAttrs...))
+		if readWorkloads {
+			// Keep workload export dimensions out of the SDK gauge's series identity.
+			workloadAttrs := append(slices.Clone(commonAttrs),
+				attribute.String(enginetel.ExecutionIDAttr, state.id),
+				attribute.Bool(enginetel.ExecutionInternalAttr, state.execMD != nil && state.execMD.Internal),
+				attribute.Int64(enginetel.SampleIntervalAttr, readingInterval.Milliseconds()),
+			)
+			ctx = enginetel.WithWorkloadReadingAttributes(ctx, attribute.NewSet(workloadAttrs...))
+		}
 		cgroupSampler, err := resources.NewSampler(cgroupPath, state.networkNamespace, meter, attribute.NewSet(commonAttrs...))
 		if err != nil {
 			return fmt.Errorf("create cgroup sampler: %w", err)
@@ -1505,12 +1510,18 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		}))
 
 		cgroupSamplerPool.Go(func() {
-			ticker := time.NewTicker(interval)
+			ticker := time.NewTicker(cgroupSampleInterval)
 			defer ticker.Stop()
-			var started <-chan struct{}
+			samplePeriodic := cgroupSampler.Sample
+			// Only the readings workload export copies move to its interval.
+			var usageTick <-chan time.Time
 			if readWorkloads {
-				started = readingsStarted
+				usageTicker := time.NewTicker(readingInterval)
+				defer usageTicker.Stop()
+				usageTick = usageTicker.C
+				samplePeriodic = cgroupSampler.SampleOther
 			}
+			started := readingsStarted
 			var startupTimer *time.Timer
 			var startupSample <-chan time.Time
 			defer func() {
@@ -1532,7 +1543,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 					return
 				case <-started:
 					started = nil
-					if err := cgroupSampler.Sample(enginetel.WithSamplePhase(cgroupSamplerCtx, "startup")); err != nil {
+					if err := cgroupSampler.SampleUsage(enginetel.WithSamplePhase(cgroupSamplerCtx, "startup")); err != nil {
 						bklog.G(ctx).Error("failed to sample cgroup at start", "err", err)
 					}
 					// runc announces its own process before it creates the cgroup.
@@ -1541,11 +1552,15 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 					startupSample = startupTimer.C
 				case <-startupSample:
 					startupSample = nil
-					if err := cgroupSampler.Sample(enginetel.WithSamplePhase(cgroupSamplerCtx, "startup")); err != nil {
+					if err := cgroupSampler.SampleUsage(enginetel.WithSamplePhase(cgroupSamplerCtx, "startup")); err != nil {
 						bklog.G(ctx).Error("failed to sample cgroup after start", "err", err)
 					}
+				case <-usageTick:
+					if err := cgroupSampler.SampleUsage(enginetel.WithSamplePhase(cgroupSamplerCtx, "periodic")); err != nil {
+						bklog.G(ctx).Error("failed to sample cgroup", "err", err)
+					}
 				case <-ticker.C:
-					if err := cgroupSampler.Sample(enginetel.WithSamplePhase(cgroupSamplerCtx, "periodic")); err != nil {
+					if err := samplePeriodic(enginetel.WithSamplePhase(cgroupSamplerCtx, "periodic")); err != nil {
 						bklog.G(ctx).Error("failed to sample cgroup", "err", err)
 					}
 				}
@@ -1563,7 +1578,9 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	var profStartedWall atomic.Int64
 	startedCallback := func() {
 		state.startedOnce.Do(func() {
-			close(readingsStarted)
+			if readingsStarted != nil {
+				close(readingsStarted)
+			}
 			trace.SpanFromContext(ctx).AddEvent("Container started")
 			if wcprof.Enabled(ctx) {
 				profStartedNS.Store(wcprof.NowNS())
