@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -837,8 +838,14 @@ func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, a
 	// Callers may supply -c key=value before the verb. Never include those
 	// values, pathspecs, commit messages, or identity inputs in the span name.
 	commandArgs := args
-	for len(commandArgs) >= 2 && commandArgs[0] == "-c" {
-		commandArgs = commandArgs[2:]
+	for len(commandArgs) > 0 {
+		if len(commandArgs) >= 2 && commandArgs[0] == "-c" {
+			commandArgs = commandArgs[2:]
+		} else if commandArgs[0] == "--no-literal-pathspecs" {
+			commandArgs = commandArgs[1:]
+		} else {
+			break
+		}
 	}
 	operation := "command"
 	if len(commandArgs) > 0 {
@@ -857,6 +864,12 @@ func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, a
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
+		// No ignored paths is a successful eligibility check, not a failed
+		// Git operation. Preserve real process failures and cancellation.
+		var exit *exec.ExitError
+		if operation == "check-ignore" && ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return stdout.String(), nil
+		}
 		return stdout.String(), fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
