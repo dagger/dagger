@@ -2505,6 +2505,42 @@ func TestCacheNilResultIsCached(t *testing.T) {
 	assert.Equal(t, 1, c.Size())
 }
 
+// An expired entry that a session still owns stays in the cache when another
+// entry of its class is collected and takes the class's last terms with it:
+// the e-graph resets only when no entry is left.
+func TestCacheExpiredHeldEntrySurvivesReset(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(cacheTestContext(t.Context()), 30*time.Second)
+	defer cancel()
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	frame := cacheTestIntCall("expired-held-survives-reset")
+
+	held, err := c.GetOrInitCall(ctx, "holder", noopTypeResolver{}, &CallRequest{ResultCall: frame, TTL: 1}, ValueFunc(cacheTestIntResult(frame, 1)))
+	assert.NilError(t, err)
+	heldID := held.cacheSharedResult().id
+	// Wait out the one-second TTL: the held entry expires.
+	time.Sleep(time.Until(time.Unix(held.cacheSharedResult().expiresAtUnix, 0)))
+
+	// Another session misses on the expired entry, computes the recipe again
+	// and ends. Its entry is collected, and the class's terms with it, since
+	// the class's only other entry has expired.
+	again, err := c.GetOrInitCall(ctx, "other", noopTypeResolver{}, &CallRequest{ResultCall: frame.clone()}, ValueFunc(cacheTestIntResult(frame, 2)))
+	assert.NilError(t, err)
+	assert.Assert(t, again.cacheSharedResult().id != heldID, "a second entry of the recipe")
+	assert.NilError(t, c.ReleaseSession(ctx, "other"))
+
+	c.egraphMu.RLock()
+	registered := c.resultsByID[heldID] == held.cacheSharedResult()
+	c.egraphMu.RUnlock()
+	assert.Assert(t, registered, "the holding session still owns the entry")
+	_, err = c.ResultCallByResultID(ctx, "holder", uint64(heldID))
+	assert.NilError(t, err)
+	assert.NilError(t, c.ReleaseSession(ctx, "holder"))
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestEquivalencySetCacheHits(t *testing.T) {
 	t.Parallel()
 
