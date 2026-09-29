@@ -156,6 +156,10 @@ const cachePersistenceSchemaVersion = "21"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
+
+// ErrLazySessionRetryExhausted reports exhausted foreign-session takeovers.
+// The returned error also wraps the last producer-release cause.
+var ErrLazySessionRetryExhausted = errors.New("lazy attempt retry budget exhausted")
 var ErrCacheSessionNotReleased = errors.New("cache session release not started")
 var ErrCacheClosed = errors.New("cache closed")
 var ErrUnavailablePart = errors.New("imported filesystem part is unavailable")
@@ -2139,12 +2143,13 @@ type sharedResultID uint64
 // attempt's state. All fields except the immutable done channel are read or
 // written under the shared result's lazyMu.
 type lazyEvalAttempt struct {
-	token   *PartTaskToken
-	done    chan struct{}
-	cancel  context.CancelCauseFunc
-	waiters int
-	err     error
-	retry   bool // err came from cancellation of this attempt's callback context
+	token            *PartTaskToken
+	done             chan struct{}
+	cancel           context.CancelCauseFunc
+	waiters          int
+	err              error
+	retry            bool   // err came from cancellation of this attempt's callback context
+	releasedProducer string // callback failed after this attempt's producer session was released
 
 	// profOpID and spanCtx are the native and OTel wait targets for this
 	// attempt. They are minted under lazyMu before the attempt is published.
@@ -3982,23 +3987,44 @@ func lazyEvalErrorCausedByContext(ctx context.Context, err error) bool {
 	return (cause != nil && errors.Is(err, cause)) || errors.Is(err, ctx.Err())
 }
 
+type lazyAttemptRetry uint8
+
+const (
+	lazyRetryNone lazyAttemptRetry = iota
+	lazyRetryCanceled
+	lazyRetryReleasedSession
+)
+
 // waitForLazyEvaluation waits for one attempt and reports whether its outcome
-// should be retried. A retry is only requested when the callback returned the
-// cancellation of its own shared callback context while this caller remains
-// healthy. The caller's own cancellation always returns its own cause.
-func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult, attempt *lazyEvalAttempt) (error, bool) {
+// should be retried. A healthy caller may retry its
+// callback context cancellation, or a foreign producer's session release. A
+// released producer cannot lead its own retry. The caller's cancellation wins.
+func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult, attempt *lazyEvalAttempt) (lazyAttemptRetry, error) {
 	select {
 	case <-attempt.done:
 		shared.lazyMu.Lock()
 		waitErr := attempt.err
 		retry := attempt.retry
+		releasedProducer := attempt.releasedProducer
 		attempt.waiters--
 		shared.lazyMu.Unlock()
-		if retry {
+		if retry || releasedProducer != "" {
 			if ownCause := context.Cause(ctx); ownCause != nil {
-				return ownCause, false
+				return lazyRetryNone, ownCause
 			}
-			return nil, true
+			var sessionID string
+			if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+				sessionID = md.SessionID
+			}
+			if releasedProducer != "" && sessionID != "" && sessionID != releasedProducer && c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+				return lazyRetryNone, fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+			}
+			if releasedProducer == "" || (sessionID != "" && sessionID != releasedProducer) {
+				if releasedProducer != "" {
+					return lazyRetryReleasedSession, waitErr
+				}
+				return lazyRetryCanceled, waitErr
+			}
 		}
 		// Tag the failure with the result it belongs to so that an enclosing
 		// lazy callback's resume span can tell "a prerequisite failed" apart
@@ -4006,7 +4032,7 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 		if waitErr != nil {
 			waitErr = &prerequisiteEvalError{err: waitErr, resultID: shared.id}
 		}
-		return waitErr, false
+		return lazyRetryNone, waitErr
 	case <-ctx.Done():
 		waitErr := context.Cause(ctx)
 		shared.lazyMu.Lock()
@@ -4017,7 +4043,7 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 		if lastWaiter && cancel != nil {
 			cancel(waitErr)
 		}
-		return waitErr, false
+		return lazyRetryNone, waitErr
 	}
 }
 
@@ -4332,6 +4358,10 @@ func (c *Cache) evaluateGroup(ctx context.Context, res AnyResult, shared *shared
 	return c.runLazyTask(ctx, res, shared, group, partsVal, nil)
 }
 
+// Bound foreign-session takeovers without changing the existing cancellation
+// retry contract. Exhaustion is distinct from release of the caller's session.
+const maxLazySessionRetries = 3
+
 //nolint:gocyclo // Keep joining, cancellation, and retirement in one shared attempt loop.
 func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedResult, group LazyGroupKey, partsVal HasLazyEvaluationParts, spec *LazyTaskSpec) (rerr error) {
 	stack := lazyEvalStackFromContext(ctx)
@@ -4347,6 +4377,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 	shared.lazyMu.Lock()
 	g := shared.lazyGroupStateLocked(group)
 	shared.lazyMu.Unlock()
+	retries := 0
 	for {
 		shared.lazyMu.Lock()
 		if spec == nil && (shared.lazyEvalComplete || g.complete) {
@@ -4383,7 +4414,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			producerSkip := shared.profileSkip()
 			profWait := wcprof.BeginWait(stackCtx, lazyOpID, wcprof.WaitReasonLazy)
 			otelWaitStartNS := time.Now().UnixNano()
-			waitErr, retry := c.waitForLazyEvaluation(stackCtx, shared, attempt)
+			retry, waitErr := c.waitForLazyEvaluation(stackCtx, shared, attempt)
 			profWait.End()
 			// OTel joiner wait edge: the load-bearing edge — the lazy op is in the
 			// leader's subtree, not this joiner's, so this wait is the joiner's only
@@ -4403,7 +4434,13 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if !producerSkip {
 				EmitOTelWait(stackCtx, lazyOpSpanCtx, wcprof.WaitReasonLazy, otelWaitStartNS, time.Now().UnixNano())
 			}
-			if retry {
+			if retry != lazyRetryNone {
+				if retry == lazyRetryReleasedSession {
+					if retries == maxLazySessionRetries {
+						return fmt.Errorf("%w after %d foreign-session retries: %w", ErrLazySessionRetryExhausted, maxLazySessionRetries, waitErr)
+					}
+					retries++
+				}
 				continue
 			}
 			return waitErr
@@ -4551,6 +4588,13 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			attempt.err = err
 			abandoned = err != nil && lazyEvalErrorCausedByContext(attemptCtx, err)
 			attempt.retry = abandoned
+			// Session release does not cancel the detached callback context.
+			// Attribute it to this producer only when its recorded lifecycle is
+			// actually tombstoned; unrelated dependency errors remain failures.
+			if errors.Is(err, ErrCacheSessionReleased) && attemptOp.session != nil &&
+				attemptOp.session.lifecycle.Load()&cacheSessionReleasedBit != 0 {
+				attempt.releasedProducer = attemptOp.sessionID
+			}
 			attempt.cancel = nil
 			if err == nil {
 				g.complete = true
@@ -4612,14 +4656,14 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		// producer's profile-skip condition above already controls.
 		profWait := wcprof.BeginWait(stackCtx, lazyOp.ID(), wcprof.WaitReasonLazy)
 		otelWaitStartNS := time.Now().UnixNano()
-		waitErr, retry := c.waitForLazyEvaluation(stackCtx, shared, attempt)
+		retry, waitErr := c.waitForLazyEvaluation(stackCtx, shared, attempt)
 		profWait.End()
 		if lazySpan != nil {
 			// The leader's wait on its own lazy op is redundant with nesting but is
 			// emitted for parity with native profiling and executor waits.
 			EmitOTelWait(stackCtx, lazySpan.SpanContext(), wcprof.WaitReasonLazy, otelWaitStartNS, time.Now().UnixNano())
 		}
-		if retry {
+		if retry != lazyRetryNone {
 			continue
 		}
 		return waitErr
