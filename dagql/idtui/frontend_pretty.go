@@ -397,6 +397,12 @@ type frontendPretty struct {
 	diffViewer      *DiffViewer
 	diffViewerFocus *tuist.FocusHandle
 	diffViewerTitle string
+	// diffViewerFromInput records that the prompt had focus when the viewer
+	// opened, to return it there on close.
+	diffViewerFromInput bool
+	// diffAwaitAgent is the agent focus last moved to, until a section
+	// describing it arrives (see diffViewerStale).
+	diffAwaitAgent string
 
 	// logStream holds logs a caller streams in whole (OpenLogStream), for a
 	// span whose rolled-up output the per-span log buffers can't show.
@@ -1137,6 +1143,9 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	fe.dispatch(func() {
 		title := section.Title
+		if section.Agent != "" && section.Agent == fe.diffAwaitAgent {
+			fe.diffAwaitAgent = ""
+		}
 
 		if bubble, ok := fe.notifications[title]; ok {
 			// Update existing bubble
@@ -1475,6 +1484,11 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// The keymap bar is hidden in the shell; the line above the prompt
 	// carries a hint to the keymap bubble instead.
 	fe.promptFrame.SetHintSource(fe.keymapHint)
+	// The diff viewer takes the keyboard, so the prompt and its queued
+	// message make way for it. The status line stays: the agents' activity
+	// is what moves the diffs.
+	fe.promptFrame.SetHiddenSource(fe.promptHidden)
+	fe.queuedMsgLabel.SetHiddenSource(fe.promptHidden)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.promptFrame)
@@ -3320,15 +3334,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		}
 		// Roster focus is shown only once there is more than one agent to
 		// switch between. A single-agent roster remains a state display.
-		if fe.agentRoster != nil && fe.agentRoster.Switchable() {
-			bnds = append(bnds,
-				key.NewBinding(key.WithKeys("ctrl+1"), key.WithHelp("ctrl+1…9", "focus agent")),
-				key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
-					KeyEnabled(fe.lastFocusedAgent != "")),
-				key.NewBinding(key.WithKeys("alt+[", "alt+]"), key.WithHelp("alt+[/]", "prev/next agent"),
-					KeyEnabled(fe.addressableAgentCount() > 1)),
-			)
-		}
+		bnds = append(bnds, fe.promptAgentBindings()...)
 		if fe.acceptsPromptImages() {
 			bnds = append(bnds, key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste image")))
 		}
@@ -3436,6 +3442,22 @@ func (fe *frontendPretty) keymapHeight() int {
 		return 0
 	}
 	return 2
+}
+
+// promptAgentBindings are prompt mode's roster focus keys, shared by the diff
+// viewer, which also leaves bare digits and brackets to its own use. They are
+// shown only once there is more than one agent to switch between.
+func (fe *frontendPretty) promptAgentBindings() []key.Binding {
+	if fe.agentRoster == nil || !fe.agentRoster.Switchable() {
+		return nil
+	}
+	return []key.Binding{
+		key.NewBinding(key.WithKeys("ctrl+1"), key.WithHelp("ctrl+1…9", "focus agent")),
+		key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
+			KeyEnabled(fe.lastFocusedAgent != "")),
+		key.NewBinding(key.WithKeys("alt+[", "alt+]"), key.WithHelp("alt+[/]", "prev/next agent"),
+			KeyEnabled(fe.addressableAgentCount() > 1)),
+	}
 }
 
 func (fe *frontendPretty) escHelp() string {
@@ -4293,7 +4315,7 @@ func (fe *frontendPretty) flowingMode() bool {
 // queuedMessageHeight returns the line count of the queued message label. The
 // label always renders as a single line (see QueuedMessageLabel.Render).
 func (fe *frontendPretty) queuedMessageHeight() int {
-	if fe.queuedMsgLabel == nil || fe.queuedMsgLabel.Message() == "" {
+	if fe.queuedMsgLabel == nil || fe.queuedMsgLabel.Hidden() {
 		return 0
 	}
 	return 1
@@ -4316,7 +4338,7 @@ func (fe *frontendPretty) statusLineHeight() int {
 // for chrome-height budgeting. The actual rendering is handled by tuist's
 // container (textInput is a sibling, not rendered here).
 func (fe *frontendPretty) editlineHeight() int {
-	if fe.textInput == nil {
+	if fe.textInput == nil || fe.promptFrame != nil && fe.promptFrame.Hidden() {
 		return 0
 	}
 	// Count newlines in current value + 1 for the input line itself
@@ -4872,6 +4894,8 @@ func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved boo
 	// settled target in the meantime would see a focus that has not moved
 	// yet. See focusedAgentID.
 	fe.pendingFocusAgent = entry.ID
+	// Until the new agent's changes arrive, the ones on screen are stale.
+	fe.diffAwaitAgent = entry.ID
 	fe.restoreAgentDraft(entry.ID)
 	fe.updateAgentRoster()
 
@@ -5065,6 +5089,11 @@ func (fe *frontendPretty) updateAgentRoster() {
 	if focused := fe.focusedAgentID(); focused != fe.lastRosterFocus {
 		fe.lastRosterFocus = focused
 		fe.viewDirty = true
+		// The diff viewer browses the focused agent's changes, and must not
+		// show the previous agent's while the new ones load.
+		if fe.diffViewer != nil {
+			fe.diffViewer.Update()
+		}
 	}
 	var fingerprint strings.Builder
 	for _, entry := range fe.agentRosterEntries() {

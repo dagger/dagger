@@ -336,6 +336,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.NoError(t, s.Target().ExportChanges(ctx))
 	waitRefresh(s)
 	require.Same(t, rt, s.Target().runtime(), "saving must retain the runtime")
+	require.Equal(t, "save-test", changes.Agent, "the panel names the agent it describes")
 	require.Zero(t, rt.reseedCount(), "saving must not reseed the runtime")
 	_, _, stops := rt.counts()
 	require.Zero(t, stops, "saving must not stop the runtime")

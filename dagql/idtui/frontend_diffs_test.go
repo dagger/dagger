@@ -271,6 +271,92 @@ func TestDiffViewerMouse(t *testing.T) {
 	require.Equal(t, "uncommitted", v.selected)
 }
 
+// TestDiffViewerFollowsAgentFocus: the viewer replaces the prompt, keeps the
+// status line, and takes prompt mode's agent keys, following the focused
+// agent's changes -- without ever passing the agent it left's off as the new
+// one's while they load.
+func TestDiffViewerFollowsAgentFocus(t *testing.T) {
+	runFocusTest(t, func(t *testing.T) {
+		handler := &focusShellHandler{target: "agent-chief"}
+		fe := focusTestFrontend(t, rosterDB(t), handler)
+		fe.textInput.SetValue("draft for the chief")
+		screen := func() string { return stripANSICodes(strings.Join(fe.tui.Step(), "\n")) }
+		changes := func(agent, subject string) {
+			fe.SetSidebarContent(SidebarSection{
+				Title: "Changes",
+				Agent: agent,
+				Diffs: []DiffEntry{{
+					ID: subject, Group: "Commits to save", Label: "abc1234", Title: subject,
+					Load: func() (DiffDetail, error) { return DiffDetail{Patch: testPatch(subject + ".go")}, nil },
+				}},
+			})
+		}
+		press := func(k uv.Key) string {
+			fe.handleNavKeyUV(uv.KeyPressEvent(k))
+			return screen()
+		}
+
+		changes("agent-chief", "chief commit")
+		frame := screen()
+		require.Contains(t, frame, "draft for the chief")
+		require.Contains(t, frame, "ctrl+? toggle keymap")
+
+		// The prompt makes way; the status line with the roster stays.
+		require.True(t, fe.toggleDiffViewer())
+		frame = screen()
+		require.Contains(t, frame, "abc1234 chief commit")
+		require.NotContains(t, frame, "draft for the chief")
+		require.NotContains(t, frame, "ctrl+? toggle keymap")
+		require.Contains(t, frame, "chief", "the roster is still on screen")
+		require.Contains(t, frame, "scout")
+		help := navKeyHelp(fe.keys(NewOutput(io.Discard)))
+		require.Contains(t, help, "ctrl+1…9 focus agent")
+		require.Contains(t, help, "alt+[/] prev/next agent")
+
+		// ctrl+2 moves focus, and the chief's changes go at once.
+		frame = press(uv.Key{Code: '2', Mod: uv.ModCtrl})
+		require.NotContains(t, frame, "chief commit")
+		require.Contains(t, frame, "Loading changes…")
+		awaitFocus(t, fe, handler, "agent-scout")
+		require.NotContains(t, screen(), "chief commit")
+
+		// A repaint of the chief's changes still in flight from before the
+		// switch doesn't pass for the scout's.
+		changes("agent-chief", "chief commit")
+		require.NotContains(t, screen(), "chief commit")
+		changes("agent-scout", "scout commit")
+		frame = screen()
+		require.Contains(t, frame, "abc1234 scout commit")
+		require.NotNil(t, fe.diffViewer, "switching agents keeps the viewer open")
+
+		// alt+[ walks back.
+		press(uv.Key{Code: '[', Mod: uv.ModAlt})
+		awaitFocus(t, fe, handler, "agent-scout", "agent-chief")
+		require.Contains(t, screen(), "Loading changes…")
+		changes("agent-chief", "chief commit")
+		require.Contains(t, screen(), "abc1234 chief commit")
+
+		// A switch that fails rolls back to the agent still in focus, and
+		// says why: the error line stays while the prompt is hidden.
+		handler.mu.Lock()
+		handler.focusErr = fmt.Errorf("no route to scout")
+		handler.mu.Unlock()
+		press(uv.Key{Code: '2', Mod: uv.ModCtrl})
+		awaitFocus(t, fe, handler, "agent-scout", "agent-chief")
+		frame = screen()
+		require.Contains(t, frame, "abc1234 chief commit")
+		require.Contains(t, frame, "no route to scout")
+
+		// Closing brings the prompt back, with the chief's draft and focus.
+		press(uv.Key{Code: 'q', Text: "q"})
+		require.Nil(t, fe.diffViewer)
+		frame = screen()
+		require.True(t, fe.inputFocused(), "typing goes to the prompt again")
+		require.Contains(t, frame, "draft for the chief")
+		require.Contains(t, frame, "ctrl+? toggle keymap")
+	})
+}
+
 func TestNotificationBottomBorderWidth(t *testing.T) {
 	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(120, 20))
 	fe.profile = termenv.ANSI

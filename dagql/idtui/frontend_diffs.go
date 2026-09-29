@@ -87,6 +87,10 @@ type DiffViewer struct {
 	Profile termenv.Profile
 	// Section returns the section being browsed, as it is now.
 	Section func() SidebarSection
+	// Stale reports whether the section describes something other than what
+	// is focused now (another agent's changes, while focus moves), so its
+	// entries are withheld until the section catches up.
+	Stale func(SidebarSection) bool
 	// Dispatch runs a function on the UI goroutine, where loaded diffs land.
 	Dispatch func(func())
 	// Hint renders a key hint line beneath the panes, or "" for none.
@@ -158,8 +162,16 @@ func (v *DiffViewer) section() SidebarSection {
 	return v.Section()
 }
 
+func (v *DiffViewer) stale(sec SidebarSection) bool {
+	return v.Stale != nil && v.Stale(sec)
+}
+
 func (v *DiffViewer) entries() []DiffEntry {
-	return v.section().Diffs
+	sec := v.section()
+	if v.stale(sec) {
+		return nil
+	}
+	return sec.Diffs
 }
 
 // selectedIndex resolves the selection against the current entries, falling
@@ -365,8 +377,14 @@ func (v *DiffViewer) Render(ctx tuist.Context) {
 	}
 
 	sec := v.section()
+	stale := v.stale(sec)
 	entries := sec.Diffs
-	v.prune(entries)
+	if stale {
+		// Another agent's changes: keep their diffs cached, but show none.
+		entries = nil
+	} else {
+		v.prune(entries)
+	}
 	idx := v.selectedIndex(entries)
 	if idx < 0 {
 		v.area = diffFocusSidebar
@@ -374,8 +392,8 @@ func (v *DiffViewer) Render(ctx tuist.Context) {
 
 	leftWidth, rightWidth := splitPaneWidths(width)
 	v.leftWidth = leftWidth
-	left := v.renderSidebar(out, sec, entries, idx, leftWidth, height)
-	right := v.renderPatch(out, sec, entries, idx, rightWidth, height)
+	left := v.renderSidebar(out, sec, entries, idx, stale, leftWidth, height)
+	right := v.renderPatch(out, sec, entries, idx, stale, rightWidth, height)
 	for i := range height {
 		var l, r string
 		if i < len(left) {
@@ -434,7 +452,7 @@ func diffSidebarRows(entries []DiffEntry) []diffSidebarRow {
 	return rows
 }
 
-func (v *DiffViewer) renderSidebar(out *termenv.Output, sec SidebarSection, entries []DiffEntry, selected, width, height int) []string {
+func (v *DiffViewer) renderSidebar(out *termenv.Output, sec SidebarSection, entries []DiffEntry, selected int, stale bool, width, height int) []string {
 	faint := func(s string) string {
 		return out.String(s).Foreground(termenv.ANSIBrightBlack).Faint().String()
 	}
@@ -453,7 +471,11 @@ func (v *DiffViewer) renderSidebar(out *termenv.Output, sec SidebarSection, entr
 	v.rowByLine = make(map[int]int)
 	listHeight := height - len(lines)
 	if len(entries) == 0 {
-		lines = append(lines, faint(clipPlain("No changes", width)))
+		empty := "No changes"
+		if stale {
+			empty = "Loading…"
+		}
+		lines = append(lines, faint(clipPlain(empty, width)))
 		return cropLines(lines, height)
 	}
 	if listHeight <= 0 {
@@ -552,7 +574,7 @@ func scrollWindow(n, selected, height int) (start, end int, top, bottom bool) {
 	}
 }
 
-func (v *DiffViewer) renderPatch(out *termenv.Output, sec SidebarSection, entries []DiffEntry, selected, width, height int) []string {
+func (v *DiffViewer) renderPatch(out *termenv.Output, sec SidebarSection, entries []DiffEntry, selected int, stale bool, width, height int) []string {
 	faint := func(s string) string {
 		return out.String(s).Foreground(termenv.ANSIBrightBlack).Faint().String()
 	}
@@ -560,6 +582,10 @@ func (v *DiffViewer) renderPatch(out *termenv.Output, sec SidebarSection, entrie
 	v.current = nil
 	v.bodyTop = 2
 	v.bodyHeight = max(height-2, 0)
+	if stale {
+		lines := []string{out.String(clipPlain("Loading changes…", width)).Bold().String(), rule}
+		return cropLines(lines, height)
+	}
 	if selected < 0 {
 		// Nothing to browse. Show what the bubble says instead, e.g. that a
 		// save is in progress or why the changes could not be computed.
@@ -866,12 +892,17 @@ func (fe *frontendPretty) toggleDiffViewer() bool {
 			}
 			return SidebarSection{Title: title}
 		},
+		Stale:    fe.diffViewerStale,
 		Dispatch: fe.dispatch,
 		Hint:     fe.diffViewerHint,
 		hovered:  -1,
 	}
 	fe.diffViewerTitle = title
+	// Hiding the prompt dismounts its input, and tuist won't restore focus to
+	// an unmounted component; remember to hand it back on close.
+	fe.diffViewerFromInput = fe.inputFocused()
 	fe.diffViewerFocus = fe.tui.PushFocus(fe.diffViewer)
+	fe.syncPromptHidden()
 	// The HUD's bubbles would cover the patch, and the one being browsed is
 	// what the viewer shows anyway. The HUD keys still reveal it.
 	if fe.notificationOverlay != nil {
@@ -891,11 +922,18 @@ func (fe *frontendPretty) closeDiffViewer() {
 	fe.diffViewerFocus = nil
 	fe.diffViewer = nil
 	fe.diffViewerTitle = ""
+	fe.syncPromptHidden()
 	if fe.notificationOverlay != nil {
 		fe.notificationOverlay.SetHidden(fe.notificationsHidden)
 	}
+	fromInput := fe.diffViewerFromInput
+	fe.diffViewerFromInput = false
 	if fe.tui.Focused() == nil {
-		fe.focusNavigationTarget()
+		if fromInput && fe.textInput != nil {
+			fe.enterInsertMode()
+		} else {
+			fe.focusNavigationTarget()
+		}
 	}
 	fe.syncHardwareCursor()
 	fe.refreshKeymap()
@@ -907,6 +945,35 @@ func (fe *frontendPretty) updateDiffViewer(title string) {
 	if fe.diffViewer != nil && fe.diffViewerTitle == title {
 		fe.diffViewer.Update()
 	}
+}
+
+// promptHidden reports whether the prompt makes way for the diff viewer,
+// which owns the keyboard while it is open.
+func (fe *frontendPretty) promptHidden() bool {
+	return fe.diffViewer != nil
+}
+
+// syncPromptHidden re-renders the prompt after the viewer opens or closes.
+func (fe *frontendPretty) syncPromptHidden() {
+	if fe.promptFrame != nil {
+		fe.promptFrame.Update()
+	}
+	if fe.queuedMsgLabel != nil {
+		fe.queuedMsgLabel.Update()
+	}
+}
+
+// diffViewerStale reports whether sec still describes the agent focus just
+// moved away from. The viewer follows the focused agent's changes, which the
+// session repaints asynchronously after a switch; until a section naming the
+// new agent arrives, whatever is there -- the old agent's changes, or a
+// section naming no agent at all -- must not pass for the new one's. When a
+// switch fails and focus rolls back, the focused agent is no longer the one
+// awaited, and the section stands.
+func (fe *frontendPretty) diffViewerStale(sec SidebarSection) bool {
+	return fe.diffAwaitAgent != "" &&
+		fe.diffAwaitAgent == fe.focusedAgentID() &&
+		sec.Agent != fe.diffAwaitAgent
 }
 
 func (fe *frontendPretty) renderDiffViewer(ctx tuist.Context) {
@@ -973,6 +1040,9 @@ func (fe *frontendPretty) diffViewerKeys(quitMsg string) []key.Binding {
 	if v != nil {
 		binds = append(binds, v.section().KeyMap...)
 	}
+	// The viewer follows the focused agent, so prompt mode's agent keys
+	// switch whose changes it shows.
+	binds = append(binds, fe.promptAgentBindings()...)
 	return binds
 }
 
@@ -1018,7 +1088,19 @@ func (fe *frontendPretty) handleDiffViewerKey(ev uv.KeyPressEvent, keyStr string
 		v.NextFile()
 	case "N":
 		v.PrevFile()
+	case "alt+[", "alt+]":
+		// Prompt mode's agent keys, so the viewer can follow another agent's
+		// changes without closing. (Bare [ and ] step through entries here.)
+		delta := 1
+		if keyStr == "alt+[" {
+			delta = -1
+		}
+		fe.cycleAgent(delta)
 	default:
+		// ctrl+1…9 and alt+l, as in prompt mode.
+		if fe.handleAgentFocusShortcut(keyStr) {
+			break
+		}
 		// The section's own keys act on what is being reviewed, e.g. saving
 		// the changes to the checkout. They are the shell's to handle.
 		if fe.shell == nil || !slices.ContainsFunc(v.section().KeyMap, func(b key.Binding) bool {
