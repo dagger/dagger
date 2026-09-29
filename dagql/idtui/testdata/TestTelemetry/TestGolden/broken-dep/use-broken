@@ -18,6 +18,11 @@ Expected stderr:
           │   ┃ ./main.go:6:6: undefined: ctx
           │   ! exit code: 1
           │
-          ╰╴✘ asModule getModDef X.Xs ERROR
+          ╰╴✘ ModuleSource._moduleDefinition(
+            │ ┆ runtime: Container.withoutMount(path: "/root/.cache/go-build"): Container!
+            │ ┆ introspectionJson: __schemaJSONFile(hiddenTypes: ["Host", "Engine", "EngineCache", "EngineCacheEntry", "EngineCacheEntrySet"], hiddenFields: ["Query.currentWorkspace", "Query.engineVolume", "Query.sshfsVolume", "Address.volume"]): File!
+            │ ┆ moduleName: "broken"
+            │ ): Module! X.Xs ERROR
+            ╰╴✘ asModule getModDef X.Xs ERROR
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

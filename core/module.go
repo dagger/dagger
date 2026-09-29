@@ -43,6 +43,13 @@ type Module struct {
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
 
+	// Definition is the cached result of ModuleSource._moduleDefinition when
+	// the module's type definitions came from its container runtime: the
+	// definition-only module the runtime reported. Keeping the reference puts
+	// the definition row inside this module's closure, so a bundle that
+	// carries the module carries the definition too.
+	Definition dagql.Nullable[dagql.ObjectResult[*Module]]
+
 	// The following are populated while initializing the module
 
 	// The doc string of the module, if any
@@ -874,6 +881,18 @@ func (mod *Module) AttachDependencyResults(
 		mod.Runtime = dagql.NonNull(typed)
 		owned = append(owned, typed)
 	}
+	if mod.Definition.Valid && mod.Definition.Value.Self() != nil {
+		attached, err := attach(mod.Definition.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach module definition: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach module definition: unexpected result %T", attached)
+		}
+		mod.Definition = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
 	for i, def := range mod.ObjectDefs {
 		if def.Self() == nil {
 			continue
@@ -992,6 +1011,7 @@ type persistedModulePayload struct {
 	SourceResultID                uint64                          `json:"sourceResultID,omitempty"`
 	ContextSourceResultID         uint64                          `json:"contextSourceResultID,omitempty"`
 	RuntimeResultID               uint64                          `json:"runtimeResultID,omitempty"`
+	DefinitionResultID            uint64                          `json:"definitionResultID,omitempty"`
 	DepModuleResultIDs            []uint64                        `json:"depModuleResultIDs,omitempty"`
 	IncludeSelfInDeps             bool                            `json:"includeSelfInDeps,omitempty"`
 	NameField                     string                          `json:"nameField,omitempty"`
@@ -1031,6 +1051,13 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, enc *dagql.Persist
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.RuntimeResultID = runtimeID
+	}
+	if mod.Definition.Valid && mod.Definition.Value.Self() != nil {
+		definitionID, err := encodePersistedObjectRef(enc, mod.Definition.Value, "module definition")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		persisted.DefinitionResultID = definitionID
 	}
 
 	persisted.IncludeSelfInDeps = mod.IncludeSelfInDeps
@@ -1112,6 +1139,10 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	if err != nil {
 		return nil, err
 	}
+	definitionRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, persisted.DefinitionResultID, "module definition")
+	if err != nil {
+		return nil, err
+	}
 
 	query, err := persistedDecodeQuery(dec)
 	if err != nil {
@@ -1186,6 +1217,9 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	}
 	if runtimeRes.Self() != nil {
 		mod.Runtime = dagql.NonNull(runtimeRes)
+	}
+	if definitionRes.Self() != nil {
+		mod.Definition = dagql.NonNull(definitionRes)
 	}
 
 	return mod, nil
