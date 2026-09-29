@@ -92,14 +92,14 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	target, targetSink := connectWithTrace(targetCtx, t)
 	defer target.Close()
 	transport := &displayArchiveTransport{next: targetSink.conn}
-	client := archive.NewClient(transport).WithSourceSession(node.Control.Session)
+	client := archive.NewClient(transport)
 	traceID := node.Control.Trace
 	var manifest archive.Manifest
 	require.Eventually(t, func() bool {
 		manifests, err := client.ListAll(targetCtx, archive.ListOptions{})
 		require.NoError(t, err)
 		for _, candidate := range manifests {
-			if candidate.TraceID == traceID && candidate.SourceSession == node.Control.Session {
+			if candidate.TraceID == traceID {
 				manifest = candidate
 				return candidate.State != archive.StateActive && candidate.State != archive.StateFinalizing
 			}
@@ -107,24 +107,20 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 		return false
 	}, time.Minute, 100*time.Millisecond)
 	require.Equal(t, archive.StateClosed, manifest.State, "archive failure: %s", manifest.Failure)
-	require.NotEmpty(t, manifest.Bootstrap.SHA256, "fixture must retain canonical bootstrap evidence")
-	require.NotEmpty(t, manifest.Generation)
+	require.Positive(t, manifest.Bootstrap.Records, "fixture must retain canonical bootstrap evidence")
 
 	// A successful local selection may not consult Cloud, not even for auth.
 	remote := func(context.Context) (tracesource.Source, func() error, error) {
 		t.Fatal("retained archive must not open Cloud")
 		return nil, nil, nil
 	}
-	open := func(generation string) tracesource.Open {
-		return func(ctx context.Context) (tracesource.Source, func() error, error) {
-			return tracesource.OpenArchive(ctx, client, traceID, generation)
-		}
+	open := func(ctx context.Context) (tracesource.Source, func() error, error) {
+		source, err := tracesource.OpenArchive(ctx, client, traceID)
+		return source, nil, err
 	}
-	display, closeDisplay, err := tracesource.Select(targetCtx, manifest.Generation, open(manifest.Generation), remote)
+	display, _, err := tracesource.Select(targetCtx, open, remote)
 	require.NoError(t, err)
-	defer closeDisplay()
-	require.EqualValues(t, 0, transport.closedLeases.Load())
-	require.Equal(t, 0, transport.signalRequests(), "opening a display must only inspect metadata and acquire its lease")
+	require.Equal(t, 0, transport.signalRequests(), "opening a display must only inspect metadata")
 
 	spanCount := 0
 	err = display.FetchSpans(targetCtx, traceID, cloud.SpanSelection{Incremental: true, DagUIView: true}, func(_ context.Context, batch *coltracepb.ExportTraceServiceRequest) error {
@@ -188,11 +184,6 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	})
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, archivedBytes, unrelatedBytes)
-	require.NoError(t, closeDisplay())
-	require.EqualValues(t, 1, transport.closedLeases.Load(), "display cleanup must close its retention lease")
-
-	_, _, err = tracesource.Select(targetCtx, "stale-generation", open("stale-generation"), remote)
-	require.Error(t, err, "stale selection must not silently display a different generation")
 	require.NoError(t, target.Close())
 
 	// Finally exercise the actual CLI report from a destination that cannot
@@ -207,7 +198,7 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	require.NoError(t, os.WriteFile(filepath.Join(destination, "dagger.toml"), []byte("[modules.broken]\nsource = \"definitely-missing-module\"\n"), 0o600))
 	bin := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
 	require.NotEmpty(t, bin)
-	cmd := exec.CommandContext(ctx, bin, "--progress=report", "trace", traceID, "--source-session", manifest.SourceSession, "--generation", manifest.Generation, "--span", selectedSpan)
+	cmd := exec.CommandContext(ctx, bin, "--progress=report", "trace", traceID, "--span", selectedSpan)
 	cmd.Dir = destination
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
@@ -234,7 +225,7 @@ func (AgentRestoreSuite) TestLazyArchiveDisplay(ctx context.Context, t *testctx.
 	require.NoError(t, listener.Close())
 	consoleCtx, stopConsole := context.WithCancel(ctx)
 	defer stopConsole()
-	console := exec.CommandContext(consoleCtx, bin, "--progress=tty", "trace", traceID, "--source-session", manifest.SourceSession, "--generation", manifest.Generation)
+	console := exec.CommandContext(consoleCtx, bin, "--progress=tty", "trace", traceID)
 	console.Dir = destination
 	console.Env = append([]string{"DAGGER_TUI_CONSOLE=" + address}, cmd.Env...)
 	consoleOutput, err := os.CreateTemp(t.TempDir(), "archive-console-output")
@@ -317,10 +308,9 @@ func displayLogBytes(batch *collogspb.ExportLogsServiceRequest) int {
 // the importer. Fetching and discarding all logs is still a memory regression.
 // Reject executable requests: a display transport cannot query/restore agents.
 type displayArchiveTransport struct {
-	next         archive.HTTPDoer
-	mu           sync.Mutex
-	paths        []string
-	closedLeases atomic.Int32
+	next  archive.HTTPDoer
+	mu    sync.Mutex
+	paths []string
 }
 
 func (d *displayArchiveTransport) Do(req *http.Request) (*http.Response, error) {
@@ -330,11 +320,7 @@ func (d *displayArchiveTransport) Do(req *http.Request) (*http.Response, error) 
 	d.mu.Lock()
 	d.paths = append(d.paths, req.URL.Path)
 	d.mu.Unlock()
-	resp, err := d.next.Do(req)
-	if err == nil && strings.HasSuffix(req.URL.Path, "/lease") && resp.StatusCode == http.StatusOK {
-		resp.Body = &displayLeaseBody{ReadCloser: resp.Body, closed: &d.closedLeases}
-	}
-	return resp, err
+	return d.next.Do(req)
 }
 
 func (d *displayArchiveTransport) signalRequests() int {
@@ -342,7 +328,7 @@ func (d *displayArchiveTransport) signalRequests() int {
 	defer d.mu.Unlock()
 	count := 0
 	for _, path := range d.paths {
-		for _, suffix := range []string{"/traces", "/logs", "/metrics", "/bootstrap"} {
+		for _, suffix := range []string{"/traces", "/logs", "/metrics", "/" + archive.AgentBootstrapResource} {
 			if strings.HasSuffix(path, suffix) {
 				count++
 			}
@@ -361,15 +347,4 @@ func (d *displayArchiveTransport) logRequests() int {
 		}
 	}
 	return count
-}
-
-type displayLeaseBody struct {
-	io.ReadCloser
-	once   sync.Once
-	closed *atomic.Int32
-}
-
-func (b *displayLeaseBody) Close() error {
-	b.once.Do(func() { b.closed.Add(1) })
-	return b.ReadCloser.Close()
 }
