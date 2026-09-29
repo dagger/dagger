@@ -235,7 +235,7 @@ func (c *Client) run(
 		close(state.done)
 		if err := state.cleanups.Run(); err != nil {
 			bklog.G(ctx).Errorf("executor run failed to cleanup: %v", err)
-			rerr = errors.Join(rerr, err)
+			rerr = errors.Join(rerr, &ExecCleanupError{Err: err})
 		}
 		state.doneErr = rerr
 
