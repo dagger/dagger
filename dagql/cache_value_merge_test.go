@@ -2138,3 +2138,47 @@ func TestMergeValuesAttachesOnlyTheFinalOfferOfAPart(t *testing.T) {
 	require.NoError(t, a.ReleaseSession(aCtx, "session-a"))
 	require.NoError(t, a.ReleaseSession(cCtx, "session-c"))
 }
+
+// A record that references two records of one recipe, which land on one
+// entry, takes that entry once: it has one dependency, the entry counts one
+// unit of ownership from it, and each of its references names one of its
+// dependencies. The merge validates records at their provisional numbers,
+// where the two are distinct; relocation must keep what that validation
+// proved.
+func TestMergeValuesRelocationKeepsReferencesWithinDependencies(t *testing.T) {
+	t.Parallel()
+	ctx, a, srv := transferTestCache(t)
+	old := persistedListTestResult(t, ctx, a, srv, "relocated-twice", String("old"))
+	mergeTestExpire(a, old.cacheSharedResult())
+	frame := old.cacheSharedResult().loadResultCall().clone()
+	fresh, err := a.GetOrInitCall(ctx, "new-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(String("fresh"), frame)
+	})
+	require.NoError(t, err)
+	root := persistedListTestResult(t, ctx, a, srv, "both-relocated", DynamicResultArrayOutput{Elem: String(""), Values: []AnyResult{old, fresh}})
+	bundle := exportTestBundle(t, ctx, a, root)
+	require.Len(t, bundle.Values, 3)
+	rootOrdinal := mergeTestOrdinalOf(t, bundle, root.cacheSharedResult())
+
+	bctx, b, _ := transferTestCache(t)
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	b.egraphMu.RLock()
+	defer b.egraphMu.RUnlock()
+	r := b.resultsByID[sharedResultID(mergeTestValueOf(t, reply, rootOrdinal).Number)]
+	require.Len(t, r.deps, 1, "both records land on one entry")
+	for id := range r.deps {
+		require.Equal(t, 1, int(b.resultsByID[id].incomingOwnershipCount), "the root owns the entry once")
+	}
+	refs := 0
+	_, err = VisitEncodedReferences(PersistedRecord{ResultID: uint64(r.id), Envelope: *r.persistedEnvelope, Call: r.loadResultCall()}, func(ref *PersistedRef) error {
+		if ref.RecipeID == nil && (ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall) {
+			refs++
+			require.Contains(t, r.deps, sharedResultID(ref.ResultID), "reference %s", ref.Path)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, refs, "both items reference the entry")
+	require.NoError(t, a.ReleaseSession(ctx, "new-session"))
+}

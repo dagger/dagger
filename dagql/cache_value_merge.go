@@ -559,9 +559,8 @@ func (c *Cache) decideMergeRowLocked(row *mergeRow, now int64, fresh sharedResul
 	}
 }
 
-// relocateMergeRowsLocked relocates each decided record to the final numbers
-// and validates the ones merge installs; each row's incoming offers are
-// relocated too. Requires egraphMu.
+// relocateMergeRowsLocked relocates each decided record to the final numbers;
+// each row's incoming offers are relocated too. Requires egraphMu.
 func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 	number := func(ordinal uint64) (sharedResultID, error) {
 		row := commit.byOrdinal[ordinal]
@@ -601,48 +600,22 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 				row.deps = append(row.deps, n)
 			}
 		}
-		depIDs := make([]uint64, len(row.deps))
-		for i, dep := range row.deps {
-			depIDs[i] = uint64(dep)
-		}
-		if err := validateTransferRecord(rec, depIDs); err != nil {
-			return fmt.Errorf("merge values: row %d: %w", row.ordinal, err)
-		}
-		if err := validateMergedReferences(rec, seen); err != nil {
-			return fmt.Errorf("merge values: row %d: %w", row.ordinal, err)
-		}
+		// The preparation validated the record at its provisional numbers,
+		// which are one to one with ordinals (validateTransferRecord).
+		// Relocation maps each ordinal to one nonzero number and applies
+		// that map to references and dependencies alike, and it lists each
+		// dependency once as it maps them (seen, above), though two records
+		// of one recipe map to one entry. So every child or call reference
+		// is still a direct dependency, none is zero and none is listed
+		// twice: the payload's checks aren't repeated here. The offers,
+		// every row's, are checked at the final numbers with the graph
+		// (checkMergeGraphLocked).
 		row.rec = rec
 		if !c.blobBacked {
 			row.offers = rec.Envelope.PendingOffers
 		}
 	}
 	return nil
-}
-
-// validateMergedReferences checks that a relocated record refers to its
-// children and calls only through its direct dependencies, as a stored
-// record must.
-func validateMergedReferences(rec PersistedRecord, deps map[sharedResultID]bool) error {
-	env := rec.Envelope
-	for _, offer := range env.PendingOffers {
-		if err := validateOfferReferences(offer); err != nil {
-			return err
-		}
-	}
-	env.PendingOffers = nil
-	_, err := VisitEncodedReferences(PersistedRecord{ResultID: rec.ResultID, Envelope: env, Call: rec.Call, SnapshotLinks: rec.SnapshotLinks}, func(ref *PersistedRef) error {
-		if ref.RecipeID != nil {
-			return nil
-		}
-		switch ref.Kind {
-		case PersistedRefChild, PersistedRefCall:
-			if !deps[sharedResultID(ref.ResultID)] {
-				return fmt.Errorf("reference %s to %d is not a direct dependency", ref.Path, ref.ResultID)
-			}
-		}
-		return nil
-	})
-	return err
 }
 
 // checkMergeGraphLocked checks, before anything changes, the ownership graph
