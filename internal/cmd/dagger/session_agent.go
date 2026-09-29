@@ -1102,6 +1102,7 @@ func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 		Title:       "Changes",
 		ContentFunc: preview.render,
 		KeyMap:      []key.Binding{changesSaveBinding, changesReloadBinding},
+		Diffs:       preview.diffEntries(a.session.plumbingCtx, a.session.dag),
 	})
 	return nil
 }

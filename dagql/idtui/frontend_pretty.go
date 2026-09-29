@@ -392,6 +392,12 @@ type frontendPretty struct {
 	logPagerFocus  *tuist.FocusHandle
 	logSearchInput *tuist.TextInput
 
+	// fullscreen diff viewer state, browsing the Diffs of the HUD section
+	// titled diffViewerTitle (see toggleDiffViewer)
+	diffViewer      *DiffViewer
+	diffViewerFocus *tuist.FocusHandle
+	diffViewerTitle string
+
 	// logStream holds logs a caller streams in whole (OpenLogStream), for a
 	// span whose rolled-up output the per-span log buffers can't show.
 	logStream *logStream
@@ -1155,6 +1161,9 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 				fe.notificationContainer.AddChild(bubble)
 			}
 		}
+		fe.updateDiffViewer(title)
+		// Whether there are diffs to view changes the available keys.
+		fe.refreshKeymap()
 
 		fe.Update()
 	})
@@ -1335,6 +1344,9 @@ func (fe *frontendPretty) refreshKeymap() {
 		fe.keymapBubble.Update()
 		fe.syncHUDWidth()
 	}
+	if fe.diffViewer != nil {
+		fe.diffViewer.Update() // its key hint
+	}
 }
 
 // SetStatusLine updates the compact status line with LLM token/cost/context
@@ -1477,6 +1489,8 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 }
 
 func (fe *frontendPretty) stopShell() {
+	// The viewer browses a HUD bubble, which goes away with the shell.
+	fe.closeDiffViewer()
 	fe.cancelImagePaste()
 	fe.promptImages = nil
 	fe.historyImages = nil
@@ -3247,6 +3261,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 				key.WithHelp("ctrl+c", quitMsg)),
 		}
 	}
+	if fe.diffViewerFocused() {
+		return fe.diffViewerKeys(quitMsg)
+	}
 	var focused *dagui.Span
 	if fe.testsFocused() {
 		enterHelp := "detail"
@@ -3293,6 +3310,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
 			key.NewBinding(key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, "toggle hud")),
+			key.NewBinding(key.WithKeys(diffViewerKey), key.WithHelp(diffViewerKey, "view diff"),
+				KeyEnabled(fe.hasDiffs())),
 		}
 		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
 			bnds = append(bnds,
@@ -3337,6 +3356,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("T"),
 			key.WithHelp("T", "tests"),
 			KeyEnabled(fe.hasTestsForFocus())),
+		key.NewBinding(key.WithKeys(diffViewerKey),
+			key.WithHelp(diffViewerKey, "view diff"),
+			KeyEnabled(fe.hasDiffs())),
 		key.NewBinding(key.WithKeys("←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"),
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
@@ -3490,6 +3512,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	if fe.logPager != nil {
 		fe.logPager.RefreshSearch()
 		fe.renderLogPager(ctx)
+		return
+	}
+
+	if fe.diffViewer != nil {
+		fe.renderDiffViewer(ctx)
 		return
 	}
 
@@ -5986,6 +6013,10 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		return true
 	case "alt+up":
 		return fe.recallQueuedPrompt()
+	case diffViewerKey:
+		// Reviewing the agent's work doesn't need a detour through nav mode.
+		// The draft stays in the input for when the viewer closes.
+		return fe.toggleDiffViewer()
 	case "up", "down":
 		// Let TextInput move within multiline or wrapped input. At the visual
 		// boundary it bubbles the key to PromptFrame for history navigation.
@@ -6123,6 +6154,11 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	}
 
+	if fe.diffViewer != nil {
+		fe.handleDiffViewerKey(ev, keyStr)
+		return
+	}
+
 	if fe.testsMode {
 		switch keyStr {
 		case "q", "T", "esc", "alt+esc":
@@ -6224,6 +6260,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	case "T":
 		fe.toggleTestsMode()
+		return
+	case diffViewerKey:
+		fe.toggleDiffViewer()
 		return
 	case "w":
 		if fe.cloudURL == "" {

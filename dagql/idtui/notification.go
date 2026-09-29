@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
@@ -78,11 +79,30 @@ func (n *NotificationBubble) Render(ctx tuist.Context) {
 		ctx.Line(leftBorder + padded + rightBorder)
 	}
 
-	// Bottom border: ╰───────────────────╯
-	bottomBorder := out.String(
-		CornerBottomLeft + strings.Repeat(HorizBar, innerWidth) + CornerBottoRight,
-	).Foreground(borderFg).String()
-	ctx.Line(bottomBorder)
+	// Bottom border: ╰──────── ctrl+g view diff ─╯
+	ctx.Line(n.buildBottomBorder(profile, borderFg, innerWidth))
+}
+
+// buildBottomBorder closes the box. A section with diffs advertises the diff
+// viewer's key there, leaving the top border to the section's own keys.
+func (n *NotificationBubble) buildBottomBorder(profile termenv.Profile, borderFg termenv.Color, innerWidth int) string {
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(profile))
+	bar := func(count int) string {
+		return out.String(strings.Repeat(HorizBar, max(count, 0))).Foreground(borderFg).String()
+	}
+	corner1 := out.String(CornerBottomLeft).Foreground(borderFg).String()
+	corner2 := out.String(CornerBottoRight).Foreground(borderFg).String()
+	if len(n.section.Diffs) == 0 {
+		return corner1 + bar(innerWidth) + corner2
+	}
+	kb := new(strings.Builder)
+	keymapWidth := RenderKeymap(kb, KeymapStyle, []key.Binding{diffViewerBinding},
+		n.fe.pressedKey, n.fe.pressedKeyAt) + 2 // spaces around keymap
+	// Keep at least one bar either side; omit the hint rather than overflow.
+	if keymapWidth+2 > innerWidth {
+		return corner1 + bar(innerWidth) + corner2
+	}
+	return corner1 + bar(innerWidth-keymapWidth-1) + " " + kb.String() + " " + bar(1) + corner2
 }
 
 func (n *NotificationBubble) buildTopBorder(profile termenv.Profile, borderFg termenv.Color, innerWidth int) string {

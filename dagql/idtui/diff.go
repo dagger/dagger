@@ -15,6 +15,13 @@ import (
 // patches. The old and new sides of each hunk are tokenised independently so
 // diff markers do not interfere with the source lexer.
 func highlightDiff(profile termenv.Profile, patch string) string {
+	return colorizeDiff(profile, patch, true)
+}
+
+// colorizeDiff colors a unified Git patch's markers, headers and hunks. With
+// syntax, the source lines are also highlighted with the file's lexer; without
+// it (a patch too large to tokenise promptly), only the diff structure is.
+func colorizeDiff(profile termenv.Profile, patch string, syntax bool) string {
 	if profile == termenv.Ascii || patch == "" {
 		return patch
 	}
@@ -26,7 +33,10 @@ func highlightDiff(profile termenv.Profile, patch string) string {
 
 	for i := range parsed.files {
 		file := &parsed.files[i]
-		lexer := matchDiffLexer(file.name)
+		var lexer chroma.Lexer
+		if syntax {
+			lexer = matchDiffLexer(file.name)
+		}
 		if lexer == nil {
 			continue
 		}

@@ -313,6 +313,10 @@ type SidebarSection struct {
 	ContentFunc func(int) string
 	// Keymap associated with this section
 	KeyMap []key.Binding
+	// Diffs, when set, can be browsed in the fullscreen diff viewer, opened
+	// with diffViewerKey (see DiffViewer). The section's KeyMap keeps working
+	// there, so its actions apply to the changes being reviewed.
+	Diffs []DiffEntry
 }
 
 func (sec SidebarSection) Body(width int) string {
