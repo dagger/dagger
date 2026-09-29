@@ -12,7 +12,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modelcatalog"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
@@ -350,26 +349,24 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	// comparison baseline, or an explicit Ctrl+U imports a new client workspace.
 	attached.tracedReset = snapshot.WithoutMessageHistory()
 	// An attached/trace-restored conversation does not carry the checkpoint it
-	// originally synchronized from. Its current snapshot workspace is the safe
-	// best-effort baseline: it is portable with the snapshot and cannot trigger
-	// an unlike-host-root comparison. A later explicit save/reset advances it.
+	// originally synchronized from. The runtime's seed says where it started,
+	// though: the workspace its loop was handed. Measured from the current
+	// snapshot instead, an agent first focused after finishing its work -- the
+	// usual case for a worker -- would show no changes at all. A restored
+	// agent's seed is the snapshot it was restored from, which is the right
+	// baseline for it too: its history before that is another session's.
 	//
-	// A live agent's handle does say where it started, though: it was spawned
-	// from a conversation whose workspace is the one it was handed. Measured
-	// from the snapshot instead, an agent first focused after finishing its
-	// work -- the usual case for a worker -- would show no changes at all.
-	baselines := []*dagger.Workspace{snapshot.Workspace()}
-	if !owned {
-		if seed := spawnWorkspace(s.dag, encodedID); seed != nil {
-			baselines = append([]*dagger.Workspace{seed}, baselines...)
-		}
-	}
-	for _, workspace := range baselines {
-		if _, err := workspace.ID(ctx); err != nil {
+	// The snapshot workspace remains the fallback, for an engine without the
+	// seed field. Both are pinned by ID so later comparisons and exports
+	// reference the value rather than re-shipping a recipe. A later explicit
+	// save/reset advances the baseline.
+	for _, workspace := range []*dagger.Workspace{rt.agent.Seed().Workspace(), snapshot.Workspace()} {
+		id, err := workspace.ID(ctx)
+		if err != nil {
 			slog.Debug("attached agent workspace is not a usable synchronization baseline", "error", err)
 			continue
 		}
-		attached.setLastSynced(workspace)
+		attached.setLastSynced(dagger.Ref[*dagger.Workspace](s.dag, id))
 		break
 	}
 	if err := attached.setLLM(snapshot); err != nil {
@@ -379,36 +376,6 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	s.agents = append(s.agents, attached)
 	s.mu.Unlock()
 	return attached, nil
-}
-
-// spawnWorkspace returns the workspace an agent was spawned with: that of the
-// conversation it was spawned from (see spawnSeed). It returns nil when the
-// handle does not say.
-func spawnWorkspace(dag *dagger.Client, encodedID string) *dagger.Workspace {
-	seed, ok := spawnSeed(encodedID)
-	if !ok {
-		return nil
-	}
-	return dagger.Ref[*dagger.LLM](dag, seed).Workspace()
-}
-
-// spawnSeed finds the conversation an agent was spawned from in its handle:
-// the receiver of the call that produced it (LLM.agent, LLM.spawn). It
-// reports false when the handle does not say, e.g. a bare engine-result ID.
-func spawnSeed(encodedID string) (dagger.ID, bool) {
-	var agent call.ID
-	if err := agent.Decode(encodedID); err != nil || agent.IsHandle() {
-		return "", false
-	}
-	seed := agent.Receiver()
-	if seed == nil || seed.IsHandle() || seed.Type() == nil || seed.Type().NamedType() != "LLM" {
-		return "", false
-	}
-	encoded, err := seed.Encode()
-	if err != nil {
-		return "", false
-	}
-	return dagger.ID(encoded), true
 }
 
 // SubmitToTarget offers a message to the target conversation's in-flight turn,
