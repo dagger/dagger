@@ -1140,7 +1140,7 @@ func (WorkspaceAPISuite) TestWorkspaceExportToStaysOnCurrentClient(ctx context.C
 	copyTestdataFixture(ctx, t, moduleDir, "modules", "go", "workspace-export-sandbox")
 	runGit(ctx, t, workdir, "add", ".")
 	runGit(ctx, t, workdir, "commit", "-m", "initial")
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export-to")
+	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export-to")
 	require.NoError(t, err, string(out))
 	require.Equal(t, "refused", strings.TrimSpace(string(out)))
 	_, err = os.Stat(filepath.Join(workdir, "sneaky.txt"))
