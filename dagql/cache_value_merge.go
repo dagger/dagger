@@ -582,6 +582,14 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		if err != nil {
 			return err
 		}
+		// Two records of one recipe land on one entry, so an owner that
+		// lists both names that entry once, as offerPart lists the owners
+		// of the offers it receives.
+		for i := range rec.Envelope.PendingOffers {
+			owner := &rec.Envelope.PendingOffers[i].Owner
+			slices.Sort(owner.DependencyIDs)
+			owner.DependencyIDs = slices.Compact(owner.DependencyIDs)
+		}
 		if !row.action.installs() {
 			if !c.blobBacked {
 				row.offers = rec.Envelope.PendingOffers

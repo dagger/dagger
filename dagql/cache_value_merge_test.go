@@ -2182,3 +2182,49 @@ func TestMergeValuesRelocationKeepsReferencesWithinDependencies(t *testing.T) {
 	require.Equal(t, 2, refs, "both items reference the entry")
 	require.NoError(t, a.ReleaseSession(ctx, "new-session"))
 }
+
+// An offer whose owner lists two records of one recipe, which land on one
+// entry, is admitted with that entry once in its owner, whether the offer's
+// receiver is created by the merge or is the engine's own entry.
+func TestMergeValuesOfferOwnerNamingOneEntryTwice(t *testing.T) {
+	t.Parallel()
+	ctx, a, srv := transferTestCache(t)
+	old := persistedListTestResult(t, ctx, a, srv, "owner-twice", String("old"))
+	mergeTestExpire(a, old.cacheSharedResult())
+	frame := old.cacheSharedResult().loadResultCall().clone()
+	fresh, err := a.GetOrInitCall(ctx, "new-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(String("fresh"), frame)
+	})
+	require.NoError(t, err)
+	root := persistedListTestResult(t, ctx, a, srv, "owned-twice", &transferTestValue{Text: "pending"})
+	mergeTestOfferOn(t, ctx, a, root, "/", old, fresh)
+	bundle := exportTestBundle(t, ctx, a, root)
+	require.Len(t, bundle.Values, 3, "the root and the owner's two records")
+	rootOrdinal := mergeTestOrdinalOf(t, bundle, root.cacheSharedResult())
+	freshOrdinal := mergeTestOrdinalOf(t, bundle, fresh.cacheSharedResult())
+
+	for _, own := range []bool{false, true} {
+		t.Run(map[bool]string{false: "a created receiver", true: "the engine's own receiver"}[own], func(t *testing.T) {
+			bctx, b, bsrv := transferTestCache(t)
+			var mine uint64
+			if own {
+				mine = uint64(persistedListTestResult(t, bctx, b, bsrv, "owned-twice", &transferTestValue{Text: "pending"}).cacheSharedResult().id)
+			}
+			reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+			require.NoError(t, err)
+			receiver := mergeTestValueOf(t, reply, rootOrdinal).Number
+			if own {
+				require.Equal(t, mine, receiver, "the record lands on the engine's own entry")
+			}
+			entry := mergeTestValueOf(t, reply, freshOrdinal).Number
+			b.egraphMu.RLock()
+			defer b.egraphMu.RUnlock()
+			offers := b.resultsByID[sharedResultID(receiver)].testPartOffers()
+			require.Len(t, offers, 1)
+			for _, offer := range offers {
+				require.Equal(t, []uint64{entry}, offer.record.Owner.DependencyIDs, "the entry once")
+			}
+		})
+	}
+	require.NoError(t, a.ReleaseSession(ctx, "new-session"))
+}
