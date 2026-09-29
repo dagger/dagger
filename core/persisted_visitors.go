@@ -467,6 +467,9 @@ var persistedHTTPStateVisitor = persistedStructVisitor(dagql.PersistedRefLocalBa
 
 var persistedGitRepositoryVisitor = persistedStructVisitor("", func(p *persistedGitRepositoryPayload, w *persistedRefWalker) error {
 	if p.Local != nil {
+		if err := w.at("local").child("historySourceResultID", &p.Local.HistorySourceResultID); err != nil {
+			return err
+		}
 		if err := w.at("local").child("directoryResultID", &p.Local.DirectoryResultID); err != nil {
 			return err
 		}
