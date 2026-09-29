@@ -50,7 +50,7 @@ New objects are written to scratch first because Git may freshen the mtime of an
 
 ## Remote Promotion and Lazy History
 
-Entry points: `GitRemoteCommitBase` and `packRemoteCommitBaseDepth` in `core/git_commit_remote.go`; `fullHistory`, `HydrateGitRepository` and `mountHistory` in `core/git_local_history.go`; `mountOwnedShallowParentHistory` and `nativeParentHistoryRefs` in `core/git_history_native.go`.
+Entry points: `GitRemoteCommitBase` and `packRemoteCommitBaseDepth` in `core/git_commit_remote.go`; `fullHistory`, `HydrateGitRepository` and `mountHistory` in `core/git_local_history.go`; `mountOwnedShallowParentHistory`, `nativeParentHistoryRefs` and `mountRefsWithLocalDonor` in `core/git_history_native.go`.
 
 A remote parent is promoted through the private `GitRef.__nativeCommitBase(depth)` field, selected on the ref pinned to its resolved SHA so that reconciliation and commit construction share one promotion. Its cache key (`gitRefNativeCommitBaseKey`) is the parent's exact recipe digest, not its content digest, which may alias equivalent refs across authorization scopes.
 
@@ -59,6 +59,8 @@ Promotion goes through the normal authenticated mirror fetch, then, holding the 
 The committed repository records the pinned remote ref as `LocalGitRepository.HistorySource`: one exact remote anchor, inherited unchanged by descendant commits. Raw storage operations (native staging, reconciliation, source-only checkout, short logs) work against the shallow storage. Consumers that need deeper history (`mountHistory` with a depth reaching the boundary, full retained checkouts, bundles) call `fullHistory`, which selects `HistorySource.__hydrateRepository(directory)`: the complete authorized closure (`__nativeCommitBase(depth: 0)`) is merged with the local storage in a new snapshot, and the shallow boundary is removed only after the complete pack succeeded. That field's key combines the source recipe and the directory's structural input digest, so content-equivalent aliases never share owned provenance.
 
 History comparisons between a committed child and its exact parent (e.g. ahead/behind against the remote branch) are answered from the child's own objects when the child's raw commit headers name that parent as the single parent and the repository recipes match (`nativeParentHistoryCandidate`, `validateNativeParentHistory`). A direct-parent comparison is complete even with unknown older ancestry. The substitution lasts only for that read; no remote-to-local alias is published.
+
+Other joined reads (log ranges and merge bases between the agent's workspace and the host checkout, as the Changes sidebar issues right after a `checkout`) use a plain local repository among the refs as a history donor (`mountRefsWithLocalDonor`, `joinDonorHistory`). This happens when the donor is complete, not partial, and SHA-1, and when its raw objects (no replacement refs) contain every remote ref's commit and every owned shallow boundary. A commit's ancestry is fixed by its SHA, so the private alternates view drops those boundaries and answers without fetching, unshallowing or locking the shared mirror. Otherwise the read keeps the existing path, which unshallows the whole remote while holding the mirror lock and so queues a concurrent depth-one promotion behind it.
 
 ## Native Workspace Reconciliation
 
@@ -156,7 +158,7 @@ Unit tests (`go test -race ./core ./core/schema ./engine/session/git ./engine/en
 
 - `core/git_commit_test.go`: `TestGitNativeCommitMatchesCheckout` (native vs legacy commit objects), `TestGitNativeCommitPublicationIsRooted`, `TestGitNativeCommitRejectsGitlinks`, `TestGitNativeCommitRefStorageEligibility`, `TestGitNativeCommitStorageEligibility`, `TestGitNativeCommitObjectMetrics`, `TestGitNativeCommitLargeFile`, `TestGitNativeCommitBeyondOwnedShallowBoundaryFallsBack`; `core/git_commit_create_test.go`: `TestNativeCommitFallback`, `TestNativeFallbackPolicy`, `TestNativeSnapshotDepthBound`.
 - `core/git_commit_remote_test.go`: promotion provenance, isolation from unrelated mirror objects/refs, shallow promotion, fallbacks. `core/schema/git_lazy_test.go`: `TestNativeCommitBaseCacheScope`.
-- `core/git_history_native_test.go`, `core/git_history_test.go`: parent-history provenance and raw headers, cached/shallow history joins.
+- `core/git_history_native_test.go`, `core/git_history_test.go`: parent-history provenance and raw headers, cached/shallow history joins, `TestDonorHistoryJoin` (remote refs and owned boundaries covered by a local donor; uncovered, shallow and mismatched inputs left to `refJoin`).
 - `core/changeset_native_test.go`: `TestNativeWorkspaceMergeMatchesCheckout` (reconciliation vs legacy checkout sequence, including metadata), fallback and base-evidence tests.
 - `core/git_local_incremental_test.go`: incremental checkout vs full checkout, gates, actual-parent and provenance checks. `core/git_persistence_test.go`: checkout-base and remote tree persistence, `TestGitCheckoutBaseContentEquivalentParentTree`.
 - `core/git_host_history_test.go`, `engine/session/git/git_pack_commit_test.go`, `engine/engineutil/git_history_test.go`: donor scoping, exact-closure packs, unavailable donors, import validation.

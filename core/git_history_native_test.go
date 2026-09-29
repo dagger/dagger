@@ -61,6 +61,111 @@ func TestNativeParentHistoryProvenance(t *testing.T) {
 	require.IsType(t, &RemoteGitRef{}, parent.Self().Backend, "public ref must never be replaced")
 }
 
+func dirHistorySource(dir string, donor bool, anchor string) *donorHistorySource {
+	src := &donorHistorySource{donor: donor, anchor: anchor, gitDir: nativeCommitGitDir}
+	src.mount = func(_ context.Context, fn func(*gitutil.GitCLI) error) error {
+		return fn(gitutil.NewGitCLI(gitutil.WithDir(dir)))
+	}
+	if !donor {
+		src.gitDir = func(ctx context.Context, root string) (string, error) {
+			return nativeCommitGitDirWithShallow(ctx, root, true)
+		}
+	}
+	return src
+}
+
+func TestDonorHistoryJoin(t *testing.T) {
+	ctx := t.Context()
+	host := historyRepo(t, "sha1")
+	historyCommit(t, host, "a", "one")
+	upstream := historyCommit(t, host, "b", "two")
+	hostHead := historyCommit(t, host, "c", "three")
+
+	// An owned depth-one checkout of upstream with an agent commit on top.
+	owned := t.TempDir()
+	require.NoError(t, packRemoteCommitBaseDepth(ctx, host, owned, upstream, nil, 1))
+	opts := GitCommitOpts{Message: "agent", Date: "2026-01-01T00:00:00Z", AuthorName: "Agent", AuthorEmail: "agent@example.com"}
+	require.NoError(t, withNativeCommitIndex(ctx, owned, filepath.Join(owned, "objects"), &gitutil.Ref{SHA: upstream}, &ChangesetPaths{Added: []string{"agent"}}, opts, func(work string) error {
+		return os.WriteFile(filepath.Join(work, "agent"), []byte("agent\n"), 0644)
+	}))
+	child := gitMirrorTestRun(t, owned, "rev-parse", "HEAD")
+	shallowClone := t.TempDir()
+	gitMirrorTestRun(t, shallowClone, "clone", "--depth=1", "file://"+host, ".")
+	unrelated := historyRepo(t, "sha1")
+	historyCommit(t, unrelated, "x", "unrelated")
+
+	hostBefore := historySnapshot(t, host)
+	ownedBefore := historySnapshot(t, owned)
+	historyForbidFetch(t)
+
+	revList := func(git *gitutil.GitCLI, args ...string) []string {
+		out, err := git.Run(ctx, append([]string{"rev-list"}, args...)...)
+		require.NoError(t, err)
+		return strings.Fields(string(out))
+	}
+
+	t.Run("remote ref covered by host", func(t *testing.T) {
+		called := false
+		handled, err := joinDonorHistory(ctx, []*donorHistorySource{dirHistorySource(host, true, "")}, []string{upstream}, []string{upstream, hostHead}, func(git *gitutil.GitCLI, shas []string) error {
+			called = true
+			require.Equal(t, []string{upstream, hostHead}, shas)
+			require.Empty(t, revList(git, shas[0], "^"+shas[1]))
+			require.Equal(t, []string{hostHead}, revList(git, shas[1], "^"+shas[0]))
+			return nil
+		})
+		require.NoError(t, err)
+		require.True(t, handled)
+		require.True(t, called)
+	})
+
+	t.Run("owned shallow boundary covered by host", func(t *testing.T) {
+		sources := []*donorHistorySource{dirHistorySource(owned, false, upstream), dirHistorySource(host, true, "")}
+		handled, err := joinDonorHistory(ctx, sources, nil, []string{child, hostHead}, func(git *gitutil.GitCLI, shas []string) error {
+			require.Equal(t, []string{child}, revList(git, shas[0], "^"+shas[1]))
+			require.Equal(t, []string{hostHead}, revList(git, shas[1], "^"+shas[0]))
+			// The boundary is dropped: history continues through the donor.
+			require.Len(t, revList(git, shas[0]), 3)
+			base, err := git.Run(ctx, "merge-base", shas[0], shas[1])
+			require.NoError(t, err)
+			require.Equal(t, upstream, strings.TrimSpace(string(base)))
+			return nil
+		})
+		require.NoError(t, err)
+		require.True(t, handled)
+	})
+
+	for _, tc := range []struct {
+		name    string
+		sources []*donorHistorySource
+		needed  []string
+		shas    []string
+	}{
+		{"donor lacks the commit", []*donorHistorySource{dirHistorySource(unrelated, true, "")}, []string{upstream}, []string{upstream, upstream}},
+		{"donor lacks the boundary", []*donorHistorySource{dirHistorySource(owned, false, upstream), dirHistorySource(unrelated, true, "")}, nil, []string{child, child}},
+		{"shallow donor", []*donorHistorySource{dirHistorySource(shallowClone, true, "")}, []string{hostHead}, []string{hostHead, hostHead}},
+		{"no donor", []*donorHistorySource{dirHistorySource(owned, false, upstream)}, []string{upstream}, []string{child, upstream}},
+		{"nothing to cover", []*donorHistorySource{dirHistorySource(host, true, "")}, nil, []string{hostHead, upstream}},
+		{"unexpected boundary", []*donorHistorySource{dirHistorySource(owned, false, hostHead), dirHistorySource(host, true, "")}, nil, []string{child, hostHead}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handled, err := joinDonorHistory(ctx, tc.sources, tc.needed, tc.shas, func(*gitutil.GitCLI, []string) error {
+				t.Fatal("uncovered history must be left to the existing join")
+				return nil
+			})
+			require.NoError(t, err)
+			require.False(t, handled)
+		})
+	}
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err := joinDonorHistory(canceled, []*donorHistorySource{dirHistorySource(host, true, "")}, []string{upstream}, []string{upstream}, func(*gitutil.GitCLI, []string) error { return nil })
+	require.ErrorIs(t, err, context.Canceled)
+
+	require.Equal(t, hostBefore, historySnapshot(t, host), "donor storage is read-only")
+	require.Equal(t, ownedBefore, historySnapshot(t, owned), "owned storage keeps its boundary")
+}
+
 func TestNativeParentHistoryHeaders(t *testing.T) {
 	source := historyRepo(t, "sha1")
 	gitMirrorTestRun(t, source, "commit", "--allow-empty", "-m", "base")
