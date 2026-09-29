@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -218,3 +220,41 @@ func receiveCompletedSpans(t *testing.T, delivered chan<- string) http.HandlerFu
 		w.Header().Set("Content-Type", "application/x-protobuf")
 	}
 }
+
+func TestWorkloadReadingsFitMetricQueue(t *testing.T) {
+	readings := NewWorkloadReadings(time.Second)
+	for i := range LargeSpanQueueSize + 1 {
+		readings.record(t.Context(), workloadReadingInstrument{"test", "cpu", "us"}, int64(i))
+	}
+	scopes, err := readings.Produce(t.Context())
+	require.NoError(t, err)
+	sink := &countingMetricExporter{}
+	queue := newAsyncMetricExporter(sink, LargeSpanQueueSize)
+	require.NoError(t, queue.Export(t.Context(), &metricdata.ResourceMetrics{ScopeMetrics: scopes}))
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, queue.Shutdown(ctx))
+	// Readings past the queue limit are lost when recorded, not with the whole batch.
+	require.Equal(t, LargeSpanQueueSize, sink.points)
+	require.Equal(t, uint64(1), readings.dropped)
+	require.Zero(t, queue.dropped)
+}
+
+type countingMetricExporter struct{ points int }
+
+func (*countingMetricExporter) Temporality(kind sdkmetric.InstrumentKind) metricdata.Temporality {
+	return sdkmetric.DefaultTemporalitySelector(kind)
+}
+func (*countingMetricExporter) Aggregation(kind sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.DefaultAggregationSelector(kind)
+}
+func (e *countingMetricExporter) Export(_ context.Context, data *metricdata.ResourceMetrics) error {
+	for _, scope := range data.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			e.points += len(m.Data.(metricdata.Gauge[int64]).DataPoints)
+		}
+	}
+	return nil
+}
+func (*countingMetricExporter) ForceFlush(context.Context) error { return nil }
+func (*countingMetricExporter) Shutdown(context.Context) error   { return nil }
