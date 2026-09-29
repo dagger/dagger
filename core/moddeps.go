@@ -105,13 +105,18 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 // SchemaBuilderMemo shares one builder, and so one built schema server, per
 // module set. Loading a handle resolves the module set its value references
 // (Query.ModDepsForCall) on every load; without a memo, each load would build
-// a server and reinstall every module.
+// a server and reinstall every module. ModDepsForCall also backs the server's
+// resultServerForCall hook, so the memo serves cold recipe loads with module
+// provenance, ObjectTypeAndServerForID, and persisted-envelope decoding too.
 //
 // The engine keeps one memo per client and drops it with the client's other
 // heavy state, so its entries live exactly as long as the client that loaded
-// them. It is unbounded: a client loads handles through few distinct module
-// sets, and an entry costs roughly one forked core schema plus its modules'
-// types.
+// them. It is unbounded by design: entries are only created for module sets
+// the client actually loads through, that count grows with distinct module
+// results (e.g. one per reload in a dev loop) rather than with load volume,
+// and an entry costs roughly one forked core schema plus its modules' types.
+// A built server is an immutable type registry; the dagql result cache is
+// engine-wide and never held by a server, so sharing one shares no results.
 type SchemaBuilderMemo struct {
 	mu       sync.Mutex
 	builders map[string]*SchemaBuilder
@@ -163,7 +168,9 @@ func (b *SchemaBuilder) memoKey() (string, bool) {
 			}
 			fmt.Fprintf(&key, "p%p", mod)
 		}
-		fmt.Fprintf(&key, ":%t:%t;", e.opts.SkipConstructor, e.opts.Entrypoint)
+		// Format the whole struct so a field added to InstallOpts later is
+		// part of the key without anyone remembering to add it here.
+		fmt.Fprintf(&key, ":%+v;", e.opts)
 	}
 	return key.String(), true
 }
@@ -309,7 +316,10 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 			// This caller gave up, which says nothing about the schema.
 			// Leave the builder unloaded so callers sharing it build
 			// with their own contexts instead of inheriting the
-			// cancellation.
+			// cancellation. This applies to every builder, not only
+			// memoized ones: a Module's Deps sits on a cached Module
+			// result that later sessions reuse, and a client's served
+			// schema builder outlives the request that first built it.
 			return
 		}
 		b.lazilyLoadedServer = loadedSchema
