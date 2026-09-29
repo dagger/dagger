@@ -26,13 +26,31 @@ type transferTestValue struct {
 	// PartDeps are the result numbers its snapshot part's probe declares as
 	// dependencies, which a receiver installing the part takes on.
 	PartDeps []uint64 `json:"partDeps,omitempty"`
-	rev      atomic.Uint64
-	release  OnReleaseFunc
-	links    []PersistedSnapshotRefLink
+	// Fields is an optional body, shaped like a module's type definitions,
+	// that gives the value a realistic payload size.
+	Fields  []transferTestField `json:"fields,omitempty"`
+	rev     atomic.Uint64
+	release OnReleaseFunc
+	links   []PersistedSnapshotRefLink
 	// revisionHook runs on each output revision read, in the reader's goroutine.
 	revisionHook func()
 	// unready makes the output revision read report a held persistence guard.
 	unready atomic.Bool
+}
+
+// transferTestField is one named field of a transferTestValue's body: a name,
+// a description, a type and its arguments.
+type transferTestField struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Type        string            `json:"type"`
+	Args        []transferTestArg `json:"args,omitempty"`
+}
+
+type transferTestArg struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Default string `json:"default,omitempty"`
 }
 
 func (*transferTestValue) Type() *ast.Type {
