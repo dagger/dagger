@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"time"
@@ -41,6 +42,13 @@ const (
 
 	// helloTimeout bounds the wait for welcome after dialling.
 	helloTimeout = 30 * time.Second
+
+	// A blob upload that stalls fails, and frees its slot: uploadIdleTimeout
+	// bounds the time the blob store goes without reading any of the body,
+	// and uploadResponseTimeout the wait for its response once the body is
+	// sent.
+	uploadIdleTimeout     = time.Minute
+	uploadResponseTimeout = time.Minute
 )
 
 // Config configures Run.
@@ -104,7 +112,7 @@ func newSettings(cfg Config) *settings {
 	}
 	s := &settings{
 		Config:     cfg,
-		put:        httpPut(http.DefaultClient),
+		put:        httpPut(uploadClient(uploadResponseTimeout), uploadIdleTimeout),
 		maxMessage: protocol.MaxMessageBytes,
 		jitter:     rand.Float64,
 	}
@@ -219,17 +227,43 @@ func (b *backoff) next(jitter float64) time.Duration {
 	return time.Duration(float64(wait) * (1 + backoffJitter*(2*jitter-1)))
 }
 
+// uploadClient is the HTTP client for blob uploads: the default transport,
+// with a bound on the wait for the response once the request is sent.
+func uploadClient(responseTimeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = responseTimeout
+	return &http.Client{Transport: transport}
+}
+
+// errUploadStalled is the error of an upload whose body the blob store
+// stopped reading.
+var errUploadStalled = errors.New("the blob store stopped reading the body")
+
 // httpPut uploads a blob to a presigned URL. Its errors never include the URL,
-// which carries a signature.
-func httpPut(client *http.Client) func(context.Context, string, io.Reader, int64) error {
+// which carries a signature. Until the request is written, the upload is
+// cancelled once no bytes of the body have been read for idle.
+func httpPut(client *http.Client, idle time.Duration) func(context.Context, string, io.Reader, int64) error {
 	return func(ctx context.Context, address string, body io.Reader, size int64) error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPut, address, body)
+		ctx, cancel := context.WithCancelCause(ctx)
+		defer cancel(nil)
+		stalled := time.AfterFunc(idle, func() { cancel(errUploadStalled) })
+		defer stalled.Stop()
+		// The body's end isn't the request's: over HTTP/2 the transport reads
+		// the end before it sends the last bytes, which wait for the blob
+		// store's flow control.
+		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+			WroteRequest: func(httptrace.WroteRequestInfo) { stalled.Stop() },
+		})
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, address, &idleBody{Reader: body, timer: stalled, idle: idle})
 		if err != nil {
 			return errors.New("invalid upload address")
 		}
 		req.ContentLength = size
 		resp, err := client.Do(req)
 		if err != nil {
+			if cause := context.Cause(ctx); errors.Is(cause, errUploadStalled) {
+				return fmt.Errorf("upload: %w", cause)
+			}
 			var urlErr *url.Error
 			if errors.As(err, &urlErr) {
 				err = urlErr.Err
@@ -243,4 +277,21 @@ func httpPut(client *http.Client) func(context.Context, string, io.Reader, int64
 		}
 		return nil
 	}
+}
+
+// idleBody is an upload's body. A read that returns bytes restarts timer.
+// Once the request is written, httpPut stops the timer: from then on, the
+// transport's response timeout bounds the upload.
+type idleBody struct {
+	io.Reader
+	timer *time.Timer
+	idle  time.Duration
+}
+
+func (b *idleBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	if n > 0 {
+		b.timer.Reset(b.idle)
+	}
+	return n, err
 }

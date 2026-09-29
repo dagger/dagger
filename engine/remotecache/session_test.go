@@ -739,7 +739,7 @@ func (failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 
 // An upload's error names the blob's failure, never the signed address.
 func TestHTTPPutHidesTheAddress(t *testing.T) {
-	put := httpPut(&http.Client{Transport: failingTransport{}})
+	put := httpPut(&http.Client{Transport: failingTransport{}}, time.Minute)
 	err := put(t.Context(), "https://blobs.example/put?X-Amz-Signature=secret", bytes.NewReader(nil), 0)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "secret")
