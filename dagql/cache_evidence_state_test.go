@@ -388,7 +388,7 @@ type statePartValue struct {
 	lazy       bool
 	absentMeta bool
 	block      chan struct{}
-	host       *PartHost
+	host       atomic.Pointer[PartHost]
 	rev        atomic.Uint64
 }
 
@@ -420,14 +420,14 @@ func (v *statePartValue) PersistedOutputRevision() (OutputRevision, error) {
 	return OutputRevision(v.rev.Load()), nil
 }
 
-func (v *statePartValue) BindPartHost(host *PartHost) { v.host = host }
+func (v *statePartValue) BindPartHost(host *PartHost) { v.host.Store(host) }
 
 func (v *statePartValue) LazyEvalFunc() LazyEvalFunc {
 	if !v.lazy || v.done.Load() {
 		return nil
 	}
 	return func(ctx context.Context) error {
-		return v.host.RunNative(ctx, LazyGroupWhole, []PartKey{"snapshot"}, func(context.Context) error {
+		return v.host.Load().RunNative(ctx, LazyGroupWhole, []PartKey{"snapshot"}, func(context.Context) error {
 			if v.block != nil {
 				<-v.block
 			}
@@ -583,7 +583,7 @@ func TestCacheResultStatePartsSurviveRestart(t *testing.T) {
 		assert.DeepEqual(t, []string{snapshotKey}, parts[field])
 	}
 	assert.DeepEqual(t, []string{snapshotKey}, lazy.cacheSharedResult().settledPartKeys())
-	assert.Equal(t, 0, len(eager.host.row.settledPartKeys()), "the gate never saw the eager value's part")
+	assert.Equal(t, 0, len(eager.host.Load().row.settledPartKeys()), "the gate never saw the eager value's part")
 	assert.NilError(t, c.ReleaseSession(ctx, "test-session"))
 	assert.NilError(t, c.Close(context.Background()))
 
@@ -602,7 +602,7 @@ func TestCacheResultStatePartsSurviveRestart(t *testing.T) {
 type stateTwoPartValue struct {
 	meta, fs atomic.Bool
 	block    chan struct{}
-	host     *PartHost
+	host     atomic.Pointer[PartHost]
 	rev      atomic.Uint64
 }
 
@@ -635,7 +635,7 @@ func (v *stateTwoPartValue) PersistedOutputRevision() (OutputRevision, error) {
 	return OutputRevision(v.rev.Load()), nil
 }
 
-func (v *stateTwoPartValue) BindPartHost(host *PartHost) { v.host = host }
+func (v *stateTwoPartValue) BindPartHost(host *PartHost) { v.host.Store(host) }
 
 func (v *stateTwoPartValue) LazyEvalFunc() LazyEvalFunc {
 	if v.meta.Load() && v.fs.Load() {
@@ -666,7 +666,7 @@ func (v *stateTwoPartValue) LazyEvalFuncForGroup(group LazyGroupKey) LazyEvalFun
 		return nil
 	}
 	return func(ctx context.Context) error {
-		return v.host.RunNative(ctx, group, []PartKey{PartKey(group)}, func(context.Context) error {
+		return v.host.Load().RunNative(ctx, group, []PartKey{PartKey(group)}, func(context.Context) error {
 			if group == "fs" && v.block != nil {
 				<-v.block
 			}
