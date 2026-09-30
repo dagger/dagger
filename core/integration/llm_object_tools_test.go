@@ -1558,6 +1558,27 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		require.Contains(t, transcript, "+from the chief")
 	})
 
+	t.Run("FindArtifacts discovers the address", func(ctx context.Context, t *testctx.T) {
+		// The model looks for GitRefs, lists the heads' keyed addresses, and
+		// passes the chief's to a GitRef-taking tool.
+		const prompt = "find the chief's work"
+		model := conversation(prompt,
+			toolCall("find", "FindArtifacts", `{"type":"GitRef"}`),
+			toolCall("items", "FindArtifacts", `{"address":"roster/members/head","view":"items"}`),
+			toolCall("show", "show", `{"from":"dag+git-ref://roster/members/head?member=chief"}`),
+		)
+		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
+		// The path, with a placeholder for the member it needs, is marked as
+		// read from the bound roster...
+		require.Contains(t, transcript,
+			"dag+git-ref://roster/members/head?member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+		// ...and the items are its live members, fully keyed.
+		require.Contains(t, transcript,
+			"dag+git-ref://roster/members/head?member=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+		require.Contains(t, transcript, "commit "+chiefSHA)
+		require.Contains(t, transcript, "+from the chief")
+	})
+
 	t.Run("an LLM-returning tool advances the bound workspace", func(ctx context.Context, t *testctx.T) {
 		// adopt returns an LLM: a continuation the loop resumes from, with
 		// the chief's commits in its workspace.
@@ -1572,6 +1593,53 @@ roster=$(roster | with-worker --name chief --worker $chief)
 			run(ctx, t, chat(model, "$roster", prompt)+" | workspace | git | head | commit-sha")))
 		require.Equal(t, "from the chief", strings.TrimSpace(
 			run(ctx, t, chat(model, "$roster", prompt)+" | workspace | file chief.txt | contents")))
+	})
+}
+
+// TestFindArtifacts covers the FindArtifacts builtin over the current
+// workspace: a module that fails to load is listed with its error rather than
+// failing the listing, like `dagger check -l`.
+func (LLMSuite) TestFindArtifacts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// The shell skips loading the workspace's modules (-M): it cannot load a
+	// broken one. Workspace.artifacts still discovers them, best effort.
+	base := workspaceFixture(t, c, "generators-broken")
+
+	t.Run("a workspace makes it a tool", func(ctx context.Context, t *testctx.T) {
+		tools, err := base.With(daggerShellNoMod("llm | tools")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, tools, "## FindArtifacts\n")
+	})
+
+	t.Run("checks and load errors are listed", func(ctx context.Context, t *testctx.T) {
+		const prompt = "which checks are there?"
+		script := c.LLM().WithPrompt(prompt)
+		for i, args := range []string{`{}`, `{"type":"Check"}`} {
+			id := fmt.Sprintf("find_%d", i)
+			script = script.
+				WithResponse([]dagger.LLMContentBlockInput{
+					{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: "FindArtifacts", Arguments: dagger.JSON(args)},
+				}).
+				WithToolResult(id, "", false)
+		}
+		model := cannedRecordingModel(ctx, t, c, script.WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+		out, err := base.With(daggerShellNoMod(fmt.Sprintf(
+			`llm --model="%s" | with-prompt "%s" | loop | transcript`, model, prompt,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The overview counts the loaded module's artifacts by type and names
+		// the module that failed to load.
+		require.Contains(t, out, "Check (")
+		require.Contains(t, out, "Service (1): good")
+		require.Contains(t, out, "Modules that failed to load")
+		// The checks: the loaded module's, and the load failure in place of
+		// the broken module's.
+		require.Contains(t, out, "dag+check://good/verify — A trivial check. Used to prove the module loaded for `dagger check`.")
+		require.Contains(t, out, "dag+check://bad/load — LOAD ERROR: ")
+		require.NotContains(t, out, "dag+service://good/web —")
+		require.Contains(t, out, "done")
 	})
 }
 

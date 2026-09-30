@@ -354,6 +354,7 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 		return nil, err
 	}
 	m.loadSkillTools(srv, allTools)
+	m.loadArtifactTools(ctx, srv, allTools)
 	m.loadBuiltins(srv, allTools)
 	return allTools.Order, nil
 }

@@ -8,6 +8,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/iancoleman/strcase"
@@ -129,6 +131,67 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		addr.Version = commit
 	}
 	return addr.String(), nil
+}
+
+// Description is the description of the field that supplies the artifact. A
+// load failure describes the module that could not be loaded; a generator's
+// stale check is described from its generator.
+func (a *Artifact) Description() string {
+	if a.LoadFailure != nil {
+		if a.Workspace.Self() == nil {
+			return "this bound tool object could not be loaded"
+		}
+		return "this workspace module could not be loaded"
+	}
+	if a.Node == nil {
+		return ""
+	}
+	generator := a.Node.Parent
+	if a.Node.Name == "stale" && generator != nil && slices.Contains(generator.Directives, "generate") {
+		if obj := generator.ObjectType(); obj != nil && obj.Name == "Generator" && obj.SourceModuleName == "" {
+			description, _, _ := strings.Cut(generator.Description, "\n")
+			description = strings.TrimRight(strings.TrimSpace(description), ".:;!?")
+			if description == "" {
+				return "staleness check"
+			}
+			first, size := utf8.DecodeRuneInString(description)
+			return "staleness check: " + string(unicode.ToLower(first)) + description[size:]
+		}
+	}
+	return a.Node.Description
+}
+
+// PathDefinitions lists the entries' schema paths, one per address (without
+// dimension keys), sorted by address. It reads no runtime values: apply
+// SchemaSelection first so the selection's filters are bound.
+func (a *Artifacts) PathDefinitions(opts ArtifactURIOpts) ([]*ArtifactPath, error) {
+	opts.DimensionKeys = false
+	paths := map[string]*ArtifactPath{}
+	for _, entry := range a.Entries {
+		uri, err := entry.URI(opts)
+		if err != nil {
+			return nil, err
+		}
+		path := paths[uri]
+		if path == nil {
+			path = &ArtifactPath{ModuleName: entry.ModuleName, URI: uri, Description: entry.Description(), Dimensions: []string{}}
+			paths[uri] = path
+		}
+		if entry.LoadFailure != nil {
+			path.LoadError = entry.LoadFailure.Message
+		}
+		for _, dimension := range entry.DimensionDefinitions() {
+			if !slices.Contains(path.Dimensions, dimension.Identifier) {
+				path.Dimensions = append(path.Dimensions, dimension.Identifier)
+			}
+		}
+	}
+	result := make([]*ArtifactPath, 0, len(paths))
+	for _, path := range paths {
+		result = append(result, path)
+	}
+	slices.SortFunc(result, func(a, b *ArtifactPath) int { return strings.Compare(a.URI, b.URI) })
+	return result, nil
 }
 
 // artifactReferenceChainKey carries the chain of artifact references being

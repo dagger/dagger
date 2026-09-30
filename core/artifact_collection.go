@@ -209,6 +209,53 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 	return items, nil
 }
 
+// ExpandDimensionItems lists the collection items represented in the selection
+// for a dimension (by identifier or name), evaluating only the collection
+// receivers needed to enumerate their keys. Parent keys are preserved.
+func (a *Artifacts) ExpandDimensionItems(ctx context.Context, name string) ([]*Artifact, error) {
+	dimension, err := a.ResolveDimension(name)
+	if err != nil {
+		return nil, err
+	}
+	filtered, err := a.FilterDimensions([]string{name}).BindDimensions()
+	if err != nil {
+		return nil, err
+	}
+	expanded, err := filtered.ForDimensionKeys(dimension).Expand(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return expanded.DimensionItems(dimension)
+}
+
+// ExpandDimensionKeys lists the keys represented in the selection for a
+// dimension (by identifier or name), sorted with no duplicates. A static
+// dimension's keys are read from the schema; a collection's are enumerated
+// from its receivers, never from leaf values.
+func (a *Artifacts) ExpandDimensionKeys(ctx context.Context, name string) ([]string, error) {
+	dimension, err := a.ResolveDimension(name)
+	if err != nil {
+		return nil, err
+	}
+	if artifact.IsStaticDimension(dimension) {
+		selected, err := a.FilterDimensions([]string{dimension}).SchemaSelection()
+		if err != nil {
+			return nil, err
+		}
+		var keys []string
+		for _, entry := range selected.Entries {
+			keys = append(keys, entry.StaticDimensionKey(dimension))
+		}
+		slices.Sort(keys)
+		return slices.Compact(keys), nil
+	}
+	items, err := a.ExpandDimensionItems(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return (&Artifacts{Entries: items}).DimensionKeys(dimension), nil
+}
+
 // Expand evaluates only the collection receivers needed to enumerate selected
 // keys. A leaf artifact's value remains deferred.
 func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
