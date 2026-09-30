@@ -515,54 +515,65 @@ func TestCloudPublishedRow(t *testing.T) {
 		"the key named in a value is not the marker")
 }
 
-// A session's forwarder outlives the session: the main client's shutdown
-// waits on a Cloud outage for one bound, teardown not at all, and the store
-// stays open and kept from collection until the forwarder, in the background,
-// has published everything once Cloud is back, and released it.
+// The existing forwarder keeps the store alive and publishes its remaining
+// telemetry after teardown, whether shutdown drained for a near-expiry token
+// or left a fresh token's telemetry to the forwarder immediately.
 func TestSessionCloudForwarderDrainsAfterTeardown(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	receiver := newCloudReceiver(t, false)
-	receiver.refuse.Store(true)
-	const bound = 300 * time.Millisecond
-	tuning := fastCloudForwardTuning()
-	tuning.exportTimeout = 5 * time.Second
-	srv := &Server{sessionCloudFlushTimeout: bound, cloudForwardTuning: &tuning}
-	sess, root := newCloudTestSession(t, srv, &engine.ClientMetadata{
-		CloudAuth:               basicCloudAuth("dag_test_token"),
-		CloudURL:                receiver.URL,
-		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
-	})
-	sess.state.Store(sessionStateInitialized)
-	srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
-	emitCloudTestTelemetry(t, sess, root)
-	postTelemetry(t, srv.telemetryPubSub, sess.sessionID, root.clientID)
+	for _, tc := range []struct {
+		name   string
+		expiry time.Time
+	}{
+		{"fresh token", time.Now().Add(time.Hour)},
+		{"token near expiry", time.Now().Add(time.Second)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			receiver := newCloudReceiver(t, false)
+			receiver.refuse.Store(true)
+			const bound = 300 * time.Millisecond
+			tuning := fastCloudForwardTuning()
+			tuning.exportTimeout = 5 * time.Second
+			srv := &Server{sessionCloudFlushTimeout: bound, cloudForwardTuning: &tuning}
+			sess, root := newCloudTestSession(t, srv, &engine.ClientMetadata{
+				CloudAuth:               basicCloudAuth("dag_test_token"),
+				CloudURL:                receiver.URL,
+				CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+			})
+			sess.state.Store(sessionStateInitialized)
+			srv.daggerSessions = map[string]*daggerSession{sess.sessionID: sess}
+			emitCloudTestTelemetry(t, sess, root)
+			postTelemetry(t, srv.telemetryPubSub, sess.sessionID, root.clientID)
 
-	start := time.Now()
-	stopBudget := sess.startCloudShutdownBudget()
-	sess.flushSessionCloudTelemetry(ctx)
-	stopBudget()
-	require.Less(t, time.Since(start), bound+250*time.Millisecond, "the shutdown waits on the outage for one bound")
+			start := time.Now()
+			stopBudget := sess.startCloudShutdownBudget()
+			sess.setCloudTokenExpiry(tc.expiry)
+			sess.flushSessionCloudTelemetryForShutdown(ctx)
+			require.NoError(t, sess.FlushTelemetry(ctx, "client shutdown"))
+			stopBudget()
+			require.Less(t, time.Since(start), bound+250*time.Millisecond, "the shutdown waits on the outage for at most one bound")
 
-	start = time.Now()
-	require.NoError(t, sess.shutdownTelemetry(ctx))
-	require.Less(t, time.Since(start), bound+time.Second, "teardown does not wait on the forwarder")
-	require.True(t, srv.cloudForwarders.KeepSet()[root.clientID], "the store is kept while the forwarder publishes")
-	require.Equal(t, 1, srv.clientDBs.OpenStats().Refs, "the forwarder holds the store open")
-	_, spans, logs, _ := receiver.snapshot()
-	require.Empty(t, spans)
-	require.Empty(t, logs)
+			start = time.Now()
+			require.NoError(t, sess.shutdownTelemetry(ctx))
+			require.Less(t, time.Since(start), bound+time.Second, "teardown does not wait on the forwarder")
+			require.True(t, srv.cloudForwarders.KeepSet()[root.clientID], "the store is kept while the forwarder publishes")
+			require.Equal(t, 1, srv.clientDBs.OpenStats().Refs, "the forwarder holds the store open")
+			_, spans, logs, _ := receiver.snapshot()
+			require.Empty(t, spans)
+			require.Empty(t, logs)
 
-	receiver.refuse.Store(false)
-	require.NoError(t, sess.cloudForwarder.waitReleased(ctx))
-	_, spans, logs, _ = receiver.snapshot()
-	require.Equal(t, []string{"cloud-span"}, dedupe(filterNames(spans, "cloud-span")))
-	require.Equal(t, 1, countName(spans, "posted-span"), "posted telemetry once")
-	require.Equal(t, 1, countName(logs, "cloud-log"))
-	require.Equal(t, 1, countName(logs, "posted-log"))
-	require.Empty(t, srv.cloudForwarders.KeepSet(), "the forwarder released the store")
-	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+			receiver.refuse.Store(false)
+			require.NoError(t, sess.cloudForwarder.waitReleased(ctx))
+			_, spans, logs, _ = receiver.snapshot()
+			require.Equal(t, []string{"cloud-span"}, dedupe(filterNames(spans, "cloud-span")))
+			require.Equal(t, 1, countName(spans, "posted-span"), "posted telemetry once")
+			require.Equal(t, 1, countName(logs, "cloud-log"))
+			require.Equal(t, 1, countName(logs, "posted-log"))
+			require.Empty(t, srv.cloudForwarders.KeepSet(), "the forwarder released the store")
+			require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+		})
+	}
 }
 
 func countName(names []string, name string) int {

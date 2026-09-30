@@ -691,17 +691,14 @@ func (sess *daggerSession) cloudFlushCanOutliveClient(now time.Time) bool {
 	return expiry == 0 || time.Unix(0, expiry).Sub(now) > cloudTokenRefreshMargin
 }
 
-// flushSessionCloudTelemetryForShutdown sends the session's last Cloud
-// telemetry for the main client's shutdown. The engine outlives the client,
-// so when the token allows it the engine finishes sending in the background
-// and the client does not wait on Cloud. Each wait stays bounded by the
-// session's Cloud flush timeout either way.
+// flushSessionCloudTelemetryForShutdown waits for Cloud only when the token
+// may need the client's credentials to refresh. Otherwise the existing
+// forwarder keeps publishing; the shutdown's FlushTelemetry barrier still
+// makes the client's telemetry durable in the local store.
 func (sess *daggerSession) flushSessionCloudTelemetryForShutdown(ctx context.Context) {
-	if sess.cloudFlushCanOutliveClient(time.Now()) {
-		go sess.flushSessionCloudTelemetry(context.WithoutCancel(ctx))
-		return
+	if !sess.cloudFlushCanOutliveClient(time.Now()) {
+		sess.flushSessionCloudTelemetry(ctx)
 	}
-	sess.flushSessionCloudTelemetry(ctx)
 }
 
 // flushSessionCloudTelemetry publishes what the session has sent so far to

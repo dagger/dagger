@@ -1180,25 +1180,17 @@ func TestShutdownCloudFlushWaitsOnlyWhenTheTokenMayNeedRefresh(t *testing.T) {
 		return sess, release, done
 	}
 
-	t.Run("fresh token: the client does not wait on Cloud", func(t *testing.T) {
-		sess, release, done := slowFlush()
-		sess.setCloudTokenExpiry(time.Now().Add(time.Hour))
-		returned := make(chan struct{})
-		go func() {
+	t.Run("fresh token: the existing forwarder handles Cloud", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			var flushes atomic.Int32
+			sess := &daggerSession{cloudFlushers: []func(context.Context){func(context.Context) {
+				flushes.Add(1)
+			}}}
+			sess.setCloudTokenExpiry(time.Now().Add(time.Hour))
 			sess.flushSessionCloudTelemetryForShutdown(t.Context())
-			close(returned)
-		}()
-		select {
-		case <-returned:
-		case <-time.After(5 * time.Second):
-			t.Fatal("shutdown waited for Cloud")
-		}
-		close(release)
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("the flush did not finish after the client was released")
-		}
+			synctest.Wait()
+			require.Zero(t, flushes.Load(), "no separate drain is started for a fresh token")
+		})
 	})
 
 	t.Run("token near expiry: the client waits for the flush", func(t *testing.T) {
