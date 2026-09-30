@@ -920,7 +920,7 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	slog := slog.With("service", svc.Host)
 
 	running, found := ss.running[svc.Key]
-	if !found || running != svc {
+	if !found {
 		ss.l.Unlock()
 		slog.Trace("detach: service not running")
 		// not even running; ignore

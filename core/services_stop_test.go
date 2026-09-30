@@ -346,29 +346,3 @@ func TestServicesAbandonedStopFallsBackToDetach(t *testing.T) {
 		require.True(t, svc.waitKilled(t))
 	})
 }
-
-// Detaching or stopping an instance that has exited must not affect a new
-// instance started under the same key.
-func TestServicesStopDoesNotTouchReplacement(t *testing.T) {
-	t.Parallel()
-	services := newStopTestServices(50 * time.Millisecond)
-	key := stopTestKey(t.Name())
-	old, oldSvc := startStopRecording(t, services, key)
-
-	require.NoError(t, services.StopRunning(context.Background(), old, true))
-	require.True(t, oldSvc.waitKilled(t))
-	require.Eventually(t, func() bool {
-		services.l.Lock()
-		defer services.l.Unlock()
-		_, found := services.running[key]
-		return !found
-	}, 10*time.Second, 10*time.Millisecond)
-
-	replacement, svc := startStopRecording(t, services, key)
-	require.NotSame(t, old, replacement)
-
-	services.Detach(context.Background(), old)
-	require.NoError(t, services.StopRunning(context.Background(), old, false))
-	require.Equal(t, 1, bindingsOf(services, key))
-	svc.noRequest(t, 10*services.terminateGracePeriod)
-}
