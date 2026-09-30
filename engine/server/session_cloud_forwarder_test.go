@@ -399,6 +399,24 @@ func TestCloudForwarderStopCancelsExports(t *testing.T) {
 	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
 }
 
+func TestCloudForwarderFinishAfterRelease(t *testing.T) {
+	t.Parallel()
+	srv := forwardTestStore(t)
+	f := startForwardTest(t, srv, &forwardTestExporter{}, &forwardTestExporter{}, fastCloudForwardTuning())
+	f.stop(errors.New("stop"))
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, f.waitReleased(ctx))
+
+	f.finish()
+	f.timerMu.Lock()
+	active := f.deadline != nil && f.deadline.Stop()
+	f.timerMu.Unlock()
+	require.False(t, active, "finishing a released forwarder must not retain it with a new deadline")
+	require.Empty(t, srv.cloudForwarders.KeepSet())
+	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+}
+
 // Once the session is gone, a credential that can no longer be used ends
 // forwarding at once, rather than at the background deadline; while the
 // session runs, the forwarder keeps retrying.

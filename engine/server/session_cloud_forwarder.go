@@ -399,11 +399,14 @@ func (f *cloudForwarder) drain(ctx context.Context) error {
 // timeout, and then releases. It never waits.
 func (f *cloudForwarder) finish() {
 	f.finishOnce.Do(func() {
-		close(f.finished)
 		f.timerMu.Lock()
-		f.deadline = time.AfterFunc(f.tuning.backgroundTimeout, func() {
-			f.stop(errCloudForwardDeadline)
-		})
+		if f.ctx.Err() == nil {
+			f.deadline = time.AfterFunc(f.tuning.backgroundTimeout, func() {
+				f.stop(errCloudForwardDeadline)
+			})
+		}
+		// The deadline must exist before caught-up lanes can release it.
+		close(f.finished)
 		f.timerMu.Unlock()
 		for _, lane := range f.lanes {
 			lane.wake()
