@@ -2138,3 +2138,140 @@ func TestMergeValuesAttachesOnlyTheFinalOfferOfAPart(t *testing.T) {
 	require.NoError(t, a.ReleaseSession(aCtx, "session-a"))
 	require.NoError(t, a.ReleaseSession(cCtx, "session-c"))
 }
+
+// A record that references two records of one recipe, which land on one
+// entry, takes that entry once: it has one dependency, the entry counts one
+// unit of ownership from it, and each of its references names one of its
+// dependencies. The merge validates records at their provisional numbers,
+// where the two are distinct; relocation must keep what that validation
+// proved.
+func TestMergeValuesRelocationKeepsReferencesWithinDependencies(t *testing.T) {
+	t.Parallel()
+	ctx, a, srv := transferTestCache(t)
+	old := persistedListTestResult(t, ctx, a, srv, "relocated-twice", String("old"))
+	mergeTestExpire(a, old.cacheSharedResult())
+	frame := old.cacheSharedResult().loadResultCall().clone()
+	fresh, err := a.GetOrInitCall(ctx, "new-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(String("fresh"), frame)
+	})
+	require.NoError(t, err)
+	root := persistedListTestResult(t, ctx, a, srv, "both-relocated", DynamicResultArrayOutput{Elem: String(""), Values: []AnyResult{old, fresh}})
+	bundle := exportTestBundle(t, ctx, a, root)
+	require.Len(t, bundle.Values, 3)
+	rootOrdinal := mergeTestOrdinalOf(t, bundle, root.cacheSharedResult())
+
+	bctx, b, _ := transferTestCache(t)
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	b.egraphMu.RLock()
+	defer b.egraphMu.RUnlock()
+	r := b.resultsByID[sharedResultID(mergeTestValueOf(t, reply, rootOrdinal).Number)]
+	require.Len(t, r.deps, 1, "both records land on one entry")
+	for id := range r.deps {
+		require.Equal(t, 1, int(b.resultsByID[id].incomingOwnershipCount), "the root owns the entry once")
+	}
+	refs := 0
+	_, err = VisitEncodedReferences(PersistedRecord{ResultID: uint64(r.id), Envelope: *r.persistedEnvelope, Call: r.loadResultCall()}, func(ref *PersistedRef) error {
+		if ref.RecipeID == nil && (ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall) {
+			refs++
+			require.Contains(t, r.deps, sharedResultID(ref.ResultID), "reference %s", ref.Path)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, refs, "both items reference the entry")
+	require.NoError(t, a.ReleaseSession(ctx, "new-session"))
+}
+
+// An offer whose owner lists two records of one recipe, which land on one
+// entry, is admitted with that entry once in its owner, whether the offer's
+// receiver is created by the merge or is the engine's own entry.
+func TestMergeValuesOfferOwnerNamingOneEntryTwice(t *testing.T) {
+	t.Parallel()
+	ctx, a, srv := transferTestCache(t)
+	old := persistedListTestResult(t, ctx, a, srv, "owner-twice", String("old"))
+	mergeTestExpire(a, old.cacheSharedResult())
+	frame := old.cacheSharedResult().loadResultCall().clone()
+	fresh, err := a.GetOrInitCall(ctx, "new-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(String("fresh"), frame)
+	})
+	require.NoError(t, err)
+	root := persistedListTestResult(t, ctx, a, srv, "owned-twice", &transferTestValue{Text: "pending"})
+	mergeTestOfferOn(t, ctx, a, root, "/", old, fresh)
+	bundle := exportTestBundle(t, ctx, a, root)
+	require.Len(t, bundle.Values, 3, "the root and the owner's two records")
+	rootOrdinal := mergeTestOrdinalOf(t, bundle, root.cacheSharedResult())
+	freshOrdinal := mergeTestOrdinalOf(t, bundle, fresh.cacheSharedResult())
+
+	for _, own := range []bool{false, true} {
+		t.Run(map[bool]string{false: "a created receiver", true: "the engine's own receiver"}[own], func(t *testing.T) {
+			bctx, b, bsrv := transferTestCache(t)
+			var mine uint64
+			if own {
+				mine = uint64(persistedListTestResult(t, bctx, b, bsrv, "owned-twice", &transferTestValue{Text: "pending"}).cacheSharedResult().id)
+			}
+			reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+			require.NoError(t, err)
+			receiver := mergeTestValueOf(t, reply, rootOrdinal).Number
+			if own {
+				require.Equal(t, mine, receiver, "the record lands on the engine's own entry")
+			}
+			entry := mergeTestValueOf(t, reply, freshOrdinal).Number
+			b.egraphMu.RLock()
+			defer b.egraphMu.RUnlock()
+			offers := b.resultsByID[sharedResultID(receiver)].testPartOffers()
+			require.Len(t, offers, 1)
+			for _, offer := range offers {
+				require.Equal(t, []uint64{entry}, offer.record.Owner.DependencyIDs, "the entry once")
+			}
+		})
+	}
+	require.NoError(t, a.ReleaseSession(ctx, "new-session"))
+}
+
+// A record the merge installs names the entry that takes it, whether the
+// merge creates that entry, stores the record on an entry with no value,
+// replaces an expired value in place or retires an entry in use; the entry
+// then exports. A record that lands on an entry the cache has names a number
+// other than its provisional one, so its relocation can't be skipped.
+func TestMergeValuesInstalledRecordNamesItsEntry(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []string{"created", "stored on an entry with no value", "replacing an expired value", "retiring an entry in use"} {
+		t.Run(tc, func(t *testing.T) {
+			t.Parallel()
+			bundle, recipe := mergeTestSource(t, "root", "sent")
+			var (
+				ctx  context.Context
+				into *Cache
+				from = cloudCacheID
+			)
+			switch tc {
+			case "stored on an entry with no value":
+				ctx, into = storedPartTestCache(t, WithBlobStore())
+				from = "cache-a"
+				_, err := into.AttachRemoteHolding(ctx, HolderKey{Cache: "cache-x", Number: 9}, RemoteHolding{Recipe: recipe, Field: "root", TypeName: "transferTestValue"})
+				require.NoError(t, err)
+			default:
+				bctx, b, bsrv := transferTestCache(t)
+				ctx, into = bctx, b
+				if tc != "created" {
+					local := persistedListTestResult(t, bctx, b, bsrv, "root", &transferTestValue{Text: "local"})
+					if tc == "replacing an expired value" {
+						require.NoError(t, b.ReleaseSession(bctx, "test-session"))
+					}
+					mergeTestExpire(b, local.cacheSharedResult())
+				}
+			}
+			reply, err := into.MergeValues(ctx, from, bundle)
+			require.NoError(t, err)
+			number := reply.Imported()[0].ResultID
+			into.egraphMu.RLock()
+			res := into.resultsByID[sharedResultID(number)]
+			envelope, frame := *res.persistedEnvelope, res.loadResultCall()
+			into.egraphMu.RUnlock()
+			require.Equal(t, number, envelope.ResultID, "the record names its entry")
+			_, err = normalizeTransferRecord(PersistedRecord{ResultID: number, Envelope: envelope, Call: frame})
+			require.NoError(t, err, "the entry exports")
+		})
+	}
+}

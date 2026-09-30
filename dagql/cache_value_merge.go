@@ -171,6 +171,17 @@ type valueMergePrep struct {
 	index   map[uint64]*TransferredValue
 	firstID uint64
 	plans   map[uint64]transferIdentityPlan
+	// records are the bundle's records at their provisional numbers, as
+	// validated, by ordinal, and refs the provisional numbers each one
+	// references, itself included.
+	records map[uint64]PersistedRecord
+	refs    map[uint64][]uint64
+	// completeParts are the part keys each record proves complete, by
+	// ordinal. A part key is an address and its completeness, which the
+	// record's payload decides; relocation rewrites only reference numbers,
+	// never to or from zero, so the keys read at provisional numbers are the
+	// ones at the final numbers.
+	completeParts map[uint64][]string
 }
 
 // prepareValueMerge validates the bundle and derives each record's identity.
@@ -194,7 +205,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 	if err != nil {
 		return nil, err
 	}
-	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}}
+	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, completeParts: map[uint64][]string{}}
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
@@ -221,10 +232,21 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
 	for _, id := range order {
 		row := prep.index[id]
-		rec, err := VisitEncodedReferences(row.Record, relocate)
+		var refs []uint64
+		rec, err := VisitEncodedReferences(row.Record, func(ref *PersistedRef) error {
+			if err := relocate(ref); err != nil {
+				return err
+			}
+			if ref.RecipeID == nil && ref.ResultID != 0 {
+				refs = append(refs, ref.ResultID)
+			}
+			return nil
+		})
 		if err != nil {
 			return nil, err
 		}
+		slices.Sort(refs)
+		prep.refs[id] = slices.Compact(refs)
 		rec.Envelope.Imported = true
 		deps := make(map[sharedResultID]struct{}, len(row.DependencyIDs))
 		relocatedDeps := make([]uint64, 0, len(row.DependencyIDs))
@@ -238,6 +260,8 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 		if err := validateTransferRecord(rec, relocatedDeps); err != nil {
 			return nil, err
 		}
+		prep.completeParts[id] = recordCompletePartKeys(rec)
+		prep.records[id] = rec
 		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
 		res.storeResultCall(rec.Call)
 		if !c.blobBacked {
@@ -552,10 +576,16 @@ func (c *Cache) decideMergeRowLocked(row *mergeRow, now int64, fresh sharedResul
 	}
 }
 
-// relocateMergeRowsLocked relocates each decided record to the final numbers
-// and validates the ones merge installs; each row's incoming offers are
-// relocated too. Requires egraphMu.
+// relocateMergeRowsLocked relocates each decided record from its provisional
+// numbers to the final ones; each row's incoming offers are relocated too. A
+// new entry keeps its provisional number, so a record whose own number and
+// references all keep their provisional numbers is already at its final ones
+// and is installed as it is. An installed record whose own number or any
+// reference changes is walked; references can move to existing entries or
+// when records of one recipe coalesce. A row that keeps its value relocates
+// only its offers. Requires egraphMu.
 func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
+	prep := commit.prep
 	number := func(ordinal uint64) (sharedResultID, error) {
 		row := commit.byOrdinal[ordinal]
 		if row == nil {
@@ -563,26 +593,60 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		}
 		return row.res.id, nil
 	}
+	final := func(provisional uint64) (sharedResultID, error) {
+		return number(provisional - prep.firstID + 1)
+	}
 	relocate := func(ref *PersistedRef) error {
 		if ref.RecipeID != nil || ref.ResultID == 0 {
 			return nil
 		}
-		n, err := number(ref.ResultID)
+		n, err := final(ref.ResultID)
 		ref.ResultID = uint64(n)
 		return err
 	}
 	for _, row := range commit.rows {
-		rec, err := VisitEncodedReferences(row.value.Record, relocate)
-		if err != nil {
-			return err
-		}
+		source := prep.records[row.ordinal]
 		if !row.action.installs() {
 			if !c.blobBacked {
-				row.offers = rec.Envelope.PendingOffers
+				offers, err := clonePartOffers(source.Envelope.PendingOffers)
+				if err != nil {
+					return err
+				}
+				for i := range offers {
+					if err := visitPersistedPartOffer(&offers[i], nil, relocate); err != nil {
+						return err
+					}
+				}
+				compactOfferOwners(offers)
+				row.offers = offers
 			}
 			continue
 		}
-		rec.Envelope.Imported = true
+		moved := false
+		for _, provisional := range prep.refs[row.ordinal] {
+			n, err := final(provisional)
+			if err != nil {
+				return err
+			}
+			moved = moved || uint64(n) != provisional
+		}
+		rec := source
+		if moved {
+			var err error
+			if rec, err = VisitEncodedReferences(source, relocate); err != nil {
+				return err
+			}
+		} else {
+			// The record is shared with the preparation: copy what the
+			// commit changes.
+			rec.Call = source.Call.clone()
+			offers, err := clonePartOffers(source.Envelope.PendingOffers)
+			if err != nil {
+				return err
+			}
+			rec.Envelope.PendingOffers = offers
+		}
+		compactOfferOwners(rec.Envelope.PendingOffers)
 		seen := map[sharedResultID]bool{}
 		for _, dep := range row.value.DependencyIDs {
 			n, err := number(dep)
@@ -594,16 +658,16 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 				row.deps = append(row.deps, n)
 			}
 		}
-		depIDs := make([]uint64, len(row.deps))
-		for i, dep := range row.deps {
-			depIDs[i] = uint64(dep)
-		}
-		if err := validateTransferRecord(rec, depIDs); err != nil {
-			return fmt.Errorf("merge values: row %d: %w", row.ordinal, err)
-		}
-		if err := validateMergedReferences(rec, seen); err != nil {
-			return fmt.Errorf("merge values: row %d: %w", row.ordinal, err)
-		}
+		// The preparation validated the record at its provisional numbers,
+		// which are one to one with ordinals (validateTransferRecord).
+		// Relocation maps each ordinal to one nonzero number and applies
+		// that map to references and dependencies alike, and it lists each
+		// dependency once as it maps them (seen, above), though two records
+		// of one recipe map to one entry. So every child or call reference
+		// is still a direct dependency, none is zero and none is listed
+		// twice: the payload's checks aren't repeated here. The offers,
+		// every row's, are checked at the final numbers with the graph
+		// (checkMergeGraphLocked).
 		row.rec = rec
 		if !c.blobBacked {
 			row.offers = rec.Envelope.PendingOffers
@@ -612,30 +676,15 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 	return nil
 }
 
-// validateMergedReferences checks that a relocated record refers to its
-// children and calls only through its direct dependencies, as a stored
-// record must.
-func validateMergedReferences(rec PersistedRecord, deps map[sharedResultID]bool) error {
-	env := rec.Envelope
-	for _, offer := range env.PendingOffers {
-		if err := validateOfferReferences(offer); err != nil {
-			return err
-		}
+// compactOfferOwners lists each offer owner's dependencies once, sorted. Two
+// records of one recipe land on one entry, so an owner that lists both names
+// that entry once, as offerPart lists the owners of the offers it receives.
+func compactOfferOwners(offers []PersistedPartOffer) {
+	for i := range offers {
+		owner := &offers[i].Owner
+		slices.Sort(owner.DependencyIDs)
+		owner.DependencyIDs = slices.Compact(owner.DependencyIDs)
 	}
-	env.PendingOffers = nil
-	_, err := VisitEncodedReferences(PersistedRecord{ResultID: rec.ResultID, Envelope: env, Call: rec.Call, SnapshotLinks: rec.SnapshotLinks}, func(ref *PersistedRef) error {
-		if ref.RecipeID != nil {
-			return nil
-		}
-		switch ref.Kind {
-		case PersistedRefChild, PersistedRefCall:
-			if !deps[sharedResultID(ref.ResultID)] {
-				return fmt.Errorf("reference %s to %d is not a direct dependency", ref.Path, ref.ResultID)
-			}
-		}
-		return nil
-	})
-	return err
 }
 
 // checkMergeGraphLocked checks, before anything changes, the ownership graph
@@ -1118,14 +1167,22 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 // mergedCompletePartKeysLocked returns the complete parts of res as the merge
 // leaves it. For an entry that takes a record, they are what the record
 // proves, the part probe's LocalComplete over it, as the entry's own spans
-// report them. For an entry that keeps its value, they are completePartKeysLocked's.
-// Requires egraphMu.
+// report them, read outside the lock (valueMergePrep.completeParts). For an
+// entry that keeps its value, they are completePartKeysLocked's. Requires
+// egraphMu.
 func (c *Cache) mergedCompletePartKeysLocked(commit *valueMergeCommit, res *sharedResult) []string {
 	row := commit.installed[res]
 	if row == nil {
 		return completePartKeysLocked(res)
 	}
-	probes, err := describePartRecord(row.rec)
+	return commit.prep.completeParts[row.ordinal]
+}
+
+// recordCompletePartKeys returns the part keys record proves complete: the
+// part probe's LocalComplete over it, sorted, or none if the record doesn't
+// describe its parts.
+func recordCompletePartKeys(record PersistedRecord) []string {
+	probes, err := describePartRecord(record)
 	if err != nil {
 		return nil
 	}
