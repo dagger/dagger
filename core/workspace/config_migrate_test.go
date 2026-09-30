@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConfigWarnings(t *testing.T) {
+func TestCheckConfigFields(t *testing.T) {
 	data := []byte(`future = true
 [modules."custom.sdk"]
 source = './sdk'
@@ -31,27 +31,30 @@ backendPort = 80
 backendService = 'web'
 future = 'keep'
 `)
-	warnings, err := ConfigWarnings(data, "nested/dagger.toml")
-	require.NoError(t, err)
+	warnings, err := CheckConfigFields(data, "nested/dagger.toml")
 	require.Equal(t, []string{
-		"nested/dagger.toml:1:1: unsupported field future is ignored",
 		"nested/dagger.toml:5:1: unsupported field modules.\"custom.sdk\".as-sdk is ignored; run `dagger ws migrate` to migrate it",
-		"nested/dagger.toml:4:1: unsupported field modules.\"custom.sdk\".unknown is ignored",
-		"nested/dagger.toml:22:1: unsupported field ports.8080.future is ignored",
-		"nested/dagger.toml:11:1: unsupported field sdks.custom.future is ignored",
-		"nested/dagger.toml:14:1: unsupported field sdks.custom.scopes.\".\".future is ignored",
 	}, warnings)
-	cfg, err := ParseConfig(data)
+	require.EqualError(t, err, strings.Join([]string{
+		"nested/dagger.toml:1:1: unknown field future",
+		"nested/dagger.toml:4:1: unknown field modules.\"custom.sdk\".unknown",
+		"nested/dagger.toml:22:1: unknown field ports.8080.future",
+		"nested/dagger.toml:11:1: unknown field sdks.custom.future",
+		"nested/dagger.toml:14:1: unknown field sdks.custom.scopes.\".\".future",
+	}, "\n"))
+	_, err = ParseConfigAt(t.Context(), data, "nested")
+	require.ErrorContains(t, err, "unknown field future")
+
+	// Legacy SDK fields alone do not block loading, so migration can run.
+	legacy := []byte("[modules.provider]\nsource = './sdk'\n[modules.provider.as-sdk]\nname = 'custom'\n[modules.provider.settings]\nanything = { nested = true }\n")
+	cfg, err := ParseConfigAt(t.Context(), legacy, ".")
 	require.NoError(t, err)
-	require.Equal(t, "custom.sdk", cfg.SDKs["custom"].Module)
-	updated, err := UpdateConfigBytes(data, cfg)
-	require.NoError(t, err)
-	require.Equal(t, data, updated)
+	require.Equal(t, "./sdk", cfg.Modules["provider"].Source)
 }
 
-func TestConfigWarningsMatchDecoder(t *testing.T) {
+func TestCheckConfigFieldsMatchDecoder(t *testing.T) {
 	data := []byte("[modules.provider]\nSOURCE = './sdk'\n[ports.8080]\nbackendservice = 'web'\nbackendPort = 80\n")
-	warnings, err := ConfigWarnings(data, "dagger.toml")
+	warnings, err := CheckConfigFields(data, "dagger.toml")
 	require.NoError(t, err)
 	require.Empty(t, warnings)
 	cfg, err := ParseConfig(data)
@@ -59,11 +62,11 @@ func TestConfigWarningsMatchDecoder(t *testing.T) {
 	require.Equal(t, "./sdk", cfg.Modules["provider"].Source)
 	require.Equal(t, "web", cfg.Ports["8080"].BackendService)
 
-	warnings, err = ConfigWarnings([]byte("[modules.provider]\nsource = './sdk'\nSOURCE = './ignored'\n"), "dagger.toml")
-	require.NoError(t, err)
-	require.Equal(t, []string{"dagger.toml:3:1: unsupported field modules.provider.SOURCE is ignored"}, warnings)
+	warnings, err = CheckConfigFields([]byte("[modules.provider]\nsource = './sdk'\nSOURCE = './ignored'\n"), "dagger.toml")
+	require.Empty(t, warnings)
+	require.EqualError(t, err, "dagger.toml:3:1: unknown field modules.provider.SOURCE")
 
-	warnings, err = ConfigWarnings([]byte("[MODULES.provider.AS-SDK]\nNAME = 'custom'\n"), "dagger.toml")
+	warnings, err = CheckConfigFields([]byte("[MODULES.provider.AS-SDK]\nNAME = 'custom'\n"), "dagger.toml")
 	require.NoError(t, err)
 	require.Equal(t, []string{"dagger.toml:1:1: unsupported field MODULES.provider.AS-SDK is ignored; run `dagger ws migrate` to migrate it"}, warnings)
 }

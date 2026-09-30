@@ -16,7 +16,6 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateNativeConfig(ctx context.Cont
 ignore = [
   'node_modules', # keep
 ]
-future = true
 
 [modules.app]
 source = './app'
@@ -103,7 +102,6 @@ func (WorkspaceMigrationSuite) TestWorkspaceUnsupportedConfigWarning(ctx context
 	c := connect(ctx, t)
 	original := `[modules.provider]
 source = './sdk'
-future = true
 [modules.provider.as-sdk]
 name = 'custom'
 [modules.provider.settings]
@@ -114,13 +112,22 @@ arbitrary = { nested = true }
 		With(daggerExec("ws", "config"))
 	out, err := ctr.CombinedOutput(ctx)
 	require.NoError(t, err, out)
-	require.Contains(t, out, "dagger.toml:4:1: unsupported field modules.provider.as-sdk is ignored")
+	require.Contains(t, out, "dagger.toml:3:1: unsupported field modules.provider.as-sdk is ignored")
 	require.Contains(t, out, "dagger ws migrate")
-	require.Contains(t, out, "unsupported field modules.provider.future")
-	require.NotContains(t, out, "unsupported field modules.provider.settings")
+	require.NotContains(t, out, "modules.provider.settings")
 	unchanged, err := ctr.File("dagger.toml").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, original, unchanged)
+}
+
+func (WorkspaceMigrationSuite) TestWorkspaceUnknownConfigField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out, err := workspaceBase(t, c).
+		WithNewFile("dagger.toml", "[modules.provider]\nsource = './sdk'\nsoruce = './typo'\n").
+		With(daggerExecFail("ws", "config")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "dagger.toml:3:1: unknown field modules.provider.soruce")
 }
 
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateAgentDisposition(ctx context.Context, t *testctx.T) {

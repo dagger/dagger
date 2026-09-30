@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -9,14 +10,16 @@ import (
 	toml "github.com/pelletier/go-toml"
 )
 
-// ConfigWarnings reports unsupported workspace fields without interpreting them.
+// CheckConfigFields reports workspace fields that the schema does not define.
+// Unknown fields are errors. Legacy SDK fields are only warnings, so that
+// `dagger ws migrate` can load the workspace and migrate them.
 // Settings maps belong to modules and SDKs, so their contents are unrestricted.
-func ConfigWarnings(data []byte, filename string) ([]string, error) {
+func CheckConfigFields(data []byte, filename string) (warnings []string, _ error) {
 	tree, err := toml.LoadBytes(data)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", filename, err)
 	}
-	var warnings []string
+	var errs []error
 	var visit func(*toml.Tree, reflect.Type, []string)
 	visit = func(tree *toml.Tree, typ reflect.Type, prefix []string) {
 		for typ.Kind() == reflect.Pointer {
@@ -44,11 +47,12 @@ func ConfigWarnings(data []byte, filename string) ([]string, error) {
 			}
 			if !known {
 				pos := tree.GetPositionPath([]string{key})
-				message := fmt.Sprintf("%s:%d:%d: unsupported field %s is ignored", filename, pos.Line, pos.Col, JoinConfigPath(parts...))
+				location := fmt.Sprintf("%s:%d:%d", filename, pos.Line, pos.Col)
 				if legacySDKConfigPath(parts) {
-					message += "; run `dagger ws migrate` to migrate it"
+					warnings = append(warnings, fmt.Sprintf("%s: unsupported field %s is ignored; run `dagger ws migrate` to migrate it", location, JoinConfigPath(parts...)))
+				} else {
+					errs = append(errs, fmt.Errorf("%s: unknown field %s", location, JoinConfigPath(parts...)))
 				}
-				warnings = append(warnings, message)
 				continue
 			}
 			if child, ok := tree.GetPath([]string{key}).(*toml.Tree); ok && childType.Kind() != reflect.Interface {
@@ -57,7 +61,7 @@ func ConfigWarnings(data []byte, filename string) ([]string, error) {
 		}
 	}
 	visit(tree, reflect.TypeFor[Config](), nil)
-	return warnings, nil
+	return warnings, errors.Join(errs...)
 }
 
 func legacySDKConfigPath(parts []string) bool {
