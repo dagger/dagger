@@ -217,6 +217,16 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.NotContains(t, changes.Body(80), "History unavailable")
 	require.NotContains(t, changes.Body(80), "Uncommitted")
 	require.Len(t, changes.KeyMap, 2)
+	// The diff viewer browses each commit's own patch.
+	require.Len(t, changes.Diffs, 1)
+	require.Equal(t, "Commits to save", changes.Diffs[0].Group)
+	require.Equal(t, "agent commit", changes.Diffs[0].Title)
+	commitDiff, err := changes.Diffs[0].Load()
+	require.NoError(t, err)
+	require.Contains(t, commitDiff.Header, "Author: ")
+	require.Contains(t, commitDiff.Header, "    agent commit")
+	require.Contains(t, commitDiff.Patch, "+++ b/saved.txt")
+	require.Contains(t, commitDiff.Patch, "+committed")
 
 	// File stats describe only the edits above HEAD, not the total diff from
 	// the checkpoint. Even undoing a committed addition is a pending deletion.
@@ -239,6 +249,14 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 			require.Len(t, preview.Outgoing, 1)
 			text := ansi.Strip(preview.render(80))
 			require.Less(t, strings.Index(text, "Uncommitted changes"), strings.Index(text, "Commits to save"))
+			// The viewer lists the same edits first, with their patch.
+			diffs := preview.diffEntries(ctx, dag)
+			require.Len(t, diffs, 2)
+			require.Equal(t, "uncommitted", diffs[0].ID)
+			detail, err := diffs[0].Load()
+			require.NoError(t, err)
+			require.Contains(t, detail.Patch, tc.want.Path)
+			require.NotContains(t, detail.Patch, "+committed", "only edits above HEAD")
 		})
 	}
 
@@ -318,6 +336,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.NoError(t, s.Target().ExportChanges(ctx))
 	waitRefresh(s)
 	require.Same(t, rt, s.Target().runtime(), "saving must retain the runtime")
+	require.Equal(t, "save-test", changes.Agent, "the panel names the agent it describes")
 	require.Zero(t, rt.reseedCount(), "saving must not reseed the runtime")
 	_, _, stops := rt.counts()
 	require.Zero(t, stops, "saving must not stop the runtime")

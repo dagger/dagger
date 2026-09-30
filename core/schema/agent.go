@@ -52,6 +52,18 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			Doc(`Why the loop failed, for a FAILED agent; empty otherwise.`,
 				`The snapshot holds the completed prefix — send or resume retries from it.`),
 
+		// seed is deliberately cached (no DoNotCache): it is part of the
+		// value, fixed by the spawn, and reading it off the value is what
+		// makes it trustworthy -- re-evaluating the seed's recipe instead
+		// could re-run a DoNotCache link on it (Agent.snapshot, a module
+		// function) and hand back a different conversation than the one the
+		// loop was actually given.
+		dagql.NodeFunc("seed", s.seed).
+			Experimental("Agent APIs are likely to change.").
+			Doc(`The conversation the agent was spawned from: the tools, workspace and message history its loop started with.`,
+				`Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.`,
+				`For an agent restored under a handle, this is the conversation it was restored from.`),
+
 		dagql.NodeFunc("snapshot", s.snapshot).
 			Experimental("Agent APIs are likely to change.").
 			DoNotCache("Reflects the loop's last committed step, which advances as the agent runs.").
@@ -236,6 +248,10 @@ func (s agentSchema) loopError(ctx context.Context, parent dagql.ObjectResult[*c
 		return "", nil
 	}
 	return rt.LoopError(), nil
+}
+
+func (s agentSchema) seed(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.ObjectResult[*core.LLM], error) {
+	return parent.Self().Seed, nil
 }
 
 func (s agentSchema) snapshot(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.ObjectResult[*core.LLM], _ error) {

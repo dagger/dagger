@@ -349,15 +349,25 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	// comparison baseline, or an explicit Ctrl+U imports a new client workspace.
 	attached.tracedReset = snapshot.WithoutMessageHistory()
 	// An attached/trace-restored conversation does not carry the checkpoint it
-	// originally synchronized from. Its current snapshot workspace is the safe
-	// best-effort baseline: it is portable with the snapshot and cannot trigger
-	// an unlike-host-root comparison. A later explicit save/reset advances it.
-	if workspace := snapshot.Workspace(); workspace != nil {
-		if _, err := workspace.ID(ctx); err != nil {
-			slog.Debug("attached agent snapshot has no workspace synchronization baseline", "error", err)
-		} else {
-			attached.setLastSynced(workspace)
+	// originally synchronized from. The runtime's seed says where it started,
+	// though: the workspace its loop was handed. Measured from the current
+	// snapshot instead, an agent first focused after finishing its work -- the
+	// usual case for a worker -- would show no changes at all. A restored
+	// agent's seed is the snapshot it was restored from, which is the right
+	// baseline for it too: its history before that is another session's.
+	//
+	// The snapshot workspace remains the fallback, for an engine without the
+	// seed field. Both are pinned by ID so later comparisons and exports
+	// reference the value rather than re-shipping a recipe. A later explicit
+	// save/reset advances the baseline.
+	for _, workspace := range []*dagger.Workspace{rt.agent.Seed().Workspace(), snapshot.Workspace()} {
+		id, err := workspace.ID(ctx)
+		if err != nil {
+			slog.Debug("attached agent workspace is not a usable synchronization baseline", "error", err)
+			continue
 		}
+		attached.setLastSynced(dagger.Ref[*dagger.Workspace](s.dag, id))
+		break
 	}
 	if err := attached.setLLM(snapshot); err != nil {
 		return nil, fmt.Errorf("attach to agent %q: %w", name, err)

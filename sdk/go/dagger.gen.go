@@ -702,6 +702,21 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 	}, nil
 }
 
+// The conversation the agent was spawned from: the tools, workspace and message history its loop started with.
+//
+// Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.
+//
+// For an agent restored under a handle, this is the conversation it was restored from.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Seed() *LLM {
+	q := r.query.Select("seed")
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // AgentSendOpts contains options for Agent.Send
 type AgentSendOpts struct {
 	// The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.

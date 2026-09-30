@@ -780,6 +780,72 @@ func (AgentRuntimeSuite) TestSpawnAfterStop(ctx context.Context, t *testctx.T) {
 	require.Equal(t, restartReply, lastReply)
 }
 
+// TestSeed covers the seed field: the conversation the loop started with,
+// fixed by the spawn. It is what a client measures an agent's own work
+// against, so it must hold still while everything else about the agent
+// moves -- a turn advances the snapshot, a reseed swaps it wholesale -- and
+// for a restored instance it must be the conversation the restore adopted,
+// never anything from before it.
+func (AgentRuntimeSuite) TestSeed(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const (
+		prompt = "prompt for the seeded agent"
+		reply  = "the seeded agent's reply"
+	)
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt(prompt).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: reply},
+		}))
+	workspaceID := func(contents string) dagger.ID {
+		return queryID(ctx, t, c, fmt.Sprintf(
+			`{ directory { withNewFile(path: "base.txt", contents: %q) { asWorkspace { id } } } }`, contents),
+			"directory.withNewFile.asWorkspace.id")
+	}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "seeded", wsID: workspaceID("as spawned")})
+
+	const selection = `
+		seed { transcript workspace { file(path: "base.txt") { contents } } }
+		snapshot { transcript workspace { file(path: "base.txt") { contents } } }`
+	seedContents := func(out gjson.Result) string { return out.Get("seed.workspace.file.contents").String() }
+	snapshotContents := func(out gjson.Result) string { return out.Get("snapshot.workspace.file.contents").String() }
+
+	// Never stepped: the snapshot IS the seed.
+	out := h.mustRun(ctx, t, selection)
+	require.Equal(t, "as spawned", seedContents(out))
+	require.Equal(t, "as spawned", snapshotContents(out))
+	require.NotContains(t, out.Get("seed.transcript").String(), prompt)
+
+	// A turn advances the snapshot and leaves the seed where it was.
+	delivery, got, err := h.sendAndWait(ctx, t, prompt)
+	require.NoError(t, err)
+	require.Equal(t, "STARTED", delivery)
+	require.Equal(t, reply, got)
+	out = h.mustRun(ctx, t, selection)
+	require.Contains(t, out.Get("snapshot.transcript").String(), prompt)
+	require.NotContains(t, out.Get("seed.transcript").String(), prompt,
+		"the seed is the conversation as spawned, not as it stands")
+
+	// So does a reseed, even one that rebinds the workspace: the seed is
+	// where the instance started, not the base of its current conversation.
+	rebound, err := c.LLM(dagger.LLMOpts{Model: model}).
+		WithWorkspace(dagger.Ref[*dagger.Workspace](c, workspaceID("after a reseed"))).
+		ID(ctx)
+	require.NoError(t, err)
+	require.NoError(t, h.reseedAgent(ctx, t, string(rebound)))
+	out = h.mustRun(ctx, t, selection)
+	require.Equal(t, "after a reseed", snapshotContents(out))
+	require.Equal(t, "as spawned", seedContents(out))
+
+	// A restored instance's seed is the conversation the restore adopted:
+	// its earlier history belongs to the session that published it.
+	restored := "restored history " + identity.NewID()
+	r, err := rehydrateAgent(ctx, c, llmWithPrompt(ctx, t, c, emptyReplayModel, restored), identity.NewID(), "restored", "IDLE", "")
+	require.NoError(t, err)
+	require.Contains(t, r.mustRun(ctx, t, `seed { transcript }`).Get("seed.transcript").String(), restored)
+}
+
 // TestReseed covers the continuity verb: reseed swaps an instance's
 // committed conversation in place — same identity, same entry, same mailbox
 // — where a stop-and-respawn would mint a successor instance under the same

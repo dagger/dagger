@@ -19,6 +19,7 @@ import (
 const changesHistoryLimit = 20
 
 type changesCommit struct {
+	ID              dagger.ID
 	SHA             string
 	MessageHeadline string
 }
@@ -27,6 +28,11 @@ type workspaceChangesPreview struct {
 	Files              []patchpreview.Entry
 	Outgoing, Incoming []changesCommit
 	HistoryError       string
+
+	// changes are the uncommitted edits Files summarizes, and changesVersion
+	// identifies their content: the workspace and what it is compared to.
+	changes        *dagger.Changeset
+	changesVersion string
 }
 
 func (p workspaceChangesPreview) empty() bool {
@@ -37,10 +43,10 @@ func (p workspaceChangesPreview) empty() bool {
 // complete list from a truncated preview. Never request unlimited history.
 const changesHistoryQuery = `query ChangesHistory($workspace: ID!, $baseline: ID!, $limit: Int!) {
   outgoing: node(id: $workspace) { ... on GitRef {
-    log(base: $baseline, limit: $limit) { sha messageHeadline }
+    log(base: $baseline, limit: $limit) { id sha messageHeadline }
   } }
   incoming: node(id: $baseline) { ... on GitRef {
-    log(base: $workspace, limit: $limit) { sha messageHeadline }
+    log(base: $workspace, limit: $limit) { id sha messageHeadline }
   } }
 }`
 
@@ -145,6 +151,9 @@ func previewWorkspaceChanges(ctx context.Context, dag *dagger.Client, ws, baseli
 		return preview, switchedWorkspace(ctx, ws, err)
 	}
 	preview.Files = entries
+	preview.changes = changes
+	// Which comparison the edits come from follows from the two sides too.
+	preview.changesVersion = string(workspaceID) + " " + string(baselineID)
 	return preview, nil
 }
 
@@ -236,14 +245,7 @@ func (p workspaceChangesPreview) render(width int) string {
 		}
 		fmt.Fprintf(&buf, "%s (%s)\n", title, count)
 		for _, commit := range commits[:min(len(commits), changesHistoryLimit)] {
-			// Commit subjects are repository data, not terminal instructions.
-			subject := strings.Map(func(r rune) rune {
-				if unicode.IsControl(r) {
-					return ' '
-				}
-				return r
-			}, ansi.Strip(commit.MessageHeadline))
-			line := commit.SHA[:min(len(commit.SHA), 7)] + " " + subject
+			line := shortSHA(commit.SHA) + " " + commitSubject(commit.MessageHeadline)
 			fmt.Fprintln(&buf, ansi.Truncate(line, max(width, 1), "…"))
 		}
 		if len(commits) > changesHistoryLimit {
@@ -259,4 +261,100 @@ func (p workspaceChangesPreview) render(width int) string {
 		buf.WriteString(p.HistoryError)
 	}
 	return strings.TrimSpace(buf.String())
+}
+
+func shortSHA(sha string) string {
+	return sha[:min(len(sha), 7)]
+}
+
+// commitSubject makes a commit subject safe to display: commit subjects are
+// repository data, not terminal instructions.
+func commitSubject(headline string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, ansi.Strip(headline))
+}
+
+// diffEntries lists the preview's changes for the diff viewer: the
+// uncommitted edits, then each commit, in the order the bubble lists them.
+// Patches load lazily, through ctx, when the viewer shows them.
+func (p workspaceChangesPreview) diffEntries(ctx context.Context, dag *dagger.Client) []idtui.DiffEntry {
+	var entries []idtui.DiffEntry
+	if len(p.Files) > 0 && p.changes != nil {
+		changes := p.changes
+		files := "files"
+		if len(p.Files) == 1 {
+			files = "file"
+		}
+		entries = append(entries, idtui.DiffEntry{
+			ID:      "uncommitted",
+			Version: p.changesVersion,
+			Title:   fmt.Sprintf("Uncommitted changes (%d %s)", len(p.Files), files),
+			Load: func() (idtui.DiffDetail, error) {
+				patch, err := changes.AsPatch().Contents(ctx)
+				return idtui.DiffDetail{Patch: patch}, err
+			},
+		})
+	}
+	add := func(group string, commits []changesCommit) {
+		for _, commit := range commits[:min(len(commits), changesHistoryLimit)] {
+			if commit.ID == "" {
+				continue
+			}
+			entries = append(entries, idtui.DiffEntry{
+				ID:    commit.SHA,
+				Group: group,
+				Label: shortSHA(commit.SHA),
+				Title: commitSubject(commit.MessageHeadline),
+				Load: func() (idtui.DiffDetail, error) {
+					return loadCommitDiff(ctx, dag, commit.ID)
+				},
+			})
+		}
+	}
+	add("Commits to save", p.Outgoing)
+	add("Checkpoint-only commits", p.Incoming)
+	return entries
+}
+
+// Read a commit's metadata and patch in one request.
+const commitDiffQuery = `query CommitDiff($commit: ID!) {
+  commit: node(id: $commit) { ... on GitCommit {
+    sha authorName authorEmail authoredDate message
+    changes { asPatch { contents } }
+  } }
+}`
+
+func loadCommitDiff(ctx context.Context, dag *dagger.Client, id dagger.ID) (idtui.DiffDetail, error) {
+	var response struct {
+		Commit struct {
+			SHA          string
+			AuthorName   string
+			AuthorEmail  string
+			AuthoredDate string
+			Message      string
+			Changes      struct{ AsPatch struct{ Contents string } }
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query:     commitDiffQuery,
+		Variables: map[string]any{"commit": id},
+	}, &dagger.Response{Data: &response}); err != nil {
+		return idtui.DiffDetail{}, err
+	}
+	commit := response.Commit
+	var header strings.Builder
+	fmt.Fprintf(&header, "commit %s\n", commit.SHA)
+	fmt.Fprintf(&header, "Author: %s <%s>\n", commit.AuthorName, commit.AuthorEmail)
+	fmt.Fprintf(&header, "Date:   %s\n", commit.AuthoredDate)
+	if message := strings.TrimRight(ansi.Strip(commit.Message), "\n"); message != "" {
+		header.WriteString("\n")
+		for _, line := range strings.Split(message, "\n") {
+			fmt.Fprintf(&header, "    %s\n", line)
+		}
+	}
+	return idtui.DiffDetail{Header: header.String(), Patch: commit.Changes.AsPatch.Contents}, nil
 }

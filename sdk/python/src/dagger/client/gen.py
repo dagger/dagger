@@ -1155,6 +1155,24 @@ class Agent(Type):
         _args: list[Arg] = []
         return await self._ctx.execute_sync(self, "resume", _args)
 
+    def seed(self) -> "LLM":
+        """The conversation the agent was spawned from: the tools, workspace and
+        message history its loop started with.
+
+        Fixed by the spawn; stepping does not move it (see snapshot for the
+        latest committed step). Its workspace is the baseline the agent's own
+        changes are measured from.
+
+        For an agent restored under a handle, this is the conversation it was
+        restored from.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("seed", _args)
+        return LLM(_ctx)
+
     async def send(
         self,
         message: str,

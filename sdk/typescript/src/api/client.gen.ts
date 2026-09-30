@@ -4664,6 +4664,19 @@ export class Agent extends BaseClient {
   }
 
   /**
+   * The conversation the agent was spawned from: the tools, workspace and message history its loop started with.
+   *
+   * Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.
+   *
+   * For an agent restored under a handle, this is the conversation it was restored from.
+   * @experimental
+   */
+  seed = (): LLM => {
+    const ctx = this._ctx.select("seed")
+    return new LLM(ctx)
+  }
+
+  /**
    * Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
    *
    * Never blocks, never drops; concurrent sends queue in order.

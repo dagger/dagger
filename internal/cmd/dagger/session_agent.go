@@ -1079,7 +1079,7 @@ func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 	// skip the query rather than issuing one guaranteed to fail.
 	baseline := a.lastSynced()
 	if baseline == nil {
-		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
+		a.setChangesSection(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
 	preview, err := previewWorkspaceChanges(a.session.plumbingCtx, a.session.dag, workspace, baseline)
@@ -1087,7 +1087,7 @@ func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 		// Replace the bubble rather than leaving the previous preview up: it
 		// described an earlier workspace and may advertise a save that no
 		// longer applies. A switched workspace is a state, not a failure.
-		a.session.frontend.SetSidebarContent(changesPreviewFailure(err))
+		a.setChangesSection(changesPreviewFailure(err))
 		var switched *workspaceSwitchedError
 		if errors.As(err, &switched) {
 			return nil
@@ -1095,15 +1095,26 @@ func (a *sessionAgent) updateChangesPreview(llm *dagger.LLM) error {
 		return err
 	}
 	if preview.empty() {
-		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
+		a.setChangesSection(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
-	a.session.frontend.SetSidebarContent(idtui.SidebarSection{
+	a.setChangesSection(idtui.SidebarSection{
 		Title:       "Changes",
 		ContentFunc: preview.render,
 		KeyMap:      []key.Binding{changesSaveBinding, changesReloadBinding},
+		Diffs:       preview.diffEntries(a.session.plumbingCtx, a.session.dag),
 	})
 	return nil
+}
+
+// setChangesSection paints the Changes bubble, naming this conversation's
+// runtime as the agent it describes, so the diff viewer can tell this agent's
+// changes from those of the agent focus just left.
+func (a *sessionAgent) setChangesSection(section idtui.SidebarSection) {
+	a.agentL.Lock()
+	section.Agent = a.agentHandle
+	a.agentL.Unlock()
+	a.session.frontend.SetSidebarContent(section)
 }
 
 // refreshUI re-renders the conversation-scoped surfaces for a conversation

@@ -392,6 +392,21 @@ type frontendPretty struct {
 	logPagerFocus  *tuist.FocusHandle
 	logSearchInput *tuist.TextInput
 
+	// fullscreen diff viewer state, browsing the Diffs of the HUD section
+	// titled diffViewerTitle (see toggleDiffViewer)
+	diffViewer      *DiffViewer
+	diffViewerFocus *tuist.FocusHandle
+	diffViewerTitle string
+	// diffViewerFromInput records that the prompt had focus when the viewer
+	// opened, to return it there on close.
+	diffViewerFromInput bool
+	// hudHiddenBeforeDiffs is the HUD preference the viewer overrode, to
+	// restore on close.
+	hudHiddenBeforeDiffs bool
+	// sectionAwaitAgent is the agent focus last moved to, until a section
+	// describing it arrives (see sectionStale).
+	sectionAwaitAgent string
+
 	// logStream holds logs a caller streams in whole (OpenLogStream), for a
 	// span whose rolled-up output the per-span log buffers can't show.
 	logStream *logStream
@@ -1131,6 +1146,19 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	fe.dispatch(func() {
 		title := section.Title
+		if section.Agent != "" {
+			// A conversation-scoped section describes the agent it names. A
+			// paint from an agent focus has left -- a refresh still in flight
+			// when the switch happened, e.g. at the end of its turn -- would
+			// otherwise land over the focused agent's, and stay there for as
+			// long as the focused agent has nothing new to paint.
+			if focused := fe.focusedAgentID(); focused != "" && section.Agent != focused {
+				return
+			}
+			if section.Agent == fe.sectionAwaitAgent {
+				fe.sectionAwaitAgent = ""
+			}
+		}
 
 		if bubble, ok := fe.notifications[title]; ok {
 			// Update existing bubble
@@ -1155,6 +1183,9 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 				fe.notificationContainer.AddChild(bubble)
 			}
 		}
+		fe.updateDiffViewer(title)
+		// Whether there are diffs to view changes the available keys.
+		fe.refreshKeymap()
 
 		fe.Update()
 	})
@@ -1222,17 +1253,35 @@ func (fe *frontendPretty) syncHUDWidth() {
 // content, so updates received while hidden are visible when they are shown
 // again.
 func (fe *frontendPretty) toggleNotifications() {
-	fe.notificationsHidden = !fe.notificationsHidden
+	fe.setNotificationsHidden(!fe.notificationsHidden)
+}
+
+// setNotificationsHidden shows or hides the HUD, and relabels the keys that
+// say which it is (see hudBinding).
+func (fe *frontendPretty) setNotificationsHidden(hidden bool) {
+	fe.notificationsHidden = hidden
 	if fe.notificationOverlay != nil {
-		fe.notificationOverlay.SetHidden(fe.notificationsHidden)
+		fe.notificationOverlay.SetHidden(hidden)
 	}
+	fe.refreshHUDKeys()
+}
+
+// refreshHUDKeys re-renders everything labelling the HUD keys after the HUD
+// or its keymap bubble is shown or hidden: the hint above the prompt, and the
+// keymap bar and bubble.
+func (fe *frontendPretty) refreshHUDKeys() {
+	if fe.promptFrame != nil {
+		fe.promptFrame.Update()
+	}
+	fe.refreshKeymap()
 }
 
 // toggleKeymap shows or dismisses the keymap bubble: every key available
 // right now, pinned at the top of the HUD. Showing it reveals a hidden HUD,
 // since asking for the keymap is asking to see it.
 func (fe *frontendPretty) toggleKeymap() {
-	if fe.keymapBubble != nil && !fe.notificationsHidden {
+	defer fe.refreshHUDKeys()
+	if fe.keymapShown() {
 		fe.notificationContainer.RemoveChild(fe.keymapBubble)
 		fe.keymapBubble = nil
 		fe.syncHUDWidth()
@@ -1286,10 +1335,31 @@ const hudToggleKey = "ctrl+h"
 // hudKeys are the keys governing the HUD, advertised by the shell's hint in
 // place of a full keymap.
 func (fe *frontendPretty) hudKeys() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys(keymapToggleKeys...), key.WithHelp("ctrl+?", "toggle keymap")),
-		key.NewBinding(key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, "toggle hud")),
+	return []key.Binding{fe.keymapBinding(), fe.hudBinding()}
+}
+
+// keymapShown reports whether the keymap bubble is on screen.
+func (fe *frontendPretty) keymapShown() bool {
+	return fe.keymapBubble != nil && !fe.notificationsHidden
+}
+
+// keymapBinding is the keymap bubble's key, labelled with what pressing it
+// does now -- which also tells whether the bubble is showing.
+func (fe *frontendPretty) keymapBinding() key.Binding {
+	help := "show keymap"
+	if fe.keymapShown() {
+		help = "hide keymap"
 	}
+	return key.NewBinding(key.WithKeys(keymapToggleKeys...), key.WithHelp("ctrl+?", help))
+}
+
+// hudBinding is the HUD's key, labelled with what pressing it does now.
+func (fe *frontendPretty) hudBinding(opts ...key.BindingOpt) key.Binding {
+	help := "hide hud"
+	if fe.notificationsHidden {
+		help = "show hud"
+	}
+	return key.NewBinding(append([]key.BindingOpt{key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, help)}, opts...)...)
 }
 
 // keymapHint renders the shell's compact key hint, shown above the prompt.
@@ -1334,6 +1404,9 @@ func (fe *frontendPretty) refreshKeymap() {
 	if fe.keymapBubble != nil {
 		fe.keymapBubble.Update()
 		fe.syncHUDWidth()
+	}
+	if fe.diffViewer != nil {
+		fe.diffViewer.Update() // its key hint
 	}
 }
 
@@ -1463,6 +1536,11 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// The keymap bar is hidden in the shell; the line above the prompt
 	// carries a hint to the keymap bubble instead.
 	fe.promptFrame.SetHintSource(fe.keymapHint)
+	// The diff viewer takes the keyboard, so the prompt and its queued
+	// message make way for it. The status line stays: the agents' activity
+	// is what moves the diffs.
+	fe.promptFrame.SetHiddenSource(fe.promptHidden)
+	fe.queuedMsgLabel.SetHiddenSource(fe.promptHidden)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.promptFrame)
@@ -1477,6 +1555,8 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 }
 
 func (fe *frontendPretty) stopShell() {
+	// The viewer browses a HUD bubble, which goes away with the shell.
+	fe.closeDiffViewer()
 	fe.cancelImagePaste()
 	fe.promptImages = nil
 	fe.historyImages = nil
@@ -3247,6 +3327,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 				key.WithHelp("ctrl+c", quitMsg)),
 		}
 	}
+	if fe.diffViewerFocused() {
+		return fe.diffViewerKeys(quitMsg)
+	}
 	var focused *dagui.Span
 	if fe.testsFocused() {
 		enterHelp := "detail"
@@ -3292,7 +3375,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	if fe.inputFocused() {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
-			key.NewBinding(key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, "toggle hud")),
+			fe.hudBinding(),
+			key.NewBinding(key.WithKeys(diffViewerKey), key.WithHelp(diffViewerKey, "view diff"),
+				KeyEnabled(fe.hasDiffs())),
 		}
 		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
 			bnds = append(bnds,
@@ -3301,15 +3386,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		}
 		// Roster focus is shown only once there is more than one agent to
 		// switch between. A single-agent roster remains a state display.
-		if fe.agentRoster != nil && fe.agentRoster.Switchable() {
-			bnds = append(bnds,
-				key.NewBinding(key.WithKeys("ctrl+1"), key.WithHelp("ctrl+1…9", "focus agent")),
-				key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
-					KeyEnabled(fe.lastFocusedAgent != "")),
-				key.NewBinding(key.WithKeys("alt+[", "alt+]"), key.WithHelp("alt+[/]", "prev/next agent"),
-					KeyEnabled(fe.addressableAgentCount() > 1)),
-			)
-		}
+		bnds = append(bnds, fe.promptAgentBindings()...)
 		if fe.acceptsPromptImages() {
 			bnds = append(bnds, key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste image")))
 		}
@@ -3328,15 +3405,16 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
 			KeyEnabled(fe.shell != nil)),
-		key.NewBinding(key.WithKeys(hudToggleKey),
-			key.WithHelp(hudToggleKey, "toggle hud"),
-			KeyEnabled(fe.shell != nil || fe.notificationOverlay != nil)),
+		fe.hudBinding(KeyEnabled(fe.shell != nil || fe.notificationOverlay != nil)),
 		key.NewBinding(key.WithKeys("w"),
 			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
 			KeyEnabled(fe.cloudURL != "")),
 		key.NewBinding(key.WithKeys("T"),
 			key.WithHelp("T", "tests"),
 			KeyEnabled(fe.hasTestsForFocus())),
+		key.NewBinding(key.WithKeys(diffViewerKey),
+			key.WithHelp(diffViewerKey, "view diff"),
+			KeyEnabled(fe.hasDiffs())),
 		key.NewBinding(key.WithKeys("←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"),
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
@@ -3416,6 +3494,22 @@ func (fe *frontendPretty) keymapHeight() int {
 	return 2
 }
 
+// promptAgentBindings are prompt mode's roster focus keys, shared by the diff
+// viewer, which also leaves bare digits and brackets to its own use. They are
+// shown only once there is more than one agent to switch between.
+func (fe *frontendPretty) promptAgentBindings() []key.Binding {
+	if fe.agentRoster == nil || !fe.agentRoster.Switchable() {
+		return nil
+	}
+	return []key.Binding{
+		key.NewBinding(key.WithKeys("ctrl+1"), key.WithHelp("ctrl+1…9", "focus agent")),
+		key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
+			KeyEnabled(fe.lastFocusedAgent != "")),
+		key.NewBinding(key.WithKeys("alt+[", "alt+]"), key.WithHelp("alt+[/]", "prev/next agent"),
+			KeyEnabled(fe.addressableAgentCount() > 1)),
+	}
+}
+
 func (fe *frontendPretty) escHelp() string {
 	if fe.searchQuery != "" {
 		return "clear search"
@@ -3490,6 +3584,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	if fe.logPager != nil {
 		fe.logPager.RefreshSearch()
 		fe.renderLogPager(ctx)
+		return
+	}
+
+	if fe.diffViewer != nil {
+		fe.renderDiffViewer(ctx)
 		return
 	}
 
@@ -4266,7 +4365,7 @@ func (fe *frontendPretty) flowingMode() bool {
 // queuedMessageHeight returns the line count of the queued message label. The
 // label always renders as a single line (see QueuedMessageLabel.Render).
 func (fe *frontendPretty) queuedMessageHeight() int {
-	if fe.queuedMsgLabel == nil || fe.queuedMsgLabel.Message() == "" {
+	if fe.queuedMsgLabel == nil || fe.queuedMsgLabel.Hidden() {
 		return 0
 	}
 	return 1
@@ -4289,7 +4388,7 @@ func (fe *frontendPretty) statusLineHeight() int {
 // for chrome-height budgeting. The actual rendering is handled by tuist's
 // container (textInput is a sibling, not rendered here).
 func (fe *frontendPretty) editlineHeight() int {
-	if fe.textInput == nil {
+	if fe.textInput == nil || fe.promptFrame != nil && fe.promptFrame.Hidden() {
 		return 0
 	}
 	// Count newlines in current value + 1 for the input line itself
@@ -4845,6 +4944,8 @@ func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved boo
 	// settled target in the meantime would see a focus that has not moved
 	// yet. See focusedAgentID.
 	fe.pendingFocusAgent = entry.ID
+	// Until the new agent's changes arrive, the ones on screen are stale.
+	fe.sectionAwaitAgent = entry.ID
 	fe.restoreAgentDraft(entry.ID)
 	fe.updateAgentRoster()
 
@@ -5038,6 +5139,17 @@ func (fe *frontendPretty) updateAgentRoster() {
 	if focused := fe.focusedAgentID(); focused != fe.lastRosterFocus {
 		fe.lastRosterFocus = focused
 		fe.viewDirty = true
+		// Sections describing an agent (the Changes bubble, and the diff
+		// viewer browsing it) must not show the previous agent's content
+		// while the new one's loads; see sectionStale.
+		for _, bubble := range fe.notifications {
+			if bubble.section.Agent != "" {
+				bubble.Update()
+			}
+		}
+		if fe.diffViewer != nil {
+			fe.diffViewer.Update()
+		}
 	}
 	var fingerprint strings.Builder
 	for _, entry := range fe.agentRosterEntries() {
@@ -5986,6 +6098,10 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		return true
 	case "alt+up":
 		return fe.recallQueuedPrompt()
+	case diffViewerKey:
+		// Reviewing the agent's work doesn't need a detour through nav mode.
+		// The draft stays in the input for when the viewer closes.
+		return fe.toggleDiffViewer()
 	case "up", "down":
 		// Let TextInput move within multiline or wrapped input. At the visual
 		// boundary it bubbles the key to PromptFrame for history navigation.
@@ -6123,6 +6239,11 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	}
 
+	if fe.diffViewer != nil {
+		fe.handleDiffViewerKey(ev, keyStr)
+		return
+	}
+
 	if fe.testsMode {
 		switch keyStr {
 		case "q", "T", "esc", "alt+esc":
@@ -6224,6 +6345,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	case "T":
 		fe.toggleTestsMode()
+		return
+	case diffViewerKey:
+		fe.toggleDiffViewer()
 		return
 	case "w":
 		if fe.cloudURL == "" {

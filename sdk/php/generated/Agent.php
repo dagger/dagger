@@ -67,6 +67,19 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The conversation the agent was spawned from: the tools, workspace and message history its loop started with.
+     *
+     * Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.
+     *
+     * For an agent restored under a handle, this is the conversation it was restored from.
+     */
+    public function seed(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('seed');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The conversation as of the last committed step: immutable, branchable, persistable.
      *
      * The seed conversation if the agent never stepped.
