@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/artifact"
@@ -281,7 +279,7 @@ func (*artifactsSchema) dimensionDefinitions(_ context.Context, parent *core.Art
 	return parent.DimensionDefinitions(), nil
 }
 
-func (s *artifactsSchema) pathDefinitions(ctx context.Context, parent *core.Artifacts, args struct {
+func (*artifactsSchema) pathDefinitions(_ context.Context, parent *core.Artifacts, args struct {
 	Absolute      bool `default:"false"`
 	TypeAssertion bool `default:"false"`
 	Dimension     dagql.Optional[dagql.String]
@@ -302,36 +300,7 @@ func (s *artifactsSchema) pathDefinitions(ctx context.Context, parent *core.Arti
 		}
 		parent = &core.Artifacts{Entries: items}
 	}
-	paths := map[string]*core.ArtifactPath{}
-	for _, entry := range parent.Entries {
-		uri, err := entry.URI(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion})
-		if err != nil {
-			return nil, err
-		}
-		path := paths[uri]
-		if path == nil {
-			description, err := s.description(ctx, entry, struct{}{})
-			if err != nil {
-				return nil, err
-			}
-			path = &core.ArtifactPath{ModuleName: entry.ModuleName, URI: uri, Description: description, Dimensions: []string{}}
-			paths[uri] = path
-		}
-		if entry.LoadFailure != nil {
-			path.LoadError = entry.LoadFailure.Message
-		}
-		for _, dimension := range entry.DimensionDefinitions() {
-			if !slices.Contains(path.Dimensions, dimension.Identifier) {
-				path.Dimensions = append(path.Dimensions, dimension.Identifier)
-			}
-		}
-	}
-	result := make([]*core.ArtifactPath, 0, len(paths))
-	for _, path := range paths {
-		result = append(result, path)
-	}
-	slices.SortFunc(result, func(a, b *core.ArtifactPath) int { return strings.Compare(a.URI, b.URI) })
-	return result, nil
+	return parent.PathDefinitions(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion})
 }
 func (*artifactsSchema) dimensions(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
 	expanded, err := expandArtifacts(ctx, parent)
@@ -340,44 +309,12 @@ func (*artifactsSchema) dimensions(ctx context.Context, parent *core.Artifacts, 
 	}
 	return expanded.Dimensions(), nil
 }
-func (s *artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
-	dimension, err := parent.ResolveDimension(args.Dimension)
-	if err != nil {
-		return nil, err
-	}
-	if artifact.IsStaticDimension(dimension) {
-		selected, err := parent.FilterDimensions([]string{dimension}).SchemaSelection()
-		if err != nil {
-			return nil, err
-		}
-		var keys []string
-		for _, entry := range selected.Entries {
-			keys = append(keys, entry.StaticDimensionKey(dimension))
-		}
-		slices.Sort(keys)
-		return slices.Compact(keys), nil
-	}
-	items, err := s.dimensionItems(ctx, parent, args)
-	if err != nil {
-		return nil, err
-	}
-	return (&core.Artifacts{Entries: items}).DimensionKeys(dimension), nil
+func (*artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
+	return parent.ExpandDimensionKeys(ctx, args.Dimension)
 }
 
 func (*artifactsSchema) dimensionItems(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]*core.Artifact, error) {
-	dimension, err := parent.ResolveDimension(args.Dimension)
-	if err != nil {
-		return nil, err
-	}
-	filtered, err := parent.FilterDimensions([]string{args.Dimension}).BindDimensions()
-	if err != nil {
-		return nil, err
-	}
-	expanded, err := expandArtifacts(ctx, filtered.ForDimensionKeys(dimension))
-	if err != nil {
-		return nil, err
-	}
-	return expanded.DimensionItems(dimension)
+	return parent.ExpandDimensionItems(ctx, args.Dimension)
 }
 func (*artifactsSchema) items(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
 	expanded, err := expandArtifacts(ctx, parent)
@@ -869,28 +806,7 @@ func (*artifactsSchema) filterDirectives(_ context.Context, parent *core.Artifac
 }
 
 func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ struct{}) (string, error) {
-	if parent.LoadFailure != nil {
-		if parent.Workspace.Self() == nil {
-			return "this bound tool object could not be loaded", nil
-		}
-		return "this workspace module could not be loaded", nil
-	}
-	if parent.Node == nil {
-		return "", nil
-	}
-	generator := parent.Node.Parent
-	if parent.Node.Name == "stale" && generator != nil && slices.Contains(generator.Directives, "generate") {
-		if obj := generator.ObjectType(); obj != nil && obj.Name == "Generator" && obj.SourceModuleName == "" {
-			description, _, _ := strings.Cut(generator.Description, "\n")
-			description = strings.TrimRight(strings.TrimSpace(description), ".:;!?")
-			if description == "" {
-				return "staleness check", nil
-			}
-			first, size := utf8.DecodeRuneInString(description)
-			return "staleness check: " + string(unicode.ToLower(first)) + description[size:], nil
-		}
-	}
-	return parent.Node.Description, nil
+	return parent.Description(), nil
 }
 
 // Keep planned artifacts in the query graph so value evaluation, remote
