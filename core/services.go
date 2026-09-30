@@ -37,13 +37,6 @@ const (
 	// sent a graceful stop (SIGTERM) and when it is sent an immediate stop (SIGKILL).
 	TerminateGracePeriod = 10 * time.Second
 
-	// ExplicitStopGracePeriod is the time between when an explicit graceful stop
-	// sends a service a graceful stop (SIGTERM) and when it sends an immediate
-	// stop (SIGKILL). An explicit graceful stop asks for a clean shutdown, which
-	// can take a while: a nested engine allows itself up to 5 minutes to sync its
-	// cache to disk, so this is longer than that.
-	ExplicitStopGracePeriod = 6 * time.Minute
-
 	// MaxExitedServicesPerSession bounds the exited-service tombstones retained
 	// per session; beyond it the oldest tombstones are dropped.
 	MaxExitedServicesPerSession = 100
@@ -63,10 +56,8 @@ type Services struct {
 	exited map[string][]*ExitedService
 	l      sync.Mutex
 
-	// terminateGracePeriod and explicitStopGracePeriod are TerminateGracePeriod
-	// and ExplicitStopGracePeriod, overridable in tests.
-	terminateGracePeriod    time.Duration
-	explicitStopGracePeriod time.Duration
+	// terminateGracePeriod is TerminateGracePeriod, overridable in tests.
+	terminateGracePeriod time.Duration
 }
 
 type startingService struct {
@@ -188,8 +179,7 @@ func NewServices() *Services {
 		bindings: map[ServiceKey]int{},
 		exited:   map[string][]*ExitedService{},
 
-		terminateGracePeriod:    TerminateGracePeriod,
-		explicitStopGracePeriod: ExplicitStopGracePeriod,
+		terminateGracePeriod: TerminateGracePeriod,
 	}
 }
 
@@ -1146,12 +1136,7 @@ func (ss *Services) stop(ctx context.Context, running *RunningService, force boo
 	running.stoppers++
 	ss.l.Unlock()
 
-	var err error
-	if force {
-		err = running.stopFromManager(ctx, true)
-	} else {
-		err = ss.stopGraceful(ctx, running, ss.explicitStopGracePeriod)
-	}
+	err := running.stopFromManager(ctx, force)
 
 	ss.l.Lock()
 	running.stoppers--

@@ -119,10 +119,9 @@ func startStopRecording(t *testing.T, services *Services, key ServiceKey) (*Runn
 	return running, svc
 }
 
-func newStopTestServices(terminateGracePeriod, explicitStopGracePeriod time.Duration) *Services {
+func newStopTestServices(terminateGracePeriod time.Duration) *Services {
 	services := NewServices()
 	services.terminateGracePeriod = terminateGracePeriod
-	services.explicitStopGracePeriod = explicitStopGracePeriod
 	return services
 }
 
@@ -153,7 +152,7 @@ func TestServicesDetachJoinsExplicitStop(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			services := newStopTestServices(50*time.Millisecond, time.Hour)
+			services := newStopTestServices(50 * time.Millisecond)
 			key := stopTestKey(t.Name())
 			running, svc := startStopRecording(t, services, key)
 
@@ -193,7 +192,7 @@ func TestServicesJoinedStopReportsStopResult(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				services := newStopTestServices(time.Hour, time.Hour)
+				services := newStopTestServices(time.Hour)
 				exited := make(chan struct{})
 				var exitErr, cleanupErr error
 				var signals int
@@ -257,7 +256,7 @@ func TestServicesJoinedStopReportsStopResult(t *testing.T) {
 // stop in flight to finish on its own.
 func TestServicesCanceledJoinedStopLeavesStopInFlight(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		services := newStopTestServices(time.Hour, time.Hour)
+		services := newStopTestServices(time.Hour)
 		running, svc := startStopRecording(t, services, stopTestKey(t.Name()))
 
 		ownerErr := make(chan error, 1)
@@ -284,7 +283,7 @@ func TestServicesCanceledJoinedStopLeavesStopInFlight(t *testing.T) {
 // escalates after TerminateGracePeriod.
 func TestServicesDetachEscalatesAfterTerminateGracePeriod(t *testing.T) {
 	t.Parallel()
-	services := newStopTestServices(50*time.Millisecond, time.Hour)
+	services := newStopTestServices(50 * time.Millisecond)
 	running, svc := startStopRecording(t, services, stopTestKey(t.Name()))
 
 	detached := time.Now()
@@ -298,7 +297,7 @@ func TestServicesDetachEscalatesAfterTerminateGracePeriod(t *testing.T) {
 // A force stop escalates an explicit graceful stop in flight immediately.
 func TestServicesForceStopEscalatesExplicitStop(t *testing.T) {
 	t.Parallel()
-	services := newStopTestServices(time.Hour, time.Hour)
+	services := newStopTestServices(time.Hour)
 	running, svc := startStopRecording(t, services, stopTestKey(t.Name()))
 
 	stopErr := make(chan error, 1)
@@ -311,28 +310,12 @@ func TestServicesForceStopEscalatesExplicitStop(t *testing.T) {
 	require.True(t, svc.waitKilled(t))
 }
 
-// An explicit graceful stop escalates after its own ExplicitStopGracePeriod.
-func TestServicesExplicitStopEscalatesAfterExplicitStopGracePeriod(t *testing.T) {
-	t.Parallel()
-	services := newStopTestServices(time.Hour, 50*time.Millisecond)
-	running, svc := startStopRecording(t, services, stopTestKey(t.Name()))
-
-	stopped := time.Now()
-	stopErr := make(chan error, 1)
-	go func() { stopErr <- services.StopRunning(context.Background(), running, false) }()
-	require.False(t, svc.nextRequest(t))
-	require.True(t, svc.nextRequest(t))
-	require.GreaterOrEqual(t, time.Since(stopped), services.explicitStopGracePeriod)
-	require.NoError(t, <-stopErr)
-	require.True(t, svc.waitKilled(t))
-}
-
 // An explicit stop that returns before the service exits leaves it with no
 // binders, so it is then stopped as if it were detached.
 func TestServicesAbandonedStopFallsBackToDetach(t *testing.T) {
 	t.Run("graceful", func(t *testing.T) {
 		t.Parallel()
-		services := newStopTestServices(50*time.Millisecond, time.Hour)
+		services := newStopTestServices(50 * time.Millisecond)
 		key := stopTestKey(t.Name())
 		running, svc := startStopRecording(t, services, key)
 
@@ -350,7 +333,7 @@ func TestServicesAbandonedStopFallsBackToDetach(t *testing.T) {
 
 	t.Run("force", func(t *testing.T) {
 		t.Parallel()
-		services := newStopTestServices(50*time.Millisecond, time.Hour)
+		services := newStopTestServices(50 * time.Millisecond)
 		key := stopTestKey(t.Name())
 		running, svc := startStopRecording(t, services, key)
 
@@ -368,7 +351,7 @@ func TestServicesAbandonedStopFallsBackToDetach(t *testing.T) {
 // instance started under the same key.
 func TestServicesStopDoesNotTouchReplacement(t *testing.T) {
 	t.Parallel()
-	services := newStopTestServices(50*time.Millisecond, time.Hour)
+	services := newStopTestServices(50 * time.Millisecond)
 	key := stopTestKey(t.Name())
 	old, oldSvc := startStopRecording(t, services, key)
 
