@@ -143,7 +143,7 @@ source = "dagger.io/sdk/dang@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk@pull/47/head"
+source = "github.com/dagger/go-sdk@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk.settings]
@@ -333,7 +333,7 @@ source = ".dagger/modules/dagger-dev"
 entrypoint = true
 
 [modules.typescript-sdk]
-source = "github.com/dagger/typescript-sdk@pull/64/head"
+source = "github.com/dagger/typescript-sdk@main"
 
 [sdks.typescript]
 module = "typescript-sdk"
