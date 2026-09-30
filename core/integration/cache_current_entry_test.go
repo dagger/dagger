@@ -66,6 +66,9 @@ head -c 16 /dev/urandom | base64`
 
 	outputs := make([]string, len(racing))
 	chains := make(chan struct{}, len(racing))
+	startStdout := make(chan struct{})
+	startCtx, cancelStart := context.WithCancel(ctx)
+	defer cancelStart()
 	var eg errgroup.Group
 	for i, session := range racing {
 		eg.Go(func() error {
@@ -77,6 +80,11 @@ head -c 16 /dev/urandom | base64`
 				return err
 			}
 			chains <- struct{}{}
+			select {
+			case <-startStdout:
+			case <-startCtx.Done():
+				return startCtx.Err()
+			}
 			out, err := ctr.Stdout(ctx)
 			outputs[i] = out
 			return err
@@ -89,6 +97,9 @@ head -c 16 /dev/urandom | base64`
 			t.Fatal("the sessions did not publish their chains")
 		}
 	}
+
+	// Neither session evaluates until both chains have been published.
+	close(startStdout)
 
 	type snapshot struct {
 		OngoingCalls []struct {
