@@ -38,7 +38,7 @@ func newReusedSnapshotFixture(t *testing.T, failAttach bool) *reusedSnapshotFixt
 	base = ContextWithOperationLeaseProvider(base, OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
 		return snapshots.WithLazyLease(ctx, store.Leases, snapshots.MakeTemporary)
 	}))
-	var manager snapshots.SnapshotManager = store.Manager
+	manager := store.Manager
 	if failAttach {
 		manager = failingAttachManager{SnapshotManager: store.Manager}
 	}
