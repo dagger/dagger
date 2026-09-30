@@ -101,6 +101,11 @@ type Server interface {
 	// The default deps of every user module (currently just core)
 	DefaultDeps(context.Context) (*SchemaBuilder, error)
 
+	// The current session's memo of module dependency schemas, shared by
+	// all of the session's clients and dropped with the session. Nil
+	// disables memoization.
+	SessionSchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error)
+
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
 
@@ -339,7 +344,9 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	}); err != nil {
 		return nil, err
 	}
-	return deps, nil
+	// Callers hold the builder only for the current load, so it may keep the
+	// server it builds instead of adding an entry to the session's memo.
+	return deps.ClientOwned(), nil
 }
 
 func (q *Query) RequireMainClient(ctx context.Context) error {

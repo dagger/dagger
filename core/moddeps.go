@@ -5,8 +5,11 @@ package core
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -33,12 +36,24 @@ type modDepEntry struct {
 // SchemaBuilder lazily constructs a dagql server from a set of modules with
 // per-module install policy. It is used both for a module's own dependency
 // graph and for the set of modules served to a client session.
+//
+// A built server is kept only by a client-owned builder: one that lives no
+// longer than the client or session that built it, such as a
+// SchemaBuilderMemo entry or the builder a client serves from. Any other
+// builder, notably a Module's Deps, sits on cached results that outlive the
+// session, so its schema is taken from the current session's memo instead
+// and lives and dies with that session.
 type SchemaBuilder struct {
 	root    *Query
 	entries []modDepEntry
 
+	// clientOwned marks a builder that may keep the server it builds. It is
+	// never copied: every derived builder starts unowned.
+	clientOwned bool
+
 	lazilyLoadedServer *dagql.Server
 	loadSchemaErr      error
+	loadSchemaFailed   atomic.Bool
 	loadSchemaLock     sync.Mutex
 }
 
@@ -61,6 +76,14 @@ func (b *SchemaBuilder) Clone() *SchemaBuilder {
 		root:    b.root,
 		entries: slices.Clone(b.entries),
 	}
+}
+
+// ClientOwned returns a copy of b that keeps the server it builds. Only a
+// client or session may hold it, and never on a value that can outlive them.
+func (b *SchemaBuilder) ClientOwned() *SchemaBuilder {
+	cp := b.Clone()
+	cp.clientOwned = true
+	return cp
 }
 
 func (b *SchemaBuilder) WithRoot(root *Query) *SchemaBuilder {
@@ -89,6 +112,78 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 		root:    b.root,
 		entries: append(slices.Clone(b.entries), extra...),
 	}
+}
+
+// SchemaBuilderMemo shares one builder, and so one built schema server, per
+// module set.
+//
+// The engine keeps one memo per session for the schemas of builders that are
+// not client-owned, such as a Module's Deps (see SchemaBuilder.Schema). It is
+// shared by the session's clients, including the nested client of every
+// function call, and dropped when the session ends; its entries grow with the
+// distinct module sets the session uses.
+//
+// A built server is an immutable type registry; the dagql result cache is
+// engine-wide and never held by a server, so sharing one shares no results.
+type SchemaBuilderMemo struct {
+	mu       sync.Mutex
+	builders map[string]*SchemaBuilder
+}
+
+func NewSchemaBuilderMemo() *SchemaBuilderMemo {
+	return &SchemaBuilderMemo{builders: map[string]*SchemaBuilder{}}
+}
+
+// Get returns the client-owned builder memoized for exactly b's root and
+// entries, memoizing a client-owned copy of b if there is none. b itself is
+// never memoized, since the caller may keep it on a value that outlives the
+// session. A nil memo, or a module set that cannot be keyed, returns b.
+//
+// A builder whose schema failed to load is replaced rather than returned, so
+// a failed build is retried by the next load instead of sticking.
+func (m *SchemaBuilderMemo) Get(b *SchemaBuilder) *SchemaBuilder {
+	if m == nil || b == nil {
+		return b
+	}
+	key, ok := b.memoKey()
+	if !ok {
+		return b
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if cached := m.builders[key]; cached != nil && !cached.loadSchemaFailed.Load() {
+		return cached
+	}
+	owned := b.ClientOwned()
+	m.builders[key] = owned
+	return owned
+}
+
+// memoKey identifies b's root and entries: user modules by attached result,
+// anything else (core) by instance. Entry order and install options are part
+// of the key, since both shape the built schema.
+func (b *SchemaBuilder) memoKey() (string, bool) {
+	var key strings.Builder
+	fmt.Fprintf(&key, "r%p;", b.root)
+	for _, e := range b.entries {
+		switch mod := e.mod.(type) {
+		case *userMod:
+			id, err := mod.res.ID()
+			if err != nil || id == nil || id.EngineResultID() == 0 {
+				return "", false
+			}
+			fmt.Fprintf(&key, "m%d", id.EngineResultID())
+		default:
+			if reflect.ValueOf(mod).Kind() != reflect.Pointer {
+				return "", false
+			}
+			fmt.Fprintf(&key, "p%p", mod)
+		}
+		// Format the whole struct so a field added to InstallOpts later is
+		// part of the key without anyone remembering to add it here.
+		fmt.Fprintf(&key, ":%+v;", e.opts)
+	}
+	return key.String(), true
 }
 
 func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
@@ -144,11 +239,34 @@ func (b *SchemaBuilder) PrimaryMods() []Mod {
 }
 
 func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
-	srv, err := b.lazilyLoadSchema(ctx)
+	owner := b
+	if !b.clientOwned {
+		owner = currentSessionSchemaBuilderMemo(ctx).Get(b)
+		if !owner.clientOwned {
+			// No session can hold this module set's server: build it for
+			// this call alone rather than keep it on b.
+			owner = b.Clone()
+		}
+	}
+	srv, err := owner.lazilyLoadSchema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load schema: %w", err)
 	}
 	return srv, nil
+}
+
+// currentSessionSchemaBuilderMemo returns the current session's memo, or nil
+// when the context carries no client of a live session.
+func currentSessionSchemaBuilderMemo(ctx context.Context) *SchemaBuilderMemo {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil
+	}
+	memo, err := query.SessionSchemaBuilderMemo(ctx)
+	if err != nil {
+		return nil
+	}
+	return memo
 }
 
 func (b *SchemaBuilder) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes, hiddenFields []string) (dagql.Result[*File], error) {
@@ -213,6 +331,7 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 	defer func() {
 		b.lazilyLoadedServer = loadedSchema
 		b.loadSchemaErr = rerr
+		b.loadSchemaFailed.Store(rerr != nil)
 	}()
 
 	var nonEntrypoints, entrypoints []modDepEntry
