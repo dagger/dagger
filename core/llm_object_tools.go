@@ -1110,6 +1110,13 @@ func resolveObjectAddress(ctx context.Context, srv *dagql.Server, addr, addressF
 	if err != nil {
 		return nil, err
 	}
+	// A dag:// address is accepted only because a workspace resolves it.
+	// Without one (no current workspace, or a schema view without
+	// Workspace.resolve), some decoders would read the value as a path on the
+	// calling client's host instead.
+	if dagaddress.IsAddress(addr) && resolved.Self().BoundWorkspace.Self() == nil {
+		return nil, errors.New("a dag:// address needs a workspace, and none is in scope")
+	}
 	// Address resolution is user-facing work of the tool call — possibly an
 	// image pull — not engine bookkeeping: run it non-internal (matching the
 	// method call's Select in callObjectMethod) so it renders in the trace as
@@ -1141,9 +1148,11 @@ func (m *MCP) resolveBoundToolAddress(ctx context.Context, srv *dagql.Server, ad
 		return nil, false, nil
 	}
 	parsed, err := dagaddress.Parse(addr)
-	if err != nil || parsed.Absolute {
-		// A malformed address reports through workspace resolution; an
-		// absolute one names a workspace, never this conversation.
+	if err != nil {
+		return nil, false, nil //nolint:nilerr // deliberate: workspace resolution reports a malformed address
+	}
+	if parsed.Absolute {
+		// An absolute address names a workspace, never this conversation.
 		return nil, false, nil
 	}
 	boundType, mod, ok, err := m.boundToolModule(parsed.Path)

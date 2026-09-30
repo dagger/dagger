@@ -871,18 +871,19 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		require.Equal(t, "make in alpine:latest", out.String())
 	})
 
-	t.Run("dag addresses naming no bound tool module resolve as before", func(t *testing.T) {
+	t.Run("dag addresses naming no bound tool module need a workspace", func(t *testing.T) {
 		// The bound runner is not a module's main object, so no binding
-		// claims the address: it goes through the Address API unchanged.
+		// claims the address. This server has no Workspace.resolve, so it
+		// would reach Query.address with no workspace to resolve it, where
+		// the git decoders once read a DAG address as a host path: it is
+		// refused before any Address loader runs.
 		m := newMCP().WithTools(runner, srv.Schema(), nil)
-		sel, err := m.buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+		_, err := m.buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
 			"cmd":     "make",
 			"sandbox": "dag://runner/sandbox",
 		})
-		require.NoError(t, err)
-		var out dagql.String
-		require.NoError(t, srv.Select(ctx, runner, &out, sel))
-		require.Equal(t, "make in dag://runner/sandbox", out.String())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "a dag:// address needs a workspace")
 	})
 
 	t.Run("a real ID still decodes directly", func(t *testing.T) {
