@@ -1663,10 +1663,22 @@ SessionRejectsCurrent(o) ==
         /\ res[r].barrier \in {"none", "closedOk"}
         /\ ~(res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles)
 
+\* The publishing session was released while the call's current entry is
+\* live but its attachment is open: publication does not wait on it, since
+\* the wait would hold the session's release open for as long as that
+\* attachment lasts. The new value registers beside it, not indexed.
+ReleasedWhileCurrentOpen(o) ==
+    /\ sessionRelease[ongoingCalls[o].sess].phase # "live"
+    /\ \E r \in Current(ongoingCalls[o].call) :
+        /\ ~res[r].expired
+        /\ res[r].barrier = "open"
+
 PubIndexFresh(o) ==
     /\ ongoingCalls[o].pubState = "begun"
     /\ ongoingCalls[o].outcome = "fresh"
-    /\ Current(ongoingCalls[o].call) = {} \/ SessionRejectsCurrent(o)
+    /\ \/ Current(ongoingCalls[o].call) = {}
+       \/ SessionRejectsCurrent(o)
+       \/ ReleasedWhileCurrentOpen(o)
     /\ Len(res) < MaxResults
     /\ \E lazyArm \in LazyArmChoices, handleChoice \in HandleChoices(o),
           deps \in DepChoices(o) :
@@ -1674,7 +1686,7 @@ PubIndexFresh(o) ==
                 IF r \in deps THEN [res[r] EXCEPT !.own = @ + 1]
                 ELSE res[r]]
             fresh == [FreshResult(o, lazyArm, handleChoice, deps)
-                        EXCEPT !.indexed = ~SessionRejectsCurrent(o)]
+                        EXCEPT !.indexed = ~(SessionRejectsCurrent(o) \/ ReleasedWhileCurrentOpen(o))]
         IN /\ FreshDepsFinal(lazyArm, deps)
            /\ res' = Append(withDeps, fresh)
            /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].pubState = "attaching",

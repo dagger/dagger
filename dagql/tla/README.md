@@ -335,7 +335,10 @@ The rules, and where the engine applies them (`initCompletedResult`,
   its call has no current entry. `PubAdoptSameCall` adopts the call's live
   entry, one whose attachment has settled clean, and takes the handoff hold
   in the same step, as `PubAdopt` does. While that attachment is open, no
-  publication action is enabled, so publication waits. Adoption keeps the
+  publication action is enabled, so publication waits, unless the publishing
+  session has been released: then `PubIndexFresh` registers the value beside
+  the entry, not indexed (`ReleasedWhileCurrentOpen`), so the release doesn't
+  wait on another session's attachment. Adoption keeps the
   existing session filter. When the publishing session does not cover the
   entry's stored requirements, `PubIndexFresh` registers the value beside the
   entry, live but not indexed. A late retention edge can raise those
