@@ -16211,6 +16211,50 @@ func (r *Query) LLM(opts ...LLMOpts) *LLM {
 	}
 }
 
+// LLMContentBlockOpts contains options for Query.LLMContentBlock
+type LLMContentBlockOpts struct {
+	// The text content (for TEXT).
+	Text string
+	// A media file whose contents become the block's inline bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+	File *File
+	// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+	Data string
+	// The media MIME type, e.g. "image/png". Required with data; inferred from a file's contents when omitted.
+	MimeType string
+}
+
+// Create a block of text or media content, independent of any conversation.
+//
+// A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.
+//
+// Experimental: LLM support is not yet stabilized
+func (r *Query) LLMContentBlock(kind LLMContentBlockKind, opts ...LLMContentBlockOpts) *LLMContentBlock {
+	q := r.query.Select("llmContentBlock")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `text` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Text) {
+			q = q.Arg("text", opts[i].Text)
+		}
+		// `file` optional argument
+		if !querybuilder.IsZeroValue(opts[i].File) {
+			q = q.Arg("file", opts[i].File)
+		}
+		// `data` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Data) {
+			q = q.Arg("data", opts[i].Data)
+		}
+		// `mimeType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MimeType) {
+			q = q.Arg("mimeType", opts[i].MimeType)
+		}
+	}
+	q = q.Arg("kind", kind)
+
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
 // Create a new module.
 func (r *Query) Module() *Module {
 	q := r.query.Select("module")

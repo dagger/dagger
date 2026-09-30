@@ -15005,6 +15005,21 @@ pub struct QueryLlmOpts<'a> {
     pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryLlmContentBlockOpts<'a> {
+    /// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+    #[builder(setter(into, strip_option), default)]
+    pub data: Option<&'a str>,
+    /// A media file whose contents become the block's inline bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+    #[builder(setter(into, strip_option), default)]
+    pub file: Option<Id>,
+    /// The media MIME type, e.g. "image/png". Required with data; inferred from a file's contents when omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub mime_type: Option<&'a str>,
+    /// The text content (for TEXT).
+    #[builder(setter(into, strip_option), default)]
+    pub text: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryEnvFileOpts {
     /// Replace "${VAR}" or "$VAR" with the value of other vars
     #[builder(setter(into, strip_option), default)]
@@ -15825,6 +15840,54 @@ impl Query {
             query = query.arg("provider", provider);
         }
         Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create a block of text or media content, independent of any conversation.
+    /// A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - The kind of content: TEXT, IMAGE, AUDIO, or DOCUMENT.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn llm_content_block(&self, kind: LlmContentBlockKind) -> LlmContentBlock {
+        let mut query = self.selection.select("llmContentBlock");
+        query = query.arg("kind", kind);
+        LlmContentBlock {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create a block of text or media content, independent of any conversation.
+    /// A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - The kind of content: TEXT, IMAGE, AUDIO, or DOCUMENT.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn llm_content_block_opts<'a>(
+        &self,
+        kind: LlmContentBlockKind,
+        opts: QueryLlmContentBlockOpts<'a>,
+    ) -> LlmContentBlock {
+        let mut query = self.selection.select("llmContentBlock");
+        query = query.arg("kind", kind);
+        if let Some(text) = opts.text {
+            query = query.arg("text", text);
+        }
+        if let Some(file) = opts.file {
+            query = query.arg("file", file);
+        }
+        if let Some(data) = opts.data {
+            query = query.arg("data", data);
+        }
+        if let Some(mime_type) = opts.mime_type {
+            query = query.arg("mimeType", mime_type);
+        }
+        LlmContentBlock {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

@@ -216,6 +216,16 @@ func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	return client.LLM(opts...)
 }
 
+// Create a block of text or media content, independent of any conversation.
+//
+// A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.
+//
+// Experimental: LLM support is not yet stabilized
+func LLMContentBlock(kind dagger.LLMContentBlockKind, opts ...dagger.LLMContentBlockOpts) *dagger.LLMContentBlock {
+	client := initClient()
+	return client.LLMContentBlock(kind, opts...)
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()

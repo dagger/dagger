@@ -15471,6 +15471,52 @@ class Query(Root):
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
 
+    def llm_content_block(
+        self,
+        kind: LLMContentBlockKind,
+        *,
+        text: str | None = "",
+        file: File | None = None,
+        data: str | None = "",
+        mime_type: str | None = "",
+    ) -> LLMContentBlock:
+        """Create a block of text or media content, independent of any
+        conversation.
+
+        A function exposed as an LLM tool can return a content block, or a
+        list of them, to give the model text and media as the tool's result,
+        e.g. a screenshot for the model to look at.
+
+        .. caution::
+            Experimental: LLM support is not yet stabilized
+
+        Parameters
+        ----------
+        kind:
+            The kind of content: TEXT, IMAGE, AUDIO, or DOCUMENT.
+        text:
+            The text content (for TEXT).
+        file:
+            A media file whose contents become the block's inline bytes (for
+            IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for
+            media.
+        data:
+            Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply
+            exactly one of file or data for media.
+        mime_type:
+            The media MIME type, e.g. "image/png". Required with data;
+            inferred from a file's contents when omitted.
+        """
+        _args = [
+            Arg("kind", kind),
+            Arg("text", text, ""),
+            Arg("file", file, None),
+            Arg("data", data, ""),
+            Arg("mimeType", mime_type, ""),
+        ]
+        _ctx = self._select("llmContentBlock", _args)
+        return LLMContentBlock(_ctx)
+
     def module(self) -> Module:
         """Create a new module."""
         _args: list[Arg] = []

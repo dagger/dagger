@@ -6130,6 +6130,37 @@ type Query implements Node {
     provider: String
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
 
+  """
+  Create a block of text or media content, independent of any conversation.
+
+  A function exposed as an LLM tool can return a content block, or a list of
+  them, to give the model text and media as the tool's result, e.g. a screenshot
+  for the model to look at.
+  """
+  llmContentBlock(
+    """The kind of content: TEXT, IMAGE, AUDIO, or DOCUMENT."""
+    kind: LLMContentBlockKind!
+
+    """The text content (for TEXT)."""
+    text: String = ""
+
+    """
+    A media file whose contents become the block's inline bytes (for IMAGE,
+    AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+    """
+    file: ID @expectedType(name: "File")
+
+    """
+    Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+    """
+    data: String = ""
+
+    """
+    The media MIME type, e.g. "image/png". Required with data; inferred from a file's contents when omitted.
+    """
+    mimeType: String = ""
+  ): LLMContentBlock! @experimental(reason: "LLM support is not yet stabilized")
+
   """Initialize a JSON value"""
   json: JSONValue!
 

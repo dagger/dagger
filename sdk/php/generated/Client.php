@@ -491,6 +491,35 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Create a block of text or media content, independent of any conversation.
+     *
+     * A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.
+     */
+    public function llmContentBlock(
+        LLMContentBlockKind $kind,
+        ?string $text = '',
+        ?File $file = null,
+        ?string $data = '',
+        ?string $mimeType = '',
+    ): LLMContentBlock {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llmContentBlock');
+        $innerQueryBuilder->setArgument('kind', $kind);
+        if (null !== $text) {
+        $innerQueryBuilder->setArgument('text', $text);
+        }
+        if (null !== $file) {
+        $innerQueryBuilder->setArgument('file', $file);
+        }
+        if (null !== $data) {
+        $innerQueryBuilder->setArgument('data', $data);
+        }
+        if (null !== $mimeType) {
+        $innerQueryBuilder->setArgument('mimeType', $mimeType);
+        }
+        return new \Dagger\LLMContentBlock($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Initialize a JSON value
      */
     public function json(): JsonValue

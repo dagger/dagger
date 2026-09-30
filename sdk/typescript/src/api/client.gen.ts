@@ -3320,6 +3320,28 @@ export type ClientLLMOpts = {
   provider?: string
 }
 
+export type ClientLLMContentBlockOpts = {
+  /**
+   * The text content (for TEXT).
+   */
+  text?: string
+
+  /**
+   * A media file whose contents become the block's inline bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+   */
+  file?: File
+
+  /**
+   * Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+   */
+  data?: string
+
+  /**
+   * The media MIME type, e.g. "image/png". Required with data; inferred from a file's contents when omitted.
+   */
+  mimeType?: string
+}
+
 export type ClientModuleSourceOpts = {
   /**
    * Version query for a Git module source.
@@ -15952,6 +15974,33 @@ export class Client extends BaseClient {
   llm = (opts?: ClientLLMOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
     return new LLM(ctx)
+  }
+
+  /**
+   * Create a block of text or media content, independent of any conversation.
+   *
+   * A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.
+   * @param kind The kind of content: TEXT, IMAGE, AUDIO, or DOCUMENT.
+   * @param opts.text The text content (for TEXT).
+   * @param opts.file A media file whose contents become the block's inline bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+   * @param opts.data Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
+   * @param opts.mimeType The media MIME type, e.g. "image/png". Required with data; inferred from a file's contents when omitted.
+   * @experimental
+   */
+  llmContentBlock = (
+    kind: LLMContentBlockKind,
+    opts?: ClientLLMContentBlockOpts,
+  ): LLMContentBlock => {
+    const metadata = {
+      kind: { is_enum: true, value_to_name: LLMContentBlockKindValueToName },
+    }
+
+    const ctx = this._ctx.select("llmContentBlock", {
+      kind,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new LLMContentBlock(ctx)
   }
 
   /**
