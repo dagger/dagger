@@ -253,6 +253,33 @@ func TestServicesJoinedStopReportsStopResult(t *testing.T) {
 	}
 }
 
+// A graceful stop that joins one in flight and is then canceled leaves the
+// stop in flight to finish on its own.
+func TestServicesCanceledJoinedStopLeavesStopInFlight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		services := newStopTestServices(time.Hour, time.Hour)
+		running, svc := startStopRecording(t, services, stopTestKey(t.Name()))
+
+		ownerErr := make(chan error, 1)
+		go func() { ownerErr <- services.StopRunning(context.Background(), running, false) }()
+		require.False(t, svc.nextRequest(t))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		joinedErr := make(chan error, 1)
+		go func() { joinedErr <- services.StopRunning(ctx, running, false) }()
+		synctest.Wait()
+		cancel()
+		require.ErrorIs(t, <-joinedErr, context.Canceled)
+		synctest.Wait()
+		svc.noRequest(t, 0)
+
+		svc.exit(false)
+		require.NoError(t, <-ownerErr)
+		require.False(t, svc.waitKilled(t))
+		svc.noRequest(t, 0)
+	})
+}
+
 // A Detach of the last binding still stops the service gracefully and
 // escalates after TerminateGracePeriod.
 func TestServicesDetachEscalatesAfterTerminateGracePeriod(t *testing.T) {
