@@ -58,6 +58,39 @@ func TestArtifactAbsoluteURI(t *testing.T) {
 	}
 }
 
+func TestArtifactWithoutWorkspace(t *testing.T) {
+	bound := &Artifact{ModuleName: "roster", Path: []string{"roster", "members"}, TypeName: "Directory"}
+	// No absolute address: it names a workspace.
+	_, err := bound.URI(ArtifactURIOpts{Absolute: true})
+	require.ErrorContains(t, err, "dag://roster/members has no absolute address")
+	uri, err := bound.URI(ArtifactURIOpts{DimensionKeys: true, TypeAssertion: true})
+	require.NoError(t, err)
+	require.Equal(t, "dag+directory://roster/members", uri)
+	// Evaluated in the caller's context, which is left as is.
+	ctx := t.Context()
+	evalCtx, err := bound.WorkspaceContext(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ctx, evalCtx)
+	require.Nil(t, bound.BoundRoot())
+
+	// An absolute address never selects an artifact without a workspace.
+	ws, err := dagql.NewResultForCall(&Workspace{Address: "file:///ws"}, &dagql.ResultCall{})
+	require.NoError(t, err)
+	inWorkspace := &Artifact{ModuleName: "roster", Path: []string{"roster", "members"}, TypeName: "Directory", Workspace: dagql.ObjectResult[*Workspace]{Result: ws}}
+	mixed := &Artifacts{Entries: []*Artifact{bound, inWorkspace}}
+	absolute, err := dagaddress.Parse("dag://github.com/acme/repo@1111111111111111111111111111111111111111:roster/members")
+	require.NoError(t, err)
+	selected, err := mixed.FilterURI(absolute)
+	require.NoError(t, err)
+	require.Len(t, selected.Entries, 1)
+	require.Same(t, ws.Self(), selected.Entries[0].Workspace.Self())
+	relative, err := dagaddress.Parse("dag://roster/members")
+	require.NoError(t, err)
+	selected, err = mixed.FilterURI(relative)
+	require.NoError(t, err)
+	require.Len(t, selected.Entries, 2)
+}
+
 func TestArtifactParentDirectivesAreImmediate(t *testing.T) {
 	parent := &ModTreeNode{Directives: []string{"generate"}}
 	child := &ModTreeNode{Parent: parent}

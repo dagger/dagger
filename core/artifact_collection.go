@@ -219,6 +219,12 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 type artifactCollectionKeyFunc func(context.Context, *Artifact) ([]collectionKey, error)
 
 func artifactCollectionKeys(ctx context.Context, artifact *Artifact) ([]collectionKey, error) {
+	// Each receiver evaluates in its own workspace, so one selection can mix
+	// workspaces and bound artifacts.
+	ctx, err := artifact.WorkspaceContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var value dagql.AnyResult
 	if err := artifact.Evaluate(ctx, &value); err != nil {
 		return nil, err
@@ -255,9 +261,23 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 			}
 			identities := map[string]bool{}
 			for _, artifact := range excluded.Entries {
-				identities[artifactIdentity(artifact)] = true
+				id, err := artifact.identity()
+				if err != nil {
+					return nil, err
+				}
+				identities[id] = true
 			}
-			result = result.filter(func(artifact *Artifact) bool { return !identities[artifactIdentity(artifact)] })
+			var identityErr error
+			result = result.filter(func(artifact *Artifact) bool {
+				id, err := artifact.identity()
+				if err != nil {
+					identityErr = err
+				}
+				return !identities[id]
+			})
+			if identityErr != nil {
+				return nil, identityErr
+			}
 		}
 		result.Selector.ExcludedURIs = slices.Clone(a.Selector.ExcludedURIs)
 		return result, nil
