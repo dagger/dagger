@@ -49,6 +49,11 @@ func (*ArtifactPath) TypeDescription() string {
 
 // Artifact holds a complete address and its deferred object value. The module
 // tree and workspace are retained so evaluation does not depend on the caller.
+//
+// A workspace artifact has a Workspace and a tree rooted at a fresh
+// construction of its module. A bound artifact (see BoundArtifacts) has no
+// Workspace: its tree is rooted at a live object value (ModTreeNode.RootValue),
+// e.g. an LLM's bound tool object, and it is evaluated in the caller's context.
 type Artifact struct {
 	ModuleName     string `field:"true" doc:"The installed module name."`
 	DimensionNames map[string]string
@@ -102,6 +107,9 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		}
 	}
 	if opts.Absolute {
+		if a.Workspace.Self() == nil {
+			return "", fmt.Errorf("%s has no absolute address: it is not a workspace artifact", addr.String())
+		}
 		workspace, commit, err := a.Workspace.Self().GitAddress()
 		if err != nil {
 			return "", err
@@ -300,18 +308,64 @@ func (a *Artifacts) FilterParentDirectives(directives []string, exclude bool) *A
 	return selected
 }
 
-// identity distinguishes addresses in different workspaces, even if their
-// values happen to be the same object.
+// identity distinguishes addresses in different workspaces, or rooted at
+// different bound values, even if their values happen to be the same object.
 func (a *Artifact) identity() (string, error) {
-	var workspaceID uint64
+	scope, err := a.scope()
+	if err != nil {
+		return "", err
+	}
+	return scope + ":" + artifactIdentity(a), nil
+}
+
+// scope names what the artifact's address is relative to: its workspace
+// ("w<result ID>"), else the live value its tree is rooted at ("v<result ID>"),
+// else nothing ("").
+func (a *Artifact) scope() (string, error) {
 	if a.Workspace.Self() != nil {
 		id, err := a.Workspace.ID()
 		if err != nil {
 			return "", err
 		}
-		workspaceID = id.EngineResultID()
+		return fmt.Sprintf("w%d", id.EngineResultID()), nil
 	}
-	return fmt.Sprintf("%d:%s", workspaceID, artifactIdentity(a)), nil
+	if root := a.BoundRoot(); root != nil {
+		id, err := root.ID()
+		if err != nil {
+			return "", fmt.Errorf("artifact %s root: %w", strings.Join(a.Path, "/"), err)
+		}
+		return fmt.Sprintf("v%d", id.EngineResultID()), nil
+	}
+	return "", nil
+}
+
+// BoundRoot returns the live value a bound artifact's tree is rooted at, or
+// nil for a workspace artifact, which is evaluated from a fresh construction.
+func (a *Artifact) BoundRoot() dagql.AnyObjectResult {
+	if a.Workspace.Self() != nil {
+		return nil
+	}
+	for node := a.Node; node != nil; node = node.Parent {
+		if node.RootValue != nil {
+			return node.RootValue
+		}
+	}
+	return nil
+}
+
+// WorkspaceContext binds the artifact's workspace into ctx for evaluation:
+// its owning client for host routing, and the workspace itself for
+// contextual and Workspace-typed arguments. An artifact without a workspace
+// (see BoundArtifacts) is evaluated in ctx as is.
+func (a *Artifact) WorkspaceContext(ctx context.Context) (context.Context, error) {
+	if a.Workspace.Self() == nil {
+		return ctx, nil
+	}
+	ctx, err := WorkspaceClientContext(ctx, a.Workspace.Self())
+	if err != nil {
+		return nil, err
+	}
+	return WorkspaceToContext(ctx, a.Workspace), nil
 }
 
 func (a *Artifacts) WithArtifacts(other *Artifacts) (*Artifacts, error) {
@@ -508,9 +562,15 @@ func (a *Artifacts) DimensionKeys(dimension string) []string {
 }
 
 // FilterURI applies a DAG address as one filter: the chain of path, type, and
-// dimension-key filters the address encodes.
+// dimension-key filters the address encodes. An absolute address names a
+// workspace, so it never selects an artifact without one (see BoundArtifacts);
+// callers check that the workspace is the selection's own.
 func (a *Artifacts) FilterURI(addr *dagaddress.Address) (*Artifacts, error) {
 	selected := a
+	if addr.Absolute && slices.ContainsFunc(a.Entries, func(artifact *Artifact) bool { return artifact.Workspace.Self() == nil }) {
+		selected = a.filter(func(artifact *Artifact) bool { return artifact.Workspace.Self() != nil })
+		selected.Selector.Paths = selected.exactPaths()
+	}
 	if addr.Path != "" {
 		var err error
 		selected, err = selected.FilterPattern(addr.Path)

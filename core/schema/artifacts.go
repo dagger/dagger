@@ -104,14 +104,14 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("uri", s.artifactURI).
 			Doc("The artifact's DAG address, such as dag://engine-dev/playground.").
 			Args(
-				dagql.Arg("absolute").Doc("Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address."),
+				dagql.Arg("absolute").Doc("Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address."),
 				dagql.Arg("dimensionKeys").Doc("Include the dimension keys as a query. Without them, the address is a path selector."),
 				dagql.Arg("typeAssertion").Doc("Include the artifact type in the scheme: dag+container://."),
 			),
 	}.Install(srv)
 	artifactClass.Extend(dagql.FieldSpec{
 		Name: "value", Type: nodeInterfaceType{}, Args: dagql.NewInputSpecs(dagql.InputSpec{Name: "arguments", Type: core.JSON{}, Default: core.JSON("{}"), Description: "Field arguments as a JSON object."}),
-		Description: "Evaluate the target in the workspace that supplied this artifact.",
+		Description: "Evaluate the target in the workspace that supplied this artifact. An artifact of an LLM's bound tool object has no workspace: it is evaluated from that object's value in the caller's context.",
 		ViewFilter:  AfterVersion("v1.0.0-0"),
 		DoNotCache:  "Evaluate the field with its own cache policy.",
 	}, s.value)
@@ -252,13 +252,18 @@ func (*artifactsSchema) filterURI(_ context.Context, parent *core.Artifacts, arg
 }
 
 // checkArtifactAddressWorkspace reserves the absolute form. Only the current
-// workspace, at its own commit, is accepted.
+// workspace, at its own commit, is accepted. Artifacts without a workspace
+// (see core.BoundArtifacts) never match an absolute address, so they do not
+// constrain it.
 func checkArtifactAddressWorkspace(entries []*core.Artifact, addr *dagaddress.Address, uri string) error {
 	if !addr.Absolute {
 		return nil
 	}
 	notSupported := fmt.Errorf("address selects another workspace; filters cannot change workspace: %s", uri)
 	for _, artifact := range entries {
+		if artifact.Workspace.Self() == nil {
+			continue
+		}
 		address, commit, err := artifact.Workspace.Self().GitAddress()
 		if err != nil || address != addr.Workspace || commit != addr.Version {
 			return notSupported
@@ -395,18 +400,24 @@ func (*artifactsSchema) one(ctx context.Context, parent *core.Artifacts, _ struc
 }
 func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
 	var workspaceID uint64
-	for i, entry := range parent.Entries {
+	for _, entry := range parent.Entries {
 		// Module and type keys are static. Only collection keys are resolved.
 		if slices.ContainsFunc(entry.DimensionKeys, func(key *core.ArtifactDimensionKey) bool {
 			return key.Dimension != artifact.ModuleDimension && !strings.HasPrefix(key.Dimension, "type:")
 		}) {
 			return "", fmt.Errorf("a selection with resolved collection keys has no single DAG address; use the individual artifact addresses")
 		}
+		// A relative address has no workspace, so it can mix one workspace's
+		// artifacts with artifacts that have none (see core.BoundArtifacts),
+		// such as an LLM's scope. It cannot tell two workspaces apart.
+		if entry.Workspace.Self() == nil {
+			continue
+		}
 		id, err := entry.Workspace.ID()
 		if err != nil {
 			return "", err
 		}
-		if i > 0 && id.EngineResultID() != workspaceID {
+		if workspaceID != 0 && id.EngineResultID() != workspaceID {
 			return "", fmt.Errorf("a selection from multiple workspaces has no single DAG address; use the individual artifact addresses")
 		}
 		workspaceID = id.EngineResultID()
@@ -428,16 +439,11 @@ func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{
 	return bound.URI(), nil
 }
 
+// expandArtifacts enumerates the selected collections' keys. Each collection
+// receiver evaluates in its own artifact's workspace (see
+// core.Artifact.WorkspaceContext), so a selection may mix workspaces and
+// artifacts without one.
 func expandArtifacts(ctx context.Context, parent *core.Artifacts) (*core.Artifacts, error) {
-	if len(parent.Entries) > 0 && parent.Entries[0].Workspace.Self() != nil {
-		ws := parent.Entries[0].Workspace
-		var err error
-		ctx, err = withWorkspaceClientContext(ctx, ws.Self())
-		if err != nil {
-			return nil, err
-		}
-		ctx = core.WorkspaceToContext(ctx, ws)
-	}
 	return parent.Expand(ctx)
 }
 func (*artifactsSchema) artifactURI(_ context.Context, parent *core.Artifact, args struct {
@@ -461,7 +467,9 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 	if err != nil {
 		return nil, err
 	}
-	if artifact.TypeName == "Check" && artifact.LoadFailure == nil {
+	// A bound artifact (no workspace) is rooted at a live local value, which a
+	// cloud engine cannot reconstruct: its checks always run locally.
+	if artifact.TypeName == "Check" && artifact.LoadFailure == nil && artifact.Workspace.Self() != nil {
 		md, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, err
@@ -627,13 +635,13 @@ func artifactCloudInput(ctx context.Context, srv *dagql.Server, input dagql.Inpu
 	}
 }
 
-// evaluateArtifact selects the artifact's value in its own workspace.
+// evaluateArtifact selects the artifact's value in its own workspace, or in
+// the caller's context for an artifact without one.
 func evaluateArtifact(ctx context.Context, artifact *core.Artifact, dest any, inputs ...dagql.NamedInput) error {
-	ctx, err := withWorkspaceClientContext(ctx, artifact.Workspace.Self())
+	ctx, err := artifact.WorkspaceContext(ctx)
 	if err != nil {
 		return err
 	}
-	ctx = core.WorkspaceToContext(ctx, artifact.Workspace)
 	var value dagql.AnyObjectResult
 	err = artifact.Evaluate(ctx, &value, inputs...)
 	if artifact.LoadFailure != nil {
@@ -862,6 +870,9 @@ func (*artifactsSchema) filterDirectives(_ context.Context, parent *core.Artifac
 
 func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ struct{}) (string, error) {
 	if parent.LoadFailure != nil {
+		if parent.Workspace.Self() == nil {
+			return "this bound tool object could not be loaded", nil
+		}
 		return "this workspace module could not be loaded", nil
 	}
 	if parent.Node == nil {
@@ -920,7 +931,7 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		result := &core.ArtifactResult{Artifact: artifact.Clone()}
 		results[i] = result
 		var attrs []attribute.KeyValue
-		localCheck := artifact.TypeName == "Check" && (!md.EnableCloudScaleOut || artifact.LoadFailure != nil)
+		localCheck := artifact.TypeName == "Check" && (!md.EnableCloudScaleOut || artifact.LoadFailure != nil || artifact.Workspace.Self() == nil)
 		if localCheck {
 			attrs = append(attrs, attribute.String(telemetry.CheckNameAttr, uri))
 		}
