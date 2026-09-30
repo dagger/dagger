@@ -1613,7 +1613,7 @@ func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePrivateSSH(ctx context.Cont
 			ref := c.Git(cloneRef, dagger.GitOpts{
 				SSHAuthSocket: c.Host().UnixSocket(sockPath),
 			}).Head()
-			commit, err := ref.Commit(ctx)
+			commit, err := ref.CommitSHA(ctx)
 			require.NoError(t, err)
 			ws := ref.AsWorkspace().WithNewFile("workspace-module/dagger-module.toml", `name = "workspace-module"
 engineVersion = "latest"
