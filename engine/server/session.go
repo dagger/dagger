@@ -149,10 +149,10 @@ type daggerSession struct {
 	// Dagger Cloud publishing, set up when the main client asked the engine
 	// to publish the session's telemetry. cloudForwarder publishes the spans
 	// and logs from the main client's store and owns their exporters; the
-	// metric exporter is shared by every client's periodic reader, so the
+	// metric queue is shared by every client's periodic reader, so the
 	// session shuts it down itself.
 	cloudForwarder *cloudForwarder
-	cloudMetrics   sdkmetric.Exporter
+	cloudMetrics   *cloudMetricQueue
 	// cloudBound bounds every flush, shutdown and metric export of the Cloud
 	// exporters; cloudFlushers publish what the session has sent so far.
 	cloudBound    cloudFlushBound
@@ -697,7 +697,8 @@ func (client *clientRuntime) shutdownMetrics(ctx context.Context) error {
 		errs = errors.Join(errs, client.workloadMeterProvider.Shutdown(ctx))
 		client.workloadMeterProvider = nil
 	}
-	errs = errors.Join(errs, client.meterProvider.ForceFlush(ctx))
+	// MeterProvider.Shutdown performs each reader's final collection before it
+	// stops the reader. A preceding ForceFlush would collect every reader twice.
 	errs = errors.Join(errs, client.meterProvider.Shutdown(ctx))
 	client.meterProvider = nil
 	client.metricExporter = nil
@@ -2798,8 +2799,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	var shutdownErr error
 
 	sess := client.daggerSession
+	isMainClient := client.clientID == sess.mainClientCallerID
 	slog := slog.With(
-		"isMainClient", client.clientID == sess.mainClientCallerID,
+		"isMainClient", isMainClient,
 		"sessionID", sess.sessionID,
 		"clientID", client.clientID,
 		"mainClientID", sess.mainClientCallerID)
@@ -2837,10 +2839,10 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		return err
 	}
 
-	if client.clientID == sess.mainClientCallerID {
+	if isMainClient {
 		slog.Info("main client is shutting down")
-		// Every wait on Cloud from here until the request returns shares
-		// one deadline, well within the client's own shutdown limit.
+		// Every wait on Cloud from here until the request returns shares one
+		// deadline, well within the client's own shutdown limit.
 		defer sess.startCloudShutdownBudget()()
 		err := drainPhase("flush workspace locks", func() error {
 			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
@@ -2850,14 +2852,12 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
 
-		// Publish what the session has sent to Cloud so far while the client's
-		// attachables are still open: refreshing an OAuth token reads the
-		// client's credentials file through them.
-		_ = drainPhase("flush session Cloud telemetry", func() error {
+		// Preserve the pre-closing drain point. Cloud checks can begin dependent
+		// work as soon as the load result is published; entering closing before
+		// this drain can release its cache session while those requests are still
+		// being admitted. Refresh remains enabled for the final metric drain below.
+		_ = drainPhase("flush session Cloud telemetry before closing", func() error {
 			sess.flushSessionCloudTelemetry(ctx)
-			// No token refresh reaches through the client's attachables
-			// once they start closing; see cloudRefreshGate.
-			sess.stopCloudTokenRefresh(ctx)
 			return nil
 		})
 
@@ -2871,6 +2871,18 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			sess.services.StopSessionServices(ctx, sess.sessionID)
 			return nil
 		})
+
+		// Stop every periodic metric reader after the last metric-producing
+		// shutdown work. Reader shutdown performs one final collection, so no
+		// Cloud metric can be enqueued after the later queue barrier.
+		metricsErr := drainPhase("shutdown session metrics", func() error {
+			clients := sess.clientMetricRuntimes()
+			return runClientMetricOp(ctx, clients, "shutdown metrics", (*clientRuntime).shutdownMetrics)
+		})
+		if metricsErr != nil {
+			slog.Error("failed to shutdown session metrics", "error", metricsErr)
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("shutdown session metrics: %w", metricsErr))
+		}
 
 		defer func() {
 			// Signal shutdown at the very end, _after_ flushing telemetry/etc.,
@@ -2899,6 +2911,18 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	if flushErr != nil {
 		slog.Error("failed to flush telemetry", "error", flushErr)
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
+	}
+
+	if isMainClient {
+		// All metric readers are stopped and the session providers have completed
+		// their final flush. Drain the three Cloud signals under one budget while
+		// the main client's attachables can still refresh OAuth, then prevent any
+		// later refresh from reaching through those attachables.
+		_ = drainPhase("flush final session Cloud telemetry", func() error {
+			sess.flushSessionCloudTelemetry(ctx)
+			sess.stopCloudTokenRefresh(ctx)
+			return nil
+		})
 	}
 
 	client.closeShutdownOnce.Do(func() {
