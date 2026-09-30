@@ -36,8 +36,9 @@ type Module struct {
 	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK config used by this module."`
 
 	// Deps contains the module's dependency DAG. Its SchemaBuilder may retain a
-	// query root and lazy schema, but never runtime authority; execution still
-	// requires the held ClientScope carried by the calling context.
+	// query root, but never a built schema or runtime authority: its schema
+	// comes from the current client's memo, and execution still requires the
+	// held ClientScope carried by the calling context.
 	Deps *SchemaBuilder
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.

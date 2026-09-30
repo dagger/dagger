@@ -94,3 +94,65 @@ func TestSchemaBuilderCanceledLoadDoesNotStick(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, srv, again, "the built server is kept")
 }
+
+// memoTestServer hands out one client's schema builder memo.
+type memoTestServer struct {
+	*mockServer
+	memo *SchemaBuilderMemo
+}
+
+func (s *memoTestServer) SchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error) {
+	return s.memo, nil
+}
+
+// A builder that is not client-owned, like a cached Module's Deps, never keeps
+// the server it builds: the current client's memo does, so the server is built
+// once per client and dies with it.
+func TestSchemaBuilderServerLivesInClientMemo(t *testing.T) {
+	deps := NewSchemaBuilder(&Query{}, []Mod{&ctxInstallMod{}})
+	client := func() context.Context {
+		return ContextWithQuery(t.Context(), &Query{Server: &memoTestServer{mockServer: &mockServer{}, memo: NewSchemaBuilderMemo()}})
+	}
+
+	ctxA := client()
+	srv, err := deps.Schema(ctxA)
+	require.NoError(t, err)
+	again, err := deps.Schema(ctxA)
+	require.NoError(t, err)
+	require.Same(t, srv, again, "one client builds the module set once")
+	require.Nil(t, deps.lazilyLoadedServer, "the builder itself keeps no server")
+
+	other, err := deps.Schema(client())
+	require.NoError(t, err)
+	require.NotSame(t, srv, other, "another client builds its own")
+}
+
+// With no client to hold it, the server is built for the one call.
+func TestSchemaBuilderWithoutClientBuildsUncached(t *testing.T) {
+	deps := NewSchemaBuilder(&Query{}, []Mod{&ctxInstallMod{}})
+	srv, err := deps.Schema(t.Context())
+	require.NoError(t, err)
+	again, err := deps.Schema(t.Context())
+	require.NoError(t, err)
+	require.NotSame(t, srv, again)
+	require.Nil(t, deps.lazilyLoadedServer)
+}
+
+// The memo owns a copy, never the caller's builder, and ownership is never
+// inherited by a derived builder.
+func TestSchemaBuilderMemoOwnsACopy(t *testing.T) {
+	deps := NewSchemaBuilder(&Query{}, []Mod{&memoTestMod{name: "a"}})
+	owned := NewSchemaBuilderMemo().Get(deps)
+	require.NotSame(t, deps, owned)
+	require.True(t, owned.clientOwned)
+	require.False(t, deps.clientOwned)
+	for name, derived := range map[string]*SchemaBuilder{
+		"Clone":    owned.Clone(),
+		"WithRoot": owned.WithRoot(&Query{}),
+		"Append":   owned.Append(&memoTestMod{name: "b"}),
+		"Prepend":  owned.Prepend(&memoTestMod{name: "b"}),
+		"With":     owned.With(&memoTestMod{name: "b"}, InstallOpts{}),
+	} {
+		require.False(t, derived.clientOwned, name)
+	}
+}

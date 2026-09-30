@@ -1476,7 +1476,7 @@ func (srv *Server) initializeClientRuntime(
 	}
 	coreMod := coreSchemaBase.CoreMod(coreView)
 	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
-	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
+	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod}).ClientOwned()
 	client.schemaBuilderMemo = core.NewSchemaBuilderMemo()
 
 	if opts.ModuleContext.Self() != nil {
@@ -1503,10 +1503,11 @@ func (srv *Server) initializeClientRuntime(
 		coreMod = coreSchemaBase.CoreMod(coreView)
 
 		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
-		client.servedMods = client.mod.Self().Deps.WithRoot(client.dagqlRoot)
+		servedMods := client.mod.Self().Deps.WithRoot(client.dagqlRoot)
 		if len(client.mod.Self().ObjectDefs) > 0 {
-			client.servedMods = client.servedMods.Append(core.NewUserMod(client.mod))
+			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
+		client.servedMods = servedMods.ClientOwned()
 	} else {
 		client.pendingWorkspaceLoad = true
 		if clientMD := client.clientMetadata; clientMD != nil && len(clientMD.ExtraModules) > 0 {
@@ -2979,7 +2980,7 @@ func (srv *Server) serveModule(client *clientRuntime, mod core.Mod, opts core.In
 		}
 	}
 	// With handles deduplication and promotion internally.
-	client.servedMods = client.servedMods.With(mod, opts)
+	client.servedMods = client.servedMods.With(mod, opts).ClientOwned()
 	return nil
 }
 
