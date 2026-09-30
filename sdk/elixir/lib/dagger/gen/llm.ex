@@ -39,6 +39,30 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Discover every artifact this conversation can address, as one selection, without evaluating their values.
+
+  Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace and are evaluated in the caller's context.
+
+  The workspace part is the artifacts of the bound workspace, or of the current workspace when none is bound, as returned by Workspace.artifacts. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
+  """
+  @spec artifacts(t(), [{:include, [String.t()]}]) :: Dagger.Artifacts.t()
+  def artifacts(%__MODULE__{} = llm, optional_args \\ []) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("artifacts")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   Run expertise in list order, passing this conversation through each function. Retain existing contributions.
   """
   @spec compose(t(), [String.t()]) :: Dagger.LLM.t()

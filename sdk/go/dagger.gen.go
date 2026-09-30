@@ -1190,7 +1190,7 @@ func (r *Artifact) Path(ctx context.Context) ([]string, error) {
 
 // ArtifactURIOpts contains options for Artifact.URI
 type ArtifactURIOpts struct {
-	// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+	// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
 	Absolute bool
 	// Include the dimension keys as a query. Without them, the address is a path selector.
 	//
@@ -1235,7 +1235,7 @@ type ArtifactValueOpts struct {
 	Arguments JSON
 }
 
-// Evaluate the target in the workspace that supplied this artifact.
+// Evaluate the target in the workspace that supplied this artifact. An artifact of an LLM's bound tool object has no workspace: it is evaluated from that object's value in the caller's context.
 func (r *Artifact) Value(opts ...ArtifactValueOpts) Node {
 	q := r.query.Select("value")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -12580,6 +12580,33 @@ func (r *LLM) Agent(handle string, name string) *Agent {
 	q = q.Arg("name", name)
 
 	return &Agent{
+		query: q,
+	}
+}
+
+// LLMArtifactsOpts contains options for LLM.Artifacts
+type LLMArtifactsOpts struct {
+	// Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.
+	Include []string
+}
+
+// Discover every artifact this conversation can address, as one selection, without evaluating their values.
+//
+// Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace and are evaluated in the caller's context.
+//
+// The workspace part is the artifacts of the bound workspace, or of the current workspace when none is bound, as returned by Workspace.artifacts. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLM) Artifacts(opts ...LLMArtifactsOpts) *Artifacts {
+	q := r.query.Select("artifacts")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &Artifacts{
 		query: q,
 	}
 }
