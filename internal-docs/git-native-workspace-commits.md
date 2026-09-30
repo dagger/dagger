@@ -169,6 +169,18 @@ The result is owned storage like any promotion: losing the donor or the remote a
 
 The spans `git request approved host commit closure` and `git import approved host commit closure` record `git.history.depth`.
 
+## Upstream Name Resolution
+
+Entry points: `LocalGitRepository.Upstream` and `GitUpstream` in `core/git_local.go`; `withContents`, `ref` and `upstreamRef` in `core/schema/git.go`; `gitRefWithCommitRepository` in `core/schema/git_commit_create.go`.
+
+Owned storage holds only the history it was built from. A remote ref resolves names with `ls-remote` and fetches lazily with the repository's own authentication; owned storage lists only its own refs (`ls-remote file://<gitdir>`). Without a link back, anything that turned a remote repository into owned storage lost the ability to resolve its other branches and tags: a dirty or unpushed `CurrentWorkspace().snapshot()` (its `withBundle` ends in `withContents`), and any commit on a remote-backed workspace. Module code cannot recover the capability by calling `git(url)`: implicit host credentials are only offered to the non-module caller, so a private remote is unreadable from an agent tool even though the snapshot's own recipe authenticated it.
+
+`LocalGitRepository.Upstream` retains that remote. `withContents` sets it from its receiver (`GitUpstream`: a remote receiver itself, or owned storage's own `Upstream`), and `gitRefWithCommitRepository` carries it to the committed repository, so it survives every descendant commit, `asRepository` and `withRemote`. It is only ever a remote repository (`validateUpstream`), attached, persisted (`upstreamResultID`) and walked as an owned dependency like `HistorySource`.
+
+`GitRepository.ref` on owned storage resolves locally first: `HEAD`, full SHAs, local names and local abbreviated SHAs never touch the upstream. Only a `RefNotFoundError` falls through to `upstreamRef`, which selects `ref` on the upstream with the caller's name, pinned commit and lock request. The result is the remote's own `GitRef`, so reading it fetches through the ordinary authenticated mirror path; nothing is written into the owned storage. Local names shadow remote ones, as a local branch shadows its upstream in Git.
+
+`Upstream` is deliberately separate from `HistorySource`. `HistorySource` marks owned *shallow* storage anchored at a remote commit and excludes the storage from serving as a local donor; a captured bundle is complete, and must remain a donor. `Upstream` grants nothing new: it is the exact repository, with the exact authentication, that the receiver already held, and it is never inferred from supplied storage.
+
 ## Fallback Policy
 
 Native paths are optimizations; the legacy path is always correct. `nativeFallback` is the shared policy:

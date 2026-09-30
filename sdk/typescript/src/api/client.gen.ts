@@ -12159,6 +12159,8 @@ export class GitRepository extends BaseClient {
    * @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
    *
    * Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
+   *
+   * A repository derived from a remote one (e.g. a workspace's history after a snapshot or commit) resolves names it does not contain itself through that remote, with its authentication.
    */
   ref = (name: string): GitRef => {
     const ctx = this._ctx.select("ref", { name })
@@ -12228,6 +12230,8 @@ export class GitRepository extends BaseClient {
    * Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
    *
    * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+   *
+   * When the receiver is a remote repository (or was derived from one), that remote is retained with its authentication: refs the supplied storage does not contain resolve through it.
    * @param directory Existing Git storage to open. Git metadata and object dependencies must be contained in this directory.
    */
   withContents = (directory: Directory): GitRepository => {

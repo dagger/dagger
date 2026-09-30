@@ -10858,6 +10858,9 @@ class GitRepository(Type):
             against locally available objects, so remote repositories
             (resolved via ls-remote) can only expand prefixes of already-
             fetched commits; use the full SHA or a named ref otherwise.
+            A repository derived from a remote one (e.g. a workspace's history
+            after a snapshot or commit) resolves names it does not contain
+            itself through that remote, with its authentication.
         """
         _args = [
             Arg("name", name),
@@ -10974,6 +10977,10 @@ class GitRepository(Type):
         configuration; that configuration is not rewritten. Use
         Directory.asGit to open the supplied repository without retaining the
         receiver's routing.
+
+        When the receiver is a remote repository (or was derived from one),
+        that remote is retained with its authentication: refs the supplied
+        storage does not contain resolve through it.
 
         Parameters
         ----------
