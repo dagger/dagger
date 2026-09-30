@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime/debug"
 	"sync"
+	"weak"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
@@ -33,6 +34,11 @@ import (
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
+	// self is a weak pointer to this server, made once and shared by its
+	// classes so they can invalidate the schema cache without keeping the
+	// server alive.
+	self weak.Pointer[Server]
+
 	root           AnyObjectResult
 	telemetry      AroundFunc
 	objects        map[string]ObjectType
@@ -216,7 +222,7 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 }
 
 func newBlankServer() *Server {
-	return &Server{
+	srv := &Server{
 		objects:        map[string]ObjectType{},
 		interfaces:     map[string]*Interface{},
 		scalars:        map[string]ScalarType{},
@@ -230,6 +236,8 @@ func newBlankServer() *Server {
 		schemaOnces:    make(map[call.View]*sync.Once),
 		schemaLock:     &sync.Mutex{},
 	}
+	srv.self = weak.Make(srv)
+	return srv
 }
 
 // Fork returns a new server that starts with a clone of the current server's
