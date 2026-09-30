@@ -481,3 +481,7 @@ var _ PersistedSnapshotRefLinkProvider = (*persistSnapshotValue)(nil)
 func (*fakeSnapshotManager) PinSnapshot(context.Context, string) (bkcache.ImmutableRef, error) {
 	panic("unexpected PinSnapshot")
 }
+
+func (*fakeSnapshotManager) LeaseExistingSnapshot(context.Context, string) (bkcache.ImmutableRef, error) {
+	panic("unexpected LeaseExistingSnapshot")
+}
