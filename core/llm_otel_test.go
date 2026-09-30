@@ -7,11 +7,36 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+// TestCaptureBodyTruncatesOnRuneBoundary: a body cut at the capture limit
+// must stay valid UTF-8 whatever character straddles the limit, since the
+// capture is logged as a string.
+func TestCaptureBodyTruncatesOnRuneBoundary(t *testing.T) {
+	for _, r := range []string{"é", "—", "🙂"} {
+		for shift := range len(r) {
+			body := strings.Repeat("a", maxBodyCapture-shift) + strings.Repeat(r, 4)
+			captured, full, err := captureBody(io.NopCloser(strings.NewReader(body)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(full) != body {
+				t.Fatalf("%q/%d: full body not preserved", r, shift)
+			}
+			if !utf8.ValidString(captured) {
+				t.Fatalf("%q/%d: captured body is not valid UTF-8", r, shift)
+			}
+			if !strings.HasSuffix(captured, "\n... (truncated)") {
+				t.Fatalf("%q/%d: captured body not marked truncated", r, shift)
+			}
+		}
+	}
+}
 
 // TestLLMTransportSpanInternal locks in that LLM HTTP spans are marked
 // internal: their stdio is the raw provider wire protocol (SSE event

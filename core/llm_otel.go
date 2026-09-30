@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -254,7 +255,10 @@ func llmErrorMessage(body []byte) string {
 	}
 }
 
-// captureBody reads the full body, returning a displayable string and the raw bytes.
+// captureBody reads the full body, returning a displayable string and the raw
+// bytes. A body over maxBodyCapture is cut at a character boundary: the
+// captured string is logged, and splitting a UTF-8 sequence would make it an
+// invalid string for every consumer downstream.
 func captureBody(r io.ReadCloser) (captured string, full []byte, err error) {
 	full, err = io.ReadAll(r)
 	r.Close()
@@ -264,5 +268,9 @@ func captureBody(r io.ReadCloser) (captured string, full []byte, err error) {
 	if len(full) <= maxBodyCapture {
 		return string(full), full, nil
 	}
-	return string(full[:maxBodyCapture]) + "\n... (truncated)", full, nil
+	cut := maxBodyCapture
+	for i := 0; i < utf8.UTFMax && cut > 0 && !utf8.RuneStart(full[cut]); i++ {
+		cut--
+	}
+	return string(full[:cut]) + "\n... (truncated)", full, nil
 }

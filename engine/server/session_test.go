@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
@@ -1944,6 +1945,63 @@ func TestLogRecordRowPreservesBytesBody(t *testing.T) {
 	var body otlpcommonv1.AnyValue
 	require.NoError(t, proto.Unmarshal(row.Body, &body))
 	require.Equal(t, payload, body.GetBytesValue())
+}
+
+// A record carrying invalid UTF-8 must not sink its batch. The LLM HTTP span
+// logs its request body cut at a byte limit, which can split a character;
+// protobuf refuses such a string, and the failed batch used to take the
+// records exported beside it -- the agent's prompt, emitted just before the
+// request -- down with it.
+func TestTelemetryExportKeepsBatchWithInvalidUTF8(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+
+	cut := "request body — truncated"[:len("request body ")+1] // mid em dash
+	require.False(t, utf8.ValidString(cut))
+	records := []sdklog.Record{
+		scopedLogRecord(t, "test", otellog.StringValue("the user's prompt")),
+		scopedLogRecord(t, "test", otellog.StringValue(cut)),
+		scopedLogRecord(t, "test",
+			otellog.MapValue(otellog.String("nested", cut), otellog.Slice("list", otellog.StringValue(cut))),
+			otellog.String(cut, cut)),
+	}
+	require.NoError(t, ps.Logs("client").Export(t.Context(), records))
+
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{ID: 0, Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, len(records))
+
+	var body otlpcommonv1.AnyValue
+	require.NoError(t, proto.Unmarshal(rows[0].Body, &body))
+	require.Equal(t, "the user's prompt", body.GetStringValue())
+	require.NoError(t, proto.Unmarshal(rows[1].Body, &body))
+	require.Equal(t, "request body \uFFFD", body.GetStringValue())
+	require.NoError(t, proto.Unmarshal(rows[2].Body, &body))
+	for _, kv := range body.GetKvlistValue().GetValues() {
+		switch kv.GetKey() {
+		case "nested":
+			require.Equal(t, "request body \uFFFD", kv.GetValue().GetStringValue())
+		case "list":
+			require.Equal(t, "request body \uFFFD", kv.GetValue().GetArrayValue().GetValues()[0].GetStringValue())
+		default:
+			t.Fatalf("unexpected key %q", kv.GetKey())
+		}
+	}
+}
+
+// validUTF8LogValue must hand back valid values as they were.
+func TestValidUTF8LogValueKeepsValidValues(t *testing.T) {
+	for _, v := range []otellog.Value{
+		otellog.StringValue("plain — fine"),
+		otellog.SliceValue(otellog.StringValue("a"), otellog.IntValue(1)),
+		otellog.MapValue(otellog.String("k", "v")),
+		otellog.BytesValue([]byte{0xff}),
+	} {
+		require.True(t, validUTF8LogValue(v).Equal(v), "%v", v)
+	}
 }
 
 func TestTelemetryExportReleasesClientDBHandle(t *testing.T) {
