@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -209,6 +210,47 @@ func TestArchivePriorityChecksAndPassthrough(t *testing.T) {
 	require.True(t, v.selected["4"], "initial view crosses hidden and passthrough spans")
 	require.True(t, v.selected["5"], "checks are priority even without an error")
 	require.False(t, v.selected["7"])
+}
+
+func TestArchivePriorityConversation(t *testing.T) {
+	db, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer db.Close()
+	boolAttr := func(k string) *commonpb.KeyValue {
+		return &commonpb.KeyValue{Key: k, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_BoolValue{BoolValue: true}}}
+	}
+	agentID := selectionAttr(string(semconv.GenAIAgentIDKey), "agent-1")
+	attrs := map[int][]*commonpb.KeyValue{
+		3: {boolAttr(telemetryattrs.AgentAttr), agentID},
+		6: {selectionAttr(telemetry.LLMRoleAttr, "user"), agentID},
+		// A synchronous LLM conversation has no agent identity.
+		9: {selectionAttr(telemetry.LLMRoleAttr, "assistant")},
+	}
+	var rows []Span
+	for i := 1; i <= 9; i++ {
+		row := Span{TraceID: selectionTrace, SpanID: fmt.Sprint(i), Attributes: []byte("[]"), Links: []byte("[]")}
+		if i > 1 {
+			row.ParentSpanID = sql.NullString{String: fmt.Sprint(i - 1), Valid: true}
+		}
+		if a, ok := attrs[i]; ok {
+			row.Attributes, err = MarshalProtoJSONs(a)
+			require.NoError(t, err)
+		}
+		rows = append(rows, row)
+	}
+	_, err = db.AppendSpans(rows)
+	require.NoError(t, err)
+	cut, err := db.Checkpoint(t.Context())
+	require.NoError(t, err)
+	v, err := db.ArchiveSpanView(t.Context(), selectionTrace, cut, &archive.SpanSelection{DagUIView: true})
+	require.NoError(t, err)
+	require.True(t, v.partial)
+	require.True(t, v.selected["3"], "agent loops are priority")
+	require.True(t, v.selected["5"], "a message's chain to its loop is loaded")
+	require.True(t, v.selected["6"], "messages are priority")
+	require.True(t, v.selected["7"], "a message's children are counted and shown")
+	require.False(t, v.selected["8"])
+	require.False(t, v.selected["9"], "only agent conversation spans are priority")
 }
 
 func TestArchiveMetadataTextAndVisibility(t *testing.T) {
