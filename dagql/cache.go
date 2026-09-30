@@ -3283,7 +3283,7 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		return nil, fmt.Errorf("attach dependency result: %w", err)
 	}
 	if hit {
-		c.registerLazyEvaluation(hitRes.cacheSharedResult(), hitRes, resolver)
+		c.registerLazyEvaluation(hitRes.cacheSharedResult(), hitRes)
 		return hitRes, nil
 	}
 
@@ -4180,10 +4180,7 @@ func lazyEvalFuncOfResult(val AnyResult) LazyEvalFunc {
 	return lazy.LazyEvalFunc()
 }
 
-func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult, resolver TypeResolver) {
-	if server := resolverServer(resolver); server != nil {
-		shared.partGate.server.CompareAndSwap(nil, server)
-	}
+func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
 	if shared == nil || val == nil {
 		return
 	}
@@ -6789,7 +6786,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	if !adoptedCurrent {
 		// An adopted entry already carries its own value's registration.
-		c.registerLazyEvaluation(oc.res, oc.val, resolver)
+		c.registerLazyEvaluation(oc.res, oc.val)
 	}
 	finishAttachDeps(nil)
 	// Eager completion: attachment, lease synchronization and lazy
