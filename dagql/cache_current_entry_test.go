@@ -1201,6 +1201,10 @@ func TestCachePublicationReplacementIsReported(t *testing.T) {
 	assert.DeepEqual(t, []string{snapshot}, parts)
 	assert.NilError(t, c.ReleaseSession(ctx, "session-a"))
 	assert.NilError(t, c.ReleaseSession(ctx, "test-session"))
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	assert.NilError(t, c.WaitSessionRelease(waitCtx, "session-a"))
+	assert.NilError(t, c.WaitSessionRelease(waitCtx, "test-session"))
 	currentEntryTestExpire(c, first)
 
 	replaced, state := publish("session-b")
