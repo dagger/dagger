@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  Add a `noLock` option to `GitRepository.ref`, `GitRepository.branch`,
+  `GitRepository.tag`, `GitRepository.head`, `GitRepository.latest`, and
+  `Container.from`. When enabled, the lookup neither reads from nor writes to
+  the workspace lockfile.
+time: 2026-09-29T18:05:30Z

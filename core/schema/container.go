@@ -89,6 +89,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
 					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("noLock").
+					View(AfterVersion("v1.0.0-beta.15")).
+					Doc(`Ignore the workspace lockfile for this lookup.`),
 			),
 		dagql.NodeFunc("build", s.build).
 			View(BeforeVersion("v0.19.0")).
@@ -1095,6 +1098,7 @@ type containerFromArgs struct {
 	RegistryService       dagql.Optional[core.ServiceID]
 	Protocol              dagql.Optional[core.RegistryProtocol]
 	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+	NoLock                bool `name:"noLock" default:"false"`
 }
 
 func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], insecureSkipTLSVerify bool) (serverresolver.RegistryTransport, error) {
@@ -1172,6 +1176,9 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 
 //nolint:gocyclo
 func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
+	if args.NoLock {
+		ctx = withoutWorkspaceLookupLock(ctx)
+	}
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return inst, err
 	}

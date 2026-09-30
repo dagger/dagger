@@ -77,6 +77,91 @@ func (LockfileSuite) TestDefaultUsesPinEntry(ctx context.Context, t *testctx.T) 
 	require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
 }
 
+func (LockfileSuite) TestContainerFromNoLockIgnoresReadAndWrite(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "query.graphql", `{
+  container {
+    from(address: "alpine:latest", noLock: true) {
+      imageRef
+    }
+  }
+}`)
+	lockPath, lockContents := writeOCISHALock(t, workdir, "not-a-digest")
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	require.NotContains(t, string(out), "not-a-digest")
+
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Equal(t, lockContents, string(lockBytes))
+
+	require.NoError(t, os.WriteFile(lockPath, nil, 0o600))
+	out, err = hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	lockBytes, err = os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Empty(t, lockBytes)
+}
+
+func (LockfileSuite) TestGitNoLockIgnoresReadAndWrite(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "query.graphql", `{
+  git(url: "`+lockTestGitRepoURL+`") {
+    head(noLock: true) { commit }
+    ref(name: "main", noLock: true) { commit }
+    revision: ref(name: "main~1", noLock: true) { commit }
+    branch(name: "main", noLock: true) { commit }
+    tag(name: "`+lockTestGitTagName+`", noLock: true) { commit }
+    latest(noLock: true) { commit }
+  }
+}`)
+
+	lock := workspace.NewLock()
+	for _, name := range []string{
+		"HEAD",
+		"main",
+		"refs/heads/main",
+		"refs/tags/" + lockTestGitTagName,
+	} {
+		require.NoError(t, lock.SetLookup(
+			workspace.CoreLockNamespace,
+			workspace.LockOperationGitSHA,
+			[]any{lockTestGitRepoURL, name},
+			"not-a-commit",
+		))
+	}
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationGitLatest,
+		[]any{lockTestGitRepoURL},
+		"not-a-ref",
+	))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	require.NoError(t, os.WriteFile(lockPath, lockBytes, 0o600))
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	require.NotContains(t, string(out), "not-a-commit")
+
+	lockBytesAfter, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Equal(t, lockBytes, lockBytesAfter)
+
+	require.NoError(t, os.WriteFile(lockPath, nil, 0o600))
+	out, err = hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	lockBytesAfter, err = os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Empty(t, lockBytesAfter)
+}
+
 func hostGitInit(t *testctx.T, dir string) {
 	gitCmd := exec.Command("git", "init")
 	gitCmd.Dir = dir
