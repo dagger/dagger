@@ -32,6 +32,18 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls for this LLM").
 					View(BeforeVersion("v1.0.0-0")),
 			),
+		dagql.Func("llmContentBlock", s.llmContentBlock).
+			View(AfterVersion("v1.0.0-0")).
+			Experimental("LLM support is not yet stabilized").
+			Doc(`Create a block of text or media content, independent of any conversation.`,
+				`A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.`).
+			Args(
+				dagql.Arg("kind").Doc("The kind of content: TEXT, IMAGE, AUDIO, or DOCUMENT."),
+				dagql.Arg("text").Doc("The text content (for TEXT)."),
+				dagql.Arg("file").Doc("A media file whose contents become the block's inline bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media."),
+				dagql.Arg("data").Doc("Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media."),
+				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png". Required with data; inferred from a file's contents when omitted.`),
+			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
 		dagql.NodeFunc("compose", s.compose).
@@ -428,6 +440,30 @@ func resolveLLMContent(ctx context.Context, inputs []dagql.InputObject[core.LLMC
 		return nil, err
 	}
 	return blocks, nil
+}
+
+// llmContentBlock builds a standalone text or media block. It shares
+// LLMContentBlockInput's resolution, so a file resolves to inline bytes and
+// the block is validated exactly as withContent would validate it.
+func (s *llmSchema) llmContentBlock(ctx context.Context, _ *core.Query, args struct {
+	Kind     core.LLMContentBlockKind
+	Text     string `default:""`
+	File     dagql.Optional[core.FileID]
+	Data     string `default:""`
+	MIMEType string `name:"mimeType" default:""`
+}) (*core.LLMContentBlock, error) {
+	switch args.Kind {
+	case core.LLMContentText, core.LLMContentImage, core.LLMContentAudio, core.LLMContentDocument:
+	default:
+		return nil, fmt.Errorf("%s is not text or media content", args.Kind)
+	}
+	return core.LLMContentBlockInput{
+		Kind:     args.Kind,
+		Text:     args.Text,
+		File:     args.File,
+		Data:     args.Data,
+		MIMEType: args.MIMEType,
+	}.Resolve(ctx)
 }
 
 func (s *llmSchema) withContent(ctx context.Context, llm *core.LLM, args struct {

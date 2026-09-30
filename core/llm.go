@@ -38,6 +38,11 @@ import (
 
 func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
+	// Acronyms only match a whole name, so a module type definition naming
+	// this core type would otherwise normalize to "LlmcontentBlock", miss the
+	// core type, and be namespaced as a module-local object. Modules return it
+	// from functions exposed as LLM tools.
+	strcase.ConfigureAcronym("LLMContentBlock", "LLMContentBlock")
 }
 
 const (
