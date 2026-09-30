@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -116,21 +117,13 @@ func (s *DB) ArchiveSpanView(ctx context.Context, traceID string, cut HighWater,
 			if row.TraceID != traceID {
 				continue
 			}
-			node := archiveSpanNode{row: row.ID, parent: row.ParentSpanID.String, priority: row.StatusCode == int64(codes.Error), causes: causalLinkTargets(row)}
+			node := archiveSpanNode{row: row.ID, parent: row.ParentSpanID.String, causes: causalLinkTargets(row)}
 			var attrs []*commonpb.KeyValue
 			if err := UnmarshalProtoJSONs(row.Attributes, &commonpb.KeyValue{}, &attrs); err != nil {
 				return nil, err
 			}
-			for _, a := range attrs {
-				switch a.GetKey() {
-				case telemetry.CheckNameAttr, "test.case.name", "test.suite.name":
-					node.priority = true
-				case telemetry.UIPassthroughAttr, telemetry.UIInternalAttr:
-					node.passthrough = node.passthrough || a.GetValue().GetBoolValue()
-				case telemetry.UIRevealAttr:
-					node.priority = node.priority || a.GetValue().GetBoolValue()
-				}
-			}
+			node.priority, node.passthrough = archiveSpanClass(attrs)
+			node.priority = node.priority || row.StatusCode == int64(codes.Error)
 			v.nodes[row.SpanID] = node
 		}
 	}
@@ -167,6 +160,28 @@ func (s *DB) ArchiveSpanView(ctx context.Context, traceID string, cut HighWater,
 	}
 	v.selectSpans(sel)
 	return v, nil
+}
+
+// archiveSpanClass reads a span's view classification from its attributes:
+// whether it belongs to the priority view, and whether the UI renders its
+// children in its place.
+//
+// Priority matches Dagger Cloud's: checks, tests, revealed spans, and agent
+// conversation spans. The engine stamps gen_ai.agent.id on an agent's loop
+// span and each of its message spans, so a conversation is whole -- every
+// message's chain up to its loop -- without expanding down to it.
+func archiveSpanClass(attrs []*commonpb.KeyValue) (priority, passthrough bool) {
+	for _, a := range attrs {
+		switch a.GetKey() {
+		case telemetry.CheckNameAttr, string(semconv.TestCaseNameKey), string(semconv.TestSuiteNameKey), string(semconv.GenAIAgentIDKey):
+			priority = true
+		case telemetry.UIPassthroughAttr, telemetry.UIInternalAttr:
+			passthrough = passthrough || a.GetValue().GetBoolValue()
+		case telemetry.UIRevealAttr:
+			priority = priority || a.GetValue().GetBoolValue()
+		}
+	}
+	return priority, passthrough
 }
 
 // selectSpans applies presentation selection only after the fixed-cut topology
