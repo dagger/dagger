@@ -83,7 +83,7 @@ type DaggerDev {
       "build-base",
       "protobuf~35",
       "protobuf-dev~35",
-      "clang",
+      "clang-22",
       "lld",
       "libbpf-dev",
     ])
