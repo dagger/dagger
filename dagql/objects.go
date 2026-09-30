@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"weak"
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -33,7 +34,11 @@ type Class[T Typed] struct {
 	// Uses a map (reference type) so it's shared across value copies of Class.
 	interfaces map[string]*Interface
 
-	invalidateSchemaCache func()
+	// server is the server whose schema cache must be invalidated when the
+	// class changes. It is weak because classes outlive their server: they are
+	// carried by object results, which may stay cached long after a per-client
+	// fork is gone, and a strong reference would keep the whole server alive.
+	server weak.Pointer[Server]
 
 	// The inner type sourceMap directive so additional type
 	// registered by the engine can store also store its origin.
@@ -69,9 +74,7 @@ func (class Class[T]) ImplementInterfaceUnchecked(iface *Interface) {
 	class.interfaces[iface.TypeName()] = iface
 	class.fieldsL.Unlock()
 	iface.addImplementor(class.TypeName())
-	if class.invalidateSchemaCache != nil {
-		class.invalidateSchemaCache()
-	}
+	class.invalidateSchemaCache()
 }
 
 type ClassOpts[T Typed] struct {
@@ -121,8 +124,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		interfaces: map[string]*Interface{},
 		sourceMap:  opts.SourceMap,
 		view:       opts.View,
-
-		invalidateSchemaCache: srv.invalidateSchemaCache,
+		server:     srv.self,
 	}
 	if !opts.NoIDs {
 		class.Install(Field[T]{
@@ -184,8 +186,17 @@ func (class Class[T]) ForkObjectType(srv *Server) (ObjectType, error) {
 	forked.fields = maps.Clone(forked.fields)
 	forked.interfaces = maps.Clone(class.interfaces)
 	forked.fieldsL = new(sync.RWMutex)
-	forked.invalidateSchemaCache = srv.invalidateSchemaCache
+	forked.server = srv.self
 	return forked, nil
+}
+
+// invalidateSchemaCache invalidates the class's server's schema cache. If the
+// server has been collected, nothing can read its schema cache anymore, so
+// there is nothing to invalidate.
+func (class Class[T]) invalidateSchemaCache() {
+	if srv := class.server.Value(); srv != nil {
+		srv.invalidateSchemaCache()
+	}
 }
 
 func (class Class[T]) Typed() Typed {
@@ -283,9 +294,7 @@ func (class Class[T]) Install(fields ...Field[T]) {
 
 		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
 	}
-	if class.invalidateSchemaCache != nil {
-		class.invalidateSchemaCache()
-	}
+	class.invalidateSchemaCache()
 }
 
 var _ ObjectType = Class[Typed]{}
@@ -309,9 +318,7 @@ func (class Class[T]) Implements(iface *Interface) {
 	class.interfaces[iface.TypeName()] = iface
 	class.fieldsL.Unlock()
 	iface.addImplementor(class.TypeName())
-	if class.invalidateSchemaCache != nil {
-		class.invalidateSchemaCache()
-	}
+	class.invalidateSchemaCache()
 }
 
 // Interfaces returns the interfaces this class implements.
@@ -339,9 +346,7 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	// Invalidate cache after releasing the lock to avoid Class[...].fieldsL and
 	// *Server.schemaLock deadlock if the schema is concurrently introspected and
 	// updated (via Extend)
-	if class.invalidateSchemaCache != nil {
-		class.invalidateSchemaCache()
-	}
+	class.invalidateSchemaCache()
 }
 
 // TypeDefinition returns the schema definition of the class.
