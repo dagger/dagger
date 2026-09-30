@@ -1004,8 +1004,8 @@ func TestStopCloudTokenRefreshWaitsDespiteSpentBudget(t *testing.T) {
 	finished := make(chan struct{})
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		sess.cloudRefresh.exit()
 		close(finished)
+		sess.cloudRefresh.exit()
 	}()
 	start := time.Now()
 	sess.stopCloudTokenRefresh(t.Context())
