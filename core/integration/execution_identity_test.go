@@ -20,7 +20,9 @@ func (EngineSuite) TestExecutionDigestMatchesCacheHits(ctx context.Context, t *t
 	c := connect(ctx, t)
 	// The client forwards the session telemetry to the fake Cloud.
 	cloud := newTelemetrySplitCloud(t, c)
-	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+	// Keep the first session's result available for the second session's hit.
+	engineCtr := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, engineCtr)).Start(ctx)
 	require.NoError(t, err)
 
 	marker := identity.NewID()
