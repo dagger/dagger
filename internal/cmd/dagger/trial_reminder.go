@@ -2,17 +2,13 @@ package daggercmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 
@@ -24,100 +20,37 @@ import (
 // A trial reminder tells users whose Cloud org is in its trial without a
 // payment method to enter one, after the command's trace output.
 
-// trialReminderCacheTTL is how long a check result is reused. Whether an org
-// has a payment method is looked up in the billing system on every request,
-// and the CLI runs often, so the answer is not asked for on every command.
-const trialReminderCacheTTL = 15 * time.Minute
-
 // trialStatus is the outcome of a trial reminder check for one org.
 type trialStatus struct {
 	// NeedsPayment is set when the org is in its trial without a payment
 	// method.
-	NeedsPayment bool       `json:"needsPayment"`
-	TrialEnd     *time.Time `json:"trialEnd,omitempty"`
-	CheckedAt    time.Time  `json:"checkedAt"`
+	NeedsPayment bool
+	TrialEnd     *time.Time
 }
 
 // trialReminderAPI is the part of the Cloud client the check uses.
 type trialReminderAPI interface {
-	OrgDetails(ctx context.Context, orgName string) (*cloudapi.OrgDetails, error)
-	OrgHasPaymentMethod(ctx context.Context, orgName string) (bool, error)
+	OrgPaymentStatus(ctx context.Context, orgName string) (*cloudapi.PaymentStatus, error)
 }
 
 // checkTrialStatus asks Cloud whether org is in its trial without a payment
-// method. The payment method is only asked for orgs in their trial.
-func checkTrialStatus(ctx context.Context, api trialReminderAPI, org string, now time.Time) (*trialStatus, error) {
-	details, err := api.OrgDetails(ctx, org)
+// method. Cloud keeps the payment method current from billing webhooks, so
+// this is one cheap query.
+func checkTrialStatus(ctx context.Context, api trialReminderAPI, org string) (*trialStatus, error) {
+	payment, err := api.OrgPaymentStatus(ctx, org)
 	if err != nil {
 		return nil, err
 	}
-	status := &trialStatus{CheckedAt: now}
-	if details.Subscription.Status != "in_trial" {
+	status := &trialStatus{}
+	if payment.Status != "in_trial" {
 		return status, nil
 	}
-	hasPaymentMethod, err := api.OrgHasPaymentMethod(ctx, org)
-	if err != nil {
-		return nil, err
-	}
-	status.NeedsPayment = !hasPaymentMethod
-	if end := details.Subscription.TrialEnd; end != nil {
+	status.NeedsPayment = !payment.HasPaymentMethod
+	if end := payment.TrialEnd; end != nil {
 		if t, err := time.Parse(time.RFC3339, *end); err == nil {
 			status.TrialEnd = &t
 		}
 	}
-	return status, nil
-}
-
-func trialReminderCachePath(org string) string {
-	name := strings.NewReplacer("/", "_", "\\", "_").Replace(org)
-	return filepath.Join(xdg.CacheHome, "dagger", "trial-reminder", name+".json")
-}
-
-// cachedTrialStatus returns the cached check result for org, if it is recent.
-func cachedTrialStatus(org string, now time.Time) *trialStatus {
-	data, err := os.ReadFile(trialReminderCachePath(org))
-	if err != nil {
-		return nil
-	}
-	var status trialStatus
-	if err := json.Unmarshal(data, &status); err != nil {
-		return nil
-	}
-	if now.Sub(status.CheckedAt) > trialReminderCacheTTL || status.CheckedAt.After(now) {
-		return nil
-	}
-	return &status
-}
-
-func cacheTrialStatus(org string, status *trialStatus) {
-	path := trialReminderCachePath(org)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return
-	}
-	data, err := json.Marshal(status)
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile(path, data, 0o600)
-}
-
-// forgetTrialStatus drops the cached check result for org, so the next
-// command checks again, for example after entering payment details.
-func forgetTrialStatus(org string) {
-	_ = os.Remove(trialReminderCachePath(org))
-}
-
-// trialStatusFor returns the check result for org, from the cache when it is
-// recent and from Cloud otherwise.
-func trialStatusFor(ctx context.Context, api trialReminderAPI, org string, now time.Time) (*trialStatus, error) {
-	if status := cachedTrialStatus(org, now); status != nil {
-		return status, nil
-	}
-	status, err := checkTrialStatus(ctx, api, org, now)
-	if err != nil {
-		return nil, err
-	}
-	cacheTrialStatus(org, status)
 	return status, nil
 }
 
@@ -164,7 +97,7 @@ func startTrialReminder(ctx context.Context, w io.Writer) {
 			}
 			// Errors are not reported: an older Cloud API without the payment
 			// method field, or a failed lookup, must not add noise.
-			status, err := trialStatusFor(ctx, client, org, time.Now())
+			status, err := checkTrialStatus(ctx, client, org)
 			if err != nil {
 				return
 			}

@@ -103,9 +103,7 @@ func (cli *CloudCLI) BillingPayment(cmd *cobra.Command, args []string) error {
 	},
 		func(ctx context.Context, client *cloudapi.Client, orgID string) (string, error) {
 			return client.CreatePaymentCheckout(ctx, orgID)
-		},
-		// Entering payment details ends the trial reminder: check again.
-		forgetTrialStatus)
+		})
 }
 
 func (cli *CloudCLI) BillingManage(cmd *cobra.Command, args []string) error {
@@ -115,9 +113,7 @@ func (cli *CloudCLI) BillingManage(cmd *cobra.Command, args []string) error {
 	},
 		func(ctx context.Context, client *cloudapi.Client, orgID string) (string, error) {
 			return client.CreatePortalSession(ctx, orgID)
-		},
-		// The portal can add a payment method too.
-		forgetTrialStatus)
+		})
 }
 
 // billingURLCommand resolves the target org (positional arg, --org, or the
@@ -137,8 +133,6 @@ func (cli *CloudCLI) billingURLCommand(
 	open bool,
 	page billingPage,
 	hostedURL func(ctx context.Context, client *cloudapi.Client, orgID string) (string, error),
-	// opened is called with the org name once its hosted page is created.
-	opened func(org string),
 ) error {
 	ctx := cmd.Context()
 	client, cloudAuth, err := cli.cloudClient(ctx)
@@ -158,7 +152,6 @@ func (cli *CloudCLI) billingURLCommand(
 	if err != nil {
 		return err
 	}
-	opened(org.Name)
 
 	// Open the page like dagger login does: automatically in an interactive
 	// terminal, unless --open says otherwise.

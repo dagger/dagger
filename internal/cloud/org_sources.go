@@ -359,32 +359,44 @@ func (c *Client) OrgDetails(ctx context.Context, orgName string) (*OrgDetails, e
 	return data.Org, nil
 }
 
-const getOrgHasPaymentMethodOperation = `
-query GetOrgHasPaymentMethod($org: String!) {
+const getOrgPaymentStatusOperation = `
+query GetOrgPaymentStatus($org: String!) {
 	org(name: $org) {
-		hasPaymentMethod
+		subscription {
+			status
+			trialEnd
+			hasPaymentMethod
+		}
 	}
 }
 `
 
-// OrgHasPaymentMethod reports whether the org's billing customer has a
-// payment method to charge when its trial ends. Cloud looks it up in the
-// billing system on every request, so ask only for orgs in their trial.
-func (c *Client) OrgHasPaymentMethod(ctx context.Context, orgName string) (bool, error) {
+// PaymentStatus is an org's subscription status and whether its billing
+// customer has a payment method.
+type PaymentStatus struct {
+	Status           string  `json:"status"`
+	TrialEnd         *string `json:"trialEnd,omitempty"`
+	HasPaymentMethod bool    `json:"hasPaymentMethod"`
+}
+
+// OrgPaymentStatus returns the org's subscription status and whether it has
+// a payment method to charge when its trial ends. Cloud keeps the latter
+// current from billing webhooks, so asking is cheap.
+func (c *Client) OrgPaymentStatus(ctx context.Context, orgName string) (*PaymentStatus, error) {
 	var data struct {
 		Org *struct {
-			HasPaymentMethod bool `json:"hasPaymentMethod"`
+			Subscription PaymentStatus `json:"subscription"`
 		} `json:"org"`
 	}
-	if err := c.doGraphQL(ctx, "GetOrgHasPaymentMethod", getOrgHasPaymentMethodOperation, map[string]any{
+	if err := c.doGraphQL(ctx, "GetOrgPaymentStatus", getOrgPaymentStatusOperation, map[string]any{
 		"org": orgName,
 	}, &data); err != nil {
-		return false, err
+		return nil, err
 	}
 	if data.Org == nil {
-		return false, fmt.Errorf("org %q not found", orgName)
+		return nil, fmt.Errorf("org %q not found", orgName)
 	}
-	return data.Org.HasPaymentMethod, nil
+	return &data.Org.Subscription, nil
 }
 
 const createPaymentCheckoutSessionOperation = `
