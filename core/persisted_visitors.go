@@ -470,6 +470,9 @@ var persistedGitRepositoryVisitor = persistedStructVisitor("", func(p *persisted
 		if err := w.at("local").child("historySourceResultID", &p.Local.HistorySourceResultID); err != nil {
 			return err
 		}
+		if err := w.at("local").child("upstreamResultID", &p.Local.UpstreamResultID); err != nil {
+			return err
+		}
 		if err := w.at("local").child("directoryResultID", &p.Local.DirectoryResultID); err != nil {
 			return err
 		}

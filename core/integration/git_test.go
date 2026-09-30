@@ -908,6 +908,12 @@ sleep infinity
 	remoteSHA, err := repo.Branch("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, remoteSHA, strings.TrimSpace(localSHA))
+	// A capture carries only its checkpoint refs, so the snapshot's own storage
+	// can resolve another branch only through the SSH remote it came from.
+	// (Read it from the clone: this session's listing predates the push.)
+	remoteOnlySHA, err := checkout.WithExec([]string{"git", "rev-parse", "origin/ssh-push"}).Stdout(ctx)
+	require.NoError(t, err)
+	remoteOnlySHA = strings.TrimSpace(remoteOnlySHA)
 
 	for _, existingAgent := range []bool{false, true} {
 		name := "snapshot with identity file"
@@ -929,7 +935,15 @@ sleep infinity
 						tracked: file(path: "README.md") { contents }
 						local: file(path: "local.txt") { contents }
 						git {
-							head { commitSHA }
+							head {
+								commitSHA
+								asRepository {
+									ref(name: "ssh-push") {
+										commitSHA
+										tree(discardGitDir: true) { entries }
+									}
+								}
+							}
 							uncommitted { modifiedPaths }
 						}
 					}
@@ -958,12 +972,50 @@ sleep infinity
 						"tracked": {"contents": "test\ndirty tracked file\n"},
 						"local": {"contents": "local commit\n"},
 						"git": {
-							"head": {"commitSHA": %q},
+							"head": {
+								"commitSHA": %q,
+								"asRepository": {
+									"ref": {
+										"commitSHA": %q,
+										"tree": {"entries": ["README.md", "pushed.txt"]}
+									}
+								}
+							},
 							"uncommitted": {"modifiedPaths": ["README.md"]}
 						}
 					}
 				}
-			}`, id, strings.TrimSpace(localSHA)), out)
+			}`, id, strings.TrimSpace(localSHA), remoteOnlySHA), out)
+
+			// Agent tools are module code, which is never offered the owner's
+			// credentials implicitly: git(url) cannot read this remote there.
+			// The snapshot handed to the module still resolves it, through the
+			// remote it was captured from.
+			resolver := client.
+				WithNewFile("/resolver/dagger.json", `{"name":"resolver","engineVersion":"latest","sdk":{"source":"dang"}}`).
+				WithNewFile("/resolver/main.dang", `type Resolver {
+  resolve(ws: Workspace!, name: String!): String! { ws.git.head.asRepository.ref(name: name).commitSHA }
+  direct(url: String!, name: String!): String! { git(url).ref(name: name).commitSHA }
+}`)
+			script := func(script string) (string, string, int) {
+				ran := resolver.WithExec([]string{"dagger", "script", "-m", "/resolver"}, dagger.ContainerWithExecOpts{
+					Stdin:  script,
+					Expect: dagger.ReturnTypeAny,
+				})
+				code, err := ran.ExitCode(ctx)
+				require.NoError(t, err)
+				stdout, err := ran.Stdout(ctx)
+				require.NoError(t, err)
+				stderr, err := ran.Stderr(ctx)
+				require.NoError(t, err)
+				return stdout, stderr, code
+			}
+			stdout, stderr, code := script(`resolve --ws $(current-workspace | snapshot) ssh-push`)
+			require.Zero(t, code, stderr)
+			require.Equal(t, remoteOnlySHA, strings.TrimSpace(stdout))
+			_, stderr, code = script(fmt.Sprintf(`direct %q ssh-push`, repoURL))
+			require.NotZero(t, code)
+			require.Contains(t, stderr, "SSH URLs are not supported without an SSH socket")
 		})
 	}
 }
