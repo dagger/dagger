@@ -1,0 +1,6 @@
+kind: Fixed
+body: Keep host attachables available during cancelled command shutdown so workspace locks can be saved.
+time: 2026-09-30T12:40:00-07:00
+custom:
+    Author: grouville
+    PR: "14376"
