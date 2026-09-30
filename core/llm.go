@@ -3250,6 +3250,11 @@ func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
 	return llm.mcp.workspace
 }
 
+// Artifacts returns the conversation's artifact scope; see MCP.Artifacts.
+func (llm *LLM) Artifacts(ctx context.Context, srv *dagql.Server, include []string) (*Artifacts, error) {
+	return llm.mcp.Artifacts(ctx, srv, include)
+}
+
 // A variable in the LLM environment
 type LLMVariable struct {
 	// The name of the variable

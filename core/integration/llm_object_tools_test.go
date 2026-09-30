@@ -1379,6 +1379,49 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 		)).Stdout(ctx)
 		requireErrOut(t, err, `resolve "dag://roster/members/dir?member=a": no artifact matches`)
 	})
+
+	t.Run("the LLM scope has the bound tools' live artifacts", func(ctx context.Context, t *testctx.T) {
+		const setup = `roster=$(roster | with-member --name a --contents "hello from the roster")
+scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $roster | artifacts)
+`
+		run := func(ctx context.Context, t *testctx.T, script string) string {
+			t.Helper()
+			out, err := base.With(daggerShell(setup + script)).Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+		// The collection's keys come from the bound roster's state...
+		require.Equal(t, "dag://roster/members/dir?member=a\n",
+			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir" | items | uri`))
+		// ...and so does the value.
+		require.Equal(t, "hello from the roster",
+			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir?member=a" | one | value | file f | contents`))
+		// The workspace's other modules are in scope, constructed fresh.
+		require.Equal(t, "dag://notes/docs\n",
+			run(ctx, t, `$scope | filter-uri "dag://notes/**" | items | uri`))
+		require.Equal(t, "README\n",
+			run(ctx, t, `$scope | filter-uri "dag://notes/docs" | one | value | entries`))
+		// The workspace's own roster is shadowed by the bound one: the
+		// collection is listed once, not once per roster.
+		require.Equal(t, "dag://roster/members\n",
+			run(ctx, t, `$scope | filter-uri "dag://roster/members" | items | uri`))
+	})
+
+	t.Run("the LLM scope without tools is the workspace's", func(ctx context.Context, t *testctx.T) {
+		// A bound workspace's roster is constructed fresh: it has no members.
+		out, err := base.With(daggerShell(
+			`llm | with-workspace --workspace $(current-workspace) | artifacts | filter-uri "dag://roster/members/dir" | items | uri`,
+		)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, out)
+		// Without a bound workspace, the scope falls back to the current one.
+		out, err = base.With(daggerShell(
+			`llm | artifacts | filter-uri "dag://{notes,roster}/**" | path-definitions | uri`,
+		)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "dag://notes/docs\n")
+		require.Contains(t, out, "dag://roster/members\n")
+	})
 }
 
 // TestBoundCollectionRefs covers agent histories addressed through a bound
