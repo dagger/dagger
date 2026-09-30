@@ -225,26 +225,25 @@ func TestModuleDefinitionScopeCoversInputs(t *testing.T) {
 	otherSchema := definitionTestInputsFor(t, ctx, cache, srv, "s1", "source", scoped, "runtime", "schema-2")
 	s := &moduleSourceSchema{}
 	type scopes struct {
-		op            string
 		operation     uint64
 		currentModule uint64
 		runtime       uint64
 	}
 	// discover builds the discovery module and its operation-scoped module,
 	// as moduleDefinitionFromRuntime does before it runs the runtime.
-	discover := func(in definitionTestInputs, name string) (dagql.ObjectResult[*core.Module], string) {
-		mod, op, err := s.moduleDefinitionDiscovery(ctx, in.source, in.runtime, in.schema, name)
+	discover := func(in definitionTestInputs, name string) dagql.ObjectResult[*core.Module] {
+		mod, err := s.moduleDefinitionDiscovery(ctx, in.source, in.runtime, in.schema, name)
 		require.NoError(t, err)
-		operation, err := sdk.ScopeModuleForSDKOperation(ctx, mod, op, srv)
+		operation, err := sdk.ScopeModuleForSDKOperation(ctx, mod, "getModDef", srv)
 		require.NoError(t, err)
-		return operation, op
+		return operation
 	}
 	scope := func(in definitionTestInputs, name string) scopes {
-		operation, op := discover(in, name)
+		operation := discover(in, name)
 		current, err := core.ImplementationScopedModule(ctx, operation)
 		require.NoError(t, err)
 		require.True(t, current.Self().Runtime.Valid)
-		return scopes{op: op, operation: persistedID(t, cache, operation), currentModule: persistedID(t, cache, current), runtime: persistedID(t, cache, current.Self().Runtime.Value)}
+		return scopes{operation: persistedID(t, cache, operation), currentModule: persistedID(t, cache, current), runtime: persistedID(t, cache, current.Self().Runtime.Value)}
 	}
 	// currentModule selects Query.currentModule and its name with operation
 	// as the running function's module, through the real dynamic-input key.
@@ -263,7 +262,6 @@ func TestModuleDefinitionScopeCoversInputs(t *testing.T) {
 	require.Equal(t, persistedID(t, cache, base.runtime), first.runtime)
 
 	renamed := scope(base, "renamed")
-	require.NotEqual(t, first.op, renamed.op)
 	require.NotEqual(t, first.operation, renamed.operation, "a different name is a different operation scope")
 	require.NotEqual(t, first.currentModule, renamed.currentModule, "a different name is a different current module")
 
@@ -279,8 +277,8 @@ func TestModuleDefinitionScopeCoversInputs(t *testing.T) {
 	// The behavior an SDK sees: the same source loaded under two names
 	// answers currentModule.name with each name, in one session, and the
 	// first selection is unchanged after the second.
-	demoOperation, _ := discover(base, "demo")
-	renamedOperation, _ := discover(base, "renamed")
+	demoOperation := discover(base, "demo")
+	renamedOperation := discover(base, "renamed")
 	name, runtime := currentModule(demoOperation)
 	require.Equal(t, "demo", name)
 	require.Equal(t, persistedID(t, cache, base.runtime), runtime)
@@ -288,11 +286,11 @@ func TestModuleDefinitionScopeCoversInputs(t *testing.T) {
 	require.Equal(t, "renamed", name, "the renamed load's current module is not the first load's")
 	name, _ = currentModule(demoOperation)
 	require.Equal(t, "demo", name, "the original selection still answers its own name")
-	otherRuntimeOperation, _ := discover(otherRuntime, "demo")
+	otherRuntimeOperation := discover(otherRuntime, "demo")
 	name, runtime = currentModule(otherRuntimeOperation)
 	require.Equal(t, "demo", name)
 	require.Equal(t, persistedID(t, cache, otherRuntime.runtime), runtime, "the other runtime's current module carries that runtime")
-	otherSchemaOperation, _ := discover(otherSchema, "demo")
+	otherSchemaOperation := discover(otherSchema, "demo")
 	_, runtime = currentModule(otherSchemaOperation)
 	require.Equal(t, persistedID(t, cache, base.runtime), runtime)
 	require.NotEqual(t, persistedID(t, cache, otherSchemaOperation), persistedID(t, cache, demoOperation))
@@ -308,7 +306,7 @@ func TestModuleDefinitionScopeCoversInputs(t *testing.T) {
 	gotIdentity, err := moduleDefinitionIdentity(ctx, byHandle, base.schema, "demo")
 	require.NoError(t, err)
 	require.Equal(t, wantIdentity, gotIdentity)
-	require.Equal(t, "getModDef:"+wantIdentity.String(), first.op)
+	require.Equal(t, wantIdentity.String(), demoOperation.Self().AsModuleVariantDigest)
 }
 
 // staleTypesSDK is an SDK whose persisted moduleTypes capability its loaded
@@ -495,4 +493,72 @@ func persistedID(t *testing.T, cache *dagql.Cache, res dagql.AnyResult) uint64 {
 	id, err := cache.PersistedResultID(res)
 	require.NoError(t, err)
 	return id
+}
+
+// definitionTypesSDK reports the name seen through the real SDK-operation
+// scope, so cache hits and variant isolation are checked together.
+type definitionTypesSDK struct {
+	staleTypesSDK
+}
+
+func (s *definitionTypesSDK) AsModuleTypes() (core.ModuleTypes, bool)          { return s, true }
+func (s *definitionTypesSDK) CloneForModuleSource(*core.ModuleSource) core.SDK { return s }
+func (s *definitionTypesSDK) ModuleTypes(ctx context.Context, _ *core.SchemaBuilder, _ dagql.ObjectResult[*core.ModuleSource], mod *core.Module) (dagql.ObjectResult[*core.Module], error) {
+	s.typesCalls.Add(1)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Module]{}, err
+	}
+	scoped, err := sdk.ScopeModuleForSDKOperation(ctx, mod, "moduleTypes", dag)
+	if err != nil {
+		return dagql.ObjectResult[*core.Module]{}, err
+	}
+	def := scoped.Self().Clone()
+	def.Description = "definition of " + scoped.Self().NameField
+	return dagql.NewObjectResultForCurrentCall(ctx, dag, def)
+}
+
+func TestModuleTypesDefinitionIdentityAndScope(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv := moduleDefinitionTestCache(t, "", "s1", &moduleDefinitionTestResolver{})
+	scoped := digest.FromString("scoped source")
+	in := definitionTestInputsFor(t, ctx, cache, srv, "s1", "source", scoped, "runtime", "schema")
+	impl := &definitionTypesSDK{}
+	source := in.source.Self().Clone()
+	source.SDK = &core.SDKConfig{Source: "scripted"}
+	source.SDKImpl = impl
+	src := attachDefinitionTestResult(t, ctx, cache, srv, "s1", "types-source", source)
+	src, err := src.WithContentDigest(ctx, scoped)
+	require.NoError(t, err)
+	selectTypes := func(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource], schema dagql.ObjectResult[*core.File], name string) dagql.ObjectResult[*core.Module] {
+		t.Helper()
+		schemaID, err := schema.ID()
+		require.NoError(t, err)
+		var def dagql.ObjectResult[*core.Module]
+		require.NoError(t, srv.Select(ctx, src, &def, dagql.Selector{
+			Field: "_moduleTypesDefinition",
+			Args: []dagql.NamedInput{
+				{Name: "introspectionJson", Value: dagql.NewID[*core.File](schemaID)},
+				{Name: "moduleName", Value: dagql.String(name)},
+			},
+		}))
+		require.Equal(t, "definition of "+name, def.Self().Description)
+		return def
+	}
+	first := selectTypes(ctx, src, in.schema, "demo")
+	second := selectTypes(withClient(ctx, "c2", "s2"), src, in.schema, "demo")
+	require.Same(t, first.Unwrap(), second.Unwrap())
+	require.EqualValues(t, 1, impl.typesCalls.Load(), "another client reuses the definition")
+	selectTypes(ctx, src, in.schema, "renamed")
+	require.EqualValues(t, 2, impl.typesCalls.Load(), "a renamed load sees its own scoped name")
+	other := definitionTestInputsFor(t, ctx, cache, srv, "s1", "source", scoped, "runtime", "schema-2")
+	selectTypes(ctx, src, other.schema, "demo")
+	require.EqualValues(t, 3, impl.typesCalls.Load(), "a changed schema recomputes the definition")
+	edited := attachDefinitionTestResult(t, ctx, cache, srv, "s1", "edited-types-source", source.Clone())
+	edited, err = edited.WithContentDigest(ctx, digest.FromString("edited source"))
+	require.NoError(t, err)
+	selectTypes(ctx, edited, in.schema, "demo")
+	require.EqualValues(t, 4, impl.typesCalls.Load(), "a changed source recomputes the definition")
+	require.Same(t, first.Unwrap(), selectTypes(ctx, src, in.schema, "demo").Unwrap())
+	require.EqualValues(t, 4, impl.typesCalls.Load(), "other variants do not replace the original definition")
 }

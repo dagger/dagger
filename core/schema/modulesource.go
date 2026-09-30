@@ -3390,24 +3390,15 @@ func (s *moduleSourceSchema) moduleSourceModuleDefinition(
 	if err != nil {
 		return inst, fmt.Errorf("failed to load schema introspection json for module definition: %w", err)
 	}
-	mod, opScope, err := s.moduleDefinitionDiscovery(ctx, src, runtime, schema, args.ModuleName)
+	mod, err := s.moduleDefinitionDiscovery(ctx, src, runtime, schema, args.ModuleName)
 	if err != nil {
 		return inst, err
 	}
-	initialized, err := s.moduleDefinitionFromRuntime(ctx, dag, mod, opScope)
+	initialized, err := s.moduleDefinitionFromRuntime(ctx, dag, mod)
 	if err != nil {
 		return inst, err
 	}
-	def := &core.Module{
-		NameField:     args.ModuleName,
-		OriginalName:  src.Self().ModuleOriginalName,
-		SDKConfig:     mod.SDKConfig.Clone(),
-		Description:   initialized.Description,
-		ObjectDefs:    append(dagql.ObjectResultArray[*core.TypeDef](nil), initialized.ObjectDefs...),
-		InterfaceDefs: append(dagql.ObjectResultArray[*core.TypeDef](nil), initialized.InterfaceDefs...),
-		EnumDefs:      append(dagql.ObjectResultArray[*core.TypeDef](nil), initialized.EnumDefs...),
-		Runtime:       dagql.NonNull(runtime),
-	}
+	def := moduleDefinitionOnly(mod, initialized)
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, def)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create module definition result for module %q: %w", args.ModuleName, err)
@@ -3440,7 +3431,7 @@ func (s *moduleSourceSchema) moduleDefViaRuntime(
 	}
 	ctr, isContainer := runtime.AsContainer()
 	if !isContainer {
-		return s.moduleDefinitionFromRuntime(ctx, dag, mod, "getModDef")
+		return s.moduleDefinitionFromRuntime(ctx, dag, mod)
 	}
 	mod.Runtime = dagql.NonNull(ctr)
 
@@ -3504,31 +3495,37 @@ func moduleDefinitionIdentity(ctx context.Context, runtime dagql.ObjectResult[*c
 	return hashutil.HashStrings("ModuleSource._moduleDefinition", runtimeDigest.String(), schemaDigest.String(), moduleName), nil
 }
 
-// moduleDefinitionDiscovery builds the module that one definition's
-// discovery runs under, and the name of the SDK-operation scope it runs
-// in. Both carry the definition's identity, because the two scopes the
-// runtime sees key on the source alone otherwise: ScopeModuleForSDKOperation
-// keys the attached module on the operation name and the source
-// implementation digest, and currentModule then scopes that module again
-// through Module._implementationScoped, which hashes the source digest and
-// AsModuleVariantDigest. Without the identity in both, two definitions of
-// one source that differ in runtime, schema file or name would share one
-// scoped module, one runtime, and one currentModule answer, whose name the
-// SDK reads before discovery.
+// moduleDefinitionDiscovery gives runtime discovery its definition identity.
+// The SDK-operation and currentModule scopes both use AsModuleVariantDigest
+// to keep definitions with different runtimes, schemas or names separate.
 func (s *moduleSourceSchema) moduleDefinitionDiscovery(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
 	runtime dagql.ObjectResult[*core.Container],
 	schema dagql.ObjectResult[*core.File],
 	moduleName string,
-) (*core.Module, string, error) {
+) (*core.Module, error) {
 	identity, err := moduleDefinitionIdentity(ctx, runtime, schema, moduleName)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
+	mod, err := s.moduleDefinitionDiscoveryModule(ctx, src, moduleName, identity)
+	if err != nil {
+		return nil, err
+	}
+	mod.Runtime = dagql.NonNull(runtime)
+	return mod, nil
+}
+
+func (s *moduleSourceSchema) moduleDefinitionDiscoveryModule(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	moduleName string,
+	identity digest.Digest,
+) (*core.Module, error) {
 	deps, err := s.loadDependencyModules(ctx, src, src)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to load dependencies for module definition: %w", err)
+		return nil, fmt.Errorf("failed to load dependencies for module definition: %w", err)
 	}
 	mod := &core.Module{
 		Source:                dagql.NonNull(src),
@@ -3537,34 +3534,46 @@ func (s *moduleSourceSchema) moduleDefinitionDiscovery(
 		OriginalName:          src.Self().ModuleOriginalName,
 		SDKConfig:             src.Self().SDK,
 		Deps:                  deps,
-		Runtime:               dagql.NonNull(runtime),
 		AsModuleVariantDigest: identity.String(),
 	}
 	if mod.SDKConfig == nil {
 		mod.SDKConfig = &core.SDKConfig{}
 	}
-	return mod, "getModDef:" + identity.String(), nil
+	return mod, nil
+}
+
+// moduleDefinitionOnly keeps the reported types without discovery's source,
+// dependencies or operation scope, so the cached result can be persisted.
+func moduleDefinitionOnly(mod, initialized *core.Module) *core.Module {
+	return &core.Module{
+		NameField:     mod.NameField,
+		OriginalName:  mod.OriginalName,
+		SDKConfig:     mod.SDKConfig.Clone(),
+		Description:   initialized.Description,
+		ObjectDefs:    slices.Clone(initialized.ObjectDefs),
+		InterfaceDefs: slices.Clone(initialized.InterfaceDefs),
+		EnumDefs:      slices.Clone(initialized.EnumDefs),
+		Runtime:       mod.Runtime,
+	}
 }
 
 // moduleDefinitionFromRuntime runs the module's runtime once with no object
 // or function name, which tells the SDK to return the module's definition
 // (in terms of objects, fields and functions). It is the uncached step:
 // _moduleDefinition's resolver on a miss, and the whole path for a runtime
-// that is not a container. opScope names the SDK-operation scope the
-// discovery runs under; a cached definition passes one that covers its
-// inputs.
+// that is not a container. The discovery module carries its identity in
+// AsModuleVariantDigest, which the SDK-operation scope includes in its key.
 func (s *moduleSourceSchema) moduleDefinitionFromRuntime(
 	ctx context.Context,
 	dag *dagql.Server,
 	mod *core.Module,
-	opScope string,
 ) (_ *core.Module, rerr error) {
 	modName := mod.NameField
 
 	ctx, span := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	scopedMod, err := sdk.ScopeModuleForSDKOperation(ctx, mod, opScope, dag)
+	scopedMod, err := sdk.ScopeModuleForSDKOperation(ctx, mod, "getModDef", dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scoped module for getModDef: %w", err)
 	}
@@ -3680,38 +3689,15 @@ func (s *moduleSourceSchema) moduleSourceModuleTypesDefinition(
 		return inst, fmt.Errorf("module types definition identity: introspection json: %w", err)
 	}
 	identity := hashutil.HashStrings("ModuleSource._moduleTypesDefinition", schemaDigest.String(), args.ModuleName)
-	deps, err := s.loadDependencyModules(ctx, src, src)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load dependencies for module types definition: %w", err)
-	}
-	// The identity goes into AsModuleVariantDigest so the SDK-operation and
-	// currentModule scopes the SDK creates are distinct per definition, not
-	// shared by every definition of one source.
-	mod := &core.Module{
-		Source:                dagql.NonNull(src),
-		ContextSource:         dagql.NonNull(src),
-		NameField:             args.ModuleName,
-		OriginalName:          src.Self().ModuleOriginalName,
-		SDKConfig:             src.Self().SDK,
-		Deps:                  deps,
-		AsModuleVariantDigest: identity.String(),
-	}
-	if mod.SDKConfig == nil {
-		mod.SDKConfig = &core.SDKConfig{}
-	}
-	initialized, err := typeDefsImpl.ModuleTypes(ctx, deps, src, mod)
+	mod, err := s.moduleDefinitionDiscoveryModule(ctx, src, args.ModuleName, identity)
 	if err != nil {
 		return inst, err
 	}
-	def := &core.Module{
-		NameField:     args.ModuleName,
-		OriginalName:  src.Self().ModuleOriginalName,
-		SDKConfig:     mod.SDKConfig.Clone(),
-		Description:   initialized.Self().Description,
-		ObjectDefs:    append(dagql.ObjectResultArray[*core.TypeDef](nil), initialized.Self().ObjectDefs...),
-		InterfaceDefs: append(dagql.ObjectResultArray[*core.TypeDef](nil), initialized.Self().InterfaceDefs...),
-		EnumDefs:      append(dagql.ObjectResultArray[*core.TypeDef](nil), initialized.Self().EnumDefs...),
+	initialized, err := typeDefsImpl.ModuleTypes(ctx, mod.Deps, src, mod)
+	if err != nil {
+		return inst, err
 	}
+	def := moduleDefinitionOnly(mod, initialized.Self())
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, def)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create module types definition result for module %q: %w", args.ModuleName, err)
