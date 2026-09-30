@@ -55,9 +55,6 @@ type Services struct {
 	// are stopped, and capped at MaxExitedServicesPerSession.
 	exited map[string][]*ExitedService
 	l      sync.Mutex
-
-	// terminateGracePeriod is TerminateGracePeriod, overridable in tests.
-	terminateGracePeriod time.Duration
 }
 
 type startingService struct {
@@ -178,8 +175,6 @@ func NewServices() *Services {
 		running:  map[ServiceKey]*RunningService{},
 		bindings: map[ServiceKey]int{},
 		exited:   map[string][]*ExitedService{},
-
-		terminateGracePeriod: TerminateGracePeriod,
 	}
 }
 
@@ -1166,7 +1161,7 @@ func (ss *Services) StopRunning(ctx context.Context, running *RunningService, fo
 // stopDetached stops a service with no binders left. The caller must have
 // counted it in running.stoppers.
 func (ss *Services) stopDetached(ctx context.Context, running *RunningService) {
-	_ = ss.stopGraceful(ctx, running, ss.terminateGracePeriod)
+	_ = ss.stopGraceful(ctx, running, TerminateGracePeriod)
 	ss.l.Lock()
 	running.stoppers--
 	ss.l.Unlock()

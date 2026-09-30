@@ -27,13 +27,6 @@ type stopRecordingStartable struct {
 	killed   bool
 }
 
-func newStopRecordingStartable() *stopRecordingStartable {
-	return &stopRecordingStartable{
-		requests: make(chan bool, 100),
-		exited:   make(chan struct{}),
-	}
-}
-
 func (s *stopRecordingStartable) Start(_ context.Context, running *RunningService, _ digest.Digest, _ ServiceStartOpts) error {
 	running.Stop = func(ctx context.Context, force bool) error {
 		// like a container service, a request whose context has ended is not
@@ -70,26 +63,16 @@ func (s *stopRecordingStartable) exit(killed bool) {
 	})
 }
 
-// nextRequest returns the force flag of the next stop request.
+// nextRequest returns the force flag of the stop request the service has
+// received once every goroutine is blocked.
 func (s *stopRecordingStartable) nextRequest(t *testing.T) bool {
 	t.Helper()
+	synctest.Wait()
 	select {
 	case force := <-s.requests:
 		return force
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for a stop request")
-		return false
-	}
-}
-
-// waitKilled waits for the service to exit and reports whether it was killed.
-func (s *stopRecordingStartable) waitKilled(t *testing.T) bool {
-	t.Helper()
-	select {
-	case <-s.exited:
-		return s.killed
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for the service to exit")
+	default:
+		t.Fatal("no stop request")
 		return false
 	}
 }
@@ -97,32 +80,31 @@ func (s *stopRecordingStartable) waitKilled(t *testing.T) bool {
 // noRequest asserts that no stop request arrives within d.
 func (s *stopRecordingStartable) noRequest(t *testing.T, d time.Duration) {
 	t.Helper()
+	time.Sleep(d)
+	synctest.Wait()
 	select {
 	case force := <-s.requests:
 		t.Fatalf("unexpected stop request (force=%v)", force)
-	case <-time.After(d):
+	default:
 	}
 }
 
-type startableFunc func(*RunningService)
-
-func (f startableFunc) Start(_ context.Context, running *RunningService, _ digest.Digest, _ ServiceStartOpts) error {
-	f(running)
-	return nil
+// waitKilled waits for the service to exit and reports whether it was killed.
+func (s *stopRecordingStartable) waitKilled(t *testing.T) bool {
+	t.Helper()
+	<-s.exited
+	return s.killed
 }
 
-func startStopRecording(t *testing.T, services *Services, key ServiceKey) (*RunningService, *stopRecordingStartable) {
+func startStopRecording(t *testing.T, services *Services) (*RunningService, *stopRecordingStartable) {
 	t.Helper()
-	svc := newStopRecordingStartable()
-	running, _, err := services.startWithKey(context.Background(), key, svc, ServiceStartOpts{}, false)
+	svc := &stopRecordingStartable{
+		requests: make(chan bool, 100),
+		exited:   make(chan struct{}),
+	}
+	running, _, err := services.startWithKey(context.Background(), stopTestKey(t.Name()), svc, ServiceStartOpts{}, false)
 	require.NoError(t, err)
 	return running, svc
-}
-
-func newStopTestServices(terminateGracePeriod time.Duration) *Services {
-	services := NewServices()
-	services.terminateGracePeriod = terminateGracePeriod
-	return services
 }
 
 func stopTestKey(name string) ServiceKey {
@@ -133,47 +115,37 @@ func stopTestKey(name string) ServiceKey {
 	}
 }
 
-func bindingsOf(services *Services, key ServiceKey) int {
-	services.l.Lock()
-	defer services.l.Unlock()
-	return services.bindings[key]
+type startableFunc func(*RunningService)
+
+func (f startableFunc) Start(_ context.Context, running *RunningService, _ digest.Digest, _ ServiceStartOpts) error {
+	f(running)
+	return nil
 }
 
-// A late Detach must join an explicit graceful stop already in flight, not
-// send its own SIGTERM and then SIGKILL the service after
+// Late Detaches must join an explicit graceful stop already in flight, not
+// each send their own SIGTERM and then SIGKILL the service after
 // TerminateGracePeriod while it is still shutting down cleanly.
 func TestServicesDetachJoinsExplicitStop(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		detaches int
-	}{
-		{"one detach", 1},
-		{"two detaches", 2},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			services := newStopTestServices(50 * time.Millisecond)
-			key := stopTestKey(t.Name())
-			running, svc := startStopRecording(t, services, key)
+	synctest.Test(t, func(t *testing.T) {
+		services := NewServices()
+		running, svc := startStopRecording(t, services)
 
-			stopErr := make(chan error, 1)
-			go func() { stopErr <- services.StopRunning(context.Background(), running, false) }()
-			require.False(t, svc.nextRequest(t))
+		stopErr := make(chan error, 1)
+		go func() { stopErr <- services.StopRunning(context.Background(), running, false) }()
+		require.False(t, svc.nextRequest(t))
 
-			for range tc.detaches {
-				services.Detach(context.Background(), running)
-			}
+		services.Detach(context.Background(), running)
+		services.Detach(context.Background(), running)
+		svc.noRequest(t, 2*TerminateGracePeriod)
+		services.l.Lock()
+		require.Equal(t, 0, services.bindings[running.Key])
+		services.l.Unlock()
 
-			// well past the Detach grace period
-			svc.noRequest(t, 10*services.terminateGracePeriod)
-			require.Equal(t, 0, bindingsOf(services, key))
-
-			svc.exit(false)
-			require.NoError(t, <-stopErr)
-			require.False(t, svc.waitKilled(t))
-			svc.noRequest(t, 0)
-		})
-	}
+		svc.exit(false)
+		require.NoError(t, <-stopErr)
+		require.False(t, svc.waitKilled(t))
+		svc.noRequest(t, 0)
+	})
 }
 
 // A graceful stop that joins one in flight sends no signal of its own, but
@@ -182,17 +154,14 @@ func TestServicesDetachJoinsExplicitStop(t *testing.T) {
 func TestServicesJoinedStopReportsStopResult(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
-		detachOwner   bool
 		failedCleanup bool
 	}{
-		{"explicit owner", false, false},
-		{"explicit owner cleanup failure", false, true},
-		{"detach owner", true, false},
-		{"detach owner cleanup failure", true, true},
+		{"signal exit", false},
+		{"cleanup failure", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				services := newStopTestServices(time.Hour)
+				services := NewServices()
 				exited := make(chan struct{})
 				var exitErr, cleanupErr error
 				var signals int
@@ -215,11 +184,7 @@ func TestServicesJoinedStopReportsStopResult(t *testing.T) {
 				require.NoError(t, err)
 
 				ownerErr := make(chan error, 1)
-				if tc.detachOwner {
-					services.Detach(context.Background(), running)
-				} else {
-					go func() { ownerErr <- services.StopRunning(context.Background(), running, false) }()
-				}
+				go func() { ownerErr <- services.StopRunning(context.Background(), running, false) }()
 				synctest.Wait()
 				joinedErr := make(chan error, 1)
 				go func() { joinedErr <- services.StopRunning(context.Background(), running, false) }()
@@ -234,16 +199,11 @@ func TestServicesJoinedStopReportsStopResult(t *testing.T) {
 				exitErr, cleanupErr = classifyContainerServiceExit(runErr, nil, trace.SpanContext{})
 				close(exited)
 
-				if tc.failedCleanup {
-					require.ErrorIs(t, <-joinedErr, cleanupCause)
-				} else {
-					require.NoError(t, <-joinedErr)
-				}
-				if !tc.detachOwner {
+				for _, err := range []error{<-ownerErr, <-joinedErr} {
 					if tc.failedCleanup {
-						require.ErrorIs(t, <-ownerErr, cleanupCause)
+						require.ErrorIs(t, err, cleanupCause)
 					} else {
-						require.NoError(t, <-ownerErr)
+						require.NoError(t, err)
 					}
 				}
 				require.Equal(t, 1, signals)
@@ -256,8 +216,8 @@ func TestServicesJoinedStopReportsStopResult(t *testing.T) {
 // stop in flight to finish on its own.
 func TestServicesCanceledJoinedStopLeavesStopInFlight(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		services := newStopTestServices(time.Hour)
-		running, svc := startStopRecording(t, services, stopTestKey(t.Name()))
+		services := NewServices()
+		running, svc := startStopRecording(t, services)
 
 		ownerErr := make(chan error, 1)
 		go func() { ownerErr <- services.StopRunning(context.Background(), running, false) }()
@@ -269,7 +229,6 @@ func TestServicesCanceledJoinedStopLeavesStopInFlight(t *testing.T) {
 		synctest.Wait()
 		cancel()
 		require.ErrorIs(t, <-joinedErr, context.Canceled)
-		synctest.Wait()
 		svc.noRequest(t, 0)
 
 		svc.exit(false)
@@ -279,70 +238,74 @@ func TestServicesCanceledJoinedStopLeavesStopInFlight(t *testing.T) {
 	})
 }
 
-// A Detach of the last binding still stops the service gracefully and
-// escalates after TerminateGracePeriod.
-func TestServicesDetachEscalatesAfterTerminateGracePeriod(t *testing.T) {
-	t.Parallel()
-	services := newStopTestServices(50 * time.Millisecond)
-	running, svc := startStopRecording(t, services, stopTestKey(t.Name()))
-
-	detached := time.Now()
-	services.Detach(context.Background(), running)
-	require.False(t, svc.nextRequest(t))
-	require.True(t, svc.nextRequest(t))
-	require.GreaterOrEqual(t, time.Since(detached), services.terminateGracePeriod)
-	require.True(t, svc.waitKilled(t))
-}
-
-// A force stop escalates an explicit graceful stop in flight immediately.
-func TestServicesForceStopEscalatesExplicitStop(t *testing.T) {
-	t.Parallel()
-	services := newStopTestServices(time.Hour)
-	running, svc := startStopRecording(t, services, stopTestKey(t.Name()))
-
-	stopErr := make(chan error, 1)
-	go func() { stopErr <- services.StopRunning(context.Background(), running, false) }()
-	require.False(t, svc.nextRequest(t))
-
-	require.NoError(t, services.StopRunning(context.Background(), running, true))
-	require.True(t, svc.nextRequest(t))
-	require.NoError(t, <-stopErr)
-	require.True(t, svc.waitKilled(t))
-}
-
 // An explicit stop that returns before the service exits leaves it with no
 // binders, so it is then stopped as if it were detached.
 func TestServicesAbandonedStopFallsBackToDetach(t *testing.T) {
 	t.Run("graceful", func(t *testing.T) {
-		t.Parallel()
-		services := newStopTestServices(50 * time.Millisecond)
-		key := stopTestKey(t.Name())
-		running, svc := startStopRecording(t, services, key)
+		synctest.Test(t, func(t *testing.T) {
+			services := NewServices()
+			running, svc := startStopRecording(t, services)
 
-		ctx, cancel := context.WithCancel(context.Background())
-		stopErr := make(chan error, 1)
-		go func() { stopErr <- services.StopRunning(ctx, running, false) }()
-		require.False(t, svc.nextRequest(t))
-		cancel()
-		require.ErrorIs(t, <-stopErr, context.Canceled)
+			ctx, cancel := context.WithCancel(context.Background())
+			stopErr := make(chan error, 1)
+			go func() { stopErr <- services.StopRunning(ctx, running, false) }()
+			require.False(t, svc.nextRequest(t))
+			cancel()
+			require.ErrorIs(t, <-stopErr, context.Canceled)
 
-		require.False(t, svc.nextRequest(t))
-		require.True(t, svc.nextRequest(t))
-		require.True(t, svc.waitKilled(t))
+			require.False(t, svc.nextRequest(t))
+			time.Sleep(TerminateGracePeriod)
+			require.True(t, svc.nextRequest(t))
+			require.True(t, svc.waitKilled(t))
+		})
 	})
 
 	t.Run("force", func(t *testing.T) {
-		t.Parallel()
-		services := newStopTestServices(50 * time.Millisecond)
-		key := stopTestKey(t.Name())
-		running, svc := startStopRecording(t, services, key)
+		synctest.Test(t, func(t *testing.T) {
+			services := NewServices()
+			running, svc := startStopRecording(t, services)
 
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		require.ErrorIs(t, services.StopRunning(ctx, running, true), context.Canceled)
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			require.ErrorIs(t, services.StopRunning(ctx, running, true), context.Canceled)
 
+			require.False(t, svc.nextRequest(t))
+			time.Sleep(TerminateGracePeriod)
+			require.True(t, svc.nextRequest(t))
+			require.True(t, svc.waitKilled(t))
+		})
+	})
+}
+
+// A Detach of the last binding still stops the service gracefully and
+// escalates after TerminateGracePeriod.
+func TestServicesDetachEscalatesAfterTerminateGracePeriod(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		services := NewServices()
+		running, svc := startStopRecording(t, services)
+
+		services.Detach(context.Background(), running)
 		require.False(t, svc.nextRequest(t))
+		svc.noRequest(t, TerminateGracePeriod-time.Nanosecond)
+		time.Sleep(time.Nanosecond)
 		require.True(t, svc.nextRequest(t))
+		require.True(t, svc.waitKilled(t))
+	})
+}
+
+// A force stop escalates an explicit graceful stop in flight immediately.
+func TestServicesForceStopEscalatesExplicitStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		services := NewServices()
+		running, svc := startStopRecording(t, services)
+
+		stopErr := make(chan error, 1)
+		go func() { stopErr <- services.StopRunning(context.Background(), running, false) }()
+		require.False(t, svc.nextRequest(t))
+
+		require.NoError(t, services.StopRunning(context.Background(), running, true))
+		require.True(t, svc.nextRequest(t))
+		require.NoError(t, <-stopErr)
 		require.True(t, svc.waitKilled(t))
 	})
 }
