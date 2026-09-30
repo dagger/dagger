@@ -205,6 +205,11 @@ func (class Class[T]) invalidateSchemaCache() {
 	}
 }
 
+// weakServer returns the server the class belongs to, without keeping it alive.
+func (class Class[T]) weakServer() weak.Pointer[Server] {
+	return class.server
+}
+
 func (class Class[T]) Typed() Typed {
 	return class.inner
 }

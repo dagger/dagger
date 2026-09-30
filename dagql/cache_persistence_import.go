@@ -510,8 +510,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
-				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
-					res.objClass = objDecoded.ObjectType()
+				if objDecoded, ok := decoded.(AnyObjectResult); ok {
+					res.setObjClassLocked(objDecoded.ObjectType())
 				}
 				// The install must not touch the session-resource fields:
 				// the decoded shell only knows the row's own handle (the
@@ -919,8 +919,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
-				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
-					res.objClass = objDecoded.ObjectType()
+				if objDecoded, ok := decoded.(AnyObjectResult); ok {
+					res.setObjClassLocked(objDecoded.ObjectType())
 				}
 				// The install must not touch the session-resource fields:
 				// the decoded shell only knows the row's own handle, so
