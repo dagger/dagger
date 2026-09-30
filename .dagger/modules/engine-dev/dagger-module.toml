@@ -7,7 +7,8 @@ include = ["../../../engine/distconsts/**/*", "../../../sdk/typescript/runtime/*
 
 [[dependencies]]
   name = "alpine"
-  source = "dagger.io/linux/alpine@main"
+  source = "https://github.com/dagger/alpine@main"
+  pin = "0cbccf6115c57069e2aa3ef9b07133093f1a3246"
 
 [[dependencies]]
   name = "dagger-cli"
@@ -27,7 +28,8 @@ include = ["../../../engine/distconsts/**/*", "../../../sdk/typescript/runtime/*
 
 [[dependencies]]
   name = "wolfi"
-  source = "dagger.io/linux/wolfi@main"
+  source = "https://github.com/dagger/wolfi@main"
+  pin = "b480244fdace9a9c23eb61f3aec164bba9575242"
 
 [codegen]
   automaticGitignore = false

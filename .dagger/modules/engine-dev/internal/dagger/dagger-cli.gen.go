@@ -14,7 +14,6 @@ type DaggerCli struct { // dagger-cli (../../../../../.dagger/modules/cli-dev/ma
 
 	id              *ID
 	publishMetadata *Void
-	releaseDryRun   *Void
 	tag             *string
 	version         *string
 }
@@ -220,13 +219,12 @@ func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret,
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *DaggerCli) ReleaseDryRun(ctx context.Context) error { // dagger-cli (../../../../../.dagger/modules/cli-dev/publish.go:174:1)
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *DaggerCli) ReleaseDryRun() *Check { // dagger-cli (../../../../../.dagger/modules/cli-dev/publish.go:174:1)
 	q := r.query.Select("releaseDryRun")
 
-	return q.Execute(ctx)
+	return &Check{
+		query: q,
+	}
 }
 
 func (r *DaggerCli) Tag(ctx context.Context) (string, error) { // dagger-cli (../../../../../.dagger/modules/cli-dev/main.go:115:2)

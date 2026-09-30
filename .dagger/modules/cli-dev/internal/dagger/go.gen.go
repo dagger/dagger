@@ -13,14 +13,13 @@ import (
 type Go struct { // go (../../../../../.dagger/modules/go/main.go:192:6)
 	query *querybuilder.Selection
 
-	cgo       *bool
-	checkTidy *Void
-	id        *ID
-	limit     *int
-	race      *bool
-	test      *Void
-	tests     *string
-	version   *string
+	cgo     *bool
+	id      *ID
+	limit   *int
+	race    *bool
+	test    *Void
+	tests   *string
+	version *string
 }
 type WithGoFunc func(r *Go) *Go
 
@@ -175,10 +174,7 @@ type GoCheckTidyOpts struct {
 }
 
 // Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../../.dagger/modules/go/main.go:802:1)
-	if r.checkTidy != nil {
-		return nil
-	}
+func (r *Go) CheckTidy(opts ...GoCheckTidyOpts) *Check { // go (../../../../../.dagger/modules/go/main.go:802:1)
 	q := r.query.Select("checkTidy")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -191,7 +187,9 @@ func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // 
 		}
 	}
 
-	return q.Execute(ctx)
+	return &Check{
+		query: q,
+	}
 }
 
 // Download dependencies into the module cache

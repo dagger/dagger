@@ -143,8 +143,11 @@ source = "dagger.io/sdk/dang@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk]
-source = "dagger.io/sdk/go@main"
+source = "github.com/dagger/go-sdk@pull/47/head"
 check.skip = ["generate/stale"]
+
+[modules.go-sdk.settings]
+lock = true
 
 # Dev-only: the TLA+ cache-model checks are expensive (the full run takes
 # well over an hour) and deliberately do not run in CI; use
