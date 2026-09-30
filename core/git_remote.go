@@ -127,7 +127,7 @@ func (repo *RemoteGitRepository) PrimePublicRemote(ctx context.Context, remote *
 	}
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // Priming is optional when the context has no engine cache.
 	}
 	cacheKey, err := repo.remoteCacheKey(ctx)
 	if err != nil {
