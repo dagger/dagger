@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Agent prompts, and other telemetry logs, no longer go missing from long
+  sessions: a log record containing invalid UTF-8 (such as an LLM request body
+  truncated mid-character) no longer makes the engine drop every record
+  exported alongside it.
+time: 2026-09-30T18:00:00Z
+custom:
+  Author: vito

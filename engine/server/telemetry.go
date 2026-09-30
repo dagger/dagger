@@ -10,9 +10,11 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
 
@@ -1001,7 +1003,7 @@ func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
 	var body []byte
 	if !rec.Body().Empty() {
 		var err error
-		body, err = proto.Marshal(telemetry.LogValueToPB(rec.Body()))
+		body, err = proto.Marshal(telemetry.LogValueToPB(validUTF8LogValue(rec.Body())))
 		if err != nil {
 			return clientdb.Log{}, fmt.Errorf("marshal log record body: %w", err)
 		}
@@ -1010,8 +1012,8 @@ func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
 	attrs := []*otlpcommonv1.KeyValue{}
 	rec.WalkAttributes(func(kv log.KeyValue) bool {
 		attrs = append(attrs, &otlpcommonv1.KeyValue{
-			Key:   kv.Key,
-			Value: telemetry.LogValueToPB(kv.Value),
+			Key:   strings.ToValidUTF8(kv.Key, string(utf8.RuneError)),
+			Value: telemetry.LogValueToPB(validUTF8LogValue(kv.Value)),
 		})
 		return true
 	})
@@ -1049,6 +1051,56 @@ func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
 		Resource:             resource,
 		ResourceSchemaURL:    res.SchemaURL(),
 	}, nil
+}
+
+// validUTF8LogValue replaces invalid UTF-8 in a log value's strings -- nested
+// ones and map keys included -- with U+FFFD. Protobuf refuses to marshal a
+// string field that is not valid UTF-8, and a record that fails to marshal
+// fails its whole export batch, silently dropping every other record in it.
+// Producers emit arbitrary bytes as strings: raw process output, or a body cut
+// at a byte limit in the middle of a character (the LLM HTTP span's capture).
+// Values that are already valid are returned unchanged, without copying.
+func validUTF8LogValue(v log.Value) log.Value {
+	switch v.Kind() {
+	case log.KindString:
+		if s := v.AsString(); !utf8.ValidString(s) {
+			return log.StringValue(strings.ToValidUTF8(s, string(utf8.RuneError)))
+		}
+	case log.KindSlice:
+		vals := v.AsSlice()
+		var fixed []log.Value
+		for i, elem := range vals {
+			valid := validUTF8LogValue(elem)
+			if fixed == nil && !valid.Equal(elem) {
+				fixed = slices.Clone(vals)
+			}
+			if fixed != nil {
+				fixed[i] = valid
+			}
+		}
+		if fixed != nil {
+			return log.SliceValue(fixed...)
+		}
+	case log.KindMap:
+		kvs := v.AsMap()
+		var fixed []log.KeyValue
+		for i, kv := range kvs {
+			valid := log.KeyValue{
+				Key:   strings.ToValidUTF8(kv.Key, string(utf8.RuneError)),
+				Value: validUTF8LogValue(kv.Value),
+			}
+			if fixed == nil && !valid.Equal(kv) {
+				fixed = slices.Clone(kvs)
+			}
+			if fixed != nil {
+				fixed[i] = valid
+			}
+		}
+		if fixed != nil {
+			return log.MapValue(fixed...)
+		}
+	}
+	return v
 }
 
 func (ps *PubSub) Metrics(clientID string) sdkmetric.Exporter {
