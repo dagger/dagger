@@ -150,16 +150,17 @@ func TestGitMirrorFetchNegotiation(t *testing.T) {
 				} else {
 					require.Contains(t, packets, "fetch> have "+base)
 					require.Less(t, nextBytes, 4096, "existing large blob must not transfer again")
+					// Depth limits would mark complete history shallow, and
+					// removing those boundaries can resend all of it.
+					_, err := os.Stat(filepath.Join(mirror, "shallow"))
+					require.ErrorIs(t, err, os.ErrNotExist, "complete mirror must stay complete")
 				}
 				_, restoredBytes := fetch(next, 0)
 				t.Logf("restore full history=%d bytes", restoredBytes)
 				require.Equal(t, "3", gitMirrorTestRun(t, mirror, "rev-list", "--count", next))
 				require.Equal(t, "65536", gitMirrorTestRun(t, mirror, "cat-file", "-s", base+"^:history"))
 				if !legacy {
-					// Git can resend history when removing a shallow boundary even
-					// with negotiation tips. This change does not widen depth=1
-					// requests to avoid those boundaries.
-					require.Less(t, restoredBytes, 128*1024)
+					require.Zero(t, restoredBytes, "complete mirror already holds full history")
 					packets, cachedBytes := fetch(next, 0)
 					require.Empty(t, packets, "complete cached refs need no remote contact")
 					require.Zero(t, cachedBytes)
