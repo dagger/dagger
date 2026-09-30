@@ -6581,6 +6581,68 @@ func TestCachePruneMinFreeSpaceHonorsReservedSpace(t *testing.T) {
 	}, 120)
 	assert.Assert(t, triggered)
 	assert.Equal(t, int64(40), target)
+
+	// Exactly at the reserve is protected too.
+	target, triggered = pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 100,
+		ReservedSpace:    80,
+	}, 80)
+	assert.Assert(t, triggered)
+	assert.Equal(t, int64(0), target)
+
+	// A smaller shortfall should not reclaim all usage above the reserve.
+	target, triggered = pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 180,
+		ReservedSpace:    80,
+	}, 120)
+	assert.Assert(t, triggered)
+	assert.Equal(t, int64(20), target)
+}
+
+func TestCachePruneMinFreeSpaceRetainsReservedResults(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	for i := range 3 {
+		key := cacheTestIntCall(fmt.Sprintf("prune-reserve-%d", i))
+		_, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+			ResultCall:    key,
+			IsPersistable: true,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestSizedIntResult(key, i, 100, fmt.Sprintf("snapshot://prune-reserve-%d", i), nil), nil
+		})
+		assert.NilError(t, err)
+	}
+	cacheTestReleaseSession(t, c, ctx)
+
+	policy := CachePrunePolicy{
+		All:              true,
+		MinFreeSpace:     500,
+		CurrentFreeSpace: 0,
+		ReservedSpace:    200,
+	}
+	// Disk pressure exceeds the entire cache, but GC can reclaim the excess
+	// above the reserve and must retain the rest after the session closes.
+	report, err := c.Prune(ctx, []CachePrunePolicy{policy})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(report.Entries))
+	assert.Equal(t, int64(100), report.ReclaimedBytes)
+
+	report, err = c.Prune(ctx, []CachePrunePolicy{policy})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, len(report.Entries))
+	assert.Equal(t, int64(0), report.ReclaimedBytes)
+
+	// Explicit pruning without space thresholds can still empty the cache.
+	report, err = c.Prune(ctx, []CachePrunePolicy{{All: true}})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, len(report.Entries))
+	assert.Equal(t, int64(200), report.ReclaimedBytes)
 }
 
 func TestCachePruneSessionOwnedEntriesAreNeverPruned(t *testing.T) {

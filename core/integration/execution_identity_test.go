@@ -20,7 +20,13 @@ func (EngineSuite) TestExecutionDigestMatchesCacheHits(ctx context.Context, t *t
 	c := connect(ctx, t)
 	// The client forwards the session telemetry to the fake Cloud.
 	cloud := newTelemetrySplitCloud(t, c)
-	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+	// Trigger disk-pressure GC between sessions without filling the host disk.
+	// The result fits inside the reserve and must remain available for a hit.
+	engineCtr := devEngineContainer(c, engineWithConfig(ctx, t,
+		engineConfigWithEnabled(true),
+		engineConfigWithGC(`"1GB"`, `"100%"`, `"2GB"`, `0`),
+	))
+	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, engineCtr)).Start(ctx)
 	require.NoError(t, err)
 
 	marker := identity.NewID()
