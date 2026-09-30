@@ -840,11 +840,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithObject("LoadedEngine")).
 							WithDescription("Load the engine container into a Docker engine").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("docker.go", 16, 1)).
-							WithArg("docker", dag.TypeDef().WithObject("Socket"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 19, 2)}).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 23, 2), DefaultValue: dagger.JSON("\"localhost/dagger-engine.dev:latest\"")}).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 26, 2)}).
-							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable experimental GPU support", SourceMap: dag.SourceMap("docker.go", 30, 2)})).
+							WithSourceMap(dag.SourceMap("docker.go", 17, 1)).
+							WithArg("docker", dag.TypeDef().WithObject("Socket"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 20, 2)}).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 24, 2), DefaultValue: dagger.JSON("\"localhost/dagger-engine.dev:latest\"")}).
+							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 27, 2)}).
+							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable experimental GPU support", SourceMap: dag.SourceMap("docker.go", 31, 2)})).
 					WithFunction(
 						dag.Function("NetworkCidr",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
@@ -945,19 +945,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("subnetNumber", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{Description: "A configurable part of the IP subnet managed by the engine\nChange this to allow nested dagger engines", SourceMap: dag.SourceMap("main.go", 25, 2), DefaultValue: dagger.JSON("89")}).
 							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients,\nto ensure they can access private registries", SourceMap: dag.SourceMap("main.go", 29, 2)}))).
 			WithObject(
-				dag.TypeDef().WithObject("LoadedEngine", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("docker.go", 77, 6)}).
+				dag.TypeDef().WithObject("LoadedEngine", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("docker.go", 78, 6)}).
 					WithFunction(
 						dag.Function("Start",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Start the loaded engine container").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("docker.go", 86, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 91, 2), DefaultValue: dagger.JSON("\"dagger-engine.dev\"")}).
-							WithArg("cloudToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 93, 2)}).
-							WithArg("cloudURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 95, 2)}).
-							WithArg("debug", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 98, 2)}).
-							WithArg("extraHosts", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 101, 2)})).
-					WithField("Image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("docker.go", 79, 2)})), nil
+							WithSourceMap(dag.SourceMap("docker.go", 87, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 92, 2), DefaultValue: dagger.JSON("\"dagger-engine.dev\"")}).
+							WithArg("cloudToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 94, 2)}).
+							WithArg("cloudURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 96, 2)}).
+							WithArg("debug", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 99, 2)}).
+							WithArg("extraHosts", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 102, 2)})).
+					WithField("Image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("docker.go", 80, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func TestDaggerUpVerifyHarness(t *testing.T) {
 			require.NoError(t, syscall.Mkfifo(filepath.Join(state, "started"), 0600))
 			bin := filepath.Join(state, "bin")
 			require.NoError(t, os.Mkdir(bin, 0700))
-			require.NoError(t, os.WriteFile(filepath.Join(bin, "dagger"), []byte(`#!/bin/sh
+			writeUpVerifyExecutable(t, filepath.Join(bin, "dagger"), `#!/bin/sh
 if [ "$2" = -l ]; then
 	case "$UP_TEST_MODE" in
 		prepare-error) exit 17 ;;
@@ -48,8 +49,8 @@ fi
 touch "$UP_TEST_STATE/launched"
 echo started > "$UP_TEST_STATE/started"
 exec sleep 30
-`), 0700))
-			require.NoError(t, os.WriteFile(filepath.Join(bin, "wget"), []byte(`#!/bin/sh
+`)
+			writeUpVerifyExecutable(t, filepath.Join(bin, "wget"), `#!/bin/sh
 touch "$UP_TEST_STATE/probed"
 if [ "$2" = --spider ]; then
 	[ "$UP_TEST_MODE" != probe-timeout ] || exec sleep 30
@@ -65,7 +66,7 @@ if [ "$UP_TEST_MODE" = wrong-body ]; then
 else
 	echo nginx
 fi
-`), 0700))
+`)
 
 			// Leave scheduling slack in stages that are not being forced to time out.
 			bounds := upVerifyBounds{prepare: 5, ready: 5, probe: 5, shutdown: 5}
@@ -107,4 +108,15 @@ fi
 			t.Logf("%s", out)
 		})
 	}
+}
+
+func writeUpVerifyExecutable(t *testing.T, path, script string) {
+	t.Helper()
+	// Keep writable executable FDs out of the Go test process: parallel forks
+	// can inherit them until exec and cause ETXTBSY even after os.WriteFile closes.
+	// Waiting for the writer also ensures its writable FDs are gone before use.
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", `cat > "$1" && chmod 0700 "$1"`, "sh", path)
+	cmd.Stdin = strings.NewReader(script)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
 }

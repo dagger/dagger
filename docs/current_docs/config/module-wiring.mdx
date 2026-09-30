@@ -107,6 +107,33 @@ dagger api call playwright --service=dag://myapp/serve test
   a `Container`, a `tcp://` URL for a `Service`. So `git:2.40` and
   `alpine:3.20` stay image refs.
 
+## Migrate existing references
+
+Older workspace configurations used `module:function` or a bare entrypoint
+function name. Replace those values in object-typed settings and CLI flags
+with DAG addresses:
+
+| Previous value | DAG address |
+| --- | --- |
+| `base-images:chromium` | `dag://base-images/chromium` |
+| `myapp:serve` | `dag://myapp/serve` |
+| `go-base` (on entrypoint `project-dev`) | `dag://project-dev/go-base` |
+
+This rule applies to object-typed settings for modules written in any SDK.
+For a `Container` setting, a bare name such as `go-base` is now an image
+reference. For `File` and `Directory` settings, it is a path. Keep ordinary
+image references, paths, URLs, and string-valued settings as they are.
+
+The settings command accepts a bare entrypoint function name and writes its
+full DAG address. Hand-edited `dagger.toml` values and CLI object flags need
+the `dag://` scheme explicitly.
+
+SDK code that resolves workspace artifacts uses `Workspace.resolve` with a
+DAG address, then the matching typed loader such as `Address.container` or
+`Address.service`. In the 1.0 API, `Query.address` resolves external references
+only. Pass the resulting typed object to other module functions as usual.
+Clients using a pre-1.0 schema view retain the legacy `Query.address` behavior.
+
 ## Design your module for wiring
 
 If you author modules, wiring changes how you shape a constructor:

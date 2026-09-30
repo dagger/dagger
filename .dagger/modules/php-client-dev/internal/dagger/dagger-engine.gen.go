@@ -205,17 +205,17 @@ func (r *DaggerEngine) IntrospectionTool() *File { // dagger-engine (../../../..
 type DaggerEngineLoadToDockerOpts struct {
 
 	// Default: "localhost/dagger-engine.dev:latest"
-	Name string // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:23:2)
+	Name string // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:24:2)
 
-	Platform Platform // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:26:2)
+	Platform Platform // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:27:2)
 	//
 	// Enable experimental GPU support
 	//
-	GpuSupport bool // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:30:2)
+	GpuSupport bool // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:31:2)
 }
 
 // Load the engine container into a Docker engine
-func (r *DaggerEngine) LoadToDocker(docker *Socket, opts ...DaggerEngineLoadToDockerOpts) *DaggerEngineLoadedEngine { // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:16:1)
+func (r *DaggerEngine) LoadToDocker(docker *Socket, opts ...DaggerEngineLoadToDockerOpts) *DaggerEngineLoadedEngine { // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:17:1)
 	assertNotNil("docker", docker)
 	q := r.query.Select("loadToDocker")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -605,7 +605,7 @@ func (r *DaggerEngine) AsNode() Node {
 	}
 }
 
-type DaggerEngineLoadedEngine struct { // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:77:6)
+type DaggerEngineLoadedEngine struct { // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:78:6)
 	query *querybuilder.Selection
 
 	id    *ID
@@ -668,7 +668,7 @@ func (r *DaggerEngineLoadedEngine) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *DaggerEngineLoadedEngine) Image(ctx context.Context) (string, error) { // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:79:2)
+func (r *DaggerEngineLoadedEngine) Image(ctx context.Context) (string, error) { // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:80:2)
 	if r.image != nil {
 		return *r.image, nil
 	}
@@ -684,19 +684,19 @@ func (r *DaggerEngineLoadedEngine) Image(ctx context.Context) (string, error) { 
 type DaggerEngineLoadedEngineStartOpts struct {
 
 	// Default: "dagger-engine.dev"
-	Name string // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:91:2)
+	Name string // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:92:2)
 
-	CloudToken *Secret // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:93:2)
+	CloudToken *Secret // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:94:2)
 
-	CloudURL string // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:95:2)
+	CloudURL string // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:96:2)
 
-	Debug bool // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:98:2)
+	Debug bool // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:99:2)
 
-	ExtraHosts []string // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:101:2)
+	ExtraHosts []string // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:102:2)
 }
 
 // Start the loaded engine container
-func (r *DaggerEngineLoadedEngine) Start(ctx context.Context, opts ...DaggerEngineLoadedEngineStartOpts) error { // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:86:1)
+func (r *DaggerEngineLoadedEngine) Start(ctx context.Context, opts ...DaggerEngineLoadedEngineStartOpts) error { // dagger-engine (../../../../../.dagger/modules/engine-dev/docker.go:87:1)
 	if r.start != nil {
 		return nil
 	}
