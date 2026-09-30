@@ -210,6 +210,9 @@ type cacheSessionLifecycle struct {
 	cleanupStarted bool
 	releaseDone    chan struct{}
 	releaseErr     error
+	// released closes when the session is marked released: before its
+	// in-flight operations finish, unlike releaseDone.
+	released chan struct{}
 }
 
 type cacheSessionReleasePlan struct {
@@ -248,7 +251,7 @@ func (c *Cache) sessionLifecycle(sessionID string) *cacheSessionLifecycle {
 	if state, ok := c.sessionLifecycles.Load(sessionID); ok {
 		return state.(*cacheSessionLifecycle)
 	}
-	state := &cacheSessionLifecycle{releaseDone: make(chan struct{})}
+	state := &cacheSessionLifecycle{releaseDone: make(chan struct{}), released: make(chan struct{})}
 	actual, _ := c.sessionLifecycles.LoadOrStore(sessionID, state)
 	return actual.(*cacheSessionLifecycle)
 }
@@ -1357,6 +1360,7 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 		state.releaseMu.Unlock()
 		return nil
 	}
+	close(state.released)
 
 	c.sessionMu.Lock()
 	resultIDs := maps.Clone(c.sessionResultIDsBySession[sessionID])
@@ -6515,13 +6519,30 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				cur.attachDepsMu.Lock()
 				waitCh := cur.attachDepsWaitCh
 				cur.attachDepsMu.Unlock()
+				var released <-chan struct{}
+				if state := c.sessionLifecycle(sessionID); state != nil {
+					released = state.released
+				}
 				c.egraphMu.Unlock()
 				if c.testPublicationWaitsOnAttachment != nil {
 					c.testPublicationWaitsOnAttachment(cur)
 				}
-				<-waitCh
+				select {
+				case <-waitCh:
+					c.egraphMu.Lock()
+					continue
+				case <-released:
+				case <-ctx.Done():
+				}
+				// This publication's session was released, or its caller left,
+				// while another session's attachment is open. Waiting on would
+				// hold the session's release open for as long as that
+				// attachment lasts, so the value registers beside the entry,
+				// not indexed, as for a session that does not cover the
+				// entry's requirements.
 				c.egraphMu.Lock()
-				continue
+				unindexed = true
+				break
 			}
 			// A late explicit dependency can raise the entry's requirements
 			// without changing its recipe. A session that does not cover

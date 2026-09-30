@@ -1309,3 +1309,148 @@ func TestCacheNilResultsOfDifferentRecipesStaySeparate(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(ctx, "session-a"))
 	assert.NilError(t, c.ReleaseSession(ctx, "session-b"))
 }
+
+// currentEntryTestOpenAttachment publishes frame in session-b with an
+// attachment that stays open until the returned release is called, and
+// returns once it is open, with the channel B's call returns on.
+func currentEntryTestOpenAttachment(t *testing.T, ctx context.Context, c *Cache, frame *ResultCall) (func(), <-chan currentEntryTestOutcome) {
+	t.Helper()
+	attachStarted, attachRelease := make(chan struct{}), make(chan struct{})
+	release := sync.OnceFunc(func() { close(attachRelease) })
+	t.Cleanup(release)
+	bValue := &captureTestValue{text: "b", attach: func(context.Context) error {
+		close(attachStarted)
+		<-attachRelease
+		return nil
+	}}
+	bDone := make(chan currentEntryTestOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(ctx, "session-b", noopTypeResolver{}, &CallRequest{ResultCall: frame.clone()}, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(bValue, frame.clone())
+		})
+		bDone <- currentEntryTestOutcome{res, err}
+	}()
+	<-attachStarted
+	return release, bDone
+}
+
+// A publication waits while its recipe's current entry's attachment is open.
+// When its own session is released meanwhile, it stops waiting: otherwise the
+// release would wait as long as the other session's attachment lasts. Its
+// value registers beside the entry, not indexed, and the released session's
+// call fails.
+func TestCacheReleasedPublicationStopsWaitingOnTheCurrentEntrysAttachment(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&captureTestValue{}).Type()),
+		Field: "current-entry-released-publication-stops-waiting",
+	}
+	waitedOn := make(chan sharedResultID, 1)
+	c.testPublicationWaitsOnAttachment = func(res *sharedResult) { waitedOn <- res.id }
+
+	var releasedA atomic.Bool
+	aValue := &captureTestValue{text: "a", release: func(context.Context) error {
+		releasedA.Store(true)
+		return nil
+	}}
+	aStarted, aFinish := make(chan struct{}), make(chan struct{})
+	aDone := make(chan currentEntryTestOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(ctx, "session-a", noopTypeResolver{}, &CallRequest{ResultCall: frame.clone()}, func(context.Context) (AnyResult, error) {
+			close(aStarted)
+			<-aFinish
+			return NewResultForCall(aValue, frame.clone())
+		})
+		aDone <- currentEntryTestOutcome{res, err}
+	}()
+	<-aStarted
+	releaseB, bDone := currentEntryTestOpenAttachment(t, ctx, c, frame)
+	close(aFinish)
+	bID := <-waitedOn
+
+	assert.NilError(t, c.ReleaseSession(ctx, "session-a"))
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	assert.NilError(t, c.WaitSessionRelease(waitCtx, "session-a"), "the release finishes while B's attachment is open")
+	select {
+	case a := <-aDone:
+		assert.Assert(t, errors.Is(a.err, ErrCacheSessionReleased), "the released session's call fails: %v", a.err)
+	default:
+		t.Fatal("the released session's call is still in flight")
+	}
+	assert.Assert(t, releasedA.Load(), "the released session's value is released")
+	select {
+	case <-bDone:
+		t.Fatal("B's call returned while its attachment was open")
+	default:
+	}
+
+	releaseB()
+	b := <-bDone
+	assert.NilError(t, b.err)
+	assert.Equal(t, bID, b.res.cacheSharedResult().id)
+	assert.Equal(t, bID, currentEntryTestIndexed(t, c, frame), "B's entry stays the recipe's current entry")
+	assert.NilError(t, c.ReleaseSession(ctx, "session-b"))
+}
+
+// A publication through AttachResult stops waiting on another session's open
+// attachment when its caller's context ends, and doesn't adopt the entry.
+func TestCacheCancelledPublicationStopsWaitingOnTheCurrentEntrysAttachment(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&captureTestValue{}).Type()),
+		Field: "current-entry-cancelled-publication-stops-waiting",
+	}
+	waitedOn := make(chan sharedResultID, 1)
+	c.testPublicationWaitsOnAttachment = func(res *sharedResult) { waitedOn <- res.id }
+
+	detached, err := NewResultForCall(&captureTestValue{text: "a"}, frame.clone())
+	assert.NilError(t, err)
+	// A's attach misses, then parks before its publication decides; B then
+	// publishes the recipe, and B's attachment stays open.
+	parked, resume := make(chan struct{}), make(chan struct{})
+	c.testBeforePublicationIndex = func(oc *ongoingCall) {
+		if oc.val != nil && oc.val.cacheSharedResult() == detached.cacheSharedResult() {
+			close(parked)
+			<-resume
+		}
+	}
+	aCtx, aCancel := context.WithCancel(ctx)
+	defer aCancel()
+	aDone := make(chan currentEntryTestOutcome, 1)
+	go func() {
+		res, err := c.AttachResult(aCtx, "session-a", noopTypeResolver{}, detached)
+		aDone <- currentEntryTestOutcome{res, err}
+	}()
+	<-parked
+	releaseB, bDone := currentEntryTestOpenAttachment(t, ctx, c, frame)
+	close(resume)
+	bID := <-waitedOn
+
+	aCancel()
+	select {
+	case a := <-aDone:
+		if a.err == nil {
+			assert.Assert(t, a.res.cacheSharedResult().id != bID, "the cancelled publication does not adopt B's open entry")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the cancelled publication is still waiting on B's attachment")
+	}
+
+	releaseB()
+	b := <-bDone
+	assert.NilError(t, b.err)
+	assert.Equal(t, bID, currentEntryTestIndexed(t, c, frame), "B's entry stays the recipe's current entry")
+	assert.NilError(t, c.ReleaseSession(ctx, "session-a"))
+	assert.NilError(t, c.ReleaseSession(ctx, "session-b"))
+}
