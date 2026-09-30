@@ -1806,6 +1806,28 @@ func (src *ModuleSource) loadContextFromSource(
 	return inst, nil
 }
 
+// localContextFilePath resolves relative paths from the module root and absolute
+// paths from the context root, rejecting paths outside the context directory.
+func (src *ModuleSource) localContextFilePath(path string) (string, error) {
+	ctxPath, err := src.LocalContextDirectoryPath()
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(ctxPath, src.SourceRootSubpath, path)
+	} else {
+		path = filepath.Join(ctxPath, path)
+	}
+	relativePathToCtx, err := filepath.Rel(ctxPath, path)
+	if err != nil {
+		return "", fmt.Errorf("failed to get relative path to context: %w", err)
+	}
+	if strings.HasPrefix(relativePathToCtx, "..") {
+		return "", fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
+	}
+	return path, nil
+}
+
 func (src *ModuleSource) LoadContextFile(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -1829,7 +1851,7 @@ func (src *ModuleSource) LoadContextFile(
 
 	switch src.Kind {
 	case ModuleSourceKindLocal:
-		ctxPath, err := src.LocalContextDirectoryPath()
+		path, err = src.localContextFilePath(path)
 		if err != nil {
 			return inst, err
 		}
@@ -1838,31 +1860,6 @@ func (src *ModuleSource) LoadContextFile(
 			return inst, fmt.Errorf("failed to get client metadata: %w", err)
 		}
 		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
-
-		// Retrieve the absolute path to the context directory (.git or module config)
-		// and the module root directory (module config)
-		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
-
-		// If path is not absolute, it's relative to the module root directory.
-		// If path is absolute, it's relative to the context directory.
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(modPath, path)
-		} else {
-			path = filepath.Join(ctxPath, path)
-		}
-
-		// We just check if the path is relative to the context directory,
-		// if not, that means it's a path that target an outside directory
-		// which is not allowed.
-		relativePathToCtx, err := filepath.Rel(ctxPath, path)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path to context: %w", err)
-		}
-
-		// If the relative path is outisde of the context directory, throw an error.
-		if strings.HasPrefix(relativePathToCtx, "..") {
-			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
-		}
 
 		err = dag.Select(localSourceCtx, dag.Root(), &inst,
 			dagql.Selector{
@@ -2620,7 +2617,7 @@ func (fs ModuleSourceFS) ReadFile(ctx context.Context, path string) ([]byte, err
 		// Read straight from the caller's host, as the workspace config is
 		// read: syncing the file's directory into the engine just to read
 		// one file costs a round trip and a snapshot on every module load.
-		localPath, err := fs.src.LocalContextDirectoryPath()
+		path, err := fs.src.localContextFilePath(path)
 		if err != nil {
 			return nil, err
 		}
@@ -2633,11 +2630,6 @@ func (fs ModuleSourceFS) ReadFile(ctx context.Context, path string) ([]byte, err
 			return nil, fmt.Errorf("failed to get client metadata: %w", err)
 		}
 		ctx = engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(localPath, fs.src.SourceRootSubpath, path)
-		} else {
-			path = filepath.Join(localPath, path)
-		}
 		return fs.bk.ReadCallerHostFile(ctx, path)
 	}
 	dag, err := CurrentDagqlServer(ctx)
