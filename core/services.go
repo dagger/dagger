@@ -37,6 +37,13 @@ const (
 	// sent a graceful stop (SIGTERM) and when it is sent an immediate stop (SIGKILL).
 	TerminateGracePeriod = 10 * time.Second
 
+	// ExplicitStopGracePeriod is the time between when an explicit graceful stop
+	// sends a service a graceful stop (SIGTERM) and when it sends an immediate
+	// stop (SIGKILL). An explicit graceful stop asks for a clean shutdown, which
+	// can take a while: a nested engine allows itself up to 5 minutes to sync its
+	// cache to disk, so this is longer than that.
+	ExplicitStopGracePeriod = 6 * time.Minute
+
 	// MaxExitedServicesPerSession bounds the exited-service tombstones retained
 	// per session; beyond it the oldest tombstones are dropped.
 	MaxExitedServicesPerSession = 100
@@ -55,6 +62,11 @@ type Services struct {
 	// are stopped, and capped at MaxExitedServicesPerSession.
 	exited map[string][]*ExitedService
 	l      sync.Mutex
+
+	// terminateGracePeriod and explicitStopGracePeriod are TerminateGracePeriod
+	// and ExplicitStopGracePeriod, overridable in tests.
+	terminateGracePeriod    time.Duration
+	explicitStopGracePeriod time.Duration
 }
 
 type startingService struct {
@@ -144,6 +156,11 @@ type RunningService struct {
 
 	manager *Services
 
+	// stoppers counts the stops in flight that own stopping this service: a
+	// Detach's graceful stop and each explicit stop. A graceful stop that joins
+	// one already in flight is not counted. Guarded by manager.l.
+	stoppers int
+
 	releaseOnce sync.Once
 }
 
@@ -170,6 +187,9 @@ func NewServices() *Services {
 		running:  map[ServiceKey]*RunningService{},
 		bindings: map[ServiceKey]int{},
 		exited:   map[string][]*ExitedService{},
+
+		terminateGracePeriod:    TerminateGracePeriod,
+		explicitStopGracePeriod: ExplicitStopGracePeriod,
 	}
 }
 
@@ -910,10 +930,17 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	slog := slog.With("service", svc.Host)
 
 	running, found := ss.running[svc.Key]
-	if !found {
+	if !found || running != svc {
 		ss.l.Unlock()
 		slog.Trace("detach: service not running")
 		// not even running; ignore
+		return
+	}
+
+	if ss.bindings[svc.Key] == 0 {
+		ss.l.Unlock()
+		slog.Debug("detach: service already stopping")
+		// the stop in flight owns stopping it
 		return
 	}
 
@@ -929,12 +956,13 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 		return
 	}
 
+	running.stoppers++
 	ss.l.Unlock()
 
 	slog.Debug("detach: stopping")
 
 	// we should avoid blocking, and return immediately
-	go ss.stopGraceful(context.WithoutCancel(ctx), running, TerminateGracePeriod)
+	go ss.stopDetached(context.WithoutCancel(ctx), running)
 }
 
 func (svc *RunningService) suppressDependencyExitPropagation() func() {
@@ -1091,12 +1119,48 @@ func (svc *RunningService) releaseAfterExit(ctx context.Context) error {
 func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {
 	ss.l.Lock()
 	current, found := ss.running[running.Key]
-	if found && current == running {
-		ss.bindings[running.Key] = 0
+	if !found || current != running {
+		ss.l.Unlock()
+		if err := running.stopFromManager(ctx, force); err != nil {
+			return fmt.Errorf("stop: %w", err)
+		}
+		return nil
+	}
+	ss.bindings[running.Key] = 0
+	if !force && running.stoppers > 0 {
+		ss.l.Unlock()
+		// join the stop in flight rather than sending another SIGTERM
+		if running.Wait != nil {
+			_ = running.Wait(ctx)
+		}
+		return context.Cause(ctx)
+	}
+	running.stoppers++
+	ss.l.Unlock()
+
+	var err error
+	if force {
+		err = running.stopFromManager(ctx, true)
+	} else {
+		err = ss.stopGraceful(ctx, running, ss.explicitStopGracePeriod)
+	}
+
+	ss.l.Lock()
+	running.stoppers--
+	current, found = ss.running[running.Key]
+	abandoned := err != nil && found && current == running && running.stoppers == 0
+	if abandoned {
+		running.stoppers++
 	}
 	ss.l.Unlock()
 
-	if err := running.stopFromManager(ctx, force); err != nil {
+	if abandoned {
+		// the service is still running with no binders and nothing left to stop
+		// it, so fall back to stopping it as if it were detached
+		slog.Debug("stop: abandoned; stopping as detached", "service", running.Host, "err", err)
+		go ss.stopDetached(context.WithoutCancel(ctx), running)
+	}
+	if err != nil {
 		return fmt.Errorf("stop: %w", err)
 	}
 	return nil
@@ -1106,14 +1170,16 @@ func (ss *Services) StopRunning(ctx context.Context, running *RunningService, fo
 	return ss.stop(ctx, running, force)
 }
 
-func (ss *Services) stopGraceful(ctx context.Context, running *RunningService, timeout time.Duration) error {
+// stopDetached stops a service with no binders left. The caller must have
+// counted it in running.stoppers.
+func (ss *Services) stopDetached(ctx context.Context, running *RunningService) {
+	_ = ss.stopGraceful(ctx, running, ss.terminateGracePeriod)
 	ss.l.Lock()
-	current, found := ss.running[running.Key]
-	if found && current == running {
-		ss.bindings[running.Key] = 0
-	}
+	running.stoppers--
 	ss.l.Unlock()
+}
 
+func (ss *Services) stopGraceful(ctx context.Context, running *RunningService, timeout time.Duration) error {
 	// attempt to gentle stop within a timeout
 	cause := stderrors.New("service did not terminate")
 	ctx2, cancel := context.WithTimeoutCause(ctx, timeout, cause)
