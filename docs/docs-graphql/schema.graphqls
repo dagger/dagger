@@ -1049,6 +1049,9 @@ type Container implements Exportable & Node & Syncer {
     Allow HTTPS registry communication without verifying the server certificate.
     """
     insecureSkipTLSVerify: Boolean = false
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): Container!
 
   """
@@ -4125,7 +4128,10 @@ type GitRepository implements Node {
   id: ID!
 
   """Returns details for HEAD."""
-  head: GitRef!
+  head(
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
+  ): GitRef!
 
   """Returns details of a ref."""
   ref(
@@ -4147,18 +4153,27 @@ type GitRepository implements Node {
     (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
     """
     name: String!
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): GitRef!
 
   """Returns details of a branch."""
   branch(
     """Branch's name (e.g., "main")."""
     name: String!
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): GitRef!
 
   """Returns details of a tag."""
   tag(
     """Tag's name (e.g., "v0.3.9")."""
     name: String!
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): GitRef!
 
   """Returns details of a commit."""
@@ -4183,6 +4198,9 @@ type GitRepository implements Node {
   latest(
     """Version query used to select the greatest matching release ref."""
     version: String = ""
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): GitRef!
 
   """tags that match any of the given glob patterns."""

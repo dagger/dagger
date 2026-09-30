@@ -717,6 +717,11 @@ export type ContainerFromOpts = {
    * Allow HTTPS registry communication without verifying the server certificate.
    */
   insecureSkipTLSVerify?: boolean
+
+  /**
+   * Ignore the workspace lockfile for this lookup.
+   */
+  noLock?: boolean
 }
 
 export type ContainerImportOpts = {
@@ -2336,6 +2341,13 @@ export type GitRepositoryAsWorkspaceOpts = {
   cwd?: string
 }
 
+export type GitRepositoryBranchOpts = {
+  /**
+   * Ignore the workspace lockfile for this lookup.
+   */
+  noLock?: boolean
+}
+
 export type GitRepositoryBranchesOpts = {
   /**
    * Glob patterns (e.g., "refs/tags/v*").
@@ -2350,11 +2362,37 @@ export type GitRepositoryBundleOpts = {
   base?: GitRef
 }
 
+export type GitRepositoryHeadOpts = {
+  /**
+   * Ignore the workspace lockfile for this lookup.
+   */
+  noLock?: boolean
+}
+
 export type GitRepositoryLatestOpts = {
   /**
    * Version query used to select the greatest matching release ref.
    */
   version?: string
+
+  /**
+   * Ignore the workspace lockfile for this lookup.
+   */
+  noLock?: boolean
+}
+
+export type GitRepositoryRefOpts = {
+  /**
+   * Ignore the workspace lockfile for this lookup.
+   */
+  noLock?: boolean
+}
+
+export type GitRepositoryTagOpts = {
+  /**
+   * Ignore the workspace lockfile for this lookup.
+   */
+  noLock?: boolean
 }
 
 export type GitRepositoryTagsOpts = {
@@ -6958,6 +6996,7 @@ export class Container extends BaseClient {
    *
    * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
    * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
+   * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
   from = (address: string, opts?: ContainerFromOpts): Container => {
     const metadata = {
@@ -12096,9 +12135,10 @@ export class GitRepository extends BaseClient {
   /**
    * Returns details of a branch.
    * @param name Branch's name (e.g., "main").
+   * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
-  branch = (name: string): GitRef => {
-    const ctx = this._ctx.select("branch", { name })
+  branch = (name: string, opts?: GitRepositoryBranchOpts): GitRef => {
+    const ctx = this._ctx.select("branch", { name, ...opts })
     return new GitRef(ctx)
   }
 
@@ -12137,9 +12177,10 @@ export class GitRepository extends BaseClient {
 
   /**
    * Returns details for HEAD.
+   * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
-  head = (): GitRef => {
-    const ctx = this._ctx.select("head")
+  head = (opts?: GitRepositoryHeadOpts): GitRef => {
+    const ctx = this._ctx.select("head", { ...opts })
     return new GitRef(ctx)
   }
 
@@ -12148,6 +12189,7 @@ export class GitRepository extends BaseClient {
    *
    * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
    * @param opts.version Version query used to select the greatest matching release ref.
+   * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
   latest = (opts?: GitRepositoryLatestOpts): GitRef => {
     const ctx = this._ctx.select("latest", { ...opts })
@@ -12161,18 +12203,20 @@ export class GitRepository extends BaseClient {
    * Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
    *
    * The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+   * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
-  ref = (name: string): GitRef => {
-    const ctx = this._ctx.select("ref", { name })
+  ref = (name: string, opts?: GitRepositoryRefOpts): GitRef => {
+    const ctx = this._ctx.select("ref", { name, ...opts })
     return new GitRef(ctx)
   }
 
   /**
    * Returns details of a tag.
    * @param name Tag's name (e.g., "v0.3.9").
+   * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
-  tag = (name: string): GitRef => {
-    const ctx = this._ctx.select("tag", { name })
+  tag = (name: string, opts?: GitRepositoryTagOpts): GitRef => {
+    const ctx = this._ctx.select("tag", { name, ...opts })
     return new GitRef(ctx)
   }
 

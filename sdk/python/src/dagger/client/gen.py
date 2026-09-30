@@ -3767,6 +3767,7 @@ class Container(Type):
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
+        no_lock: bool | None = False,
     ) -> Self:
         """Download a container image, and apply it to the container state. All
         previous state will be lost.
@@ -3791,6 +3792,8 @@ class Container(Type):
         insecure_skip_tls_verify:
             Allow HTTPS registry communication without verifying the server
             certificate.
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("address", address),
@@ -3798,6 +3801,7 @@ class Container(Type):
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -10702,16 +10706,24 @@ class GitRepository(Type):
         _ctx = self._select("asWorkspace", _args)
         return Workspace(_ctx)
 
-    def branch(self, name: str) -> GitRef:
+    def branch(
+        self,
+        name: str,
+        *,
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Returns details of a branch.
 
         Parameters
         ----------
         name:
             Branch's name (e.g., "main").
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("name", name),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("branch", _args)
         return GitRef(_ctx)
@@ -10792,9 +10804,17 @@ class GitRepository(Type):
         _ctx = self._select("commit", _args)
         return GitCommit(_ctx)
 
-    def head(self) -> GitRef:
-        """Returns details for HEAD."""
-        _args: list[Arg] = []
+    def head(self, *, no_lock: bool | None = False) -> GitRef:
+        """Returns details for HEAD.
+
+        Parameters
+        ----------
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
+        """
+        _args = [
+            Arg("noLock", no_lock, False),
+        ]
         _ctx = self._select("head", _args)
         return GitRef(_ctx)
 
@@ -10826,7 +10846,12 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def latest(self, *, version: str | None = "") -> GitRef:
+    def latest(
+        self,
+        *,
+        version: str | None = "",
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Return the latest stable release tag, falling back to HEAD when no
         release exists.
 
@@ -10837,14 +10862,22 @@ class GitRepository(Type):
         ----------
         version:
             Version query used to select the greatest matching release ref.
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("version", version, ""),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("latest", _args)
         return GitRef(_ctx)
 
-    def ref(self, name: str) -> GitRef:
+    def ref(
+        self,
+        name: str,
+        *,
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Returns details of a ref.
 
         Parameters
@@ -10865,23 +10898,34 @@ class GitRepository(Type):
             the resulting commit; remote repositories fetch the history the
             walk needs. Other git revision syntax (`^{...}`, `@{...}`,
             `:path`, ranges) is not supported.
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("name", name),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("ref", _args)
         return GitRef(_ctx)
 
-    def tag(self, name: str) -> GitRef:
+    def tag(
+        self,
+        name: str,
+        *,
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Returns details of a tag.
 
         Parameters
         ----------
         name:
             Tag's name (e.g., "v0.3.9").
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("name", name),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("tag", _args)
         return GitRef(_ctx)

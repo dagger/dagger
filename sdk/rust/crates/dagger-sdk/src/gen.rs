@@ -2878,6 +2878,9 @@ pub struct ContainerFromOpts<'a> {
     /// Allow HTTPS registry communication without verifying the server certificate.
     #[builder(setter(into, strip_option), default)]
     pub insecure_skip_tls_verify: Option<bool>,
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
     /// Protocol to use for registry communication.
     /// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
     #[builder(setter(into, strip_option), default)]
@@ -3537,6 +3540,9 @@ impl Container {
         }
         if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
             query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
+        }
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
         }
         Container {
             proc: self.proc.clone(),
@@ -10982,7 +10988,34 @@ pub struct GitRepository {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryHeadOpts {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryRefOpts {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryBranchOpts {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryTagOpts {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryLatestOpts<'a> {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
     /// Version query used to select the greatest matching release ref.
     #[builder(setter(into, strip_option), default)]
     pub version: Option<&'a str>,
@@ -11053,8 +11086,28 @@ impl GitRepository {
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns details for HEAD.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn head(&self) -> GitRef {
         let query = self.selection.select("head");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns details for HEAD.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn head_opts(&self, opts: GitRepositoryHeadOpts) -> GitRef {
+        let mut query = self.selection.select("head");
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         GitRef {
             proc: self.proc.clone(),
             selection: query,
@@ -11070,8 +11123,46 @@ impl GitRepository {
     /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
     ///
     /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("ref");
+        query = query.arg("name", name.into());
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns details of a ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+    ///
+    /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
+    ///
+    /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn r#ref_opts(&self, name: impl Into<String>, opts: GitRepositoryRefOpts) -> GitRef {
+        let mut query = self.selection.select("ref");
+        query = query.arg("name", name.into());
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns details of a branch.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Branch's name (e.g., "main").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn branch(&self, name: impl Into<String>) -> GitRef {
+        let mut query = self.selection.select("branch");
         query = query.arg("name", name.into());
         GitRef {
             proc: self.proc.clone(),
@@ -11084,8 +11175,27 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `name` - Branch's name (e.g., "main").
-    pub fn branch(&self, name: impl Into<String>) -> GitRef {
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn branch_opts(&self, name: impl Into<String>, opts: GitRepositoryBranchOpts) -> GitRef {
         let mut query = self.selection.select("branch");
+        query = query.arg("name", name.into());
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns details of a tag.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Tag's name (e.g., "v0.3.9").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn tag(&self, name: impl Into<String>) -> GitRef {
+        let mut query = self.selection.select("tag");
         query = query.arg("name", name.into());
         GitRef {
             proc: self.proc.clone(),
@@ -11098,9 +11208,13 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `name` - Tag's name (e.g., "v0.3.9").
-    pub fn tag(&self, name: impl Into<String>) -> GitRef {
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn tag_opts(&self, name: impl Into<String>, opts: GitRepositoryTagOpts) -> GitRef {
         let mut query = self.selection.select("tag");
         query = query.arg("name", name.into());
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         GitRef {
             proc: self.proc.clone(),
             selection: query,
@@ -11147,6 +11261,9 @@ impl GitRepository {
         let mut query = self.selection.select("latest");
         if let Some(version) = opts.version {
             query = query.arg("version", version);
+        }
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
         }
         GitRef {
             proc: self.proc.clone(),

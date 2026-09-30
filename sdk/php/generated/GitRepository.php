@@ -25,39 +25,51 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Returns details for HEAD.
      */
-    public function head(): GitRef
+    public function head(?bool $noLock = false): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('head');
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
+        }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Returns details of a ref.
      */
-    public function ref(string $name): GitRef
+    public function ref(string $name, ?bool $noLock = false): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
         $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
+        }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Returns details of a branch.
      */
-    public function branch(string $name): GitRef
+    public function branch(string $name, ?bool $noLock = false): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('branch');
         $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
+        }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Returns details of a tag.
      */
-    public function tag(string $name): GitRef
+    public function tag(string $name, ?bool $noLock = false): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tag');
         $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
+        }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -76,11 +88,14 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
      */
-    public function latest(?string $version = ''): GitRef
+    public function latest(?string $version = '', ?bool $noLock = false): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latest');
         if (null !== $version) {
         $innerQueryBuilder->setArgument('version', $version);
+        }
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
         }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

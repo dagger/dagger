@@ -43,6 +43,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?Service $registryService = null,
         ?RegistryProtocol $protocol = null,
         ?bool $insecureSkipTLSVerify = false,
+        ?bool $noLock = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('from');
         $innerQueryBuilder->setArgument('address', $address);
@@ -57,6 +58,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $insecureSkipTLSVerify) {
         $innerQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
+        }
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
