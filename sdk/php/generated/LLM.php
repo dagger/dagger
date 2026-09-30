@@ -138,6 +138,22 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Discover every artifact this conversation can address, as one selection, without evaluating their values.
+     *
+     * Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace and are evaluated in the caller's context.
+     *
+     * The workspace part is the artifacts of the bound workspace, or of the current workspace when none is bound, as returned by Workspace.artifacts. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it.
+     */
+    public function artifacts(?array $include = null): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('artifacts');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
      */
     public function withModel(string $model, ?string $provider = null): LLM

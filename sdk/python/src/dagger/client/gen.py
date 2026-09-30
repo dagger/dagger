@@ -1612,8 +1612,8 @@ class Artifact(Type):
         ----------
         absolute:
             Prefix the workspace's Git address and commit:
-            dag://<workspace>@<commit>:<path>. Fails if the workspace has no
-            Git address.
+            dag://<workspace>@<commit>:<path>. Fails if the artifact has no
+            workspace, or its workspace has no Git address.
         dimension_keys:
             Include the dimension keys as a query. Without them, the address
             is a path selector.
@@ -1643,7 +1643,9 @@ class Artifact(Type):
         return await _ctx.execute(str)
 
     def value(self, *, arguments: JSON = "{}") -> Node:
-        """Evaluate the target in the workspace that supplied this artifact.
+        """Evaluate the target in the workspace that supplied this artifact. An
+        artifact of an LLM's bound tool object has no workspace: it is
+        evaluated from that object's value in the caller's context.
 
         Parameters
         ----------
@@ -11940,6 +11942,42 @@ class LLM(Type):
         ]
         _ctx = self._select("agent", _args)
         return Agent(_ctx)
+
+    def artifacts(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> Artifacts:
+        """Discover every artifact this conversation can address, as one
+        selection, without evaluating their values.
+
+        Tool objects bound with withTools contribute their modules' artifacts,
+        rooted at their current values: evaluating one reads the live state of
+        the bound tools, not a fresh construction. If a module's main object
+        is bound, only its tree is included; otherwise each bound object of
+        that module contributes its own tree. Addresses start with the module
+        name. These artifacts have no workspace and are evaluated in the
+        caller's context.
+
+        The workspace part is the artifacts of the bound workspace, or of the
+        current workspace when none is bound, as returned by
+        Workspace.artifacts. A workspace module with the same name as a module
+        with bound tool objects is omitted: the bound tools shadow it.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
+        Parameters
+        ----------
+        include:
+            Only include artifacts matching these path patterns, as with
+            Workspace.artifacts. A path selects that path and its children.
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("artifacts", _args)
+        return Artifacts(_ctx)
 
     def compose(self, expertise: list[Expertise]) -> Self:
         """Run expertise in list order, passing this conversation through each
