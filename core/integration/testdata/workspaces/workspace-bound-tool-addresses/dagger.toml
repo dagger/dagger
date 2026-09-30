@@ -1,2 +1,5 @@
 [modules.roster]
 source = ".dagger/modules/roster"
+
+[modules.notes]
+source = ".dagger/modules/notes"

@@ -105,6 +105,17 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("workspace", s.workspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the workspace the LLM is bound to."),
+		// Per call: when no workspace is bound, the scope depends on the
+		// client's current workspace, which the receiver's ID does not
+		// capture. Retaining each result keeps its items' IDs loadable.
+		dagql.Func("artifacts", s.artifacts).
+			View(AfterVersion("v1.0.0-0")).
+			Experimental("Agent APIs are likely to change.").
+			WithInput(dagql.PerCallInput).
+			Doc("Discover every artifact this conversation can address, as one selection, without evaluating their values.",
+				"Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace and are evaluated in the caller's context.",
+				"The workspace part is the artifacts of the bound workspace, or of the current workspace when none is bound, as returned by Workspace.artifacts. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it.").
+			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.")),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
 			Args(
@@ -358,6 +369,16 @@ func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{})
 		return res, fmt.Errorf("no workspace is bound to this LLM (bind one with withWorkspace)")
 	}
 	return ws, nil
+}
+
+func (s *llmSchema) artifacts(ctx context.Context, llm *core.LLM, args struct {
+	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+}) (*core.Artifacts, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return llm.Artifacts(ctx, srv, workspaceIncludePatterns(args.Include))
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
