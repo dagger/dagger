@@ -1599,6 +1599,54 @@ engineVersion = "latest"
 	require.Equal(t, "git-module", name)
 }
 
+func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePrivateSSH(ctx context.Context, t *testctx.T) {
+	const repoPath = "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private"
+	for _, cloneRef := range []string{
+		"git@gitlab.com:dagger-modules/private/test/more/dagger-test-modules-private.git",
+		"ssh://git@" + repoPath + ".git",
+	} {
+		t.Run(cloneRef, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+			defer cleanup()
+
+			ref := c.Git(cloneRef, dagger.GitOpts{
+				SSHAuthSocket: c.Host().UnixSocket(sockPath),
+			}).Head()
+			commit, err := ref.Commit(ctx)
+			require.NoError(t, err)
+			ws := ref.AsWorkspace().WithNewFile("workspace-module/dagger-module.toml", `name = "workspace-module"
+engineVersion = "latest"
+
+[[dependencies]]
+name = "dep"
+source = "../workspace-dep"
+`).WithNewFile("workspace-dep/dagger-module.toml", `name = "dep"
+engineVersion = "latest"
+`)
+			src := ws.ModuleSource("workspace-module")
+			kind, err := src.Kind(ctx)
+			require.NoError(t, err)
+			require.Equal(t, dagger.ModuleSourceKindGitSource, kind)
+			gotClone, err := src.CloneRef(ctx)
+			require.NoError(t, err)
+			require.Equal(t, cloneRef, gotClone)
+			repoURL, err := src.HTMLRepoURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "https://"+repoPath, repoURL)
+			link, err := src.HTMLURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "https://"+repoPath+"/tree/"+commit+"/workspace-module", link)
+			deps, err := src.Dependencies(ctx)
+			require.NoError(t, err)
+			require.Len(t, deps, 1)
+			name, err := deps[0].ModuleOriginalName(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "dep", name)
+		})
+	}
+}
+
 func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePreservesGitContext(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	moduleDir := c.Directory().
