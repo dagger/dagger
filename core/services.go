@@ -1133,7 +1133,15 @@ func (ss *Services) stop(ctx context.Context, running *RunningService, force boo
 		if running.Wait != nil {
 			_ = running.Wait(ctx)
 		}
-		return context.Cause(ctx)
+		if err := context.Cause(ctx); err != nil {
+			return err
+		}
+		// the service has exited, so this only collects its stop result, e.g.
+		// a cleanup failure
+		if err := running.stopFromManager(ctx, false); err != nil {
+			return fmt.Errorf("stop: %w", err)
+		}
+		return nil
 	}
 	running.stoppers++
 	ss.l.Unlock()
