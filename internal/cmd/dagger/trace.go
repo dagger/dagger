@@ -366,27 +366,9 @@ func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceView
 		// --log (runTraceView only asks for it with a live frontend): page the
 		// selected span's full logs, or the whole trace's.
 		if o.log {
-			if !target.IsValid() {
-				root, _, err := sel.resolveSpan(ctx, source, traceID)
-				if err != nil {
-					return cleanup, err
-				}
-				if target, err = parseSpanID(root); err != nil {
-					return cleanup, err
-				}
-				descendants = true
+			if err := openTraceLogPager(ctx, tf, source, traceID, sel, target, descendants, &streamFg); err != nil {
+				return cleanup, err
 			}
-			w := tf.OpenLogStream(target, sel.title(traceID))
-			streamFg.Go(func() error {
-				_, err := streamTraceLogText(ctx, source, traceID, target.String(), descendants, func(body string) error {
-					_, err := io.WriteString(w, body)
-					return err
-				})
-				if err != nil && ctx.Err() == nil {
-					fmt.Fprintf(w, "\nError: cannot stream the logs: %v\n", err)
-				}
-				return nil
-			})
 		}
 
 		// Fetch the subtrees of surfaced failed checks so their cause and
@@ -449,6 +431,33 @@ func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceView
 		}
 	}
 	return runErr
+}
+
+// openTraceLogPager opens the frontend's pager on target's full logs, or on
+// the whole trace's when no span was selected, streaming them on fg.
+func openTraceLogPager(ctx context.Context, tf idtui.TraceFrontend, source tracesource.Source, traceID string, sel spanSelector, target dagui.SpanID, descendants bool, fg *fetchGroup) error {
+	if !target.IsValid() {
+		root, _, err := sel.resolveSpan(ctx, source, traceID)
+		if err != nil {
+			return err
+		}
+		if target, err = parseSpanID(root); err != nil {
+			return err
+		}
+		descendants = true
+	}
+	w := tf.OpenLogStream(target, sel.title(traceID))
+	fg.Go(func() error {
+		_, err := streamTraceLogText(ctx, source, traceID, target.String(), descendants, func(body string) error {
+			_, err := io.WriteString(w, body)
+			return err
+		})
+		if err != nil && ctx.Err() == nil {
+			fmt.Fprintf(w, "\nError: cannot stream the logs: %v\n", err)
+		}
+		return nil
+	})
+	return nil
 }
 
 // resolveTraceTarget turns a --span/--check/--test selection into the span to
