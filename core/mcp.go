@@ -131,6 +131,11 @@ type MCP struct {
 	// have nothing to be filled from and are treated as unsatisfiable (see
 	// implicitToolArgs). Unlike the per-step scratch above, it survives Clone.
 	standalone bool
+	// scopeBase is the conversation a standalone server (dagger mcp) serves,
+	// with its bindings recorded. No step sets selfLLM there, so tool-argument
+	// addresses resolve in this conversation's scope instead (see
+	// MCP.scopeLLM). Like standalone, it survives Clone.
+	scopeBase dagql.ObjectResult[*LLM]
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.

@@ -53,7 +53,8 @@ func (*ArtifactPath) TypeDescription() string {
 // A workspace artifact has a Workspace and a tree rooted at a fresh
 // construction of its module. A bound artifact (see BoundArtifacts) has no
 // Workspace: its tree is rooted at a live object value (ModTreeNode.RootValue),
-// e.g. an LLM's bound tool object, and it is evaluated in the caller's context.
+// e.g. an LLM's bound tool object. It evaluates in its ContextWorkspace, if
+// any, else in the caller's context.
 type Artifact struct {
 	ModuleName     string `field:"true" doc:"The installed module name."`
 	DimensionNames map[string]string
@@ -63,7 +64,16 @@ type Artifact struct {
 	Directives     []string `field:"true" doc:"The directives carried by this artifact."`
 	LoadFailure    *ModuleLoadFailure
 	Node           *ModTreeNode
-	Workspace      dagql.ObjectResult[*Workspace]
+	// Workspace is the workspace that supplied the artifact: its address is
+	// relative to it, and it names the artifact's identity. Unset for a
+	// bound artifact.
+	Workspace dagql.ObjectResult[*Workspace]
+	// ContextWorkspace is the workspace a bound artifact evaluates in — for an
+	// LLM's scope, the conversation's workspace — so a required Workspace
+	// argument along its path is the same whoever evaluates it, a module
+	// function included. It is not part of the address or identity; a
+	// workspace artifact evaluates in its own Workspace instead.
+	ContextWorkspace dagql.ObjectResult[*Workspace]
 }
 
 // Clone gives each API result its own writable dependency wrappers. Attachment
@@ -119,6 +129,22 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		addr.Version = commit
 	}
 	return addr.String(), nil
+}
+
+// artifactReferenceChainKey carries the chain of artifact references being
+// resolved in a context, to detect reference cycles.
+type artifactReferenceChainKey struct{}
+
+// WithArtifactReference records that the reference ref (a canonical address)
+// is being resolved in ctx. It fails if ref is already being resolved further
+// up the chain: evaluating it would construct itself, e.g. through a module
+// whose constructor defaults to an address of its own artifact.
+func WithArtifactReference(ctx context.Context, ref string) (context.Context, error) {
+	chain, _ := ctx.Value(artifactReferenceChainKey{}).([]string)
+	if slices.Contains(chain, ref) {
+		return nil, fmt.Errorf("module reference cycle detected: %s -> %s", strings.Join(chain, " -> "), ref)
+	}
+	return context.WithValue(ctx, artifactReferenceChainKey{}, append(slices.Clip(chain), ref)), nil
 }
 
 // ArtifactTypeName is the CLI-case form of a GraphQL type name, as used in a
@@ -353,19 +379,24 @@ func (a *Artifact) BoundRoot() dagql.AnyObjectResult {
 	return nil
 }
 
-// WorkspaceContext binds the artifact's workspace into ctx for evaluation:
+// WorkspaceContext binds the workspace the artifact evaluates in into ctx:
 // its owning client for host routing, and the workspace itself for
-// contextual and Workspace-typed arguments. An artifact without a workspace
-// (see BoundArtifacts) is evaluated in ctx as is.
+// contextual and Workspace-typed arguments. That is the artifact's own
+// Workspace, else its ContextWorkspace (see BoundArtifacts); with neither,
+// ctx is left as is.
 func (a *Artifact) WorkspaceContext(ctx context.Context) (context.Context, error) {
-	if a.Workspace.Self() == nil {
+	ws := a.Workspace
+	if ws.Self() == nil {
+		ws = a.ContextWorkspace
+	}
+	if ws.Self() == nil {
 		return ctx, nil
 	}
-	ctx, err := WorkspaceClientContext(ctx, a.Workspace.Self())
+	ctx, err := WorkspaceClientContext(ctx, ws.Self())
 	if err != nil {
 		return nil, err
 	}
-	return WorkspaceToContext(ctx, a.Workspace), nil
+	return WorkspaceToContext(ctx, ws), nil
 }
 
 func (a *Artifacts) WithArtifacts(other *Artifacts) (*Artifacts, error) {
@@ -810,6 +841,8 @@ type persistedArtifact struct {
 	Directives     []string
 	Node           int
 	Workspace      uint64
+	// ContextWorkspace is Artifact.ContextWorkspace; zero when unset.
+	ContextWorkspace uint64 `json:",omitempty"`
 }
 type persistedArtifacts struct {
 	Tree     persistedModTree
@@ -830,6 +863,12 @@ func encodeArtifacts(enc *dagql.PersistEncodeContext, entries []*Artifact, selec
 		}
 		if a.Workspace.Self() != nil {
 			p.Workspace, err = encodePersistedObjectRef(enc, a.Workspace, "artifact workspace")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+		}
+		if a.ContextWorkspace.Self() != nil {
+			p.ContextWorkspace, err = encodePersistedObjectRef(enc, a.ContextWorkspace, "artifact context workspace")
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
@@ -859,6 +898,10 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 			return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
 		}
 		a.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.Workspace, "artifact workspace")
+		if err != nil {
+			return nil, err
+		}
+		a.ContextWorkspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.ContextWorkspace, "artifact context workspace")
 		if err != nil {
 			return nil, err
 		}
@@ -899,6 +942,18 @@ func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult,
 		a.Workspace, ok = value.(dagql.ObjectResult[*Workspace])
 		if !ok {
 			return nil, fmt.Errorf("artifact workspace has unexpected type %T", value)
+		}
+		owned = append(owned, value)
+	}
+	if a.ContextWorkspace.Self() != nil {
+		value, err := attach(a.ContextWorkspace)
+		if err != nil {
+			return nil, err
+		}
+		var ok bool
+		a.ContextWorkspace, ok = value.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("artifact context workspace has unexpected type %T", value)
 		}
 		owned = append(owned, value)
 	}

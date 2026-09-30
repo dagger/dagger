@@ -1312,7 +1312,8 @@ type Swapper {
 }
 
 // TestBoundToolAddresses covers dag:// addresses at tool dispatch that name a
-// module bound as a tool (MCP.resolveBoundToolAddress): the path is evaluated
+// module bound as a tool: they resolve in the conversation's scope
+// (LLM.artifacts), where the path is evaluated
 // from the LIVE bound object, so it sees state a fresh constructor lacks, and
 // collection items take their key from the address's dimension query.
 func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
@@ -1378,6 +1379,61 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 			`current-workspace | resolve "dag://roster/members/dir?member=a" | directory | entries`,
 		)).Stdout(ctx)
 		requireErrOut(t, err, `resolve "dag://roster/members/dir?member=a": no artifact matches`)
+	})
+
+	t.Run("selection args take addresses in the conversation's scope", func(ctx context.Context, t *testctx.T) {
+		// Artifacts and Artifact args lift a DAG address — scheme optional,
+		// the path a glob — into the part of the conversation's scope it
+		// selects, which the module function then evaluates itself.
+		const prompt = "read the notes"
+		const notes = "hello from the roster | workspace readme"
+		script := c.LLM().WithPrompt(prompt).
+			// Rebind and read in one turn: the read sees the new member.
+			WithResponse([]dagger.LLMContentBlockInput{
+				toolCall("add", "withMember", `{"name":"a","contents":"hello from the roster"}`),
+				toolCall("all", "readAll", `{"targets":"roster/**/notes"}`),
+			}).
+			WithToolResult("add", "", false).
+			WithToolResult("all", "", false)
+		for _, call := range []struct {
+			block   dagger.LLMContentBlockInput
+			isError bool
+		}{
+			{block: toolCall("one", "read", `{"target":"roster/members/notes?member=a"}`)},
+			{block: toolCall("typed", "read", `{"target":"dag+file://roster/members/notes?member=a"}`)},
+			{block: toolCall("many", "read", `{"target":"roster/members/*"}`), isError: true},
+		} {
+			script = script.
+				WithResponse([]dagger.LLMContentBlockInput{call.block}).
+				WithToolResult(call.block.CallID, "", call.isError)
+		}
+		model := cannedRecordingModel(ctx, t, c, script.WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+		tools, err := base.With(daggerShell("llm | with-tools $(inspector) | tools")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, tools, "## readAll\n")
+		require.Contains(t, tools, "(Artifacts address:")
+		require.Contains(t, tools, "## read\n")
+		require.Contains(t, tools, "(Artifact address:")
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(roster) | with-tools $(inspector) | with-prompt "%s" | loop | transcript`,
+			model, prompt,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The bare glob selects the bound roster's notes, member a included:
+		// the rebinding earlier in the turn is in scope. Evaluated inside the
+		// module function, the notes still get the conversation's workspace.
+		require.Contains(t, out, "dag://roster/members/notes?member=a: "+notes, out)
+		// A keyed address, with or without a type assertion, picks one.
+		require.Equal(t, 2, strings.Count(out, "read: "+notes), out)
+		// An Artifact must be exactly one: several matches are listed.
+		require.Contains(t, out, `"roster/members/*" is not a resolvable Artifact address`)
+		require.Contains(t, out, "dag://roster/members/dir?member=a")
+		require.Contains(t, out, "FindArtifacts lists what exists")
+		require.Contains(t, out, "done")
 	})
 
 	t.Run("the LLM scope has the bound tools' live artifacts", func(ctx context.Context, t *testctx.T) {

@@ -609,6 +609,9 @@ var persistedArtifactsVisitor = persistedStructVisitor("", func(p *persistedArti
 		if err := w.at("Entries").index(i).child("Workspace", &p.Entries[i].Workspace); err != nil {
 			return err
 		}
+		if err := w.at("Entries").index(i).child("ContextWorkspace", &p.Entries[i].ContextWorkspace); err != nil {
+			return err
+		}
 	}
 	return nil
 })
