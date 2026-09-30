@@ -446,19 +446,9 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 		return err
 	}
 
-	// A depth limit only saves transfer on an empty or already-shallow mirror.
-	// Fetching a new tip with --depth into a complete mirror records shallow
-	// boundaries over history it already has, and removing them again for the
-	// next full-history read can resend that entire history. Fetching the tip
-	// completely costs only the commits it adds.
-	if depth > 0 {
-		complete, err := gitMirrorIsComplete(ctx, git, gitDir)
-		if err != nil {
-			return err
-		}
-		if complete {
-			depth = 0
-		}
+	depth, err = mirrorFetchDepth(ctx, git, gitDir, depth)
+	if err != nil {
+		return err
 	}
 
 	shaRefSpecs := make([]string, len(refs))
@@ -577,6 +567,27 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 	}
 
 	return nil
+}
+
+// mirrorFetchDepth returns the depth to fetch into the mirror at gitDir.
+//
+// A depth limit only saves transfer on an empty or already-shallow mirror.
+// Fetching a new tip with --depth into a complete mirror records shallow
+// boundaries over history it already has, and removing them again for the
+// next full-history read can resend that entire history. Fetching the tip
+// completely costs only the commits it adds.
+func mirrorFetchDepth(ctx context.Context, git *gitutil.GitCLI, gitDir string, depth int) (int, error) {
+	if depth <= 0 {
+		return depth, nil
+	}
+	complete, err := gitMirrorIsComplete(ctx, git, gitDir)
+	if err != nil {
+		return 0, err
+	}
+	if complete {
+		return 0, nil
+	}
+	return depth, nil
 }
 
 // gitMirrorIsComplete reports whether the mirror holds history and none of it
