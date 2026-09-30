@@ -141,6 +141,10 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		t.Helper()
 		require.NoError(t, stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
 	}
+	discard := func(t *testctx.T, e *running) {
+		t.Helper()
+		require.NoError(t, discardNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
+	}
 	start := func(t *testctx.T, state string, volume *dagger.CacheVolume, checkout string) *running {
 		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
@@ -201,7 +205,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	aDir := newCheckout(t)
 	aVolume := outer.CacheVolume("b2-transfer-a-" + identity.NewID())
 	a := start(t, "b2-transfer-a-state-"+identity.NewID(), aVolume, aDir)
-	defer stop(t, a)
+	defer discard(t, a)
 	require.NoError(t, a.client.ModuleSource(".").AsModule().Serve(ctx))
 	aID, aArtifactID := callReport(t, a.client, "same")
 	require.Equal(t, uint64(1), countBody(t, a.client, "report"))
@@ -225,7 +229,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			bVolume := outer.CacheVolume("b2-transfer-b-" + identity.NewID())
 			bState := "b2-transfer-b-state-" + identity.NewID()
 			b := start(t, bState, bVolume, bDir)
-			defer func() { stop(t, b) }()
+			defer func() { discard(t, b) }()
 			var operational *dagger.Module
 			var err error
 			// warmScratchRow is B's own scratch Directory entry, when B is warm.
@@ -368,6 +372,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				_, err = pressure.WithEnvVariable("PRESSURE", identity.NewID()).WithExec([]string{"dd", "if=/dev/zero", "of=/fixture/gc-pressure", "bs=1048576", "count=" + strconv.FormatInt(count, 10), "conv=fsync"}).Sync(ctx)
 				require.NoError(t, err)
 			}
+			// Stop cleanly: the restart below checks the shutdown marker.
 			stop(t, b)
 			b = start(t, bState, bVolume, bDir)
 			var restored transferFixtureReport
@@ -458,7 +463,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	t.Run("foreign context", func(ctx context.Context, t *testctx.T) {
 		volume := outer.CacheVolume("b2-transfer-foreign-" + identity.NewID())
 		foreign := start(t, "b2-transfer-foreign-state-"+identity.NewID(), volume, newCheckout(t))
-		defer stop(t, foreign)
+		defer discard(t, foreign)
 		// This bare client also uses addendum 2's runtime preparation; it never
 		// serves the Module, so schema recovery has no installed candidates.
 		_, err := foreign.client.ModuleSource(".").AsModule().Sync(ctx)
