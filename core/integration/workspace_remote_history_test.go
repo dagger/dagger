@@ -86,6 +86,45 @@ func (WorkspaceSuite) TestWorkspaceRemoteParentHistoryDoesNotFetch(ctx context.C
 	require.GreaterOrEqual(t, walks, 2, "both ahead and behind must actually traverse history")
 }
 
+// Committing on a remote workspace turns it into owned storage holding only
+// its own (detached) history. Other names still resolve through the remote it
+// came from, with that remote's bindings (here, the service that makes git://
+// reachable), while HEAD stays the local commit.
+func (WorkspaceSuite) TestWorkspaceRemoteCommitResolvesUpstreamRefs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture := newWorkspaceRemoteHistoryFixture(ctx, t, c)
+	ws := workspaceRemoteHistoryCommit(ctx, t, c, fixture.repo.Head().AsWorkspace(), 1)
+	head := ws.Git().Head()
+	headSHA, err := head.CommitSHA(ctx)
+	require.NoError(t, err)
+	repo := head.AsRepository()
+
+	for _, name := range []string{"main", "divergent", "side", "old", "refs/heads/side"} {
+		want := fixture.git(ctx, t, "rev-parse", name+"^{commit}")
+		got, err := repo.Ref(name).CommitSHA(ctx)
+		require.NoError(t, err, name)
+		require.Equal(t, want, got, name)
+	}
+	contents, err := repo.Ref("divergent").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("divergent.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "divergent\n", contents)
+
+	// Local names never reach the remote.
+	for _, name := range []string{"HEAD", headSHA} {
+		got, err := repo.Ref(name).CommitSHA(ctx)
+		require.NoError(t, err, name)
+		require.Equal(t, headSHA, got, name)
+	}
+	// The remote-resolved base is comparable with the local commit, as a
+	// rebase onto it needs.
+	base, err := head.CommonAncestor(repo.Ref("main")).CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fixture.git(ctx, t, "rev-parse", "main"), base)
+
+	_, err = repo.Ref("missing").CommitSHA(ctx)
+	require.ErrorContains(t, err, `does not contain ref "missing"`)
+}
+
 // Each fixture has its own URL and mirror: one demand test must not warm the
 // history that a different test is supposed to fetch lazily. Everything is
 // created in containers; no host workspace capture participates in the commits.
