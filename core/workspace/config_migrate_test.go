@@ -30,6 +30,8 @@ anything = false
 backendPort = 80
 backendService = 'web'
 future = 'keep'
+[env.ci.modules.foo.as-sdk]
+name = 'env-specific'
 `)
 	warnings, err := CheckConfigFields(data, "nested/dagger.toml")
 	require.Equal(t, []string{
@@ -38,9 +40,10 @@ future = 'keep'
 	require.EqualError(t, err, strings.Join([]string{
 		"nested/dagger.toml:1:1: unknown field future",
 		"nested/dagger.toml:4:1: unknown field modules.\"custom.sdk\".unknown",
-		"nested/dagger.toml:22:1: unknown field ports.8080.future",
 		"nested/dagger.toml:11:1: unknown field sdks.custom.future",
 		"nested/dagger.toml:14:1: unknown field sdks.custom.scopes.\".\".future",
+		"nested/dagger.toml:22:1: unknown field ports.8080.future",
+		"nested/dagger.toml:23:1: unknown field env.ci.modules.foo.as-sdk",
 	}, "\n"))
 	_, err = ParseConfigAt(t.Context(), data, "nested")
 	require.ErrorContains(t, err, "unknown field future")

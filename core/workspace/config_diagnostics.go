@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"reflect"
@@ -19,7 +20,11 @@ func CheckConfigFields(data []byte, filename string) (warnings []string, _ error
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", filename, err)
 	}
-	var errs []error
+	type unknownField struct {
+		pos  toml.Position
+		path string
+	}
+	var unknown []unknownField
 	var visit func(*toml.Tree, reflect.Type, []string)
 	visit = func(tree *toml.Tree, typ reflect.Type, prefix []string) {
 		for typ.Kind() == reflect.Pointer {
@@ -47,11 +52,10 @@ func CheckConfigFields(data []byte, filename string) (warnings []string, _ error
 			}
 			if !known {
 				pos := tree.GetPositionPath([]string{key})
-				location := fmt.Sprintf("%s:%d:%d", filename, pos.Line, pos.Col)
 				if legacySDKConfigPath(parts) {
-					warnings = append(warnings, fmt.Sprintf("%s: unsupported field %s is ignored; run `dagger ws migrate` to migrate it", location, JoinConfigPath(parts...)))
+					warnings = append(warnings, fmt.Sprintf("%s:%d:%d: unsupported field %s is ignored; run `dagger ws migrate` to migrate it", filename, pos.Line, pos.Col, JoinConfigPath(parts...)))
 				} else {
-					errs = append(errs, fmt.Errorf("%s: unknown field %s", location, JoinConfigPath(parts...)))
+					unknown = append(unknown, unknownField{pos, JoinConfigPath(parts...)})
 				}
 				continue
 			}
@@ -61,12 +65,22 @@ func CheckConfigFields(data []byte, filename string) (warnings []string, _ error
 		}
 	}
 	visit(tree, reflect.TypeFor[Config](), nil)
+	// Report errors in file order.
+	slices.SortStableFunc(unknown, func(a, b unknownField) int {
+		return cmp.Or(cmp.Compare(a.pos.Line, b.pos.Line), cmp.Compare(a.pos.Col, b.pos.Col))
+	})
+	errs := make([]error, 0, len(unknown))
+	for _, field := range unknown {
+		errs = append(errs, fmt.Errorf("%s:%d:%d: unknown field %s", filename, field.pos.Line, field.pos.Col, field.path))
+	}
 	return warnings, errors.Join(errs...)
 }
 
+// legacySDKConfigPath reports whether parts names a legacy SDK field that
+// `dagger ws migrate` can migrate. Environment-specific SDK roles cannot be
+// migrated, so they are not included.
 func legacySDKConfigPath(parts []string) bool {
-	return len(parts) == 3 && configDecoderKeyMatches(parts[0], "modules") && configDecoderKeyMatches(parts[2], "as-sdk") ||
-		len(parts) == 5 && configDecoderKeyMatches(parts[0], "env") && configDecoderKeyMatches(parts[2], "modules") && configDecoderKeyMatches(parts[4], "as-sdk")
+	return len(parts) == 3 && configDecoderKeyMatches(parts[0], "modules") && configDecoderKeyMatches(parts[2], "as-sdk")
 }
 
 // configDecoderKey returns the key go-toml consumes for a tagged struct field.
