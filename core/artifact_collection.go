@@ -304,7 +304,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 			continue
 		}
 		group.Go(func() error {
-			nodes, err := expandArtifactNode(ctx, template.Node, template.Workspace, bound.Selector.Dimensions, collectionKeys)
+			nodes, err := expandArtifactNode(ctx, template.Node, template, bound.Selector.Dimensions, collectionKeys)
 			if err != nil {
 				return err
 			}
@@ -360,14 +360,17 @@ func (a *Artifacts) selectsDimension(id string) bool {
 	return slices.ContainsFunc(a.Selector.DimensionAlternatives, func(group []string) bool { return slices.Contains(group, id) })
 }
 
-func expandArtifactNode(ctx context.Context, node *ModTreeNode, ws dagql.ObjectResult[*Workspace], filters []ArtifactDimensionFilter, collectionKeys artifactCollectionKeyFunc) ([]*ModTreeNode, error) {
+// expandArtifactNode enumerates the keys of node's collections. Each
+// collection receiver evaluates like template: in its workspace or context
+// workspace.
+func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifact, filters []ArtifactDimensionFilter, collectionKeys artifactCollectionKeyFunc) ([]*ModTreeNode, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if node == nil {
 		return []*ModTreeNode{nil}, nil
 	}
-	parents, err := expandArtifactNode(ctx, node.Parent, ws, filters, collectionKeys)
+	parents, err := expandArtifactNode(ctx, node.Parent, template, filters, collectionKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +398,7 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, ws dagql.ObjectR
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			keys, err := collectionKeys(ctx, &Artifact{Node: parent, Workspace: ws})
+			keys, err := collectionKeys(ctx, &Artifact{Node: parent, Workspace: template.Workspace, ContextWorkspace: template.ContextWorkspace})
 			if err != nil {
 				return fmt.Errorf("dimension %q: %w", node.CollectionDimension.Identifier, err)
 			}

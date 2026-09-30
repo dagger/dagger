@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -35,9 +36,22 @@ func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string
 	if err != nil {
 		return nil, err
 	}
-	workspace, err := m.scopeWorkspaceArtifacts(ctx, srv, include)
+	ws, err := m.scopeWorkspace(ctx, srv)
 	if err != nil {
 		return nil, err
+	}
+	var workspace []*Artifact
+	if ws.Self() != nil {
+		workspace, err = scopeWorkspaceArtifacts(ctx, srv, ws, include)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// A bound artifact evaluates in the conversation's workspace, whoever
+	// evaluates it: a module function receiving the selection does not
+	// inherit the conversation's context.
+	for _, entry := range bound {
+		entry.ContextWorkspace = ws
 	}
 	return mergeScopeArtifacts(bound, shadowed, workspace, include)
 }
@@ -101,7 +115,7 @@ type scopeBinding struct {
 // selectScopeBindings groups bindings by module, in binding order, and picks
 // the ones whose trees enter the scope: the module's main object alone when
 // it is bound — the module's whole address space, of which its other objects
-// are views (see boundToolRoot) — otherwise every bound object of the module.
+// are views — otherwise every bound object of the module.
 func selectScopeBindings(bindings []scopeBinding) (modules []string, selected map[string][]scopeBinding) {
 	selected = map[string][]scopeBinding{}
 	for _, b := range bindings {
@@ -178,35 +192,43 @@ func (m *MCP) bindingArtifacts(ctx context.Context, srv *dagql.Server, binding s
 	return BoundArtifacts(ctx, binding.module, root)
 }
 
-// scopeWorkspaceArtifacts selects Workspace.artifacts on the scope's
-// workspace, so its discovery rules (load failures, SDK generators,
-// entrypoint shorthand) apply unchanged. No workspace means no artifacts.
-func (m *MCP) scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, include []string) ([]*Artifact, error) {
+// scopeWorkspace is the workspace of the scope: the conversation's bound
+// workspace, else the one bound into ctx, else — as for address resolution
+// (resolveUserAddress) — the client's current workspace. None (a zero
+// result) when there is no current workspace or no schema view to discover
+// workspace artifacts in.
+func (m *MCP) scopeWorkspace(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*Workspace], error) {
 	srv = srv.Canonical()
 	workspaceType, ok := srv.ObjectType("Workspace")
 	if ok {
 		_, ok = workspaceType.FieldSpec("artifacts", srv.View)
 	}
 	if !ok {
-		return nil, nil
+		return dagql.ObjectResult[*Workspace]{}, nil
 	}
 	ws := m.workspace
 	if ws.Self() == nil {
 		ws, _ = WorkspaceFromContext(ctx)
 	}
 	if ws.Self() == nil {
-		// As for address resolution (resolveUserAddress), an unbound
-		// conversation works in the client's current workspace.
 		if err := srv.Select(ctx, srv.Root(), &ws, dagql.Selector{View: srv.View, Field: "currentWorkspace"}); err != nil {
 			if errors.Is(err, ErrNoCurrentWorkspace) {
-				return nil, nil
+				return dagql.ObjectResult[*Workspace]{}, nil
 			}
-			return nil, fmt.Errorf("load current workspace: %w", err)
+			return ws, fmt.Errorf("load current workspace: %w", err)
 		}
 	}
+	return ws, nil
+}
+
+// scopeWorkspaceArtifacts selects Workspace.artifacts on the scope's
+// workspace, so its discovery rules (load failures, SDK generators,
+// entrypoint shorthand) apply unchanged.
+func scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace], include []string) ([]*Artifact, error) {
+	srv = srv.Canonical()
 	sel := dagql.Selector{View: srv.View, Field: "artifacts"}
 	if include != nil {
-		sel.Args = []dagql.NamedInput{{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(include...))}}
+		sel.Args = []dagql.NamedInput{{Name: "include", Value: dagql.Opt(dagql.ArrayInput[dagql.String](dagql.NewStringArray(include...)))}}
 	}
 	var artifacts dagql.ObjectResult[*Artifacts]
 	if err := srv.Select(ctx, ws, &artifacts, sel); err != nil {
@@ -217,4 +239,144 @@ func (m *MCP) scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, in
 		entries = append(entries, entry.Clone())
 	}
 	return entries, nil
+}
+
+// scopeLLM returns the conversation whose scope (LLM.artifacts) a tool
+// argument's address resolves in: the conversation dispatching the call — or,
+// for a server without one (dagger mcp), the conversation it serves — with
+// the changes earlier calls of this turn made to its workspace and bindings
+// folded in, as step() folds them before continuations. So an address sees
+// the tools' state as of this call, and the value lifted from it has a
+// recipe: the conversation's own artifacts, filtered by the address.
+func (m *MCP) scopeLLM(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*LLM], error) {
+	base := m.currentLLM()
+	if base.Self() == nil {
+		base = m.scopeBase
+	}
+	if base.Self() == nil {
+		return base, errors.New("no conversation to resolve the address in")
+	}
+	wsBefore, err := base.Self().mcp.WorkspaceID()
+	if err != nil {
+		return base, err
+	}
+	toolsBefore, err := base.Self().mcp.BoundToolBindings()
+	if err != nil {
+		return base, err
+	}
+	sels := stateDeltaSelectors(m, wsBefore, toolsBefore)
+	if len(sels) == 0 {
+		return base, nil
+	}
+	srv = srv.Canonical()
+	for i := range sels {
+		sels[i].View = srv.View
+	}
+	var folded dagql.ObjectResult[*LLM]
+	if err := srv.Select(ctx, base, &folded, sels...); err != nil {
+		return base, fmt.Errorf("record this turn's tool state: %w", err)
+	}
+	return folded, nil
+}
+
+// scopeSelectors select a DAG address in a conversation's scope:
+// artifacts(include: [<path>]).filterUri(uri: <uri>). As for workspace
+// resolution (Workspace.resolve), the path narrows which workspace modules
+// load.
+func scopeSelectors(srv *dagql.Server, parsed *dagaddress.Address, uri string) []dagql.Selector {
+	artifacts := dagql.Selector{View: srv.View, Field: "artifacts"}
+	if parsed.Path != "" {
+		artifacts.Args = []dagql.NamedInput{{Name: "include", Value: dagql.Opt(dagql.ArrayInput[dagql.String](dagql.NewStringArray(parsed.Path)))}}
+	}
+	return []dagql.Selector{artifacts, {
+		View: srv.View, Field: "filterUri",
+		Args: []dagql.NamedInput{{Name: "uri", Value: dagql.String(uri)}},
+	}}
+}
+
+// liftScopeSelection lifts a DAG address, with or without the dag://
+// scheme, into the part of the conversation's scope it selects: the
+// Artifacts selection, or with one, the Artifact it must select exactly. The
+// result is selected through the conversation itself, so its ID is a real
+// recipe that a module function receiving it can load and evaluate.
+func (m *MCP) liftScopeSelection(ctx context.Context, srv *dagql.Server, addr string, one bool) (dagql.AnyObjectResult, error) {
+	parsed, err := dagaddress.Parse(addr)
+	if err != nil {
+		return nil, err
+	}
+	llm, err := m.scopeLLM(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	srv = srv.Canonical()
+	sels := scopeSelectors(srv, parsed, addr)
+	if !one {
+		var selection dagql.ObjectResult[*Artifacts]
+		if err := srv.Select(ctx, llm, &selection, sels...); err != nil {
+			return nil, err
+		}
+		return selection, nil
+	}
+	var artifact dagql.ObjectResult[*Artifact]
+	if err := srv.Select(ctx, llm, &artifact, append(sels, dagql.Selector{View: srv.View, Field: "one"})...); err != nil {
+		return nil, err
+	}
+	return artifact, nil
+}
+
+// resolveScopeObject evaluates the one value a relative DAG address names in
+// the conversation's scope: its bound tools with their live state, and its
+// workspace. It is LLM.artifacts(include: [<path>]).filterUri(<addr>).one.value,
+// with Workspace.resolve's rules: a type assertion only chooses among
+// several matches, so an artifact of another type is reported as such, and
+// the value must have the argument's type. Artifact.value evaluates each
+// artifact in its own workspace (or, for a bound tool's, the conversation's).
+func (m *MCP) resolveScopeObject(ctx context.Context, srv *dagql.Server, parsed *dagaddress.Address, addr, typeName string) (dagql.AnyObjectResult, error) {
+	llm, err := m.scopeLLM(ctx, srv)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	srv = srv.Canonical()
+	untyped := *parsed
+	untyped.Types = nil
+	var selection dagql.ObjectResult[*Artifacts]
+	if err := srv.Select(ctx, llm, &selection, scopeSelectors(srv, parsed, untyped.String())...); err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	if len(parsed.Types) > 0 && len(selection.Self().Entries) > 1 {
+		typed := dagaddress.Address{HasScheme: true, Types: parsed.Types}
+		if err := srv.Select(ctx, selection, &selection, dagql.Selector{
+			View: srv.View, Field: "filterUri",
+			Args: []dagql.NamedInput{{Name: "uri", Value: dagql.String(typed.String())}},
+		}); err != nil {
+			return nil, fmt.Errorf("resolve %q: %w", addr, err)
+		}
+	}
+	var one dagql.ObjectResult[*Artifact]
+	if err := srv.Select(ctx, selection, &one, dagql.Selector{View: srv.View, Field: "one"}); err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	artifact := one.Self()
+	if err := artifact.AssertType(parsed.Types); err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	if artifact.TypeName != typeName {
+		return nil, fmt.Errorf("resolve %q: artifact is a %s, not a %s", addr, artifact.TypeName, typeName)
+	}
+	// Guard against reference cycles, as Workspace.resolve does.
+	normalized, err := artifact.URI(ArtifactURIOpts{DimensionKeys: true})
+	if err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	ctx, err = WithArtifactReference(ctx, normalized)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	// Evaluation is user-facing work of the tool call: keep its spans
+	// visible, as for any other address (resolveObjectAddress).
+	var obj dagql.AnyObjectResult
+	if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), one, &obj, dagql.Selector{View: srv.View, Field: "value"}); err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", addr, err)
+	}
+	return obj, nil
 }

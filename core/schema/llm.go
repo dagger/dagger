@@ -113,8 +113,9 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Experimental("Agent APIs are likely to change.").
 			WithInput(dagql.PerCallInput).
 			Doc("Discover every artifact this conversation can address, as one selection, without evaluating their values.",
-				"Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace and are evaluated in the caller's context.",
-				"The workspace part is the artifacts of the bound workspace, or of the current workspace when none is bound, as returned by Workspace.artifacts. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it.").
+				"Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the workspace of the scope, whoever evaluates them.",
+				"The workspace part is the artifacts of the bound workspace, or of the current workspace when none is bound, as returned by Workspace.artifacts. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it.",
+				"Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.").
 			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.")),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
@@ -146,12 +147,12 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")).
 					Doc("The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time."),
 			),
-		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
+		dagql.NodeFunc("__mcp", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.Nullable[core.Void], error) {
 			currentSrv, err := core.CurrentDagqlServer(ctx)
 			if err != nil {
 				return dagql.Null[core.Void](), err
 			}
-			return dagql.Null[core.Void](), self.MCP(ctx, currentSrv)
+			return dagql.Null[core.Void](), self.Self().MCP(ctx, currentSrv, self)
 		}).
 			Doc("instantiates an mcp server"),
 		dagql.Func("withContent", s.withContent).

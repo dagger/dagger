@@ -3,3 +3,6 @@ source = ".dagger/modules/roster"
 
 [modules.notes]
 source = ".dagger/modules/notes"
+
+[modules.inspector]
+source = ".dagger/modules/inspector"

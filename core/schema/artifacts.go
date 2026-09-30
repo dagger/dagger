@@ -111,7 +111,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	artifactClass.Extend(dagql.FieldSpec{
 		Name: "value", Type: nodeInterfaceType{}, Args: dagql.NewInputSpecs(dagql.InputSpec{Name: "arguments", Type: core.JSON{}, Default: core.JSON("{}"), Description: "Field arguments as a JSON object."}),
-		Description: "Evaluate the target in the workspace that supplied this artifact. An artifact of an LLM's bound tool object has no workspace: it is evaluated from that object's value in the caller's context.",
+		Description: "Evaluate the target in the workspace that supplied this artifact. An artifact of an LLM's bound tool object has no workspace of its own: it is evaluated from that object's value, in the workspace of the LLM's scope.",
 		ViewFilter:  AfterVersion("v1.0.0-0"),
 		DoNotCache:  "Evaluate the field with its own cache policy.",
 	}, s.value)
