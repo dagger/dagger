@@ -1,0 +1,6 @@
+kind: Changed
+body: Cache SDK-provided module type definitions by source, dependency schema, and loaded module name.
+time: 2026-09-30T12:40:00-07:00
+custom:
+    Author: grouville
+    PR: "14398"
