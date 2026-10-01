@@ -60,7 +60,9 @@ func (GeneratorsSuite) TestSingleGeneratorPreservesSnapshots(ctx context.Context
 		require.False(t, exists)
 		modes, err := result.WithExec([]string{"stat", "-c", "%a", "out", "out/app", "out/text", "out/empty", "out/untouched", "out/mode-only"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "700\n750\n600\n700\n664\n600\n", modes)
+		// Changeset paths follow Git's content and executable-bit semantics.
+		// A permission-only change to mode-only is not an exported path.
+		require.Equal(t, "700\n750\n600\n700\n664\n644\n", modes)
 	}
 }
 
