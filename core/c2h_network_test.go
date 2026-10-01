@@ -37,7 +37,7 @@ func TestHostTunnelAttributedNetworkBytes(t *testing.T) {
 		got[current.Name] = gauge.DataPoints[0].Value
 	}
 	require.Equal(t, map[string]int64{
-		telemetryattrs.NetworkRxBytes: 23,
-		telemetryattrs.NetworkTxBytes: 29,
+		telemetryattrs.NetworkEstimatedRxBytes: 23,
+		telemetryattrs.NetworkEstimatedTxBytes: 29,
 	}, got)
 }

@@ -85,9 +85,9 @@ const (
 	LogMediaMIMETypeAttr = "dagger.io/log.media.mime_type"
 	LogMediaDataAttr     = "dagger.io/log.media.data"
 
-	// Attributed network byte metrics use the operation's point of view.
-	// "Internal" means the packet's remote address belongs to a Dagger-managed
-	// CNI bridge; "external" means it does not.
+	// Attributed network byte metrics are exact eBPF counters from an operation's
+	// network boundary. "Internal" means the packet's remote address belongs to
+	// a configured internal network; "external" means it does not.
 	NetworkRxBytes         = "dagger.io/metrics.network.attributed.rx.bytes"
 	NetworkTxBytes         = "dagger.io/metrics.network.attributed.tx.bytes"
 	NetworkInternalRxBytes = "dagger.io/metrics.network.attributed.internal.rx.bytes"
@@ -95,6 +95,11 @@ const (
 	NetworkExternalRxBytes = "dagger.io/metrics.network.attributed.external.rx.bytes"
 	NetworkExternalTxBytes = "dagger.io/metrics.network.attributed.external.tx.bytes"
 	NetworkAvailable       = "dagger.io/metrics.network.attributed.available"
+
+	// Estimated network byte metrics are conservative protocol-level lower
+	// bounds for operations without their own kernel network boundary.
+	NetworkEstimatedRxBytes = "dagger.io/metrics.network.estimated.rx.bytes"
+	NetworkEstimatedTxBytes = "dagger.io/metrics.network.estimated.tx.bytes"
 
 	// DagPartialAttr marks a successful lazy-evaluation resume span that
 	// completed one part while the result still had deferred work. Such a

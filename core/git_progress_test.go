@@ -42,7 +42,7 @@ func TestGitAttributedNetworkBytes(t *testing.T) {
 	require.NoError(t, reader.Collect(ctx, &metrics))
 	require.Len(t, metrics.ScopeMetrics, 1)
 	require.Len(t, metrics.ScopeMetrics[0].Metrics, 1)
-	require.Equal(t, telemetryattrs.NetworkRxBytes, metrics.ScopeMetrics[0].Metrics[0].Name)
+	require.Equal(t, telemetryattrs.NetworkEstimatedRxBytes, metrics.ScopeMetrics[0].Metrics[0].Name)
 	gauge := metrics.ScopeMetrics[0].Metrics[0].Data.(metricdata.Gauge[int64])
 	require.EqualValues(t, 2_936_012, gauge.DataPoints[0].Value)
 }

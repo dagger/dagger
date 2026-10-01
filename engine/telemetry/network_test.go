@@ -31,7 +31,7 @@ func TestNetworkRecorder(t *testing.T) {
 	require.NoError(t, reader.Collect(ctx, &metrics))
 	require.Len(t, metrics.ScopeMetrics, 1)
 	require.Len(t, metrics.ScopeMetrics[0].Metrics, 1)
-	require.Equal(t, telemetryattrs.NetworkRxBytes, metrics.ScopeMetrics[0].Metrics[0].Name)
+	require.Equal(t, telemetryattrs.NetworkEstimatedRxBytes, metrics.ScopeMetrics[0].Metrics[0].Name)
 	gauge := metrics.ScopeMetrics[0].Metrics[0].Data.(metricdata.Gauge[int64])
 	require.EqualValues(t, 123, gauge.DataPoints[0].Value)
 	spanID, ok := gauge.DataPoints[0].Attributes.Value(daggerotel.MetricsSpanIDAttr)
@@ -62,7 +62,7 @@ func TestNetworkStatsHandler(t *testing.T) {
 		got[current.Name] = gauge.DataPoints[0].Value
 	}
 	require.Equal(t, map[string]int64{
-		telemetryattrs.NetworkRxBytes: 11,
-		telemetryattrs.NetworkTxBytes: 13,
+		telemetryattrs.NetworkEstimatedRxBytes: 11,
+		telemetryattrs.NetworkEstimatedTxBytes: 13,
 	}, got)
 }

@@ -37,7 +37,7 @@ func TestSocketAttributedNetworkBytes(t *testing.T) {
 		got[current.Name] = gauge.DataPoints[0].Value
 	}
 	require.Equal(t, map[string]int64{
-		telemetryattrs.NetworkRxBytes: 17,
-		telemetryattrs.NetworkTxBytes: 19,
+		telemetryattrs.NetworkEstimatedRxBytes: 17,
+		telemetryattrs.NetworkEstimatedTxBytes: 19,
 	}, got)
 }

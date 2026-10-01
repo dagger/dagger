@@ -75,8 +75,8 @@ func TestLLMAttributedNetworkBytes(t *testing.T) {
 		got[current.Name] = gauge.DataPoints[0].Value
 	}
 	require.Equal(t, map[string]int64{
-		telemetryattrs.NetworkRxBytes: int64(len(compressedBody)),
-		telemetryattrs.NetworkTxBytes: int64(len(requestBody)),
+		telemetryattrs.NetworkEstimatedRxBytes: int64(len(compressedBody)),
+		telemetryattrs.NetworkEstimatedTxBytes: int64(len(requestBody)),
 	}, got)
 }
 

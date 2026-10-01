@@ -43,7 +43,7 @@ func TestGitPushAttributedNetworkBytes(t *testing.T) {
 
 	var data metricdata.ResourceMetrics
 	require.NoError(t, reader.Collect(ctx, &data))
-	require.Equal(t, telemetryattrs.NetworkTxBytes, data.ScopeMetrics[0].Metrics[0].Name)
+	require.Equal(t, telemetryattrs.NetworkEstimatedTxBytes, data.ScopeMetrics[0].Metrics[0].Name)
 	gauge := data.ScopeMetrics[0].Metrics[0].Data.(metricdata.Gauge[int64])
 	require.EqualValues(t, 1_992_294, gauge.DataPoints[0].Value)
 }

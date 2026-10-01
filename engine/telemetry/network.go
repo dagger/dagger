@@ -32,11 +32,11 @@ type NetworkRecorder struct {
 }
 
 func NewNetworkRecorder(ctx context.Context, direction NetworkDirection) (*NetworkRecorder, error) {
-	name := telemetryattrs.NetworkRxBytes
-	description := "Total number of bytes received by the operation"
+	name := telemetryattrs.NetworkEstimatedRxBytes
+	description := "Estimated bytes received by the operation"
 	if direction == NetworkTX {
-		name = telemetryattrs.NetworkTxBytes
-		description = "Total number of bytes transmitted by the operation"
+		name = telemetryattrs.NetworkEstimatedTxBytes
+		description = "Estimated bytes transmitted by the operation"
 	}
 	gauge, err := daggerotel.Meter(ctx, networkInstrumentation).Int64Gauge(
 		name,

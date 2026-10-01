@@ -1035,29 +1035,31 @@ func renderSpanDuration(out TermOutput, span *dagui.Span, now time.Time, final b
 }
 
 var metricsVerbosity = map[string]int{
-	telemetry.IOStatDiskReadBytes:         3,
-	telemetry.IOStatDiskWriteBytes:        3,
-	telemetry.IOStatPressureSomeTotal:     3,
-	telemetry.CPUStatPressureSomeTotal:    3,
-	telemetry.CPUStatPressureFullTotal:    3,
-	telemetry.MemoryCurrentBytes:          3,
-	telemetry.MemoryPeakBytes:             3,
-	telemetryattrs.NetworkRxBytes:         2,
-	telemetryattrs.NetworkTxBytes:         2,
-	telemetryattrs.NetworkInternalRxBytes: 3,
-	telemetryattrs.NetworkInternalTxBytes: 3,
-	telemetryattrs.NetworkExternalRxBytes: 3,
-	telemetryattrs.NetworkExternalTxBytes: 3,
-	telemetryattrs.NetworkAvailable:       3,
-	telemetry.NetstatRxBytes:              3,
-	telemetry.NetstatTxBytes:              3,
-	telemetry.NetstatRxDropped:            3,
-	telemetry.NetstatTxDropped:            3,
-	telemetry.NetstatRxPackets:            3,
-	telemetry.NetstatTxPackets:            3,
-	telemetry.LLMInputTokens:              1,
-	telemetry.LLMOutputTokens:             1,
-	telemetry.FilesyncWrittenBytes:        3,
+	telemetry.IOStatDiskReadBytes:          3,
+	telemetry.IOStatDiskWriteBytes:         3,
+	telemetry.IOStatPressureSomeTotal:      3,
+	telemetry.CPUStatPressureSomeTotal:     3,
+	telemetry.CPUStatPressureFullTotal:     3,
+	telemetry.MemoryCurrentBytes:           3,
+	telemetry.MemoryPeakBytes:              3,
+	telemetryattrs.NetworkRxBytes:          2,
+	telemetryattrs.NetworkTxBytes:          2,
+	telemetryattrs.NetworkEstimatedRxBytes: 2,
+	telemetryattrs.NetworkEstimatedTxBytes: 2,
+	telemetryattrs.NetworkInternalRxBytes:  3,
+	telemetryattrs.NetworkInternalTxBytes:  3,
+	telemetryattrs.NetworkExternalRxBytes:  3,
+	telemetryattrs.NetworkExternalTxBytes:  3,
+	telemetryattrs.NetworkAvailable:        3,
+	telemetry.NetstatRxBytes:               3,
+	telemetry.NetstatTxBytes:               3,
+	telemetry.NetstatRxDropped:             3,
+	telemetry.NetstatTxDropped:             3,
+	telemetry.NetstatRxPackets:             3,
+	telemetry.NetstatTxPackets:             3,
+	telemetry.LLMInputTokens:               1,
+	telemetry.LLMOutputTokens:              1,
+	telemetry.FilesyncWrittenBytes:         3,
 }
 
 func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
@@ -1092,8 +1094,8 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 
 	if metricsByName := r.db.MetricsBySpan[span.ID]; metricsByName != nil {
 		// Native operation network stats
-		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkRxBytes, "Network Rx", humanizeBytes)
-		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkTxBytes, "Network Tx", humanizeBytes)
+		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkEstimatedRxBytes, "Estimated Network Rx", humanizeBytes)
+		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkEstimatedTxBytes, "Estimated Network Tx", humanizeBytes)
 
 		// LLM Stats
 		r.renderMetric(out, metricsByName, telemetry.LLMInputTokens, "Input Tokens", humanizeTokens)
