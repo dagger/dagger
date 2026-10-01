@@ -130,13 +130,13 @@ static __always_inline int classify(struct __sk_buff *skb, __u8 direction,
     __u16 proto;
     __u32 offset = 12;
     if (bpf_skb_load_bytes(skb, offset, &proto, sizeof(proto)) < 0)
-        return SCOPE_EXTERNAL;
+        return -1;
     offset = 14;
 
     if (proto == bpf_htons(ETH_P_8021Q) ||
         proto == bpf_htons(ETH_P_8021AD)) {
         if (bpf_skb_load_bytes(skb, offset + 2, &proto, sizeof(proto)) < 0)
-            return SCOPE_EXTERNAL;
+            return -1;
         offset += 4;
     }
 
@@ -147,7 +147,7 @@ static __always_inline int classify(struct __sk_buff *skb, __u8 direction,
         __u32 addr_offset = offset + (direction == DIR_TX ? 16 : 12);
         if (bpf_skb_load_bytes(skb, addr_offset, &key.addr,
                                sizeof(key.addr)) < 0)
-            return SCOPE_EXTERNAL;
+            return -1;
         return bpf_map_lookup_elem(&internal_v4, &key) ?
             SCOPE_INTERNAL : SCOPE_EXTERNAL;
     }
@@ -157,7 +157,7 @@ static __always_inline int classify(struct __sk_buff *skb, __u8 direction,
         __u32 addr_offset = offset + (direction == DIR_TX ? 24 : 8);
         if (bpf_skb_load_bytes(skb, addr_offset, key.addr,
                                sizeof(key.addr)) < 0)
-            return SCOPE_EXTERNAL;
+            return -1;
         return bpf_map_lookup_elem(&internal_v6, &key) ?
             SCOPE_INTERNAL : SCOPE_EXTERNAL;
     }
@@ -174,7 +174,7 @@ static __always_inline int classify_l3(struct __sk_buff *skb, __u8 direction)
         struct ipv4_lpm_key key = {.prefixlen = 32};
         __u32 addr_offset = direction == DIR_TX ? 16 : 12;
         if (bpf_skb_load_bytes(skb, addr_offset, &key.addr, sizeof(key.addr)) < 0)
-            return SCOPE_EXTERNAL;
+            return -1;
         return bpf_map_lookup_elem(&internal_v4, &key) ? SCOPE_INTERNAL : SCOPE_EXTERNAL;
     }
 
@@ -182,11 +182,11 @@ static __always_inline int classify_l3(struct __sk_buff *skb, __u8 direction)
         struct ipv6_lpm_key key = {.prefixlen = 128};
         __u32 addr_offset = direction == DIR_TX ? 24 : 8;
         if (bpf_skb_load_bytes(skb, addr_offset, key.addr, sizeof(key.addr)) < 0)
-            return SCOPE_EXTERNAL;
+            return -1;
         return bpf_map_lookup_elem(&internal_v6, &key) ? SCOPE_INTERNAL : SCOPE_EXTERNAL;
     }
 
-    return SCOPE_EXTERNAL;
+    return -1;
 }
 
 static __always_inline int add_cgroup_bytes(struct __sk_buff *skb,
@@ -207,7 +207,9 @@ static __always_inline int add_cgroup_bytes(struct __sk_buff *skb,
     if (loopback_ifindex && skb->ifindex == *loopback_ifindex)
         return 1;
 
-    __u8 scope = classify_l3(skb, direction);
+    int scope = classify_l3(skb, direction);
+    if (scope < 0)
+        return 1;
     struct cgroup_counter_key key = {
         .direction = direction,
         .scope = scope,
