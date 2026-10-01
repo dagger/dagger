@@ -2485,7 +2485,11 @@ func (s *Server) toSelectable(ctx context.Context, val AnyResult) (AnyObjectResu
 	// a path; once we resolve here we remember the class on the shared so
 	// subsequent hits skip this branch while its server is alive.
 	if shared != nil && s.resultServerForCall != nil {
-		if depResolver, err := resolverForSharedResultObject(ctx, s, shared, className); err == nil && depResolver != nil {
+		depResolver, err := resolverForSharedResultObject(ctx, s, shared, className)
+		if err != nil {
+			return nil, fmt.Errorf("toSelectable %q: resolve type from the result's call graph: %w", className, err)
+		}
+		if depResolver != nil {
 			if class, ok := depResolver.ObjectType(className); ok {
 				shared.setObjClass(class)
 				return class.New(val)
