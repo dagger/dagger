@@ -110,16 +110,18 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	if err != nil {
 		return nil, fmt.Errorf("%q: load core schema: %w", main.Name(), err)
 	}
-	defaults := defaultDeps.Mods()
-	mods := make([]modInstall, 0, len(defaults)+1)
-	for _, defaultDep := range defaults {
-		mods = append(mods, modInstall{mod: defaultDep})
-	}
-	mods = append(mods, modInstall{mod: NewUserMod(mod)})
-	// Preserve the unversioned artifact view. The module's runtime still uses
-	// its own dependencies and version; discovery must see newer core targets.
-	srv, err := buildSchemaWithView(ctx, q, mods, "")
+	coreSchema, err := defaultDeps.Schema(ctx)
 	if err != nil {
+		return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
+	}
+	srv, err := coreSchema.Fork(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("%q: fork core schema: %w", main.Name(), err)
+	}
+	// Artifact discovery needs the unversioned API, including newer core fields.
+	srv.View = ""
+	InstallCoreSchemaLoaders(srv)
+	if err := NewUserMod(mod).Install(ctx, srv); err != nil {
 		return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
 	}
 	return srv, nil

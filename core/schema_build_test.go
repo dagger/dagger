@@ -65,7 +65,7 @@ func TestArtifactSchemaForkViewAndIsolation(t *testing.T) {
 	require.NoError(t, err)
 	coreMod := &artifactCoreForkTestMod{base: base, view: "v0.21.0"}
 	probe := &artifactProbeMod{}
-	server.deps = NewSchemaBuilder(root, []Mod{coreMod, probe})
+	server.deps = NewSchemaBuilder(root, []Mod{coreMod, probe}).ClientOwned()
 	base.InstallObject(dagql.NewClass(base, dagql.ClassOpts[*Module]{}))
 	module := &Module{NameField: "fixture"}
 	mod, err := dagql.NewObjectResultForCall(module, base, &dagql.ResultCall{
@@ -87,7 +87,7 @@ func TestArtifactSchemaForkViewAndIsolation(t *testing.T) {
 	versioned, err := buildSchema(ctx, root, []modInstall{{mod: coreMod}, {mod: probe}})
 	require.NoError(t, err)
 	require.Equal(t, call.View("v0.21.0"), versioned.View)
-	require.Equal(t, 3, probe.installs)
+	require.Equal(t, 2, probe.installs)
 	_, exists := base.Root().ObjectType().FieldSpec("probe", "")
 	require.False(t, exists, "module installation must not modify the core template")
 	dagql.Fields[*Query]{dagql.Func("firstOnly", func(context.Context, *Query, struct{}) (string, error) {
@@ -95,6 +95,11 @@ func TestArtifactSchemaForkViewAndIsolation(t *testing.T) {
 	})}.Install(forks[0])
 	_, exists = forks[1].Root().ObjectType().FieldSpec("firstOnly", "")
 	require.False(t, exists)
+	template, err := server.deps.Schema(ctx)
+	require.NoError(t, err)
+	require.Equal(t, call.View("v0.21.0"), template.View)
+	_, exists = template.Root().ObjectType().FieldSpec("firstOnly", "")
+	require.False(t, exists, "artifact mutations must not change the cached schema")
 }
 
 func TestSchemaJSONFileSelectorHiddenFieldsAffectCallIdentity(t *testing.T) {
