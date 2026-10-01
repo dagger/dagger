@@ -289,9 +289,10 @@ func scopeSelectors(srv *dagql.Server, parsed *dagaddress.Address, uri string) [
 
 // liftScopeSelection lifts a DAG address, with or without the dag://
 // scheme, into the part of the conversation's scope it selects: the
-// Artifacts selection, or with one, the Artifact it must select exactly. The
-// result is selected through the conversation itself, so its ID is a real
-// recipe that a module function receiving it can load and evaluate.
+// Artifacts selection, which must not be empty, or with one, the Artifact it
+// must select exactly. The result is selected through the conversation
+// itself, so its ID is a real recipe that a module function receiving it can
+// load and evaluate.
 func (m *MCP) liftScopeSelection(ctx context.Context, srv *dagql.Server, addr string, one bool) (dagql.AnyObjectResult, error) {
 	parsed, err := dagaddress.Parse(addr)
 	if err != nil {
@@ -307,6 +308,12 @@ func (m *MCP) liftScopeSelection(ctx context.Context, srv *dagql.Server, addr st
 		var selection dagql.ObjectResult[*Artifacts]
 		if err := srv.Select(ctx, llm, &selection, sels...); err != nil {
 			return nil, err
+		}
+		// A filter matching nothing is a valid selection, but an address the
+		// model typed that names nothing is a mistake: passed on, a function
+		// like check would succeed without running anything.
+		if len(selection.Self().Entries) == 0 {
+			return nil, fmt.Errorf("no artifact matches %s", selection.Self().URI())
 		}
 		return selection, nil
 	}

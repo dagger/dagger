@@ -162,6 +162,12 @@ func TestLiftScopeSelection(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "docs/site via conversation.artifacts.filterUri", out)
 		require.Nil(t, includes[len(includes)-1], "an address without a path loads everything")
+
+		// An address that selects nothing is refused, rather than handing
+		// the function an empty selection it would vacuously accept.
+		_, err = call(t, m, "check", map[string]any{"targets": "go/lnt"})
+		require.ErrorContains(t, err, `"go/lnt" is not a resolvable Artifacts address: no artifact matches dag://go/lnt`)
+		require.ErrorContains(t, err, "FindArtifacts lists what exists")
 	})
 
 	t.Run("an Artifact arg takes the one artifact", func(t *testing.T) {
