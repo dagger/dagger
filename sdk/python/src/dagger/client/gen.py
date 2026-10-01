@@ -12057,6 +12057,9 @@ class LLM(Type):
         withWorkspace, as returned by Workspace.artifacts; an LLM with no
         bound workspace has none. A workspace module with the same name as a
         module with bound tool objects is omitted: the bound tools shadow it.
+        Unless they are only a plain construction of the module, which has no
+        state of its own: then the workspace module's artifacts are kept
+        instead.
 
         Tool arguments that take an address resolve it here: a DAG address to
         one object, or, for Artifacts and Artifact arguments, a selection
