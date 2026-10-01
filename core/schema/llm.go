@@ -72,7 +72,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.").
 			Args(
-				dagql.Arg("workspace").Doc("The workspace to work in."),
+				dagql.Arg("workspace").Doc("The workspace to work in.").
+					// Only the latest bound workspace is ever used, so loading a
+					// conversation from its recipe must not re-evaluate every
+					// workspace it was bound to along the way (each carrying its
+					// own history of commits, pulls and applied changes). Carry
+					// it by reference; core.LLM loads it on first use.
+					LazyRef(),
 			),
 		dagql.Func("workspace", s.workspace).
 			View(AfterVersion("v1.0.0-0")).
@@ -313,6 +319,16 @@ func (s *llmSchema) withWorkspace(ctx context.Context, llm *core.LLM, args struc
 	if err != nil {
 		return nil, err
 	}
+	id, err := args.Workspace.ID()
+	if err != nil {
+		return nil, err
+	}
+	// Bind a recipe ID lazily (see the LazyRef on this argument). A handle
+	// refers to a result this session already holds, so load it eagerly: it
+	// is cheap, and handles carry no recipe to defer to.
+	if id != nil && !id.IsHandle() {
+		return llm.WithLazyWorkspace(id), nil
+	}
 	ws, err := args.Workspace.Load(ctx, srv)
 	if err != nil {
 		return nil, err
@@ -321,15 +337,14 @@ func (s *llmSchema) withWorkspace(ctx context.Context, llm *core.LLM, args struc
 }
 
 func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Workspace], _ error) {
-	ws := llm.Workspace()
-	if ws.Self() == nil {
+	if !llm.HasWorkspace() {
 		// llm() starts unbound; a workspace is only present once the caller
 		// binds one via withWorkspace. Return an error rather than a
 		// zero-value Workspace!, which nil-derefs in the Workspace field
 		// resolvers and crashes the engine.
 		return res, fmt.Errorf("no workspace is bound to this LLM (bind one with withWorkspace)")
 	}
-	return ws, nil
+	return llm.Workspace(ctx)
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
