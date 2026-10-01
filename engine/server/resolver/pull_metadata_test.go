@@ -58,7 +58,7 @@ func TestPullReusesPinnedMetadataOnlyWhenEligible(t *testing.T) {
 					require.Equal(t, before, s.registry.manifestHEADs.Load(), "metadata reuse must avoid the second HEAD")
 					encoding := s.registry.layerAcceptEncoding.Load()
 					require.NotNil(t, encoding)
-					require.Equal(t, "identity", *encoding)
+					require.NotEqual(t, "identity", *encoding)
 				} else {
 					require.Greater(t, s.registry.manifestHEADs.Load(), before, "ineligible metadata must use remote resolution")
 				}

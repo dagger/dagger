@@ -1,6 +1,8 @@
 package core
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
@@ -21,14 +23,21 @@ import (
 
 func TestLLMAttributedNetworkBytes(t *testing.T) {
 	const requestBody = `{"model":"test"}`
-	const responseBody = `{"ok":true}`
+	responseBody := strings.Repeat(`{"ok":true}`, 1024)
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	_, err := io.WriteString(zw, responseBody)
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	compressedBody := compressed.Bytes()
 	var acceptEncoding string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		acceptEncoding = r.Header.Get("Accept-Encoding")
 		_, err := io.Copy(io.Discard, r.Body)
 		require.NoError(t, err)
 		w.Header().Set("Content-Type", "application/json")
-		_, err = io.WriteString(w, responseBody)
+		w.Header().Set("Content-Encoding", "gzip")
+		_, err = w.Write(compressedBody)
 		require.NoError(t, err)
 	}))
 	t.Cleanup(srv.Close)
@@ -41,7 +50,7 @@ func TestLLMAttributedNetworkBytes(t *testing.T) {
 	ctx, span := traceProvider.Tracer("test").Start(context.Background(), "llm")
 	defer span.End()
 	ctx = telemetry.WithMeterProvider(ctx, meterProvider)
-	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	ctx, err = enginetelemetry.WithNetworkRecording(ctx)
 	require.NoError(t, err)
 
 	client := &http.Client{Transport: newLLMOTelTransport(nil, "test")}
@@ -51,10 +60,12 @@ func TestLLMAttributedNetworkBytes(t *testing.T) {
 	require.NoError(t, err)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
-	_, err = io.Copy(io.Discard, resp.Body)
+	gotBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
-	require.Equal(t, "identity", acceptEncoding)
+	require.Equal(t, "gzip", acceptEncoding)
+	require.Equal(t, responseBody, string(gotBody))
+	require.Less(t, len(compressedBody), len(responseBody))
 
 	var data metricdata.ResourceMetrics
 	require.NoError(t, reader.Collect(ctx, &data))
@@ -64,7 +75,7 @@ func TestLLMAttributedNetworkBytes(t *testing.T) {
 		got[current.Name] = gauge.DataPoints[0].Value
 	}
 	require.Equal(t, map[string]int64{
-		telemetryattrs.NetworkRxBytes: int64(len(responseBody)),
+		telemetryattrs.NetworkRxBytes: int64(len(compressedBody)),
 		telemetryattrs.NetworkTxBytes: int64(len(requestBody)),
 	}, got)
 }

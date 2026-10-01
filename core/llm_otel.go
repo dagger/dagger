@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,12 +33,15 @@ const maxBodyCapture = 256 * 1024 // 256 KiB
 // transport, which logs bodies and never headers — a bearer token must not
 // reach telemetry.
 func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
-	var base http.RoundTripper
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Keep response content encoding intact until llmOTelTransport has counted
+	// the compressed bytes. It restores the standard library's transparent gzip
+	// behavior before returning the response to the provider SDK.
+	transport.DisableCompression = true
 	if endpoint.dial != nil {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.DialContext = endpoint.dial
-		base = transport
 	}
+	var base http.RoundTripper = transport
 	base = newCredentialTransport(base, endpoint.AuthTokenSource, endpoint.credentialApplier())
 	return &http.Client{
 		Transport: newLLMOTelTransport(base, provider),
@@ -53,7 +57,9 @@ type llmOTelTransport struct {
 
 func newLLMOTelTransport(base http.RoundTripper, provider string) http.RoundTripper {
 	if base == nil {
-		base = http.DefaultTransport
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.DisableCompression = true
+		base = transport
 	}
 	return &llmOTelTransport{base: base, provider: provider}
 }
@@ -63,7 +69,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	parent := trace.SpanFromContext(ctx)
 	if !parent.IsRecording() {
-		return t.base.RoundTrip(req)
+		return t.roundTrip(req)
 	}
 
 	spanName := fmt.Sprintf("LLM HTTP %s %s", req.Method, req.URL.Path)
@@ -112,11 +118,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		req.ContentLength = int64(len(fullBody))
 		fmt.Fprintf(stdio.Stdout, ">>> %s %s\n%s\n", req.Method, req.URL.Path, captured)
 	}
-	if req.Header.Get("Accept-Encoding") == "" {
-		req.Header.Set("Accept-Encoding", "identity")
-	}
-
-	resp, err := t.base.RoundTrip(req)
+	resp, err := t.roundTrip(req)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -139,9 +141,6 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		resp.Body = &teeReadCloser{
 			reader: io.TeeReader(resp.Body, stdio.Stdout),
 			closer: resp.Body,
-			onRead: func(n int) {
-				enginetelemetry.RecordNetworkRX(req.Context(), int64(n))
-			},
 			onClose: func() {
 				span.End()
 				stdio.Close()
@@ -150,7 +149,6 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	} else if resp.Body != nil {
 		// Non-streaming: buffer, log, and replace.
 		captured, fullBody, readErr := captureBody(resp.Body)
-		enginetelemetry.RecordNetworkRX(req.Context(), int64(len(fullBody)))
 		if readErr == nil {
 			resp.Body = io.NopCloser(bytes.NewReader(fullBody))
 			fmt.Fprintf(stdio.Stdout, "<<< %d\n%s\n", resp.StatusCode, captured)
@@ -172,6 +170,64 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 
 	return resp, nil
+}
+
+// roundTrip preserves net/http's automatic gzip behavior while recording the
+// compressed response body. The underlying transport has automatic
+// decompression disabled so the recorder can sit below the decoder.
+func (t *llmOTelTransport) roundTrip(req *http.Request) (*http.Response, error) {
+	autoGzip := req.Header.Get("Accept-Encoding") == "" &&
+		req.Header.Get("Range") == "" && req.Method != http.MethodHead
+	if autoGzip {
+		req = req.Clone(req.Context())
+		req.Header.Set("Accept-Encoding", "gzip")
+	}
+
+	resp, err := t.base.RoundTrip(req)
+	if err != nil || resp.Body == nil {
+		return resp, err
+	}
+	rawBody := &teeReadCloser{
+		reader: resp.Body,
+		closer: resp.Body,
+		onRead: func(n int) {
+			enginetelemetry.RecordNetworkRX(req.Context(), int64(n))
+		},
+	}
+	resp.Body = rawBody
+	if autoGzip && strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+		resp.Body = &gzipReadCloser{body: rawBody}
+		resp.Header.Del("Content-Encoding")
+		resp.Header.Del("Content-Length")
+		resp.ContentLength = -1
+		resp.Uncompressed = true
+	}
+	return resp, nil
+}
+
+// gzipReadCloser matches net/http's lazy transparent decompression: malformed
+// gzip data is reported by the first Read, and closing it closes the raw body.
+type gzipReadCloser struct {
+	body io.ReadCloser
+	zr   *gzip.Reader
+	err  error
+}
+
+func (r *gzipReadCloser) Read(p []byte) (int, error) {
+	if r.zr == nil && r.err == nil {
+		r.zr, r.err = gzip.NewReader(r.body)
+	}
+	if r.err != nil {
+		return 0, r.err
+	}
+	return r.zr.Read(p)
+}
+
+func (r *gzipReadCloser) Close() error {
+	if r.zr != nil {
+		_ = r.zr.Close()
+	}
+	return r.body.Close()
 }
 
 // revealTransport un-hides a failed LLM HTTP span. The span is marked

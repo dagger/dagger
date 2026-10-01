@@ -72,7 +72,6 @@ type networkRoundTripper struct {
 
 func (t networkRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	req = req.Clone(req.Context())
-	req.Header.Set("Accept-Encoding", "identity")
 	resp, err := t.RoundTripper.RoundTrip(req)
 	if err != nil {
 		return nil, err
