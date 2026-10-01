@@ -1967,6 +1967,12 @@ func EngineCache(ctx context.Context) (*Cache, error) {
 	return val.(*Cache), nil
 }
 
+// ContextWithServer returns ctx with srv as its current dagql server, as a
+// resolver called by srv sees it.
+func ContextWithServer(ctx context.Context, srv *Server) context.Context {
+	return srvToContext(ctx, srv)
+}
+
 func srvToContext(ctx context.Context, srv *Server) context.Context {
 	if CurrentDagqlServer(ctx) == srv {
 		return ctx

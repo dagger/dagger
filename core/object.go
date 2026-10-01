@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"weak"
 
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -1441,6 +1442,29 @@ func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *Field
 	}, nil
 }
 
+// installedServer is the server a module object type's resolvers were
+// installed into. It is held weakly: the type's class rides along with cached
+// object results (another module object's field value, an interface value,
+// ...), and a strong reference would keep the whole server alive long after
+// the client that built it is gone.
+type installedServer struct {
+	srv weak.Pointer[dagql.Server]
+}
+
+func newInstalledServer(srv *dagql.Server) installedServer {
+	return installedServer{srv: weak.Make(srv)}
+}
+
+// orCurrent returns the installed server while it is alive, or else the server
+// running the current call. Use it where any server with the core schema will
+// do.
+func (s installedServer) orCurrent(ctx context.Context) *dagql.Server {
+	if srv := s.srv.Value(); srv != nil {
+		return srv
+	}
+	return dagql.CurrentDagqlServer(ctx)
+}
+
 // objFun creates a dagql.Field for a function defined on a module object type.
 // This is used during the GraphQL schema installation process to convert
 // user-defined functions in module object types into callable GraphQL fields.
@@ -1486,6 +1510,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 	spec.Module = moduleID
 	spec.GetDynamicInput = modFun.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
+	installed := newInstalledServer(dag)
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
@@ -1494,7 +1519,9 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 				ParentTyped:    obj,
 				ParentFields:   obj.Self().Fields,
 				SkipSelfSchema: false,
-				Server:         dag,
+				// Only applies ignore patterns to Directory args, which any
+				// server with the core schema can do.
+				Server: installed.orCurrent(ctx),
 			}
 			for name, val := range args {
 				opts.Inputs = append(opts.Inputs, CallInput{
