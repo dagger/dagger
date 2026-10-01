@@ -431,15 +431,41 @@ func (a *Artifact) scope() (string, error) {
 // BoundRoot returns the live value a bound artifact's tree is rooted at, or
 // nil for a workspace artifact, which is evaluated from a fresh construction.
 func (a *Artifact) BoundRoot() dagql.AnyObjectResult {
+	if root := a.boundRootNode(); root != nil {
+		return root.RootValue
+	}
+	return nil
+}
+
+// boundRootNode returns the node a bound artifact's tree is rooted at: the
+// one holding the live value. Nil for a workspace artifact.
+func (a *Artifact) boundRootNode() *ModTreeNode {
 	if a.Workspace.Self() != nil {
 		return nil
 	}
 	for node := a.Node; node != nil; node = node.Parent {
 		if node.RootValue != nil {
-			return node.RootValue
+			return node
 		}
 	}
 	return nil
+}
+
+// unqualifiedPath is the path of a bound artifact whose tree was qualified by
+// its bound type (see qualifyCollidingTrees) without that segment: the path
+// the address would have had if no other bound object collided with it. Nil
+// for any other artifact.
+func (a *Artifact) unqualifiedPath() []string {
+	root := a.boundRootNode()
+	if root == nil || root.Parent == nil || root.Parent.Name == "" {
+		return nil
+	}
+	path := a.Node.Path().CliCase()
+	qualifier := len(root.Path()) - 1
+	if qualifier < 0 || qualifier >= len(path) {
+		return nil
+	}
+	return slices.Delete(path, qualifier, qualifier+1)
 }
 
 // WorkspaceContext binds the workspace the artifact evaluates in into ctx:
@@ -591,7 +617,15 @@ func (a *Artifact) matchesPattern(pattern string) (bool, error) {
 	if a.Node == nil {
 		return false, nil
 	}
-	return doublestar.PathMatch(pattern, strings.Join(a.Node.Path().CliCase(), "/"))
+	if match, err := doublestar.PathMatch(pattern, strings.Join(a.Node.Path().CliCase(), "/")); err != nil || match {
+		return match, err
+	}
+	// A bound tree qualified by its type still answers to the plain path,
+	// which then selects the artifact of every colliding bound object.
+	if path := a.unqualifiedPath(); path != nil {
+		return doublestar.PathMatch(pattern, strings.Join(path, "/"))
+	}
+	return false, nil
 }
 
 func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {

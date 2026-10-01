@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
@@ -153,6 +154,8 @@ func (m *MCP) boundScopeArtifacts(ctx context.Context, srv *dagql.Server) ([]*Ar
 	var entries []*Artifact
 	for _, name := range modules {
 		shadowed[name] = true
+		var trees []boundTree
+		var failure *Artifact
 		for _, binding := range selected[name] {
 			artifacts, err := m.bindingArtifacts(ctx, srv, binding)
 			if err != nil {
@@ -161,18 +164,87 @@ func (m *MCP) boundScopeArtifacts(ctx context.Context, srv *dagql.Server) ([]*Ar
 				}
 				// Like a workspace module that fails to load: report it
 				// in place of the tree, which still shadows the workspace.
+				// One check per module, naming each binding that failed.
+				msg := err.Error()
+				if len(selected[name]) > 1 {
+					msg = "bound " + binding.typeName + ": " + msg
+				}
+				if failure != nil {
+					failure.LoadFailure.Message += "\n" + msg
+					continue
+				}
 				modName := binding.module.Self().Name()
-				entries = append(entries, &Artifact{
+				failure = &Artifact{
 					ModuleName: modName, Path: []string{name, "load"}, DimensionKeys: []*ArtifactDimensionKey{},
 					Directives: []string{"check"}, TypeName: "Check",
-					LoadFailure: &ModuleLoadFailure{Name: modName, Message: err.Error()},
-				})
+					LoadFailure: &ModuleLoadFailure{Name: modName, Message: msg},
+				}
+				entries = append(entries, failure)
 				continue
 			}
-			entries = append(entries, artifacts.Entries...)
+			trees = append(trees, boundTree{typeName: binding.typeName, entries: artifacts.Entries})
+		}
+		qualifyCollidingTrees(trees)
+		for _, tree := range trees {
+			entries = append(entries, tree.entries...)
 		}
 	}
 	return entries, shadowed, nil
+}
+
+// boundTree is the artifacts of one bound object.
+type boundTree struct {
+	typeName string
+	entries  []*Artifact
+}
+
+// qualifyCollidingTrees disambiguates bound objects of one module whose trees
+// share a path, e.g. two narrower views of the module that both have a
+// members field: dag://staff/members/head would name an artifact of each, and
+// no address could tell them apart. Each colliding tree is rooted one level
+// down instead, at a segment naming the bound object's type:
+// dag://staff/staff-pull-tools/members/head. The unqualified address still
+// matches the artifact (see Artifact.matchesPattern), so it selects them all,
+// and where one is required the error lists the qualified addresses to choose
+// from. Trees that collide with no other keep their plain paths.
+func qualifyCollidingTrees(trees []boundTree) {
+	if len(trees) < 2 {
+		return
+	}
+	owners := map[string]int{}
+	for _, tree := range trees {
+		paths := map[string]bool{}
+		for _, entry := range tree.entries {
+			paths[strings.Join(entry.Path, "/")] = true
+		}
+		for path := range paths {
+			owners[path]++
+		}
+	}
+	for _, tree := range trees {
+		if slices.ContainsFunc(tree.entries, func(entry *Artifact) bool { return owners[strings.Join(entry.Path, "/")] > 1 }) {
+			qualifyBoundTree(tree.entries, tree.typeName)
+		}
+	}
+}
+
+// qualifyBoundTree inserts a segment naming the bound type between the module
+// and the bound object's fields, in the tree and in each artifact's path. The
+// root keeps its value, so evaluation is unchanged.
+func qualifyBoundTree(entries []*Artifact, typeName string) {
+	qualified := map[*ModTreeNode]bool{}
+	for _, entry := range entries {
+		root := entry.boundRootNode()
+		if root == nil {
+			continue
+		}
+		if !qualified[root] {
+			qualified[root] = true
+			root.Parent = &ModTreeNode{Name: root.Name, Parent: root.Parent}
+			root.Name = typeName
+		}
+		entry.Path = entry.Node.Path().CliCase()
+	}
 }
 
 // bindingArtifacts discovers one bound object's artifacts, rooted at its
