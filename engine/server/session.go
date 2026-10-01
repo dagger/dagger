@@ -160,6 +160,9 @@ type daggerSession struct {
 	// cloudRefresh admits OAuth token refreshes until the main client's
 	// shutdown starts.
 	cloudRefresh *cloudRefreshGate
+	// cloudTokenExpiry is when the session's Cloud token expires, in Unix
+	// nanoseconds, or zero when it does not. Token refreshes update it.
+	cloudTokenExpiry atomic.Int64
 
 	// informed when a client goes away to prevent hanging on drain
 	telemetryPubSub *PubSub
@@ -2850,11 +2853,12 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
 
-		// Publish what the session has sent to Cloud so far while the client's
-		// attachables are still open: refreshing an OAuth token reads the
-		// client's credentials file through them.
+		// Publish what the session has sent to Cloud so far. A token that may
+		// need a refresh is used while the client's attachables are still
+		// open, since refreshing reads the client's credentials file through
+		// them; otherwise the engine finishes after the client has gone.
 		_ = drainPhase("flush session Cloud telemetry", func() error {
-			sess.flushSessionCloudTelemetry(ctx)
+			sess.flushSessionCloudTelemetryForShutdown(ctx)
 			// No token refresh reaches through the client's attachables
 			// once they start closing; see cloudRefreshGate.
 			sess.stopCloudTokenRefresh(ctx)
