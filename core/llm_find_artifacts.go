@@ -33,7 +33,7 @@ func (m *MCP) loadArtifactTools(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
 		Name: findArtifactsToolName,
 		Description: "List the artifacts you can name by DAG address -- the values tool arguments accept as addresses (e.g. a GitRef or Directory argument) -- like `dagger list`. " +
-			"The scope is the workspace's modules plus the modules of your bound tool objects, which are read from their current state and shadow a workspace module of the same name. Listing never evaluates a value." + "\n" +
+			"The scope is the workspace's modules plus the modules of your bound tool objects, which are read from their current state and shadow a workspace module of the same name (unless they are a fresh construction of it). Listing never evaluates a value." + "\n" +
 			"Address grammar: dag[+<type>]://<module>/<field>/...[?<dimension>=<key>&...], e.g. dag+git-ref://staff/members/head?member=chief. " +
 			"The path follows fields from the module; each collection on the path needs a key for its dimension; +<type> asserts the artifact's type (CLI case)." + "\n" +
 			"With no arguments: an overview of types, collections and load errors. Filters combine with AND. " +

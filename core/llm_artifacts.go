@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // Artifacts returns the conversation's scope: every artifact its addresses
@@ -27,13 +28,15 @@ import (
 //     conversation. A workspace module named like a module with bound
 //     objects is dropped: the bound one shadows it, so an address naming the
 //     module never silently resolves against a fresh construction instead of
-//     the live tools.
+//     the live tools. Bound objects that are themselves only a fresh
+//     construction have no live state to protect, so there the workspace's
+//     module is kept instead (see mergeScopeArtifacts).
 //
 // include narrows the selection like Workspace.artifacts(include:): each
 // pattern selects a path and its children, and only the workspace modules it
 // names are loaded. nil selects everything.
 func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string) (*Artifacts, error) {
-	bound, shadowed, err := m.boundScopeArtifacts(ctx, srv)
+	bound, shadowed, fresh, err := m.boundScopeArtifacts(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -51,14 +54,19 @@ func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string
 	for _, entry := range bound {
 		entry.ContextWorkspace = ws
 	}
-	return mergeScopeArtifacts(bound, shadowed, workspace, include)
+	return mergeScopeArtifacts(bound, shadowed, fresh, workspace, include)
 }
 
 // mergeScopeArtifacts combines the bound and workspace parts of a scope. A
 // workspace artifact of a shadowed module (by CLI-case module name) is
-// dropped. include narrows the bound part the way Workspace.artifacts already
-// narrowed the workspace part, and is recorded as the selection's paths.
-func mergeScopeArtifacts(bound []*Artifact, shadowed map[string]bool, workspace []*Artifact, include []string) (*Artifacts, error) {
+// dropped, unless the module's bindings are fresh constructions (see
+// isFreshConstruction) and the workspace has the module: its artifacts are
+// then the same values, and the workspace's are the ones `dagger list` shows
+// (with entrypoint shorthand, SDK generators and cloud checks), so they win
+// over the bound ones. include narrows the bound part the way
+// Workspace.artifacts already narrowed the workspace part, and is recorded as
+// the selection's paths.
+func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, workspace []*Artifact, include []string) (*Artifacts, error) {
 	result := &Artifacts{Entries: []*Artifact{}}
 	if include != nil {
 		result.Selector.Paths = make([]string, 0, len(include))
@@ -66,7 +74,18 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed map[string]bool, workspace 
 			result.Selector.Paths = append(result.Selector.Paths, IncludePattern(pattern))
 		}
 	}
+	// A fresh binding yields to a workspace module that loaded; not to one
+	// that failed to, whose failure would hide the working binding.
+	yields := map[string]bool{}
+	for _, entry := range workspace {
+		if name := ArtifactTypeName(entry.ModuleName); fresh[name] && entry.LoadFailure == nil {
+			yields[name] = true
+		}
+	}
 	for _, entry := range bound {
+		if yields[ArtifactTypeName(entry.ModuleName)] {
+			continue
+		}
 		match, err := matchesInclude(entry, result.Selector.Paths)
 		if err != nil {
 			return nil, err
@@ -76,7 +95,7 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed map[string]bool, workspace 
 		}
 	}
 	for _, entry := range workspace {
-		if !shadowed[ArtifactTypeName(entry.ModuleName)] {
+		if name := ArtifactTypeName(entry.ModuleName); !shadowed[name] || yields[name] {
 			result.Entries = append(result.Entries, entry)
 		}
 	}
@@ -130,9 +149,11 @@ func selectScopeBindings(bindings []scopeBinding) (modules []string, selected ma
 	return modules, selected
 }
 
-// boundScopeArtifacts discovers the artifacts of the bound tool objects, and
-// the CLI-case names of their modules, which shadow workspace modules.
-func (m *MCP) boundScopeArtifacts(ctx context.Context, srv *dagql.Server) ([]*Artifact, map[string]bool, error) {
+// boundScopeArtifacts discovers the artifacts of the bound tool objects, the
+// CLI-case names of their modules, which shadow workspace modules, and which
+// of those modules are bound only as fresh constructions (see
+// isFreshConstruction).
+func (m *MCP) boundScopeArtifacts(ctx context.Context, srv *dagql.Server) ([]*Artifact, map[string]bool, map[string]bool, error) {
 	var bindings []scopeBinding
 	m.mu.Lock()
 	for _, b := range m.boundTools {
@@ -151,17 +172,20 @@ func (m *MCP) boundScopeArtifacts(ctx context.Context, srv *dagql.Server) ([]*Ar
 
 	modules, selected := selectScopeBindings(bindings)
 	shadowed := make(map[string]bool, len(modules))
+	fresh := map[string]bool{}
 	var entries []*Artifact
 	for _, name := range modules {
 		shadowed[name] = true
+		fresh[name] = true
 		var trees []boundTree
 		var failure *Artifact
 		for _, binding := range selected[name] {
-			artifacts, err := m.bindingArtifacts(ctx, srv, binding)
+			root, artifacts, err := m.bindingArtifacts(ctx, srv, binding)
 			if err != nil {
 				if ctxErr := ctx.Err(); ctxErr != nil {
-					return nil, nil, ctxErr
+					return nil, nil, nil, ctxErr
 				}
+				fresh[name] = false
 				// Like a workspace module that fails to load: report it
 				// in place of the tree, which still shadows the workspace.
 				// One check per module, naming each binding that failed.
@@ -182,6 +206,9 @@ func (m *MCP) boundScopeArtifacts(ctx context.Context, srv *dagql.Server) ([]*Ar
 				entries = append(entries, failure)
 				continue
 			}
+			if !isFreshConstruction(ctx, binding.module.Self(), root) {
+				fresh[name] = false
+			}
 			trees = append(trees, boundTree{typeName: binding.typeName, entries: artifacts.Entries})
 		}
 		qualifyCollidingTrees(trees)
@@ -189,7 +216,33 @@ func (m *MCP) boundScopeArtifacts(ctx context.Context, srv *dagql.Server) ([]*Ar
 			entries = append(entries, tree.entries...)
 		}
 	}
-	return entries, shadowed, nil
+	return entries, shadowed, fresh, nil
+}
+
+// isFreshConstruction reports whether a bound object is a plain construction
+// of its module's main object: the module's constructor called from the
+// query root with no arguments but a Workspace. It then carries no state of
+// its own, so its artifacts are the values the workspace's module would give
+// — `dagger mcp`, for instance, binds every workspace module that way — and
+// there is no live state for the workspace's to hide.
+func isFreshConstruction(ctx context.Context, mod *Module, root dagql.AnyObjectResult) bool {
+	main, ok := mod.MainObject()
+	if !ok || root.Type().Name() != main.Name {
+		return false
+	}
+	// The recipe, not the runtime handle: a handle is opaque, with no call
+	// to inspect.
+	id, err := root.RecipeID(ctx)
+	if err != nil || id == nil || id.IsHandle() || id.Receiver() != nil || id.Field() != gqlFieldName(mod.Name()) {
+		return false
+	}
+	for _, arg := range id.Args() {
+		lit, ok := arg.Value().(*call.LiteralID)
+		if !ok || lit.Value().Type().NamedType() != workspaceTypeName {
+			return false
+		}
+	}
+	return true
 }
 
 // boundTree is the artifacts of one bound object.
@@ -248,17 +301,18 @@ func qualifyBoundTree(entries []*Artifact, typeName string) {
 }
 
 // bindingArtifacts discovers one bound object's artifacts, rooted at its
-// current value. A lazy binding (restored from a persisted session) is loaded
-// here, as it would be for a tool call.
-func (m *MCP) bindingArtifacts(ctx context.Context, srv *dagql.Server, binding scopeBinding) (*Artifacts, error) {
+// current value, which it returns too. A lazy binding (restored from a
+// persisted session) is loaded here, as it would be for a tool call.
+func (m *MCP) bindingArtifacts(ctx context.Context, srv *dagql.Server, binding scopeBinding) (dagql.AnyObjectResult, *Artifacts, error) {
 	root, ok, err := m.boundToolObject(ctx, srv, binding.typeName)
 	if err == nil && !ok {
 		err = fmt.Errorf("no object of type %q is bound", binding.typeName)
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return BoundArtifacts(ctx, binding.module, root)
+	artifacts, err := BoundArtifacts(ctx, binding.module, root)
+	return root, artifacts, err
 }
 
 // scopeWorkspace is the workspace of the scope: the conversation's bound
