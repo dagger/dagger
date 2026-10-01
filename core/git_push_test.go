@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -29,13 +30,16 @@ func TestGitPushAttributedNetworkBytes(t *testing.T) {
 		TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2},
 	}))
 
-	_, stderr, _ := gitPushProgressStreams(ctx)(ctx)
+	var forwarded bytes.Buffer
+	stderr := gitPushProgressFilter(ctx)(ctx, &forwarded)
 	_, err := io.WriteString(stderr,
 		"Writing objects:  50% (1/2), 1.0 MiB | 1.0 MiB/s\r"+
-			"Writing objects: 100% (2/2), 2.0 MiB | 1.0 MiB/s, done.\n",
+			"Writing objects: 100% (2/2), 2.0 MiB | 1.0 MiB/s, done.\n"+
+			"fatal: remote rejected the push\n",
 	)
 	require.NoError(t, err)
 	require.NoError(t, stderr.Close())
+	require.Equal(t, "fatal: remote rejected the push\n", forwarded.String())
 
 	var data metricdata.ResourceMetrics
 	require.NoError(t, reader.Collect(ctx, &data))

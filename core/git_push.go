@@ -241,24 +241,31 @@ var gitWritingObjectsRE = regexp.MustCompile(
 	`Writing objects:\s+\d+% \(\d+/\d+\)(?:,\s+([0-9]+(?:\.[0-9]+)?)\s+(bytes|[KMGT]?i?B))?`,
 )
 
-func gitPushProgressStreams(ctx context.Context) gitutil.StreamFunc {
+var gitPushProgressLineRE = regexp.MustCompile(
+	`^(?:Enumerating objects:|Counting objects:|Delta compression using up to |Compressing objects:|Writing objects:|Total \d+)`,
+)
+
+func gitPushOutputStreams(context.Context) (io.WriteCloser, io.WriteCloser, func()) {
+	return new(gitPushOutputLimit), nil, func() {}
+}
+
+func gitPushProgressFilter(ctx context.Context) gitutil.StderrFilterFunc {
 	network, _ := enginetelemetry.NewNetworkAccumulator(
 		ctx,
 		enginetelemetry.NetworkTX,
 	)
-	return func(context.Context) (io.WriteCloser, io.WriteCloser, func()) {
-		return new(gitPushOutputLimit), &gitPushProgressWriter{
-			network: network,
-		}, func() {}
+	return func(_ context.Context, downstream io.Writer) io.WriteCloser {
+		return &gitPushProgressWriter{network: network, downstream: downstream}
 	}
 }
 
 type gitPushProgressWriter struct {
-	mu      sync.Mutex
-	buf     bytes.Buffer
-	limit   gitPushOutputLimit
-	bytes   int64
-	network *enginetelemetry.NetworkAccumulator
+	mu         sync.Mutex
+	buf        bytes.Buffer
+	limit      gitPushOutputLimit
+	bytes      int64
+	network    *enginetelemetry.NetworkAccumulator
+	downstream io.Writer
 }
 
 func (w *gitPushProgressWriter) Write(p []byte) (int, error) {
@@ -273,7 +280,9 @@ func (w *gitPushProgressWriter) Write(p []byte) (int, error) {
 		if i < 0 {
 			break
 		}
-		w.consume(string(w.buf.Next(i + 1)))
+		if err := w.consume(string(w.buf.Next(i + 1))); err != nil {
+			return 0, err
+		}
 	}
 	return len(p), nil
 }
@@ -282,27 +291,35 @@ func (w *gitPushProgressWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.buf.Len() > 0 {
-		w.consume(w.buf.String())
+		if err := w.consume(w.buf.String()); err != nil {
+			return err
+		}
 		w.buf.Reset()
 	}
 	return nil
 }
 
-func (w *gitPushProgressWriter) consume(line string) {
+func (w *gitPushProgressWriter) consume(line string) error {
 	match := gitWritingObjectsRE.FindStringSubmatch(line)
-	if len(match) != 3 || match[1] == "" {
-		return
+	if len(match) == 3 && match[1] != "" {
+		current, ok := parseGitByteSizeLowerBound(match[1], match[2])
+		if ok && current > w.bytes {
+			w.network.Add(current - w.bytes)
+			w.bytes = current
+		}
 	}
-	current, ok := parseGitByteSizeLowerBound(match[1], match[2])
-	if !ok || current <= w.bytes {
-		return
+	if gitPushProgressLineRE.MatchString(strings.TrimRight(line, "\r\n")) {
+		return nil
 	}
-	w.network.Add(current - w.bytes)
-	w.bytes = current
+	_, err := io.WriteString(w.downstream, line)
+	return err
 }
 
 func runGitPush(ctx context.Context, git *gitutil.GitCLI, url, name, sha, expected string) (*GitPushResult, error) {
-	git = git.New(gitutil.WithStreams(gitPushProgressStreams(ctx)))
+	git = git.New(
+		gitutil.WithStreams(gitPushOutputStreams),
+		gitutil.WithStderrFilter(gitPushProgressFilter(ctx)),
+	)
 	args := []string{"push", "--porcelain", "--progress", "--no-verify", "--no-follow-tags", "--recurse-submodules=no", "--signed=false"}
 	if expected != "" {
 		args = append(args, "--force-with-lease="+name+":"+expected)

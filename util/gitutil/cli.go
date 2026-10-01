@@ -23,9 +23,10 @@ type GitCLI struct {
 	git  string
 	exec func(context.Context, *exec.Cmd) error
 
-	args    []string
-	dir     string
-	streams StreamFunc
+	args         []string
+	dir          string
+	streams      StreamFunc
+	stderrFilter StderrFilterFunc
 
 	workTree string
 	gitDir   string
@@ -163,12 +164,24 @@ func WithHTTPAuthorizationHeader(remote *GitURL, header string) Option {
 
 type StreamFunc func(context.Context) (io.WriteCloser, io.WriteCloser, func())
 
+// StderrFilterFunc wraps the command's normal stderr destination. The wrapper
+// may consume selected output while forwarding everything else to dst.
+type StderrFilterFunc func(context.Context, io.Writer) io.WriteCloser
+
 // WithStreams configures a callback for getting the streams for a command. The
 // stream callback will be called once for each command, and both writers will
 // be closed after the command has finished.
 func WithStreams(streams StreamFunc) Option {
 	return func(b *GitCLI) {
 		b.streams = streams
+	}
+}
+
+// WithStderrFilter configures a filter around a command's captured and
+// telemetry stderr streams.
+func WithStderrFilter(filter StderrFilterFunc) Option {
+	return func(b *GitCLI) {
+		b.stderrFilter = filter
 	}
 }
 
@@ -247,6 +260,11 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 	cmd.Stdin = nil
 	cmd.Stdout = io.MultiWriter(buf, stdio.Stdout)
 	cmd.Stderr = io.MultiWriter(errbuf, stdio.Stderr)
+	if cli.stderrFilter != nil {
+		filter := cli.stderrFilter(ctx, cmd.Stderr)
+		cmd.Stderr = filter
+		defer filter.Close()
+	}
 	if cli.streams != nil {
 		stdout, stderr, flush := cli.streams(ctx)
 		if stdout != nil {
@@ -255,8 +273,12 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 		if stderr != nil {
 			cmd.Stderr = io.MultiWriter(stderr, cmd.Stderr)
 		}
-		defer stdout.Close()
-		defer stderr.Close()
+		if stdout != nil {
+			defer stdout.Close()
+		}
+		if stderr != nil {
+			defer stderr.Close()
+		}
 		defer func() {
 			if rerr != nil {
 				flush()
