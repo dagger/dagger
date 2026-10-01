@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/stretchr/testify/require"
@@ -56,6 +57,9 @@ func TestNativeFallbackPolicy(t *testing.T) {
 		// Nothing to commit is the answer, not a failure of the optimization.
 		{"nothing to commit", ErrNothingToCommit, false},
 		{"wrapped nothing to commit", fmt.Errorf("native commit: %w", ErrNothingToCommit), false},
+		// So is a conflict on HEAD's real tree; restaging cannot do better.
+		{"merge conflict", nativeMergeConflict("merge conflict between workspace and incoming changes in edit"), false},
+		{"merge conflict and cleanup", errors.Join(nativeMergeConflict("conflict"), errors.New("unmount failed")), false},
 		{"unsupported", reason, true},
 		// Real failures of the optimization fall back to the legacy path.
 		{"failure", failure, true},
@@ -93,6 +97,15 @@ func TestNativeFallbackPolicy(t *testing.T) {
 			require.False(t, nativeFallback(ctx, trace.SpanFromContext(ctx), "fallback_reason", err))
 		}
 	}
+}
+
+func TestGitErrorArgs(t *testing.T) {
+	require.Equal(t, "[read-tree abc]", gitErrorArgs([]string{"read-tree", "abc"}))
+	require.Equal(t, "[add -A -- one]", gitErrorArgs([]string{"add", "-A", "--", "one"}))
+	require.Equal(t, "[add -A -- one (+2 more paths)]", gitErrorArgs([]string{"add", "-A", "--", "one", "two", "three"}))
+	long := gitErrorArgs([]string{"commit-tree", "-m", strings.Repeat("é", maxGitErrorArgsBytes)})
+	require.LessOrEqual(t, len(long), maxGitErrorArgsBytes+len("…"))
+	require.True(t, utf8.ValidString(long))
 }
 
 func TestNativeSnapshotDepthBound(t *testing.T) {

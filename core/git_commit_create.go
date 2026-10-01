@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -176,9 +177,8 @@ func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult
 
 var errNativeCommitUnsupported = errors.New("unsupported native git commit")
 
-// Reasons are fixed codes only, never paths, refs or repository configuration.
-// Keep them on the native span so a conservative fallback is distinguishable
-// from a successful transaction without exposing private source metadata.
+// Reasons are fixed codes, so a conservative fallback is easy to tell apart
+// from a successful transaction, or from a real failure, on the native span.
 type nativeCommitUnsupportedReason string
 
 func (reason nativeCommitUnsupportedReason) Error() string { return string(reason) }
@@ -189,15 +189,17 @@ func (reason nativeCommitUnsupportedReason) Is(target error) bool {
 // nativeFallback is the policy shared by every native fast path (commit,
 // workspace reconciliation, incremental checkout). Each is an optimization over
 // a complete legacy path, so ANY failure falls back to that path: unanticipated
-// repository states, missing objects and internal timeouts included. Only the
+// repository states, missing objects and internal timeouts included. The
 // caller's own cancellation surfaces; an error that merely wraps a deadline
-// from some internal context still falls back. ErrNothingToCommit is a result,
-// not a failure: the legacy path would reach the same answer only after a full
-// checkout, so it is returned as-is. The error is recorded on span as attr, so
-// fallbacks stay visible. Callers release anything they produced before
+// from some internal context still falls back. ErrNothingToCommit and a native
+// merge conflict are results, not failures: the legacy path would reach the
+// same answer only after restaging everything, so they are returned as-is. The
+// full error, paths included, is recorded on span as attr, so fallbacks stay
+// visible and debuggable. Callers release anything they produced before
 // discarding the error.
 func nativeFallback(ctx context.Context, span trace.Span, attr string, err error) bool {
-	if err == nil || ctx.Err() != nil || errors.Is(err, ErrNothingToCommit) {
+	var conflict nativeMergeConflict
+	if err == nil || ctx.Err() != nil || errors.Is(err, ErrNothingToCommit) || errors.As(err, &conflict) {
 		return false
 	}
 	span.SetAttributes(attribute.String(attr, err.Error()))
@@ -837,8 +839,14 @@ func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, a
 	// Callers may supply -c key=value before the verb. Never include those
 	// values, pathspecs, commit messages, or identity inputs in the span name.
 	commandArgs := args
-	for len(commandArgs) >= 2 && commandArgs[0] == "-c" {
-		commandArgs = commandArgs[2:]
+	for len(commandArgs) > 0 {
+		if len(commandArgs) >= 2 && commandArgs[0] == "-c" {
+			commandArgs = commandArgs[2:]
+		} else if commandArgs[0] == "--no-literal-pathspecs" {
+			commandArgs = commandArgs[1:]
+		} else {
+			break
+		}
 	}
 	operation := "command"
 	if len(commandArgs) > 0 {
@@ -857,7 +865,30 @@ func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, a
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(stderr.String()))
+		// No ignored paths is a successful eligibility check, not a failed
+		// Git operation. Preserve real process failures and cancellation.
+		var exit *exec.ExitError
+		if operation == "check-ignore" && ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return stdout.String(), nil
+		}
+		return stdout.String(), fmt.Errorf("git %s: %w: %s", gitErrorArgs(args), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
+}
+
+// maxGitErrorArgsBytes bounds the command line quoted in a git error.
+const maxGitErrorArgsBytes = 512
+
+// gitErrorArgs keeps a failed command recognizable without quoting a whole
+// pathspec batch (up to maxGitPathSpecBytes) or a long commit message in the
+// error, and in the fallback reason recorded from it.
+func gitErrorArgs(args []string) string {
+	if i := slices.Index(args, "--"); i >= 0 && len(args) > i+2 {
+		args = append(slices.Clone(args[:i+2]), fmt.Sprintf("(+%d more paths)", len(args)-i-2))
+	}
+	s := fmt.Sprint(args)
+	if len(s) > maxGitErrorArgsBytes {
+		s = strings.ToValidUTF8(s[:maxGitErrorArgsBytes], "") + "…"
+	}
+	return s
 }
