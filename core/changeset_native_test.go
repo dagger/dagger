@@ -150,6 +150,8 @@ func TestNativeWorkspaceMergeMatchesCheckout(t *testing.T) {
 						require.Error(t, err)
 						require.NotErrorIs(t, err, errNativeCommitUnsupported)
 						require.Contains(t, err.Error(), "CONFLICT")
+						require.Contains(t, err.Error(), "merge conflict between workspace and incoming changes in edit")
+						require.NotRegexp(t, `[0-9a-f]{40}`, err.Error(), "scratch commit IDs leaked into the conflict")
 						return
 					}
 					require.NoError(t, oracleErr)
@@ -218,7 +220,7 @@ func TestNativeWorkspaceMergeFallbacksAndErrors(t *testing.T) {
 	require.NoError(t, err)
 	parent = strings.TrimSpace(parent)
 	noop := func(string) error { return nil }
-	for _, paths := range []*ChangesetPaths{{Added: []string{"empty/"}}, {Modified: []string{".gitattributes"}}, {AllRemoved: []string{"nested/.gitignore"}}, {Added: []string{".gitmodules"}}} {
+	for _, paths := range []*ChangesetPaths{{Added: []string{"empty/"}}, {Added: []string{"nested/", "nested/empty/", "file"}}, {Modified: []string{".gitattributes"}}, {AllRemoved: []string{"nested/.gitignore"}}, {Added: []string{".gitmodules"}}} {
 		err := nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, t.TempDir(), []*ChangesetPaths{paths, {}}, []func(string) error{noop, noop})
 		require.ErrorIs(t, err, errNativeCommitUnsupported)
 	}

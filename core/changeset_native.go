@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -219,10 +220,21 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 				return nativeCommitUnsupportedReason("merge-controls-change")
 			}
 		}
+		// An added directory must be an ancestor of some added file.
+		filled := map[string]bool{}
 		for _, p := range changes.Added {
-			if strings.HasSuffix(p, "/") && !slices.ContainsFunc(changes.Added, func(file string) bool {
-				return !strings.HasSuffix(file, "/") && strings.HasPrefix(file, p)
-			}) {
+			if strings.HasSuffix(p, "/") {
+				continue
+			}
+			for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
+				if filled[dir+"/"] {
+					break // its ancestors were recorded with it
+				}
+				filled[dir+"/"] = true
+			}
+		}
+		for _, p := range changes.Added {
+			if strings.HasSuffix(p, "/") && !filled[p] {
 				return nativeCommitUnsupportedReason("empty-directory")
 			}
 		}
@@ -273,13 +285,22 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 			return err
 		}
 		commits[i] = strings.TrimSpace(commit)
+		// merge-tree labels conflict messages with its arguments. Name the
+		// sides instead of printing scratch commit IDs nobody can look up.
+		if _, err := run("update-ref", "refs/heads/"+nativeMergeLabels[i], commits[i]); err != nil {
+			return err
+		}
 	}
-	merged, err := run("merge-tree", "--write-tree", "--merge-base="+parent, commits[0], commits[1])
+	merged, err := run("merge-tree", "--write-tree", "--name-only", "--merge-base="+parent, nativeMergeLabels[0], nativeMergeLabels[1])
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("merge workspace changes: %w\n%s", err, merged)
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return nativeMergeConflictError(merged)
+		}
+		return fmt.Errorf("merge workspace changes: %w", err)
 	}
 	merged = strings.TrimSpace(merged)
 	// Replay the legacy worktree transitions, not a full checkout of merged.
@@ -303,6 +324,36 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 	return nativeWorkspaceCheckout(run, base, trees[0], merged)
 }
 
+// nativeMergeLabels name the two sides in merge-tree's conflict messages: the
+// workspace's pending edits and the changes being committed.
+var nativeMergeLabels = [2]string{"workspace", "incoming"}
+
+// nativeMergeConflictError reports a merge-tree conflict by the conflicted
+// paths and Git's own CONFLICT messages, dropping the merged tree ID and
+// "Auto-merging" noise. With --name-only, the output is the tree ID, one
+// conflicted path per line, a blank line, then informational messages.
+func nativeMergeConflictError(out string) error {
+	info, messages, _ := strings.Cut(strings.TrimRight(out, "\n"), "\n\n")
+	var paths []string
+	if _, rest, ok := strings.Cut(info, "\n"); ok {
+		paths = strings.Split(rest, "\n")
+	}
+	var conflicts []string
+	for _, line := range strings.Split(messages, "\n") {
+		if strings.HasPrefix(line, "CONFLICT") {
+			conflicts = append(conflicts, line)
+		}
+	}
+	msg := "merge conflict between workspace and incoming changes"
+	if len(paths) > 0 {
+		msg += " in " + strings.Join(paths, ", ")
+	}
+	if len(conflicts) > 0 {
+		msg += ":\n" + strings.Join(conflicts, "\n")
+	}
+	return errors.New(msg)
+}
+
 // nativeWorkspaceCheckout performs only the filesystem writes a Git tree
 // transition requires. The private index is never stored in the output layer.
 func nativeWorkspaceCheckout(run func(...string) (string, error), base, from, to string) error {
@@ -323,12 +374,16 @@ func nativeWorkspaceCheckout(run func(...string) (string, error), base, from, to
 	}
 	defer root.Close()
 	deleted := splitOnNul([]byte(removed))
+	isDeleted := make(map[string]bool, len(deleted))
+	for _, p := range deleted {
+		isDeleted[p] = true
+	}
 	var checkout []string
 	for _, p := range splitOnNul([]byte(changed)) {
 		if err := root.RemoveAll(filepath.FromSlash(p)); err != nil {
 			return err
 		}
-		if !slices.Contains(deleted, p) {
+		if !isDeleted[p] {
 			checkout = append(checkout, p)
 		}
 	}

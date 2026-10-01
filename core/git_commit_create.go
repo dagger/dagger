@@ -177,9 +177,8 @@ func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult
 
 var errNativeCommitUnsupported = errors.New("unsupported native git commit")
 
-// Reasons are fixed codes only, never paths, refs or repository configuration.
-// Keep them on the native span so a conservative fallback is distinguishable
-// from a successful transaction without exposing private source metadata.
+// Reasons are fixed codes, so a conservative fallback is easy to tell apart
+// from a successful transaction, or from a real failure, on the native span.
 type nativeCommitUnsupportedReason string
 
 func (reason nativeCommitUnsupportedReason) Error() string { return string(reason) }
@@ -194,9 +193,9 @@ func (reason nativeCommitUnsupportedReason) Is(target error) bool {
 // caller's own cancellation surfaces; an error that merely wraps a deadline
 // from some internal context still falls back. ErrNothingToCommit is a result,
 // not a failure: the legacy path would reach the same answer only after a full
-// checkout, so it is returned as-is. The error is recorded on span as attr, so
-// fallbacks stay visible. Callers release anything they produced before
-// discarding the error.
+// checkout, so it is returned as-is. The full error, paths included, is recorded
+// on span as attr, so fallbacks stay visible and debuggable. Callers release
+// anything they produced before discarding the error.
 func nativeFallback(ctx context.Context, span trace.Span, attr string, err error) bool {
 	if err == nil || ctx.Err() != nil || errors.Is(err, ErrNothingToCommit) {
 		return false

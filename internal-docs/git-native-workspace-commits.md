@@ -34,7 +34,7 @@ The span `git native commit transaction` records `dagger.git.native.supported`, 
 
 ### Eligibility
 
-Unsupported inputs are rejected with a fixed `nativeCommitUnsupportedReason` code, never a path or ref:
+Unsupported inputs are rejected with a fixed `nativeCommitUnsupportedReason` code:
 
 - `git-directory-layout`, `object-directory-layout`: `.git` is a gitfile or symlink, or `objects` is not a directory
 - `linked-worktree`, `shallow-history`, `object-alternates`, `partial-repository`: storage the snapshot does not fully own
@@ -56,7 +56,7 @@ Entry points: `TryNativeWorkspaceMerge` and `nativeWorkspaceMerge` in `core/chan
 The native merge proves the same provenance for both changesets against the working tree's `Before`, then mounts the local repository read-only to borrow its objects. In a private bare scratch repository it:
 
 1. Stages each changeset in its own sparse worktree and private index with `stageNativeChanges`, the staging shared with commit construction, and writes a temporary commit on the parent.
-2. Runs `git merge-tree --write-tree --merge-base=<parent>` on the two commits. A conflict is an error.
+2. Runs `git merge-tree --write-tree --name-only --merge-base=<parent>` on the two commits, named `workspace` and `incoming` so conflict messages refer to the sides rather than scratch commit IDs. A conflict is an error naming the conflicted paths and Git's `CONFLICT` messages.
 3. Replays, on a COW child of `Before`, the filesystem transitions of the legacy checkout sequence rather than checking out the merged tree:
 
 ```text
@@ -82,7 +82,7 @@ The span `git native workspace merge` records `dagger.git.native_merge.supported
 
 Native paths are optimizations; the legacy path is always correct. `nativeFallback` is the shared policy:
 
-- **Any error falls back**, not only unsupported inputs: unanticipated repository states, missing objects and internal timeouts included. The error is recorded as the span's fallback reason, and the caller takes the legacy path: the checkout-based `GitCommitChangeset` for commits, the general `__mergeWithChangeset` for workspace reconciliation. A `merge-tree` conflict falls back too, so the legacy merge reports it.
+- **Any error falls back**, not only unsupported inputs: unanticipated repository states, missing objects and internal timeouts included. The error is recorded in full, paths included, as the span's fallback reason, and the caller takes the legacy path: the checkout-based `GitCommitChangeset` for commits, the general `__mergeWithChangeset` for workspace reconciliation. A `merge-tree` conflict falls back too, so the legacy merge reports it.
 - **The caller's own cancellation is returned**, decided by the caller's `ctx.Err()`. An error that merely wraps a deadline from some internal context still falls back.
 - **`ErrNothingToCommit` is returned as-is.** It is the commit's answer, not a failure, and the legacy path would reach it only after a full checkout.
 - **Produced snapshots are released first.** A failure or cancellation observed after the child snapshot was committed releases it, with an uncancelled cleanup context, before the error is returned or discarded. This applies to a reconciliation result as well as a commit.
