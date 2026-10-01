@@ -543,8 +543,8 @@ func (c *Cache) snapshotPruneStateLocked(
 			expiresAtUnix:            edge.expiresAtUnix,
 		}
 		if mode == pruneSnapshotMetadata {
-			snapshotResult.directResultBytes = directResultBytes
-			snapshotResult.entry.SizeBytes = directResultBytes
+			snapshotResult.directResultBytes = directResultBytes + res.payloadBytes
+			snapshotResult.entry.SizeBytes = snapshotResult.directResultBytes
 		} else {
 			usageIdentities := identities[resID]
 			sizeBytes := int64(0)

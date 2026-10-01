@@ -61,6 +61,19 @@ type PersistedResultEnvelope struct {
 	Items                 []PersistedResultEnvelope `json:"items,omitempty"`
 }
 
+// persistedEnvelopePayloadBytes is the length of the encoded value an
+// undecoded imported row retains in memory.
+func persistedEnvelopePayloadBytes(env *PersistedResultEnvelope) int64 {
+	if env == nil {
+		return 0
+	}
+	n := int64(len(env.ObjectJSON) + len(env.ScalarJSON))
+	for i := range env.Items {
+		n += persistedEnvelopePayloadBytes(&env.Items[i])
+	}
+	return n
+}
+
 type PersistedObjectCache interface {
 	PersistedResultID(AnyResult) (uint64, error)
 }

@@ -269,7 +269,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 			// the cache.
 			res.noteCloudCopyLocked(row.SenderNumber, true, row.ExpiresAtUnix)
 		}
-		private.resultsByID[res.id] = res
+		private.putResultLocked(res)
 	}
 	if err := private.validateStoredOwnershipLocked(); err != nil {
 		return nil, err
@@ -848,7 +848,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			fallthrough
 		case mergeCreate:
 			c.installMergedRecordLocked(row.res, row)
-			c.resultsByID[row.res.id] = row.res
+			c.putResultLocked(row.res)
 			row.res.onRelease = c.resultSnapshotLeaseCleanup(row.res)
 			c.indexRecipeLocked(row.plan.recipe, row.res)
 			created = append(created, row.res)
@@ -1013,6 +1013,7 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow) {
 	res.self = nil
 	res.persistedEnvelope = &rec.Envelope
 	res.payloadRevision++
+	c.setResultPayloadBytesLocked(res, persistedEnvelopePayloadBytes(&rec.Envelope))
 	if res.createdAtUnixNano == 0 {
 		res.createdAtUnixNano = time.Now().UnixNano()
 	}
@@ -1224,6 +1225,7 @@ func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, qu
 		res.hasValue = false
 		res.payloadRevision++
 		res.payloadMu.Unlock()
+		c.setResultPayloadBytesLocked(res, 0)
 		return queue
 	}
 	c.unindexRecipesLocked(res)

@@ -414,7 +414,7 @@ func (c *Cache) newHoldingLocked(ctx context.Context, state *remoteCacheState, k
 			description: desc.Field,
 		}
 		c.nextSharedResultID++
-		c.resultsByID[entry.id] = entry
+		c.putResultLocked(entry)
 		c.indexRecipeLocked(desc.Recipe, entry)
 	}
 	return entry, c.addHoldingLocked(ctx, state, key, entry)
