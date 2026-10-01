@@ -30,7 +30,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/hashutil"
@@ -221,9 +220,7 @@ func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	return scope
 }
 
-func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (_ *gitutil.Remote, rerr error) {
-	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "git.lsRemote", wcprof.OpOpts{})
-	defer func() { op.EndErr(rerr) }()
+func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remote, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
