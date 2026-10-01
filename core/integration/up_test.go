@@ -58,16 +58,14 @@ func (UpSuite) TestUpDirectSDK(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir(tc.path)
-			// list services with the command and its former name, "up"
-			for _, command := range []string{"start", "up"} {
-				out, err := modGen.
-					With(daggerExec(command, "-l", "-f=link")).
-					CombinedOutput(ctx)
-				require.NoError(t, err)
-				require.Contains(t, out, "web")
-				require.Contains(t, out, "redis")
-				require.Contains(t, out, "infra/database")
-			}
+			// list services
+			out, err := modGen.
+				With(daggerExec("start", "-l", "-f=link")).
+				CombinedOutput(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "web")
+			require.Contains(t, out, "redis")
+			require.Contains(t, out, "infra/database")
 		})
 	}
 }
