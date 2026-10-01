@@ -292,6 +292,9 @@ func (m *MCP) LastResult() dagql.Typed {
 // baseServer provides the schema for core tools and dispatch. Bound module
 // tools retain their own defining schemas. Value workspaces use only core here;
 // their modules are loaded from their trees during explicit agent composition.
+// Live workspaces load their modules best-effort: a broken module is left out
+// of the schema (and listed by FindArtifacts as a load failure) instead of
+// failing every step.
 func (m *MCP) baseServer(ctx context.Context) (*dagql.Server, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {

@@ -161,6 +161,10 @@ func workspaceHostRoutingContext(ctx context.Context, ws *Workspace) (context.Co
 // loadWorkspaceOwnerContext switches to a live Workspace's owning client and
 // loads its served modules. MCP.baseServer calls this only for live workspaces;
 // value workspaces use core directly and never load the caller's modules.
+//
+// The load is best-effort: a module that cannot load is skipped rather than
+// failing every LLM step, so the FindArtifacts builtin (via Workspace.artifacts)
+// can still report it as a failing <module>/load check.
 func loadWorkspaceOwnerContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (context.Context, error) {
 	wsCtx, err := workspaceHostRoutingContext(ctx, ws.Self())
 	if err != nil {
@@ -170,7 +174,7 @@ func loadWorkspaceOwnerContext(ctx context.Context, ws dagql.ObjectResult[*Works
 	if err != nil {
 		return nil, err
 	}
-	if _, err := query.EnsureWorkspaceModules(wsCtx, nil, ModuleLoadStrict); err != nil {
+	if _, err := query.EnsureWorkspaceModules(wsCtx, nil, ModuleLoadBestEffort); err != nil {
 		return nil, fmt.Errorf("ensure workspace modules: %w", err)
 	}
 	return wsCtx, nil
