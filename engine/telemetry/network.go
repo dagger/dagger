@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/stats"
 )
 
 const networkInstrumentation = "dagger.io/network"
@@ -130,5 +131,54 @@ func RecordNetworkRX(ctx context.Context, bytes int64) {
 func RecordNetworkTX(ctx context.Context, bytes int64) {
 	if accumulators, ok := ctx.Value(networkAccumulatorsKey{}).(networkAccumulators); ok {
 		accumulators.tx.Add(bytes)
+	}
+}
+
+// NetworkStatsHandler records compressed gRPC message bytes for operations
+// that opted in with WithNetworkRecording. HTTP/2 framing and connection-level
+// traffic remain in the engine-wide eBPF total.
+func NetworkStatsHandler(inner stats.Handler) stats.Handler {
+	return &networkStatsHandler{inner: inner}
+}
+
+type networkStatsHandler struct {
+	inner stats.Handler
+}
+
+func (h *networkStatsHandler) TagRPC(
+	ctx context.Context,
+	info *stats.RPCTagInfo,
+) context.Context {
+	if h.inner != nil {
+		ctx = h.inner.TagRPC(ctx, info)
+	}
+	return ctx
+}
+
+func (h *networkStatsHandler) HandleRPC(ctx context.Context, event stats.RPCStats) {
+	if h.inner != nil {
+		h.inner.HandleRPC(ctx, event)
+	}
+	switch event := event.(type) {
+	case *stats.InPayload:
+		RecordNetworkRX(ctx, int64(event.WireLength))
+	case *stats.OutPayload:
+		RecordNetworkTX(ctx, int64(event.WireLength))
+	}
+}
+
+func (h *networkStatsHandler) TagConn(
+	ctx context.Context,
+	info *stats.ConnTagInfo,
+) context.Context {
+	if h.inner != nil {
+		return h.inner.TagConn(ctx, info)
+	}
+	return ctx
+}
+
+func (h *networkStatsHandler) HandleConn(ctx context.Context, event stats.ConnStats) {
+	if h.inner != nil {
+		h.inner.HandleConn(ctx, event)
 	}
 }

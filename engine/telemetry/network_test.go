@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/stats"
 )
 
 func TestNetworkRecorder(t *testing.T) {
@@ -36,4 +37,32 @@ func TestNetworkRecorder(t *testing.T) {
 	spanID, ok := gauge.DataPoints[0].Attributes.Value(daggerotel.MetricsSpanIDAttr)
 	require.True(t, ok)
 	require.Equal(t, spanCtx.SpanID().String(), spanID.AsString())
+}
+
+func TestNetworkStatsHandler(t *testing.T) {
+	reader := metric.NewManualReader()
+	provider := metric.NewMeterProvider(metric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(t.Context())) })
+	ctx := daggerotel.WithMeterProvider(context.Background(), provider)
+	ctx = trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2},
+	}))
+	ctx, err := WithNetworkRecording(ctx)
+	require.NoError(t, err)
+
+	handler := NetworkStatsHandler(nil)
+	handler.HandleRPC(ctx, &stats.InPayload{WireLength: 11})
+	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 13})
+
+	var data metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(ctx, &data))
+	got := map[string]int64{}
+	for _, current := range data.ScopeMetrics[0].Metrics {
+		gauge := current.Data.(metricdata.Gauge[int64])
+		got[current.Name] = gauge.DataPoints[0].Value
+	}
+	require.Equal(t, map[string]int64{
+		telemetryattrs.NetworkRxBytes: 11,
+		telemetryattrs.NetworkTxBytes: 13,
+	}, got)
 }
