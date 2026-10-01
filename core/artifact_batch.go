@@ -24,6 +24,7 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 	type batchGroup struct {
 		artifact *Artifact
 		receiver *ModTreeNode
+		keys     map[string]struct{}
 	}
 	groups := map[string]batchGroup{}
 	servers := map[uint64]*dagql.Server{}
@@ -92,13 +93,33 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 		}
 		group, exists := groups[identity]
 		if !exists {
-			group = batchGroup{planned, item}
+			group = batchGroup{
+				artifact: planned,
+				receiver: item,
+			}
 			groups[identity] = group
 			result = append(result, planned)
-		} else if !slices.Contains(group.receiver.CollectionKeys, key) {
-			group.receiver.CollectionKeys = append(group.receiver.CollectionKeys, key)
 		} else {
-			continue
+			// Small groups scan their few keys. From 8 keys on, a map avoids
+			// comparing each new key against every key already in the group.
+			if group.keys == nil {
+				if slices.Contains(group.receiver.CollectionKeys, key) {
+					continue
+				}
+				if len(group.receiver.CollectionKeys) >= 8 {
+					group.keys = make(map[string]struct{}, 16)
+					for _, previous := range group.receiver.CollectionKeys {
+						group.keys[previous] = struct{}{}
+					}
+					groups[identity] = group
+				}
+			} else if _, exists := group.keys[key]; exists {
+				continue
+			}
+			if group.keys != nil {
+				group.keys[key] = struct{}{}
+			}
+			group.receiver.CollectionKeys = append(group.receiver.CollectionKeys, key)
 		}
 		group.artifact.DimensionKeys = append(group.artifact.DimensionKeys, &ArtifactDimensionKey{Dimension: item.CollectionDimension.Identifier, Key: key})
 	}
