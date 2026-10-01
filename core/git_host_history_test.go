@@ -51,7 +51,12 @@ func TestCapturedHostHistoryScope(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok, "donor routes never cross owners")
 	require.Error(t, q.RegisterCapturedHostHistory(foreign, parent.Self().Repo, md.ClientID, "/approved", "state", anchor, url.Remote()))
-	require.Error(t, q.RegisterCapturedHostHistory(ctx, parent.Self().Repo, md.ClientID, "/approved", "state", anchor, "https://other.test/repo.git"))
+	unrelated := &Query{}
+	require.NoError(t, unrelated.RegisterCapturedHostHistory(ctx, parent.Self().Repo, md.ClientID, "/approved", "state", anchor, "https://other.test/repo.git"),
+		"an unrecognized route is not a donor, and never fails the capture")
+	_, ok, err = unrelated.capturedHostHistory(ctx, parent)
+	require.NoError(t, err)
+	require.False(t, ok, "a different route registers no donor")
 	_, ok, err = (&Query{}).capturedHostHistory(ctx, parent)
 	require.NoError(t, err)
 	require.False(t, ok, "new client lifecycle has no donor")
@@ -69,6 +74,29 @@ func TestCapturedHostHistoryScope(t *testing.T) {
 	_, ok, err = q.capturedHostHistory(ctx, parent)
 	require.NoError(t, err)
 	require.False(t, ok, "only pinned remote sources may donate")
+}
+
+// Query.git records an ssh:// remote without a user as user "git". The
+// client reports the host's own spelling; registration must neither fail the
+// capture nor miss the donor because of that normalization.
+func TestCapturedHostHistorySSHDefaultUser(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "host-history-ssh-user")
+	ctx, cache, srv := env.open(t)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+	md, err := engine.ClientMetadataFromContext(ctx)
+	require.NoError(t, err)
+	recorded, err := gitutil.ParseURL("ssh://git@example.test/repo.git")
+	require.NoError(t, err)
+	anchor := strings.Repeat("a", 40)
+	remote := &RemoteGitRepository{URL: recorded}
+	repo := env.attach(t, ctx, cache, srv, "ssh-repo", &GitRepository{Backend: remote, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	ref := &gitutil.Ref{SHA: anchor, Name: anchor}
+	parent := env.attach(t, ctx, cache, srv, "ssh-ref", &GitRef{Repo: repo, Ref: ref, Backend: &RemoteGitRef{repo: remote, Ref: ref}}).(dagql.ObjectResult[*GitRef])
+	q := &Query{}
+	require.NoError(t, q.RegisterCapturedHostHistory(ctx, repo, md.ClientID, "/approved", "state", anchor, "ssh://example.test/repo.git"))
+	_, ok, err := q.capturedHostHistory(ctx, parent)
+	require.NoError(t, err)
+	require.True(t, ok)
 }
 
 // hostHistoryTestPack returns a donated pack of the anchor's closure, as
