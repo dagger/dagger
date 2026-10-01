@@ -18223,6 +18223,9 @@ pub struct WorkspaceWithUpdatedModulesOpts<'a> {
     /// New version request for exactly one selected module. Cannot be combined with a version suffix.
     #[builder(setter(into, strip_option), default)]
     pub version: Option<&'a str>,
+    /// New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+    #[builder(setter(into, strip_option), default)]
+    pub source: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceChangesOpts {
@@ -19744,7 +19747,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with updated module versions and lockfile state.
+    /// Return this workspace with updated module sources, versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -19758,7 +19761,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with updated module versions and lockfile state.
+    /// Return this workspace with updated module sources, versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -19774,6 +19777,9 @@ impl Workspace {
         }
         if let Some(version) = opts.version {
             query = query.arg("version", version);
+        }
+        if let Some(source) = opts.source {
+            query = query.arg("source", source);
         }
         Workspace {
             proc: self.proc.clone(),

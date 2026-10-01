@@ -699,6 +699,7 @@ func (s *workspaceSchema) withUpdatedLockEntries(
 type workspaceModuleUpdateArgs struct {
 	Names   []string `default:"[]"`
 	Version string   `default:""`
+	Source  string   `default:""`
 }
 
 func moduleSelectionDirectories(ws *core.Workspace, configDir string) (string, string) {
@@ -729,7 +730,7 @@ func (s *workspaceSchema) withUpdatedModules(
 	}
 
 	configDir, cwd := moduleSelectionDirectories(ws, staged.ConfigDir)
-	modules, err := workspace.SelectModuleUpdates(effective.Modules, configDir, cwd, args.Names, args.Version)
+	modules, err := workspace.SelectModuleUpdates(effective.Modules, configDir, cwd, args.Names, args.Version, args.Source)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -751,15 +752,37 @@ func (s *workspaceSchema) withUpdatedModules(
 	for _, module := range modules {
 		name, entry := module.Name, module.Entry
 		moduleSources = append(moduleSources, workspace.ResolveModuleEntrySource(staged.ConfigDir, entry.Source))
-		if module.Version != "" {
+		if module.Version != "" || args.Source != "" {
 			if _, envSelected := selectedWorkspaceEnv(ctx, ws); envSelected {
 				if _, isSDK := workspace.SDKNameForModule(staged.Config, name); isSDK {
-					return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs are not env-scoped; update SDK versions in the base workspace config")
+					return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs are not env-scoped; update SDK sources in the base workspace config")
 				}
 			}
-			entry.Source, err = workspace.ModuleSourceWithVersion(entry.Source, module.Version)
-			if err != nil {
-				return dagql.ObjectResult[*core.Workspace]{}, err
+			if args.Source != "" {
+				// Resolve like install: a local path is relative to the
+				// workspace cwd and is recorded relative to the config.
+				source, configSource, err := s.resolveWorkspaceInstallSource(refreshCtx, selected, args.Source, staged.ConfigDir)
+				if err != nil {
+					return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update module %q: %w", name, err)
+				}
+				if !source.Self().ConfigExists {
+					return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update module %q: ref %q does not point to an initialized module", name, args.Source)
+				}
+				if _, isSDK := workspace.SDKNameForModule(staged.Config, name); isSDK {
+					implements, err := detectWorkspaceSDKCapabilities(refreshCtx, source)
+					if err != nil {
+						return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update module %q: %w", name, err)
+					}
+					if !implements {
+						return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update module %q: ref %q does not implement the SDK interface", name, args.Source)
+					}
+				}
+				entry.Source = filepath.ToSlash(configSource)
+			} else {
+				entry.Source, err = workspace.ModuleSourceWithVersion(entry.Source, module.Version)
+				if err != nil {
+					return dagql.ObjectResult[*core.Workspace]{}, err
+				}
 			}
 			// A pin on the old request cannot constrain the replacement request.
 			entry.Pin = ""
@@ -777,7 +800,8 @@ func (s *workspaceSchema) withUpdatedModules(
 			}
 			moduleSources = append(moduleSources, workspace.ResolveModuleEntrySource(staged.ConfigDir, entry.Source))
 		}
-		if workspace.IsLocalRef(entry.Source, entry.Pin) {
+		// A new source was fetched and checked when it was resolved.
+		if args.Source != "" || workspace.IsLocalRef(entry.Source, entry.Pin) {
 			continue
 		}
 		source, _, err := s.resolveWorkspaceInstallSource(refreshCtx, selected, entry.Source, staged.ConfigDir)

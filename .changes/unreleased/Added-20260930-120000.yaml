@@ -1,0 +1,8 @@
+kind: Added
+body: |
+  `dagger mod update NAME --source SOURCE` changes the source of an installed
+  module. The module keeps its name and settings.
+time: 2026-09-30T12:00:00Z
+custom:
+  Author: shykes
+  PR: 0
