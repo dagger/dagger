@@ -77,16 +77,15 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("workspace", s.workspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the workspace the LLM is bound to."),
-		// Per call: when no workspace is bound, the scope depends on the
-		// client's current workspace, which the receiver's ID does not
-		// capture. Retaining each result keeps its items' IDs loadable.
+		// No per-call input: the scope depends only on the receiver, whose
+		// ID records its bound tools and bound workspace, and the selection
+		// is lazy, so it caches like any other field.
 		dagql.Func("artifacts", s.artifacts).
 			View(AfterVersion("v1.0.0-0")).
 			Experimental("Agent APIs are likely to change.").
-			WithInput(dagql.PerCallInput).
 			Doc("Discover every artifact this conversation can address, as one selection, without evaluating their values.",
-				"Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the workspace of the scope, whoever evaluates them.",
-				"The workspace part is the artifacts of the bound workspace, or of the current workspace when none is bound, as returned by Workspace.artifacts. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it.",
+				"Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.",
+				"The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it.",
 				"Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.").
 			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.")),
 		dagql.Func("withModel", s.withModel).

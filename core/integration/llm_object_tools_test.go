@@ -1054,7 +1054,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		continued := strings.Join([]string{
 			"[continued via tool startFresh]",
 			"Continuing from the returned conversation.",
-			"Toolset unchanged (21 tools).",
+			"Toolset unchanged (22 tools).",
 			"Conversation history replaced: 2 messages -> 0 messages.",
 		}, "\n")
 		continuationModel := cannedRecordingModel(ctx, t, c, c.LLM().
@@ -1463,20 +1463,27 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 			run(ctx, t, `$scope | filter-uri "dag://roster/members" | items | uri`))
 	})
 
-	t.Run("the LLM scope without tools is the workspace's", func(ctx context.Context, t *testctx.T) {
+	t.Run("the LLM scope's workspace part is the bound workspace's", func(ctx context.Context, t *testctx.T) {
 		// A bound workspace's roster is constructed fresh: it has no members.
 		out, err := base.With(daggerShell(
 			`llm | with-workspace --workspace $(current-workspace) | artifacts | filter-uri "dag://roster/members/dir" | items | uri`,
 		)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Empty(t, out)
-		// Without a bound workspace, the scope falls back to the current one.
+		// Without a bound workspace, the scope has no workspace part: the
+		// calling client's current workspace is not the conversation's.
 		out, err = base.With(daggerShell(
 			`llm | artifacts | filter-uri "dag://{notes,roster}/**" | path-definitions | uri`,
 		)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "dag://notes/docs\n")
+		require.Empty(t, out)
+		// Bound tools are in scope all the same.
+		out, err = base.With(daggerShell(
+			`llm | with-tools $(roster) | artifacts | filter-uri "dag://{notes,roster}/**" | path-definitions | uri`,
+		)).Stdout(ctx)
+		require.NoError(t, err)
 		require.Contains(t, out, "dag://roster/members\n")
+		require.NotContains(t, out, "dag://notes/")
 	})
 }
 
@@ -1603,19 +1610,30 @@ roster=$(roster | with-worker --name chief --worker $chief)
 	})
 }
 
-// TestFindArtifacts covers the FindArtifacts builtin over the current
-// workspace: a module that fails to load is listed with its error rather than
-// failing the listing, like `dagger check -l`.
+// TestFindArtifacts covers the FindArtifacts builtin over a bound workspace: a
+// module that fails to load is listed with its error rather than failing the
+// listing, like `dagger check -l`.
 func (LLMSuite) TestFindArtifacts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	// The shell skips loading the workspace's modules (-M): it cannot load a
 	// broken one. Workspace.artifacts still discovers them, best effort.
-	base := workspaceFixture(t, c, "generators-broken")
+	//
+	// The conversation is bound to a snapshot of the workspace: a value
+	// workspace serves only core to the LLM, whereas a live one loads every
+	// workspace module strictly (MCP.baseServer), which fails on the broken
+	// one before any tool runs. The snapshot needs the fixture committed.
+	base := workspaceFixture(t, c, "generators-broken").
+		WithExec([]string{"sh", "-c", "git add -A && git commit --allow-empty -m fixture"})
+	const bind = `with-workspace --workspace $(current-workspace | snapshot)`
 
-	t.Run("a workspace makes it a tool", func(ctx context.Context, t *testctx.T) {
-		tools, err := base.With(daggerShellNoMod("llm | tools")).Stdout(ctx)
+	t.Run("a bound workspace makes it a tool", func(ctx context.Context, t *testctx.T) {
+		tools, err := base.With(daggerShellNoMod("llm | " + bind + " | tools")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, tools, "## FindArtifacts\n")
+		// An unbound LLM has an empty scope: nothing to find.
+		tools, err = base.With(daggerShellNoMod("llm | tools")).Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, tools, "## FindArtifacts\n")
 	})
 
 	t.Run("checks and load errors are listed", func(ctx context.Context, t *testctx.T) {
@@ -1633,7 +1651,7 @@ func (LLMSuite) TestFindArtifacts(ctx context.Context, t *testctx.T) {
 			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 		}))
 		out, err := base.With(daggerShellNoMod(fmt.Sprintf(
-			`llm --model="%s" | with-prompt "%s" | loop | transcript`, model, prompt,
+			`llm --model="%s" | %s | with-prompt "%s" | loop | transcript`, model, bind, prompt,
 		))).Stdout(ctx)
 		require.NoError(t, err)
 		// The overview counts the loaded module's artifacts by type and names
