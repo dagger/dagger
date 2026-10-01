@@ -63,6 +63,10 @@ source = 'github.com/does/notexist/tools@v2'
 		{"local update", []string{"mod", "update", "local", "--version=v2"}, "local module source"},
 		{"update all version", []string{"update", "--version=v2"}, "--version requires exactly one"},
 		{"conflicting version", []string{"update", "tools@v2", "--version=v3"}, "use either a version suffix or --version"},
+		{"update all source", []string{"update", "--source=github.com/does/notexist/other"}, "--source requires exactly one"},
+		{"source and version", []string{"update", "tools", "--source=github.com/does/notexist/other", "--version=v2"}, "use either --source or --version"},
+		{"source and suffix", []string{"update", "tools@v2", "--source=github.com/does/notexist/other"}, "use either --source or a version suffix"},
+		{"source not a module", []string{"update", "tools", "--source=./missing"}, "does not point to an initialized module"},
 		{"reinstall version", []string{"install", "github.com/does/notexist/tools@v2", "--name=tools"}, "use dagger mod update tools --version VERSION"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -155,6 +159,29 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleVersionUpdate(ctx context.Contex
 			require.Equal(t, data, refreshed)
 		})
 	}
+	t.Run("source flag replaces the source and keeps settings", func(ctx context.Context, t *testctx.T) {
+		config := "# Keep this comment\n[modules.tools]\nsource = './old' # request\nentrypoint = false\n\n[modules.tools.settings]\ngreeting = 'hi'\n"
+		workdir := newWorkspaceConfigWorkdir(ctx, t, config)
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "mod", "update", "tools", "--source="+remote.repoURL+"@v2")
+		require.NoError(t, err, string(out))
+		require.Contains(t, string(out), fmt.Sprintf(`Updating "tools" source: %s@v2.`, remote.repoURL))
+		data, err := os.ReadFile(filepath.Join(workdir, workspace.ConfigFileName))
+		require.NoError(t, err)
+		require.Equal(t, strings.Replace(config, "./old", remote.repoURL+"@v2", 1), string(data))
+		lock, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+		require.NoError(t, err)
+		require.Contains(t, string(lock), remote.commit)
+
+		// A local source is relative to the cwd and recorded relative to the config.
+		require.NoError(t, os.MkdirAll(filepath.Join(workdir, "mods", "tools"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, "mods", "tools", "dagger.json"), []byte(`{"name":"tools","engineVersion":"v1.0.0"}`), 0o644))
+		cmd := hostDaggerCommandRaw(ctx, t, filepath.Join(workdir, "mods"), "mod", "update", "tools", "--source=./tools")
+		out, err = cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "mods/tools", cfg.Modules["tools"].Source)
+		require.Equal(t, "hi", cfg.Modules["tools"].Settings["greeting"])
+	})
 	t.Run("failed version leaves config and lock unchanged", func(ctx context.Context, t *testctx.T) {
 		config := fmt.Sprintf("[modules.tools]\nsource = '%s@v1'\n", remote.repoURL)
 		workdir := newWorkspaceConfigWorkdir(ctx, t, config)

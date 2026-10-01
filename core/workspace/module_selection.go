@@ -231,10 +231,17 @@ func SameModuleRequest(left, leftDir, right, rightDir string) bool {
 }
 
 // SelectModuleUpdates prepares a complete update before any source is fetched
-// or config is changed. A separate version applies to exactly one selector.
-func SelectModuleUpdates(modules map[string]ModuleEntry, configDir, cwd string, selectors []string, version string) ([]ModuleSelection, error) {
+// or config is changed. A separate version or source applies to exactly one
+// selector. A new source replaces the whole request, so it excludes a version.
+func SelectModuleUpdates(modules map[string]ModuleEntry, configDir, cwd string, selectors []string, version, source string) ([]ModuleSelection, error) {
 	if version != "" && len(selectors) != 1 {
 		return nil, fmt.Errorf("--version requires exactly one installed name or source")
+	}
+	if source != "" && len(selectors) != 1 {
+		return nil, fmt.Errorf("--source requires exactly one installed name or source")
+	}
+	if source != "" && version != "" {
+		return nil, fmt.Errorf("use either --source or --version, not both")
 	}
 	if len(selectors) == 0 {
 		for name := range modules {
@@ -254,6 +261,9 @@ func SelectModuleUpdates(modules map[string]ModuleEntry, configDir, cwd string, 
 				return nil, fmt.Errorf("use either a version suffix or --version, not both")
 			}
 			selection.Version = version
+		}
+		if source != "" && selection.Version != "" {
+			return nil, fmt.Errorf("use either --source or a version suffix, not both; put the version in the new source")
 		}
 		if selection.Version != "" {
 			if _, err := ModuleSourceWithVersion(selection.Entry.Source, selection.Version); err != nil {
