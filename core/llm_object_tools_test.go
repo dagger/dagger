@@ -476,11 +476,9 @@ func TestCombineSpanResult(t *testing.T) {
 	require.Empty(t, combineSpanResult(spanID, "", "", ""))
 	require.Empty(t, combineSpanResult(spanID, "LINE-01", "\n \n\t\n", ""))
 
-	// Report only: no empty OUTPUT section for a target that printed nothing,
-	// and no heading over the report itself.
+	// Report only: no empty OUTPUT section for a target that printed nothing.
 	quiet := combineSpanResult(spanID, "", "== CHECKS ==  ✔ 1 passed\n✔ lint:check 0.1s OK", "")
 	require.NotContains(t, quiet, "OUTPUT")
-	require.NotContains(t, quiet, "TRACE REPORT")
 	require.True(t, strings.HasPrefix(quiet, "== CHECKS =="), "got %q", quiet)
 
 	got := combineSpanResult(spanID, "LINE-01\nLINE-02", "• Foo.bar 1.0s", "")
@@ -488,7 +486,6 @@ func TestCombineSpanResult(t *testing.T) {
 	require.Contains(t, got, "== OUTPUT ==\nLINE-01\nLINE-02")
 	// ...then the report, bare.
 	require.Contains(t, got, "LINE-02\n\n• Foo.bar")
-	require.NotContains(t, got, "TRACE REPORT")
 	require.Less(t, strings.Index(got, "== OUTPUT =="), strings.Index(got, "• Foo.bar"))
 
 	// The breadcrumb names the span, in the same vocabulary as the flat

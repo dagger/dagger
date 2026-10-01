@@ -118,15 +118,13 @@ func (AgentRuntimeSuite) TestWait(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "IDLE", inert.state(ctx, t))
 }
 
-// TestResumeRetryEmitsNoStaleIdle pins the resume-retry flow against the
-// stale idle event observed in dogfooding: resuming a FAILED worker
-// relaunches its loop with the mailbox still empty (the staff sendTo is
-// resume-first, send-second), and the relaunch window used to project a
-// transient IDLE — firing an idle event that carried the PREVIOUS turn's
-// final reply, which a supervising chief reads as a fresh completion. The
-// fix is twofold: the relaunch restores the suspended-turn fact when the
-// snapshot holds a pending (failed) step, and an IDLE edge with no newly
-// committed work no longer fans out at all.
+// TestResumeRetryEmitsNoStaleIdle pins the resume-retry flow against stale
+// idle events: resuming a FAILED worker relaunches its loop with the mailbox
+// still empty (the staff sendTo is resume-first, send-second). The relaunch
+// restores the suspended-turn fact when the snapshot holds a pending (failed)
+// step, and an IDLE edge with no newly committed work emits no event, so a
+// supervising chief never receives the PREVIOUS turn's final reply as a fresh
+// completion.
 func (AgentRuntimeSuite) TestResumeRetryEmitsNoStaleIdle(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)

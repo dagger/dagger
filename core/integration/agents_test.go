@@ -225,10 +225,9 @@ func (AgentsSuite) TestComposeExclude(ctx context.Context, t *testctx.T) {
 }
 
 // TestComposeSeedIsWorkspaceBound locks in that compose's default base LLM is
-// bound to the workspace the group was rolled up from. llm() starts unbound
-// (NewLLM no longer binds the ambient workspace), so without the explicit
-// withWorkspace seed, reading the composed LLM's workspace fails with "no
-// workspace is bound to this LLM" — the `dagger agent` startup regression.
+// bound to the workspace the group was rolled up from. llm() starts unbound,
+// so without the explicit withWorkspace seed, reading the composed LLM's
+// workspace fails with "no workspace is bound to this LLM".
 func (AgentsSuite) TestComposeSeedIsWorkspaceBound(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := installAgents(t, c, "editor")
@@ -244,7 +243,7 @@ func (AgentsSuite) TestComposeSeedIsWorkspaceBound(ctx context.Context, t *testc
 	require.Contains(t, out, "modules/")
 }
 
-// TestAgentReadsSeedWorkspace covers the mid-fold half of the same regression:
+// TestAgentReadsSeedWorkspace covers the mid-fold half of the same contract:
 // an @agent leaf that reads base.workspace during compose (like a real agent
 // scanning project context) must see the seed's bound workspace.
 func (AgentsSuite) TestAgentReadsSeedWorkspace(ctx context.Context, t *testctx.T) {

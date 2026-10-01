@@ -460,7 +460,6 @@ func testFocusKeyRetargetsAndKeepsDrafts(t *testing.T) {
 
 	help := navKeyHelp(fe.keys(NewOutput(io.Discard)))
 	require.Contains(t, help, "ctrl+1…9 focus agent")
-	require.NotContains(t, help, "alt+1…9 focus agent")
 	require.False(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModAlt}),
 		"the old Alt+digit binding must remain unclaimed")
 

@@ -1446,28 +1446,27 @@ func (ModuleSuite) TestContextGitWorktree(ctx context.Context, t *testctx.T) {
 	})
 }
 
-// TestModuleWorktreeGoSDK locks in the fix for loading a Go SDK module from a
-// linked git worktree checkout.
+// TestModuleWorktreeGoSDK verifies loading a Go SDK module from a linked git
+// worktree checkout.
 //
 // A linked worktree's .git is a POINTER FILE ("gitdir: .../.git/worktrees/<name>")
 // rather than a .git directory. The Go SDK's codegen container runs
 // `git config --global user.email <val>` (and user.name) with its workdir inside
 // the mounted module context whenever the client has a global git identity set.
-// Previously the dangling pointer was shipped into that context, so git could not
-// resolve the repository and every git invocation there died with
-// "fatal: not a git repository: (null)" — making module loading fail hard.
+// Inside that context the pointer dangles, so git cannot resolve the repository
+// and fails with "fatal: not a git repository: (null)".
 //
-// The engine now drops a root .git regular file from the synced module-context
+// The engine drops a root .git regular file from the synced module-context
 // snapshot (git-ness is supplied canonically elsewhere), so codegen's git config
-// exec succeeds, the module loads, and the +defaultPath="/" context no longer
-// carries the .git pointer.
+// exec succeeds, the module loads, and the +defaultPath="/" context has no .git
+// entry.
 func (ModuleSuite) TestModuleWorktreeGoSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// goGitBase sets user.email/user.name GLOBALLY. That is load-bearing here:
 	// a global git identity is exactly what makes the engine inject the
-	// `git config --global ...` execs into the Go SDK codegen container that
-	// historically tripped over the dangling worktree pointer.
+	// `git config --global ...` execs into the Go SDK codegen container, the
+	// execs that would fail on a dangling worktree pointer.
 	ctr := goGitBase(t, c).
 		WithNewFile("/work/tracked.txt", "v1").
 		WithExec([]string{"git", "add", "."}).
@@ -1900,7 +1899,6 @@ func (ModuleSuite) TestGitignore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "foo", out)
 
-		// NOTE: we disabled this in dagger/dagger#11017
 		// args passed via function arguments do not automatically have gitignore applied
 		out, err = modGen.With(daggerCall("get-file-at", "--dir", "./frontend", "--filename", "bar.txt")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1912,7 +1910,6 @@ func (ModuleSuite) TestGitignore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "foo", out)
 
-		// NOTE: we disabled this in dagger/dagger#11017
 		// context arguments do not automatically have gitignore applied
 		out, err = modGen.With(daggerCall("get-file-context", "--filename", "frontend/bar.txt")).Stdout(ctx)
 		require.NoError(t, err)

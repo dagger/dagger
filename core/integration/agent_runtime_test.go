@@ -628,9 +628,8 @@ func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
 	require.Equal(t, secondReply, lastReply)
 }
 
-// TestSpawnInstances locks in the instance semantics of spawn — the
-// deliberate inversion of the old value-dedupe contract: two spawns of an
-// IDENTICAL composition (same seed, same display name) are two distinct
+// TestSpawnInstances locks in the instance semantics of spawn: two spawns of
+// an IDENTICAL composition (same seed, same display name) are two distinct
 // agents, with distinct pinned IDs and independent runtimes. Both dwell in
 // the same recorded slow tool call concurrently — two RUNNING instances
 // under one display name — and each turn resolves against its own runtime.
@@ -643,9 +642,8 @@ func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 
 	// Two spawns of the exact same composition: same model, same tool
-	// binding, same display name. Under the old identity model these
-	// resolved to one runtime entry by content digest; spawn mints a
-	// unique runtime handle into each pinned chain, so they are two agents.
+	// binding, same display name. Spawn mints a unique runtime handle into
+	// each pinned chain, so these are two agents.
 	opts := spawnOpts{model: model, name: "twin", toolIDs: []dagger.ID{ctrID}}
 	first := spawnAgent(ctx, t, c, opts)
 	second := spawnAgent(ctx, t, c, opts)
@@ -1737,7 +1735,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 
 	// Lookup on an agent with NO runtime entry: clear error — message is a
 	// pure lookup and never creates one. The handle for such an instance is
-	// the bare agent(handle:, name:) lookup, since spawn now creates the entry
+	// the bare agent(handle:, name:) lookup, since spawn creates the entry
 	// it mints (see TestRuntimeVerbsRequireRuntime for why a miss must never
 	// be a constructor).
 	ghost := unmintedAgent(ctx, t, c, identity.NewID(), "never-ran")
@@ -2053,47 +2051,25 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 // its first turn immediately (empty recording), so neither covers
 // turn-1-succeeds-then-later-send.
 //
-// Suspected mechanism (observed once on a live staff-module session, not
-// yet reproduced here): AgentRuntime.start launches the loop on
-// context.WithoutCancel of the SPAWNING request, keeping that request's
-// values — dagql server, query, client metadata. When the spawner is a
-// module function call, those values belong to the function call's client,
-// which ends with the call — so every later wake of the loop (drainMailbox's
-// withPrompt Select, then Step) executes against a released client. On the
-// live session a send five minutes after the spawning call ended enqueued
-// fine (delivery evidence computed) but the loop never drained: the
-// message's response hung forever.
+// AgentRuntime.start runs the loop detached from the SPAWNING request, so
+// when the spawner is a module function call, every later wake of the loop
+// (drainMailbox's withPrompt Select, then Step) happens after that call's
+// client has ended. A send in that window must still drain and complete:
+// its response resolves with the next turn's reply (a hang fails the test
+// by response timeout instead of wedging CI).
 //
-// The ingredients here are layered to match that scenario as closely as a
-// canned-replay test can, and each was verified to really occur:
+// The test sets up these ingredients:
 //
 //   - the spawner is a DANG module function, like modules/staff: the Dang
 //     runtime is in-process and its function-call client's connections
 //     provably close the moment the call returns (a Go runtime container's
 //     nested client conn lingers to session end, masking the window);
 //   - hire awaits the opening turn INSIDE the module call, so turn 1
-//     completes while the spawning client is alive, exactly as observed
-//     live — then stores the worker handle in module state and returns;
+//     completes while the spawning client is alive, as in the staff hire
+//     shape — then stores the worker handle in module state and returns;
 //   - the second exchange is module-mediated (ask = resume + send + response,
 //     resolving the worker from module state), issued from a fresh
 //     function-call client of its own — the staff ask shape.
-//
-// STATUS: this does NOT currently reproduce the hang — the loop drains and
-// steps correctly on the released spawner's retained context, for a direct
-// client send and for the module-mediated ask alike, so the test passes and
-// stands as the regression probe for this window (a hang fails it by response
-// timeout instead of wedging CI). Live-only ingredients still unaccounted
-// for: a real provider model (credential/env round-trips through the loop's
-// client at step time, where replay needs none), the spawning call being
-// dispatched as a tool from another agent's open turn, and the minutes-long
-// idle gap before the send (time-based teardown).
-//
-// One adjacent breakage WAS found while building this (deliberately not
-// asserted here): a telemetry-rebuilt recipe ID passed as a module
-// function's Agent argument fails to load with `resolve result ID for
-// call: no attached result for xxh3:…` after the spawning call's results
-// are released — the same handle works via node(id:), so handle-passing
-// into module tools breaks where direct addressing survives.
 func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *testctx.T) {
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
 		t.Skip("needs its own CLI session to forward telemetry to the sink")
@@ -2202,15 +2178,12 @@ func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *te
 	require.Equal(t, "IDLE", rebuilt.state(ctx, t))
 }
 
-// TestAgentArgumentAfterSpawnerReleased pins the adjacent breakage
-// TestSendAfterSpawnerReleased's construction uncovered: a telemetry-rebuilt
-// recipe ID passed as a module function's `Agent!` ARGUMENT must address the
-// live runtime wherever the same handle works via node(id:). It used to fail
-// with `resolve result ID for call: no attached result for xxh3:…`
-// (dagql resultIDForCall) once the spawning call's results were released:
-// rebuilding argument inputs from a stored call frame insisted on an
-// already-attached result for the inline recipe instead of falling back to
-// evaluating it the way node(id:) does. Handle-passing INTO module tools is
+// TestAgentArgumentAfterSpawnerReleased pins that a telemetry-rebuilt recipe
+// ID passed as a module function's `Agent!` ARGUMENT addresses the live
+// runtime wherever the same handle works via node(id:), even once the
+// spawning call's results are released: argument inputs rebuilt from a
+// stored call frame evaluate the inline recipe the way node(id:) does when
+// no result is attached to it. Handle-passing INTO module tools is
 // the staff shape's bread and butter — a chief hands worker handles to
 // module functions all day — so direct addressing working while argument
 // passing fails is exactly the kind of asymmetry that bites live sessions.
@@ -2349,8 +2322,7 @@ func queryID(ctx context.Context, t *testctx.T, c *dagger.Client, query, path st
 // all, so those tests establish that the mechanism CAN work, not that it works
 // for the compositions users actually drive (design §10.2).
 //
-// The three cases differ only in where the workspace comes from, and that
-// alone used to decide whether addressing survived:
+// The three cases differ only in where the workspace comes from:
 //
 //   - host directory workspace — host.directory(…).asWorkspace(), a
 //     replayable, digest-stable leaf.
@@ -2358,25 +2330,14 @@ func queryID(ctx context.Context, t *testctx.T, c *dagger.Client, query, path st
 //     carries PerCallInput/PerSessionInput (core/schema/workspace.go:35-40),
 //     i.e. deliberately mints a fresh value on every evaluation.
 //   - session workspace overlay — the same, plus an edit, to separate the
-//     sparse-overlay machinery from currentWorkspace itself. It was never the
-//     overlay: this case failed exactly like the bare one.
+//     sparse-overlay machinery from currentWorkspace itself.
 //
-// What broke was never the walk. Every frame resolves, the ID rebuilds, and
-// the handle reads back its own name and runtime handle — those are literals in
-// the recipe. But a telemetry-rebuilt ID is the RECIPE form (design §9), so
-// USING it re-executes the chain; a fresh currentWorkspace meant a fresh seed,
-// a different agent value, and — while AgentRuntimes keyed on the agent
-// value's content digest — a different registry key. The lookup missed, and a
-// miss is indistinguishable from a never-started agent, since Get never
-// creates and IDLE-with-seed-snapshot is the honest projection of one. So the
-// handle looked healthy and addressed a corpse, and the first send spawned a
-// second loop from the seed: the live agent kept running while a fresh,
-// history-less one received the user's message.
-//
-// The registry now keys on the spawn-minted Handle (core/agent.go), a
+// A telemetry-rebuilt ID is the RECIPE form (design §9), so USING it
+// re-executes the chain, and a fresh currentWorkspace means a fresh seed
+// value. The registry keys on the spawn-minted Handle (core/agent.go), a
 // literal on the pinned chain that survives re-execution whatever the leaves
-// do — so all three cases address the live runtime, and the assertions past
-// the rebuild are what pins that.
+// do, so all three cases address the same live runtime; the assertions past
+// the rebuild pin that.
 func (AgentRuntimeSuite) TestRosterAddressingHostWorkspace(ctx context.Context, t *testctx.T) {
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
 		t.Skip("needs its own CLI session to forward telemetry to the sink")

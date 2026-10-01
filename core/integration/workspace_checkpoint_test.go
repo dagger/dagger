@@ -262,7 +262,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	_, err = live.Snapshot().ID(ctx)
 	require.ErrorContains(t, err, "loose.txt")
 	require.NotContains(t, err.Error(), "untracked bytes")
-	// Stage it instead of using the removed per-call include override.
+	// Staging the untracked file approves it for capture.
 	git("add", "loose.txt")
 	mounted := snapshotWorkspace(ctx, t, c, live.WithMountedDirectory("/deps", c.Directory().WithNewFile("readme.txt", "mounted")))
 	contents, err = mounted.File("/deps/readme.txt").Contents(ctx)

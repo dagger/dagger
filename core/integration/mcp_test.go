@@ -59,8 +59,7 @@ func (MCPSuite) TestWithoutModuleAndWithPrivilegedServesBuiltins(ctx context.Con
 	cli := startMCPClient(ctx, t, emptyDir, "--env-privileged")
 
 	// With no module there is no object to bind, so only the builtin tools
-	// are served. (The old Env-based core-API surface was retired with the
-	// object-tools scheme.)
+	// are served.
 	tools := listToolNames(ctx, t, cli)
 	require.Contains(t, tools, "ReadLogs")
 	require.Contains(t, tools, "LoadTrace")
@@ -191,8 +190,7 @@ func startMCPClient(ctx context.Context, t testing.TB, workdir string, extraArgs
 }
 
 // listToolNames lists the MCP server's tools via the MCP protocol. Tools are
-// the bound module objects' methods plus builtins — there is no discovery
-// indirection (the old ListMethods/SelectMethods tools are gone).
+// the bound module objects' methods plus builtins.
 func listToolNames(ctx context.Context, t testing.TB, cli *mcpclient.Client) []string {
 	t.Helper()
 

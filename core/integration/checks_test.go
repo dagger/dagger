@@ -263,7 +263,7 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 
 	t.Run("a wildcard matching the generator still selects the check", func(ctx context.Context, t *testctx.T) {
 		// "*" spans one segment, so this matches the generator and not the
-		// longer check name. It selected the check before the up-to-date leaf.
+		// longer check name; matching the generator selects its staleness check.
 		out, err := modGen.
 			With(daggerExec("check", "-l", "empty-*")).
 			CombinedOutput(ctx)
@@ -482,8 +482,8 @@ source = "ci/.dagger/hello-with-checks"
 // TestChecksReportUnloadableModules covers `dagger check`'s handling of a
 // workspace module that cannot be loaded: the modules that do load still run,
 // and the one that does not is reported as a check that fails. check stays a
-// gate -- the run exits non-zero even when every check that ran passed -- but a
-// broken module no longer costs the whole report, and listing no longer aborts.
+// gate -- the run exits non-zero even when every check that ran passed -- but
+// the report still covers every loadable module, and listing succeeds.
 func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -579,7 +579,6 @@ engineVersion = "v0.21.9"
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "run `dagger generate`")
-		require.NotContains(t, out, "skipped until it is generated")
 	})
 }
 

@@ -4,11 +4,9 @@ package core
 // each environment. They verify how users select, read, write, and run with
 // those environment-specific values.
 //
-// The standalone `dagger env {create,list,rm}` lifecycle group was removed in
-// the CLI 1.0 redesign: an env is now just a path prefix (env.<name>.*) in
-// workspace config, so it comes into being when a value is written under it and
-// is inspected/edited via `dagger workspace config` (raw) or `dagger module settings
-// --env` (typed). There is no longer a discrete create/list/rm command to test.
+// An env is a path prefix (env.<name>.*) in workspace config. It exists once a
+// value is written under it, and is read or edited via `dagger workspace config`
+// (raw) or `dagger module settings --env` (typed).
 //
 // See also:
 // - workspace_settings_test.go: typed module-setting discovery and UX.

@@ -82,8 +82,11 @@ func TestDescribeLoadFailure(t *testing.T) {
 			telemetry.TrackOrigin(missing, origin))
 
 		got := DescribeLoadFailure(err, ModuleLoadBestEffort)
-		require.Contains(t, got, "run `dagger generate`")
-		require.NotContains(t, got, "skipped until it is generated")
+		require.Equal(t,
+			"loading module \"modules/ungenerated\": failed to get module runtime: "+
+				"module \"ungenerated\": generated file \"dagger.gen.go\" is missing; "+
+				"run `dagger generate` and commit the generated files",
+			got)
 	})
 
 	t.Run("leaves other errors alone", func(t *testing.T) {

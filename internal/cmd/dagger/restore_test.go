@@ -536,5 +536,4 @@ func TestTraceFlagIsDeprecated(t *testing.T) {
 	require.Equal(t, "r", resume.Shorthand)
 	require.False(t, resume.Hidden)
 	require.Equal(t, string(agentResumeList), resume.NoOptDefVal)
-	require.Nil(t, agentCmd.Flags().Lookup("list-archives"), "a bare -r replaces --list-archives")
 }

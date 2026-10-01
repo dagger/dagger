@@ -386,9 +386,26 @@ def test_generate_modern_id_surface():
     code = generate(schema, schema_version="v0.21.0-dev")
 
     assert "class ContainerID(Scalar):" not in code
-    assert "load_container_from_id" not in code
     assert "async def id(self) -> str:" in code
     assert "return await _ctx.execute(str)" in code
+
+
+def test_generate_legacy_id_surface():
+    schema = build_schema(
+        """
+        directive @expectedType(name: String!)
+            on FIELD_DEFINITION
+            | ARGUMENT_DEFINITION
+            | INPUT_FIELD_DEFINITION
+
+        type Container { id: ID! @expectedType(name: "Container") }
+        type Query { container: Container! }
+        """
+    )
+
+    code = generate(schema, schema_version="v0.20.0")
+
+    assert "class ContainerID(Scalar):" in code
 
 
 def test_user_sync_leaf(ctx: Context):

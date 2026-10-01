@@ -354,7 +354,7 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 	require.True(t, empty)
 }
 
-// TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource asserts the future
+// TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource asserts the
 // functional-write contract. Writing to a Workspace returns an overlay
 // Workspace; the base source remains readable and unchanged.
 func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource(ctx context.Context, t *testctx.T) {

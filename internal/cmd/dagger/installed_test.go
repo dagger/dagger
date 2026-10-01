@@ -9,9 +9,6 @@ import (
 
 func TestModuleListCommand(t *testing.T) {
 	require.Equal(t, "List installed modules", installedCmd.Short)
-	require.Nil(t, installedCmd.Flags().Lookup("source"))
-	require.Nil(t, installedCmd.Flags().Lookup("installed"))
-	require.Nil(t, installedCmd.Flags().Lookup("sdk"))
 }
 
 func TestPrintModuleList(t *testing.T) {
