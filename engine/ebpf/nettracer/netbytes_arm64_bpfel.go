@@ -20,6 +20,14 @@ type netbytesCgroupCounterKey struct {
 	Pad       uint16
 }
 
+type netbytesCounterKey struct {
+	_         structs.HostLayout
+	Ifindex   uint32
+	Direction uint8
+	Scope     uint8
+	Pad       uint16
+}
+
 type netbytesIpv4LpmKey struct {
 	_         structs.HostLayout
 	Prefixlen uint32
@@ -76,12 +84,15 @@ type netbytesSpecs struct {
 type netbytesProgramSpecs struct {
 	CountCgroupEgress  *ebpf.ProgramSpec `ebpf:"count_cgroup_egress"`
 	CountCgroupIngress *ebpf.ProgramSpec `ebpf:"count_cgroup_ingress"`
+	CountEgress        *ebpf.ProgramSpec `ebpf:"count_egress"`
+	CountIngress       *ebpf.ProgramSpec `ebpf:"count_ingress"`
 }
 
 // netbytesMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type netbytesMapSpecs struct {
+	ByteCounters          *ebpf.MapSpec `ebpf:"byte_counters"`
 	CgroupByteCounters    *ebpf.MapSpec `ebpf:"cgroup_byte_counters"`
 	EngineCgroupId        *ebpf.MapSpec `ebpf:"engine_cgroup_id"`
 	EngineLoopbackIfindex *ebpf.MapSpec `ebpf:"engine_loopback_ifindex"`
@@ -116,6 +127,7 @@ func (o *netbytesObjects) Close() error {
 //
 // It can be passed to loadNetbytesObjects or ebpf.CollectionSpec.LoadAndAssign.
 type netbytesMaps struct {
+	ByteCounters          *ebpf.Map `ebpf:"byte_counters"`
 	CgroupByteCounters    *ebpf.Map `ebpf:"cgroup_byte_counters"`
 	EngineCgroupId        *ebpf.Map `ebpf:"engine_cgroup_id"`
 	EngineLoopbackIfindex *ebpf.Map `ebpf:"engine_loopback_ifindex"`
@@ -126,6 +138,7 @@ type netbytesMaps struct {
 
 func (m *netbytesMaps) Close() error {
 	return _NetbytesClose(
+		m.ByteCounters,
 		m.CgroupByteCounters,
 		m.EngineCgroupId,
 		m.EngineLoopbackIfindex,
@@ -147,12 +160,16 @@ type netbytesVariables struct {
 type netbytesPrograms struct {
 	CountCgroupEgress  *ebpf.Program `ebpf:"count_cgroup_egress"`
 	CountCgroupIngress *ebpf.Program `ebpf:"count_cgroup_ingress"`
+	CountEgress        *ebpf.Program `ebpf:"count_egress"`
+	CountIngress       *ebpf.Program `ebpf:"count_ingress"`
 }
 
 func (p *netbytesPrograms) Close() error {
 	return _NetbytesClose(
 		p.CountCgroupEgress,
 		p.CountCgroupIngress,
+		p.CountEgress,
+		p.CountIngress,
 	)
 }
 
