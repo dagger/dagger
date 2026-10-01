@@ -361,41 +361,19 @@ func scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, ws dagql.Ob
 }
 
 // scopeLLM returns the conversation whose scope (LLM.artifacts) a tool
-// argument's address resolves in: the conversation dispatching the call — or,
-// for a server without one (dagger mcp), the conversation it serves — with
-// the changes earlier calls of this turn made to its workspace and bindings
-// folded in, as step() folds them before continuations. So an address sees
-// the tools' state as of this call, and the value lifted from it has a
-// recipe: the conversation's own artifacts, filtered by the address.
+// argument's address resolves in: this turn's conversation (see
+// MCP.turnLLM), so an address sees the tools' state as of this call, and the
+// value lifted from it has a recipe: the conversation's own artifacts,
+// filtered by the address.
 func (m *MCP) scopeLLM(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*LLM], error) {
-	base := m.currentLLM()
-	if base.Self() == nil {
-		base = m.scopeBase
-	}
-	if base.Self() == nil {
-		return base, errors.New("no conversation to resolve the address in")
-	}
-	wsBefore, err := base.Self().mcp.WorkspaceID()
+	llm, err := m.turnLLM(ctx, srv)
 	if err != nil {
-		return base, err
+		return llm, err
 	}
-	toolsBefore, err := base.Self().mcp.BoundToolBindings()
-	if err != nil {
-		return base, err
+	if llm.Self() == nil {
+		return llm, errors.New("no conversation to resolve the address in")
 	}
-	sels := stateDeltaSelectors(m, wsBefore, toolsBefore)
-	if len(sels) == 0 {
-		return base, nil
-	}
-	srv = srv.Canonical()
-	for i := range sels {
-		sels[i].View = srv.View
-	}
-	var folded dagql.ObjectResult[*LLM]
-	if err := srv.Select(ctx, base, &folded, sels...); err != nil {
-		return base, fmt.Errorf("record this turn's tool state: %w", err)
-	}
-	return folded, nil
+	return llm, nil
 }
 
 // scopeSelectors select a DAG address in a conversation's scope:
