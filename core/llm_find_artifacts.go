@@ -26,8 +26,8 @@ const (
 // loadArtifactTools registers FindArtifacts when the conversation's scope can
 // be non-empty. The scope itself is computed per call, never here: listing
 // tools must stay cheap.
-func (m *MCP) loadArtifactTools(ctx context.Context, srv *dagql.Server, allTools *LLMToolSet) {
-	if !m.mayHaveArtifacts(ctx, srv) {
+func (m *MCP) loadArtifactTools(srv *dagql.Server, allTools *LLMToolSet) {
+	if !m.mayHaveArtifacts(srv) {
 		return
 	}
 	allTools.Add(LLMTool{
@@ -79,38 +79,16 @@ func (m *MCP) loadArtifactTools(ctx context.Context, srv *dagql.Server, allTools
 }
 
 // mayHaveArtifacts reports whether the conversation's scope can be non-empty:
-// a module object is bound as tools, or there is a workspace (bound, in ctx,
-// or the client's current one) whose artifacts the schema can list.
-func (m *MCP) mayHaveArtifacts(ctx context.Context, srv *dagql.Server) bool {
+// a module object is bound as tools, or a workspace is bound whose artifacts
+// the schema can list (see MCP.scopeWorkspace).
+func (m *MCP) mayHaveArtifacts(srv *dagql.Server) bool {
 	m.mu.Lock()
 	bound := slices.ContainsFunc(m.boundTools, func(b boundTool) bool {
 		_, ok := ModuleObjectTypeModule(b.objType)
 		return ok
 	})
 	m.mu.Unlock()
-	if bound {
-		return true
-	}
-	canonical := srv.Canonical()
-	workspaceType, ok := canonical.ObjectType("Workspace")
-	if ok {
-		_, ok = workspaceType.FieldSpec("artifacts", canonical.View)
-	}
-	if !ok {
-		return false
-	}
-	if m.workspace.Self() != nil {
-		return true
-	}
-	if _, ok := WorkspaceFromContext(ctx); ok {
-		return true
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil || query.Server == nil {
-		return false
-	}
-	ws, err := query.Server.CurrentWorkspace(ctx)
-	return err == nil && ws != nil
+	return bound || m.scopeWorkspace(srv).Self() != nil
 }
 
 type findArtifactsArgs struct {

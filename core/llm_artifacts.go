@@ -22,11 +22,11 @@ import (
 //     BoundArtifacts). A binding that fails to load is reported as a
 //     "<module>/load" check, like a workspace module that fails to load.
 //   - The workspace's artifacts (Workspace.artifacts): the workspace the
-//     conversation is bound to, else the one bound into ctx, else the
-//     client's current workspace, else none. A workspace module named like a
-//     module with bound objects is dropped: the bound one shadows it, so an
-//     address naming the module never silently resolves against a fresh
-//     construction instead of the live tools.
+//     conversation is bound to (LLM.withWorkspace), or none for an unbound
+//     conversation. A workspace module named like a module with bound
+//     objects is dropped: the bound one shadows it, so an address naming the
+//     module never silently resolves against a fresh construction instead of
+//     the live tools.
 //
 // include narrows the selection like Workspace.artifacts(include:): each
 // pattern selects a path and its children, and only the workspace modules it
@@ -36,10 +36,7 @@ func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string
 	if err != nil {
 		return nil, err
 	}
-	ws, err := m.scopeWorkspace(ctx, srv)
-	if err != nil {
-		return nil, err
-	}
+	ws := m.scopeWorkspace(srv)
 	var workspace []*Artifact
 	if ws.Self() != nil {
 		workspace, err = scopeWorkspaceArtifacts(ctx, srv, ws, include)
@@ -193,32 +190,28 @@ func (m *MCP) bindingArtifacts(ctx context.Context, srv *dagql.Server, binding s
 }
 
 // scopeWorkspace is the workspace of the scope: the conversation's bound
-// workspace, else the one bound into ctx, else — as for address resolution
-// (resolveUserAddress) — the client's current workspace. None (a zero
-// result) when there is no current workspace or no schema view to discover
-// workspace artifacts in.
-func (m *MCP) scopeWorkspace(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*Workspace], error) {
+// workspace, and only that. An unbound conversation (Query.llm starts
+// unbound) has no workspace part, whatever the calling client's current
+// workspace is, so the scope depends only on the conversation's own recipe.
+// None (a zero result) as well when the schema view cannot discover workspace
+// artifacts.
+func (m *MCP) scopeWorkspace(srv *dagql.Server) dagql.ObjectResult[*Workspace] {
+	if m.workspace.Self() == nil || !schemaHasWorkspaceArtifacts(srv) {
+		return dagql.ObjectResult[*Workspace]{}
+	}
+	return m.workspace
+}
+
+// schemaHasWorkspaceArtifacts reports whether the schema view can discover a
+// workspace's artifacts (Workspace.artifacts).
+func schemaHasWorkspaceArtifacts(srv *dagql.Server) bool {
 	srv = srv.Canonical()
 	workspaceType, ok := srv.ObjectType("Workspace")
-	if ok {
-		_, ok = workspaceType.FieldSpec("artifacts", srv.View)
-	}
 	if !ok {
-		return dagql.ObjectResult[*Workspace]{}, nil
+		return false
 	}
-	ws := m.workspace
-	if ws.Self() == nil {
-		ws, _ = WorkspaceFromContext(ctx)
-	}
-	if ws.Self() == nil {
-		if err := srv.Select(ctx, srv.Root(), &ws, dagql.Selector{View: srv.View, Field: "currentWorkspace"}); err != nil {
-			if errors.Is(err, ErrNoCurrentWorkspace) {
-				return dagql.ObjectResult[*Workspace]{}, nil
-			}
-			return ws, fmt.Errorf("load current workspace: %w", err)
-		}
-	}
-	return ws, nil
+	_, ok = workspaceType.FieldSpec("artifacts", srv.View)
+	return ok
 }
 
 // scopeWorkspaceArtifacts selects Workspace.artifacts on the scope's
