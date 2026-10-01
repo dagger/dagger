@@ -430,17 +430,19 @@ func (m *MCP) liftScopeSelection(ctx context.Context, srv *dagql.Server, addr st
 	}
 	srv = srv.Canonical()
 	sels := scopeSelectors(srv, parsed, addr)
+	var selection dagql.ObjectResult[*Artifacts]
+	if err := srv.Select(ctx, llm, &selection, sels...); err != nil {
+		return nil, err
+	}
+	// A filter matching nothing is a valid selection, but an address the
+	// model typed that names nothing is a mistake: passed on, a function
+	// like check would succeed without running anything. Count the items,
+	// not the schema paths: a collection path with an unknown key is a path
+	// with no items.
+	if err := requireScopeMatch(ctx, selection.Self(), parsed, one); err != nil {
+		return nil, err
+	}
 	if !one {
-		var selection dagql.ObjectResult[*Artifacts]
-		if err := srv.Select(ctx, llm, &selection, sels...); err != nil {
-			return nil, err
-		}
-		// A filter matching nothing is a valid selection, but an address the
-		// model typed that names nothing is a mistake: passed on, a function
-		// like check would succeed without running anything.
-		if len(selection.Self().Entries) == 0 {
-			return nil, fmt.Errorf("no artifact matches %s", selection.Self().URI())
-		}
 		return selection, nil
 	}
 	var artifact dagql.ObjectResult[*Artifact]
@@ -448,6 +450,38 @@ func (m *MCP) liftScopeSelection(ctx context.Context, srv *dagql.Server, addr st
 		return nil, err
 	}
 	return artifact, nil
+}
+
+// requireScopeMatch requires a selection to have items: exactly one when one
+// is set. Collections are expanded to count their items, as Artifacts.one
+// does. The error names the address as given, not the selection's normalized
+// URI, which spells an empty selection "dag://{}" and a collection key by its
+// dimension's identifier. It is built here rather than by Artifacts.one so
+// the tool result is the message alone, without the trace report an engine
+// error carries into it.
+func requireScopeMatch(ctx context.Context, selection *Artifacts, addr *dagaddress.Address, one bool) error {
+	if len(selection.Entries) > 0 {
+		var err error
+		selection, err = selection.Expand(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	switch n := len(selection.Entries); {
+	case n == 0:
+		return fmt.Errorf("no artifact matches %s", addr)
+	case n == 1 || !one:
+		return nil
+	}
+	lines := make([]string, 0, len(selection.Entries))
+	for _, artifact := range selection.Entries {
+		uri, err := artifact.URI(ArtifactURIOpts{DimensionKeys: true})
+		if err != nil {
+			return err
+		}
+		lines = append(lines, uri)
+	}
+	return fmt.Errorf("%s matches %d artifacts:\n%s", addr, len(selection.Entries), strings.Join(lines, "\n"))
 }
 
 // resolveScopeObject evaluates the one value a relative DAG address names in
@@ -477,6 +511,9 @@ func (m *MCP) resolveScopeObject(ctx context.Context, srv *dagql.Server, parsed 
 		}); err != nil {
 			return nil, fmt.Errorf("resolve %q: %w", addr, err)
 		}
+	}
+	if err := requireScopeMatch(ctx, selection.Self(), parsed, true); err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", addr, err)
 	}
 	var one dagql.ObjectResult[*Artifact]
 	if err := srv.Select(ctx, selection, &one, dagql.Selector{View: srv.View, Field: "one"}); err != nil {

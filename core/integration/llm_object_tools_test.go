@@ -1396,6 +1396,7 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 			{block: toolCall("one", "read", `{"target":"roster/members/notes?member=a"}`)},
 			{block: toolCall("typed", "read", `{"target":"dag+file://roster/members/notes?member=a"}`)},
 			{block: toolCall("many", "read", `{"target":"roster/members/*"}`), isError: true},
+			{block: toolCall("nobody", "readAll", `{"targets":"roster/members/notes?member=nobody"}`), isError: true},
 		} {
 			script = script.
 				WithResponse([]dagger.LLMContentBlockInput{call.block}).
@@ -1424,9 +1425,12 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 		// A keyed address, with or without a type assertion, picks one.
 		require.Equal(t, 2, strings.Count(out, "read: "+notes), out)
 		// An Artifact must be exactly one: several matches are listed.
-		require.Contains(t, out, `"roster/members/*" is not a resolvable Artifact address`)
+		require.Contains(t, out, `"roster/members/*" is not a resolvable Artifact address: dag://roster/members/* matches 2 artifacts`)
 		require.Contains(t, out, "dag://roster/members/dir?member=a")
 		require.Contains(t, out, "FindArtifacts lists what exists")
+		// A collection path with an unknown key has no items: refused, not
+		// handed to the function as an empty selection.
+		require.Contains(t, out, `"roster/members/notes?member=nobody" is not a resolvable Artifacts address: no artifact matches dag://roster/members/notes?member=nobody`)
 		require.Contains(t, out, "done")
 	})
 

@@ -178,7 +178,7 @@ func TestLiftScopeSelection(t *testing.T) {
 		// Several matches are an error listing them, pointing to discovery.
 		_, err = call(t, m, "eval", map[string]any{"target": "go/*"})
 		require.ErrorContains(t, err, `"go/*" is not a resolvable Artifact address`)
-		require.ErrorContains(t, err, "matches 2 artifacts:\ndag://go/lint\ndag://go/test")
+		require.ErrorContains(t, err, "dag://go/* matches 2 artifacts:\ndag://go/lint\ndag://go/test")
 		require.ErrorContains(t, err, "FindArtifacts lists what exists")
 	})
 
