@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -18,11 +19,11 @@ func TestOpenAIMediaPayload(t *testing.T) {
 		Role: LLMMessageRoleUser,
 		Content: []*LLMContentBlock{
 			{Kind: LLMContentText, Text: "before"},
-			{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
+			{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 			{Kind: LLMContentText, Text: "between"},
-			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: "YXVkaW8="},
-			{Kind: LLMContentAudio, MIMEType: "audio/mpeg", Data: "bXAz"},
-			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "cGRm"},
+			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("audio")},
+			{Kind: LLMContentAudio, MIMEType: "audio/mpeg", Data: []byte("mp3")},
+			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("pdf")},
 			{Kind: LLMContentText, Text: "after"},
 		},
 	}})
@@ -48,13 +49,13 @@ func TestOpenAIToolMediaPayload(t *testing.T) {
 			Kind: LLMContentToolResult, CallID: "screenshot", Text: "legacy", Errored: true,
 			Content: []*LLMContentBlock{
 				{Kind: LLMContentText, Text: "before"},
-				{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
+				{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 				{Kind: LLMContentText, Text: "after"},
 			},
 		}}},
 		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{
 			Kind: LLMContentToolResult, CallID: "document", Content: []*LLMContentBlock{
-				{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "cGRm"},
+				{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("pdf")},
 			},
 		}}},
 	}
@@ -109,7 +110,7 @@ func TestOpenAIToolAudioPayload(t *testing.T) {
 	messages, err := convertHistoryToOpenAI([]*LLMMessage{{
 		Role: LLMMessageRoleUser,
 		Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "listen", Content: []*LLMContentBlock{
-			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: "YXVkaW8="},
+			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("audio")},
 		}}},
 	}})
 	require.NoError(t, err)
@@ -128,7 +129,7 @@ func TestOpenAIWAVMediaFromBytes(t *testing.T) {
 	wav := []byte("RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x40\x1f\x00\x00\x80\x3e\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
 	for _, mimeType := range []string{"", "audio/wav", "audio/wave", "audio/x-wav"} {
 		t.Run(mimeType, func(t *testing.T) {
-			block, err := llmContentFromBytes(wav, mimeType)
+			block, err := LLMContentFromBytes(wav, mimeType)
 			require.NoError(t, err)
 			require.Equal(t, LLMContentAudio, block.Kind)
 			messages, err := convertHistoryToOpenAI([]*LLMMessage{{
@@ -137,7 +138,7 @@ func TestOpenAIWAVMediaFromBytes(t *testing.T) {
 			require.NoError(t, err)
 			payload, err := json.Marshal(messages)
 			require.NoError(t, err)
-			assert.JSONEq(t, `[{"role":"user","content":[{"type":"input_audio","input_audio":{"format":"wav","data":"`+block.Data+`"}}]}]`, string(payload))
+			assert.JSONEq(t, `[{"role":"user","content":[{"type":"input_audio","input_audio":{"format":"wav","data":"`+base64.StdEncoding.EncodeToString(block.Data)+`"}}]}]`, string(payload))
 		})
 	}
 }
@@ -147,8 +148,8 @@ func TestCodexMediaPayload(t *testing.T) {
 		Role: LLMMessageRoleUser,
 		Content: []*LLMContentBlock{
 			{Kind: LLMContentText, Text: "before"},
-			{Kind: LLMContentImage, MIMEType: "image/jpeg", Data: "aW1hZ2U="},
-			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "cGRm"},
+			{Kind: LLMContentImage, MIMEType: "image/jpeg", Data: []byte("image")},
+			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("pdf")},
 			{Kind: LLMContentText, Text: "after"},
 		},
 	}})
@@ -173,9 +174,9 @@ func TestCodexToolMediaPayload(t *testing.T) {
 			{Kind: LLMContentToolResult, CallID: "read", Text: "legacy", Errored: true,
 				Content: []*LLMContentBlock{
 					{Kind: LLMContentText, Text: "before image"},
-					{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
+					{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 					{Kind: LLMContentText, Text: "after image"},
-					{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "cGRm"},
+					{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("pdf")},
 				}},
 			{Kind: LLMContentText, Text: "after result"},
 		},
@@ -202,15 +203,14 @@ func TestOpenAIRejectUnsupportedMedia(t *testing.T) {
 		role  LLMMessageRole
 		block *LLMContentBlock
 	}{
-		{"system image", LLMMessageRoleSystem, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "eA=="}},
-		{"assistant image", LLMMessageRoleAssistant, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "eA=="}},
+		{"system image", LLMMessageRoleSystem, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("x")}},
+		{"assistant image", LLMMessageRoleAssistant, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("x")}},
 		{"unknown role", LLMMessageRole("unknown"), &LLMContentBlock{Kind: LLMContentText, Text: "x"}},
 		{"unknown kind", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentBlockKind("unknown")}},
 		{"nil block", LLMMessageRoleUser, nil},
-		{"bad base64", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "bad!!"}},
-		{"bad image MIME", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/tiff", Data: "eA=="}},
-		{"unsupported document", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentDocument, MIMEType: "application/zip", Data: "eA=="}},
-		{"unsupported audio", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentAudio, MIMEType: "audio/ogg", Data: "eA=="}},
+		{"bad image MIME", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/tiff", Data: []byte("x")}},
+		{"unsupported document", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentDocument, MIMEType: "application/zip", Data: []byte("x")}},
+		{"unsupported audio", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentAudio, MIMEType: "audio/ogg", Data: []byte("x")}},
 		{"user tool call", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentToolCall, CallID: "id", ToolName: "read"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -222,7 +222,7 @@ func TestOpenAIRejectUnsupportedMedia(t *testing.T) {
 		})
 	}
 	for _, nested := range []bool{false, true} {
-		block := &LLMContentBlock{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: "eA=="}
+		block := &LLMContentBlock{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("x")}
 		if nested {
 			block = &LLMContentBlock{Kind: LLMContentToolResult, CallID: "read", Content: []*LLMContentBlock{block}}
 		}
@@ -250,7 +250,7 @@ func TestLocalMediaRequest(t *testing.T) {
 	_, err := client.SendQuery(t.Context(), []*LLMMessage{{
 		Role: LLMMessageRoleUser, Content: []*LLMContentBlock{
 			{Kind: LLMContentText, Text: "describe"},
-			{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
+			{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 		},
 	}}, []LLMTool{{Name: "read", Schema: map[string]any{"type": "object"}}}, &LLMCallOpts{})
 	require.NoError(t, err)

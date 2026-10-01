@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1085,7 +1084,7 @@ func llmContentEqual(a, b *LLMContentBlock) bool {
 	return a.Kind == b.Kind && a.Text == b.Text && a.CallID == b.CallID &&
 		a.ToolName == b.ToolName && string(a.Arguments) == string(b.Arguments) &&
 		a.Errored == b.Errored && a.Signature == b.Signature &&
-		a.MIMEType == b.MIMEType && a.Data == b.Data &&
+		a.MIMEType == b.MIMEType && slices.Equal(a.Data, b.Data) &&
 		slices.EqualFunc(a.Content, b.Content, llmContentEqual)
 }
 
@@ -1739,12 +1738,11 @@ func mcpContentBlocks(result *mcp.CallToolResult) ([]*LLMContentBlock, error) {
 			return nil, fmt.Errorf("nil MCP content at index %d", i)
 		}
 		if block.Kind == LLMContentImage || block.Kind == LLMContentAudio || block.Kind == LLMContentDocument {
-			// Check the decoded budget before allocating a second, larger copy.
 			if len(mediaData) > MaxLLMMediaBytes-mediaBytes {
-				return nil, fmt.Errorf("MCP tool media exceeds %d decoded bytes", MaxLLMMediaBytes)
+				return nil, fmt.Errorf("MCP tool media exceeds %d bytes", MaxLLMMediaBytes)
 			}
 			mediaBytes += len(mediaData)
-			block.Data = base64.StdEncoding.EncodeToString(mediaData)
+			block.Data = dagql.NewBytes(mediaData)
 		}
 		blocks = append(blocks, block)
 	}

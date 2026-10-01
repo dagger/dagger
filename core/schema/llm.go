@@ -32,6 +32,34 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls for this LLM").
 					View(BeforeVersion("v1.0.0-0")),
 			),
+		dagql.Func("llmContent", s.llmContent).
+			View(AfterVersion("v1.0.0-0")).
+			Experimental("LLM support is not yet stabilized").
+			Doc(`Start an empty run of text and media content, independent of any conversation.`,
+				`Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.`),
+	}.Install(srv)
+	// Like the content-block message model below, the content builder is only
+	// visible to v1+ views.
+	srv.InstallObject(dagql.NewClass[*core.LLMContent](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.LLMContent]{
+		dagql.Func("withText", s.llmContentWithText).
+			Doc(`Append a block of text.`).
+			Args(
+				dagql.Arg("text").Doc("The text."),
+			),
+		dagql.Func("withFile", s.llmContentWithFile).
+			Doc(`Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.`).
+			Args(
+				dagql.Arg("file").Doc("The media file. Its contents become the block's inline bytes."),
+				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.`),
+			),
+		dagql.Func("withData", s.llmContentWithData).
+			Doc(`Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.`,
+				`Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.`).
+			Args(
+				dagql.Arg("data").Doc("The media bytes."),
+				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png".`),
+			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
 		dagql.NodeFunc("compose", s.compose).
@@ -428,6 +456,40 @@ func resolveLLMContent(ctx context.Context, inputs []dagql.InputObject[core.LLMC
 		return nil, err
 	}
 	return blocks, nil
+}
+
+func (s *llmSchema) llmContent(ctx context.Context, _ *core.Query, _ struct{}) (*core.LLMContent, error) {
+	return &core.LLMContent{}, nil
+}
+
+func (s *llmSchema) llmContentWithText(ctx context.Context, content *core.LLMContent, args struct {
+	Text string
+}) (*core.LLMContent, error) {
+	return content.WithBlock(&core.LLMContentBlock{Kind: core.LLMContentText, Text: args.Text})
+}
+
+// llmContentWithFile resolves the file to inline bytes exactly as
+// LLM.withContentFile does, so the media kind is inferred the same way.
+func (s *llmSchema) llmContentWithFile(ctx context.Context, content *core.LLMContent, args struct {
+	File     core.FileID
+	MIMEType string `name:"mimeType" default:""`
+}) (*core.LLMContent, error) {
+	block, err := core.LLMContentFromFile(ctx, args.File, args.MIMEType)
+	if err != nil {
+		return nil, err
+	}
+	return content.WithBlock(block)
+}
+
+func (s *llmSchema) llmContentWithData(ctx context.Context, content *core.LLMContent, args struct {
+	Data     dagql.Bytes
+	MIMEType string `name:"mimeType"`
+}) (*core.LLMContent, error) {
+	block, err := core.LLMContentFromBytes(args.Data, args.MIMEType)
+	if err != nil {
+		return nil, err
+	}
+	return content.WithBlock(block)
 }
 
 func (s *llmSchema) withContent(ctx context.Context, llm *core.LLM, args struct {

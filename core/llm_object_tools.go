@@ -1284,6 +1284,7 @@ func boundToolRoot(path string, candidates []boundToolCandidate) (int, bool, err
 //   - Changeset: overlay onto the workspace, return the patch summary.
 //   - Workspace: replace the current workspace, return the diff summary.
 //   - LLM: replace the conversation — the loop resumes from it (a continuation).
+//   - LLMContent: the tool result's text and media, in order.
 //   - the bound object's own type: rebind it as the new state, return its print.
 //   - any other object: sync it, return its print (else a type description).
 //   - Void/null: return its print, else "(done)".
@@ -1302,6 +1303,18 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 			}
 		}
 		return out, err
+	}
+
+	// Content is the tool's result content, in order, after anything the
+	// method printed. This is how a tool shows the model media (e.g. a
+	// screenshot): as its own result, not as a user message appended to the
+	// conversation it would have to return.
+	if content, ok := dagql.UnwrapAs[*LLMContent](val); ok {
+		if content == nil || len(content.Blocks) == 0 {
+			return m.logsOrDone(ctx), nil
+		}
+		// Clone so the tool result never aliases a cached value.
+		return &LLMContentBlock{Kind: LLMContentToolResult, Text: m.toolLogs(ctx), Content: cloneLLMContent(content.Blocks)}, nil
 	}
 
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {

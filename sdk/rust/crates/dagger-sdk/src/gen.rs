@@ -112,7 +112,7 @@ pub struct LlmContentBlockInput {
     pub arguments: Json,
     pub call_id: String,
     pub content: Vec<LlmContentBlockInput>,
-    pub data: String,
+    pub data: Bytes,
     pub errored: bool,
     pub file: Id,
     pub kind: LlmContentBlockKind,
@@ -13310,6 +13310,152 @@ impl Syncer for Llm {
     }
 }
 #[derive(Clone)]
+pub struct LlmContent {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmContentWithFileOpts<'a> {
+    /// The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub mime_type: Option<&'a str>,
+}
+impl IntoID<Id> for LlmContent {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for LlmContent {
+    fn graphql_type() -> &'static str {
+        "LLMContent"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl LlmContent {
+    /// A unique identifier for this LLMContent.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Append a block of text.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The text.
+    pub fn with_text(&self, text: impl Into<String>) -> LlmContent {
+        let mut query = self.selection.select("withText");
+        query = query.arg("text", text.into());
+        LlmContent {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The media file. Its contents become the block's inline bytes.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_file(&self, file: impl IntoID<Id>) -> LlmContent {
+        let mut query = self.selection.select("withFile");
+        query = query.arg_lazy(
+            "file",
+            Box::new(move || {
+                let file = file.clone();
+                Box::pin(async move { file.into_id().await.unwrap().quote() })
+            }),
+        );
+        LlmContent {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The media file. Its contents become the block's inline bytes.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_file_opts<'a>(
+        &self,
+        file: impl IntoID<Id>,
+        opts: LlmContentWithFileOpts<'a>,
+    ) -> LlmContent {
+        let mut query = self.selection.select("withFile");
+        query = query.arg_lazy(
+            "file",
+            Box::new(move || {
+                let file = file.clone();
+                Box::pin(async move { file.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(mime_type) = opts.mime_type {
+            query = query.arg("mimeType", mime_type);
+        }
+        LlmContent {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.
+    /// Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The media bytes.
+    /// * `mime_type` - The media MIME type, e.g. "image/png".
+    pub fn with_data(&self, data: Bytes, mime_type: impl Into<String>) -> LlmContent {
+        let mut query = self.selection.select("withData");
+        query = query.arg("data", data);
+        query = query.arg("mimeType", mime_type.into());
+        LlmContent {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The ordered text and media blocks.
+    pub async fn blocks(&self) -> Result<Vec<LlmContentBlock>, DaggerError> {
+        let query = self.selection.select("blocks");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| LlmContentBlock {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("LLMContentBlock"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+}
+impl Node for LlmContent {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct LlmContentBlock {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -13379,8 +13525,8 @@ impl LlmContentBlock {
         let query = self.selection.select("mimeType");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
-    pub async fn data(&self) -> Result<String, DaggerError> {
+    /// The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+    pub async fn data(&self) -> Result<Bytes, DaggerError> {
         let query = self.selection.select("data");
         query.execute(self.graphql_client.clone()).await
     }
@@ -16021,6 +16167,16 @@ impl Query {
             query = query.arg("provider", provider);
         }
         Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Start an empty run of text and media content, independent of any conversation.
+    /// Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+    pub fn llm_content(&self) -> LlmContent {
+        let query = self.selection.select("llmContent");
+        LlmContent {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

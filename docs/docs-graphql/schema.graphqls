@@ -5034,6 +5034,50 @@ type LLM implements Node & Syncer {
   contextTokens: Int!
 }
 
+"""
+An ordered run of text and media content for a model to read, built outside any conversation.
+"""
+type LLMContent implements Node {
+  """A unique identifier for this LLMContent."""
+  id: ID!
+
+  """Append a block of text."""
+  withText(
+    """The text."""
+    text: String!
+  ): LLMContent!
+
+  """
+  Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
+  """
+  withFile(
+    """The media file. Its contents become the block's inline bytes."""
+    file: ID! @expectedType(name: "File")
+
+    """
+    The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.
+    """
+    mimeType: String = ""
+  ): LLMContent!
+
+  """
+  Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.
+
+  Prefer withFile for anything but small payloads: the bytes become part of the
+  content's identity, so they travel with every reference to it.
+  """
+  withData(
+    """The media bytes."""
+    data: Bytes!
+
+    """The media MIME type, e.g. "image/png"."""
+    mimeType: String!
+  ): LLMContent!
+
+  """The ordered text and media blocks."""
+  blocks: [LLMContentBlock!]!
+}
+
 """A single piece of content within an LLM message."""
 type LLMContentBlock implements Node {
   """A unique identifier for this LLMContentBlock."""
@@ -5062,8 +5106,8 @@ type LLMContentBlock implements Node {
   """The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds)."""
   mimeType: String!
 
-  """Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."""
-  data: String!
+  """The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."""
+  data: Bytes!
 
   """
   Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
@@ -5102,10 +5146,8 @@ input LLMContentBlockInput {
   """Media MIME type; required for inline data, inferred for a file."""
   mimeType: String = ""
 
-  """
-  Base64-encoded media bytes. Supply exactly one of data or file for media.
-  """
-  data: String = ""
+  """Media bytes. Supply exactly one of data or file for media."""
+  data: Bytes
 
   """A media file to resolve to inline bytes."""
   file: ID @expectedType(name: "File")
@@ -6203,6 +6245,15 @@ type Query implements Node {
     """
     provider: String
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
+
+  """
+  Start an empty run of text and media content, independent of any conversation.
+
+  Add blocks with withText, withFile, and withData. A function exposed as an LLM
+  tool can return the content to give the model text and media as the tool's
+  result, e.g. a caption and a screenshot for the model to look at.
+  """
+  llmContent: LLMContent! @experimental(reason: "LLM support is not yet stabilized")
 
   """Initialize a JSON value"""
   json: JSONValue!

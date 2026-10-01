@@ -2743,6 +2743,13 @@ export type LLMWithToolsOpts = {
   version?: number
 }
 
+export type LLMContentWithFileOpts = {
+  /**
+   * The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.
+   */
+  mimeType?: string
+}
+
 export type LLMContentBlockInput = {
   /**
    * The arguments to pass to the tool (for TOOL_CALL kind).
@@ -2760,9 +2767,9 @@ export type LLMContentBlockInput = {
   content?: LLMContentBlockInput[]
 
   /**
-   * Base64-encoded media bytes. Supply exactly one of data or file for media.
+   * Media bytes. Supply exactly one of data or file for media.
    */
-  data?: string
+  data?: Bytes
 
   /**
    * Whether the tool call resulted in an error (for TOOL_RESULT kind).
@@ -13603,13 +13610,102 @@ export class LLM extends BaseClient {
 }
 
 /**
+ * An ordered run of text and media content for a model to read, built outside any conversation.
+ */
+export class LLMContent extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this LLMContent.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The ordered text and media blocks.
+   */
+  blocks = async (): Promise<LLMContentBlock[]> => {
+    type blocks = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("blocks").select("id")
+
+    const response: Awaited<blocks[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new LLMContentBlock(ctx.copy().selectNode(r.id, "LLMContentBlock")),
+    )
+  }
+
+  /**
+   * Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.
+   *
+   * Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.
+   * @param data The media bytes.
+   * @param mimeType The media MIME type, e.g. "image/png".
+   */
+  withData = (data: Bytes, mimeType: string): LLMContent => {
+    const ctx = this._ctx.select("withData", { data, mimeType })
+    return new LLMContent(ctx)
+  }
+
+  /**
+   * Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
+   * @param file The media file. Its contents become the block's inline bytes.
+   * @param opts.mimeType The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.
+   */
+  withFile = (file: File, opts?: LLMContentWithFileOpts): LLMContent => {
+    const ctx = this._ctx.select("withFile", { file, ...opts })
+    return new LLMContent(ctx)
+  }
+
+  /**
+   * Append a block of text.
+   * @param text The text.
+   */
+  withText = (text: string): LLMContent => {
+    const ctx = this._ctx.select("withText", { text })
+    return new LLMContent(ctx)
+  }
+
+  /**
+   * Call the provided function with current LLMContent.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: LLMContent) => LLMContent) => {
+    return arg(this)
+  }
+}
+
+/**
  * A single piece of content within an LLM message.
  */
 export class LLMContentBlock extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _arguments?: JSON = undefined
   private readonly _callId?: string = undefined
-  private readonly _data?: string = undefined
+  private readonly _data?: Bytes = undefined
   private readonly _errored?: boolean = undefined
   private readonly _kind?: LLMContentBlockKind = undefined
   private readonly _mimeType?: string = undefined
@@ -13625,7 +13721,7 @@ export class LLMContentBlock extends BaseClient {
     _id?: ID,
     _arguments?: JSON,
     _callId?: string,
-    _data?: string,
+    _data?: Bytes,
     _errored?: boolean,
     _kind?: LLMContentBlockKind,
     _mimeType?: string,
@@ -13711,16 +13807,16 @@ export class LLMContentBlock extends BaseClient {
   }
 
   /**
-   * Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+   * The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
    */
-  data = async (): Promise<string> => {
+  data = async (): Promise<Bytes> => {
     if (this._data) {
       return this._data
     }
 
     const ctx = this._ctx.select("data")
 
-    const response: Awaited<string> = await ctx.execute()
+    const response: Awaited<Bytes> = await ctx.execute()
 
     return response
   }
@@ -16053,6 +16149,17 @@ export class Client extends BaseClient {
   llm = (opts?: ClientLLMOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
     return new LLM(ctx)
+  }
+
+  /**
+   * Start an empty run of text and media content, independent of any conversation.
+   *
+   * Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+   * @experimental
+   */
+  llmContent = (): LLMContent => {
+    const ctx = this._ctx.select("llmContent")
+    return new LLMContent(ctx)
   }
 
   /**

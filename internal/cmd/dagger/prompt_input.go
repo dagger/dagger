@@ -26,7 +26,7 @@ func promptImageBlocks(input idtui.PromptInput) []dagger.LLMContentBlockInput {
 		blocks = append(blocks, dagger.LLMContentBlockInput{
 			Kind:     dagger.LLMContentBlockKindImage,
 			MimeType: image.MIMEType,
-			Data:     base64.StdEncoding.EncodeToString(image.Data),
+			Data:     dagger.Bytes(base64.StdEncoding.EncodeToString(image.Data)),
 		})
 	}
 	return blocks

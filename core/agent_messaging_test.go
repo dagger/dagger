@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/base64"
 	"sync"
 	"testing"
 
@@ -120,7 +119,7 @@ func TestAgentSendContent(t *testing.T) {
 			rt.turnOpen = state == "mid-turn"
 			rt.stepping = state == "mid-turn"
 			rt.paused = state == "paused"
-			image := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "aGVsbG8="}
+			image := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("hello")}
 			blocks := []*LLMContentBlock{image, {Kind: LLMContentText, Text: "after"},
 				{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: image.Data},
 				{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: image.Data}}
@@ -135,7 +134,7 @@ func TestAgentSendContent(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, []string{msg.Ref, mediaOnly.Ref, legacy.Ref, empty.Ref}, rt.mailbox)
 			// Mutating caller-owned pointers and the input slice cannot alter queued data.
-			image.Data = "b3RoZXI="
+			image.Data = []byte("other")
 			blocks[1].Text = "mutated"
 			blocks[0] = nil
 			rec := rt.messages[msg.Ref]
@@ -186,13 +185,13 @@ func TestAgentSendContentValidationBeforeReply(t *testing.T) {
 	ref, err := sender.enqueue("question", nil, "")
 	require.NoError(t, err)
 	sender.messages[ref].consumed = true
-	large := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: base64.StdEncoding.EncodeToString(make([]byte, MaxLLMMediaBytes/2+1))}
+	large := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: make([]byte, MaxLLMMediaBytes/2+1)}
 	for name, blocks := range map[string][]*LLMContentBlock{
 		"nil":            {nil},
 		"tool call":      {{Kind: LLMContentToolCall}},
 		"tool result":    {{Kind: LLMContentToolResult, Text: "not user content"}},
 		"thinking":       {{Kind: LLMContentThinking, Text: "private"}},
-		"invalid media":  {{Kind: LLMContentImage, MIMEType: "image/png", Data: "bad"}},
+		"invalid media":  {{Kind: LLMContentImage, MIMEType: "text/plain", Data: []byte("bad")}},
 		"aggregate size": {large, large},
 	} {
 		t.Run(name, func(t *testing.T) {

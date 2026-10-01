@@ -264,7 +264,7 @@ func TestPromptImageBlocks(t *testing.T) {
 	for i, block := range blocks {
 		require.Equal(t, dagger.LLMContentBlockKindImage, block.Kind)
 		require.Equal(t, input.Images[i].MIMEType, block.MimeType)
-		decoded, err := base64.StdEncoding.DecodeString(block.Data)
+		decoded, err := base64.StdEncoding.DecodeString(string(block.Data))
 		require.NoError(t, err)
 		require.Equal(t, input.Images[i].Data, decoded)
 		require.Empty(t, block.Text)
