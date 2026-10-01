@@ -83,16 +83,60 @@ type Address implements Node {
   value: String!
 
   """Load a container from the address."""
-  container: Container!
+  container(
+    """
+    Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+
+    A DAG address is unaffected: its module evaluates as usual.
+    """
+    noLock: Boolean = false
+  ): Container!
 
   """Load a directory from the address."""
-  directory(exclude: [String!] = [], include: [String!] = [], gitignore: Boolean = false, noCache: Boolean = false): Directory!
+  directory(
+    exclude: [String!] = []
+
+    include: [String!] = []
+
+    gitignore: Boolean = false
+
+    noCache: Boolean = false
+
+    """
+    Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+
+    A DAG address is unaffected: its module evaluates as usual.
+    """
+    noLock: Boolean = false
+  ): Directory!
 
   """Load a file from the address."""
-  file(exclude: [String!] = [], include: [String!] = [], gitignore: Boolean = false, noCache: Boolean = false): File!
+  file(
+    exclude: [String!] = []
+
+    include: [String!] = []
+
+    gitignore: Boolean = false
+
+    noCache: Boolean = false
+
+    """
+    Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+
+    A DAG address is unaffected: its module evaluates as usual.
+    """
+    noLock: Boolean = false
+  ): File!
 
   """Load a git ref (branch, tag or commit) from the address."""
-  gitRef: GitRef!
+  gitRef(
+    """
+    Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+
+    A DAG address is unaffected: its module evaluates as usual.
+    """
+    noLock: Boolean = false
+  ): GitRef!
 
   """Load a git repository from the address."""
   gitRepository: GitRepository!

@@ -16,11 +16,27 @@ export type float = number
 // arises once client.gen.ts `export *`s those dep files.
 export { BaseClient }
 
+export type AddressContainerOpts = {
+  /**
+   * Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+   *
+   * A DAG address is unaffected: its module evaluates as usual.
+   */
+  noLock?: boolean
+}
+
 export type AddressDirectoryOpts = {
   exclude?: string[]
   include?: string[]
   gitignore?: boolean
   noCache?: boolean
+
+  /**
+   * Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+   *
+   * A DAG address is unaffected: its module evaluates as usual.
+   */
+  noLock?: boolean
 }
 
 export type AddressFileOpts = {
@@ -28,6 +44,22 @@ export type AddressFileOpts = {
   include?: string[]
   gitignore?: boolean
   noCache?: boolean
+
+  /**
+   * Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+   *
+   * A DAG address is unaffected: its module evaluates as usual.
+   */
+  noLock?: boolean
+}
+
+export type AddressGitRefOpts = {
+  /**
+   * Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+   *
+   * A DAG address is unaffected: its module evaluates as usual.
+   */
+  noLock?: boolean
 }
 
 export type AgentNotifyOpts = {
@@ -4396,14 +4428,20 @@ export class Address extends BaseClient {
 
   /**
    * Load a container from the address.
+   * @param opts.noLock Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+   *
+   * A DAG address is unaffected: its module evaluates as usual.
    */
-  container = (): Container => {
-    const ctx = this._ctx.select("container")
+  container = (opts?: AddressContainerOpts): Container => {
+    const ctx = this._ctx.select("container", { ...opts })
     return new Container(ctx)
   }
 
   /**
    * Load a directory from the address.
+   * @param opts.noLock Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+   *
+   * A DAG address is unaffected: its module evaluates as usual.
    */
   directory = (opts?: AddressDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { ...opts })
@@ -4412,6 +4450,9 @@ export class Address extends BaseClient {
 
   /**
    * Load a file from the address.
+   * @param opts.noLock Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+   *
+   * A DAG address is unaffected: its module evaluates as usual.
    */
   file = (opts?: AddressFileOpts): File => {
     const ctx = this._ctx.select("file", { ...opts })
@@ -4420,9 +4461,12 @@ export class Address extends BaseClient {
 
   /**
    * Load a git ref (branch, tag or commit) from the address.
+   * @param opts.noLock Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+   *
+   * A DAG address is unaffected: its module evaluates as usual.
    */
-  gitRef = (): GitRef => {
-    const ctx = this._ctx.select("gitRef")
+  gitRef = (opts?: AddressGitRefOpts): GitRef => {
+    const ctx = this._ctx.select("gitRef", { ...opts })
     return new GitRef(ctx)
   }
 

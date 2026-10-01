@@ -719,9 +719,19 @@ class Address(Type):
     and other object types. Address format depends on the type, and is
     validated at type selection."""
 
-    def container(self) -> "Container":
-        """Load a container from the address."""
-        _args: list[Arg] = []
+    def container(self, *, no_lock: bool | None = False) -> "Container":
+        """Load a container from the address.
+
+        Parameters
+        ----------
+        no_lock:
+            Resolve the address's image tag live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
+        _args = [
+            Arg("noLock", no_lock, False),
+        ]
         _ctx = self._select("container", _args)
         return Container(_ctx)
 
@@ -732,13 +742,27 @@ class Address(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         no_cache: bool | None = False,
+        no_lock: bool | None = False,
     ) -> "Directory":
-        """Load a directory from the address."""
+        """Load a directory from the address.
+
+        Parameters
+        ----------
+        exclude:
+        include:
+        gitignore:
+        no_cache:
+        no_lock:
+            Resolve the address's git ref live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
         _args = [
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("noCache", no_cache, False),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -750,20 +774,44 @@ class Address(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         no_cache: bool | None = False,
+        no_lock: bool | None = False,
     ) -> "File":
-        """Load a file from the address."""
+        """Load a file from the address.
+
+        Parameters
+        ----------
+        exclude:
+        include:
+        gitignore:
+        no_cache:
+        no_lock:
+            Resolve the address's git ref live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
         _args = [
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("noCache", no_cache, False),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    def git_ref(self) -> "GitRef":
-        """Load a git ref (branch, tag or commit) from the address."""
-        _args: list[Arg] = []
+    def git_ref(self, *, no_lock: bool | None = False) -> "GitRef":
+        """Load a git ref (branch, tag or commit) from the address.
+
+        Parameters
+        ----------
+        no_lock:
+            Resolve the address's git ref live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
+        _args = [
+            Arg("noLock", no_lock, False),
+        ]
         _ctx = self._select("gitRef", _args)
         return GitRef(_ctx)
 

@@ -250,9 +250,23 @@ func (r *Address) WithGraphQLQuery(q *querybuilder.Selection) *Address {
 	}
 }
 
+// AddressContainerOpts contains options for Address.Container
+type AddressContainerOpts struct {
+	// Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
+}
+
 // Load a container from the address.
-func (r *Address) Container() *Container {
+func (r *Address) Container(opts ...AddressContainerOpts) *Container {
 	q := r.query.Select("container")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 
 	return &Container{
 		query: q,
@@ -268,6 +282,10 @@ type AddressDirectoryOpts struct {
 	Gitignore bool
 
 	NoCache bool
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
 }
 
 // Load a directory from the address.
@@ -290,6 +308,10 @@ func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
 		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
 	}
 
 	return &Directory{
@@ -306,6 +328,10 @@ type AddressFileOpts struct {
 	Gitignore bool
 
 	NoCache bool
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
 }
 
 // Load a file from the address.
@@ -328,6 +354,10 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
 		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
 	}
 
 	return &File{
@@ -335,9 +365,23 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 	}
 }
 
+// AddressGitRefOpts contains options for Address.GitRef
+type AddressGitRefOpts struct {
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
+}
+
 // Load a git ref (branch, tag or commit) from the address.
-func (r *Address) GitRef() *GitRef {
+func (r *Address) GitRef(opts ...AddressGitRefOpts) *GitRef {
 	q := r.query.Select("gitRef")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 
 	return &GitRef{
 		query: q,

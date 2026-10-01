@@ -337,6 +337,13 @@ pub struct Address {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct AddressContainerOpts {
+    /// Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+    /// A DAG address is unaffected: its module evaluates as usual.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct AddressDirectoryOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
@@ -346,6 +353,10 @@ pub struct AddressDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
+    /// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+    /// A DAG address is unaffected: its module evaluates as usual.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct AddressFileOpts<'a> {
@@ -357,6 +368,17 @@ pub struct AddressFileOpts<'a> {
     pub include: Option<Vec<&'a str>>,
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
+    /// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+    /// A DAG address is unaffected: its module evaluates as usual.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct AddressGitRefOpts {
+    /// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+    /// A DAG address is unaffected: its module evaluates as usual.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
 }
 impl IntoID<Id> for Address {
     fn into_id(
@@ -393,8 +415,28 @@ impl Address {
         query.execute(self.graphql_client.clone()).await
     }
     /// Load a container from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn container(&self) -> Container {
         let query = self.selection.select("container");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a container from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn container_opts(&self, opts: AddressContainerOpts) -> Container {
+        let mut query = self.selection.select("container");
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -432,6 +474,9 @@ impl Address {
         }
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
+        }
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
         }
         Directory {
             proc: self.proc.clone(),
@@ -471,6 +516,9 @@ impl Address {
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
         }
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -478,8 +526,28 @@ impl Address {
         }
     }
     /// Load a git ref (branch, tag or commit) from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn git_ref(&self) -> GitRef {
         let query = self.selection.select("gitRef");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a git ref (branch, tag or commit) from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn git_ref_opts(&self, opts: AddressGitRefOpts) -> GitRef {
+        let mut query = self.selection.select("gitRef");
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         GitRef {
             proc: self.proc.clone(),
             selection: query,
