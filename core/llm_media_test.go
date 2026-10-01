@@ -213,6 +213,27 @@ func TestLLMContentRecordedMedia(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestLLMContentPersistence(t *testing.T) {
+	ctx := t.Context()
+	content, err := (&LLMContent{}).WithBlock(&LLMContentBlock{Kind: LLMContentText, Text: "caption"})
+	require.NoError(t, err)
+	content, err = content.WithBlock(&LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("hello")})
+	require.NoError(t, err)
+
+	encoded, err := content.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(nil, 0, nil))
+	require.NoError(t, err)
+	require.Contains(t, string(encoded.JSON), `"data":"aGVsbG8="`)
+	decoded, err := (&LLMContent{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(nil, 0, nil), encoded.JSON)
+	require.NoError(t, err)
+	require.Equal(t, content, decoded)
+
+	// A payload that no longer validates (e.g. the budget shrank) is refused
+	// rather than admitted as content a tool result would then reject.
+	_, err = (&LLMContent{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(nil, 0, nil),
+		json.RawMessage(`{"blocks":[{"kind":"IMAGE","mime_type":"image/png"}]}`))
+	require.ErrorContains(t, err, "requires MIME type and data")
+}
+
 func TestLLMContentInputValidation(t *testing.T) {
 	_, err := (LLMContentBlockInput{Kind: LLMContentImage, Data: dagql.Opt(dagql.Bytes("hello"))}).Resolve(context.Background())
 	require.ErrorContains(t, err, "MIME")

@@ -665,6 +665,30 @@ func (c *LLMContent) Clone() *LLMContent {
 	return &LLMContent{Blocks: cloneLLMContent(c.Blocks)}
 }
 
+// The content is self-contained data: its media is inline bytes, so the
+// persisted payload is the value itself and carries no references.
+func (c *LLMContent) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = enc
+	if c == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted LLM content: nil LLM content")
+	}
+	return encodePersistedObjectPayload(c)
+}
+
+func (*LLMContent) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dec
+	var content LLMContent
+	if err := json.Unmarshal(payload, &content); err != nil {
+		return nil, fmt.Errorf("decode persisted LLM content payload: %w", err)
+	}
+	if err := ValidateLLMContent(content.Blocks); err != nil {
+		return nil, fmt.Errorf("decode persisted LLM content payload: %w", err)
+	}
+	return &content, nil
+}
+
 // WithBlock appends a block, enforcing the per-message media budget across
 // the whole run so an oversized result fails where it is built rather than
 // when the tool result is validated.
