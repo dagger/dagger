@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -89,25 +90,92 @@ func (node *AgentNode) Live() bool {
 // defeat the purpose. Nesting is left to the caller, which can derive it
 // from the spans' ancestry when it wants a chief/worker tree.
 //
-// The result is cached per DB mutation; callers must treat the returned
-// nodes as read-only.
+// The result is cached until something it is built from changes — a loop
+// span's identity or start time, a control record, or the live trace — so the
+// many reads a frontend makes per span batch and per frame are free while a
+// large trace streams in; callers must treat the returned nodes as read-only.
 func (db *DB) Agents() []*AgentNode {
-	if db.agentsInit && db.agentsAt == db.mutations {
+	live := db.liveTraceID()
+	if db.agentsInit && db.agentsAt == db.agentsGen && db.agentsLive == live {
 		return db.agents
 	}
-	db.agents = db.buildAgents()
-	db.agentsAt = db.mutations
+	db.agents = db.buildAgents(live)
+	db.agentsAt = db.agentsGen
+	db.agentsLive = live
 	db.agentsInit = true
 	return db.agents
 }
 
-func (db *DB) buildAgents() []*AgentNode {
+// agentSpanIndex holds the DB's agent loop spans — those with Agent set and a
+// non-empty AgentID — so the roster is built from them alone rather than by
+// scanning every span in the DB, which on a large imported trace meant
+// rescanning hundreds of thousands of spans per ingested batch.
+type agentSpanIndex struct {
+	// spans is in the order each span first became an agent loop span,
+	// which is the tie-break for loop spans with equal start times.
+	spans []*Span
+	// keys is what the roster last read off each indexed span.
+	keys map[SpanID]agentSpanKey
+}
+
+// agentSpanKey is everything the roster reads off a loop span at build time.
+// Re-integrating a span without changing any of it — the common case of a
+// loop span's repeated in-flight exports — leaves the roster as it was.
+type agentSpanKey struct {
+	id, name, callDigest string
+	start                time.Time
+}
+
+func (key agentSpanKey) equal(other agentSpanKey) bool {
+	return key.id == other.id &&
+		key.name == other.name &&
+		key.callDigest == other.callDigest &&
+		key.start.Equal(other.start)
+}
+
+// indexAgentSpan brings the agent span index up to date with a span whose
+// fields were just (re)set: agent attributes can arrive on a later export
+// than the span's first, and a replacing snapshot can drop them again.
+func (db *DB) indexAgentSpan(span *Span) {
+	if db.Spans.Map[span.ID] != span {
+		// Not the span the DB holds for this ID; only those are agents.
+		return
+	}
+	idx := &db.agentSpans
+	old, indexed := idx.keys[span.ID]
+	if !span.Agent || span.AgentID == "" {
+		if indexed {
+			delete(idx.keys, span.ID)
+			idx.spans = slices.DeleteFunc(idx.spans, func(s *Span) bool {
+				return s == span
+			})
+			db.agentsGen++
+		}
+		return
+	}
+	key := agentSpanKey{
+		id:         span.AgentID,
+		name:       span.AgentName,
+		callDigest: span.AgentCallDigest,
+		start:      span.StartTime,
+	}
+	if indexed && old.equal(key) {
+		return
+	}
+	if idx.keys == nil {
+		idx.keys = map[SpanID]agentSpanKey{}
+	}
+	if !indexed {
+		idx.spans = append(idx.spans, span)
+	}
+	idx.keys[span.ID] = key
+	db.agentsGen++
+}
+
+func (db *DB) buildAgents(live TraceID) []*AgentNode {
 	byID := map[string]*AgentNode{}
 	var order []*AgentNode
-	for span := range db.Spans.Iter() {
-		if !span.Agent || span.AgentID == "" {
-			continue
-		}
+	for _, span := range db.agentSpans.spans {
 		node, ok := byID[span.AgentID]
 		if !ok {
 			node = &AgentNode{ID: span.AgentID}
@@ -115,34 +183,36 @@ func (db *DB) buildAgents() []*AgentNode {
 			order = append(order, node)
 		}
 		node.Spans = append(node.Spans, span)
-		// Identity is immutable, but a relaunched loop re-stamps it; take
-		// the newest non-empty value so a re-spawned loop span can correct
-		// a partially stamped predecessor.
-		if span.AgentName != "" {
-			node.Name = span.AgentName
-		}
-		if span.AgentCallDigest != "" {
-			node.CallDigest = span.AgentCallDigest
-		}
 	}
 
 	for _, node := range order {
 		sort.SliceStable(node.Spans, func(i, j int) bool {
 			return node.Spans[i].Before(node.Spans[j])
 		})
+		// Identity is immutable, but a relaunched loop re-stamps it; take
+		// the newest non-empty value so a re-spawned loop span can correct
+		// a partially stamped predecessor.
+		for _, span := range node.Spans {
+			if span.AgentName != "" {
+				node.Name = span.AgentName
+			}
+			if span.AgentCallDigest != "" {
+				node.CallDigest = span.AgentCallDigest
+			}
+		}
 	}
 
 	// Lifecycle comes only from control revisions: select one per handle,
 	// preferring the live session's incarnation over imported ones.
 	selected := map[string]agentcontrol.Agent{}
-	live := db.liveTraceID().String()
+	liveTrace := live.String()
 	for _, projection := range db.agentControl.Agents() {
 		old, exists := selected[projection.Handle]
 		if exists {
-			if old.Trace == live && projection.Trace != live {
+			if old.Trace == liveTrace && projection.Trace != liveTrace {
 				continue
 			}
-			if projection.Trace != live && !projection.Activity.After(old.Activity) {
+			if projection.Trace != liveTrace && !projection.Activity.After(old.Activity) {
 				continue
 			}
 		}

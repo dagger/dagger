@@ -45,6 +45,7 @@ func (db *DB) ingestAgentControl(record sdklog.Record) bool {
 	}
 	if changed || err != nil {
 		db.mutations++
+		db.agentsGen++
 	}
 	return true
 }
