@@ -62,7 +62,7 @@ func TestNativeParentHistoryProvenance(t *testing.T) {
 }
 
 func dirHistorySource(dir string, donor bool, anchor string) *donorHistorySource {
-	src := &donorHistorySource{donor: donor, anchor: anchor, gitDir: nativeCommitGitDir}
+	src := &donorHistorySource{donor: donor, anchor: anchor, gitDir: donorGitDir}
 	src.mount = func(_ context.Context, fn func(*gitutil.GitCLI) error) error {
 		return fn(gitutil.NewGitCLI(gitutil.WithDir(dir)))
 	}
@@ -93,6 +93,13 @@ func TestDonorHistoryJoin(t *testing.T) {
 	gitMirrorTestRun(t, shallowClone, "clone", "--depth=1", "file://"+host, ".")
 	unrelated := historyRepo(t, "sha1")
 	historyCommit(t, unrelated, "x", "unrelated")
+	// A complete copy of host whose head is grafted parentless. Git would let
+	// gc prune the hidden ancestors, which the donor view would still walk.
+	grafted := t.TempDir()
+	gitMirrorTestRun(t, grafted, "clone", "--no-local", "file://"+host, ".")
+	graftsPath := gitMirrorTestRun(t, grafted, "rev-parse", "--path-format=absolute", "--git-path", "info/grafts")
+	require.NoError(t, os.MkdirAll(filepath.Dir(graftsPath), 0o755))
+	require.NoError(t, os.WriteFile(graftsPath, []byte(hostHead+"\n"), 0o644))
 
 	hostBefore := historySnapshot(t, host)
 	ownedBefore := historySnapshot(t, owned)
@@ -143,6 +150,7 @@ func TestDonorHistoryJoin(t *testing.T) {
 		{"donor lacks the commit", []*donorHistorySource{dirHistorySource(unrelated, true, "")}, []string{upstream}, []string{upstream, upstream}},
 		{"donor lacks the boundary", []*donorHistorySource{dirHistorySource(owned, false, upstream), dirHistorySource(unrelated, true, "")}, nil, []string{child, child}},
 		{"shallow donor", []*donorHistorySource{dirHistorySource(shallowClone, true, "")}, []string{hostHead}, []string{hostHead, hostHead}},
+		{"grafted donor", []*donorHistorySource{dirHistorySource(grafted, true, "")}, []string{hostHead}, []string{hostHead, hostHead}},
 		{"no donor", []*donorHistorySource{dirHistorySource(owned, false, upstream)}, []string{upstream}, []string{child, upstream}},
 		{"nothing to cover", []*donorHistorySource{dirHistorySource(host, true, "")}, nil, []string{hostHead, upstream}},
 		{"unexpected boundary", []*donorHistorySource{dirHistorySource(owned, false, hostHead), dirHistorySource(host, true, "")}, nil, []string{child, hostHead}},
