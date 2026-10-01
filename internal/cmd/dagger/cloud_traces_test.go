@@ -245,3 +245,23 @@ func TestResolveTraceViewArgLast(t *testing.T) {
 	require.Equal(t, cloudapi.TraceRef{TraceID: "2f123ba77bf7bd2d4db2f70ed20613e8", Org: "acme"}, ref)
 	require.Equal(t, "acme", lastOrg)
 }
+
+// Duration order cannot be paged, so an unbounded duration listing would rank
+// only the newest page and silently miss longer runs outside it. Default it to
+// a rolling window; only when the caller gives no --since.
+func TestCloudTracesListDurationSortDefaultsSince(t *testing.T) {
+	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+
+	f, err := (&cloudTracesListOptions{sort: "duration"}).filter(now)
+	require.NoError(t, err)
+	require.NotNil(t, f.Since, "duration sort must be bounded")
+	require.True(t, now.Add(-time.Hour).Equal(*f.Since))
+
+	f, err = (&cloudTracesListOptions{sort: "duration", since: "7d"}).filter(now)
+	require.NoError(t, err)
+	require.True(t, now.Add(-7*24*time.Hour).Equal(*f.Since), "an explicit --since wins")
+
+	f, err = (&cloudTracesListOptions{sort: "start"}).filter(now)
+	require.NoError(t, err)
+	require.Nil(t, f.Since, "start sort is paginated, so it stays unbounded")
+}
