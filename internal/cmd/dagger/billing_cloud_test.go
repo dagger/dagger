@@ -5,37 +5,47 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
-func TestPrintBillingPage(t *testing.T) {
-	page := billingPage{name: "payment page", action: "add or update the payment method"}
-	const url = "https://dagger-test.chargebee.com/pages/v4/abc/"
+func TestPrintBillingPortal(t *testing.T) {
+	const url = "https://dagger-test.chargebee.com/portal/v2/abc/"
 
 	t.Run("opened in the browser", func(t *testing.T) {
 		var buf bytes.Buffer
-		printBillingPage(&buf, page, "acme", url, true, true)
+		printBillingPortal(&buf, "acme", url, true, true)
 		require.Equal(t,
-			"✓ Opened the payment page for acme in your browser.\n"+
-				"Use it to add or update the payment method. If it didn't open, visit:\n"+
+			"✓ Opened the billing portal for acme in your browser.\n"+
+				"Use it to manage your subscription, payment method, and billing information. If it didn't open, visit:\n"+
 				"  "+url+"\n",
 			buf.String())
 	})
 
 	t.Run("not opened", func(t *testing.T) {
 		var buf bytes.Buffer
-		printBillingPage(&buf, page, "acme", url, false, true)
+		printBillingPortal(&buf, "acme", url, false, true)
 		require.Equal(t,
-			"Open the payment page to add or update the payment method for acme:\n"+
+			"Open the billing portal to manage the subscription, payment method, and billing information of acme:\n"+
 				"  "+url+"\n",
 			buf.String())
 	})
 
 	t.Run("piped output is the URL alone", func(t *testing.T) {
 		var buf bytes.Buffer
-		printBillingPage(&buf, page, "acme", url, true, false)
+		printBillingPortal(&buf, "acme", url, true, false)
 		require.Equal(t, url+"\n", buf.String())
 	})
+}
+
+func TestBillingHasNoSubcommands(t *testing.T) {
+	for _, cmd := range []*cobra.Command{cloudBillingCmd, billingCmd} {
+		require.Empty(t, cmd.Commands(), "billing is a single command")
+		require.NotNil(t, cmd.Flags().Lookup("open"))
+		require.NotNil(t, cmd.Flags().Lookup("json"))
+	}
+	require.False(t, cloudBillingCmd.Hidden)
+	require.True(t, billingCmd.Hidden)
 }
 
 func TestCanOpenBrowser(t *testing.T) {

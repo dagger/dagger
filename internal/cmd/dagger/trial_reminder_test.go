@@ -76,7 +76,7 @@ func TestTrialReminder(t *testing.T) {
 	trialReminder(&buf, "acme", at(48*time.Hour), now)
 	out := buf.String()
 	require.Contains(t, out, "ending in 2 days.")
-	require.Contains(t, out, `Enter payment details with "dagger cloud billing payment" to avoid service disruption once your trial ends.`)
+	require.Contains(t, out, `Enter payment details with "dagger cloud billing" to avoid service disruption once your trial ends.`)
 	require.Contains(t, out, "To hide set DAGGER_NO_NAG=1")
 }
 

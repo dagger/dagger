@@ -103,7 +103,7 @@ func TestEnsureCommandCloudFeatures(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), `the free trial of organization "myorg" has ended`)
 		require.Contains(t, err.Error(), "CLOUD_CHECKS + CLOUD_MODULES are no longer enabled")
-		require.Contains(t, err.Error(), "dagger cloud billing payment")
+		require.Contains(t, err.Error(), "dagger cloud billing")
 	})
 
 	t.Run("never enabled points at the settings", func(t *testing.T) {

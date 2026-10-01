@@ -112,7 +112,7 @@ func missingFeaturesError(details *cloudapi.OrgDetails, missing []cloudFeature) 
 	}
 	for _, feature := range missing {
 		if orgFeatureStatus(details, feature) == "TRIAL_EXPIRED" {
-			return fmt.Errorf("the free trial of organization %q has ended, so %s %s no longer enabled; enter payment details to continue:\n\n  dagger cloud billing payment",
+			return fmt.Errorf("the free trial of organization %q has ended, so %s %s no longer enabled; enter payment details to continue:\n\n  dagger cloud billing",
 				details.Name, joinFeatures(missing), verb)
 		}
 	}

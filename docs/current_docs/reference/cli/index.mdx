@@ -377,7 +377,7 @@ Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
-* [dagger cloud billing](#dagger-cloud-billing)	 - Manage Dagger Cloud billing
+* [dagger cloud billing](#dagger-cloud-billing)	 - Manage your Dagger Cloud subscription, payment method, and billing information
 * [dagger cloud checks](#dagger-cloud-checks)	 - Manage Cloud-side automated checks for this workspace
 * [dagger cloud engines](#dagger-cloud-engines)	 - Manage Dagger Cloud engines
 * [dagger cloud integration](#dagger-cloud-integration)	 - Manage Dagger Cloud integration providers
@@ -391,16 +391,24 @@ Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 
 ## dagger cloud billing
 
-Manage Dagger Cloud billing
+Manage your Dagger Cloud subscription, payment method, and billing information
+
+### Synopsis
+
+Manage your Dagger Cloud subscription, payment method, and billing information.
+
+Opens the billing portal of the org (the argument, or the current org) in a
+browser when running in an interactive terminal, and prints its URL.
 
 ```
-dagger cloud billing
+dagger cloud billing [org]
 ```
 
 ### Options
 
 ```
       --json   Print JSON output
+      --open   Open the billing portal in a browser (default: in an interactive terminal)
 ```
 
 ### Options inherited from parent commands
@@ -412,85 +420,6 @@ dagger cloud billing
 ### SEE ALSO
 
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
-* [dagger cloud billing manage](#dagger-cloud-billing-manage)	 - Open the billing portal for a Dagger Cloud org
-* [dagger cloud billing payment](#dagger-cloud-billing-payment)	 - Enter or update the payment method for a Dagger Cloud org
-* [dagger cloud billing plans](#dagger-cloud-billing-plans)	 - List Dagger Cloud plans available at signup
-
-## dagger cloud billing manage
-
-Open the billing portal for a Dagger Cloud org
-
-```
-dagger cloud billing manage [org]
-```
-
-### Options
-
-```
-      --open   Open the billing portal in a browser (default: in an interactive terminal)
-```
-
-### Options inherited from parent commands
-
-```
-      --json            Print JSON output
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger cloud billing](#dagger-cloud-billing)	 - Manage Dagger Cloud billing
-
-## dagger cloud billing payment
-
-Enter or update the payment method for a Dagger Cloud org
-
-### Synopsis
-
-Enter or update the payment method for a Dagger Cloud org.
-
-Creates a secure hosted checkout page for the org's existing subscription
-where you can add or change the card on file, and prints its URL.
-
-```
-dagger cloud billing payment [org]
-```
-
-### Options
-
-```
-      --open   Open the payment page in a browser (default: in an interactive terminal)
-```
-
-### Options inherited from parent commands
-
-```
-      --json            Print JSON output
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger cloud billing](#dagger-cloud-billing)	 - Manage Dagger Cloud billing
-
-## dagger cloud billing plans
-
-List Dagger Cloud plans available at signup
-
-```
-dagger cloud billing plans
-```
-
-### Options inherited from parent commands
-
-```
-      --json            Print JSON output
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger cloud billing](#dagger-cloud-billing)	 - Manage Dagger Cloud billing
 
 ## dagger cloud checks
 

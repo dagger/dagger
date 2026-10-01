@@ -2,10 +2,8 @@ package cloud
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 )
 
 type Source struct {
@@ -60,29 +58,6 @@ type OrgDetails struct {
 	CreatedAt    string           `json:"createdAt"`
 	Subscription SubscriptionInfo `json:"subscription"`
 	Features     []Feature        `json:"features"`
-}
-
-type PlanItem struct {
-	ID           string `json:"id"`
-	ExternalName string `json:"external_name"`
-}
-
-type PlanPrice struct {
-	ID           string `json:"id"`
-	ItemID       string `json:"item_id"`
-	ExternalName string `json:"external_name"`
-	Unit         string `json:"unit"`
-	Price        uint   `json:"price"`
-	PeriodUnit   string `json:"period_unit"`
-}
-
-type Plan struct {
-	Item  PlanItem    `json:"item"`
-	Price []PlanPrice `json:"price"`
-}
-
-type PlansResponse struct {
-	Plans []Plan `json:"plans"`
 }
 
 const getSourcesOperation = `
@@ -397,47 +372,6 @@ func (c *Client) OrgPaymentStatus(ctx context.Context, orgName string) (*Payment
 		return nil, fmt.Errorf("org %q not found", orgName)
 	}
 	return &data.Org.Subscription, nil
-}
-
-const createPaymentCheckoutSessionOperation = `
-mutation CreatePaymentCheckoutSession($org: ID!) {
-	createPaymentCheckoutSession(org: $org)
-}
-`
-
-// CreatePaymentCheckout returns a Chargebee hosted checkout page URL for the
-// org's existing subscription, where the customer can enter or update their
-// payment method. Requires org admin.
-func (c *Client) CreatePaymentCheckout(ctx context.Context, orgID string) (string, error) {
-	var data struct {
-		CreatePaymentCheckoutSession string `json:"createPaymentCheckoutSession"`
-	}
-	if err := c.doGraphQL(ctx, "CreatePaymentCheckoutSession", createPaymentCheckoutSessionOperation, map[string]any{
-		"org": orgID,
-	}, &data); err != nil {
-		return "", err
-	}
-	return data.CreatePaymentCheckoutSession, nil
-}
-
-func (c *Client) Plans(ctx context.Context) (*PlansResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.u.JoinPath("/plans").String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.h.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("list plans: %s", resp.Status)
-	}
-	var plans PlansResponse
-	if err := json.NewDecoder(resp.Body).Decode(&plans); err != nil {
-		return nil, err
-	}
-	return &plans, nil
 }
 
 const createPortalSessionOperation = `

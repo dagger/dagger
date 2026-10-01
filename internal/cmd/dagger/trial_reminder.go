@@ -122,7 +122,7 @@ func trialReminder(w io.Writer, org string, trialEnd *time.Time, now time.Time) 
 	output := idtui.NewOutput(w)
 	fmt.Fprint(w, "\r\n"+
 		output.String(trialReminderHeadline(org, trialEnd, now)).Foreground(termenv.ANSIYellow).String()+"\n"+
-		`Enter payment details with "dagger cloud billing payment" to avoid service disruption once your trial ends.`+"\n"+
+		`Enter payment details with "dagger cloud billing" to avoid service disruption once your trial ends.`+"\n"+
 		output.String(fmt.Sprintf("To hide set %s=1", idtui.SkipLoggedOutTraceMsgEnvs[0])).Faint().String()+"\n",
 	)
 }
