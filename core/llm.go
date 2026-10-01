@@ -33,6 +33,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -2695,6 +2696,11 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 		if err := ValidateLLMContent(msg.Content); err != nil {
 			return nil, fmt.Errorf("message %d: %w", i, err)
 		}
+	}
+
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create LLM network recorders: %w", err)
 	}
 	b := backoff.NewExponentialBackOff()
 	// Sane defaults (ideally not worth extra knobs)

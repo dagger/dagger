@@ -9,10 +9,65 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/stretchr/testify/require"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestLLMAttributedNetworkBytes(t *testing.T) {
+	const requestBody = `{"model":"test"}`
+	const responseBody = `{"ok":true}`
+	var acceptEncoding string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		acceptEncoding = r.Header.Get("Accept-Encoding")
+		_, err := io.Copy(io.Discard, r.Body)
+		require.NoError(t, err)
+		w.Header().Set("Content-Type", "application/json")
+		_, err = io.WriteString(w, responseBody)
+		require.NoError(t, err)
+	}))
+	t.Cleanup(srv.Close)
+
+	reader := sdkmetric.NewManualReader()
+	meterProvider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, meterProvider.Shutdown(t.Context())) })
+	traceProvider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	t.Cleanup(func() { require.NoError(t, traceProvider.Shutdown(t.Context())) })
+	ctx, span := traceProvider.Tracer("test").Start(context.Background(), "llm")
+	defer span.End()
+	ctx = telemetry.WithMeterProvider(ctx, meterProvider)
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	require.NoError(t, err)
+
+	client := &http.Client{Transport: newLLMOTelTransport(nil, "test")}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, srv.URL, strings.NewReader(requestBody),
+	)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	_, err = io.Copy(io.Discard, resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, "identity", acceptEncoding)
+
+	var data metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(ctx, &data))
+	got := map[string]int64{}
+	for _, current := range data.ScopeMetrics[0].Metrics {
+		gauge := current.Data.(metricdata.Gauge[int64])
+		got[current.Name] = gauge.DataPoints[0].Value
+	}
+	require.Equal(t, map[string]int64{
+		telemetryattrs.NetworkRxBytes: int64(len(responseBody)),
+		telemetryattrs.NetworkTxBytes: int64(len(requestBody)),
+	}, got)
+}
 
 // TestCaptureBodyTruncatesOnRuneBoundary: a body cut at the capture limit
 // must stay valid UTF-8 whatever character straddles the limit, since the
