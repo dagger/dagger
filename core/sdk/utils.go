@@ -42,6 +42,11 @@ func ScopeModuleForSDKOperation(
 	if !mod.Source.Valid {
 		return inst, fmt.Errorf("module has invalid source to scope for sdk operation %q", op)
 	}
+	// Variants of one source (asModule options, or a cached definition's
+	// identity) are different modules, so they must not share a scope.
+	if mod.AsModuleVariantDigest != "" {
+		op += ":" + mod.AsModuleVariantDigest
+	}
 
 	sourceImplementationDigest, err := mod.Source.Value.Self().SourceImplementationDigest(ctx)
 	if err != nil {

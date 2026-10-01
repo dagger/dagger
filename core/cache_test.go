@@ -662,3 +662,7 @@ var _ dagql.PersistedObject = (*CacheVolume)(nil)
 func (*cacheVolumeTestSnapshotManager) PinSnapshot(context.Context, string) (bkcache.ImmutableRef, error) {
 	panic("unexpected PinSnapshot")
 }
+
+func (*cacheVolumeTestSnapshotManager) LeaseExistingSnapshot(context.Context, string) (bkcache.ImmutableRef, error) {
+	panic("unexpected LeaseExistingSnapshot")
+}

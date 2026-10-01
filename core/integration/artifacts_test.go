@@ -941,6 +941,12 @@ settings.input = "dag://provider:marker"
 	require.NotContains(t, err.Error(), "artifact")
 	_, err = base.With(daggerQuery(`{ address(value: "dag://provider/marker") { file { contents } } }`)).Stdout(ctx)
 	requireErrOut(t, err, "a DAG address needs a workspace; use Workspace.resolve")
+	// The git decoders must not read a DAG address as a local path on the
+	// caller's host: path cleaning turns "dag://../.." into a traversal.
+	_, err = base.With(daggerQuery(`{ address(value: "dag://../../../../../../..") { gitRepository { head { commit } } } }`)).Stdout(ctx)
+	requireErrOut(t, err, "a DAG address needs a workspace; use Workspace.resolve")
+	_, err = base.With(daggerQuery(`{ address(value: "dag+git-ref://../../../../../../..#main") { gitRef { commit } } }`)).Stdout(ctx)
+	requireErrOut(t, err, "a DAG address needs a workspace; use Workspace.resolve")
 }
 
 func (ArtifactsSuite) TestAliasAndShorthandSetting(ctx context.Context, t *testctx.T) {

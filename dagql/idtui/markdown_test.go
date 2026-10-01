@@ -297,6 +297,25 @@ func TestMarkdownTrimsWrapPadding(t *testing.T) {
 	}
 }
 
+// Tabs measure as zero columns, so any left in rendered Markdown make width
+// math (wrapping, overlays like the notification bubble) disagree with the
+// terminal. Code blocks expand them relative to the code itself, so nested
+// indentation stays even wherever the block lands.
+func TestMarkdownExpandsTabs(t *testing.T) {
+	content := "text\twith tab\n\n```go\nfunc f() {\n\treturn x.\n\t\tY()\n}\n```\n\n\tindented\tcode\n\n- item\n\n\t```\n\tnested\tx\n\t```\n"
+	got, err := renderMarkdown(content, 60, MarkdownStyle, nil)
+	require.NoError(t, err)
+	require.NotContains(t, got, "\t")
+	plain := plainMarkdown(got)
+	require.Contains(t, plain, "  func f() {\n      return x.\n          Y()\n  }")
+	require.Contains(t, plain, "indented    code")
+	require.Contains(t, plain, "nested  x")
+	require.Contains(t, plain, "text    with tab")
+	for _, line := range strings.Split(trimMarkdownPadding(got), "\n") {
+		require.LessOrEqual(t, ansi.StringWidth(line), 60, "%q", line)
+	}
+}
+
 func TestTrimTrailingSpaceANSI(t *testing.T) {
 	for in, want := range map[string]string{
 		"plain   ":                             "plain",

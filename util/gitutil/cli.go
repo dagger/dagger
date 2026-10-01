@@ -201,7 +201,16 @@ func (cli *GitCLI) New(opts ...Option) *GitCLI {
 }
 
 // Run executes a git command with the given args.
-func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr error) {
+func (cli *GitCLI) Run(ctx context.Context, args ...string) ([]byte, error) {
+	return cli.RunWithStdin(ctx, nil, args...)
+}
+
+// RunWithStdin executes a git command with the given args, feeding stdin to
+// it, e.g. for `update-index --index-info` or `cat-file --batch`, so that many
+// inputs take a single process. Stdin is per invocation rather than an Option
+// so that a single-use reader never carries over into CLIs derived with New.
+// A nil stdin reads from the null device, as Run does.
+func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...string) (_ []byte, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, strings.Join(append([]string{"git"}, args...), " "), trace.WithAttributes(
 		attribute.Bool(telemetry.UIEncapsulatedAttr, true),
 	))
@@ -244,7 +253,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 
 	buf := bytes.NewBuffer(nil)
 	errbuf := bytes.NewBuffer(nil)
-	cmd.Stdin = nil
+	cmd.Stdin = stdin
 	cmd.Stdout = io.MultiWriter(buf, stdio.Stdout)
 	cmd.Stderr = io.MultiWriter(errbuf, stdio.Stderr)
 	if cli.streams != nil {

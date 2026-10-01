@@ -360,7 +360,10 @@ type Swapper {
 }
 
 // TestLargeChangesetToolSkipsPatchWork covers a move with both additions and
-// removals: computing full paths would stage every file for rename detection.
+// removals: the tool-result summary must not compute full paths, which would
+// stage every file for rename detection. The recorded overlay is still
+// normalized to a patch: keeping a large changeset raw would make restoring
+// the conversation re-run the tool that produced it (e.g. a generator).
 func (LLMSuite) TestLargeChangesetToolSkipsPatchWork(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	source := c.Directory().
@@ -403,7 +406,8 @@ type Editor {
 	require.NoError(t, gid.Decode(string(id)))
 	fields := map[string]bool{}
 	collectIDFieldNames(gid, fields)
-	require.False(t, fields["withPatch"], "oversized changesets must stay raw")
+	require.True(t, fields["withPatchFile"], "oversized changesets must be patch-normalized too")
+	require.False(t, fields["moveTree"], "the recorded overlay must not retain the tool call")
 
 	entries, err := result.Workspace().Directory("new").Entries(ctx)
 	require.NoError(t, err)
@@ -581,9 +585,9 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		// The empty directory would also survive if normalization silently
 		// fell back to the raw changeset, so the subtest above cannot tell
 		// reconciliation from a skipped normalization. The recorded overlay
-		// discriminates: a normalized overlay is withPatch plus the
+		// discriminates: a normalized overlay is withPatchFile plus the
 		// withNewDirectory that restored the empty directory, while the raw
-		// changeset's chain has the tool's operations and no withPatch.
+		// changeset's chain has the tool's operations and no withPatchFile.
 		out, err := sink.captureShellRecipe(ctx, t, base, fmt.Sprintf(
 			`llm --model="%s" | with-workspace --workspace $(current-workspace | snapshot) | with-tools $(swapper) | with-prompt "scaffold the project" | loop`,
 			model,
@@ -594,7 +598,7 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		require.NoError(t, gid.Decode(strings.TrimSpace(out)))
 		fields := map[string]bool{}
 		collectIDFieldNames(gid, fields)
-		require.True(t, fields["withPatch"],
+		require.True(t, fields["withPatchFile"],
 			"the recorded overlay must be patch-normalized, not the raw changeset")
 		require.True(t, fields["withNewDirectory"],
 			"the reconciliation must record the empty directory's restoration")
@@ -1300,32 +1304,233 @@ type Swapper {
 	require.NotContains(t, transcript, "is not available")
 }
 
+// TestBoundToolAddresses covers dag:// addresses at tool dispatch that name a
+// module bound as a tool (MCP.resolveBoundToolAddress): the path is evaluated
+// from the LIVE bound object, so it sees state a fresh constructor lacks, and
+// collection items take their key from the address's dimension query.
+func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-bound-tool-addresses")
+
+	toolCall := func(id, name, args string) dagger.LLMContentBlockInput {
+		return dagger.LLMContentBlockInput{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: name, Arguments: dagger.JSON(args)}
+	}
+	show := func(id, addr string) dagger.LLMContentBlockInput {
+		return toolCall(id, "show", fmt.Sprintf(`{"dir":%q}`, addr))
+	}
+	calls := []struct {
+		block   dagger.LLMContentBlockInput
+		isError bool
+	}{
+		{block: toolCall("add", "withMember", `{"name":"a","contents":"hello from the roster"}`)},
+		{block: show("plain", "dag://roster/members/dir?member=a")},
+		{block: show("typed", "dag+directory://roster/members/dir?member=a")},
+		{block: show("wrong_type", "dag+file://roster/members/dir?member=a"), isError: true},
+		{block: show("missing", "dag://roster/members/dir?member=nobody"), isError: true},
+	}
+	script := c.LLM().WithPrompt("show the new member")
+	for _, call := range calls {
+		script = script.
+			WithResponse([]dagger.LLMContentBlockInput{call.block}).
+			WithToolResult(call.block.CallID, "", call.isError)
+	}
+	script = script.WithResponse([]dagger.LLMContentBlockInput{
+		{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+	})
+	model := cannedRecordingModel(ctx, t, c, script)
+
+	t.Run("the tool schema advertises tool module addresses", func(ctx context.Context, t *testctx.T) {
+		tools, err := base.With(daggerShell("llm | with-tools $(roster) | tools")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, tools, "## show\n")
+		require.Contains(t, tools, "(Directory address:")
+		require.Contains(t, tools, "one of your tool modules (with its current state)")
+	})
+
+	t.Run("addresses resolve against the bound object's state", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(roster) | with-prompt "show the new member" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// Both the plain and the type-asserted address reach the member the
+		// model added, which exists only in the bound roster.
+		require.Equal(t, 2, strings.Count(out, "shown: hello from the roster"), out)
+		// A type assertion that does not match reports like a workspace
+		// artifact's...
+		require.Contains(t, out, "is a Directory, not file")
+		// ...and an unknown key does not fall back to a fresh roster.
+		require.Contains(t, out, `resolve "dag://roster/members/dir?member=nobody": no artifact matches`)
+		require.Contains(t, out, "done")
+	})
+
+	t.Run("workspace resolution constructs a fresh roster", func(ctx context.Context, t *testctx.T) {
+		// The same address through Workspace.resolve evaluates a fresh
+		// Roster, which has no members.
+		_, err := base.With(daggerShell(
+			`current-workspace | resolve "dag://roster/members/dir?member=a" | directory | entries`,
+		)).Stdout(ctx)
+		requireErrOut(t, err, `resolve "dag://roster/members/dir?member=a": no artifact matches`)
+	})
+}
+
+// TestBoundCollectionRefs covers agent histories addressed through a bound
+// tool's collection, in the shape of vito/agents' staff and committer modules
+// (the workspace-agent-refs fixture mirrors them): a never-started chief
+// Agent is put on a Roster, and its committed history is addressed as
+// dag://roster/members/head?member=chief — which only resolves against the
+// BOUND Roster (or a View minted from it), since a fresh one has no members —
+// and handed to GitRef-taking tools of another module by the model.
+func (LLMSuite) TestBoundCollectionRefs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-agent-refs").
+		WithNewFile("README.md", "base\n").
+		WithExec([]string{"git", "add", "-A"}).
+		WithExec([]string{"git", "commit", "-m", "base"})
+	baseSHA, err := base.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	baseSHA = strings.TrimSpace(baseSHA)
+
+	// The chief works in a copy of the workspace with one more commit. It is
+	// spawned but never sent a message, so its loop never starts: its
+	// snapshot is just the conversation it was spawned with.
+	const chiefCommit = "chief: add chief.txt"
+	// Snapshot the local workspace up front: only its owning client (this
+	// shell) may capture it, and the git tools run as a module.
+	const setup = `ws=$(current-workspace | snapshot)
+chiefWs=$($ws | with-new-file chief.txt "from the chief")
+chiefWs=$($chiefWs | with-commit --changes $($chiefWs | git | uncommitted) --message "` + chiefCommit + `" --date 2026-09-05T12:00:00Z)
+chief=$(llm | with-workspace --workspace $chiefWs | spawn --name chief)
+roster=$(roster | with-worker --name chief --worker $chief)
+`
+	run := func(ctx context.Context, t *testctx.T, script string) string {
+		t.Helper()
+		out, err := base.With(daggerShell(setup + script)).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	// The commit is pinned (fixed date and identity), so every run of the
+	// setup produces the same chief commit.
+	chiefSHA := strings.TrimSpace(run(ctx, t, `$chiefWs | git | head | commit-sha`))
+	require.NotEqual(t, baseSHA, chiefSHA)
+
+	toolCall := func(id, name, args string) dagger.LLMContentBlockInput {
+		return dagger.LLMContentBlockInput{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: name, Arguments: dagger.JSON(args)}
+	}
+	const chiefHead = "dag://roster/members/head?member=chief"
+	conversation := func(prompt string, calls ...dagger.LLMContentBlockInput) string {
+		script := c.LLM().WithPrompt(prompt)
+		for _, call := range calls {
+			script = script.
+				WithResponse([]dagger.LLMContentBlockInput{call}).
+				WithToolResult(call.CallID, "", false)
+		}
+		return cannedRecordingModel(ctx, t, c, script.WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+	}
+	chat := func(model, tools, prompt string) string {
+		return fmt.Sprintf(`llm --model="%s" | with-workspace --workspace $ws | with-tools %s | with-tools $(git-tools) | with-prompt "%s" | loop`, model, tools, prompt)
+	}
+
+	t.Run("the bound roster resolves the address", func(ctx context.Context, t *testctx.T) {
+		const prompt = "look at the chief's work"
+		model := conversation(prompt,
+			toolCall("plain", "show", fmt.Sprintf(`{"from":%q}`, chiefHead)),
+			toolCall("typed", "show", `{"from":"dag+git-ref://roster/members/head?member=chief"}`),
+		)
+		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
+		// Both spellings reach the chief's HEAD, which only the bound roster
+		// knows.
+		require.Equal(t, 2, strings.Count(transcript, "commit "+chiefSHA), transcript)
+		require.Equal(t, 2, strings.Count(transcript, chiefCommit), transcript)
+		require.Contains(t, transcript, "+from the chief")
+	})
+
+	t.Run("a view of the roster roots the address", func(ctx context.Context, t *testctx.T) {
+		// A worker-shaped binding: only the View (not the Roster, the
+		// module's main object) is bound, and it has the members field.
+		const prompt = "look at the chief's work"
+		model := conversation(prompt,
+			toolCall("show", "show", fmt.Sprintf(`{"from":%q}`, chiefHead)),
+		)
+		transcript := run(ctx, t, chat(model, "$($roster | view)", prompt)+" | transcript")
+		require.Contains(t, transcript, "commit "+chiefSHA)
+		require.Contains(t, transcript, "+from the chief")
+	})
+
+	t.Run("an LLM-returning tool advances the bound workspace", func(ctx context.Context, t *testctx.T) {
+		// adopt returns an LLM: a continuation the loop resumes from, with
+		// the chief's commits in its workspace.
+		const prompt = "adopt the chief's work"
+		model := conversation(prompt,
+			toolCall("adopt", "adopt", fmt.Sprintf(`{"ref":%q}`, chiefHead)),
+		)
+		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
+		require.Contains(t, transcript, "Continuing from the returned conversation.")
+
+		require.Equal(t, chiefSHA, strings.TrimSpace(
+			run(ctx, t, chat(model, "$roster", prompt)+" | workspace | git | head | commit-sha")))
+		require.Equal(t, "from the chief", strings.TrimSpace(
+			run(ctx, t, chat(model, "$roster", prompt)+" | workspace | file chief.txt | contents")))
+	})
+}
+
 // TestAddressableToolArgs covers address lifting of object-typed tool args end
-// to end (hack/designs/sandboxes.md §4): a module function with a required
-// Container! arg still becomes a tool — the arg renders as an address string,
-// and a model-supplied image ref is lifted into a real container via
-// Query.address at dispatch — while a required arg of any other object type
-// (here Directory!) still disqualifies its function, since Container is the
-// only type to have passed the capability review for model-typed address
-// strings (liftableTypes in core/llm_object_tools.go).
+// to end: a module function with a required arg of an addressable type still
+// becomes a tool — the arg renders as an address string, and a model-supplied
+// address is lifted into the real object via the core Address API at
+// dispatch — unless the type is blocklisted (Secret, Socket, Volume mint
+// capabilities from a string), in which case a required arg still
+// disqualifies its function. See liftableObjectArg in
+// core/llm_object_tools.go.
 func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-addressable-args")
 
-	t.Run("a required Container arg renders as an address", func(ctx context.Context, t *testctx.T) {
+	t.Run("required liftable args render as addresses", func(ctx context.Context, t *testctx.T) {
 		tools, err := base.With(daggerShell("llm | with-tools $(runner) | tools")).Stdout(ctx)
 		require.NoError(t, err)
 
 		// exec IS a tool despite its required Container! arg...
 		require.Contains(t, tools, "## exec\n")
 		// ...and its sandbox parameter is described as an address — with the
-		// type's syntax hint from liftableTypes — not as a bare ID.
+		// type's syntax hint — not as a bare ID.
 		require.Contains(t, tools, "(Container address:")
 		require.Contains(t, tools, "or a Container ID from a prior tool result")
 
-		// lsDir's required Directory! arg is not liftable (host-path
-		// fallback), so lsDir is not exposed as a tool.
-		require.NotContains(t, tools, "## lsDir\n")
+		// Directory and GitRef are liftable as well.
+		require.Contains(t, tools, "## lsDir\n")
+		require.Contains(t, tools, "(Directory address:")
+		require.Contains(t, tools, "## commitOf\n")
+		require.Contains(t, tools, "(GitRef address:")
+
+		// useToken's required Secret! arg is blocklisted, so useToken is not
+		// exposed as a tool: an env:// address would mint a secret.
+		require.NotContains(t, tools, "## useToken\n")
+		require.NotContains(t, tools, "(Secret address:")
+	})
+
+	t.Run("a git URL lifts into a real git ref", func(ctx context.Context, t *testctx.T) {
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
+			WithPrompt("which commit is the tag?").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "commitOf",
+					Arguments: dagger.JSON(`{"ref":"https://github.com/dagger/dagger#v0.9.0"}`)},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-tools $(runner) | with-prompt "which commit is the tag?" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The commit SHA only exists in the resolved ref, never in the
+		// arguments, so it proves the address lifted into a real GitRef.
+		require.Regexp(t, `commit: [0-9a-f]{40}`, out)
 	})
 
 	t.Run("an image ref lifts into a real container", func(ctx context.Context, t *testctx.T) {

@@ -23,7 +23,15 @@ import (
 )
 
 type LocalGitRepository struct {
-	Directory dagql.ObjectResult[*Directory]
+	Directory    dagql.ObjectResult[*Directory]
+	CheckoutBase *GitCheckoutBase
+}
+
+// GitCheckoutBase retains the exact canonical parent recipe of a checked commit.
+// It is a DAG dependency, never a mounted path or a dirty worktree baseline.
+type GitCheckoutBase struct {
+	Parent    dagql.ObjectResult[*GitRef]
+	CommitSHA string
 }
 
 var _ GitRepositoryBackend = (*LocalGitRepository)(nil)
@@ -336,6 +344,12 @@ func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote
 }
 
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
+	if discardGitDir && ref.incrementalCheckoutEligible() {
+		dir, supported, err := ref.incrementalTree(ctx, srv)
+		if err != nil || supported {
+			return dir, err
+		}
+	}
 	ctx, span := Tracer(ctx).Start(ctx, "materialize local git checkout", telemetry.Internal(), trace.WithAttributes(
 		attribute.Int("dagger.git.checkout.depth", depth),
 		attribute.Bool("dagger.git.checkout.discard_git_dir", discardGitDir),
@@ -387,7 +401,10 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 				gitutil.WithWorkTree(checkoutDir),
 				gitutil.WithGitDir(checkoutDirGit),
 			)
-			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir)
+			if discardGitDir {
+				return doLocalGitTreeCheckout(ctx, git, checkoutGit, checkoutRemotes, gitURL, ref.Ref)
+			}
+			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, false)
 		})
 	})
 	if err != nil {
@@ -407,6 +424,45 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	dir.SetPath("/")
 	dir.SetSnapshot(snap)
 	return dir, nil
+}
+
+// doLocalGitTreeCheckout borrows the mounted source's objects while creating a
+// tree without .git. No history is copied or fetched: depth and tag selection
+// cannot affect the resulting worktree. The source must remain mounted until
+// this returns, including submodule materialization and removal of .git (and
+// the temporary alternates file). Retained checkouts still use doGitCheckout
+// so that they are self-contained after the source mount is released.
+func doLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCLI, remotes []GitRemote, cloneURL string, ref *gitutil.Ref) error {
+	if err := initLocalGitTreeCheckout(ctx, source, checkout); err != nil {
+		return err
+	}
+	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "")
+}
+
+func initLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCLI) error {
+	format, err := source.Run(ctx, "rev-parse", "--show-object-format")
+	if err != nil {
+		return fmt.Errorf("read local git object format: %w", err)
+	}
+	// Resolve through Git, not .git/objects: linked worktrees keep objects in
+	// their common directory. Git also follows any source alternates itself.
+	objects, err := source.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	if err != nil {
+		return fmt.Errorf("resolve local git objects: %w", err)
+	}
+	if _, err := checkout.Run(ctx, "-c", "init.defaultBranch=main", "init", "--object-format="+strings.TrimSpace(string(format))); err != nil {
+		return err
+	}
+	gitDir, err := checkout.GitDir(ctx)
+	if err != nil {
+		return err
+	}
+	// Remove only Git's output terminator: whitespace can be part of a path.
+	objectPath := strings.TrimSuffix(string(objects), "\n")
+	if err := writeGitAlternates(filepath.Join(gitDir, "objects"), []string{objectPath}); err != nil {
+		return fmt.Errorf("write local git checkout alternates: %w", err)
+	}
+	return nil
 }
 
 const persistedDirectoryLazyKindGitCleaned = "gitCleaned"

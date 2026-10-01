@@ -182,10 +182,29 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23"
+      # The Go SDK waits at most 300s for the CLI to provision the engine, and a
+      # cold pull of the engine image into the Lima Docker VM can take nearly
+      # all of that. Pull the image here, outside that window. The provisioner
+      # skips its own pull when `docker image inspect` finds this exact ref:
+      # it uses the runner host with the docker-image:// scheme removed.
+      - name: "Pull engine image"
+        run: |
+          case "$_EXPERIMENTAL_DAGGER_RUNNER_HOST" in
+            docker-image://*) ;;
+            *) echo "unexpected runner host: $_EXPERIMENTAL_DAGGER_RUNNER_HOST" >&2; exit 1 ;;
+          esac
+          image="${_EXPERIMENTAL_DAGGER_RUNNER_HOST#docker-image://}"
+          time docker pull "$image"
+          docker image inspect "$image" --format '{{ .ID }}'
+        shell: bash
       - name: "Test Go SDK"
         run: |
           cd sdk/go
-          go test -v -run TestProvision ./...
+          # -p 1 streams -v output as the test runs, instead of printing it in
+          # one burst when the package finishes. -count=1 disables the test
+          # result cache, which setup-go restores: the artifact URLs stay
+          # constant on PRs, so a restored test result can skip provisioning.
+          go test -v -p 1 -count=1 -run TestProvision ./...
 
       - uses: yezz123/setup-uv@v4
         with:
@@ -214,7 +233,20 @@ jobs:
 
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
-        run: docker logs $(docker ps -q --filter name=dagger-engine) || true
+        run: |
+          # include stopped containers: an engine that failed to start has exited
+          ids=$(docker ps -aq --filter name=dagger-engine || true)
+          if [ -z "$ids" ]; then
+            echo "no dagger-engine containers found"
+            exit 0
+          fi
+          docker ps -a --filter name=dagger-engine || true
+          for id in $ids; do
+            echo "::group::docker logs $id"
+            docker logs "$id" || true
+            echo "::endgroup::"
+          done
+        shell: bash
 
   # TODO: daggerize provisioning tests
   test-provision-go-linux-x86:

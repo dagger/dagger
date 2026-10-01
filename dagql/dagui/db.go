@@ -259,7 +259,7 @@ func NewDB() *DB {
 
 		CreatorSpans: make(map[string]SpanSet),
 
-		updatedSpans: NewSpanSet(),
+		updatedSpans: NewOrderedSet(spanKeyFunc),
 		seenSpans:    make(map[SpanID]struct{}),
 
 		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
@@ -280,7 +280,13 @@ func (db *DB) hasSeen(spanID SpanID) bool {
 }
 
 func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
-	snapshots := snapshotSpans(db.updatedSpans.Order, func(span *Span) bool {
+	// updatedSpans is kept in insertion order, since every span update lands
+	// in it; sort it by start time only here, when it's read
+	updated := slices.Clone(db.updatedSpans.Order)
+	slices.SortStableFunc(updated, func(a, b *Span) int {
+		return a.StartTime.Compare(b.StartTime)
+	})
+	snapshots := snapshotSpans(updated, func(span *Span) bool {
 		if !span.Received {
 			// don't send along any stubs; let the client-side create its own stubs
 			return false
@@ -334,11 +340,13 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 	for _, snapshot := range snapshots {
 		db.seen(snapshot.ID)
 	}
-	db.updatedSpans = NewSpanSet()
+	db.updatedSpans = NewOrderedSet(spanKeyFunc)
 	return snapshots
 }
 
 func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
+	settle := db.deferSpanOrder()
+	defer settle()
 	spans := make([]*Span, len(snapshots))
 	for i, snapshot := range snapshots {
 		span := db.findOrAllocSpan(snapshot.ID)
@@ -367,6 +375,24 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 	for _, span := range spans {
 		span.PropagateStatusToParentsAndLinks()
 	}
+}
+
+// deferSpanOrder defers keeping db.Spans sorted by start time until the
+// returned func is called, so that ingesting a batch of spans costs one sort
+// and merge rather than an O(n) insertion for each span that doesn't belong at
+// the end -- which made importing a large trace quadratic, since an import
+// doesn't deliver spans in start-time order, and a span seen before its
+// parent creates a placeholder for the parent with no start time at all.
+//
+// Every span is still in db.Spans.Order in the meantime, just not in order,
+// so nothing that needs the order may read it until the batch is settled.
+// Batches don't nest: the outermost one settles.
+func (db *DB) deferSpanOrder() (settle func()) {
+	if db.Spans.deferring {
+		return func() {}
+	}
+	db.Spans.deferSort()
+	return db.Spans.settle
 }
 
 func (db *DB) update(span *Span) {
@@ -430,6 +456,8 @@ func (db *DB) RemainingSnapshots() []SpanSnapshot {
 var _ sdktrace.SpanExporter = (*DB)(nil)
 
 func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan) error {
+	settle := db.deferSpanOrder()
+	defer settle()
 	spans := make([]*Span, len(otelSpans))
 	for i, otelSpan := range otelSpans {
 		spans[i] = db.recordOTelSpan(otelSpan)
@@ -553,6 +581,9 @@ func (db *DB) IngestLogs(logs []sdklog.Record) []sdklog.Record {
 }
 
 func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.Record {
+	// logs for spans we haven't seen yet create placeholders for them
+	settle := db.deferSpanOrder()
+	defer settle()
 	var renderable []sdklog.Record
 	if collectRenderable {
 		renderable = make([]sdklog.Record, 0, len(logs))

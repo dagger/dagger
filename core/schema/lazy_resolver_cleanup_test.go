@@ -291,7 +291,7 @@ func resolverOutputFixture(t *testing.T) (context.Context, *dagql.Server, *dagql
 	dagql.Fields[*core.Query]{dagql.NodeFunc("__httpFile", (&httpSchema{}).httpFile).IsPersistable()}.Install(srv)
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.GitRepository]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.GitBundle]{}))
-	return ctx, srv, cache, server
+	return dagql.ContextWithServer(ctx, srv), srv, cache, server
 }
 func resolverAttach[T dagql.Typed](t *testing.T, ctx context.Context, srv *dagql.Server, cache *dagql.Cache, field string, value T) dagql.ObjectResult[T] {
 	t.Helper()

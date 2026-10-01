@@ -523,18 +523,7 @@ func (repo *GitRepository) AttachDependencyResults(
 	var owned []dagql.AnyResult
 	switch backend := repo.Backend.(type) {
 	case *LocalGitRepository:
-		if backend.Directory.Self() != nil {
-			attached, err := attach(backend.Directory)
-			if err != nil {
-				return nil, fmt.Errorf("attach git repository directory: %w", err)
-			}
-			typed, ok := attached.(dagql.ObjectResult[*Directory])
-			if !ok {
-				return nil, fmt.Errorf("attach git repository directory: unexpected result %T", attached)
-			}
-			backend.Directory = typed
-			owned = append(owned, typed)
-		}
+		return backend.attachDependencyResults(attach)
 	case *RemoteGitRepository:
 		if backend.Mirror.Self() != nil {
 			attached, err := attach(backend.Mirror)
@@ -604,6 +593,33 @@ func (repo *GitRepository) AttachDependencyResults(
 	return owned, nil
 }
 
+func (repo *LocalGitRepository) attachDependencyResults(
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	var owned []dagql.AnyResult
+	if repo.Directory.Self() != nil {
+		attached, err := attach(repo.Directory)
+		if err != nil {
+			return nil, fmt.Errorf("attach git repository directory: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach git repository directory: unexpected result %T", attached)
+		}
+		repo.Directory = typed
+		owned = append(owned, typed)
+	}
+	if repo.CheckoutBase != nil {
+		parent, err := attachLazyInput(attach, repo.CheckoutBase.Parent, "git checkout parent")
+		if err != nil {
+			return nil, err
+		}
+		repo.CheckoutBase = &GitCheckoutBase{Parent: parent, CommitSHA: repo.CheckoutBase.CommitSHA}
+		owned = append(owned, parent)
+	}
+	return owned, nil
+}
+
 func (ref *GitRef) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
@@ -669,7 +685,20 @@ type persistedGitRemotePayload struct {
 }
 
 type persistedLocalGitRepositoryPayload struct {
-	DirectoryResultID uint64 `json:"directoryResultID"`
+	DirectoryResultID uint64                    `json:"directoryResultID"`
+	CheckoutBase      *persistedGitCheckoutBase `json:"checkoutBase,omitempty"`
+}
+
+type persistedGitCheckoutBase struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	CommitSHA      string `json:"commitSHA"`
+}
+
+func (p *persistedGitCheckoutBase) validate() error {
+	if p.ParentResultID == 0 || !IsFullGitSHA(p.CommitSHA) {
+		return fmt.Errorf("git checkout base: expected parent result and complete commit SHA")
+	}
+	return nil
 }
 
 type persistedRemoteGitRepositoryPayload struct {
@@ -784,6 +813,16 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, enc *dagql
 		payload.Local = &persistedLocalGitRepositoryPayload{
 			DirectoryResultID: dirID,
 		}
+		if base := backend.CheckoutBase; base != nil {
+			parentID, err := encodePersistedObjectRef(enc, base.Parent, "git checkout parent")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			payload.Local.CheckoutBase = &persistedGitCheckoutBase{ParentResultID: parentID, CommitSHA: base.CommitSHA}
+			if err := payload.Local.CheckoutBase.validate(); err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+		}
 	case *RemoteGitRepository:
 		remote, err := encodePersistedRemoteGitRepository(enc, backend)
 		if err != nil {
@@ -832,7 +871,18 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 		if err != nil {
 			return nil, err
 		}
-		repo.Backend = &LocalGitRepository{Directory: dir}
+		backend := &LocalGitRepository{Directory: dir}
+		if base := persisted.Local.CheckoutBase; base != nil {
+			if err := base.validate(); err != nil {
+				return nil, err
+			}
+			parent, err := loadPersistedObjectResultByResultID[*GitRef](ctx, dec, base.ParentResultID, "git checkout parent")
+			if err != nil {
+				return nil, err
+			}
+			backend.CheckoutBase = &GitCheckoutBase{Parent: parent, CommitSHA: base.CommitSHA}
+		}
+		repo.Backend = backend
 	case persistedGitRepositoryFormRemote:
 		if persisted.Remote == nil {
 			return nil, fmt.Errorf("decode persisted git repository: missing remote payload")
@@ -1195,12 +1245,7 @@ func doGitCheckout(
 	depth int,
 	discardGitDir bool,
 ) error {
-	checkoutDirGit, err := checkoutGit.GitDir(ctx)
-	if err != nil {
-		return fmt.Errorf("could not find git dir: %w", err)
-	}
-
-	_, err = checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	_, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
 	if err != nil {
 		return err
 	}
@@ -1219,6 +1264,24 @@ func doGitCheckout(
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
 		return err
+	}
+	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref)
+}
+
+// finishGitCheckout materializes a ref whose objects are already available.
+// tmpref is set only when the caller fetched the objects into a temporary ref.
+func finishGitCheckout(
+	ctx context.Context,
+	checkoutGit *gitutil.GitCLI,
+	remotes []GitRemote,
+	cloneURL string,
+	ref *gitutil.Ref,
+	discardGitDir bool,
+	tmpref string,
+) error {
+	checkoutDirGit, err := checkoutGit.GitDir(ctx)
+	if err != nil {
+		return fmt.Errorf("could not find git dir: %w", err)
 	}
 	if ref.Name == "" {
 		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
@@ -1244,9 +1307,11 @@ func doGitCheckout(
 			return err
 		}
 	}
-	_, err = checkoutGit.Run(ctx, "update-ref", "-d", tmpref)
-	if err != nil {
-		return fmt.Errorf("failed to delete tmp ref: %w", err)
+	if tmpref != "" {
+		_, err = checkoutGit.Run(ctx, "update-ref", "-d", tmpref)
+		if err != nil {
+			return fmt.Errorf("failed to delete tmp ref: %w", err)
+		}
 	}
 	_, err = checkoutGit.Run(ctx, "reflog", "expire", "--all", "--expire=now")
 	if err != nil {
@@ -1326,20 +1391,30 @@ func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, re
 // GitCLI positioned in a repository containing all of them, along with their
 // resolved commit SHAs (in the same order as refs).
 //
-// Refs sharing a repository are mounted together; refs from different
-// repositories are joined into a temporary repository via refJoin.
+// Refs sharing a repository are mounted together. Refs from different local
+// repositories share their cached objects read-only; others use refJoin.
 func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI, shas []string) error) error {
 	if len(refs) == 0 {
 		return fmt.Errorf("mount refs: no refs given")
+	}
+	// A single ref needs neither repository identity nor a joined object store.
+	if len(refs) == 1 {
+		return refs[0].Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
+			return fn(git, []string{refs[0].Ref.SHA})
+		})
 	}
 
 	shas := make([]string, len(refs))
 	backends := make([]GitRefBackend, len(refs))
 	sameRepo := true
+	allLocal := true
 	var repoDgst digest.Digest
 	for i, ref := range refs {
 		shas[i] = ref.Ref.SHA
 		backends[i] = ref.Backend
+		if _, ok := ref.Backend.(*LocalGitRef); !ok {
+			allLocal = false
+		}
 
 		dgst, err := ref.Repo.RecipeDigest(ctx)
 		if err != nil {
@@ -1357,6 +1432,13 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 		return refs[0].Repo.Self().Backend.mount(ctx, 0, false, backends, func(git *gitutil.GitCLI) error {
 			return fn(git, shas)
 		})
+	}
+
+	if allLocal {
+		err := mountCachedGitRefs(ctx, refs, fn)
+		if !errors.Is(err, errShallowCachedGitHistory) {
+			return err
+		}
 	}
 
 	git, shas, cleanup, err := refJoin(ctx, refs)
@@ -1416,7 +1498,14 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 	}
 
 	var commits []*GitCommitMetadata
-	err := mountRefs(ctx, refs, func(git *gitutil.GitCLI, shas []string) error {
+	// Without filtering, at most Limit generations can contribute to the first
+	// Limit commits, so remote mirrors need only fetch that deep. Local
+	// repositories ignore depth: their first mount already has all the history
+	// there is, and a shallow boundary there cannot be deepened by retrying.
+	bounded := opts.Base == nil && len(opts.Paths) == 0
+	_, local := ref.Backend.(*LocalGitRef)
+	needsFullHistory := false
+	readLog := func(git *gitutil.GitCLI, shas []string) error {
 		args := []string{"rev-list", "-n", strconv.Itoa(opts.Limit), shas[0]}
 		if len(shas) > 1 {
 			args = append(args, "^"+shas[1])
@@ -1430,9 +1519,20 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 			return fmt.Errorf("git rev-list failed: %w", err)
 		}
 
+		logSHAs := strings.Fields(string(out))
+		if bounded && !local && !needsFullHistory {
+			// A shared mirror can have uneven shallow boundaries (for example,
+			// a merge's second parent fetched separately). The mount's depth
+			// estimate alone does not guarantee this walk is complete.
+			needsFullHistory, err = gitLogReachesShallowBoundary(ctx, git, logSHAs, opts.Limit)
+			if err != nil || needsFullHistory {
+				return err
+			}
+		}
+
 		// read every commit while the repo is still mounted, rather than leaving
 		// each one to mount again on demand
-		for _, sha := range strings.Fields(string(out)) {
+		for _, sha := range logSHAs {
 			raw, err := git.Run(ctx, "cat-file", "commit", sha)
 			if err != nil {
 				return fmt.Errorf("read git commit metadata for %s: %w", sha, err)
@@ -1444,11 +1544,144 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 			commits = append(commits, meta)
 		}
 		return nil
-	})
+	}
+
+	var err error
+	if bounded {
+		// Avoid unshallowing an entire remote just to read a short log. Path
+		// filters and base exclusions need full history.
+		err = ref.Backend.mount(ctx, opts.Limit, false, func(git *gitutil.GitCLI) error {
+			return readLog(git, []string{ref.Ref.SHA})
+		})
+	} else {
+		needsFullHistory = true
+	}
+	if err == nil && needsFullHistory {
+		err = mountRefs(ctx, refs, readLog)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return commits, nil
+}
+
+// gitLogReachesShallowBoundary reports whether the bounded walk may have omitted
+// ancestors. The final commit need not have traversable parents when the limit
+// was reached: its metadata is read from the raw object, not the shallow graph.
+func gitLogReachesShallowBoundary(ctx context.Context, git *gitutil.GitCLI, shas []string, limit int) (bool, error) {
+	if len(shas) == limit {
+		shas = shas[:len(shas)-1]
+	}
+	if len(shas) == 0 {
+		return false, nil
+	}
+	// Linked worktrees keep shallow boundaries in the common directory, not
+	// their own git directory. Let Git resolve the effective shallow file.
+	shallowPath, err := git.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "shallow")
+	if err != nil {
+		return false, err
+	}
+	shallow, err := os.ReadFile(strings.TrimSuffix(string(shallowPath), "\n"))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read git shallow boundaries: %w", err)
+	}
+	boundaries := make(map[string]struct{})
+	for _, sha := range strings.Fields(string(shallow)) {
+		boundaries[sha] = struct{}{}
+	}
+	for _, sha := range shas {
+		if _, ok := boundaries[sha]; ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+var errShallowCachedGitHistory = errors.New("cannot share shallow git history")
+
+// mountCachedGitRefs borrows object databases for the duration of fn, without
+// fetching or copying any objects. Only use this for local, read-only mounts:
+// recursively mounting remote refs can deadlock on a shared mirror lock.
+func mountCachedGitRefs(ctx context.Context, refs []*GitRef, fn func(*gitutil.GitCLI, []string) error) error {
+	var objects []string
+	var shas []string
+	var objectFormat string
+	var mountNext func(int) error
+	mountNext = func(i int) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if i == len(refs) {
+			return withGitObjectView(ctx, objects, objectFormat, func(git *gitutil.GitCLI) error {
+				return fn(git, shas)
+			})
+		}
+		return refs[i].Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
+			shallow, err := git.Run(ctx, "rev-parse", "--is-shallow-repository")
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(string(shallow)) != "false" {
+				// Alternates share objects, not shallow boundaries. Dropping the
+				// boundaries invents history; unioning them can truncate another
+				// source's complete history. Leave shallow inputs to refJoin.
+				return errShallowCachedGitHistory
+			}
+			format, err := git.Run(ctx, "rev-parse", "--show-object-format")
+			if err != nil {
+				return err
+			}
+			if i == 0 {
+				objectFormat = strings.TrimSpace(string(format))
+			} else if strings.TrimSpace(string(format)) != objectFormat {
+				return fmt.Errorf("cannot compare git repositories with different object formats")
+			}
+			// --git-path resolves the common directory for linked worktrees.
+			// Strip only the output terminator: whitespace can be part of a path.
+			path, err := git.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+			if err != nil {
+				return err
+			}
+			objects = append(objects, strings.TrimSuffix(string(path), "\n"))
+			shas = append(shas, refs[i].Ref.SHA)
+			return mountNext(i + 1)
+		})
+	}
+	return mountNext(0)
+}
+
+// withGitObjectView creates only private repository metadata. Every source
+// object database (including its own alternates) stays read-only and mounted
+// until the callback returns. No refs or configuration are imported.
+func withGitObjectView(ctx context.Context, objects []string, format string, fn func(*gitutil.GitCLI) error) error {
+	tmp, err := os.MkdirTemp("", "dagger-git-history-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	git := gitutil.NewGitCLI(gitutil.WithDir(tmp), gitutil.WithGitDir(tmp))
+	if _, err := git.Run(ctx, "-c", "init.defaultBranch=main", "init", "--bare", "--object-format="+format); err != nil {
+		return fmt.Errorf("initialize git history view: %w", err)
+	}
+	if err := writeGitAlternates(filepath.Join(tmp, "objects"), objects); err != nil {
+		return fmt.Errorf("write git history alternates: %w", err)
+	}
+	return fn(git)
+}
+
+// writeGitAlternates points an object database at others. Git's alternates
+// file takes one C-quoted path per line, so spaces, newlines, quotes and
+// backslashes in a mount path cannot add or alter an entry.
+func writeGitAlternates(objectsDir string, paths []string) error {
+	quote := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
+	var alternates strings.Builder
+	for _, path := range paths {
+		alternates.WriteString(`"` + quote.Replace(path) + "\"\n")
+	}
+	return os.WriteFile(filepath.Join(objectsDir, "info", "alternates"), []byte(alternates.String()), 0600)
 }
 
 // refJoin creates a temporary git repository, adds the given refs as remotes,

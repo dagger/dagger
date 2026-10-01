@@ -28,7 +28,7 @@ func transferCache(t *testing.T, store *testutil.Store, path, session string) (c
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Container]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*File]{}))
-	return ctx, cache, srv
+	return dagql.ContextWithServer(ctx, srv), cache, srv
 }
 
 func attachTransferObject[T dagql.Typed](t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, session, field string, value T) dagql.ObjectResult[T] {

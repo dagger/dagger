@@ -162,7 +162,7 @@ func cleanLocalCopyPath(p string) string {
 func (local *localFS) Sync( //nolint:gocyclo
 	ctx context.Context,
 	remote ReadFS,
-	cacheManager bkcache.Accessor,
+	cacheManager bkcache.SnapshotManager,
 	forParents bool,
 ) (_ bkcache.ImmutableRef, _ digest.Digest, rerr error) {
 	var newCopyRef bkcache.MutableRef       // the mutable ref we will copy into with the frozen files+dirs if needed
@@ -604,7 +604,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 		return nil, "", fmt.Errorf("failed to search content hash: %w", err)
 	}
 	for _, si := range sis {
-		finalRef, err := cacheManager.GetBySnapshotID(ctx, si.SnapshotID())
+		finalRef, err := cacheManager.LeaseExistingSnapshot(ctx, si.SnapshotID())
 		if err == nil {
 			bklog.G(ctx).Debugf("reusing copy ref %s", si.SnapshotID())
 			return finalRef, dgst, nil

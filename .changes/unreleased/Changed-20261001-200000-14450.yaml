@@ -1,0 +1,12 @@
+kind: Changed
+body: |
+  Go modules download far fewer dependencies when generating code on a fresh engine.
+
+  The Go SDK image now pre-caches the dependencies module codegen fetches for a
+  generated module, and the Go SDK pins the modules generated code imports. In a
+  fresh module cache, codegen for a module without dependencies of its own went
+  from about 270 requests to the Go module proxy to about 20.
+time: 2026-10-01T20:00:00.000000000+00:00
+custom:
+    Author: sipsma
+    PR: "14450"

@@ -179,7 +179,8 @@ func (c *Cache) completeNativePartTask(ctx context.Context, task *PartTaskToken)
 	return c.teachTaskContentIdentity(ctx, task)
 }
 
-// DecodeContext borrows this held owner's exact recorded identity and server.
+// DecodeContext borrows this held owner's exact recorded identity and the
+// context's dagql server.
 func (host *PartHost) DecodeContext(ctx context.Context) *PersistDecodeContext {
 	return host.cache.partDecodeContext(ctx, host.row, PersistedRecord{Call: host.row.loadResultCall(), SnapshotLinks: host.row.loadSnapshotOwnerLinks()}).atPath(host.path)
 }

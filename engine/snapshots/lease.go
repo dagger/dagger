@@ -336,6 +336,29 @@ func (l *LeaseManager) ListResources(ctx context.Context, lease leases.Lease) ([
 	return l.manager.ListResources(ctx, lease)
 }
 
+// LeaseExistingSnapshot adds an existing snapshot to the context's operation
+// lease, so the operation owns it as it owns the snapshots it creates, and
+// reopens it. It fails when the context has no lease.
+func (cm *snapshotManager) LeaseExistingSnapshot(ctx context.Context, snapshotID string) (ImmutableRef, error) {
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for existing snapshot")
+	}
+	leaseID, ok := leases.FromContext(ctx)
+	if !ok || leaseID == "" {
+		return nil, errors.Errorf("lease existing snapshot %s: no lease in context", snapshotID)
+	}
+	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
+		ID:   snapshotID,
+		Type: "snapshots/" + cm.Snapshotter.Name(),
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return nil, errors.Wrapf(err, "attach snapshot %s to lease %s", snapshotID, leaseID)
+	}
+	// AddResource accepts absent targets. GetBySnapshotID checks the snapshot
+	// still exists, now that the lease holds it.
+	return cm.GetBySnapshotID(ctx, snapshotID)
+}
+
 // PinSnapshot protects an existing snapshot and its ancestry independently of
 // any donor or ambient operation lease. It never downloads content.
 func (cm *snapshotManager) PinSnapshot(ctx context.Context, snapshotID string) (_ ImmutableRef, rerr error) {
