@@ -21,7 +21,7 @@ The transaction then:
 
 1. Creates a COW child of the parent repository's snapshot via `withGitMergeWorkspace`, and separately mounts the existing storage read-only to borrow its objects.
 2. Initializes a private bare scratch repository (`--object-format=sha1 --ref-format=files`) with the source's remotes, a private index and an empty sparse worktree. The borrowed object directory is passed as `GIT_ALTERNATE_OBJECT_DIRECTORIES`, with lazy fetching and replace refs disabled.
-3. Runs `read-tree` on the parent, then `ls-tree` on only the changed paths' ancestors, and checks out only the `.gitattributes`/`.gitignore` files on those chains. Unchanged blobs are never read.
+3. Runs `read-tree` on the parent, then `ls-tree` on only the changed paths and their ancestors, and checks out only the `.gitattributes`/`.gitignore` files on those chains, in one `checkout-index`. Unchanged blobs are never read.
 4. Applies the changeset to the sparse worktree, runs `update-index --force-remove` for removals (including file/directory replacements) and `add -A` for additions and modifications.
 5. Runs `write-tree`, returning `ErrNothingToCommit` when the tree is unchanged and empty commits are not allowed, then `commit-tree` with explicit author/committer identity and dates. Signoff uses `git interpret-trailers --no-divider`, matching `git commit --trailer`, so a `---` line in the message stays text.
 6. `copyNativeCommitObjects` copies only the transaction's new objects into the child: loose objects, plus the pack (with `.idx`/`.rev`) that `git add` writes for blobs over `core.bigFileThreshold`. Writes use `O_EXCL` and never touch existing objects.
@@ -42,11 +42,16 @@ Unsupported inputs are rejected with a fixed `nativeCommitUnsupportedReason` cod
 - `object-format`: anything but SHA-1
 - `ref-storage`: reftable refs, which loose-ref publication and the replaced config would lose
 - `ref-kind`: a parent ref that is neither a branch nor a detached commit
-- `gitmodules-change`, `gitlink-change`: changes touching `.gitmodules` or gitlinks
+- `gitmodules-change`: a change to a `.gitmodules` file
+- `gitlink-change`: a staged path at or inside a gitlink, i.e. a change to a submodule (see below)
 - `unsafe-write-path`: a publication path through an inherited non-directory
 - `snapshot-depth`: see below
 
 `nativeCommitFallback` reports whether every leaf of a joined or wrapped error is such a code, so helpers can tell an expected ineligibility from a real failure joined to it.
+
+### Gitlinks
+
+Only gitlinks the delta reaches matter. `ls-tree` matches its pathspecs as prefixes, so once it descends into an ancestor of a changed path it lists every child of that directory; entries are classified by exact name, and a gitlink beside an edited file is left alone. A gitlink at or above a staged path falls back with `gitlink-change`. A gitlink inside a directory a file replaced, at any depth, is deleted by `git add`, as on a full checkout: the user replaced the directory holding it. `.gitmodules` is left as the changeset has it. The workspace merge is stricter there: `validateNativeWorkspaceBase` lists declared paths with `ls-files`, which matches at or under each path but never a sibling, so a gitlink in a directory a file replaced falls back.
 
 ## Workspace Reconciliation
 
@@ -125,9 +130,9 @@ Native paths are optimizations over complete legacy paths, which handle every in
 
 Unit tests (`go test ./core -count=1`):
 
-- `core/git_commit_test.go`: `TestGitNativeCommitMatchesCheckout` (exact commit SHAs against `git commit`, including attributes, ignore rules, signoff, packed parents and detached SHA-named refs), `TestGitNativeCommitPublicationIsRooted`, `TestGitNativeCommitLargeFile`, `TestGitNativeCommitRejectsGitlinks`, `TestGitNativeCommitObjectMetrics`, `TestGitNativeCommitRefStorageEligibility`, `TestGitNativeCommitStorageEligibility`.
+- `core/git_commit_test.go`: `TestGitNativeCommitMatchesCheckout` (exact commit SHAs against `git commit`, including attributes, ignore rules, signoff, packed parents and detached SHA-named refs), `TestGitNativeCommitPublicationIsRooted`, `TestGitNativeCommitLargeFile`, `TestGitNativeCommitRejectsGitlinks`, `TestGitNativeCommitSiblingGitlink` (an edit beside a gitlink commits natively, a change at or inside it falls back), `TestGitNativeCommitObjectMetrics`, `TestGitNativeCommitRefStorageEligibility`, `TestGitNativeCommitStorageEligibility`.
 - `core/git_commit_create_test.go`: `TestNativeCommitFallback`, `TestNativeFallbackPolicy`, `TestNativeSnapshotDepthBound`.
-- `core/changeset_native_test.go`: `TestNativeWorkspaceMergeMatchesCheckout` (complete filesystem manifests against the legacy checkout sequence under umasks 022 and 000, including attributes, ownership, xattrs, replacements, renames, noops, conflicts and packed storage), `TestNativeWorkspaceMergeFallbacksAndErrors`, `TestNativeWorkspaceMergeBaseEvidence`, `TestNativeWorkspaceDeltaReplacedAncestors`, `TestNativeWorkspaceDeltaMetadataFallback`.
+- `core/changeset_native_test.go`: `TestNativeWorkspaceMergeMatchesCheckout` (complete filesystem manifests against the legacy checkout sequence under umasks 022 and 000, including attributes, ownership, xattrs, replacements, renames, noops, conflicts and packed storage), `TestNativeWorkspaceMergeFallbacksAndErrors`, `TestNativeWorkspaceMergeBaseEvidence`, `TestNativeWorkspaceMergeGitlinks`, `TestNativeWorkspaceDeltaReplacedAncestors`, `TestNativeWorkspaceDeltaMetadataFallback`.
 - `core/git_local_incremental_test.go`: `TestIncrementalGitCheckout` (complete source manifests against a fresh full checkout under umasks 022 and 000, including attributes, type replacements, symlinks, executable bits, option-like and non-ASCII path names, a delta of hundreds of paths, removal-only and same-tree commits, untouched inodes and pack mtimes), `TestIncrementalGitCheckoutGates`, `TestIncrementalGitCheckoutGitlinks` (unchanged submodules against a full checkout, and gitlink changes in the delta), `TestIncrementalGitCheckoutConvertedAttributes`, `TestIncrementalGitCheckoutActualParent` (grafts and replace refs), `TestIncrementalGitCheckoutProvenance`, `TestIncrementalGitCheckoutColdChain` (a cold 100-commit chain evaluates two trees with one full checkout, through the real cache's lazy evaluation). `core/git_persistence_test.go`: `TestGitCheckoutBasePersistence` (dependency retention across cache restarts, malformed payloads).
 
 Integration tests run against a from-source engine, e.g. `dagger call engine-dev test --pkg ./core/integration --run 'TestGit/TestGitRefWithCommitNative'`:

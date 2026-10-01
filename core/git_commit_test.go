@@ -280,6 +280,79 @@ func TestGitNativeCommitRejectsGitlinks(t *testing.T) {
 	require.Equal(t, parent, run("rev-parse", "HEAD"))
 }
 
+// ls-tree lists every child of a directory it descends into, so a gitlink
+// beside an edited file must not count as a submodule change. Changes at or
+// inside the gitlink still fall back.
+func TestGitNativeCommitSiblingGitlink(t *testing.T) {
+	for _, scenario := range []string{"edit sibling", "remove sibling", "add sibling", "inside gitlink", "replace gitlink"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := t.Context()
+			source := t.TempDir()
+			run := func(dir string, env []string, args ...string) string {
+				t.Helper()
+				out, err := runWorkspaceCommitGit(ctx, dir, env, args...)
+				require.NoError(t, err)
+				return strings.TrimSpace(out)
+			}
+			write := func(dir, name, data string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(data), 0600))
+			}
+			run(source, nil, "init", "-b", "main")
+			write(source, "vendor/x", "before")
+			write(source, "vendor/remove", "remove")
+			// A control file makes ls-tree descend into vendor.
+			write(source, "vendor/.gitattributes", "*.txt text\n")
+			run(source, nil, "add", ".")
+			run(source, nil, "commit", "-m", "root")
+			root := run(source, nil, "rev-parse", "HEAD")
+			run(source, nil, "update-index", "--add", "--cacheinfo", "160000,"+root+",vendor/module")
+			run(source, nil, "commit", "-m", "gitlink")
+			parent := run(source, nil, "rev-parse", "HEAD")
+			oracle, native := filepath.Join(t.TempDir(), "oracle"), filepath.Join(t.TempDir(), "native")
+			run(source, nil, "clone", "--no-hardlinks", source, oracle)
+			run(source, nil, "clone", "--no-hardlinks", source, native)
+
+			paths := &ChangesetPaths{}
+			apply := func(work string) error {
+				switch scenario {
+				case "edit sibling":
+					paths.Modified = []string{"vendor/x"}
+					write(work, "vendor/x", "after")
+				case "remove sibling":
+					paths.AllRemoved = []string{"vendor/remove"}
+					require.NoError(t, os.RemoveAll(filepath.Join(work, "vendor/remove")))
+				case "add sibling":
+					paths.Added = []string{"vendor/new/file"}
+					write(work, "vendor/new/file", "new")
+				case "inside gitlink":
+					paths.Added = []string{"vendor/module/file"}
+				case "replace gitlink":
+					paths.Added = []string{"vendor/module"}
+					paths.AllRemoved = []string{"vendor/module/"}
+				}
+				return nil
+			}
+			require.NoError(t, apply(oracle))
+			opts := GitCommitOpts{Message: "commit", Date: "2025-01-02T03:04:05Z", AuthorName: "Author", AuthorEmail: "author@example.com", CommitterName: "Author", CommitterEmail: "author@example.com", CommitterDate: "2025-01-02T03:04:05Z"}
+			err := withNativeCommitIndex(ctx, filepath.Join(native, ".git"), filepath.Join(source, ".git", "objects"), &gitutil.Ref{SHA: parent, Name: "refs/heads/main"}, paths, opts, apply)
+			if strings.HasSuffix(scenario, "gitlink") {
+				require.ErrorIs(t, err, errNativeCommitUnsupported)
+				require.Equal(t, "gitlink-change", err.Error())
+				require.Equal(t, parent, run(native, nil, "rev-parse", "HEAD"))
+				return
+			}
+			require.NoError(t, err)
+			env := []string{"GIT_LITERAL_PATHSPECS=1", "GIT_AUTHOR_NAME=" + opts.AuthorName, "GIT_AUTHOR_EMAIL=" + opts.AuthorEmail, "GIT_COMMITTER_NAME=" + opts.CommitterName, "GIT_COMMITTER_EMAIL=" + opts.CommitterEmail, "GIT_AUTHOR_DATE=" + opts.Date, "GIT_COMMITTER_DATE=" + opts.CommitterDate}
+			run(oracle, env, append([]string{"add", "-A", "--"}, commitStagePaths(paths)...)...)
+			run(oracle, env, "commit", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "-m", opts.Message)
+			require.Equal(t, run(oracle, nil, "rev-parse", "HEAD"), run(native, nil, "rev-parse", "HEAD"))
+			require.Equal(t, "160000 commit "+root+"\tvendor/module", run(native, nil, "ls-tree", "HEAD", "--", "vendor/module"))
+		})
+	}
+}
+
 func TestGitNativeCommitObjectMetrics(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))

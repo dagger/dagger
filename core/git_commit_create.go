@@ -269,8 +269,8 @@ func nativeCommitFallback(err error) bool {
 // nativeFallback). Only the caller's own cancellation is returned as an error.
 // Currently supported: complete local SHA-1 branches/commit IDs without
 // alternates or linked worktrees, and ordinary files/symlinks including Git
-// attributes and ignore rules. Changes touching gitlinks or .gitmodules use the
-// existing checkout path.
+// attributes and ignore rules. Changes at or inside a gitlink, or to
+// .gitmodules, use the existing checkout path (see stageNativeChanges).
 func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*GitRef], changes *Changeset, opts GitCommitOpts) (_ *Directory, supported bool, rerr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
@@ -569,12 +569,18 @@ func publishNativeCommit(gitDir, meta, branchName, sha string, run func(...strin
 // stageNativeChanges seeds a private index from parent and stages only the
 // supplied delta. The caller supplies an empty worktree and operation-local
 // metadata/object storage. Only ancestor attribute/ignore blobs are hydrated.
+//
+// Gitlinks matter only where the delta reaches them: a staged path at or under
+// a gitlink is a submodule change, which falls back. A gitlink inside a
+// directory a file replaced is removed by `git add`, as on a full checkout.
 func stageNativeChanges(run func(...string) (string, error), parent string, paths *ChangesetPaths, apply func() error) error {
 	if _, err := run("read-tree", parent); err != nil {
 		return err
 	}
 	controls := map[string]bool{}
-	ancestors := map[string]bool{}
+	// touched: staged paths and their ancestors, where a gitlink means a
+	// staged change inside (or of) a submodule.
+	touched := map[string]bool{}
 	for _, p := range commitStagePaths(paths) {
 		if path.Clean(p) != p || path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") || gitMetaPath(p) {
 			return fmt.Errorf("invalid commit path %q", p)
@@ -582,24 +588,28 @@ func stageNativeChanges(run func(...string) (string, error), parent string, path
 		if path.Base(p) == ".gitmodules" {
 			return nativeCommitUnsupportedReason("gitmodules-change")
 		}
-		ancestors[p] = true
+		touched[p] = true
 		for dir := path.Dir(p); ; dir = path.Dir(dir) {
 			controls[path.Join(dir, ".gitattributes")] = true
 			controls[path.Join(dir, ".gitignore")] = true
 			if dir == "." {
 				break
 			}
-			ancestors[dir] = true
+			touched[dir] = true
 		}
 	}
-	for p := range controls {
-		ancestors[p] = true
-	}
-	var inspect []string
-	for p := range ancestors {
-		inspect = append(inspect, p)
+	inspect := make([]string, 0, len(touched)+len(controls))
+	for _, set := range []map[string]bool{touched, controls} {
+		for p := range set {
+			inspect = append(inspect, p)
+		}
 	}
 	slices.Sort(inspect)
+	inspect = slices.Compact(inspect)
+	// ls-tree matches each pathspec as a prefix: once it descends into an
+	// ancestor, it lists every direct child of that directory. Only exact
+	// names are classified, so unrelated sibling gitlinks never matter.
+	var hydrate []string
 	for _, batch := range batchPathSpecs(inspect) {
 		out, err := run(append([]string{"ls-tree", "-z", parent, "--"}, batch...)...)
 		if err != nil {
@@ -614,14 +624,17 @@ func stageNativeChanges(run func(...string) (string, error), parent string, path
 			if !ok {
 				return fmt.Errorf("invalid ls-tree entry")
 			}
-			if mode == "160000" {
+			switch {
+			case mode == "160000" && touched[name]:
 				return nativeCommitUnsupportedReason("gitlink-change")
+			case controls[name] && (mode == "100644" || mode == "100755"):
+				hydrate = append(hydrate, name)
 			}
-			if controls[name] && (mode == "100644" || mode == "100755") {
-				if _, err := run("checkout-index", "--force", "--", name); err != nil {
-					return err
-				}
-			}
+		}
+	}
+	for _, batch := range batchPathSpecs(hydrate) {
+		if _, err := run(append([]string{"checkout-index", "--force", "--"}, batch...)...); err != nil {
+			return err
 		}
 	}
 	if err := apply(); err != nil {
