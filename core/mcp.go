@@ -1185,7 +1185,7 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 }
 
 // normalizeChangesetToPatch rewrites a changeset into pure patch data:
-// after = before.withPatch(patch, onConflict: LEAVE_CONFLICT_MARKERS),
+// after = before.withPatchFile(blob(patch), onConflict: LEAVE_CONFLICT_MARKERS),
 // changes = after.changes(from: before).
 //
 // A tool-built changeset's After is an operation chain (e.g.
@@ -1197,20 +1197,12 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 // application: hunks that fit apply, hunks that don't leave conflict markers
 // for the agent to resolve.
 //
-// Changesets above patchSummaryMaxPaths are left as-is: rendering and
-// re-applying a patch for thousands of files takes long enough to stall the
-// turn, and normalization is only a durability upgrade — the caller falls
-// back to the raw changeset on any failure anyway.
+// Size alone is no reason to keep the raw changeset: a large one is typically
+// a generator's output, whose raw form retains the generator's execution — dev
+// engines, codegen, toolchains — and makes restoring the conversation re-run
+// all of it. The patch travels as a blob, so its size never inflates call
+// arguments. Only a patch File.contents cannot read is kept raw.
 func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	tooLarge, err := changesetTooLarge(ctx, changes)
-	if err != nil {
-		return changes, fmt.Errorf("bound changeset paths: %w", err)
-	}
-	if tooLarge {
-		slog.Debug("changeset too large to normalize to patch form; keeping raw changeset",
-			"max", patchSummaryMaxPaths)
-		return changes, nil
-	}
 	var patch dagql.ObjectResult[*File]
 	if err := srv.Select(ctx, changes, &patch, dagql.Selector{
 		View:  srv.View,
@@ -1219,8 +1211,7 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 		return changes, fmt.Errorf("render changeset as patch: %w", err)
 	}
 	// Stat before reading: File.contents refuses files over
-	// MaxFileContentsSize only after reading up to it, and a patch that size
-	// is too big to ship back through withPatch as a string argument anyway.
+	// MaxFileContentsSize only after reading up to it.
 	var size int
 	if err := srv.Select(ctx, patch, &size, dagql.Selector{
 		View:  srv.View,
@@ -1234,11 +1225,8 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 			"max", engineutil.MaxFileContentsSize)
 		return changes, nil
 	}
-	var patchText string
-	if err := srv.Select(ctx, patch, &patchText, dagql.Selector{
-		View:  srv.View,
-		Field: "contents",
-	}); err != nil {
+	patchData, err := patch.Self().Contents(ctx, patch, nil, nil)
+	if err != nil {
 		return changes, fmt.Errorf("read changeset patch: %w", err)
 	}
 	before := changes.Self().Before
@@ -1252,12 +1240,29 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 	// Empty patches still need normalization: they may describe directory-only
 	// changes, or a no-op whose raw After retains an expensive tool execution.
 	patched := before
-	if patchText != "" {
+	if len(patchData) > 0 {
+		// No View: blob postdates some client views, and like
+		// checkpointOverlay's patch blob this is engine-internal plumbing.
+		var blob dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
+			Field: "blob",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString("changeset.patch")},
+				{Name: "contents", Value: dagql.Bytes(patchData)},
+				{Name: "permissions", Value: dagql.NewInt(0o600)},
+			},
+		}); err != nil {
+			return changes, fmt.Errorf("embed changeset patch: %w", err)
+		}
+		blobID, err := blob.ID()
+		if err != nil {
+			return changes, err
+		}
 		if err := srv.Select(ctx, before, &patched, dagql.Selector{
 			View:  srv.View,
-			Field: "withPatch",
+			Field: "withPatchFile",
 			Args: []dagql.NamedInput{
-				{Name: "patch", Value: dagql.NewString(patchText)},
+				{Name: "patch", Value: dagql.NewID[*File](blobID)},
 				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
 			},
 		}); err != nil {
