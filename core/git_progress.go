@@ -21,10 +21,11 @@ import (
 var gitReceivingObjectsRE = regexp.MustCompile(`Receiving objects:\s+\d+% \((\d+)/(\d+)\)(?:,\s+([0-9]+(?:\.[0-9]+)?)\s+(bytes|[KMGT]?i?B))?`)
 
 // gitFetchProgressStreams returns a gitutil.StreamFunc that parses `git
-// fetch --progress` stderr and streams the transferred pack size when Git
-// reports it, falling back to received-object counts. Progress is attributed
-// to the span carried by ctx (the "fetching <remote>" span rather than the
-// per-command span, so a named-ref retry continues the same bar).
+// fetch --progress` stderr. The object counts drive display progress while
+// Git's compressed pack size contributes to the attributed network estimate.
+// Both are attributed to the span carried by ctx (the "fetching <remote>"
+// span rather than the per-command span, so a named-ref retry continues the
+// same bar).
 func gitFetchProgressStreams(ctx context.Context) gitutil.StreamFunc {
 	network, _ := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
 	return func(context.Context) (io.WriteCloser, io.WriteCloser, func()) {
@@ -44,7 +45,6 @@ type gitProgressWriter struct {
 	current  int64
 	total    int64
 	bytes    int64
-	hasBytes bool
 	network  *enginetelemetry.NetworkAccumulator
 	lastEmit time.Time
 }
@@ -72,13 +72,12 @@ func (w *gitProgressWriter) Write(p []byte) (int, error) {
 					w.network.Add(byteCount - w.bytes)
 				}
 				w.bytes = byteCount
-				w.hasBytes = true
 			}
 		}
 		// purely throttled: Close emits the final parsed state
-		if now := time.Now(); now.Sub(w.lastEmit) >= bkcache.ProgressEmitInterval {
+		if now := time.Now(); w.total > 0 && now.Sub(w.lastEmit) >= bkcache.ProgressEmitInterval {
 			w.lastEmit = now
-			w.emit(false)
+			bkcache.EmitProgress(w.ctx, "objects", w.current, w.total, "objects")
 		}
 	}
 	return len(p), nil
@@ -87,26 +86,10 @@ func (w *gitProgressWriter) Write(p []byte) (int, error) {
 func (w *gitProgressWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.hasBytes {
-		w.emit(true)
-	} else if w.total > 0 {
-		bkcache.EmitProgress(w.ctx, "git fetch", w.current, w.total, "objects")
+	if w.total > 0 {
+		bkcache.EmitProgress(w.ctx, "objects", w.current, w.total, "objects")
 	}
 	return nil
-}
-
-func (w *gitProgressWriter) emit(final bool) {
-	if w.hasBytes {
-		var total int64
-		if final {
-			total = w.bytes
-		}
-		bkcache.EmitProgress(w.ctx, "git fetch", w.bytes, total, "bytes")
-		return
-	}
-	if w.total > 0 {
-		bkcache.EmitProgress(w.ctx, "git fetch", w.current, w.total, "objects")
-	}
 }
 
 func parseGitByteSizeLowerBound(value, unit string) (int64, bool) {
