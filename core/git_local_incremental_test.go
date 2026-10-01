@@ -2,14 +2,18 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
@@ -300,4 +304,100 @@ func TestIncrementalGitCheckoutProvenance(t *testing.T) {
 	require.False(t, ref.incrementalCheckoutEligible())
 	repo.CheckoutBase = nil
 	require.False(t, ref.incrementalCheckoutEligible())
+}
+
+type coldChainTestLazy struct {
+	LazyState
+	run func(context.Context, *Directory) error
+}
+
+func (lazy *coldChainTestLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "test", func(ctx context.Context) error { return lazy.run(ctx, dir) })
+}
+func (*coldChainTestLazy) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+func (*coldChainTestLazy) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	return nil, errors.New("test lazy has no encoding")
+}
+
+// A cold history (a session resumed on an empty engine) must not walk every
+// ancestor: requesting a tree may materialize its cold parent, but that parent
+// may only build on an already materialized grandparent.
+func TestIncrementalGitCheckoutColdChain(t *testing.T) {
+	ctx, cache, srv := containerPersistenceTestCache(t, "", newContainerPersistenceTestSnapshots(), "chain")
+	var (
+		mu        sync.Mutex
+		evaluated []int
+		fulls     int
+		deltas    int
+	)
+	// Each canonical tree stands in for LocalGitRef.Tree: a delta on its
+	// parent when incrementalParentTree provides it, a full checkout otherwise.
+	tree := func(i int, parent dagql.ObjectResult[*Directory]) dagql.ObjectResult[*Directory] {
+		dir := &Directory{Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory])}
+		dir.Lazy = &coldChainTestLazy{LazyState: NewLazyState(), run: func(ctx context.Context, dir *Directory) error {
+			mu.Lock()
+			evaluated = append(evaluated, i)
+			mu.Unlock()
+			path := "/"
+			full := true
+			if parent.Self() != nil {
+				_, parentPath, ok, err := incrementalParentTree(ctx, parent)
+				if err != nil {
+					return err
+				}
+				path, full = parentPath, !ok
+			}
+			mu.Lock()
+			if full {
+				fulls++
+			} else {
+				deltas++
+			}
+			mu.Unlock()
+			dir.SetPath(path)
+			id := fmt.Sprintf("tree%d", i)
+			dir.SetSnapshot(&cacheVolumeTestImmutableRef{id: id, snapshotID: id})
+			return nil
+		}}
+		return attachStoredSnapshotTestValue(t, ctx, cache, srv, "chain", fmt.Sprintf("tree%d", i), dir, false).(dagql.ObjectResult[*Directory])
+	}
+	const length = 100
+	trees := make([]dagql.ObjectResult[*Directory], length)
+	for i := range trees {
+		var parent dagql.ObjectResult[*Directory]
+		if i > 0 {
+			parent = trees[i-1]
+		}
+		trees[i] = tree(i, parent)
+	}
+	requireRun := func(res dagql.ObjectResult[*Directory], wantFulls, wantDeltas int, wantEvaluated ...int) {
+		t.Helper()
+		mu.Lock()
+		evaluated = nil
+		mu.Unlock()
+		require.NoError(t, cache.Evaluate(ctx, res))
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, wantEvaluated, evaluated)
+		require.Equal(t, wantFulls, fulls)
+		require.Equal(t, wantDeltas, deltas)
+	}
+
+	requireRun(trees[0], 1, 0, 0)
+	// A cold parent on a materialized grandparent is still all deltas.
+	requireRun(trees[2], 1, 2, 2, 1)
+	// A cold chain costs one full checkout of the parent and one delta, not
+	// a walk through every ancestor.
+	requireRun(trees[length-1], 2, 3, length-1, length-2)
+	for _, ancestor := range trees[3 : length-2] {
+		require.True(t, dagql.HasPendingLazyComputation(ancestor), "cold ancestor materialized")
+	}
+	// Later commits are deltas off the materialized tip.
+	requireRun(tree(length, trees[length-1]), 2, 4, length)
+	// A restored snapshot is not cold: opening it is not a checkout.
+	restored := attachStoredSnapshotTestValue(t, ctx, cache, srv, "chain", "restored", storedSnapshotTestValue("Directory", "saved", "/", true), false).(dagql.ObjectResult[*Directory])
+	require.False(t, dagql.HasPendingLazyComputation(restored))
+	requireRun(tree(length+2, tree(length+1, restored)), 2, 6, length+2, length+1)
 }

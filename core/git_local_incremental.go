@@ -36,8 +36,9 @@ func (ref *LocalGitRef) incrementalCheckoutEligible() bool {
 
 // incrementalTree applies only the commit's delta to a COW child of the parent
 // tree. False means the caller must use the full checkout: unsupported inputs,
-// a snapshot chain that is already too deep, or any other failure (see
-// nativeFallback). Only the caller's cancellation surfaces.
+// a cold parent it may not materialize (see incrementalParentTree), a snapshot
+// chain that is already too deep, or any other failure (see nativeFallback).
+// Only the caller's cancellation surfaces.
 func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "materialize incremental git checkout", telemetry.Internal())
 	defer func() {
@@ -63,20 +64,22 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 			span.SetAttributes(attribute.String("dagger.git.checkout.incremental.fallback", reason))
 			return nil
 		}
-		supported = true
-		span.SetAttributes(attribute.Int("dagger.git.checkout.incremental.changed_paths", len(plan.changed)))
+		// Selecting the tree is cheap: it returns the canonical lazy result
+		// without materializing it.
 		var parent dagql.ObjectResult[*Directory]
 		if err := srv.Select(ctx, ref.repo.CheckoutBase.Parent, &parent, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
 			return err
 		}
-		snapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
+		snapshot, parentPath, ok, err := incrementalParentTree(ctx, parent)
 		if err != nil {
 			return err
 		}
-		parentPath, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
-		if err != nil {
-			return err
+		if !ok {
+			span.SetAttributes(attribute.String("dagger.git.checkout.incremental.fallback", "cold-parent"))
+			return nil
 		}
+		supported = true
+		span.SetAttributes(attribute.Int("dagger.git.checkout.incremental.changed_paths", len(plan.changed)))
 		child, err := query.SnapshotManager().New(ctx, snapshot, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription("incremental git source checkout"))
 		if err != nil {
 			return err
@@ -119,6 +122,41 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		return nil, supported, err
 	}
 	return result, supported, nil
+}
+
+// incrementalColdParentKey marks a context that is materializing a cold parent
+// tree on behalf of an incremental checkout.
+type incrementalColdParentKey struct{}
+
+// incrementalParentTree returns the parent's canonical tree. A cold parent is
+// materialized only for a top-level checkout, and that evaluation may itself
+// only apply a delta to an already materialized grandparent. Without this
+// bound, a cold chain (a session resumed on a pruned or restarted engine) would
+// recurse through every ancestor: a nested mount, plan and delta per commit on
+// top of a full checkout of the oldest. With it, a cold chain costs at most one
+// full checkout of the parent plus one delta, and later commits are deltas
+// again. False means a cold parent within such an evaluation: the caller takes
+// the full checkout, which also starts a fresh snapshot chain. Restored stored
+// snapshots are not cold, since opening them is cheap; an evaluation already in
+// flight elsewhere is.
+func incrementalParentTree(ctx context.Context, parent dagql.ObjectResult[*Directory]) (_ bkcache.ImmutableRef, _ string, ok bool, _ error) {
+	if dagql.HasPendingLazyComputation(parent) {
+		if ctx.Value(incrementalColdParentKey{}) != nil {
+			return nil, "", false, nil
+		}
+		// Context values reach the parent's lazy evaluation, including its
+		// own incrementalTree, through the cache's detached evaluation context.
+		ctx = context.WithValue(ctx, incrementalColdParentKey{}, struct{}{})
+	}
+	snapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
+	if err != nil {
+		return nil, "", false, err
+	}
+	dir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return snapshot, dir, true, nil
 }
 
 type incrementalGitCheckoutPlan struct {
