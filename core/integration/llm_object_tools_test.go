@@ -1611,15 +1611,14 @@ func (LLMSuite) TestFindArtifacts(ctx context.Context, t *testctx.T) {
 	// The shell skips loading the workspace's modules (-M): it cannot load a
 	// broken one. Workspace.artifacts still discovers them, best effort.
 	//
-	// The conversation is bound to a snapshot of the workspace: a value
-	// workspace serves only core to the LLM, whereas a live one loads every
-	// workspace module strictly (MCP.baseServer), which fails on the broken
-	// one before any tool runs. The snapshot needs the fixture committed.
-	base := workspaceFixture(t, c, "generators-broken").
-		WithExec([]string{"sh", "-c", "git add -A && git commit --allow-empty -m fixture"})
-	const bind = `with-workspace --workspace $(current-workspace | snapshot)`
+	// The conversation is bound to the live workspace, whose modules
+	// MCP.baseServer loads best effort: the broken one is skipped rather than
+	// failing every step, so FindArtifacts can list it as a load failure.
+	base := workspaceFixture(t, c, "generators-broken")
+	const bind = `with-workspace --workspace $(current-workspace)`
 
 	t.Run("a bound workspace makes it a tool", func(ctx context.Context, t *testctx.T) {
+		// Listing tools succeeds despite the broken module.
 		tools, err := base.With(daggerShellNoMod("llm | " + bind + " | tools")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, tools, "## FindArtifacts\n")
