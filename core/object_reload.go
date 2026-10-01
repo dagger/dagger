@@ -108,6 +108,7 @@ func (obj *ModuleObject) stateRebindField(srv *dagql.Server) (dagql.Field[*Modul
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, err
 	}
+	installed := newInstalledServer(srv)
 	return dagql.Field[*ModuleObject]{
 		Spec: &dagql.FieldSpec{
 			Name:           rebindModuleObjectStateField,
@@ -123,6 +124,10 @@ func (obj *ModuleObject) stateRebindField(srv *dagql.Server) (dagql.Field[*Modul
 				return nil, fmt.Errorf("invalid previous receiver ID")
 			}
 			previousID, err := id.ID()
+			if err != nil {
+				return nil, err
+			}
+			srv, err := installed.forObject(ctx, self)
 			if err != nil {
 				return nil, err
 			}

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"weak"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/google/uuid"
@@ -2509,14 +2510,15 @@ type sharedResult struct {
 	// Immutable payload shared by all per-call Result values.
 	self     Typed
 	isObject bool
-	// objClass is the ObjectType originally used to wrap this result the
-	// first time it became an AnyObjectResult. Reconstruction reuses it
-	// directly so the cache does not need to resolve the concrete type
-	// by name (which costs a ModDepsForCall + Schema build for results
-	// whose type lives in a module that is not installed in the caller's
-	// schema). Nil when the result has not yet been wrapped as an object
-	// (e.g. just imported from persistence and not yet decoded).
-	objClass ObjectType
+	// objClass refers to the ObjectType originally used to wrap this result
+	// the first time it became an AnyObjectResult. While that class's server
+	// is alive, reconstruction reuses it so the cache does not need to
+	// resolve the concrete type through the result's call graph (which costs
+	// a ModDepsForCall + Schema build for results whose type lives in a
+	// module that is not installed in the caller's schema). Unset when the
+	// result has not yet been wrapped as an object (e.g. just imported from
+	// persistence and not yet decoded).
+	objClass objectClassRef
 	// resultCall is the non-lossy semantic/provenance call-node metadata
 	// for this materialized result. It is used for canonical recipe
 	// reconstruction and telemetry hierarchy reconstruction, not execution or
@@ -2713,7 +2715,7 @@ type sharedResultPayloadState struct {
 	self               Typed
 	isObject           bool
 	hasValue           bool
-	objClass           ObjectType
+	objClass           objectClassRef
 	persistedEnvelope  *PersistedResultEnvelope
 	snapshotOwnerLinks []PersistedSnapshotRefLink
 	createdAtUnixNano  int64
@@ -2776,19 +2778,59 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	return state
 }
 
+// objectClassRef refers to the class that wrapped a cached result by its
+// type name and its server, without keeping either alive. Classes carry field
+// resolvers that capture the server they were installed into (module classes
+// do), and cache entries can outlive that server by a long time, so holding
+// the class itself would keep the whole server alive.
+type objectClassRef struct {
+	server   weak.Pointer[Server]
+	typeName string
+}
+
+func newObjectClassRef(class ObjectType) objectClassRef {
+	bound, ok := class.(interface{ weakServer() weak.Pointer[Server] })
+	if !ok {
+		return objectClassRef{}
+	}
+	return objectClassRef{server: bound.weakServer(), typeName: class.TypeName()}
+}
+
+// load returns the referenced class if it is named typeName and its server
+// is still alive.
+func (ref objectClassRef) load(typeName string) (ObjectType, bool) {
+	if ref.typeName != typeName {
+		return nil, false
+	}
+	srv := ref.server.Value()
+	if srv == nil {
+		return nil, false
+	}
+	return srv.ObjectType(typeName)
+}
+
+func (ref objectClassRef) live() bool {
+	return ref.server.Value() != nil
+}
+
 // setObjClass remembers the ObjectType used to wrap this result the first
-// time it became an AnyObjectResult. Subsequent calls with a matching class
-// are idempotent; calls with a different class (which would indicate
-// inconsistent wrapping) are ignored to preserve the first observation.
+// time it became an AnyObjectResult. Once remembered, other classes are
+// ignored to preserve the first observation, until that class's server is
+// gone.
 func (res *sharedResult) setObjClass(class ObjectType) {
 	if res == nil || class == nil {
 		return
 	}
 	res.payloadMu.Lock()
-	if res.objClass == nil {
-		res.objClass = class
-	}
+	res.setObjClassLocked(class)
 	res.payloadMu.Unlock()
+}
+
+// setObjClassLocked is setObjClass for callers holding payloadMu.
+func (res *sharedResult) setObjClassLocked(class ObjectType) {
+	if !res.objClass.live() {
+		res.objClass = newObjectClassRef(class)
+	}
 }
 
 func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
@@ -2813,8 +2855,9 @@ func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLin
 
 // resultIsObject classifies whether val should be treated as an object result
 // for cache purposes. When it is, it also returns the class that wraps it, so
-// callers can stash the class alongside isObject and the invariant
-// "isObject ⇒ objClass != nil" holds for every shared result.
+// callers can stash the class alongside isObject: every object result
+// records the class that wrapped it, which it can reuse while that class's
+// server is alive.
 func resultIsObject(val AnyResult, resolver TypeResolver) (bool, ObjectType, error) {
 	if resolver == nil {
 		return false, nil, errors.New("type resolver is nil")
@@ -2864,7 +2907,8 @@ func sharedResultObjectTypeName(res *sharedResult, state sharedResultPayloadStat
 // the result's call graph if the current resolver does not have the type.
 //
 // This is the fallback path for object reconstruction; the common path reuses
-// the class captured on the shared result at construction time (objClass).
+// the class captured on the shared result at construction time (objClass),
+// while that class's server is alive.
 // Persisted-envelope decoding still uses this directly because there is no
 // in-memory value to derive a class from at decode time.
 func resolverForSharedResultObject(ctx context.Context, resolver TypeResolver, res *sharedResult, typeName string) (TypeResolver, error) {
@@ -2940,20 +2984,21 @@ func wrapSharedResultWithResolver(ctx context.Context, res *sharedResult, hitCac
 	}
 	// Resolver doesn't know the type — typically a cross-module hit where the
 	// concrete type lives in a module not installed in the caller's schema.
-	// Reuse the class captured at result construction; it works regardless of
-	// where the result is being read from.
-	if state.objClass != nil && state.objClass.TypeName() == typeName {
-		return state.objClass.New(ret)
+	// Reuse the class captured at result construction while its server is
+	// alive; it works regardless of where the result is being read from.
+	if objType, ok := state.objClass.load(typeName); ok {
+		return objType.New(ret)
 	}
 	if resolver == nil {
 		return nil, fmt.Errorf("reconstruct object result %q: missing type resolver", typeName)
 	}
 	// Last resort: rebuild a dep-aware resolver from the result's call frame.
-	// Reached when class capture missed a path (e.g., a value materialized in
-	// core/object.go's ConvertFromSDKResult against a server that doesn't have
-	// the producing module installed, or a persisted import loaded by ID
-	// before any class-bearing wrap). The resolved class is cached back so
-	// subsequent reconstructions skip this branch.
+	// Reached when the captured class's server is gone, or when class capture
+	// missed a path (e.g., a value materialized in core/object.go's
+	// ConvertFromSDKResult against a server that doesn't have the producing
+	// module installed, or a persisted import loaded by ID before any
+	// class-bearing wrap). The resolved class is cached back so subsequent
+	// reconstructions skip this branch while its server is alive.
 	depResolver, err := resolverForSharedResultObject(ctx, resolver, res, typeName)
 	if err != nil {
 		return nil, err
@@ -3283,7 +3328,7 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		return nil, fmt.Errorf("attach dependency result: %w", err)
 	}
 	if hit {
-		c.registerLazyEvaluation(hitRes.cacheSharedResult(), hitRes, resolver)
+		c.registerLazyEvaluation(hitRes.cacheSharedResult(), hitRes)
 		return hitRes, nil
 	}
 
@@ -4180,10 +4225,7 @@ func lazyEvalFuncOfResult(val AnyResult) LazyEvalFunc {
 	return lazy.LazyEvalFunc()
 }
 
-func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult, resolver TypeResolver) {
-	if server := resolverServer(resolver); server != nil {
-		shared.partGate.server.CompareAndSwap(nil, server)
-	}
+func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
 	if shared == nil || val == nil {
 		return
 	}
@@ -5605,10 +5647,12 @@ func (c *Cache) getOrInitCallInner(
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
 			return nil, fmt.Errorf("do-not-cache result %T cannot implement OnReleaser", onReleaser)
 		}
-		detached.isObject, detached.objClass, err = resultIsObject(val, resolver)
+		var objClass ObjectType
+		detached.isObject, objClass, err = resultIsObject(val, resolver)
 		if err != nil {
 			return nil, fmt.Errorf("classify do-not-cache result: %w", err)
 		}
+		detached.objClass = newObjectClassRef(objClass)
 		if detached.isObject {
 			// An interface field can return a concrete object without a cache entry.
 			detached.resultCall.Type = NewResultCallType(val.Type())
@@ -6280,7 +6324,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				return fmt.Errorf("classify completed result: %w", err)
 			}
 			oc.res.isObject = isObject
-			oc.res.objClass = objClass
+			oc.res.objClass = newObjectClassRef(objClass)
 		}
 	}
 	if !resWasCacheBacked {
@@ -6789,7 +6833,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	if !adoptedCurrent {
 		// An adopted entry already carries its own value's registration.
-		c.registerLazyEvaluation(oc.res, oc.val, resolver)
+		c.registerLazyEvaluation(oc.res, oc.val)
 	}
 	finishAttachDeps(nil)
 	// Eager completion: attachment, lease synchronization and lazy

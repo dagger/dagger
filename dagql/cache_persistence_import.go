@@ -510,8 +510,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
-				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
-					res.objClass = objDecoded.ObjectType()
+				if objDecoded, ok := decoded.(AnyObjectResult); ok {
+					res.setObjClassLocked(objDecoded.ObjectType())
 				}
 				// The install must not touch the session-resource fields:
 				// the decoded shell only knows the row's own handle (the
@@ -745,14 +745,14 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			res.persistDecodeMu.Unlock()
 			if !leaseSyncPending {
 				if !state.isObject {
-					c.registerLazyEvaluation(res, hit, resolver)
+					c.registerLazyEvaluation(res, hit)
 					return hit, nil
 				}
 				objRes, err := wrapSharedResultWithResolver(ctx, res, hit.HitCache(), resolver)
 				if err != nil {
 					return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
 				}
-				c.registerLazyEvaluation(res, objRes, resolver)
+				c.registerLazyEvaluation(res, objRes)
 				return objRes, nil
 			}
 			// The payload is installed but its owner-lease sync has not
@@ -919,8 +919,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
-				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
-					res.objClass = objDecoded.ObjectType()
+				if objDecoded, ok := decoded.(AnyObjectResult); ok {
+					res.setObjClassLocked(objDecoded.ObjectType())
 				}
 				// The install must not touch the session-resource fields:
 				// the decoded shell only knows the row's own handle, so

@@ -16,7 +16,6 @@ type PartGateCell struct {
 	restoredDelegation atomic.Bool
 	hostOnce           sync.Once
 	host               PartHost
-	server             atomic.Pointer[Server]
 }
 
 func (cell *PartGateCell) loadOrCreate() *PartWriterGate {

@@ -120,6 +120,11 @@ type Server interface {
 	// its handle loads (see Query.ModDepsForCall). Nil disables memoization.
 	SchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error)
 
+	// The current session's memo of module dependency schemas, shared by
+	// all of the session's clients and dropped with the session. Nil
+	// disables memoization.
+	SessionSchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error)
+
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
 

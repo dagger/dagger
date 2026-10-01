@@ -38,6 +38,8 @@ type shareTestValue struct {
 	// afterStoreUnlock runs when a prepared store that published is unlocked:
 	// the first point after a typed Commit's publication that test code sees.
 	afterStoreUnlock func()
+	// preparedServer is the server the last store preparation decoded with.
+	preparedServer atomic.Pointer[Server]
 }
 
 type shareTestEncoded struct {
@@ -98,7 +100,8 @@ func (v *shareTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink 
 // PreparePartStore is the typed receiver's writer: a closed assignment that
 // cannot fail, allocate storage or run cleanup once prepared, with its own
 // expected output revision, exactly like the File and Directory stores.
-func (v *shareTestValue) PreparePartStore(_ context.Context, _ *PersistDecodeContext, _ PersistedRecord, d PartDescriptor, ref snapshots.ImmutableRef) (PreparedPartStore, error) {
+func (v *shareTestValue) PreparePartStore(_ context.Context, dec *PersistDecodeContext, _ PersistedRecord, d PartDescriptor, ref snapshots.ImmutableRef) (PreparedPartStore, error) {
+	v.preparedServer.Store(dec.Server())
 	if d.SnapshotID == "" {
 		return nil, fmt.Errorf("share test store: donated part %q has no snapshot", d.Address.Part)
 	}

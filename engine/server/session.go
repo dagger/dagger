@@ -76,6 +76,13 @@ type daggerSession struct {
 	archivePendingTitle pendingArchiveTitle
 	mainClientCallerID  string
 
+	// schemaBuilderMemo holds the schemas built for module dependency sets
+	// (e.g. a Module's Deps) by any of the session's clients. A function
+	// call made from inside a module runs in a fresh nested client, so a
+	// per-client memo would rebuild the callee's schema on every call. It
+	// is cleared once the session's client scopes have drained.
+	schemaBuilderMemo atomic.Pointer[core.SchemaBuilderMemo]
+
 	// wcprofEnabled means this session opted into wall-clock profiling
 	// (ClientMetadata.Profile); work for all its clients (including nested
 	// module/SDK clients) is recorded even when engine-global recording is
@@ -1182,6 +1189,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		slog.Error("error waiting for client scopes to drain", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("wait for client scopes: %w", err))
 	}
+	sess.schemaBuilderMemo.Store(nil)
 	afterDagqlEntries := srv.engineCache.Size()
 	afterDagqlStats := srv.engineCache.EntryStats()
 	if afterDagqlEntries != beforeDagqlEntries {
@@ -1263,6 +1271,7 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 		clientRecords:      map[string]*clientRecord{},
 		clientRuntimes:     map[string]*clientRuntime{},
 	}
+	sess.schemaBuilderMemo.Store(core.NewSchemaBuilderMemo())
 	sess.lifecycleMu.Lock()
 	srv.daggerSessions[sessionID] = sess
 	return sess, true, nil
@@ -1479,7 +1488,7 @@ func (srv *Server) initializeClientRuntime(
 	}
 	coreMod := coreSchemaBase.CoreMod(coreView)
 	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
-	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
+	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod}).ClientOwned()
 	client.schemaBuilderMemo = core.NewSchemaBuilderMemo()
 
 	if opts.ModuleContext.Self() != nil {
@@ -1506,10 +1515,11 @@ func (srv *Server) initializeClientRuntime(
 		coreMod = coreSchemaBase.CoreMod(coreView)
 
 		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
-		client.servedMods = client.mod.Self().Deps.WithRoot(client.dagqlRoot)
+		servedMods := client.mod.Self().Deps.WithRoot(client.dagqlRoot)
 		if len(client.mod.Self().ObjectDefs) > 0 {
-			client.servedMods = client.servedMods.Append(core.NewUserMod(client.mod))
+			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
+		client.servedMods = servedMods.ClientOwned()
 	} else {
 		client.pendingWorkspaceLoad = true
 		if clientMD := client.clientMetadata; clientMD != nil && len(clientMD.ExtraModules) > 0 {
@@ -2983,7 +2993,7 @@ func (srv *Server) serveModule(client *clientRuntime, mod core.Mod, opts core.In
 		}
 	}
 	// With handles deduplication and promotion internally.
-	client.servedMods = client.servedMods.With(mod, opts)
+	client.servedMods = client.servedMods.With(mod, opts).ClientOwned()
 	return nil
 }
 
@@ -3647,6 +3657,16 @@ func (srv *Server) SchemaBuilderMemo(ctx context.Context) (*core.SchemaBuilderMe
 		return nil, err
 	}
 	return client.schemaBuilderMemo, nil
+}
+
+// SessionSchemaBuilderMemo returns the current session's memo of module
+// dependency schemas, or nil once the session is tearing down.
+func (srv *Server) SessionSchemaBuilderMemo(ctx context.Context) (*core.SchemaBuilderMemo, error) {
+	client, err := srv.executableClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.schemaBuilderMemo.Load(), nil
 }
 
 func (srv *Server) TelemetrySeenKeyStore(ctx context.Context) (dagql.TelemetrySeenKeyStore, error) {

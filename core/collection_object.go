@@ -322,6 +322,7 @@ func (obj *ModuleObject) collectionFields(ctx context.Context, dag *dagql.Server
 		}
 		return rawGet(ctx, self, map[string]dagql.Input{members.Get.Args[0].Self().Name: key.input}, view)
 	}
+	installed := newInstalledServer(dag)
 	fields := []dagql.Field[*ModuleObject]{
 		get,
 		{
@@ -352,10 +353,14 @@ func (obj *ModuleObject) collectionFields(ctx context.Context, dag *dagql.Server
 				if err != nil {
 					return nil, err
 				}
+				srv, err := installed.forObject(ctx, self)
+				if err != nil {
+					return nil, err
+				}
 				result := dagql.DynamicResultArrayOutput{Elem: members.Get.ReturnType.Self().ToTyped(), Values: make([]dagql.AnyResult, 0, len(keys))}
 				for _, key := range keys {
 					var item dagql.AnyResult
-					if err := dag.Select(ctx, self, &item, dagql.Selector{Field: "get", Args: []dagql.NamedInput{{Name: "key", Value: key.input}}}); err != nil {
+					if err := srv.Select(ctx, self, &item, dagql.Selector{Field: "get", Args: []dagql.NamedInput{{Name: "key", Value: key.input}}}); err != nil {
 						return nil, err
 					}
 					result.Values = append(result.Values, item)
