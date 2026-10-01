@@ -147,7 +147,7 @@ defmodule Dagger.Artifact do
   end
 
   @doc """
-  Evaluate the target in the workspace that supplied this artifact. An artifact of an LLM's bound tool object has no workspace: it is evaluated from that object's value in the caller's context.
+  Evaluate the target in the workspace that supplied this artifact. An artifact of an LLM's bound tool object has no workspace of its own: it is evaluated from that object's value, in the workspace bound to the LLM, if any.
   """
   @spec value(t(), Dagger.JSON.t()) :: Dagger.Node.t()
   def value(%__MODULE__{} = artifact, arguments) do

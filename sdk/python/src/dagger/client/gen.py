@@ -1644,8 +1644,9 @@ class Artifact(Type):
 
     def value(self, *, arguments: JSON = "{}") -> Node:
         """Evaluate the target in the workspace that supplied this artifact. An
-        artifact of an LLM's bound tool object has no workspace: it is
-        evaluated from that object's value in the caller's context.
+        artifact of an LLM's bound tool object has no workspace of its own: it
+        is evaluated from that object's value, in the workspace bound to the
+        LLM, if any.
 
         Parameters
         ----------
@@ -11956,13 +11957,17 @@ class LLM(Type):
         the bound tools, not a fresh construction. If a module's main object
         is bound, only its tree is included; otherwise each bound object of
         that module contributes its own tree. Addresses start with the module
-        name. These artifacts have no workspace and are evaluated in the
-        caller's context.
+        name. These artifacts have no workspace of their own: they evaluate in
+        the LLM's bound workspace, if any, whoever evaluates them.
 
-        The workspace part is the artifacts of the bound workspace, or of the
-        current workspace when none is bound, as returned by
-        Workspace.artifacts. A workspace module with the same name as a module
-        with bound tool objects is omitted: the bound tools shadow it.
+        The workspace part is the artifacts of the workspace bound with
+        withWorkspace, as returned by Workspace.artifacts; an LLM with no
+        bound workspace has none. A workspace module with the same name as a
+        module with bound tool objects is omitted: the bound tools shadow it.
+
+        Tool arguments that take an address resolve it here: a DAG address to
+        one object, or, for Artifacts and Artifact arguments, a selection
+        filtered like filterUri.
 
         .. caution::
             Experimental: Agent APIs are likely to change.
