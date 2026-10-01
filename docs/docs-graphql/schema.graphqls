@@ -646,6 +646,12 @@ type Artifacts implements Node {
 
     """Field arguments applied to each artifact, as a JSON object."""
     arguments: JSON = "{}"
+
+    """
+    Evaluate at most this many artifacts at once on this engine; the rest wait.
+    Checks that scale out to cloud engines are not counted. 0 means no limit.
+    """
+    maxConcurrency: Int = 0
   ): [ArtifactResult!]!
 
   """

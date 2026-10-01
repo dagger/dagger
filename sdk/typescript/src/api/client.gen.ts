@@ -326,6 +326,11 @@ export type ArtifactsValuesOpts = {
    * Field arguments applied to each artifact, as a JSON object.
    */
   arguments?: JSON
+
+  /**
+   * Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
+   */
+  maxConcurrency?: number
 }
 
 export type BuildArg = {
@@ -5823,6 +5828,7 @@ export class Artifacts extends BaseClient {
    * Evaluate the selection in parallel, retaining each result and error.
    * @param opts.failFast Cancel remaining work after the first failure.
    * @param opts.arguments Field arguments applied to each artifact, as a JSON object.
+   * @param opts.maxConcurrency Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
    */
   values = async (opts?: ArtifactsValuesOpts): Promise<ArtifactResult[]> => {
     type values = {

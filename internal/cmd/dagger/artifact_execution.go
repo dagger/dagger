@@ -28,7 +28,9 @@ type artifactValueResult struct {
 	}
 }
 
-func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts, failFast bool) ([]artifactValueResult, error) {
+// evaluateArtifacts evaluates the artifacts, at most maxConcurrency at once on
+// the engine. 0 means no limit.
+func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts, failFast bool, maxConcurrency int) ([]artifactValueResult, error) {
 	id, err := artifacts.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -36,13 +38,21 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *dagge
 	var response struct {
 		Selection struct{ Values []artifactValueResult }
 	}
+	// Send maxConcurrency only when set, so engines without the argument still
+	// work.
+	params, args := "", ""
+	variables := map[string]any{"id": id, "failFast": failFast}
+	if maxConcurrency > 0 {
+		params, args = ", $maxConcurrency: Int!", ", maxConcurrency: $maxConcurrency"
+		variables["maxConcurrency"] = maxConcurrency
+	}
 	err = dag.Do(ctx, &dagger.Request{
-		Query: `query ArtifactValues($id: ID!, $failFast: Boolean!) {
-   selection: node(id: $id) { ... on Artifacts { values(failFast: $failFast) {
+		Query: `query ArtifactValues($id: ID!, $failFast: Boolean!` + params + `) {
+   selection: node(id: $id) { ... on Artifacts { values(failFast: $failFast` + args + `) {
     artifact { uri } error { message values { name value } } value { id __typename }
    } } }
   }`,
-		Variables: map[string]any{"id": id, "failFast": failFast},
+		Variables: variables,
 	}, &dagger.Response{Data: &response})
 	return response.Selection.Values, err
 }

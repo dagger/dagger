@@ -645,6 +645,71 @@ func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (ChecksSuite) TestChecksParallel(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// Each of the fixture's four checks fails when more than two of them run
+	// at once. bust.txt keys the run, so no result is cached between runs.
+	fixture := func() *dagger.Container {
+		return workspaceFixture(t, c, "parallel-checks").
+			WithNewFile("bust.txt", identity.NewID())
+	}
+
+	t.Run("the limit bounds concurrent checks", func(ctx context.Context, t *testctx.T) {
+		out, err := fixture().
+			With(daggerExec("--progress=report", "check", "--parallel", "2")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+	})
+
+	t.Run("-j is an alias", func(ctx context.Context, t *testctx.T) {
+		out, err := fixture().
+			With(daggerExec("--progress=report", "check", "-j", "1")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+	})
+
+	t.Run("the environment sets the default", func(ctx context.Context, t *testctx.T) {
+		out, err := fixture().
+			WithEnvVariable("DAGGER_CHECK_PARALLEL", "2").
+			With(daggerExec("--progress=report", "check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+	})
+
+	t.Run("the flag overrides the environment", func(ctx context.Context, t *testctx.T) {
+		out, err := fixture().
+			WithEnvVariable("DAGGER_CHECK_PARALLEL", "0").
+			With(daggerExec("--progress=report", "check", "--parallel", "2")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+	})
+
+	t.Run("without a limit all checks run at once", func(ctx context.Context, t *testctx.T) {
+		out, err := fixture().
+			With(daggerExecFail("--progress=report", "check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "checks ran at once")
+	})
+
+	t.Run("a negative limit is rejected", func(ctx context.Context, t *testctx.T) {
+		out, err := fixture().
+			With(daggerExecFail("check", "--parallel=-1")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "must not be negative")
+	})
+
+	t.Run("an invalid environment value is rejected", func(ctx context.Context, t *testctx.T) {
+		out, err := fixture().
+			WithEnvVariable("DAGGER_CHECK_PARALLEL", "many").
+			With(daggerExecFail("check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "DAGGER_CHECK_PARALLEL")
+	})
+}
+
 func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {

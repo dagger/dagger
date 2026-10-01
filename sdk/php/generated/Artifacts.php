@@ -100,7 +100,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Evaluate the selection in parallel, retaining each result and error.
      */
-    public function values(?bool $failFast = false, ?Json $arguments = null): array
+    public function values(?bool $failFast = false, ?Json $arguments = null, ?int $maxConcurrency = 0): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('values');
         if (null !== $failFast) {
@@ -108,6 +108,9 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $arguments) {
         $leafQueryBuilder->setArgument('arguments', $arguments);
+        }
+        if (null !== $maxConcurrency) {
+        $leafQueryBuilder->setArgument('maxConcurrency', $maxConcurrency);
         }
         return (array)$this->queryLeaf($leafQueryBuilder, 'values');
     }

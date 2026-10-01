@@ -2345,6 +2345,8 @@ type ArtifactsValuesOpts struct {
 	//
 	// Default: "{}"
 	Arguments JSON
+	// Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
+	MaxConcurrency int
 }
 
 // Evaluate the selection in parallel, retaining each result and error.
@@ -2358,6 +2360,10 @@ func (r *Artifacts) Values(ctx context.Context, opts ...ArtifactsValuesOpts) ([]
 		// `arguments` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Arguments) {
 			q = q.Arg("arguments", opts[i].Arguments)
+		}
+		// `maxConcurrency` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxConcurrency) {
+			q = q.Arg("maxConcurrency", opts[i].MaxConcurrency)
 		}
 	}
 

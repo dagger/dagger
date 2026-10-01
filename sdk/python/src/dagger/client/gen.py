@@ -2479,6 +2479,7 @@ class Artifacts(Type):
         *,
         fail_fast: bool | None = False,
         arguments: JSON | None = "{}",
+        max_concurrency: int | None = 0,
     ) -> list[ArtifactResult]:
         """Evaluate the selection in parallel, retaining each result and error.
 
@@ -2488,10 +2489,15 @@ class Artifacts(Type):
             Cancel remaining work after the first failure.
         arguments:
             Field arguments applied to each artifact, as a JSON object.
+        max_concurrency:
+            Evaluate at most this many artifacts at once on this engine; the
+            rest wait. Checks that scale out to cloud engines are not counted.
+            0 means no limit.
         """
         _args = [
             Arg("failFast", fail_fast, False),
             Arg("arguments", arguments, "{}"),
+            Arg("maxConcurrency", max_concurrency, 0),
         ]
         _ctx = self._select("values", _args)
         return await _ctx.execute_object_list(ArtifactResult)
