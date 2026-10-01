@@ -129,6 +129,16 @@ func TestLiftScopeSelection(t *testing.T) {
 			}
 			return dagql.String(strings.Join(target.Self().Path, "/") + " via " + via), nil
 		}),
+		dagql.Func("converse", func(ctx context.Context, _ *scopeLiftRunner, args struct {
+			Llm dagql.ID[*LLM]
+		}) (dagql.String, error) {
+			llm, err := args.Llm.Load(ctx, srv)
+			if err != nil {
+				return "", err
+			}
+			via, err := recipe(ctx, llm)
+			return dagql.String(via), err
+		}),
 	}.Install(srv)
 
 	var conversation dagql.ObjectResult[*LLM]
@@ -191,6 +201,26 @@ func TestLiftScopeSelection(t *testing.T) {
 		out, err := call(t, rebound, "check", map[string]any{"targets": "docs/**"})
 		require.NoError(t, err)
 		require.Equal(t, "docs/site via conversation.withTools.artifacts.filterUri", out)
+	})
+
+	t.Run("an LLM arg takes this turn's conversation", func(t *testing.T) {
+		// Nothing changed this turn: the dispatching conversation itself.
+		out, err := call(t, m, "converse", map[string]any{})
+		require.NoError(t, err)
+		require.Equal(t, "conversation", out)
+
+		// An earlier call of the turn rebound a tool: the conversation
+		// handed over has it recorded, agreeing with what an address
+		// resolves in.
+		rebound := m.WithTools(runner, srv.Schema(), nil)
+		rebound.SetSelfLLM(conversation)
+		out, err = call(t, rebound, "converse", map[string]any{})
+		require.NoError(t, err)
+		require.Equal(t, "conversation.withTools", out)
+
+		// Without a conversation, the argument is still refused.
+		_, err = call(t, newMCP(), "converse", map[string]any{})
+		require.ErrorContains(t, err, "requires the current conversation")
 	})
 
 	t.Run("an address needs a conversation", func(t *testing.T) {

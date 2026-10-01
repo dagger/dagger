@@ -1441,6 +1441,29 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "done")
 	})
 
+	t.Run("an LLM arg sees this turn's tool state", func(ctx context.Context, t *testctx.T) {
+		// Rebind and hand over the conversation in one turn: the tool's
+		// LLM! argument has the new member bound, as address lifting does.
+		const prompt = "list the members"
+		model := cannedRecordingModel(ctx, t, c, c.LLM().WithPrompt(prompt).
+			WithResponse([]dagger.LLMContentBlockInput{
+				toolCall("add", "withMember", `{"name":"a","contents":"hello from the roster"}`),
+				toolCall("list", "boundMembers", `{}`),
+			}).
+			WithToolResult("add", "", false).
+			WithToolResult("list", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(roster) | with-tools $(inspector) | with-prompt "%s" | loop | transcript`,
+			model, prompt,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bound: dag://roster/members/dir?member=a", out)
+		require.Contains(t, out, "done")
+	})
+
 	t.Run("the LLM scope has the bound tools' live artifacts", func(ctx context.Context, t *testctx.T) {
 		const setup = `roster=$(roster | with-member --name a --contents "hello from the roster")
 scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $roster | artifacts)

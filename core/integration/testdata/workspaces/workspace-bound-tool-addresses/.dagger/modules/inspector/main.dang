@@ -19,4 +19,11 @@ type Inspector {
   read(target: Artifact!): String! {
     "read: " + target.value.{{... on File!}}.contents
   }
+
+  """
+  List the roster members in the calling conversation's scope.
+  """
+  boundMembers(llm: LLM!): String! {
+    "bound: " + llm.artifacts.filterUri(uri: "dag://roster/members/dir").items.{{uri}}.map { a => a.uri }.join(",")
+  }
 }

@@ -991,7 +991,7 @@ func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, 
 		}
 		val, ok := args[arg.Name]
 		if !ok {
-			implicit, found, err := m.implicitToolInput(ctx, astField, arg)
+			implicit, found, err := m.implicitToolInput(ctx, srv, astField, arg)
 			if err != nil {
 				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
 			}
@@ -1034,8 +1034,10 @@ func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, 
 // module function schemas and general DAGQL input resolution know nothing about
 // this convention. An argument the policy does not supply (see
 // implicitToolArgs) is reported not found, so it is left to the caller like any
-// other object argument.
-func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefinition, spec dagql.InputSpec) (dagql.Input, bool, error) {
+// other object argument. An `LLM!` argument receives the conversation as of
+// this call, with the workspace and binding changes of the turn's earlier
+// calls folded in (see MCP.turnLLM).
+func (m *MCP) implicitToolInput(ctx context.Context, srv *dagql.Server, astField *ast.FieldDefinition, spec dagql.InputSpec) (dagql.Input, bool, error) {
 	astArg := astField.Arguments.ForName(spec.Name)
 	if astArg == nil {
 		return nil, false, nil
@@ -1047,7 +1049,10 @@ func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefiniti
 		if !m.implicitArgs().llm {
 			return nil, false, nil
 		}
-		llm := m.currentLLM()
+		llm, err := m.turnLLM(ctx, srv)
+		if err != nil {
+			return nil, true, err
+		}
 		if llm.Self() == nil {
 			return nil, true, errors.New("function requires the current conversation; invoke it as an LLM tool")
 		}

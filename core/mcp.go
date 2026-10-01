@@ -108,7 +108,8 @@ type MCP struct {
 	skillDirs []ownedSkillDirectory
 	// selfLLM is the conversation dispatching the current step's tool calls —
 	// inst + withResponse, i.e. up to and including the in-flight tool call.
-	// The object-tool adapter passes it explicitly to hidden LLM arguments.
+	// It does not track the turn's later state changes: the object-tool
+	// adapter passes hidden LLM arguments turnLLM, which folds them in.
 	// Transient: cleared by Clone, never persisted.
 	selfLLM dagql.ObjectResult[*LLM]
 	// continuation is an LLM returned by a tool during this step (see
@@ -119,12 +120,13 @@ type MCP struct {
 	// there is no other state left to persist. Transient: cleared by Clone.
 	continuation dagql.ObjectResult[*LLM]
 	// stateChanged records that a tool call changed the bound workspace or
-	// bindings since selfLLM was set — this MCP has diverged from the
-	// conversation an LLM! argument would receive. A continuation adopted in
-	// that state would silently drop the divergence (step() resumes from the
-	// continuation, not from this MCP), so adoptLLM refuses it. step() folds
-	// the changes into a fresh selfLLM before the continuation phase, which
-	// resets this (see SetSelfLLM). Transient: cleared by Clone.
+	// bindings since selfLLM was set — this MCP has diverged from selfLLM, and
+	// the changes are not yet recorded in any conversation step() resumes
+	// from. A continuation adopted in that state could silently drop them
+	// (step() resumes from the continuation, not from this MCP), so adoptLLM
+	// refuses it. step() folds the changes into a fresh selfLLM before the
+	// continuation phase, which resets this (see SetSelfLLM). Transient:
+	// cleared by Clone.
 	stateChanged bool
 	// standalone marks an MCP serving tools without a driving conversation
 	// (dagger mcp): no selfLLM will ever be set, so LLM-typed tool arguments
@@ -134,7 +136,7 @@ type MCP struct {
 	// scopeBase is the conversation a standalone server (dagger mcp) serves,
 	// with its bindings recorded. No step sets selfLLM there, so tool-argument
 	// addresses resolve in this conversation's scope instead (see
-	// MCP.scopeLLM). Like standalone, it survives Clone.
+	// MCP.turnLLM). Like standalone, it survives Clone.
 	scopeBase dagql.ObjectResult[*LLM]
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
@@ -207,13 +209,14 @@ func (m *MCP) Standalone() *MCP {
 	return m
 }
 
-// SetSelfLLM records the conversation dispatching this step's tool calls, so
-// the object-tool adapter can pass it explicitly to an `LLM!` argument. Called
-// by step() on its transient MCP clone: first with the response itself, then —
-// before CallBatch runs the turn's continuations — with the turn's workspace
-// and binding changes folded in, so a continuation transforms the
-// state the turn actually produced. The conversation is in sync with this MCP
-// at that point by construction, so the divergence flag resets.
+// SetSelfLLM records the conversation dispatching this step's tool calls, the
+// base turnLLM folds the turn's later changes onto for an `LLM!` argument.
+// Called by step() on its transient MCP clone: first with the response
+// itself, then — before CallBatch runs the turn's continuations — with the
+// turn's workspace and binding changes folded in, so a continuation
+// transforms the state the turn actually produced and the changes are
+// recorded once. The conversation is in sync with this MCP at that point by
+// construction, so the divergence flag resets.
 func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -274,11 +277,54 @@ func (m *MCP) Continuation() dagql.ObjectResult[*LLM] {
 	return m.continuation
 }
 
-// currentLLM returns the conversation dispatching this step's tool calls.
+// currentLLM returns the conversation dispatching this step's tool calls, as
+// last set by SetSelfLLM: it does not reflect the workspace and binding
+// changes made by this turn's calls since then (see stateChanged). Tool
+// arguments receive turnLLM instead.
 func (m *MCP) currentLLM() dagql.ObjectResult[*LLM] {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.selfLLM
+}
+
+// turnLLM returns the conversation as of the tool call being dispatched: the
+// conversation dispatching it — or, for a server without one (dagger mcp),
+// the conversation it serves (scopeBase) — with the changes earlier calls of
+// this turn made to its workspace and bindings folded in, as step() folds
+// them before continuations. It is what an `LLM!` tool argument receives and
+// what an address argument resolves in, so both agree with the tools' state:
+// `[roster.withMember(...), staff.spawn(llm)]` hands spawn a conversation
+// with the new member bound. The result is zero when there is no
+// conversation at all.
+func (m *MCP) turnLLM(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*LLM], error) {
+	base := m.currentLLM()
+	if base.Self() == nil {
+		base = m.scopeBase
+	}
+	if base.Self() == nil {
+		return base, nil
+	}
+	wsBefore, err := base.Self().mcp.WorkspaceID()
+	if err != nil {
+		return base, err
+	}
+	toolsBefore, err := base.Self().mcp.BoundToolBindings()
+	if err != nil {
+		return base, err
+	}
+	sels := stateDeltaSelectors(m, wsBefore, toolsBefore)
+	if len(sels) == 0 {
+		return base, nil
+	}
+	srv = srv.Canonical()
+	for i := range sels {
+		sels[i].View = srv.View
+	}
+	var folded dagql.ObjectResult[*LLM]
+	if err := srv.Select(ctx, base, &folded, sels...); err != nil {
+		return base, fmt.Errorf("record this turn's tool state: %w", err)
+	}
+	return folded, nil
 }
 
 func (m *MCP) Returned() bool {
@@ -1002,7 +1048,7 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 		return "", fmt.Errorf("a conversation-replacing tool call already ran this turn; only one is allowed")
 	}
 	if m.stateChanged {
-		return "", fmt.Errorf("another state-changing tool call already ran this turn, and the conversation handed to this call does not reflect it; call the conversation-replacing tool in a turn of its own")
+		return "", fmt.Errorf("another state-changing tool call already ran this turn and is not yet recorded in the conversation; call the conversation-replacing tool in a turn of its own")
 	}
 	m.continuation = next
 	summary := summarizeContinuation(current.Self(), next.Self(), before, after)
