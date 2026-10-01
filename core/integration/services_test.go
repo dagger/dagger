@@ -954,6 +954,7 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		With(withRepoGoModules(c)).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
@@ -987,6 +988,7 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		With(withRepoGoModules(c)).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
