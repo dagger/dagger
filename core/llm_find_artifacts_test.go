@@ -13,12 +13,14 @@ func findArtifactsFixture() (*Artifacts, func(*Artifact) string) {
 	member := &ArtifactDimension{
 		Kind: "COLLECTION", CollectionType: "RosterMembers", Identifier: "/roster/members",
 		Name: "member", QualifiedName: "roster-members-member", ItemType: "RosterMember",
-		KeyName: "name", KeyDescription: "The member's name.\nUnique on the roster.",
+		KeyName: "name", KeyDescription: "The member's name.\n\nUnique on the roster.",
 	}
 	root := &ModTreeNode{Name: "roster"}
 	members := &ModTreeNode{Parent: root, Name: "members", Description: "The roster's members."}
 	get := &ModTreeNode{Parent: members, Name: "get", Description: "The member with this name.", CollectionDimension: member}
-	head := &ModTreeNode{Parent: get, Name: "head", Description: "The member's committed history.\nIts HEAD."}
+	// Hard-wrapped, as doc strings often are: only the first paragraph is
+	// shown, on one line.
+	head := &ModTreeNode{Parent: get, Name: "head", Description: "The member's committed\nhistory.\n\nIts HEAD."}
 	lint := &ModTreeNode{Parent: &ModTreeNode{Name: "go"}, Name: "lint", Description: "Lint the Go code."}
 	scope := &Artifacts{Entries: []*Artifact{
 		{ModuleName: "broken", Path: []string{"broken", "load"}, TypeName: "Check", Directives: []string{"check"},

@@ -444,7 +444,7 @@ func renderArtifactRows(rows []artifactRow) string {
 		for _, need := range needs {
 			out.WriteString("  ")
 			out.WriteString(need.placeholder())
-			if description := firstLine(need.KeyDescription); description != "" {
+			if description := firstParagraph(need.KeyDescription); description != "" {
 				out.WriteString(" — ")
 				out.WriteString(description)
 			}
@@ -458,7 +458,7 @@ func renderArtifactRow(row artifactRow) string {
 	line := row.Address
 	if row.LoadError != "" {
 		line += " — LOAD ERROR: " + strings.ReplaceAll(strings.TrimSpace(row.LoadError), "\n", "\n    ")
-	} else if description := firstLine(row.Description); description != "" {
+	} else if description := firstParagraph(row.Description); description != "" {
 		line += " — " + description
 	}
 	if row.Tag != "" {
@@ -476,7 +476,7 @@ func renderArtifactKeys(name string, dim *ArtifactDimension, keys []string) stri
 	}
 	if dim.KeyName != "" {
 		keyed := "by " + dim.KeyName
-		if description := firstLine(dim.KeyDescription); description != "" {
+		if description := firstParagraph(dim.KeyDescription); description != "" {
 			keyed += ": " + description
 		}
 		about = append(about, keyed)
@@ -577,7 +577,7 @@ func renderArtifactOverview(overview artifactOverview) string {
 			fmt.Fprintf(&out, "  %s: %s items of %s", coll.Name, coll.ItemType, coll.CollectionType)
 			if coll.KeyName != "" {
 				fmt.Fprintf(&out, ", keyed by %s", coll.KeyName)
-				if description := firstLine(coll.KeyDescription); description != "" {
+				if description := firstParagraph(coll.KeyDescription); description != "" {
 					out.WriteString(" (" + strings.TrimRight(description, ".") + ")")
 				}
 			}
@@ -595,7 +595,9 @@ func renderArtifactOverview(overview artifactOverview) string {
 	return out.String()
 }
 
-func firstLine(s string) string {
-	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
-	return strings.TrimSpace(line)
+// firstParagraph is a description's first paragraph on one line. Doc strings are
+// often hard-wrapped, so cutting at the first newline would end mid-sentence.
+func firstParagraph(s string) string {
+	paragraph, _, _ := strings.Cut(strings.TrimSpace(s), "\n\n")
+	return strings.Join(strings.Fields(paragraph), " ")
 }
