@@ -5,15 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 
+	"github.com/charmbracelet/huh"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
@@ -52,10 +57,13 @@ var agentCmd = &cobra.Command{
 		if err := validateArchiveFlags(traceID, agentFocus, listArchives, agentListMode, args); err != nil {
 			return err
 		}
+		// A bare -r offers a picker whenever the frontend can prompt, then
+		// resumes the chosen session; otherwise it prints the table.
+		pickArchive := listArchives && canPromptForInit(progress, stdinIsTTY, false)
 		// The prompt is about to use the LLM, so renew an expired subscription
 		// login up front. The on-demand refresher hook exports the renewed
 		// token on the engine's first credential lookup.
-		if !listArchives && !agentListMode {
+		if !agentListMode && (!listArchives || pickArchive) {
 			if err := llmconfig.RefreshOAuthTokensIfNeeded(cmd.Context()); err != nil {
 				slog.Warn("failed to refresh LLM OAuth tokens", "error", err)
 			}
@@ -74,7 +82,14 @@ var agentCmd = &cobra.Command{
 			func(ctx context.Context, engineClient *client.Client) error {
 				source := archive.NewClient(client.EngineConn(engineClient))
 				if listArchives {
-					return listAgentArchives(ctx, source, cmd.OutOrStdout())
+					if !pickArchive {
+						return listAgentArchives(ctx, source, cmd.OutOrStdout())
+					}
+					picked, err := pickAgentArchive(ctx, source, chooseArchiveWithFrontend)
+					if err != nil || picked == "" {
+						return err
+					}
+					traceID = picked
 				}
 				dag := engineClient.Dagger()
 				if agentListMode {
@@ -207,7 +222,7 @@ func init() {
 	registerCommandArtifactFlags(agentCmd)
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
 	agentCmd.Flags().VarP(&agentResume, "resume", "r",
-		"Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, list retained engine archives")
+		"Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, pick a retained session to resume (or list them when not interactive)")
 	// A bare -r resolves to the list keyword; -r <trace-id> and -r=<trace-id>
 	// both restore (resolveResumeFlags recognizes the space-separated form).
 	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentResumeList)
@@ -220,7 +235,7 @@ func init() {
 func validateArchiveFlags(traceID, focus string, listArchives, listAgents bool, args []string) error {
 	if listArchives {
 		if listAgents || len(args) != 0 || focus != "" {
-			return fmt.Errorf("-r without a trace ID lists archives; do not combine it with agent names, --list, or --agent")
+			return fmt.Errorf("-r without a trace ID picks a retained session; do not combine it with agent names, --list, or --agent")
 		}
 		return nil
 	}
@@ -244,6 +259,7 @@ func listAgentArchives(ctx context.Context, source agentArchiveLister, out io.Wr
 	if err != nil {
 		return err
 	}
+	sortArchivesRecentFirst(manifests)
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(w, "TRACE\tSTATE\tSTARTED\tTITLE"); err != nil {
 		return err
@@ -256,6 +272,88 @@ func listAgentArchives(ctx context.Context, source agentArchiveLister, out io.Wr
 		}
 	}
 	return w.Flush()
+}
+
+func sortArchivesRecentFirst(manifests []archive.Manifest) {
+	slices.SortStableFunc(manifests, func(a, b archive.Manifest) int {
+		return b.StartedAt.Compare(a.StartedAt)
+	})
+}
+
+// resumableArchives keeps the sessions a restore can read, newest first:
+// sealed ones, and unsealed ones restored best-effort. Active and finalizing
+// archives belong to sessions still running.
+func resumableArchives(manifests []archive.Manifest) []archive.Manifest {
+	resumable := slices.DeleteFunc(slices.Clone(manifests), func(m archive.Manifest) bool {
+		return m.State != archive.StateClosed && !m.State.Unsealed()
+	})
+	sortArchivesRecentFirst(resumable)
+	return resumable
+}
+
+// archiveChooser presents the options and returns the chosen trace ID, or ""
+// when the user dismissed the picker.
+type archiveChooser func(context.Context, []huh.Option[string]) (string, error)
+
+// pickAgentArchive lets the user choose a retained session to resume.
+func pickAgentArchive(ctx context.Context, source agentArchiveLister, choose archiveChooser) (string, error) {
+	manifests, err := source.ListAll(ctx, archive.ListOptions{})
+	if err != nil {
+		return "", err
+	}
+	resumable := resumableArchives(manifests)
+	if len(resumable) == 0 {
+		return "", errors.New("the connected engine has no agent sessions to resume; to resume one from Dagger Cloud, run: dagger agent -r <trace-id>")
+	}
+	options := make([]huh.Option[string], len(resumable))
+	for i, m := range resumable {
+		options[i] = huh.NewOption(archiveLabel(m, time.Local), m.TraceID)
+	}
+	return choose(ctx, options)
+}
+
+func chooseArchiveWithFrontend(ctx context.Context, options []huh.Option[string]) (string, error) {
+	var selected string
+	form := idtui.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("Resume an agent session").
+			Height(min(len(options)+2, 12)).
+			Filtering(true).
+			Options(options...).
+			Value(&selected),
+	))
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return "", nil
+		}
+		return "", err
+	}
+	return selected, nil
+}
+
+const archiveLabelTitleMax = 60
+
+// archiveLabel renders one picker row: start time, title, and the trace ID so
+// the filter can match an ID prefix too.
+func archiveLabel(m archive.Manifest, loc *time.Location) string {
+	// Titles are user-influenced: flatten control characters and newlines so
+	// a title can neither emit terminal controls nor break the row.
+	title := strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, m.Title)), " ")
+	if runes := []rune(title); len(runes) > archiveLabelTitleMax {
+		title = string(runes[:archiveLabelTitleMax-1]) + "…"
+	}
+	if title == "" {
+		title = "(untitled)"
+	}
+	if m.State.Unsealed() {
+		title += " [" + string(m.State) + "]"
+	}
+	return fmt.Sprintf("%s  %s  %s", m.StartedAt.In(loc).Format("2006-01-02 15:04"), title, m.TraceID)
 }
 
 func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) (string, error) {
