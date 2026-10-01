@@ -2,19 +2,22 @@ package resolver
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/remotes"
 	"github.com/dagger/dagger/engine/snapshots"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// progressIngester wraps a content.Ingester so that layer blobs written
-// through it (e.g. by remotes.FetchHandler) stream download progress as
-// telemetry, keyed by blob digest.
+// progressIngester wraps a content.Ingester so layer blobs written through it
+// stream download progress, keyed by blob digest.
 type progressIngester struct {
 	content.Ingester
 }
@@ -34,12 +37,54 @@ func (pi progressIngester) Writer(ctx context.Context, opts ...content.WriterOpt
 	return wrapProgressWriter(ctx, w, wOpts.Desc), nil
 }
 
-// wrapProgressWriter wraps a content.Writer so the layer blob written
-// through it streams transfer progress as telemetry, keyed by blob digest
-// — the same wrapper serves pull (blobs fetched into the content store)
-// and push (blobs copied to a registry's writer). Non-layer blobs pass
-// through untouched: manifests and configs are tiny. The wrapper emits a
-// pending state immediately so the item appears before bytes move.
+// networkFetcher accounts for every descriptor payload read through a registry
+// fetcher, including metadata fetched before the layer dispatch starts.
+type networkFetcher struct {
+	remotes.Fetcher
+	network *enginetelemetry.NetworkAccumulator
+}
+
+func (f networkFetcher) Fetch(ctx context.Context, desc ocispecs.Descriptor) (io.ReadCloser, error) {
+	r, err := f.Fetcher.Fetch(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	return &networkReadCloser{ReadCloser: r, network: f.network}, nil
+}
+
+type networkReadCloser struct {
+	io.ReadCloser
+	network *enginetelemetry.NetworkAccumulator
+}
+
+func (r *networkReadCloser) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	r.network.Add(int64(n))
+	return n, err
+}
+
+// networkRoundTripper accounts for registry payloads read before a descriptor
+// fetcher exists, such as the manifest GET fallback performed during resolve.
+type networkRoundTripper struct {
+	http.RoundTripper
+	network *enginetelemetry.NetworkAccumulator
+}
+
+func (t networkRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("Accept-Encoding", "identity")
+	resp, err := t.RoundTripper.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Body != nil {
+		resp.Body = &networkReadCloser{ReadCloser: resp.Body, network: t.network}
+	}
+	return resp, nil
+}
+
+// wrapProgressWriter wraps a content.Writer so layer blobs written through it
+// stream download progress as telemetry, keyed by blob digest.
 func wrapProgressWriter(ctx context.Context, w content.Writer, desc ocispecs.Descriptor) content.Writer {
 	if !images.IsLayerType(desc.MediaType) || desc.Size <= 0 {
 		return w

@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -55,6 +56,9 @@ func TestPullReusesPinnedMetadataOnlyWhenEligible(t *testing.T) {
 
 				if tc.reuse {
 					require.Equal(t, before, s.registry.manifestHEADs.Load(), "metadata reuse must avoid the second HEAD")
+					encoding := s.registry.layerAcceptEncoding.Load()
+					require.NotNil(t, encoding)
+					require.Equal(t, "identity", *encoding)
 				} else {
 					require.Greater(t, s.registry.manifestHEADs.Load(), before, "ineligible metadata must use remote resolution")
 				}
@@ -187,9 +191,10 @@ func newTestPullImage(t *testing.T, indexed bool, platform ocispecs.Platform) *t
 // testPullRegistry serves one image at test/image and counts the requests
 // the assertions care about.
 type testPullRegistry struct {
-	host          string
-	manifestHEADs atomic.Int32
-	layerGETs     atomic.Int32
+	host                string
+	manifestHEADs       atomic.Int32
+	layerGETs           atomic.Int32
+	layerAcceptEncoding atomic.Pointer[string]
 }
 
 func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
@@ -216,6 +221,15 @@ func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 		case r.URL.Path == "/v2/test/image/blobs/"+image.layer.Digest.String():
 			if r.Method == http.MethodGet {
 				registry.layerGETs.Add(1)
+				encoding := r.Header.Get("Accept-Encoding")
+				registry.layerAcceptEncoding.Store(&encoding)
+				if encoding != "identity" {
+					w.Header().Set("Content-Encoding", "gzip")
+					zw := gzip.NewWriter(w)
+					_, _ = zw.Write(image.layerBytes)
+					_ = zw.Close()
+					return
+				}
 			}
 			serveTestRegistryDescriptor(w, r, image.layer, image.layerBytes)
 		default:
