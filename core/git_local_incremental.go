@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -162,7 +163,13 @@ func incrementalParentTree(ctx context.Context, parent dagql.ObjectResult[*Direc
 type incrementalGitCheckoutPlan struct {
 	changed  []string
 	removed  []string // paths that existed in the parent, including modifications
-	checkout []string
+	checkout []incrementalGitCheckoutEntry
+}
+
+// incrementalGitCheckoutEntry is a child tree leaf to write, as diff-tree
+// reports it: the only index entries checkout-index needs.
+type incrementalGitCheckoutEntry struct {
+	mode, sha, path string
 }
 
 // No baseline filesystem traversal: tree/index scans are Git metadata only.
@@ -238,17 +245,25 @@ func parseIncrementalGitCheckoutPlan(changes []byte) (*incrementalGitCheckoutPla
 		if path.Base(p) == ".gitattributes" || path.Base(p) == ".gitmodules" {
 			return nil, "checkout-controls", nil
 		}
-		plan.changed = append(plan.changed, p)
 		switch status {
-		case "A":
-			plan.checkout = append(plan.checkout, p)
-		case "D":
-			plan.removed = append(plan.removed, p)
-		case "M", "T":
-			plan.removed = append(plan.removed, p)
-			plan.checkout = append(plan.checkout, p)
+		case "A", "D", "M", "T":
 		default:
 			return nil, "", fmt.Errorf("unexpected git diff status %q", status)
+		}
+		plan.changed = append(plan.changed, p)
+		if status != "A" {
+			plan.removed = append(plan.removed, p)
+		}
+		if status != "D" {
+			// -r lists no trees, and gitlinks fell back above.
+			mode, sha := fields[1], fields[3]
+			if mode != "100644" && mode != "100755" && mode != "120000" {
+				return nil, "", fmt.Errorf("unexpected git tree diff mode %q", mode)
+			}
+			if !IsFullGitSHA(sha) {
+				return nil, "", fmt.Errorf("invalid git tree diff entry")
+			}
+			plan.checkout = append(plan.checkout, incrementalGitCheckoutEntry{mode: mode, sha: sha, path: p})
 		}
 	}
 	return plan, "", nil
@@ -261,19 +276,31 @@ func applyIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, de
 	if len(plan.changed) == 0 {
 		return unix.UtimesNanoAt(unix.AT_FDCWD, dest, []unix.Timespec{{Sec: 1}, {Sec: 1}}, unix.AT_SYMLINK_NOFOLLOW)
 	}
-	scratch, err := os.MkdirTemp("", "dagger-git-checkout-")
-	if err != nil {
-		return err
-	}
-	defer func() { rerr = errors.Join(rerr, os.RemoveAll(scratch)) }()
-	// Identical clean config/checkout conversion to the full source checkout,
-	// never the source repository's config, info/attributes or dirty worktree.
-	checkout := source.New(gitutil.WithDir(dest), gitutil.WithWorkTree(dest), gitutil.WithGitDir(filepath.Join(scratch, "git")), gitutil.WithIndexFile(filepath.Join(scratch, "index")))
-	if err := initLocalGitTreeCheckout(ctx, source, checkout); err != nil {
-		return err
-	}
-	if _, err := checkout.Run(ctx, "read-tree", child); err != nil {
-		return err
+	var checkout *gitutil.GitCLI
+	if len(plan.checkout) > 0 {
+		scratch, err := os.MkdirTemp("", "dagger-git-checkout-")
+		if err != nil {
+			return err
+		}
+		defer func() { rerr = errors.Join(rerr, os.RemoveAll(scratch)) }()
+		// Identical clean config/checkout conversion to the full source checkout,
+		// never the source repository's config, info/attributes or dirty worktree.
+		checkout = source.New(gitutil.WithDir(dest), gitutil.WithWorkTree(dest), gitutil.WithGitDir(filepath.Join(scratch, "git")), gitutil.WithIndexFile(filepath.Join(scratch, "index")))
+		if err := initLocalGitTreeCheckout(ctx, source, checkout); err != nil {
+			return err
+		}
+		// Stage only the leaves to write, from the delta's own modes and blobs,
+		// in one process: reading the whole child tree into the index would
+		// cost as much as the tree is large. checkout-index writes each entry
+		// from its mode and blob alone, creating missing directories itself;
+		// attributes come from the commit (see below), not other entries.
+		var entries bytes.Buffer
+		for _, entry := range plan.checkout {
+			entries.WriteString(entry.mode + " " + entry.sha + "\t" + entry.path + "\x00")
+		}
+		if _, err := checkout.RunWithStdin(ctx, &entries, "update-index", "-z", "--index-info"); err != nil {
+			return err
+		}
 	}
 	root, err := os.OpenRoot(dest)
 	if err != nil {
@@ -313,9 +340,9 @@ func applyIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, de
 	}
 	// Git writes only below verified directory ancestors. Its directory/file
 	// creation supplies the same modes and umask semantics as full checkout.
-	for _, p := range plan.checkout {
+	for _, entry := range plan.checkout {
 		prefix := ""
-		for _, part := range strings.Split(path.Dir(p), "/") {
+		for _, part := range strings.Split(path.Dir(entry.path), "/") {
 			prefix = filepath.Join(prefix, part)
 			info, err := root.Lstat(prefix)
 			if errors.Is(err, os.ErrNotExist) {
@@ -332,15 +359,16 @@ func applyIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, de
 	// A full checkout reads .gitattributes from the index, but checkout-index
 	// reads the worktree copy first, which differs from its blob when the file
 	// is itself converted on checkout (working-tree-encoding, ident). Read them
-	// from the checked out commit, as the index has them.
-	attrCheckout := checkout.New(gitutil.WithArgs("--attr-source=" + child))
-	for _, batch := range batchPathSpecs(plan.checkout) {
-		if _, err := attrCheckout.Run(ctx, append([]string{"checkout-index", "--force", "--"}, batch...)...); err != nil {
+	// from the checked out commit, as the index has them. The index holds
+	// exactly the paths to write, so --all needs no pathspecs.
+	if checkout != nil {
+		attrCheckout := checkout.New(gitutil.WithArgs("--attr-source=" + child))
+		if _, err := attrCheckout.Run(ctx, "checkout-index", "--all", "--force"); err != nil {
 			return err
 		}
 	}
-	for _, p := range plan.checkout {
-		touched[p] = true
+	for _, entry := range plan.checkout {
+		touched[entry.path] = true
 	}
 	return normalizeIncrementalGitCheckout(ctx, root, dest, touched)
 }

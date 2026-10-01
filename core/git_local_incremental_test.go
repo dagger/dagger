@@ -43,6 +43,15 @@ func TestIncrementalGitCheckout(t *testing.T) {
 			write("dir-to-link/deep/old", "old", 0666)
 			write("keep/deep/untouched", "nested", 0666)
 			write("dir-to-outside/deep/old", "old", 0666)
+			// Names that must survive -z staging, never parsed as options or lists.
+			for _, p := range []string{"-leading-dash", "comma,name", "ünïcödé/☃.txt"} {
+				write(p, "old\n", 0666)
+			}
+			// A delta of hundreds of paths across many directories.
+			bulk := func(i int) string { return fmt.Sprintf("bulk/%02d/file%03d", i%17, i) }
+			for i := range 300 {
+				write(bulk(i), "base", 0666)
+			}
 			outside := t.TempDir()
 			require.NoError(t, os.Mkdir(filepath.Join(outside, "deep"), 0755))
 			require.NoError(t, os.Chtimes(filepath.Join(outside, "deep"), time.Unix(42, 0), time.Unix(42, 0)))
@@ -63,6 +72,20 @@ func TestIncrementalGitCheckout(t *testing.T) {
 			write("link-to-dir/new", "new", 0666)
 			write("identifier.ident", "new $Id$\n", 0666)
 			write("odd\n:\tname", "awkward", 0666)
+			for _, p := range []string{"-leading-dash", "comma,name", "ünïcödé/☃.txt", "-new/-x,y\n☃ z.txt"} {
+				write(p, "new\n", 0666)
+			}
+			for i := range 300 {
+				switch {
+				case i%7 == 0:
+					require.NoError(t, os.Remove(filepath.Join(source, bulk(i))))
+				case i%5 == 0:
+					require.NoError(t, os.Chmod(filepath.Join(source, bulk(i)), 0777))
+				case i%3 == 0:
+					write(bulk(i), "child", 0666)
+				}
+				write(fmt.Sprintf("bulk/new%02d/file%03d", i%13, i), "added", 0666)
+			}
 			require.NoError(t, os.Symlink("keep", filepath.Join(source, "dir-to-link")))
 			require.NoError(t, os.Symlink(outside, filepath.Join(source, "dir-to-outside")))
 			require.NoError(t, os.Chmod(filepath.Join(source, "mode"), 0777))
@@ -114,6 +137,19 @@ func TestIncrementalGitCheckout(t *testing.T) {
 			require.Empty(t, plan.changed)
 			require.NoError(t, applyIncrementalGitCheckout(ctx, cli, dest, empty, plan))
 			require.Equal(t, localTreeSnapshot(t, fresh), localTreeSnapshot(t, dest))
+
+			// Only removals: nothing to stage or check out.
+			gitMirrorTestRun(t, source, "rm", "-q", "--", "comma,name", bulk(1))
+			gitMirrorTestRun(t, source, "commit", "-m", "removals")
+			removals := gitMirrorTestRun(t, source, "rev-parse", "HEAD")
+			plan, reason, err = planIncrementalGitCheckout(ctx, cli, empty, removals)
+			require.NoError(t, err)
+			require.Empty(t, reason)
+			require.Empty(t, plan.checkout)
+			require.NoError(t, applyIncrementalGitCheckout(ctx, cli, dest, removals, plan))
+			fresh = t.TempDir()
+			require.NoError(t, doLocalGitTreeCheckout(ctx, cli, localTreeCheckoutCLI(fresh), nil, source, &gitutil.Ref{SHA: removals}))
+			require.Equal(t, localTreeSnapshot(t, fresh), localTreeSnapshot(t, dest))
 		})
 	}
 }
@@ -143,6 +179,15 @@ func TestIncrementalGitCheckoutGates(t *testing.T) {
 	}
 	_, _, err = parseIncrementalGitCheckoutPlan([]byte("M\x00file\x00"))
 	require.ErrorContains(t, err, "invalid git tree diff entry")
+	zero, blob := strings.Repeat("0", 40), strings.Repeat("1", 40)
+	_, _, err = parseIncrementalGitCheckoutPlan([]byte(":000000 100644 " + zero + " " + blob[:39] + " A\x00file\x00"))
+	require.ErrorContains(t, err, "invalid git tree diff entry")
+	_, _, err = parseIncrementalGitCheckoutPlan([]byte(":000000 040000 " + zero + " " + blob + " A\x00file\x00"))
+	require.ErrorContains(t, err, "unexpected git tree diff mode")
+	plan, reason, err := parseIncrementalGitCheckoutPlan([]byte(":100644 100755 " + zero + " " + blob + " M\x00-x,\n\x00"))
+	require.NoError(t, err)
+	require.Empty(t, reason)
+	require.Equal(t, []incrementalGitCheckoutEntry{{mode: "100755", sha: blob, path: "-x,\n"}}, plan.checkout)
 }
 
 // A full checkout initializes submodules from the gitlinks and .gitmodules
