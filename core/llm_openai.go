@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -73,7 +74,7 @@ func openAIPromptCacheKey(history []*LLMMessage) string {
 		parts = append(parts, string(msg.Role))
 		for _, block := range msg.Content {
 			parts = append(parts, string(block.Kind), block.Text, block.CallID,
-				block.ToolName, string(block.Arguments), block.MIMEType, block.Data)
+				block.ToolName, string(block.Arguments), block.MIMEType, string(block.Data))
 		}
 		if msg.Role != LLMMessageRoleSystem {
 			break
@@ -243,7 +244,7 @@ func openAIContentPart(block *LLMContentBlock) (openai.ChatCompletionContentPart
 			return openai.ChatCompletionContentPartUnionParam{}, fmt.Errorf("unsupported OpenAI audio MIME type %q (expected WAV or MP3)", block.MIMEType)
 		}
 		return openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
-			Data: block.Data, Format: format,
+			Data: base64.StdEncoding.EncodeToString(block.Data), Format: format,
 		}), nil
 	case LLMContentDocument:
 		if block.MIMEType != "application/pdf" {
@@ -267,7 +268,7 @@ func validateOpenAIImage(block *LLMContentBlock) error {
 }
 
 func openAIMediaDataURL(block *LLMContentBlock) string {
-	return "data:" + block.MIMEType + ";base64," + block.Data
+	return "data:" + block.MIMEType + ";base64," + base64.StdEncoding.EncodeToString(block.Data)
 }
 
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {

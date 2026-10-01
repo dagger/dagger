@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/scrub"
 	"github.com/google/go-cmp/cmp"
 )
@@ -39,7 +40,7 @@ type recordedContentBlock struct {
 	Errored   bool                   `json:"errored"`
 	Signature string                 `json:"signature"`
 	MIMEType  string                 `json:"mimeType"`
-	Data      string                 `json:"data"`
+	Data      dagql.Bytes            `json:"data"`
 	Content   []recordedContentBlock `json:"content"`
 }
 
@@ -100,7 +101,8 @@ func (*RecordedResponseProvider) IsRetryable(err error) bool {
 }
 
 type recordingMediaBlock struct {
-	Position, MIMEType, Data string
+	Position, MIMEType string
+	Data               []byte
 }
 
 // recordingMedia keeps media identity and ordering separate from the legacy
@@ -136,8 +138,8 @@ func recordingDiffMessage(msg *LLMMessage) *LLMMessage {
 			if block == nil {
 				continue
 			}
-			if block.Data != "" {
-				block.Data = "[media data omitted]"
+			if len(block.Data) != 0 {
+				block.Data = []byte("[media data omitted]")
 			}
 			redact(block.Content)
 		}

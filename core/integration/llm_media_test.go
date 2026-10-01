@@ -108,7 +108,7 @@ func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 
 func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	pdf := base64.StdEncoding.EncodeToString([]byte(mediaPDF))
+	pdf := dagger.Bytes(base64.StdEncoding.EncodeToString([]byte(mediaPDF)))
 	llm := c.LLM().WithContent([]dagger.LLMContentBlockInput{
 		{Kind: dagger.LLMContentBlockKindText, Text: "Compare these:"},
 		{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
@@ -126,7 +126,7 @@ func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "Compare these:", blocks[0].Text)
 	require.Equal(t, mediaPNG, blocks[1].Data)
 	require.Equal(t, "with this document", blocks[2].Text)
-	require.Equal(t, pdf, blocks[3].Data)
+	require.Equal(t, string(pdf), blocks[3].Data)
 	require.Equal(t, mediaWAV, blocks[4].Data)
 	require.Equal(t, "audio/wav", blocks[4].MIMEType)
 
@@ -135,7 +135,7 @@ func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 	require.Contains(t, transcript, "Compare these:")
 	require.Contains(t, transcript, "with this document")
 	require.NotContains(t, transcript, mediaPNG)
-	require.NotContains(t, transcript, pdf)
+	require.NotContains(t, transcript, string(pdf))
 	require.NotContains(t, transcript, mediaWAV)
 
 	id, err := sink.captureLLMRecipe(ctx, t, c, llm)

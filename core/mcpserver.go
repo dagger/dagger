@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -127,16 +128,16 @@ func mcpContentResult(blocks []*LLMContentBlock) (*mcp.CallToolResult, error) {
 		case LLMContentText:
 			result.Content = append(result.Content, mcp.NewTextContent(block.Text))
 		case LLMContentImage:
-			result.Content = append(result.Content, mcp.NewImageContent(block.Data, block.MIMEType))
+			result.Content = append(result.Content, mcp.NewImageContent(base64.StdEncoding.EncodeToString(block.Data), block.MIMEType))
 		case LLMContentAudio:
-			result.Content = append(result.Content, mcp.NewAudioContent(block.Data, block.MIMEType))
+			result.Content = append(result.Content, mcp.NewAudioContent(base64.StdEncoding.EncodeToString(block.Data), block.MIMEType))
 		case LLMContentDocument:
 			// An embedded resource requires a URI even though the bytes are
 			// inline. Use an opaque local identifier, never an external URL.
 			result.Content = append(result.Content, mcp.NewEmbeddedResource(mcp.BlobResourceContents{
 				URI:      fmt.Sprintf("urn:dagger:tool-result:%d", len(result.Content)),
 				MIMEType: block.MIMEType,
-				Blob:     block.Data,
+				Blob:     base64.StdEncoding.EncodeToString(block.Data),
 			}))
 		case LLMContentToolResult:
 			result.IsError = result.IsError || block.Errored
