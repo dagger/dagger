@@ -2,7 +2,7 @@ package gitutil
 
 import (
 	"context"
-	"crypto/sha1" //nolint:gosec // Git object IDs
+	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -23,7 +23,7 @@ func TestRunWithStdin(t *testing.T) {
 	}
 	ctx := context.Background()
 	blob := func(data string) string {
-		sum := sha1.Sum(fmt.Appendf(nil, "blob %d\x00%s", len(data), data)) //nolint:gosec // Git object IDs
+		sum := sha1.Sum(fmt.Appendf(nil, "blob %d\x00%s", len(data), data))
 		return hex.EncodeToString(sum[:])
 	}
 	hash := func(t *testing.T, out []byte, err error) string {

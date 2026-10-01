@@ -581,80 +581,13 @@ func stageNativeChanges(run func(...string) (string, error), parent string, path
 	if _, err := run("read-tree", parent); err != nil {
 		return err
 	}
-	validPath := func(p string) bool {
-		return path.Clean(p) == p && !path.IsAbs(p) && p != ".." && !strings.HasPrefix(p, "../") && !gitMetaPath(p)
+	stage, err := newNativeStagePaths(paths, removeGitlinks)
+	if err != nil {
+		return err
 	}
-	controls := map[string]bool{}
-	// touched: staged paths and their ancestors, where a gitlink means a
-	// staged change inside (or of) a submodule.
-	touched := map[string]bool{}
-	for _, p := range commitStagePaths(paths) {
-		if !validPath(p) {
-			return fmt.Errorf("invalid commit path %q", p)
-		}
-		if path.Base(p) == ".gitmodules" {
-			return nativeCommitUnsupportedReason("gitmodules-change")
-		}
-		touched[p] = true
-		for dir := path.Dir(p); ; dir = path.Dir(dir) {
-			controls[path.Join(dir, ".gitattributes")] = true
-			controls[path.Join(dir, ".gitignore")] = true
-			if dir == "." {
-				break
-			}
-			touched[dir] = true
-		}
-	}
-	removedDirs := map[string]bool{}
-	filled := map[string]bool{} // added or modified paths and their ancestors
-	if removeGitlinks {
-		for _, p := range commitRemovedDirs(paths) {
-			if !validPath(p) {
-				return fmt.Errorf("invalid commit path %q", p)
-			}
-			removedDirs[p] = true
-		}
-		for _, p := range commitStagePaths(&ChangesetPaths{Added: paths.Added, Modified: paths.Modified}) {
-			for ; p != "." && !filled[p]; p = path.Dir(p) {
-				filled[p] = true
-			}
-		}
-	}
-	inspect := make([]string, 0, len(touched)+len(removedDirs)+len(controls))
-	for _, set := range []map[string]bool{touched, removedDirs, controls} {
-		for p := range set {
-			inspect = append(inspect, p)
-		}
-	}
-	slices.Sort(inspect)
-	inspect = slices.Compact(inspect)
-	// ls-tree matches each pathspec as a prefix: once it descends into an
-	// ancestor, it lists every direct child of that directory. Only exact
-	// names are classified, so unrelated sibling gitlinks never matter.
-	var hydrate, gitlinks []string
-	for _, batch := range batchPathSpecs(inspect) {
-		out, err := run(append([]string{"ls-tree", "-z", parent, "--"}, batch...)...)
-		if err != nil {
-			return err
-		}
-		for _, entry := range strings.Split(out, "\x00") {
-			mode, rest, ok := strings.Cut(entry, " ")
-			if !ok {
-				continue
-			}
-			_, name, ok := strings.Cut(rest, "\t")
-			if !ok {
-				return fmt.Errorf("invalid ls-tree entry")
-			}
-			switch {
-			case mode == "160000" && removedDirs[name] && !filled[name]:
-				gitlinks = append(gitlinks, name)
-			case mode == "160000" && (touched[name] || removedDirs[name]):
-				return nativeCommitUnsupportedReason("gitlink-change")
-			case controls[name] && (mode == "100644" || mode == "100755"):
-				hydrate = append(hydrate, name)
-			}
-		}
+	hydrate, gitlinks, err := stage.classify(run, parent)
+	if err != nil {
+		return err
 	}
 	for _, batch := range batchPathSpecs(hydrate) {
 		if _, err := run(append([]string{"checkout-index", "--force", "--"}, batch...)...); err != nil {
@@ -679,6 +612,107 @@ func stageNativeChanges(run func(...string) (string, error), parent string, path
 		}
 	}
 	return nil
+}
+
+// nativeStagePaths are the parent tree paths stageNativeChanges inspects.
+type nativeStagePaths struct {
+	// touched: staged paths and their ancestors, where a gitlink means a
+	// staged change inside (or of) a submodule.
+	touched map[string]bool
+	// controls: ancestor attribute/ignore files to hydrate.
+	controls map[string]bool
+	// removedDirs: directories the changeset removed (removeGitlinks only).
+	removedDirs map[string]bool
+	// filled: added or modified paths and their ancestors (removeGitlinks
+	// only).
+	filled map[string]bool
+}
+
+func validNativeStagePath(p string) bool {
+	return path.Clean(p) == p && !path.IsAbs(p) && p != ".." && !strings.HasPrefix(p, "../") && !gitMetaPath(p)
+}
+
+func newNativeStagePaths(paths *ChangesetPaths, removeGitlinks bool) (*nativeStagePaths, error) {
+	s := &nativeStagePaths{
+		touched:     map[string]bool{},
+		controls:    map[string]bool{},
+		removedDirs: map[string]bool{},
+		filled:      map[string]bool{},
+	}
+	for _, p := range commitStagePaths(paths) {
+		if !validNativeStagePath(p) {
+			return nil, fmt.Errorf("invalid commit path %q", p)
+		}
+		if path.Base(p) == ".gitmodules" {
+			return nil, nativeCommitUnsupportedReason("gitmodules-change")
+		}
+		s.touched[p] = true
+		for dir := path.Dir(p); ; dir = path.Dir(dir) {
+			s.controls[path.Join(dir, ".gitattributes")] = true
+			s.controls[path.Join(dir, ".gitignore")] = true
+			if dir == "." {
+				break
+			}
+			s.touched[dir] = true
+		}
+	}
+	if !removeGitlinks {
+		return s, nil
+	}
+	for _, p := range commitRemovedDirs(paths) {
+		if !validNativeStagePath(p) {
+			return nil, fmt.Errorf("invalid commit path %q", p)
+		}
+		s.removedDirs[p] = true
+	}
+	for _, p := range commitStagePaths(&ChangesetPaths{Added: paths.Added, Modified: paths.Modified}) {
+		for ; p != "." && !s.filled[p]; p = path.Dir(p) {
+			s.filled[p] = true
+		}
+	}
+	return s, nil
+}
+
+// classify lists the inspected paths in parent, returning the control files
+// to hydrate and the removed gitlinks to remove.
+//
+// ls-tree matches each pathspec as a prefix: once it descends into an
+// ancestor, it lists every direct child of that directory. Only exact names
+// are classified, so unrelated sibling gitlinks never matter.
+func (s *nativeStagePaths) classify(run func(...string) (string, error), parent string) (hydrate, gitlinks []string, _ error) {
+	inspect := make([]string, 0, len(s.touched)+len(s.removedDirs)+len(s.controls))
+	for _, set := range []map[string]bool{s.touched, s.removedDirs, s.controls} {
+		for p := range set {
+			inspect = append(inspect, p)
+		}
+	}
+	slices.Sort(inspect)
+	inspect = slices.Compact(inspect)
+	for _, batch := range batchPathSpecs(inspect) {
+		out, err := run(append([]string{"ls-tree", "-z", parent, "--"}, batch...)...)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, entry := range strings.Split(out, "\x00") {
+			mode, rest, ok := strings.Cut(entry, " ")
+			if !ok {
+				continue
+			}
+			_, name, ok := strings.Cut(rest, "\t")
+			if !ok {
+				return nil, nil, fmt.Errorf("invalid ls-tree entry")
+			}
+			switch {
+			case mode == "160000" && s.removedDirs[name] && !s.filled[name]:
+				gitlinks = append(gitlinks, name)
+			case mode == "160000" && (s.touched[name] || s.removedDirs[name]):
+				return nil, nil, nativeCommitUnsupportedReason("gitlink-change")
+			case s.controls[name] && (mode == "100644" || mode == "100755"):
+				hydrate = append(hydrate, name)
+			}
+		}
+	}
+	return hydrate, gitlinks, nil
 }
 
 // nativeCommitMkdirParents refuses inherited symlink directories, even ones
