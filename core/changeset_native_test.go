@@ -346,6 +346,86 @@ func TestNativeWorkspaceMergeRealBaseDirectoryRename(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+// A gitlink beside the merged paths is no submodule change; a path inside it
+// is. A removed submodule directory is reconciled from the raw deltas, as the
+// commit's own change; its content falls back.
+func TestNativeWorkspaceMergeGitlinks(t *testing.T) {
+	for _, scenario := range []string{"sibling", "inside", "remove empty", "remove populated"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := t.Context()
+			repo := t.TempDir()
+			run := func(args ...string) string {
+				t.Helper()
+				out, err := runWorkspaceCommitGit(ctx, repo, nil, args...)
+				require.NoError(t, err)
+				return strings.TrimSpace(out)
+			}
+			write := func(dir, p, data string) {
+				t.Helper()
+				name := filepath.Join(dir, p)
+				require.NoError(t, os.MkdirAll(filepath.Dir(name), 0755))
+				require.NoError(t, os.WriteFile(name, []byte(data), 0644))
+			}
+			run("init", "-b", "main")
+			write(repo, "vendor/x", "x\n")
+			write(repo, "vendor/y", "y\n")
+			run("add", ".")
+			run("commit", "-m", "base")
+			run("update-index", "--add", "--cacheinfo", "160000,"+run("rev-parse", "HEAD")+",vendor/module")
+			run("commit", "-m", "gitlink")
+			parent := run("rev-parse", "HEAD")
+			base := filepath.Join(t.TempDir(), "base")
+			run("clone", "--no-hardlinks", repo, base)
+			require.NoError(t, os.RemoveAll(filepath.Join(base, ".git")))
+			paths := []*ChangesetPaths{{Modified: []string{"vendor/x"}}, {Modified: []string{"vendor/y"}}}
+			switch scenario {
+			case "inside":
+				paths[0] = &ChangesetPaths{Added: []string{"vendor/module/file"}}
+			case "remove empty":
+				paths[0] = &ChangesetPaths{AllRemoved: []string{"vendor/module/"}}
+			case "remove populated":
+				paths[0] = &ChangesetPaths{AllRemoved: []string{"vendor/module/", "vendor/module/file"}}
+			}
+			apply := []func(string) error{
+				func(work string) error {
+					if strings.HasPrefix(scenario, "remove") {
+						return os.RemoveAll(filepath.Join(work, "vendor/module"))
+					}
+					write(work, commitStagePaths(paths[0])[0], "workspace\n")
+					return nil
+				},
+				func(work string) error {
+					write(work, "vendor/y", "incoming\n")
+					return nil
+				},
+			}
+			err := nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, base, paths, apply)
+			if scenario == "inside" || scenario == "remove populated" {
+				require.ErrorIs(t, err, errNativeCommitUnsupported)
+				require.Equal(t, "gitlink-change", err.Error())
+				return
+			}
+			require.NoError(t, err)
+			want := map[string]string{"vendor/x": "workspace\n", "vendor/y": "incoming\n"}
+			if scenario == "remove empty" {
+				want["vendor/x"] = "x\n"
+			}
+			for p, want := range want {
+				got, err := os.ReadFile(filepath.Join(base, p))
+				require.NoError(t, err, p)
+				require.Equal(t, want, string(got), p)
+			}
+			info, err := os.Lstat(filepath.Join(base, "vendor/module"))
+			if scenario == "remove empty" {
+				require.ErrorIs(t, err, os.ErrNotExist)
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, info.IsDir())
+		})
+	}
+}
+
 func TestNativeWorkspaceDeltaReplacedAncestors(t *testing.T) {
 	for _, beforeKind := range []string{"missing", "regular-file", "external-symlink"} {
 		t.Run(beforeKind, func(t *testing.T) {

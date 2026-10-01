@@ -75,7 +75,7 @@ func GitCommitChangeset(
 		return nil, fmt.Errorf("changeset content: %w", err)
 	}
 	stagePaths := commitStagePaths(content.paths)
-	if len(stagePaths) == 0 && !opts.AllowEmpty {
+	if len(stagePaths) == 0 && len(commitRemovedDirs(content.paths)) == 0 && !opts.AllowEmpty {
 		return nil, ErrNothingToCommit
 	}
 
@@ -105,14 +105,10 @@ func GitCommitChangeset(
 		if err := ws.applyContent(ctx, content); err != nil {
 			return fmt.Errorf("apply changes: %w", err)
 		}
-		// Stage only the scoped paths. The work tree may legitimately carry
-		// other uncommitted changes — everything outside this commit's scope —
-		// and a bare `git add -A` would sweep them in.
-		for _, batch := range batchPathSpecs(stagePaths) {
-			args := append([]string{"add", "-A", "--"}, batch...)
-			if _, err := runWorkspaceCommitGit(ctx, ws.workDir, env, args...); err != nil {
-				return err
-			}
+		if err := stageCheckoutChanges(func(args ...string) (string, error) {
+			return runWorkspaceCommitGit(ctx, ws.workDir, env, args...)
+		}, content.paths); err != nil {
+			return err
 		}
 		staged, err := runWorkspaceCommitGit(ctx, ws.workDir, env, "diff", "--cached", "--name-only")
 		if err != nil {
@@ -269,8 +265,8 @@ func nativeCommitFallback(err error) bool {
 // nativeFallback). Only the caller's own cancellation is returned as an error.
 // Currently supported: complete local SHA-1 branches/commit IDs without
 // alternates or linked worktrees, and ordinary files/symlinks including Git
-// attributes and ignore rules. Changes touching gitlinks or .gitmodules use the
-// existing checkout path.
+// attributes and ignore rules. Changes at or inside a gitlink, or to
+// .gitmodules, use the existing checkout path (see stageNativeChanges).
 func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*GitRef], changes *Changeset, opts GitCommitOpts) (_ *Directory, supported bool, rerr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
@@ -417,8 +413,7 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 		return err
 	}
 	paths = paths.withoutGitMeta()
-	stagePaths := commitStagePaths(paths)
-	if len(stagePaths) == 0 && !opts.AllowEmpty {
+	if len(commitStagePaths(paths)) == 0 && len(commitRemovedDirs(paths)) == 0 && !opts.AllowEmpty {
 		return ErrNothingToCommit
 	}
 	scratch, err := os.MkdirTemp("", "dagger-git-commit-")
@@ -453,7 +448,7 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 		"GIT_AUTHOR_DATE=" + opts.Date, "GIT_COMMITTER_DATE=" + opts.CommitterDate,
 	}
 	run := func(args ...string) (string, error) { return runWorkspaceCommitGit(ctx, work, env, args...) }
-	if err := stageNativeChanges(run, parent, paths, func() error { return apply(work) }); err != nil {
+	if err := stageNativeChanges(run, parent, paths, true, func() error { return apply(work) }); err != nil {
 		return err
 	}
 	tree, err := run("write-tree")
@@ -569,59 +564,34 @@ func publishNativeCommit(gitDir, meta, branchName, sha string, run func(...strin
 // stageNativeChanges seeds a private index from parent and stages only the
 // supplied delta. The caller supplies an empty worktree and operation-local
 // metadata/object storage. Only ancestor attribute/ignore blobs are hydrated.
-func stageNativeChanges(run func(...string) (string, error), parent string, paths *ChangesetPaths, apply func() error) error {
+//
+// Gitlinks matter only where the delta reaches them: a staged path at or under
+// a gitlink is a submodule change, which falls back. A gitlink inside a
+// directory a file replaced is removed by `git add`, as on a full checkout.
+//
+// With removeGitlinks, a gitlink whose directory the changeset removed (an
+// uninitialized submodule's empty directory, or a whole submodule checkout) is
+// removed too, as `git add -A` would on a full checkout: changesets report
+// that only as directory entries, which are otherwise never staged. Removals
+// beneath it are submodule content, never in the index. A gitlink whose path
+// holds added or modified files again still falls back. Without
+// removeGitlinks (the workspace merge, which reconciles such directories from
+// the raw deltas) the gitlink is left alone unless a staged path reaches it.
+func stageNativeChanges(run func(...string) (string, error), parent string, paths *ChangesetPaths, removeGitlinks bool, apply func() error) error {
 	if _, err := run("read-tree", parent); err != nil {
 		return err
 	}
-	controls := map[string]bool{}
-	ancestors := map[string]bool{}
-	for _, p := range commitStagePaths(paths) {
-		if path.Clean(p) != p || path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") || gitMetaPath(p) {
-			return fmt.Errorf("invalid commit path %q", p)
-		}
-		if path.Base(p) == ".gitmodules" {
-			return nativeCommitUnsupportedReason("gitmodules-change")
-		}
-		ancestors[p] = true
-		for dir := path.Dir(p); ; dir = path.Dir(dir) {
-			controls[path.Join(dir, ".gitattributes")] = true
-			controls[path.Join(dir, ".gitignore")] = true
-			if dir == "." {
-				break
-			}
-			ancestors[dir] = true
-		}
+	stage, err := newNativeStagePaths(paths, removeGitlinks)
+	if err != nil {
+		return err
 	}
-	for p := range controls {
-		ancestors[p] = true
+	hydrate, gitlinks, err := stage.classify(run, parent)
+	if err != nil {
+		return err
 	}
-	var inspect []string
-	for p := range ancestors {
-		inspect = append(inspect, p)
-	}
-	slices.Sort(inspect)
-	for _, batch := range batchPathSpecs(inspect) {
-		out, err := run(append([]string{"ls-tree", "-z", parent, "--"}, batch...)...)
-		if err != nil {
+	for _, batch := range batchPathSpecs(hydrate) {
+		if _, err := run(append([]string{"checkout-index", "--force", "--"}, batch...)...); err != nil {
 			return err
-		}
-		for _, entry := range strings.Split(out, "\x00") {
-			mode, rest, ok := strings.Cut(entry, " ")
-			if !ok {
-				continue
-			}
-			_, name, ok := strings.Cut(rest, "\t")
-			if !ok {
-				return fmt.Errorf("invalid ls-tree entry")
-			}
-			if mode == "160000" {
-				return nativeCommitUnsupportedReason("gitlink-change")
-			}
-			if controls[name] && (mode == "100644" || mode == "100755") {
-				if _, err := run("checkout-index", "--force", "--", name); err != nil {
-					return err
-				}
-			}
 		}
 	}
 	if err := apply(); err != nil {
@@ -629,7 +599,7 @@ func stageNativeChanges(run func(...string) (string, error), parent string, path
 	}
 	// Remove first, including file/directory replacements. git add only sees
 	// added/modified files, so a sparse worktree cannot delete untouched files.
-	removed := commitStagePaths(&ChangesetPaths{AllRemoved: paths.AllRemoved})
+	removed := slices.Concat(commitStagePaths(&ChangesetPaths{AllRemoved: paths.AllRemoved}), gitlinks)
 	for _, batch := range batchPathSpecs(removed) {
 		if _, err := run(append([]string{"update-index", "--force-remove", "--"}, batch...)...); err != nil {
 			return err
@@ -642,6 +612,107 @@ func stageNativeChanges(run func(...string) (string, error), parent string, path
 		}
 	}
 	return nil
+}
+
+// nativeStagePaths are the parent tree paths stageNativeChanges inspects.
+type nativeStagePaths struct {
+	// touched: staged paths and their ancestors, where a gitlink means a
+	// staged change inside (or of) a submodule.
+	touched map[string]bool
+	// controls: ancestor attribute/ignore files to hydrate.
+	controls map[string]bool
+	// removedDirs: directories the changeset removed (removeGitlinks only).
+	removedDirs map[string]bool
+	// filled: added or modified paths and their ancestors (removeGitlinks
+	// only).
+	filled map[string]bool
+}
+
+func validNativeStagePath(p string) bool {
+	return path.Clean(p) == p && !path.IsAbs(p) && p != ".." && !strings.HasPrefix(p, "../") && !gitMetaPath(p)
+}
+
+func newNativeStagePaths(paths *ChangesetPaths, removeGitlinks bool) (*nativeStagePaths, error) {
+	s := &nativeStagePaths{
+		touched:     map[string]bool{},
+		controls:    map[string]bool{},
+		removedDirs: map[string]bool{},
+		filled:      map[string]bool{},
+	}
+	for _, p := range commitStagePaths(paths) {
+		if !validNativeStagePath(p) {
+			return nil, fmt.Errorf("invalid commit path %q", p)
+		}
+		if path.Base(p) == ".gitmodules" {
+			return nil, nativeCommitUnsupportedReason("gitmodules-change")
+		}
+		s.touched[p] = true
+		for dir := path.Dir(p); ; dir = path.Dir(dir) {
+			s.controls[path.Join(dir, ".gitattributes")] = true
+			s.controls[path.Join(dir, ".gitignore")] = true
+			if dir == "." {
+				break
+			}
+			s.touched[dir] = true
+		}
+	}
+	if !removeGitlinks {
+		return s, nil
+	}
+	for _, p := range commitRemovedDirs(paths) {
+		if !validNativeStagePath(p) {
+			return nil, fmt.Errorf("invalid commit path %q", p)
+		}
+		s.removedDirs[p] = true
+	}
+	for _, p := range commitStagePaths(&ChangesetPaths{Added: paths.Added, Modified: paths.Modified}) {
+		for ; p != "." && !s.filled[p]; p = path.Dir(p) {
+			s.filled[p] = true
+		}
+	}
+	return s, nil
+}
+
+// classify lists the inspected paths in parent, returning the control files
+// to hydrate and the removed gitlinks to remove.
+//
+// ls-tree matches each pathspec as a prefix: once it descends into an
+// ancestor, it lists every direct child of that directory. Only exact names
+// are classified, so unrelated sibling gitlinks never matter.
+func (s *nativeStagePaths) classify(run func(...string) (string, error), parent string) (hydrate, gitlinks []string, _ error) {
+	inspect := make([]string, 0, len(s.touched)+len(s.removedDirs)+len(s.controls))
+	for _, set := range []map[string]bool{s.touched, s.removedDirs, s.controls} {
+		for p := range set {
+			inspect = append(inspect, p)
+		}
+	}
+	slices.Sort(inspect)
+	inspect = slices.Compact(inspect)
+	for _, batch := range batchPathSpecs(inspect) {
+		out, err := run(append([]string{"ls-tree", "-z", parent, "--"}, batch...)...)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, entry := range strings.Split(out, "\x00") {
+			mode, rest, ok := strings.Cut(entry, " ")
+			if !ok {
+				continue
+			}
+			_, name, ok := strings.Cut(rest, "\t")
+			if !ok {
+				return nil, nil, fmt.Errorf("invalid ls-tree entry")
+			}
+			switch {
+			case mode == "160000" && s.removedDirs[name] && !s.filled[name]:
+				gitlinks = append(gitlinks, name)
+			case mode == "160000" && (s.touched[name] || s.removedDirs[name]):
+				return nil, nil, nativeCommitUnsupportedReason("gitlink-change")
+			case s.controls[name] && (mode == "100644" || mode == "100755"):
+				hydrate = append(hydrate, name)
+			}
+		}
+	}
+	return hydrate, gitlinks, nil
 }
 
 // nativeCommitMkdirParents refuses inherited symlink directories, even ones
@@ -811,6 +882,79 @@ func commitStagePaths(paths *ChangesetPaths) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// commitRemovedDirs lists the directories a changeset removed, without their
+// trailing slash. Git records none of them, except a gitlink: the directory a
+// submodule is checked out in.
+func commitRemovedDirs(paths *ChangesetPaths) []string {
+	var out []string
+	for _, p := range paths.AllRemoved {
+		if dir, ok := strings.CutSuffix(p, "/"); ok && dir != "" && dir != "." {
+			out = append(out, dir)
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// stageCheckoutChanges is the checkout path's staging, in a full checkout of
+// the parent with the changeset applied. Only the scoped paths are staged: the
+// work tree may legitimately carry other uncommitted changes, everything
+// outside this commit's scope, and a bare `git add -A` would sweep them in.
+//
+// Like the native staging, a removed submodule directory removes its gitlink,
+// unless files were added or modified at or beneath it again; paths beneath
+// it are submodule content, not in this index.
+func stageCheckoutChanges(run func(...string) (string, error), paths *ChangesetPaths) error {
+	removed := map[string]bool{}
+	for _, dir := range commitRemovedDirs(paths) {
+		removed[dir] = true
+	}
+	for _, p := range commitStagePaths(&ChangesetPaths{Added: paths.Added, Modified: paths.Modified}) {
+		for ; p != "." && p != "/"; p = path.Dir(p) {
+			delete(removed, p)
+		}
+	}
+	candidates := make([]string, 0, len(removed))
+	for dir := range removed {
+		candidates = append(candidates, dir)
+	}
+	slices.Sort(candidates)
+	var gitlinks []string
+	isGitlink := map[string]bool{}
+	for _, batch := range batchPathSpecs(candidates) {
+		out, err := run(append([]string{"ls-files", "--stage", "-z", "--"}, batch...)...)
+		if err != nil {
+			return err
+		}
+		for _, entry := range splitOnNul([]byte(out)) {
+			header, name, _ := strings.Cut(entry, "\t")
+			if strings.HasPrefix(header, "160000 ") && removed[name] && !isGitlink[name] {
+				isGitlink[name] = true
+				gitlinks = append(gitlinks, name)
+			}
+		}
+	}
+	for _, batch := range batchPathSpecs(gitlinks) {
+		if _, err := run(append([]string{"update-index", "--force-remove", "--"}, batch...)...); err != nil {
+			return err
+		}
+	}
+	stage := slices.DeleteFunc(commitStagePaths(paths), func(p string) bool {
+		for dir := path.Dir(p); len(isGitlink) > 0 && dir != "." && dir != "/"; dir = path.Dir(dir) {
+			if isGitlink[dir] {
+				return true
+			}
+		}
+		return false
+	})
+	for _, batch := range batchPathSpecs(stage) {
+		if _, err := run(append([]string{"add", "-A", "--"}, batch...)...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // batchPathSpecs splits pathspecs into groups that fit in a single argv.
