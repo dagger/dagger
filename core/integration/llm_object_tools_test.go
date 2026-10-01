@@ -367,7 +367,10 @@ type Swapper {
 }
 
 // TestLargeChangesetToolSkipsPatchWork covers a move with both additions and
-// removals: computing full paths would stage every file for rename detection.
+// removals: the tool-result summary must not compute full paths, which would
+// stage every file for rename detection. The recorded overlay is still
+// normalized to a patch: keeping a large changeset raw would make restoring
+// the conversation re-run the tool that produced it (e.g. a generator).
 func (LLMSuite) TestLargeChangesetToolSkipsPatchWork(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	source := c.Directory().
@@ -410,7 +413,8 @@ type Editor {
 	require.NoError(t, gid.Decode(string(id)))
 	fields := map[string]bool{}
 	collectIDFieldNames(gid, fields)
-	require.False(t, fields["withPatch"], "oversized changesets must stay raw")
+	require.True(t, fields["withPatchFile"], "oversized changesets must be patch-normalized too")
+	require.False(t, fields["moveTree"], "the recorded overlay must not retain the tool call")
 
 	entries, err := result.Workspace().Directory("new").Entries(ctx)
 	require.NoError(t, err)
@@ -588,9 +592,9 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		// The empty directory would also survive if normalization silently
 		// fell back to the raw changeset, so the subtest above cannot tell
 		// reconciliation from a skipped normalization. The recorded overlay
-		// discriminates: a normalized overlay is withPatch plus the
+		// discriminates: a normalized overlay is withPatchFile plus the
 		// withNewDirectory that restored the empty directory, while the raw
-		// changeset's chain has the tool's operations and no withPatch.
+		// changeset's chain has the tool's operations and no withPatchFile.
 		out, err := sink.captureShellRecipe(ctx, t, base, fmt.Sprintf(
 			`llm --model="%s" | with-workspace --workspace $(current-workspace | snapshot) | with-tools $(swapper) | with-prompt "scaffold the project" | loop`,
 			model,
@@ -601,7 +605,7 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		require.NoError(t, gid.Decode(strings.TrimSpace(out)))
 		fields := map[string]bool{}
 		collectIDFieldNames(gid, fields)
-		require.True(t, fields["withPatch"],
+		require.True(t, fields["withPatchFile"],
 			"the recorded overlay must be patch-normalized, not the raw changeset")
 		require.True(t, fields["withNewDirectory"],
 			"the reconciliation must record the empty directory's restoration")
