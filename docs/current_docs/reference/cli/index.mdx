@@ -924,8 +924,8 @@ dagger cloud traces list --pr 123 --json
       --pr string               Only traces of this pull request number
       --provider string         Only traces of this CI provider, e.g. github
       --repo strings            Only traces of this repository, e.g. github.com/org/repo (repeatable)
-      --since string            Only traces that started after this time: a duration (30m, 2d, 1w) or a date (2006-01-02, RFC 3339)
-      --sort string             Sort order: start (newest first) or duration (longest first) (default "start")
+      --since string            Only traces that started after this time: a duration (30m, 2d, 1w) or a date (2006-01-02, RFC 3339). Defaults to 1h with --sort duration
+      --sort string             Sort order: start (newest first) or duration (longest first). Duration sorts within --since, which defaults to 1h (default "start")
       --status string           Only traces with this status: passed, failed or running
       --tag string              Only traces of this git tag
       --token string            Only traces that this token sent (token ID or name)
