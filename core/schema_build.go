@@ -76,24 +76,18 @@ func buildSchema(
 	root *Query,
 	mods []modInstall,
 ) (*dagql.Server, error) {
-	var view call.View
-	for _, mod := range mods {
-		if version, ok := mod.mod.View(); ok {
-			view = version
-			break
-		}
-	}
-	return buildSchemaWithView(ctx, root, mods, view)
-}
-
-// buildSchemaWithView also serves artifact trees, whose core API view is
-// independent of the module's authored version. Only the core schema is
-// reused; every build installs user modules into an independent fork.
-func buildSchemaWithView(ctx context.Context, root *Query, mods []modInstall, view call.View) (*dagql.Server, error) {
 	var coreMod coreSchemaForker
 	for _, mod := range mods {
 		if m, ok := mod.mod.(coreSchemaForker); ok {
 			coreMod = m
+			break
+		}
+	}
+
+	var view call.View
+	for _, mod := range mods {
+		if version, ok := mod.mod.View(); ok {
+			view = version
 			break
 		}
 	}
