@@ -41,7 +41,12 @@ export const check = registry.check
 export const generate = registry.generate
 
 /**
- * The definition of @up decorator that marks a function as a service for dagger up.
+ * The definition of @start decorator that marks a function as a service for dagger start.
+ */
+export const start = registry.start
+
+/**
+ * @deprecated Use {@link start} instead.
  */
 export const up = registry.up
 

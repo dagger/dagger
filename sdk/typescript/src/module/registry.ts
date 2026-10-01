@@ -169,7 +169,18 @@ export class Registry {
   }
 
   /**
-   * The definition of @up decorator that marks a function as a service for dagger up.
+   * The definition of @start decorator that marks a function as a service for dagger start.
+   */
+  start = (): ((
+    target: object,
+    propertyKey: string,
+    descriptor: PropertyDescriptor,
+  ) => PropertyDescriptor) => {
+    return (target, propertyKey, descriptor) => descriptor
+  }
+
+  /**
+   * @deprecated Use {@link start} instead.
    */
   up = (): ((
     target: object,

@@ -645,14 +645,14 @@ Bumping the engine version usually means the generated bindings should change to
 
 ## Checks, cache policy, directives, and ignore patterns
 
-The three first-class function types are checks, generators, and services. A useful, reusable module provides at least one of them, so that the platform verbs (`dagger check`, `dagger generate`, `dagger up`) have something to run. See the [SDKs overview](./index.mdx) for the full treatment. In Elixir, you mark a function with a module attribute placed directly above its `defn`:
+The three first-class function types are checks, generators, and services. A useful, reusable module provides at least one of them, so that the platform verbs (`dagger check`, `dagger generate`, `dagger start`) have something to run. See the [SDKs overview](./index.mdx) for the full treatment. In Elixir, you mark a function with a module attribute placed directly above its `defn`:
 
 | Attribute | Return type | Run by | Purpose |
 |---|---|---|---|
 | `@check true` | `Dagger.Void.t()` (or `Dagger.Container.t()`) | `dagger check` | validate the project (test/lint/scan) |
 
 :::note
-The Elixir SDK supports checks and cache policies only. It has no equivalent of the `@generate` and `@up` markers, so an Elixir module cannot expose generators to `dagger generate` or services to `dagger up`. A `defn` may still return `Dagger.Changeset.t()` or `Dagger.Service.t()` for callers to use explicitly. If you need generators or `up` services, write that module in [Go](./go.mdx), [Python](./python.mdx), [TypeScript](./typescript.mdx), or [Dang](./dang.mdx). This is the main limitation to weigh before picking Elixir for a module.
+The Elixir SDK supports checks and cache policies only. It has no equivalent of the `@generate` and `@start` markers, so an Elixir module cannot expose generators to `dagger generate` or services to `dagger start`. A `defn` may still return `Dagger.Changeset.t()` or `Dagger.Service.t()` for callers to use explicitly. If you need generators or services, write that module in [Go](./go.mdx), [Python](./python.mdx), [TypeScript](./typescript.mdx), or [Dang](./dang.mdx). This is the main limitation to weigh before picking Elixir for a module.
 :::
 
 The Elixir-specific pieces are:

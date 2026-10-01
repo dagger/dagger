@@ -11,7 +11,7 @@ import (
 func init() {
 	cobra.AddTemplateFunc("artifactCommandUsage", artifactCommandUsage)
 	cobra.AddTemplateFunc("artifactCommandFlags", artifactCommandFlags)
-	for _, cmd := range []*cobra.Command{checksCmd, generateCmd, upCmd, shellCmd, agentCmd} {
+	for _, cmd := range []*cobra.Command{checksCmd, generateCmd, startCmd, shellCmd, agentCmd} {
 		cmd.SetUsageTemplate(`{{ "Usage" | toUpperBold }}
 {{ artifactCommandUsage . }}
 
@@ -27,7 +27,7 @@ func artifactCommandUsage(cmd *cobra.Command) string {
 		run, list = "Run checks", "List checks"
 	case "generate":
 		run, list = "Generate files", "List generators"
-	case "up":
+	case "start":
 		run, list = "Start services", "List services"
 	case "shell":
 		run, list = "Open a shell", "List shells"
@@ -87,7 +87,7 @@ func artifactCommandFlags(cmd *cobra.Command) string {
 		target = "checks"
 	case "generate":
 		target = "generators"
-	case "up":
+	case "start":
 		target = "services"
 	case "agent":
 		target = "agents"

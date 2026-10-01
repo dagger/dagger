@@ -2,7 +2,7 @@ type HelloWithServicesDang {
   """
   Returns a web server service
   """
-  @up
+  @start
   pub web: Service! {
     container
       .from("nginx:alpine")
@@ -13,7 +13,7 @@ type HelloWithServicesDang {
   """
   Returns a redis service
   """
-  @up
+  @start
   pub redis: Service! {
     container
       .from("redis:alpine")

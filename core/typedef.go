@@ -45,7 +45,7 @@ type Function struct {
 	// IsGenerator indicates whether this function is a generator
 	IsGenerator bool
 
-	// IsUp indicates whether this function returns a service to be started with `dagger up`
+	// IsUp indicates whether this function returns a service to be started with `dagger start`
 	IsUp bool
 
 	// IsAgent indicates whether this function is a source of expertise (base: LLM!): LLM!
@@ -190,7 +190,7 @@ func (fn *Function) Directives() []*ast.Directive {
 	}
 	if fn.IsUp {
 		directives = append(directives, &ast.Directive{
-			Name: "up",
+			Name: "start",
 		})
 	}
 	if fn.IsAgent {

@@ -110,7 +110,7 @@ func TestArtifactDimensionHelpSelection(t *testing.T) {
 }
 
 func TestArtifactListFlagsRequireList(t *testing.T) {
-	for _, command := range []string{"check", "generate", "up", "shell", "agent"} {
+	for _, command := range []string{"check", "generate", "start", "shell", "agent"} {
 		for _, flag := range []string{"-a", "-f=table", "--absolute", "--abs"} {
 			t.Run(command+flag, func(t *testing.T) {
 				cmd := &cobra.Command{Use: command}

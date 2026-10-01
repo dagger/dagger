@@ -4,7 +4,7 @@ import io.dagger.client.Dagger;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
-import io.dagger.module.annotation.Up;
+import io.dagger.module.annotation.Start;
 
 /** A module for HelloWithServicesJava functions */
 @Object
@@ -12,7 +12,7 @@ public class HelloWithServicesJava {
 
   /** Returns a web server service */
   @Function
-  @Up
+  @Start
   public Service web() {
     return Dagger.dag()
       .container()
@@ -23,7 +23,7 @@ public class HelloWithServicesJava {
 
   /** Returns a redis service */
   @Function
-  @Up
+  @Start
   public Service redis() {
     return Dagger.dag()
       .container()

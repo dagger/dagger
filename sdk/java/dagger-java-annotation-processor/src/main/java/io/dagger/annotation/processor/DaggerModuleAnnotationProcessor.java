@@ -30,6 +30,7 @@ import io.dagger.module.annotation.Generate;
 import io.dagger.module.annotation.Ignore;
 import io.dagger.module.annotation.Module;
 import io.dagger.module.annotation.Object;
+import io.dagger.module.annotation.Start;
 import io.dagger.module.annotation.Up;
 import io.dagger.module.info.EnumInfo;
 import io.dagger.module.info.EnumValueInfo;
@@ -239,7 +240,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                           TypeKind tk = tm.getKind();
                           boolean isCheck = elt.getAnnotation(Check.class) != null;
                           boolean isGenerate = elt.getAnnotation(Generate.class) != null;
-                          boolean isUp = elt.getAnnotation(Up.class) != null;
+                          boolean isUp =
+                              elt.getAnnotation(Start.class) != null
+                                  || elt.getAnnotation(Up.class) != null;
                           FunctionInfo functionInfo =
                               new FunctionInfo(
                                   fName,

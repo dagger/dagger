@@ -14,7 +14,7 @@ type Good {
   }
 
   """
-  A trivial service. Used to prove the module loaded for `dagger up`.
+  A trivial service. Used to prove the module loaded for `dagger start`.
   """
   @up
   pub web: Service! {

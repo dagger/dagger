@@ -739,13 +739,13 @@ Bumping the engine version usually means the generated bindings should change to
 
 ## Checks, generators, services, directives, and ignore patterns
 
-A useful, reusable module provides at least one of the three first-class function types: a **check**, a **generator**, or a **service**. That gives the platform verbs (`dagger check`, `dagger generate`, `dagger up`) something to run. These work the same in Go as in any SDK; see the [SDKs overview](./index.mdx) for the full treatment. In Go, you mark each one with a doc-comment **pragma** on the function:
+A useful, reusable module provides at least one of the three first-class function types: a **check**, a **generator**, or a **service**. That gives the platform verbs (`dagger check`, `dagger generate`, `dagger start`) something to run. These work the same in Go as in any SDK; see the [SDKs overview](./index.mdx) for the full treatment. In Go, you mark each one with a doc-comment **pragma** on the function:
 
 | Pragma | Return type | Run by | Purpose |
 |---|---|---|---|
 | `// +check` | `error` (or `*dagger.Container`) | `dagger check` | validate the project (test/lint/scan) |
 | `// +generate` | `*dagger.Changeset` | `dagger generate` | produce a diff to apply to the workspace |
-| `// +up` | `*dagger.Service` | `dagger up` | start a long-running service |
+| `// +start` | `*dagger.Service` | `dagger start` | start a long-running service |
 
 The parts specific to Go are the `// +directive` comments and the `Exclude` option on workspace directories:
 
@@ -760,7 +760,7 @@ Go modules use `// +directive` comments to add Dagger metadata that Go's type sy
 | `// +private` | above a struct field | keep the field out of the API |
 | `// +check` | above a method | mark the function as a [check](#checks) |
 | `// +generate` | above a method | mark the function as a [generator](#generators) |
-| `// +up` | above a method | mark the function as a [service](#up-services) |
+| `// +start` | above a method | mark the function as a [service](#up-services) |
 
 ### Ignore patterns
 
@@ -831,12 +831,12 @@ See [Generating code](../../using/generating.mdx).
 
 ### Services {#up-services}
 
-Mark a function with the `// +up` pragma to make it a **service**. It returns a `*dagger.Service`, and `dagger up` discovers and starts every service the module exposes, exposing their ports on the host.
+Mark a function with the `// +start` pragma to make it a **service**. It returns a `*dagger.Service`, and `dagger start` discovers and starts every service the module exposes, exposing their ports on the host.
 
 ```go
 // Run the web server.
 //
-// +up
+// +start
 func (m *MyModule) Web() *dagger.Service {
 	return dag.Container().
 		From("nginx:alpine").
@@ -845,7 +845,7 @@ func (m *MyModule) Web() *dagger.Service {
 }
 ```
 
-Like checks, `// +up` services can also be declared on custom object types so you can group related services (for example an `Infra` object exposing a `Database` service). This is the same `*dagger.Service` type described under [Services](#services) above; the `// +up` pragma is what makes a service function runnable directly via `dagger up`.
+Like checks, `// +start` services can also be declared on custom object types so you can group related services (for example an `Infra` object exposing a `Database` service). This is the same `*dagger.Service` type described under [Services](#services) above; the `// +start` pragma is what makes a service function runnable directly via `dagger start`.
 
 ## Testing Go modules
 
