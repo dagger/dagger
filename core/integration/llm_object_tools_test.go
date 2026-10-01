@@ -1614,6 +1614,9 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		// read from the bound roster...
 		require.Contains(t, transcript,
 			"dag+git-ref://roster/members/head?member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+		// ...followed by the live members' keys, so the model needs no
+		// second call to learn them...
+		require.Contains(t, transcript, "member=<name> — keys: chief")
 		// ...and the items are its live members, fully keyed.
 		require.Contains(t, transcript,
 			"dag+git-ref://roster/members/head?member=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")

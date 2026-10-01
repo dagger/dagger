@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
+	"golang.org/x/sync/errgroup"
 )
 
 // findArtifactsToolName is the builtin that lists the conversation's scope
@@ -33,11 +36,11 @@ func (m *MCP) loadArtifactTools(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
 		Name: findArtifactsToolName,
 		Description: "List the artifacts you can name by DAG address -- the values tool arguments accept as addresses (e.g. a GitRef or Directory argument) -- like `dagger list`. " +
-			"The scope is the workspace's modules plus the modules of your bound tool objects, which are read from their current state and shadow a workspace module of the same name (unless they are a fresh construction of it). Listing never evaluates a value." + "\n" +
+			"The scope is the workspace's modules plus the modules of your bound tool objects, which are read from their current state and shadow a workspace module of the same name (unless they are a fresh construction of it). Listing never evaluates an artifact's value; it only reads collections' keys." + "\n" +
 			"Address grammar: dag[+<type>]://<module>/<field>/...[?<dimension>=<key>&...], e.g. dag+git-ref://staff/members/head?member=chief. " +
 			"The path follows fields from the module; each collection on the path needs a key for its dimension; +<type> asserts the artifact's type (CLI case)." + "\n" +
 			"With no arguments: an overview of types, collections and load errors. Filters combine with AND. " +
-			"Views: paths lists each schema path once, with a <key> placeholder per dimension it still needs (the default); items lists every fully keyed address, ready to pass to a tool (the default once a collection key is selected); keys lists one dimension's keys.",
+			"Views: paths lists each schema path once, with a <key> placeholder per dimension it still needs, then the keys a placeholder can take, up to 10 (the default); items lists every fully keyed address, ready to pass to a tool (the default once a collection key is selected); keys lists one dimension's keys.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
@@ -58,7 +61,7 @@ func (m *MCP) loadArtifactTools(srv *dagql.Server, allTools *LLMToolSet) {
 				"view": map[string]any{
 					"type":        "string",
 					"enum":        []string{findArtifactsViewPaths, findArtifactsViewKeys, findArtifactsViewItems},
-					"description": "paths: schema paths with <key> placeholders. items: every fully keyed address, enumerating collection keys. keys: the keys of `dimension`.",
+					"description": "paths: schema paths with <key> placeholders, and a few keys of each collection. items: every fully keyed address, enumerating collection keys. keys: the keys of `dimension`.",
 				},
 				"dimension": map[string]any{
 					"type":        "string",
@@ -217,7 +220,16 @@ func (m *MCP) findArtifacts(ctx context.Context, srv *dagql.Server, args findArt
 		return "", err
 	}
 	if !args.filtered() && args.View == "" {
-		return renderArtifactOverview(artifactOverviewOf(scope, boundArtifactTag)), nil
+		overview := artifactOverviewOf(scope, boundArtifactTag)
+		ids := make([]string, 0, len(overview.Collections))
+		for _, coll := range overview.Collections {
+			ids = append(ids, coll.Identifier)
+		}
+		keys, err := enumerateDimensionKeys(ctx, scope, ids, artifactCollectionKeys)
+		if err != nil {
+			return "", err
+		}
+		return renderArtifactOverview(overview, keys), nil
 	}
 
 	selection := scope
@@ -255,7 +267,7 @@ func (m *MCP) findArtifacts(ctx context.Context, srv *dagql.Server, args findArt
 		if err != nil {
 			return "", err
 		}
-		return renderArtifactRows(rows), nil
+		return renderArtifactRows(rows, nil), nil
 	default:
 		schemaSelection, err := selection.SchemaSelection()
 		if err != nil {
@@ -265,8 +277,184 @@ func (m *MCP) findArtifacts(ctx context.Context, srv *dagql.Server, args findArt
 		if err != nil {
 			return "", err
 		}
-		return renderArtifactRows(rows), nil
+		keys, err := enumerateDimensionKeys(ctx, schemaSelection, rowDimensionIDs(rows), artifactCollectionKeys)
+		if err != nil {
+			return "", err
+		}
+		return renderArtifactRows(rows, keys), nil
 	}
+}
+
+// findArtifactsInlineKeys is how many of a collection's keys a listing shows
+// inline. The keys view lists them all.
+const findArtifactsInlineKeys = 10
+
+// dimensionKeys are a collection's keys as a listing enumerates them, best
+// effort: Err is why they could not be listed.
+type dimensionKeys struct {
+	Keys []string
+	Err  error
+}
+
+// enumerateDimensionKeys lists the keys of each collection dimension in ids
+// across the selection, concurrently, evaluating only collection receivers
+// (never items or leaf values), as the keys view does. A dimension whose
+// receivers depend on a parent collection's key is left out, unless the
+// selection pins that key: its keys differ per parent. Enumeration failures
+// are recorded per dimension rather than returned; only ctx's error is.
+func enumerateDimensionKeys(ctx context.Context, selection *Artifacts, ids []string, collectionKeys artifactCollectionKeyFunc) (map[string]*dimensionKeys, error) {
+	results := make([]*dimensionKeys, len(ids))
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		targets := dimensionKeyTargets(selection, id)
+		if len(targets) == 0 {
+			continue
+		}
+		wg.Go(func() {
+			keys, err := expandDimensionKeyTargets(ctx, targets, selection.Selector.Dimensions, collectionKeys)
+			results[i] = &dimensionKeys{Keys: keys, Err: err}
+		})
+	}
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	keys := map[string]*dimensionKeys{}
+	for i, result := range results {
+		if result != nil {
+			keys[ids[i]] = result
+		}
+	}
+	return keys, nil
+}
+
+// dimensionKeyTarget is a node carrying a collection dimension, with the
+// artifact whose workspace its receivers evaluate in.
+type dimensionKeyTarget struct {
+	node     *ModTreeNode
+	template *Artifact
+}
+
+// dimensionKeyTargets finds the distinct nodes of dimension id in the
+// selection. It returns none when any of them sits below a collection whose
+// key is neither fixed nor pinned to one key by the selection.
+func dimensionKeyTargets(selection *Artifacts, id string) []dimensionKeyTarget {
+	pinned := func(dim string) bool {
+		return slices.ContainsFunc(selection.Selector.Dimensions, func(f ArtifactDimensionFilter) bool {
+			return f.Dimension == dim && len(f.Keys) == 1
+		})
+	}
+	var targets []dimensionKeyTarget
+	seen := map[string]bool{}
+	for _, entry := range selection.Entries {
+		node := entry.Node
+		for node != nil && (node.CollectionDimension == nil || node.CollectionDimension.Identifier != id) {
+			node = node.Parent
+		}
+		if node == nil {
+			continue
+		}
+		var chain []string
+		for parent := node; parent != nil; parent = parent.Parent {
+			if dim := parent.CollectionDimension; parent != node && dim != nil && dim.Identifier != id && parent.CollectionKey == nil && !pinned(dim.Identifier) {
+				return nil
+			}
+			link := parent.Name
+			if parent.CollectionKey != nil {
+				link += "?" + *parent.CollectionKey
+			}
+			chain = append(chain, link)
+		}
+		// Entries share receivers: clones of the same tree, in the same
+		// workspace or bound value.
+		scope, err := entry.scope()
+		if err == nil {
+			key := scope + ":" + strings.Join(chain, "\x00")
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+		}
+		targets = append(targets, dimensionKeyTarget{node: node, template: entry})
+	}
+	return targets
+}
+
+// expandDimensionKeyTargets enumerates the keys of the targets' collections,
+// sorted and without duplicates. Their pinned parents are expanded with the
+// filters; nothing below the targets is.
+func expandDimensionKeyTargets(ctx context.Context, targets []dimensionKeyTarget, filters []ArtifactDimensionFilter, collectionKeys artifactCollectionKeyFunc) ([]string, error) {
+	found := make([][]*ModTreeNode, len(targets))
+	group, ctx := errgroup.WithContext(ctx)
+	for i, target := range targets {
+		group.Go(func() error {
+			nodes, err := expandArtifactNode(ctx, target.node, target.template, filters, collectionKeys)
+			found[i] = nodes
+			return err
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	keys := []string{}
+	for _, nodes := range found {
+		for _, node := range nodes {
+			if node != nil && node.CollectionKey != nil {
+				keys = append(keys, *node.CollectionKey)
+			}
+		}
+	}
+	slices.Sort(keys)
+	return slices.Compact(keys), nil
+}
+
+// rowDimensionIDs lists the dimensions the rows' placeholders stand for.
+func rowDimensionIDs(rows []artifactRow) []string {
+	var ids []string
+	for _, row := range rows {
+		for _, need := range row.Needs {
+			if !slices.Contains(ids, need.Identifier) {
+				ids = append(ids, need.Identifier)
+			}
+		}
+	}
+	return ids
+}
+
+// renderInlineKeys prints a collection's keys for a listing: all of them up
+// to findArtifactsInlineKeys, else the first ones and where to find the rest.
+// It is empty when the keys were not enumerated.
+func renderInlineKeys(keys *dimensionKeys, lookup string) string {
+	switch {
+	case keys == nil:
+		return ""
+	case keys.Err != nil:
+		return fmt.Sprintf("keys unavailable (%s); retry with %s(dimension: %q)", shortError(keys.Err), findArtifactsToolName, lookup)
+	case len(keys.Keys) == 0:
+		return "keys: none"
+	}
+	shown := keys.Keys[:min(len(keys.Keys), findArtifactsInlineKeys)]
+	quoted := make([]string, 0, len(shown))
+	for _, key := range shown {
+		if key == "" || key != strings.TrimSpace(key) || strings.ContainsAny(key, ",\"\n") {
+			key = strconv.Quote(key)
+		}
+		quoted = append(quoted, key)
+	}
+	out := "keys: " + strings.Join(quoted, ", ")
+	if more := len(keys.Keys) - len(shown); more > 0 {
+		out += fmt.Sprintf(" … %d more: %s(dimension: %q)", more, findArtifactsToolName, lookup)
+	}
+	return out
+}
+
+// shortError is an error's first line, cut to a length a listing can carry.
+func shortError(err error) string {
+	msg, _, _ := strings.Cut(strings.TrimSpace(err.Error()), "\n")
+	if len(msg) > 160 {
+		msg = strings.ToValidUTF8(msg[:160], "") + "…"
+	}
+	return msg
 }
 
 // findArtifactKeys lists the keys of one dimension in the selection. Only
@@ -333,6 +521,7 @@ type artifactRow struct {
 
 // artifactRowDimension is a dimension a schema path needs a key for.
 type artifactRowDimension struct {
+	Identifier string
 	// Name is the query name used in the row's address.
 	Name string
 	// Lookup is the name that selects the dimension in the whole scope, for
@@ -388,6 +577,7 @@ func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string) (
 			}
 			def := defs[i]
 			need := artifactRowDimension{
+				Identifier:     def.Identifier,
 				Name:           pathDims.DisplayName(def),
 				Lookup:         scopeDims.DisplayName(def),
 				KeyName:        def.KeyName,
@@ -423,8 +613,8 @@ func artifactItemRows(expanded *Artifacts, tag func(*Artifact) string) ([]artifa
 }
 
 // renderArtifactRows prints one row per artifact, then the dimensions the
-// rows' placeholders stand for.
-func renderArtifactRows(rows []artifactRow) string {
+// rows' placeholders stand for, with their keys when enumerated.
+func renderArtifactRows(rows []artifactRow, keys map[string]*dimensionKeys) string {
 	if len(rows) == 0 {
 		return "No artifacts match. Call " + findArtifactsToolName + " with no arguments for an overview of the scope."
 	}
@@ -444,11 +634,18 @@ func renderArtifactRows(rows []artifactRow) string {
 		for _, need := range needs {
 			out.WriteString("  ")
 			out.WriteString(need.placeholder())
+			about := []string{}
 			if description := firstParagraph(need.KeyDescription); description != "" {
-				out.WriteString(" — ")
-				out.WriteString(description)
+				about = append(about, strings.TrimRight(description, "."))
 			}
-			fmt.Fprintf(&out, " (keys: %s(dimension: %q))\n", findArtifactsToolName, need.Lookup)
+			if inline := renderInlineKeys(keys[need.Identifier], need.Lookup); inline != "" {
+				about = append(about, inline)
+			} else {
+				about = append(about, fmt.Sprintf("list its keys with %s(dimension: %q)", findArtifactsToolName, need.Lookup))
+			}
+			out.WriteString(" — ")
+			out.WriteString(strings.Join(about, "; "))
+			out.WriteString("\n")
 		}
 	}
 	return strings.TrimSuffix(out.String(), "\n")
@@ -512,6 +709,7 @@ type artifactOverviewType struct {
 }
 
 type artifactOverviewCollection struct {
+	Identifier     string
 	Name           string
 	ItemType       string
 	CollectionType string
@@ -521,7 +719,7 @@ type artifactOverviewCollection struct {
 
 // artifactOverviewOf counts the scope's schema paths per type, with the
 // modules (in CLI case, as addresses spell them) that have them. It reads no
-// runtime values.
+// runtime values: collection keys are enumerated separately.
 func artifactOverviewOf(scope *Artifacts, tag func(*Artifact) string) artifactOverview {
 	var overview artifactOverview
 	counts := map[string]int{}
@@ -553,14 +751,20 @@ func artifactOverviewOf(scope *Artifacts, tag func(*Artifact) string) artifactOv
 			continue
 		}
 		overview.Collections = append(overview.Collections, artifactOverviewCollection{
-			Name: dims.DisplayName(dim), ItemType: dim.ItemType, CollectionType: dim.CollectionType,
-			KeyName: dim.KeyName, KeyDescription: dim.KeyDescription,
+			Identifier:     dim.Identifier,
+			Name:           dims.DisplayName(dim),
+			ItemType:       dim.ItemType,
+			CollectionType: dim.CollectionType,
+			KeyName:        dim.KeyName,
+			KeyDescription: dim.KeyDescription,
 		})
 	}
 	return overview
 }
 
-func renderArtifactOverview(overview artifactOverview) string {
+// renderArtifactOverview prints the overview, with the keys of the
+// collections that were enumerated.
+func renderArtifactOverview(overview artifactOverview, keys map[string]*dimensionKeys) string {
 	if len(overview.Types) == 0 && len(overview.LoadErrors) == 0 {
 		return "No artifacts in scope: neither the workspace's modules nor your bound tool modules have any."
 	}
@@ -580,6 +784,9 @@ func renderArtifactOverview(overview artifactOverview) string {
 				if description := firstParagraph(coll.KeyDescription); description != "" {
 					out.WriteString(" (" + strings.TrimRight(description, ".") + ")")
 				}
+			}
+			if inline := renderInlineKeys(keys[coll.Identifier], coll.Name); inline != "" {
+				out.WriteString("; " + inline)
 			}
 			out.WriteString("\n")
 		}

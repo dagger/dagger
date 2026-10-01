@@ -1,6 +1,11 @@
 package core
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dagger/dagger/core/dagaddress"
@@ -55,11 +60,16 @@ Modules that failed to load (they may hide artifacts of any type):
     syntax error
 
 Narrow with type (e.g. type: "Check"), address (e.g. address: "<module>/**") or keys. view: "items" lists every fully keyed address; dimension: "<collection>" lists its keys.`,
-		renderArtifactOverview(artifactOverviewOf(scope, tag)))
+		renderArtifactOverview(artifactOverviewOf(scope, tag), nil))
+
+	// Enumerated keys are listed with their collection.
+	keys := map[string]*dimensionKeys{"/roster/members": {Keys: []string{"beta", "chief"}}}
+	require.Contains(t, renderArtifactOverview(artifactOverviewOf(scope, tag), keys),
+		"  member: RosterMember items of RosterMembers, keyed by name (The member's name); keys: beta, chief\n")
 
 	require.Equal(t,
 		"No artifacts in scope: neither the workspace's modules nor your bound tool modules have any.",
-		renderArtifactOverview(artifactOverviewOf(&Artifacts{}, tag)))
+		renderArtifactOverview(artifactOverviewOf(&Artifacts{}, tag), nil))
 }
 
 func TestFindArtifactsPathRows(t *testing.T) {
@@ -70,7 +80,7 @@ func TestFindArtifactsPathRows(t *testing.T) {
 		require.NoError(t, err)
 		rows, err := artifactPathRows(scope, selection, tag)
 		require.NoError(t, err)
-		return renderArtifactRows(rows)
+		return renderArtifactRows(rows, nil)
 	}
 
 	// Each path appears once, with a placeholder for every collection it
@@ -83,7 +93,7 @@ dag+roster-member://roster/members?member=<name> — The member with this name. 
 dag+roster-members://roster/members — The roster's members. [tool Roster, live]
 
 Replace each <placeholder> with a key (view: "items" lists every fully keyed address):
-  member=<name> — The member's name. (keys: FindArtifacts(dimension: "member"))`, render(scope))
+  member=<name> — The member's name; list its keys with FindArtifacts(dimension: "member")`, render(scope))
 
 	// A type filter keeps load failures: they could hide any type.
 	require.Equal(t, `dag+check://broken/load — LOAD ERROR: loading module "broken": boom
@@ -91,7 +101,7 @@ Replace each <placeholder> with a key (view: "items" lists every fully keyed add
 dag+git-ref://roster/members/head?member=<name> — The member's committed history. [tool Roster, live]
 
 Replace each <placeholder> with a key (view: "items" lists every fully keyed address):
-  member=<name> — The member's name. (keys: FindArtifacts(dimension: "member"))`,
+  member=<name> — The member's name; list its keys with FindArtifacts(dimension: "member")`,
 		render(scope.FilterTypeNames([]string{ArtifactTypeName("GitRef")})))
 
 	checks, err := scope.FilterURI(&dagaddress.Address{HasScheme: true, Types: []string{"check"}, Path: "go/**"})
@@ -126,13 +136,123 @@ func TestFindArtifactsItemRows(t *testing.T) {
     syntax error
 dag+git-ref://roster/members/head?member=chief — The member's committed history. [tool Roster, live]
 dag+git-ref://roster/members/head?member=worker%20one — The member's committed history. [tool Roster, live]`,
-		renderArtifactRows(rows))
+		renderArtifactRows(rows, nil))
 
 	// The addresses select the items they name.
 	addr, err := dagaddress.Parse(rows[2].Address)
 	require.NoError(t, err)
 	require.Equal(t, []string{"git-ref"}, addr.Types)
 	require.Equal(t, []dagaddress.Pair{{Dimension: "member", Key: "worker one", HasKey: true}}, addr.Query)
+}
+
+func TestFindArtifactsInlineKeys(t *testing.T) {
+	scope, tag := findArtifactsFixture()
+	var calls atomic.Int32
+	members := func(keys ...string) artifactCollectionKeyFunc {
+		return func(_ context.Context, receiver *Artifact) ([]collectionKey, error) {
+			if receiver.Node.Name != "members" {
+				return nil, fmt.Errorf("unexpected receiver %q (items and leaves must remain deferred)", receiver.Node.Name)
+			}
+			calls.Add(1)
+			list := make([]collectionKey, 0, len(keys))
+			for _, key := range keys {
+				list = append(list, collectionKey{text: key})
+			}
+			return list, nil
+		}
+	}
+	render := func(selection *Artifacts, collectionKeys artifactCollectionKeyFunc) string {
+		t.Helper()
+		selection, err := selection.SchemaSelection()
+		require.NoError(t, err)
+		rows, err := artifactPathRows(scope, selection, tag)
+		require.NoError(t, err)
+		keys, err := enumerateDimensionKeys(t.Context(), selection, rowDimensionIDs(rows), collectionKeys)
+		require.NoError(t, err)
+		return renderArtifactRows(rows, keys)
+	}
+	gitRefs := scope.FilterTypeNames([]string{ArtifactTypeName("GitRef")})
+
+	// A few keys are listed inline, sorted, so the model needs no second
+	// call to learn them. The roster's receiver is evaluated once, though
+	// two paths share it.
+	require.Equal(t, `dag+check://broken/load — LOAD ERROR: loading module "broken": boom
+    syntax error
+dag+check://go/lint — Lint the Go code.
+dag+git-ref://roster/members/head?member=<name> — The member's committed history. [tool Roster, live]
+dag+roster-member://roster/members?member=<name> — The member with this name. [tool Roster, live]
+dag+roster-members://roster/members — The roster's members. [tool Roster, live]
+
+Replace each <placeholder> with a key (view: "items" lists every fully keyed address):
+  member=<name> — The member's name; keys: alpha, beta, chief, worker one`,
+		render(scope, members("chief", "beta", "worker one", "alpha")))
+	require.EqualValues(t, 1, calls.Load())
+
+	// Keys a list could misread are quoted.
+	require.Contains(t, render(gitRefs, members("a,b", "")), `; keys: "", "a,b"`)
+	require.Contains(t, render(gitRefs, members()), "; keys: none")
+
+	// Past the cap, the first keys and where to find the rest.
+	many := make([]string, 12)
+	for i := range many {
+		many[i] = fmt.Sprintf("m%02d", i)
+	}
+	require.Contains(t, render(gitRefs, members(many...)),
+		`  member=<name> — The member's name; keys: m00, m01, m02, m03, m04, m05, m06, m07, m08, m09 … 2 more: FindArtifacts(dimension: "member")`)
+
+	// A failed enumeration keeps the placeholder and the pointer: the
+	// listing itself still succeeds.
+	require.Contains(t, render(gitRefs, func(context.Context, *Artifact) ([]collectionKey, error) {
+		return nil, errors.New("roster unavailable\nstack trace")
+	}), `  member=<name> — The member's name; keys unavailable (dimension "/roster/members": roster unavailable); retry with FindArtifacts(dimension: "member")`)
+
+	// Cancellation fails the listing rather than reporting every
+	// collection as unavailable.
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := enumerateDimensionKeys(ctx, scope, []string{"/roster/members"}, members("chief"))
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestFindArtifactsInlineKeysNested(t *testing.T) {
+	all, _ := parallelCollectionFixture(true)
+	var receivers []string
+	var mu sync.Mutex
+	keys := func(_ context.Context, receiver *Artifact) ([]collectionKey, error) {
+		mu.Lock()
+		receivers = append(receivers, receiver.Node.Name)
+		mu.Unlock()
+		switch receiver.Node.Name {
+		case "modules":
+			return []collectionKey{{text: "b"}, {text: "a"}}, nil
+		case "tests":
+			return []collectionKey{{text: "t-" + *receiver.Node.Parent.CollectionKey}}, nil
+		}
+		return nil, fmt.Errorf("unexpected receiver %q", receiver.Node.Name)
+	}
+	enumerate := func(selection *Artifacts) map[string]*dimensionKeys {
+		t.Helper()
+		selection, err := selection.SchemaSelection()
+		require.NoError(t, err)
+		found, err := enumerateDimensionKeys(t.Context(), selection, []string{"app/modules", "app/modules/tests"}, keys)
+		require.NoError(t, err)
+		return found
+	}
+
+	// The inner collection's keys depend on the outer key: only the outer
+	// one is enumerated, and no inner receiver is evaluated.
+	found := enumerate(all)
+	require.Equal(t, map[string]*dimensionKeys{"app/modules": {Keys: []string{"a", "b"}}}, found)
+	require.Equal(t, []string{"modules"}, receivers)
+
+	// Pinning the outer key makes the inner keys enumerable.
+	receivers = nil
+	found = enumerate(all.FilterDimensionKeys("module", []string{"a"}))
+	require.Equal(t, map[string]*dimensionKeys{
+		"app/modules":       {Keys: []string{"a"}},
+		"app/modules/tests": {Keys: []string{"t-a"}},
+	}, found)
+	require.NotContains(t, receivers, "check")
 }
 
 func TestFindArtifactsKeys(t *testing.T) {
