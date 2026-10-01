@@ -16,6 +16,14 @@ type JSONValue struct {
 
 var _ dagql.PersistedObject = (*JSONValue)(nil)
 var _ dagql.PersistedObjectDecoder = (*JSONValue)(nil)
+var _ dagql.CachePayloadSizer = (*JSONValue)(nil)
+
+func (v *JSONValue) CachePayloadBytes() int64 {
+	if v == nil {
+		return 0
+	}
+	return int64(len(v.Data))
+}
 
 func (*JSONValue) Type() *ast.Type {
 	return &ast.Type{
