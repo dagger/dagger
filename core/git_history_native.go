@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -101,7 +103,7 @@ func mountRefsWithLocalDonor(ctx context.Context, refs []*GitRef, fn func(*gitut
 				src.gitDir = repo.nativeGitDir
 			} else {
 				src.donor = true
-				src.gitDir = nativeCommitGitDir
+				src.gitDir = donorGitDir
 			}
 			sources = append(sources, src)
 		default:
@@ -109,6 +111,28 @@ func mountRefsWithLocalDonor(ctx context.Context, refs []*GitRef, fn func(*gitut
 		}
 	}
 	return joinDonorHistory(ctx, sources, needed, shas, fn)
+}
+
+// donorGitDir admits a complete local store as a history donor. Beyond the
+// native layout gates (no shallow, alternates or partial history), it rejects
+// info/grafts: Git prunes the real parents a graft hides, and the donor view
+// walks raw parents, so such a donor could fail the read instead of leaving it
+// to the existing join. Replace refs need no gate: prune and pack-objects
+// disable them, so the commits they replace stay reachable, and the view
+// ignores them.
+func donorGitDir(ctx context.Context, root string) (string, error) {
+	dir, err := nativeCommitGitDir(ctx, root)
+	if err != nil {
+		return "", err
+	}
+	grafts, err := os.ReadFile(filepath.Join(dir, "info", "grafts"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if len(grafts) != 0 {
+		return "", nativeCommitUnsupportedReason("grafts")
+	}
+	return dir, nil
 }
 
 type donorHistorySource struct {
