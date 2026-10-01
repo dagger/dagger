@@ -933,16 +933,25 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		require.ErrorContains(t, err, `"dag://runner/sandbox" is not a resolvable Container address: resolve "dag://runner/sandbox": no conversation to resolve the address in; FindArtifacts lists what exists`)
 	})
 
-	t.Run("absolute dag addresses need a workspace", func(t *testing.T) {
+	t.Run("absolute dag addresses need a bound workspace", func(t *testing.T) {
 		// An absolute address names a workspace, not the conversation's
-		// scope: it goes through workspace resolution, and with no
-		// Workspace.resolve here, it is refused before any Address loader
-		// runs.
+		// scope: it resolves in the conversation's bound workspace only,
+		// never the calling client's current one. With none bound, it is
+		// refused before any Address loader runs.
 		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
 			"cmd":     "make",
 			"sandbox": "dag://github.com/org/repo@1111111111111111111111111111111111111111:runner/sandbox",
 		})
-		require.ErrorContains(t, err, "a dag:// address needs a workspace")
+		require.ErrorContains(t, err, "an absolute dag:// address names a workspace, and none is bound to this conversation")
+	})
+
+	t.Run("malformed dag addresses are reported", func(t *testing.T) {
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+			"cmd":     "make",
+			"sandbox": "dag://runner/sandbox?member=%zz",
+		})
+		require.ErrorContains(t, err, `"dag://runner/sandbox?member=%zz" is not a resolvable Container address`)
+		require.ErrorContains(t, err, "invalid URL escape")
 	})
 
 	t.Run("a real ID still decodes directly", func(t *testing.T) {

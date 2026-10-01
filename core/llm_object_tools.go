@@ -1090,9 +1090,12 @@ func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefiniti
 //   - A relative dag:// address names one value in the conversation's scope
 //     — its bound tools with their live state, and its workspace (see
 //     MCP.resolveScopeObject).
-//   - Any other address — an absolute dag:// address, an image ref, a
-//     remote git URL — selects Workspace.resolve(value: <addr>).<addressField>
-//     on the session server, once checkLiftableAddress has vetted it.
+//   - An absolute dag:// address resolves in the conversation's bound
+//     workspace only (see MCP.resolveBoundWorkspaceAddress); with none bound
+//     it is refused.
+//   - Any other address — an image ref, a remote git URL — selects
+//     Workspace.resolve(value: <addr>).<addressField> on the session server,
+//     once checkLiftableAddress has vetted it.
 //
 // The resulting object's ID is re-encoded through the argument's own decoder
 // so the input matches whatever ID type the field expects (including
@@ -1122,12 +1125,19 @@ func (m *MCP) liftObjectArg(ctx context.Context, srv *dagql.Server, astField *as
 			return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w; %s", addr, typeName, err, findArtifactsPointer)
 		}
 	} else {
-		parsed, relative := relativeDAGAddress(addr)
+		parsed, isDAG, parseErr := parseDAGAddress(addr)
 		switch {
-		case relative:
+		case isDAG && parseErr != nil:
+			return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w", addr, typeName, parseErr)
+		case isDAG && !parsed.Absolute:
 			obj, err = m.resolveScopeObject(ctx, srv, parsed, addr, typeName)
 			if err != nil {
 				return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w; %s", addr, typeName, err, findArtifactsPointer)
+			}
+		case isDAG:
+			obj, err = m.resolveBoundWorkspaceAddress(ctx, srv, addr, addressableTypes[typeName].addressField)
+			if err != nil {
+				return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w", addr, typeName, err)
 			}
 		default:
 			// A model-typed string must never reach the calling client's
@@ -1162,33 +1172,58 @@ func (m *MCP) liftObjectArg(ctx context.Context, srv *dagql.Server, astField *as
 	return input, true, nil
 }
 
-// relativeDAGAddress parses a dag:// address that names a value in the
-// conversation's scope: one without a workspace. A malformed address is left
-// to workspace resolution, which reports it.
-func relativeDAGAddress(addr string) (*dagaddress.Address, bool) {
+// parseDAGAddress parses a dag:// address. isDAG reports whether the value
+// has the scheme at all; err, whether such a value is malformed. A relative
+// address names a value in the conversation's scope; an absolute one names a
+// workspace, which must be the conversation's own.
+func parseDAGAddress(addr string) (parsed *dagaddress.Address, isDAG bool, err error) {
 	if !dagaddress.IsAddress(addr) {
-		return nil, false
+		return nil, false, nil
 	}
-	parsed, err := dagaddress.Parse(addr)
-	if err != nil || parsed.Absolute {
-		return nil, false
-	}
-	return parsed, true
+	parsed, err = dagaddress.Parse(addr)
+	return parsed, true, err
 }
 
-// resolveObjectAddress loads an object from an address through the core
-// Address API: Workspace.resolve(value: <addr>).<addressField>, or
-// Query.address when no workspace is in scope (see resolveUserAddress).
+// resolveBoundWorkspaceAddress resolves an absolute dag:// address in the
+// conversation's bound workspace, and only there:
+// Workspace.resolve(value: <addr>).<addressField>, which refuses an address
+// naming another workspace. With no bound workspace it is refused: the
+// calling client's current workspace is not part of the conversation.
+func (m *MCP) resolveBoundWorkspaceAddress(ctx context.Context, srv *dagql.Server, addr, addressField string) (dagql.AnyObjectResult, error) {
+	ws := m.workspace
+	if ws.Self() == nil {
+		return nil, errors.New("an absolute dag:// address names a workspace, and none is bound to this conversation")
+	}
+	srv = srv.Canonical()
+	workspaceType, ok := srv.ObjectType("Workspace")
+	if ok {
+		_, ok = workspaceType.FieldSpec("resolve", srv.View)
+	}
+	if !ok {
+		return nil, errors.New("this schema view cannot resolve dag:// addresses")
+	}
+	// User-facing work of the tool call, as in resolveObjectAddress.
+	var obj dagql.AnyObjectResult
+	err := srv.Select(dagql.WithNonInternalTelemetry(ctx), ws, &obj,
+		dagql.Selector{View: srv.View, Field: "resolve", Args: []dagql.NamedInput{{Name: "value", Value: dagql.String(addr)}}},
+		dagql.Selector{View: srv.View, Field: addressField})
+	return obj, err
+}
+
+// resolveObjectAddress loads an object from an external address (an image
+// ref, a remote git URL) through the core Address API:
+// Workspace.resolve(value: <addr>).<addressField>, or Query.address when no
+// workspace is in scope (see resolveUserAddress). DAG addresses resolve in
+// the conversation's scope or bound workspace instead (see liftObjectArg).
 func resolveObjectAddress(ctx context.Context, srv *dagql.Server, addr, addressField string) (dagql.AnyObjectResult, error) {
 	var obj dagql.AnyObjectResult
 	resolved, err := resolveUserAddress(ctx, srv, addr)
 	if err != nil {
 		return nil, err
 	}
-	// A dag:// address is accepted only because a workspace resolves it.
-	// Without one (no current workspace, or a schema view without
-	// Workspace.resolve), some decoders would read the value as a path on the
-	// calling client's host instead.
+	// A backstop: a dag:// address is accepted only because a workspace
+	// resolves it. Without one, some decoders would read the value as a
+	// path on the calling client's host instead.
 	if dagaddress.IsAddress(addr) && resolved.Self().BoundWorkspace.Self() == nil {
 		return nil, errors.New("a dag:// address needs a workspace, and none is in scope")
 	}
