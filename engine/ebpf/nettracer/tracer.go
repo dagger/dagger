@@ -126,19 +126,20 @@ func New() (*Tracer, error) {
 			return nil, fmt.Errorf("registering link-local prefix %s: %w", prefix, err)
 		}
 	}
-	activeTracer.Store(t)
-	if err := t.addCurrentNetworkPrefixes(); err != nil {
+	finishUnavailable := func(err error) (*Tracer, error) {
 		t.cgroupErr = err
-		return t, nil //nolint:nilerr // Report engine accounting as unavailable.
+		activeTracer.Store(t)
+		return t, nil
+	}
+	if err := t.addCurrentNetworkPrefixes(); err != nil {
+		return finishUnavailable(err) //nolint:nilerr // Report engine accounting as unavailable.
 	}
 	cgroupPath, err := currentCgroupPath()
 	if err != nil {
-		t.cgroupErr = err
-		return t, nil //nolint:nilerr // Report engine accounting as unavailable.
+		return finishUnavailable(err) //nolint:nilerr // Report engine accounting as unavailable.
 	}
 	if err := t.configureEngineBoundary(cgroupPath); err != nil {
-		t.cgroupErr = err
-		return t, nil //nolint:nilerr // Report engine accounting as unavailable.
+		return finishUnavailable(err) //nolint:nilerr // Report engine accounting as unavailable.
 	}
 	ingress, err := link.AttachCgroup(link.CgroupOptions{
 		Path:    cgroupPath,
@@ -146,8 +147,7 @@ func New() (*Tracer, error) {
 		Program: objs.CountCgroupIngress,
 	})
 	if err != nil {
-		t.cgroupErr = err
-		return t, nil //nolint:nilerr // Report engine accounting as unavailable.
+		return finishUnavailable(err) //nolint:nilerr // Report engine accounting as unavailable.
 	}
 	t.cgroupIngress = ingress
 	egress, err := link.AttachCgroup(link.CgroupOptions{
@@ -158,11 +158,11 @@ func New() (*Tracer, error) {
 	if err != nil {
 		_ = ingress.Close()
 		t.cgroupIngress = nil
-		t.cgroupErr = err
-		return t, nil //nolint:nilerr // Report engine accounting as unavailable.
+		return finishUnavailable(err) //nolint:nilerr // Report engine accounting as unavailable.
 	}
 	t.cgroupEgress = egress
 	t.cgroupEnabled = true
+	activeTracer.Store(t)
 	return t, nil
 }
 
