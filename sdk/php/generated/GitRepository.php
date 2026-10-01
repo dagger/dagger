@@ -86,7 +86,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Return the latest stable release tag, falling back to HEAD when no release exists.
      *
-     * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+     * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
      */
     public function latest(?string $version = '', ?bool $noLock = false): GitRef
     {

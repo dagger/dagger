@@ -12187,7 +12187,7 @@ export class GitRepository extends BaseClient {
   /**
    * Return the latest stable release tag, falling back to HEAD when no release exists.
    *
-   * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+   * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
    * @param opts.version Version query used to select the greatest matching release ref.
    * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */

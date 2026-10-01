@@ -11339,7 +11339,7 @@ type GitRepositoryLatestOpts struct {
 
 // Return the latest stable release tag, falling back to HEAD when no release exists.
 //
-// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
 func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
 	q := r.query.Select("latest")
 	for i := len(opts) - 1; i >= 0; i-- {

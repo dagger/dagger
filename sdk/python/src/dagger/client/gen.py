@@ -10856,7 +10856,8 @@ class GitRepository(Type):
         release exists.
 
         Release selection accepts an optional "v" prefix, incomplete versions,
-        and zero-padded numeric components. This operation is pinned.
+        and zero-padded numeric components. This operation is pinned unless
+        noLock is enabled.
 
         Parameters
         ----------
