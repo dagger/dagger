@@ -4,15 +4,45 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/gitutil"
+	daggerotel "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/trace"
 )
+
+func TestGitPushAttributedNetworkBytes(t *testing.T) {
+	reader := metric.NewManualReader()
+	provider := metric.NewMeterProvider(metric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(t.Context())) })
+	ctx := daggerotel.WithMeterProvider(context.Background(), provider)
+	ctx = trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2},
+	}))
+
+	_, stderr, _ := gitPushProgressStreams(ctx)(ctx)
+	_, err := io.WriteString(stderr,
+		"Writing objects:  50% (1/2), 1.0 MiB | 1.0 MiB/s\r"+
+			"Writing objects: 100% (2/2), 2.0 MiB | 1.0 MiB/s, done.\n",
+	)
+	require.NoError(t, err)
+	require.NoError(t, stderr.Close())
+
+	var data metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(ctx, &data))
+	require.Equal(t, telemetryattrs.NetworkTxBytes, data.ScopeMetrics[0].Metrics[0].Name)
+	gauge := data.ScopeMetrics[0].Metrics[0].Data.(metricdata.Gauge[int64])
+	require.EqualValues(t, 1_992_294, gauge.DataPoints[0].Value)
+}
 
 type gitPushFixture struct {
 	dir string

@@ -1,8 +1,9 @@
 kind: Added
 body: |-
   Report attributed network receive and transmit byte estimates for
-  container execs, HTTP downloads, native Git fetches, registry image pulls
-  and pushes, host filesync, host sockets and tunnels, and LLM requests.
+  container execs, HTTP downloads, native Git fetches and pushes, registry
+  image pulls and pushes, host filesync, host sockets and tunnels, and LLM
+  requests.
   Container exec metrics separate Dagger-internal traffic from external
   traffic using TCX eBPF on the host-side CNI veth.
   Engine OpenTelemetry resource metrics also report exact cgroup network bytes
