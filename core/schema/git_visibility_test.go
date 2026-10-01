@@ -32,6 +32,7 @@ func TestPublicRemoteAdvertisement(t *testing.T) {
 	run("init", "--quiet", "--initial-branch=main")
 	run("commit", "--allow-empty", "-m", "initial")
 	run("tag", "-a", "v1", "-m", "annotated")
+	run("tag", "-a", "v10", "-m", "annotated prefix")
 	run("tag", "lightweight")
 	run("branch", "other")
 	advertisement := run("upload-pack", "--stateless-rpc", "--advertise-refs", ".")
@@ -60,7 +61,7 @@ func TestPublicRemoteAdvertisement(t *testing.T) {
 	ctx := t.Context()
 	want, err := gitutil.NewGitCLI().LsRemote(ctx, remoteURL.Remote())
 	require.NoError(t, err)
-	require.Len(t, want.Refs, 6) // HEAD, two branches, two tags, peeled annotated tag
+	require.Len(t, want.Refs, 8) // HEAD, two branches, three tags, two peeled annotated tags
 	require.Equal(t, "refs/heads/main", want.Symrefs["HEAD"])
 	requests.Store(0)
 	cache, err := dagql.NewCache(ctx, "", nil, nil)
@@ -79,7 +80,7 @@ func TestPublicRemoteAdvertisement(t *testing.T) {
 				return
 			}
 			backend := &core.RemoteGitRepository{URL: remoteURL}
-			if err := backend.PrimePublicRemote(clientCtx, probe.metadata); err != nil {
+			if err := backend.PrimePublicRemote(clientCtx, probe); err != nil {
 				t.Error(err)
 				return
 			}
@@ -110,18 +111,17 @@ func TestPublicRemoteAdvertisement(t *testing.T) {
 	private.Store(true)
 	probe, err := cachedPublicRemote(ctx, remoteURL, false)
 	require.NoError(t, err)
-	require.True(t, probe.public, "existing session retains its original view")
+	require.NotNil(t, probe, "existing session retains its original view")
 	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "cli", SessionID: "second"})
 	probe, err = cachedPublicRemote(ctx, remoteURL, false)
 	require.NoError(t, err)
-	require.False(t, probe.public, "new session rechecks visibility")
-	require.Nil(t, probe.metadata)
+	require.Nil(t, probe, "new session rechecks visibility")
 	require.EqualValues(t, 3, requests.Load())
 }
 
-func assertPublicProbe(t *testing.T, probe publicRemoteProbe, err error) bool {
+func assertPublicProbe(t *testing.T, probe *gitutil.Remote, err error) bool {
 	t.Helper()
-	if err != nil || !probe.public || probe.metadata == nil {
+	if err != nil || probe == nil {
 		t.Errorf("invalid public probe: %+v, %v", probe, err)
 		return false
 	}

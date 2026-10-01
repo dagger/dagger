@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
@@ -19,8 +18,6 @@ import (
 // before AllReferences guesses symbolic HEAD on servers without that capability.
 // Git's ls-remote --symref reports only symbolic refs actually advertised.
 func publicRemoteAdvertisement(ctx context.Context, remote *gitutil.GitURL) (_ *gitutil.Remote, rerr error) {
-	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "git.publicAdvertisement", wcprof.OpOpts{})
-	defer func() { op.EndErr(rerr) }()
 	endpoint, err := transport.NewEndpoint(remote.Remote())
 	if err != nil {
 		return nil, err
@@ -64,8 +61,10 @@ func remoteFromAdvertisement(advertised *packp.AdvRefs) *gitutil.Remote {
 			remote.Symrefs[name] = target
 		}
 	}
-	// Git advertises refs in name order; map iteration must not change the
-	// ordered refs (or their digest) between calls.
-	slices.SortFunc(remote.Refs, func(a, b *gitutil.Ref) int { return cmp.Compare(a.Name, b.Name) })
+	// Git lists each peeled ref immediately after its tag. Stable sorting by
+	// the unpeeled name keeps the tag first and preserves ls-remote's digest.
+	slices.SortStableFunc(remote.Refs, func(a, b *gitutil.Ref) int {
+		return cmp.Compare(strings.TrimSuffix(a.Name, "^{}"), strings.TrimSuffix(b.Name, "^{}"))
+	})
 	return remote
 }
