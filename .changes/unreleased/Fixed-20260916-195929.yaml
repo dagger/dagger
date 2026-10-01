@@ -1,5 +1,5 @@
 kind: Fixed
-body: Dang module invocations no longer occasionally stall 5 seconds at the end, waiting on a pooled API connection that never carried a request. It showed up most on `dagger generate`.
+body: Dang nested clients close unused HTTP connections before shutting down their local API server, avoiding a possible five-second wait after concurrent API requests.
 time: 2026-09-16T19:59:29-07:00
 custom:
     Author: grouville
