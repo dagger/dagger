@@ -165,10 +165,12 @@ func joinDonorHistory(ctx context.Context, sources []*donorHistorySource, needed
 			if src.donor {
 				donors = append(donors, gitutil.NewGitCLI(gitutil.WithDir(git.Dir()), gitutil.WithGitDir(dir)))
 			} else {
-				// A boundary other than the recorded anchor is not ours to drop.
+				// A boundary other than the recorded anchor is not ours to drop:
+				// that history is uncovered, so leave the read to the existing
+				// join. (Production sources validate it first, in nativeGitDir.)
 				shallow, err := ownedShallowBoundary(dir, src.anchor)
 				if err != nil {
-					return nil
+					return nil //nolint:nilerr // uncovered, not a read failure
 				}
 				if shallow {
 					anchors[i] = src.anchor
