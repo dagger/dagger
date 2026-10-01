@@ -162,6 +162,53 @@ func (LockfileSuite) TestGitNoLockIgnoresReadAndWrite(ctx context.Context, t *te
 	require.Empty(t, lockBytesAfter)
 }
 
+func (LockfileSuite) TestAddressNoLockIgnoresReadAndWrite(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	ref := lockTestGitRepoURL + "#main"
+	queryPath := writeQueryDoc(t, workdir, "query.graphql", `{
+  image: address(value: "alpine:latest") {
+    container(noLock: true) { imageRef }
+  }
+  ref: address(value: "`+ref+`") {
+    gitRef(noLock: true) { commit }
+    directory(noLock: true) { id }
+  }
+  file: address(value: "`+ref+`:README.md") {
+    file(noLock: true) { id }
+  }
+}`)
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup("", "oci-sha", []any{"docker.io/library/alpine:latest"}, "not-a-digest"))
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationGitSHA,
+		[]any{lockTestGitRepoURL, "main"},
+		"not-a-commit",
+	))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	require.NoError(t, os.WriteFile(lockPath, lockBytes, 0o600))
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	require.NotContains(t, string(out), "not-a-")
+
+	lockBytesAfter, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Equal(t, lockBytes, lockBytesAfter)
+
+	require.NoError(t, os.WriteFile(lockPath, nil, 0o600))
+	out, err = hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	lockBytesAfter, err = os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Empty(t, lockBytesAfter)
+}
+
 func hostGitInit(t *testctx.T, dir string) {
 	gitCmd := exec.Command("git", "init")
 	gitCmd.Dir = dir
