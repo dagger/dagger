@@ -289,6 +289,7 @@ func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/src").
 				WithEnvVariable("TARGETPLATFORM", string(platform)).
 				WithEnvVariable("CGO_ENABLED", "0").
+				With(withRepoGoModules(c)).
 				WithExec([]string{"sh", "-c", "uname -m && goxx-go build -o /out/dagger /src/cmd/dagger"})
 
 			// using require in a goroutine brings down the whole test suite, so

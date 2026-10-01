@@ -281,7 +281,8 @@ func goCache(c *dagger.Client) dagger.WithContainerFunc {
 			WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 			WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 			WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
-			WithEnvVariable("GOCACHE", "/go/build-cache")
+			WithEnvVariable("GOCACHE", "/go/build-cache").
+			With(withRepoGoModules(c))
 	}
 }
 
