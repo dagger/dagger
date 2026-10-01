@@ -353,6 +353,126 @@ func TestGitNativeCommitSiblingGitlink(t *testing.T) {
 	}
 }
 
+// An uninitialized submodule (update = none) checks out as an empty directory,
+// which changesets report only as a directory entry. Removing that directory,
+// alone or with a directory holding it, removes the gitlink: the user deleted
+// the submodule from their workspace, and its checkout would otherwise stay a
+// pending removal no commit could record. .gitmodules is left as it is. A
+// gitlink replaced by a file, or filled with files, falls back. The checkout
+// path's staging must produce the same commit.
+func TestGitNativeCommitGitlinkDirectories(t *testing.T) {
+	for _, scenario := range []string{"remove empty", "remove only empty", "remove populated", "empty to file", "fill empty", "remove sibling", "sibling dir to file", "remove nested", "nested dir to file"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := t.Context()
+			source := t.TempDir()
+			run := func(dir string, env []string, args ...string) string {
+				t.Helper()
+				out, err := runWorkspaceCommitGit(ctx, dir, env, args...)
+				require.NoError(t, err)
+				return strings.TrimSpace(out)
+			}
+			write := func(dir, name, data string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(data), 0600))
+			}
+			gitlinks := []string{"module", "sibling/module", "nested/a/module"}
+			run(source, nil, "init", "-b", "main")
+			write(source, "edit", "before")
+			write(source, "sibling/x", "x")
+			write(source, "nested/x", "x")
+			var modules strings.Builder
+			for _, p := range gitlinks {
+				fmt.Fprintf(&modules, "[submodule %q]\n\tpath = %s\n\turl = https://example.invalid/%s\n\tupdate = none\n", p, p, p)
+			}
+			write(source, ".gitmodules", modules.String())
+			run(source, nil, "add", ".")
+			run(source, nil, "commit", "-m", "root")
+			root := run(source, nil, "rev-parse", "HEAD")
+			for _, p := range gitlinks {
+				run(source, nil, "update-index", "--add", "--cacheinfo", "160000,"+root+","+p)
+			}
+			run(source, nil, "commit", "-m", "gitlinks")
+			parent := run(source, nil, "rev-parse", "HEAD")
+			oracle, native := filepath.Join(t.TempDir(), "oracle"), filepath.Join(t.TempDir(), "native")
+			run(source, nil, "clone", "--no-hardlinks", source, oracle)
+			run(source, nil, "clone", "--no-hardlinks", source, native)
+			run(oracle, nil, "submodule", "update", "--init", "--recursive")
+			entries, err := os.ReadDir(filepath.Join(oracle, "module"))
+			require.NoError(t, err)
+			require.Empty(t, entries, "an uninitialized submodule is an empty directory")
+
+			paths := &ChangesetPaths{}
+			// removed: the gitlinks the commit must no longer contain.
+			var removed []string
+			apply := func(work string) error {
+				replace := func(dir string, allRemoved ...string) {
+					paths.AllRemoved = allRemoved
+					require.NoError(t, os.RemoveAll(filepath.Join(work, dir)))
+				}
+				switch scenario {
+				case "remove empty":
+					replace("module", "module/")
+					paths.Modified = []string{"edit"}
+					write(work, "edit", "after")
+					removed = []string{"module"}
+				case "remove only empty":
+					replace("module", "module/")
+					removed = []string{"module"}
+				case "remove populated":
+					// An initialized submodule's checkout: its files are
+					// submodule content, never in the superproject's index.
+					replace("module", "module/", "module/file", "module/sub/", "module/sub/file")
+					removed = []string{"module"}
+				case "empty to file":
+					replace("module", "module/")
+					paths.Added = []string{"module"}
+					write(work, "module", "file")
+				case "fill empty":
+					paths.Added = []string{"module/new"}
+					write(work, "module/new", "new")
+				case "remove sibling", "sibling dir to file":
+					replace("sibling", "sibling/", "sibling/module/", "sibling/x")
+					removed = []string{"sibling/module"}
+				case "remove nested", "nested dir to file":
+					replace("nested", "nested/", "nested/a/", "nested/a/module/", "nested/x")
+					removed = []string{"nested/a/module"}
+				}
+				if strings.HasSuffix(scenario, "dir to file") {
+					name := strings.Fields(scenario)[0]
+					paths.Added = []string{name}
+					write(work, name, "file")
+				}
+				return nil
+			}
+			require.NoError(t, apply(oracle))
+			opts := GitCommitOpts{Message: "commit", Date: "2025-01-02T03:04:05Z", AuthorName: "Author", AuthorEmail: "author@example.com", CommitterName: "Author", CommitterEmail: "author@example.com", CommitterDate: "2025-01-02T03:04:05Z"}
+			err = withNativeCommitIndex(ctx, filepath.Join(native, ".git"), filepath.Join(source, ".git", "objects"), &gitutil.Ref{SHA: parent, Name: "refs/heads/main"}, paths, opts, apply)
+			if scenario == "empty to file" || scenario == "fill empty" {
+				require.ErrorIs(t, err, errNativeCommitUnsupported)
+				require.Equal(t, "gitlink-change", err.Error())
+				return
+			}
+			require.NoError(t, err)
+			env := []string{"GIT_LITERAL_PATHSPECS=1", "GIT_AUTHOR_NAME=" + opts.AuthorName, "GIT_AUTHOR_EMAIL=" + opts.AuthorEmail, "GIT_COMMITTER_NAME=" + opts.CommitterName, "GIT_COMMITTER_EMAIL=" + opts.CommitterEmail, "GIT_AUTHOR_DATE=" + opts.Date, "GIT_COMMITTER_DATE=" + opts.CommitterDate}
+			require.NoError(t, stageCheckoutChanges(func(args ...string) (string, error) {
+				return runWorkspaceCommitGit(ctx, oracle, env, args...)
+			}, paths))
+			run(oracle, env, "commit", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "-m", opts.Message)
+			require.Equal(t, run(oracle, nil, "rev-parse", "HEAD"), run(native, nil, "rev-parse", "HEAD"))
+			for _, p := range gitlinks {
+				entry := run(native, nil, "ls-tree", "HEAD", "--", p)
+				if slices.Contains(removed, p) {
+					require.Empty(t, entry, p)
+				} else {
+					require.Equal(t, "160000 commit "+root+"\t"+p, entry)
+				}
+			}
+			require.Equal(t, run(native, nil, "rev-parse", "HEAD~1:.gitmodules"), run(native, nil, "rev-parse", "HEAD:.gitmodules"))
+		})
+	}
+}
+
 func TestGitNativeCommitObjectMetrics(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))

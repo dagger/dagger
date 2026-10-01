@@ -267,7 +267,7 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 		if err := os.Mkdir(work, 0755); err != nil {
 			return err
 		}
-		if err := stageNativeChanges(run, parent, changes, func() error {
+		if err := stageNativeChanges(run, parent, changes, false, func() error {
 			// Controls have been hydrated, but still describe the parent.
 			if err := validateNativeWorkspaceBase(run, base, changes); err != nil {
 				return err
