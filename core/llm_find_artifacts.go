@@ -220,16 +220,9 @@ func (m *MCP) findArtifacts(ctx context.Context, srv *dagql.Server, args findArt
 		return "", err
 	}
 	if !args.filtered() && args.View == "" {
-		overview := artifactOverviewOf(scope, boundArtifactTag)
-		ids := make([]string, 0, len(overview.Collections))
-		for _, coll := range overview.Collections {
-			ids = append(ids, coll.Identifier)
-		}
-		keys, err := enumerateDimensionKeys(ctx, scope, ids, artifactCollectionKeys)
-		if err != nil {
-			return "", err
-		}
-		return renderArtifactOverview(overview, keys), nil
+		// The overview is the cheap first call: it reads no runtime state,
+		// not even collection keys. Narrowed listings show those.
+		return renderArtifactOverview(artifactOverviewOf(scope, boundArtifactTag)), nil
 	}
 
 	selection := scope
@@ -709,7 +702,6 @@ type artifactOverviewType struct {
 }
 
 type artifactOverviewCollection struct {
-	Identifier     string
 	Name           string
 	ItemType       string
 	CollectionType string
@@ -719,7 +711,7 @@ type artifactOverviewCollection struct {
 
 // artifactOverviewOf counts the scope's schema paths per type, with the
 // modules (in CLI case, as addresses spell them) that have them. It reads no
-// runtime values: collection keys are enumerated separately.
+// runtime values.
 func artifactOverviewOf(scope *Artifacts, tag func(*Artifact) string) artifactOverview {
 	var overview artifactOverview
 	counts := map[string]int{}
@@ -751,7 +743,6 @@ func artifactOverviewOf(scope *Artifacts, tag func(*Artifact) string) artifactOv
 			continue
 		}
 		overview.Collections = append(overview.Collections, artifactOverviewCollection{
-			Identifier:     dim.Identifier,
 			Name:           dims.DisplayName(dim),
 			ItemType:       dim.ItemType,
 			CollectionType: dim.CollectionType,
@@ -762,9 +753,9 @@ func artifactOverviewOf(scope *Artifacts, tag func(*Artifact) string) artifactOv
 	return overview
 }
 
-// renderArtifactOverview prints the overview, with the keys of the
-// collections that were enumerated.
-func renderArtifactOverview(overview artifactOverview, keys map[string]*dimensionKeys) string {
+// renderArtifactOverview prints the overview. It lists collections without
+// their keys: the overview reads no runtime state.
+func renderArtifactOverview(overview artifactOverview) string {
 	if len(overview.Types) == 0 && len(overview.LoadErrors) == 0 {
 		return "No artifacts in scope: neither the workspace's modules nor your bound tool modules have any."
 	}
@@ -784,9 +775,6 @@ func renderArtifactOverview(overview artifactOverview, keys map[string]*dimensio
 				if description := firstParagraph(coll.KeyDescription); description != "" {
 					out.WriteString(" (" + strings.TrimRight(description, ".") + ")")
 				}
-			}
-			if inline := renderInlineKeys(keys[coll.Identifier], coll.Name); inline != "" {
-				out.WriteString("; " + inline)
 			}
 			out.WriteString("\n")
 		}

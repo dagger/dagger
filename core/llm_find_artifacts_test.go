@@ -60,16 +60,11 @@ Modules that failed to load (they may hide artifacts of any type):
     syntax error
 
 Narrow with type (e.g. type: "Check"), address (e.g. address: "<module>/**") or keys. view: "items" lists every fully keyed address; dimension: "<collection>" lists its keys.`,
-		renderArtifactOverview(artifactOverviewOf(scope, tag), nil))
-
-	// Enumerated keys are listed with their collection.
-	keys := map[string]*dimensionKeys{"/roster/members": {Keys: []string{"beta", "chief"}}}
-	require.Contains(t, renderArtifactOverview(artifactOverviewOf(scope, tag), keys),
-		"  member: RosterMember items of RosterMembers, keyed by name (The member's name); keys: beta, chief\n")
+		renderArtifactOverview(artifactOverviewOf(scope, tag)))
 
 	require.Equal(t,
 		"No artifacts in scope: neither the workspace's modules nor your bound tool modules have any.",
-		renderArtifactOverview(artifactOverviewOf(&Artifacts{}, tag), nil))
+		renderArtifactOverview(artifactOverviewOf(&Artifacts{}, tag)))
 }
 
 func TestFindArtifactsPathRows(t *testing.T) {
