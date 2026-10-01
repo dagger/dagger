@@ -11,6 +11,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -1477,6 +1478,36 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 		require.NoError(t, err)
 		require.Contains(t, out, "dag://roster/members\n")
 		require.NotContains(t, out, "dag://notes/")
+	})
+
+	t.Run("a freshly constructed binding yields to the workspace", func(ctx context.Context, t *testctx.T) {
+		// Only a workspace artifact has an absolute address, so it tells
+		// which roster the scope kept. The fixture is a local workspace,
+		// which has no Git address either: a workspace artifact fails on
+		// that instead, past the check that refuses a bound one.
+		absolute := func(ctx context.Context, t *testctx.T, roster string) string {
+			t.Helper()
+			out, err := base.With(daggerShell(
+				`llm | with-workspace --workspace $(current-workspace) | with-tools $(` + roster + `) | artifacts | filter-uri "dag://roster/members" | items | uri --absolute`,
+			)).Stdout(ctx)
+			if err != nil {
+				var execErr *dagger.ExecError
+				if errors.As(err, &execErr) {
+					return execErr.Stderr
+				}
+				return err.Error()
+			}
+			return out
+		}
+		// A plain construction has the workspace's values: the workspace's
+		// roster stays, as `dagger mcp` binds every workspace module so.
+		fresh := absolute(ctx, t, "roster")
+		require.Contains(t, fresh, "has no Git address")
+		require.NotContains(t, fresh, "not a workspace artifact")
+		// A roster with state of its own shadows it.
+		stateful := absolute(ctx, t, `roster | with-member --name a --contents x`)
+		require.Contains(t, stateful, "not a workspace artifact")
+		require.NotContains(t, stateful, "has no Git address")
 	})
 }
 
