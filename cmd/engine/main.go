@@ -47,6 +47,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine/ebpf/filetracer"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/ebpf/ovltracer"
 	"github.com/dagger/dagger/engine/engineutil/cacerts"
 	"github.com/dagger/dagger/engine/server"
@@ -319,6 +320,7 @@ func main() { //nolint:gocyclo
 
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
 	var resourceMetrics *sdkmetric.MeterProvider
+	var networkAccounting *nettracer.Tracer
 
 	// One random ID names this engine process in all its telemetry
 	// (service.instance.id), its cache events included, and marks the epoch
@@ -380,6 +382,15 @@ func main() { //nolint:gocyclo
 		}
 		remoteCache := newRemoteCacheIntegration(&cfg)
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
+		networkAccounting, err = nettracer.New()
+		if err != nil {
+			bklog.G(ctx).Warnf("network accounting unavailable: %s", err)
+		} else if err := nettracer.EngineAccountingError(); err != nil {
+			bklog.G(ctx).Warnf(
+				"engine cgroup network accounting unavailable: %s",
+				err,
+			)
+		}
 		eventExport = newEngineEventExport(ctx, processResource, cfg.Telemetry)
 
 		bklog.G(ctx).Debug("setting up engine networking")
@@ -625,6 +636,13 @@ func main() { //nolint:gocyclo
 		// event provider; flush them before the global providers close.
 		eventExport.shutdownAtExit(ctx)
 		closeResourceMetrics(ctx, resourceMetrics)
+		if networkAccounting != nil {
+			if err := networkAccounting.Close(); err != nil {
+				bklog.G(ctx).WithError(err).Warn(
+					"network accounting shutdown incomplete",
+				)
+			}
+		}
 		// Providers finish before the engine-owned workload export drains.
 		// Their shared processor/exporter wrappers do not close it.
 		telemetry.Close()

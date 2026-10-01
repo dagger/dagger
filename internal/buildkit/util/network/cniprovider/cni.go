@@ -9,6 +9,7 @@ import (
 	"time"
 
 	cni "github.com/containerd/go-cni"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -60,8 +61,9 @@ func New(opt Opt) (network.Provider, error) {
 	}
 
 	cp := &cniProvider{
-		CNI:  cniHandle,
-		root: opt.Root,
+		CNI:           cniHandle,
+		root:          opt.Root,
+		netAccounting: nettracer.Active(),
 	}
 	cleanOldNamespaces(cp)
 
@@ -75,9 +77,10 @@ func New(opt Opt) (network.Provider, error) {
 
 type cniProvider struct {
 	cni.CNI
-	root    string
-	nsPool  *cniPool
-	release func() error
+	root          string
+	nsPool        *cniPool
+	release       func() error
+	netAccounting *nettracer.Tracer
 }
 
 func (c *cniProvider) initNetwork(lock bool) error {
