@@ -488,18 +488,6 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 	c := proxyTestClient(ctx, t)
 
-	// Just a subset of modules we expect to be downloaded since trying to go one to one would
-	// be too fragile whenever the SDK changes.
-	// NOTE: this is also impacted by engine pre-caching of SDK deps, so what shows up here are
-	// deps in testGitModuleRef that aren't pre-cached.
-	// If updating this test becomes a nuisance, we might want to use a custom test git module ref
-	// that specifically has some extra deps not in the Go SDK.
-	expectedGoModDownloads := []string{
-		"github.com/andreyvit/diff",
-		"github.com/davecgh/go-spew",
-		"github.com/go-logr/logr",
-	}
-
 	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
 	if os.Getenv(executeTestEnvName) == "" {
 		const goProxyAlias = "goproxy"
@@ -582,10 +570,11 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 
 		fetcher.mu.Lock()
 		defer fetcher.mu.Unlock()
+		// The engine pre-caches what Go SDK modules commonly need, and
+		// codegen reads that cache first, so which modules go through the
+		// proxy depends on what testGitModuleRef needs beyond it. Just check
+		// that downloads went through the proxy.
 		require.NotEmpty(t, fetcher.dlPaths)
-		for _, expectedPath := range expectedGoModDownloads {
-			require.Contains(t, fetcher.dlPaths, expectedPath)
-		}
 
 		return
 	}
