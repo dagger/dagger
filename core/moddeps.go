@@ -43,11 +43,11 @@ type modDepEntry struct {
 // graph and for the set of modules served to a client session.
 //
 // A built server is kept only by a client-owned builder: one that lives no
-// longer than the client that built it, such as a client's SchemaBuilderMemo
-// entry or the builder its runtime serves from. Any other builder, notably a
-// Module's Deps, sits on cached results that outlive the client, so its
-// schema is taken from the current client's memo instead and lives and dies
-// with that client.
+// longer than the client or session that built it, such as a
+// SchemaBuilderMemo entry or the builder a client runtime serves from. Any
+// other builder, notably a Module's Deps, sits on cached results that outlive
+// the session, so its schema is taken from the current session's memo
+// instead and lives and dies with that session.
 type SchemaBuilder struct {
 	// root is the query value installed into derived schema servers. Query only
 	// carries the engine Server facade; runtime selection and authority come
@@ -137,6 +137,13 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 // the client actually loads through, that count grows with distinct module
 // results (e.g. one per reload in a dev loop) rather than with load volume,
 // and an entry costs roughly one forked core schema plus its modules' types.
+//
+// The engine also keeps one memo per session for the schemas of builders that
+// are not client-owned, such as a Module's Deps (see SchemaBuilder.Schema).
+// It is shared by the session's clients, including the nested client of every
+// function call, and dropped when the session ends; its entries grow with the
+// distinct module sets the session uses.
+//
 // A built server is an immutable type registry; the dagql result cache is
 // engine-wide and never held by a server, so sharing one shares no results.
 type SchemaBuilderMemo struct {
@@ -269,9 +276,9 @@ func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
 	}
 	owner := b
 	if !b.clientOwned {
-		owner = currentSchemaBuilderMemo(ctx).Get(b)
+		owner = currentSessionSchemaBuilderMemo(ctx).Get(b)
 		if !owner.clientOwned {
-			// No client can hold this module set's server: build it for
+			// No session can hold this module set's server: build it for
 			// this call alone rather than keep it on b.
 			owner = b.Clone()
 		}
@@ -283,14 +290,14 @@ func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
 	return srv, nil
 }
 
-// currentSchemaBuilderMemo returns the current client's memo, or nil when the
-// context carries no client.
-func currentSchemaBuilderMemo(ctx context.Context) *SchemaBuilderMemo {
+// currentSessionSchemaBuilderMemo returns the current session's memo, or nil
+// when the context carries no client of a live session.
+func currentSessionSchemaBuilderMemo(ctx context.Context) *SchemaBuilderMemo {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil
 	}
-	memo, err := query.SchemaBuilderMemo(ctx)
+	memo, err := query.SessionSchemaBuilderMemo(ctx)
 	if err != nil {
 		return nil
 	}

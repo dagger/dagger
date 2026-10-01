@@ -95,39 +95,45 @@ func TestSchemaBuilderCanceledLoadDoesNotStick(t *testing.T) {
 	require.Same(t, srv, again, "the built server is kept")
 }
 
-// memoTestServer hands out one client's schema builder memo.
+// memoTestServer hands out one session's schema builder memo, and a client
+// memo of its own.
 type memoTestServer struct {
 	*mockServer
-	memo *SchemaBuilderMemo
+	client  *SchemaBuilderMemo
+	session *SchemaBuilderMemo
 }
 
 func (s *memoTestServer) SchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error) {
-	return s.memo, nil
+	return s.client, nil
+}
+
+func (s *memoTestServer) SessionSchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error) {
+	return s.session, nil
 }
 
 // A builder that is not client-owned, like a cached Module's Deps, never keeps
-// the server it builds: the current client's memo does, so the server is built
-// once per client and dies with it.
-func TestSchemaBuilderServerLivesInClientMemo(t *testing.T) {
+// the server it builds: the current session's memo does, so the server is
+// built once per session, shared by its clients, and dies with it.
+func TestSchemaBuilderServerLivesInSessionMemo(t *testing.T) {
 	deps := NewSchemaBuilder(&Query{}, []Mod{&ctxInstallMod{}})
-	client := func() context.Context {
-		return ContextWithQuery(t.Context(), &Query{Server: &memoTestServer{mockServer: &mockServer{}, memo: NewSchemaBuilderMemo()}})
+	session := NewSchemaBuilderMemo()
+	client := func(session *SchemaBuilderMemo) context.Context {
+		return ContextWithQuery(t.Context(), &Query{Server: &memoTestServer{mockServer: &mockServer{}, client: NewSchemaBuilderMemo(), session: session}})
 	}
 
-	ctxA := client()
-	srv, err := deps.Schema(ctxA)
+	srv, err := deps.Schema(client(session))
 	require.NoError(t, err)
-	again, err := deps.Schema(ctxA)
+	again, err := deps.Schema(client(session))
 	require.NoError(t, err)
-	require.Same(t, srv, again, "one client builds the module set once")
+	require.Same(t, srv, again, "the session's clients build the module set once")
 	require.Nil(t, deps.lazilyLoadedServer, "the builder itself keeps no server")
 
-	other, err := deps.Schema(client())
+	other, err := deps.Schema(client(NewSchemaBuilderMemo()))
 	require.NoError(t, err)
-	require.NotSame(t, srv, other, "another client builds its own")
+	require.NotSame(t, srv, other, "another session builds its own")
 }
 
-// With no client to hold it, the server is built for the one call.
+// With no session to hold it, the server is built for the one call.
 func TestSchemaBuilderWithoutClientBuildsUncached(t *testing.T) {
 	deps := NewSchemaBuilder(&Query{}, []Mod{&ctxInstallMod{}})
 	srv, err := deps.Schema(t.Context())
