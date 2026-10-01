@@ -89,8 +89,8 @@ Entry points: `GitCheckoutBase` in `core/git_local.go`; `incrementalTree`, `plan
 
 ```go
 type GitCheckoutBase struct {
-	Parent    dagql.ObjectResult[*GitRef] // exact parent recipe
-	CommitSHA string                      // resolved HEAD of the new commit
+    Parent    dagql.ObjectResult[*GitRef] // exact parent recipe
+    CommitSHA string                      // resolved HEAD of the new commit
 }
 ```
 
