@@ -124,6 +124,61 @@ func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testc
 	require.Equal(t, "Dagger", name)
 }
 
+func (WorkspaceSuite) TestWorkspacePullKeepsBranch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
+	live := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace()
+	commit := func(ws *dagger.Workspace, path, message string) *dagger.Workspace {
+		ws = ws.WithNewFile(path, message)
+		return ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate)
+	}
+	requireOnMain := func(ctx context.Context, t *testctx.T, ws *dagger.Workspace) {
+		t.Helper()
+		name, err := ws.Git().Head().Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/heads/main", name)
+		head, err := ws.Git().Directory().File("HEAD").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ref: refs/heads/main\n", head)
+	}
+	// Freezing pins HEAD's commit rather than looking the branch up again,
+	// but HEAD stays on its branch: commits on the frozen workspace advance it.
+	base := snapshotWorkspace(ctx, t, c, live)
+	requireOnMain(ctx, t, base)
+	source := commit(base, "source.txt", "source")
+	requireOnMain(ctx, t, source)
+	sourceSHA, err := source.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name     string
+		receiver *dagger.Workspace
+		want     []string
+	}{
+		{"fast-forward", live, []string{"source", "init"}},
+		{"cherry-pick", commit(live, "local.txt", "local"), []string{"source", "local", "init"}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			pulled, err := applyWorkspacePull(ctx, c, tc.receiver, source, nil, 100)
+			require.NoError(t, err)
+			requireOnMain(ctx, t, pulled)
+			log, err := pulled.Git().Head().Log(ctx, dagger.GitRefLogOpts{Limit: 10})
+			require.NoError(t, err)
+			var messages []string
+			for _, commit := range log {
+				message, err := commit.Message(ctx)
+				require.NoError(t, err)
+				messages = append(messages, strings.TrimSpace(message))
+			}
+			require.Equal(t, tc.want, messages)
+			sha, err := pulled.Git().Head().CommitSHA(ctx)
+			require.NoError(t, err)
+			require.Equal(t, len(tc.want) == 2, sha == sourceSHA, "only a fast-forward keeps the source commit")
+			requireOnMain(ctx, t, commit(pulled, "next.txt", "next"))
+		})
+	}
+}
+
 func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	git("config", "user.name", "Source")

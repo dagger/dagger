@@ -264,11 +264,8 @@ func (s *workspaceSchema) checkpointGitRef(
 		return inst, fmt.Errorf("workspace snapshot Git source has no resolved commit")
 	}
 
-	var pinned dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, ref.Repo, &pinned, dagql.Selector{
-		Field: "ref",
-		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(ref.Ref.SHA)}},
-	}); err != nil {
+	pinned, err := pinWorkspaceHead(ctx, srv, ref.Repo, ref.Ref.Name, ref.Ref.SHA)
+	if err != nil {
 		return inst, fmt.Errorf("pin workspace Git ref at %s: %w", ref.Ref.SHA, err)
 	}
 	if err := srv.Select(ctx, pinned, &inst, dagql.Selector{
@@ -288,6 +285,28 @@ func (s *workspaceSchema) checkpointGitRef(
 
 	workspaceEnv, _ := selectedWorkspaceEnv(ctx, ws)
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, ws, workspaceEnv)
+}
+
+// pinWorkspaceHead selects HEAD at exactly sha, without a mutable lookup. A
+// HEAD on a branch keeps that branch as its name: the checkout then stays on
+// the branch, so commits and pulls built on a frozen workspace advance it
+// instead of detaching HEAD.
+func pinWorkspaceHead(ctx context.Context, srv *dagql.Server, repo dagql.ObjectResult[*core.GitRepository], name, sha string) (inst dagql.ObjectResult[*core.GitRef], err error) {
+	if strings.HasPrefix(name, "refs/heads/") {
+		err = srv.Select(ctx, repo, &inst, dagql.Selector{
+			Field: "__resolvedRef",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString(name)},
+				{Name: "commit", Value: dagql.NewString(sha)},
+			},
+		})
+		return inst, err
+	}
+	err = srv.Select(ctx, repo, &inst, dagql.Selector{
+		Field: "ref",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(sha)}},
+	})
+	return inst, err
 }
 
 func (s *workspaceSchema) checkpointCapturedGitComposition(
