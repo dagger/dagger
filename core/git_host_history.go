@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,8 +45,13 @@ func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.Obje
 	if err != nil {
 		return err
 	}
-	if owner == "" || owner != md.ClientID || path == "" || state == "" || len(anchor) != 40 || !IsFullGitSHA(anchor) || remote.URL.Remote() != remoteURL {
+	if owner == "" || owner != md.ClientID || path == "" || state == "" || len(anchor) != 40 || !IsFullGitSHA(anchor) {
 		return fmt.Errorf("host history registration requires the captured owner's exact remote anchor")
+	}
+	if captured, ok := capturedGitRemote(remoteURL); !ok || remote.URL.Remote() != captured {
+		// The donor is only an optimization: a route this repository does not
+		// recognize registers nothing rather than failing the capture.
+		return nil
 	}
 	recipe, err := repo.RecipeDigest(ctx)
 	if err != nil {
@@ -58,6 +64,19 @@ func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.Obje
 	}
 	q.hostHistory[hostHistoryKey{recipe, anchor}] = hostHistoryDonor{owner, path, state}
 	return nil
+}
+
+// capturedGitRemote spells a client-reported remote URL the way Query.git
+// records it: an ssh:// remote without a user defaults to "git".
+func capturedGitRemote(raw string) (string, bool) {
+	u, err := gitutil.ParseURL(raw)
+	if err != nil {
+		return "", false
+	}
+	if u.Scheme == gitutil.SSHProtocol && u.User == nil {
+		u.User = url.User("git")
+	}
+	return u.Remote(), true
 }
 
 func (q *Query) capturedHostHistory(ctx context.Context, parent dagql.ObjectResult[*GitRef]) (hostHistoryDonor, bool, error) {
