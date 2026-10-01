@@ -51,12 +51,12 @@ Unsupported inputs are rejected with a fixed `nativeCommitUnsupportedReason` cod
 
 Entry points: `TryNativeWorkspaceMerge` and `nativeWorkspaceMerge` in `core/changeset_native.go`, called from `changesetMergeForWorkspaceCommit` (the private, persistable `Changeset.__mergeForWorkspaceCommit` field) in `core/schema/workspace_commit.go`.
 
-`Workspace.withCommit` merges the committed changeset into the approved working tree as well as into HEAD, so incoming and unselected edits both survive. When both the uncommitted and the incoming changeset pass `GitCommitChangesetNativeBase` against HEAD, the uncommitted changeset is the working delta as-is. Otherwise, for empty or off-baseline inputs, the working tree is rebuilt by applying the uncommitted changeset to HEAD and diffed against the incoming changeset's `Before`. `__mergeForWorkspaceCommit` then tries the native merge and falls back to the general fail-on-conflict `__mergeWithChangeset`, which restages the whole baseline in temporary Git repositories.
+`Workspace.withCommit` merges the committed changeset into the approved working tree as well as into HEAD, so incoming and unselected edits both survive. When both the uncommitted and the incoming changeset pass `GitCommitChangesetNativeBase` against HEAD, the uncommitted changeset is the working delta as-is. Otherwise, for empty or off-baseline inputs, the working tree is rebuilt by applying the uncommitted changeset to HEAD and diffed against the incoming changeset's `Before`. `__mergeForWorkspaceCommit` then tries the native merge and falls back to the general fail-on-conflict `__mergeWithChangeset`, which restages the whole baseline in temporary Git repositories, for any input the native merge does not support.
 
 The native merge proves the same provenance for both changesets against the working tree's `Before`, then mounts the local repository read-only to borrow its objects. In a private bare scratch repository it:
 
 1. Stages each changeset in its own sparse worktree and private index with `stageNativeChanges`, the staging shared with commit construction, and writes a temporary commit on the parent.
-2. Runs `git merge-tree --write-tree --name-only --merge-base=<parent>` on the two commits, named `workspace` and `incoming` so conflict messages refer to the sides rather than scratch commit IDs. A conflict is an error naming the conflicted paths and Git's `CONFLICT` messages.
+2. Runs `git merge-tree --write-tree --name-only --merge-base=<parent>` on the two commits, named `workspace` and `incoming` so conflict messages refer to the sides rather than scratch commit IDs. A conflict is final (`nativeMergeConflict`): an error naming the conflicted paths and Git's `CONFLICT` messages, with no legacy merge behind it.
 3. Replays, on a COW child of `Before`, the filesystem transitions of the legacy checkout sequence rather than checking out the merged tree:
 
 ```text
@@ -67,6 +67,8 @@ Before
 ```
 
 `nativeWorkspaceCheckout` removes and `checkout-index`es only entries that differ between two trees. That matters because the legacy result is not a pure function of the Git tree: entries Git skips keep their incoming raw bytes (including CRLF), permissions, ownership and xattrs, while rewritten entries are normalized. Missing parent directories are left for Git to create with its own mode. The baseline is never walked or hashed, and scratch commits, objects and indexes never enter the output snapshot.
+
+The merge base is HEAD's real tree, while the legacy merge commits a synthetic base with `git add -A` over `Before`, which leaves out tracked files the ignore rules match. The two agree on every declared path, but not on what else a directory holds, and Git's directory rename detection depends on that. When one side moves every file out of a directory that still holds a tracked ignored file, and the other side adds a file there, the legacy merge reports a `CONFLICT (file location)` for a directory rename that did not happen; the native merge keeps the added file where it was put. That is the intended result.
 
 Eligibility is checked only on declared paths and the materialized deltas, with fixed reason codes on top of the storage, gitlink and `.gitmodules` gates above:
 
@@ -80,11 +82,11 @@ The span `git native workspace merge` records `dagger.git.native_merge.supported
 
 ## Fallback Policy
 
-Native paths are optimizations; the legacy path is always correct. `nativeFallback` is the shared policy:
+Native paths are optimizations over complete legacy paths, which handle every input they reject. Where the two disagree, the native path is the reference: it works from the real Git objects, while the legacy paths approximate them from a checkout (see the merge base above). `nativeFallback` is the shared policy:
 
-- **Any error falls back**, not only unsupported inputs: unanticipated repository states, missing objects and internal timeouts included. The error is recorded in full, paths included, as the span's fallback reason, and the caller takes the legacy path: the checkout-based `GitCommitChangeset` for commits, the general `__mergeWithChangeset` for workspace reconciliation. A `merge-tree` conflict falls back too, so the legacy merge reports it.
+- **Any error falls back**, not only unsupported inputs: unanticipated repository states, missing objects and internal timeouts included. The error is recorded in full, paths included, as the span's fallback reason, and the caller takes the legacy path: the checkout-based `GitCommitChangeset` for commits, the general `__mergeWithChangeset` for workspace reconciliation. Git errors quote at most the first pathspec and 512 bytes of the command line (`gitErrorArgs`).
 - **The caller's own cancellation is returned**, decided by the caller's `ctx.Err()`. An error that merely wraps a deadline from some internal context still falls back.
-- **`ErrNothingToCommit` is returned as-is.** It is the commit's answer, not a failure, and the legacy path would reach it only after a full checkout.
+- **Results are returned as-is.** `ErrNothingToCommit` is the commit's answer and a `nativeMergeConflict` the merge's, not failures; the legacy path would reach them only after restaging everything.
 - **Produced snapshots are released first.** A failure or cancellation observed after the child snapshot was committed releases it, with an uncancelled cleanup context, before the error is returned or discarded. This applies to a reconciliation result as well as a commit.
 - **Snapshot chains are bounded.** Each native commit is a COW child of its parent's storage, so a long session stacks overlay layers. `checkNativeSnapshotDepth` rejects a child whose overlay mount has more than 64 `lowerdir` entries (`maxNativeSnapshotDepth`); the legacy path starts from a fresh snapshot and resets the chain. Non-overlay snapshotters have no such limit.
 

@@ -149,6 +149,8 @@ func TestNativeWorkspaceMergeMatchesCheckout(t *testing.T) {
 						require.Error(t, oracleErr)
 						require.Error(t, err)
 						require.NotErrorIs(t, err, errNativeCommitUnsupported)
+						var conflict nativeMergeConflict
+						require.ErrorAs(t, err, &conflict)
 						require.Contains(t, err.Error(), "CONFLICT")
 						require.Contains(t, err.Error(), "merge conflict between workspace and incoming changes in edit")
 						require.NotRegexp(t, `[0-9a-f]{40}`, err.Error(), "scratch commit IDs leaked into the conflict")
@@ -285,6 +287,63 @@ func TestNativeWorkspaceMergeBaseEvidence(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The merge base is HEAD's real tree. The legacy synthetic base leaves out the
+// tracked ignored file, sees old/ renamed wholesale and reports a file location
+// conflict for old/b.txt; old/ was never renamed, so b.txt stays where added.
+func TestNativeWorkspaceMergeRealBaseDirectoryRename(t *testing.T) {
+	ctx := t.Context()
+	repo := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		out, err := runWorkspaceCommitGit(ctx, repo, nil, args...)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	write := func(dir, p, data string) {
+		t.Helper()
+		name := filepath.Join(dir, p)
+		require.NoError(t, os.MkdirAll(filepath.Dir(name), 0755))
+		require.NoError(t, os.WriteFile(name, []byte(data), 0644))
+	}
+	run("init", "-b", "main")
+	write(repo, ".gitignore", "*.log\n")
+	write(repo, "old/a.txt", "a\n")
+	write(repo, "old/keep.log", "tracked despite ignores\n")
+	run("add", "-f", ".")
+	run("commit", "-m", "base")
+	parent := run("rev-parse", "HEAD")
+	base := filepath.Join(t.TempDir(), "base")
+	run("clone", "--no-hardlinks", repo, base)
+	require.NoError(t, os.RemoveAll(filepath.Join(base, ".git")))
+	paths := []*ChangesetPaths{
+		{AllRemoved: []string{"old/a.txt"}, Added: []string{"new/", "new/a.txt"}},
+		{Added: []string{"old/b.txt"}},
+	}
+	apply := []func(string) error{
+		func(work string) error {
+			if err := os.Remove(filepath.Join(work, "old/a.txt")); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			write(work, "new/a.txt", "a\n")
+			return nil
+		},
+		func(work string) error {
+			write(work, "old/b.txt", "b\n")
+			return nil
+		},
+	}
+	require.NoError(t, nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, base, paths, apply))
+	for p, want := range map[string]string{"new/a.txt": "a\n", "old/b.txt": "b\n", "old/keep.log": "tracked despite ignores\n"} {
+		got, err := os.ReadFile(filepath.Join(base, p))
+		require.NoError(t, err, p)
+		require.Equal(t, want, string(got), p)
+	}
+	_, err := os.Lstat(filepath.Join(base, "old/a.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Lstat(filepath.Join(base, "new/b.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestNativeWorkspaceDeltaReplacedAncestors(t *testing.T) {

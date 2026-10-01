@@ -27,7 +27,8 @@ import (
 // filesystem metadata survives. Temporary indexes, commits and objects never
 // become part of the returned snapshot. False means the caller must use the
 // existing merge: an eligibility fallback or any failure of the native merge
-// (see nativeFallback). Only the caller's own cancellation is an error.
+// (see nativeFallback). Errors are the caller's own cancellation and merge
+// conflicts, which are the merge's answer rather than a failure.
 func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) (_ *Directory, supported bool, rerr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
@@ -298,7 +299,7 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 1 {
-			return nativeMergeConflictError(merged)
+			return newNativeMergeConflict(merged)
 		}
 		return fmt.Errorf("merge workspace changes: %w", err)
 	}
@@ -328,11 +329,18 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 // workspace's pending edits and the changes being committed.
 var nativeMergeLabels = [2]string{"workspace", "incoming"}
 
-// nativeMergeConflictError reports a merge-tree conflict by the conflicted
+// nativeMergeConflict is merge-tree's answer, not a failure of the native
+// merge: it merges on HEAD's real tree, so the legacy merge, restaging the
+// whole baseline, has nothing better to report. nativeFallback returns it.
+type nativeMergeConflict string
+
+func (conflict nativeMergeConflict) Error() string { return string(conflict) }
+
+// newNativeMergeConflict reports a merge-tree conflict by the conflicted
 // paths and Git's own CONFLICT messages, dropping the merged tree ID and
 // "Auto-merging" noise. With --name-only, the output is the tree ID, one
 // conflicted path per line, a blank line, then informational messages.
-func nativeMergeConflictError(out string) error {
+func newNativeMergeConflict(out string) error {
 	info, messages, _ := strings.Cut(strings.TrimRight(out, "\n"), "\n\n")
 	var paths []string
 	if _, rest, ok := strings.Cut(info, "\n"); ok {
@@ -351,7 +359,7 @@ func nativeMergeConflictError(out string) error {
 	if len(conflicts) > 0 {
 		msg += ":\n" + strings.Join(conflicts, "\n")
 	}
-	return errors.New(msg)
+	return nativeMergeConflict(msg)
 }
 
 // nativeWorkspaceCheckout performs only the filesystem writes a Git tree

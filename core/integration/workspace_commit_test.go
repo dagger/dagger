@@ -219,6 +219,8 @@ git commit -m attributes
 	legacy, legacyErr := commit(oracle)
 	if tc.conflict {
 		require.ErrorContains(t, fastErr, "conflict", tc.name)
+		// The native merge's conflict is final: no legacy restage behind it.
+		require.ErrorContains(t, fastErr, "merge conflict between workspace and incoming changes", tc.name)
 		require.ErrorContains(t, legacyErr, "conflict", tc.name)
 		require.Equal(t, original, workspaceCommitManifest(ctx, t, inspector, working.Directory("/")), "conflict mutated the receiver")
 		return
