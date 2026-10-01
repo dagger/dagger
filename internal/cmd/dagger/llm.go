@@ -357,18 +357,18 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	// baseline for it too: its history before that is another session's.
 	//
 	// The snapshot workspace remains the fallback, for an engine without the
-	// seed field. Both are pinned by ID so later comparisons and exports
-	// reference the value rather than re-shipping a recipe. A later explicit
-	// save/reset advances the baseline.
-	for _, workspace := range []*dagger.Workspace{rt.agent.Seed().Workspace(), snapshot.Workspace()} {
-		id, err := workspace.ID(ctx)
-		if err != nil {
-			slog.Debug("attached agent workspace is not a usable synchronization baseline", "error", err)
-			continue
-		}
-		attached.setLastSynced(dagger.Ref[*dagger.Workspace](s.dag, id))
-		break
-	}
+	// seed field. The chosen one is pinned by ID so later comparisons and
+	// exports reference the value rather than re-shipping a recipe. A later
+	// explicit save/reset advances the baseline.
+	//
+	// Choosing and pinning it is deferred to the baseline's first use (the
+	// changes preview, a save), both of which only happen for the focused
+	// agent: resolving a workspace's ID loads it, and the engine binds a
+	// restored conversation's workspace lazily precisely so that adopting a
+	// whole roster of restored agents does not load every one of their
+	// workspaces up front. The seed is fixed by the spawn and the snapshot is
+	// pinned above, so deferring does not change which workspace is chosen.
+	attached.setPendingLastSynced(rt.agent.Seed().Workspace(), snapshot.Workspace())
 	if err := attached.setLLM(snapshot); err != nil {
 		return nil, fmt.Errorf("attach to agent %q: %w", name, err)
 	}

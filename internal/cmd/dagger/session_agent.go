@@ -220,6 +220,13 @@ type sessionAgent struct {
 	// so every access is guarded by lastSyncedWorkspaceL.
 	lastSyncedWorkspace  *dagger.Workspace
 	lastSyncedWorkspaceL sync.RWMutex
+	// pendingLastSynced, when non-empty, stands in for lastSyncedWorkspace
+	// until the baseline is first needed: the first candidate whose ID
+	// resolves is pinned then, and none resolving leaves the conversation
+	// without a baseline. Resolving a workspace's ID loads it, which for a
+	// restored agent can mean evaluating its whole workspace history, so an
+	// attached agent defers it rather than paying for it on adoption.
+	pendingLastSynced []*dagger.Workspace
 
 	// syncOpL serializes explicit host synchronization (ExportChanges,
 	// ResetWorkspace). Both take long enough that a user waiting with no
@@ -343,14 +350,51 @@ func (a *sessionAgent) ToggleAutocompact() {
 
 func (a *sessionAgent) lastSynced() *dagger.Workspace {
 	a.lastSyncedWorkspaceL.RLock()
-	defer a.lastSyncedWorkspaceL.RUnlock()
+	workspace, pending := a.lastSyncedWorkspace, len(a.pendingLastSynced) > 0
+	a.lastSyncedWorkspaceL.RUnlock()
+	if !pending {
+		return workspace
+	}
+	a.lastSyncedWorkspaceL.Lock()
+	defer a.lastSyncedWorkspaceL.Unlock()
+	a.resolvePendingLastSyncedLocked()
 	return a.lastSyncedWorkspace
 }
 
 func (a *sessionAgent) setLastSynced(workspace *dagger.Workspace) {
 	a.lastSyncedWorkspaceL.Lock()
 	a.lastSyncedWorkspace = workspace
+	a.pendingLastSynced = nil
 	a.lastSyncedWorkspaceL.Unlock()
+}
+
+// setPendingLastSynced defers choosing the synchronization baseline to its
+// first use (see pendingLastSynced). Candidates are tried in order.
+func (a *sessionAgent) setPendingLastSynced(candidates ...*dagger.Workspace) {
+	a.lastSyncedWorkspaceL.Lock()
+	a.lastSyncedWorkspace = nil
+	a.pendingLastSynced = candidates
+	a.lastSyncedWorkspaceL.Unlock()
+}
+
+// resolvePendingLastSyncedLocked pins the first pending baseline candidate
+// with a usable ID. The caller holds lastSyncedWorkspaceL for writing.
+func (a *sessionAgent) resolvePendingLastSyncedLocked() {
+	candidates := a.pendingLastSynced
+	a.pendingLastSynced = nil
+	ctx := a.session.plumbingCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for _, workspace := range candidates {
+		id, err := workspace.ID(ctx)
+		if err != nil {
+			slog.Debug("workspace is not a usable synchronization baseline", "error", err)
+			continue
+		}
+		a.lastSyncedWorkspace = dagger.Ref[*dagger.Workspace](a.session.dag, id)
+		return
+	}
 }
 
 // setInitialLLM installs the composition selected when prompt mode starts and
@@ -382,6 +426,7 @@ func (a *sessionAgent) updateSyncedLLM(llm *dagger.LLM, workspace *dagger.Worksp
 		return err
 	}
 	a.lastSyncedWorkspace = workspace
+	a.pendingLastSynced = nil
 	return nil
 }
 
