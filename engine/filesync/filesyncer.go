@@ -19,11 +19,11 @@ import (
 )
 
 type FileSyncer struct {
-	cacheManager bkcache.Accessor
+	cacheManager bkcache.SnapshotManager
 }
 
 type FileSyncerOpt struct {
-	CacheAccessor bkcache.Accessor
+	CacheAccessor bkcache.SnapshotManager
 }
 
 func NewFileSyncer(opt FileSyncerOpt) *FileSyncer {

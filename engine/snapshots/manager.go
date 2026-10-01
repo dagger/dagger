@@ -89,6 +89,7 @@ type Accessor interface {
 type SnapshotManager interface {
 	Accessor
 	PinSnapshot(context.Context, string) (ImmutableRef, error)
+	LeaseExistingSnapshot(context.Context, string) (ImmutableRef, error)
 	SnapshotSize(ctx context.Context, snapshotID string) (int64, error)
 	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
