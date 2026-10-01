@@ -66,15 +66,20 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 		}
 	}
 
-	if v, ok := docPragmas["up"]; ok {
-		if v == nil {
-			spec.isUp = true
-		} else {
-			spec.isUp, ok = v.(bool)
+	// "up" is the former name of the "start" pragma.
+	for _, name := range []string{"start", "up"} {
+		v, ok := docPragmas[name]
+		if !ok {
+			continue
+		}
+		isUp := v == nil
+		if !isUp {
+			isUp, ok = v.(bool)
 			if !ok {
-				return nil, fmt.Errorf("up pragma %q, must be a valid boolean", v)
+				return nil, fmt.Errorf("%s pragma %q, must be a valid boolean", name, v)
 			}
 		}
+		spec.isUp = spec.isUp || isUp
 	}
 
 	if v, ok := docPragmas["agent"]; ok {

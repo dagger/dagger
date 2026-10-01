@@ -336,7 +336,7 @@ func (*Part) Verify() error { return nil }
 	source = strings.Replace(source, `if item.Name != "item:a" { panic("excluded parent must stay deferred") }`, "", 1)
 	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
 	for _, tc := range []struct{ command, path, typ string }{
-		{"shell", "items/broken", "container"}, {"up", "items/serve", "service"}, {"generate", "items/write", "generator"}, {"agent", "items/assistant", "expertise"},
+		{"shell", "items/broken", "container"}, {"start", "items/serve", "service"}, {"generate", "items/write", "generator"}, {"agent", "items/assistant", "expertise"},
 	} {
 		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(daggerExec(tc.command, "-l", tc.path)).Stdout(ctx)
@@ -353,7 +353,7 @@ func (*Part) Verify() error { return nil }
 	}
 
 	t.Run("list flags cannot execute work", func(ctx context.Context, t *testctx.T) {
-		for _, command := range []string{"check", "generate", "up", "shell", "agent"} {
+		for _, command := range []string{"check", "generate", "start", "shell", "agent"} {
 			_, err := base.With(daggerExec(command, "-a")).Stdout(ctx)
 			requireErrOut(t, err, "--all requires --list")
 		}
@@ -432,7 +432,7 @@ func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("agent evaluated") 
 `
 	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
 	for _, tc := range []struct{ command, field string }{
-		{"check", "verify"}, {"generate", "write"}, {"up", "serve"}, {"shell", "broken"}, {"agent", "assistant"},
+		{"check", "verify"}, {"generate", "write"}, {"start", "serve"}, {"shell", "broken"}, {"agent", "assistant"},
 	} {
 		t.Run(tc.command, func(ctx context.Context, t *testctx.T) {
 			path := "deferred/" + tc.field
@@ -1026,7 +1026,7 @@ source = "dang"
 }`)
 	for _, tc := range []struct{ command, filter string }{
 		{"check", "--check=test"}, {"generate", "--generator=files"},
-		{"up", "--service=web"}, {"shell", "--container=dev"}, {"agent", "--expertise=assistant"},
+		{"start", "--service=web"}, {"shell", "--container=dev"}, {"agent", "--expertise=assistant"},
 	} {
 		args := []string{tc.command, "-l", "--playwright", "-f=link"}
 		out, err := base.With(daggerExec(args...)).Stdout(ctx)

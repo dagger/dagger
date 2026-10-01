@@ -5,7 +5,7 @@ type ProjectDev {
   """
   A Postgres database for development and tests.
   """
-  pub postgres: Service! @up {
+  pub postgres: Service! @start {
     container
       .from("postgres:17-alpine")
       .withEnvVariable("POSTGRES_USER", "test")

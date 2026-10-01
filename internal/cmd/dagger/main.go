@@ -172,7 +172,7 @@ func init() {
 
 	checksCmd.GroupID = "daily"
 	generateCmd.GroupID = "daily"
-	upCmd.GroupID = "daily"
+	startCmd.GroupID = "daily"
 	shellCmd.GroupID = "daily"
 	agentCmd.GroupID = "daily"
 
@@ -203,7 +203,7 @@ func init() {
 		apiCmd,
 		traceCmd,
 		checksCmd,
-		upCmd,
+		startCmd,
 		shellCmd,
 		agentCmd,
 		generateCmd,
@@ -953,7 +953,7 @@ const (
 )
 
 func commandShowsFinalProgress(cmd *cobra.Command) bool {
-	if cmd.CommandPath() == "dagger up" || cmd.CommandPath() == "dagger agent" {
+	if cmd.CommandPath() == "dagger start" || cmd.CommandPath() == "dagger agent" {
 		if list, _ := cmd.Flags().GetBool("list"); list {
 			return false
 		}

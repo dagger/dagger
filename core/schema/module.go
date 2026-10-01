@@ -172,8 +172,17 @@ var moduleDirectives = []dagql.DirectiveSpec{
 		},
 	},
 	{
+		Name:        "start",
+		Description: dagql.FormatDescription(`Indicates that this function returns a service for dagger start.`),
+		Args:        dagql.NewInputSpecs(), // none
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	},
+	{
+		// Former name of @start. Dang modules can still use it.
 		Name:        "up",
-		Description: dagql.FormatDescription(`Indicates that this function returns a service for dagger up.`),
+		Description: dagql.FormatDescription(`Deprecated: use @start instead.`),
 		Args:        dagql.NewInputSpecs(), // none
 		Locations: []dagql.DirectiveLocation{
 			dagql.DirectiveLocationFieldDefinition,

@@ -1,4 +1,4 @@
-import { Service, dag, object, func, up } from "@dagger.io/dagger";
+import { Service, dag, object, func, start, up } from "@dagger.io/dagger";
 
 @object()
 class HelloWithServicesTs {
@@ -6,7 +6,7 @@ class HelloWithServicesTs {
    * Returns a web server service
    */
   @func()
-  @up()
+  @start()
   web(): Service {
     return dag.container().from("nginx:alpine").withExposedPort(80).asService();
   }
@@ -15,7 +15,7 @@ class HelloWithServicesTs {
    * Returns a redis service
    */
   @func()
-  @up()
+  @start()
   redis(): Service {
     return dag
       .container()

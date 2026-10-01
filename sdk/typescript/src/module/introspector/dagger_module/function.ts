@@ -16,6 +16,7 @@ import {
   FUNCTION_DECORATOR,
   GENERATOR_DECORATOR,
   GET_DECORATOR,
+  START_DECORATOR,
   UP_DECORATOR,
 } from "./decorator.js"
 import { Locatable } from "./locatable.js"
@@ -82,8 +83,11 @@ export class DaggerFunction extends Locatable {
       this.isGenerator = true
     }
 
-    // Parse @up decorator
-    if (this.ast.isNodeDecoratedWith(this.node, UP_DECORATOR)) {
+    // Parse @start decorator, or @up, its former name
+    if (
+      this.ast.isNodeDecoratedWith(this.node, START_DECORATOR) ||
+      this.ast.isNodeDecoratedWith(this.node, UP_DECORATOR)
+    ) {
       this.isUp = true
     }
 
