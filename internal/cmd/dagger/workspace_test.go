@@ -311,6 +311,9 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	require.Contains(t, help, "shell, sh")
 	require.NotContains(t, help, "exec, run")
 	require.NotContains(t, help, "start, up")
+	up, _, err := rootCmd.Find([]string{"up"})
+	require.NoError(t, err)
+	require.Same(t, startCmd, up)
 
 	names := rootHelpCommandNames(help)
 	for _, name := range []string{
