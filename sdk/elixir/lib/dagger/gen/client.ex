@@ -512,34 +512,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Create a block of text or media content, independent of any conversation.
+  Start an empty run of text and media content, independent of any conversation.
 
-  A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.
+  Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
 
   > #### Experimental {: .warning}
   >
   > "LLM support is not yet stabilized"
   """
-  @spec llm_content_block(t(), Dagger.LLMContentBlockKind.t(), [
-          {:text, String.t() | nil},
-          {:file, Dagger.File.t() | nil},
-          {:data, String.t() | nil},
-          {:mime_type, String.t() | nil}
-        ]) :: Dagger.LLMContentBlock.t()
-  def llm_content_block(%__MODULE__{} = client, kind, optional_args \\ []) do
+  @spec llm_content(t()) :: Dagger.LLMContent.t()
+  def llm_content(%__MODULE__{} = client) do
     query_builder =
-      client.query_builder
-      |> QB.select("llmContentBlock")
-      |> QB.put_arg("kind", kind)
-      |> QB.maybe_put_arg("text", optional_args[:text])
-      |> QB.maybe_put_arg(
-        "file",
-        if(optional_args[:file], do: Dagger.ID.id!(optional_args[:file]), else: nil)
-      )
-      |> QB.maybe_put_arg("data", optional_args[:data])
-      |> QB.maybe_put_arg("mimeType", optional_args[:mime_type])
+      client.query_builder |> QB.select("llmContent")
 
-    %Dagger.LLMContentBlock{
+    %Dagger.LLMContent{
       query_builder: query_builder,
       client: client.client
     }

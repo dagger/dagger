@@ -13166,6 +13166,154 @@ func (r *LLM) AsSyncer() Syncer {
 	}
 }
 
+// An ordered run of text and media content for a model to read, built outside any conversation.
+type LLMContent struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+type WithLLMContentFunc func(r *LLMContent) *LLMContent
+
+// With calls the provided function with current LLMContent.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *LLMContent) With(f WithLLMContentFunc) *LLMContent {
+	return f(r)
+}
+
+func (r *LLMContent) WithGraphQLQuery(q *querybuilder.Selection) *LLMContent {
+	return &LLMContent{
+		query: q,
+	}
+}
+
+// The ordered text and media blocks.
+func (r *LLMContent) Blocks(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("blocks")
+
+	q = q.Select("id")
+
+	type blocks struct {
+		Id ID
+	}
+
+	convert := func(fields []blocks) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMContentBlock")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []blocks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this LLMContent.
+func (r *LLMContent) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMContent) XXX_GraphQLType() string {
+	return "LLMContent"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMContent) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMContent) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMContent) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.
+//
+// Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.
+func (r *LLMContent) WithData(data Bytes, mimeType string) *LLMContent {
+	q := r.query.Select("withData")
+	q = q.Arg("data", data)
+	q = q.Arg("mimeType", mimeType)
+
+	return &LLMContent{
+		query: q,
+	}
+}
+
+// LLMContentWithFileOpts contains options for LLMContent.WithFile
+type LLMContentWithFileOpts struct {
+	// The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.
+	MimeType string
+}
+
+// Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
+func (r *LLMContent) WithFile(file *File, opts ...LLMContentWithFileOpts) *LLMContent {
+	assertNotNil("file", file)
+	q := r.query.Select("withFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `mimeType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MimeType) {
+			q = q.Arg("mimeType", opts[i].MimeType)
+		}
+	}
+	q = q.Arg("file", file)
+
+	return &LLMContent{
+		query: q,
+	}
+}
+
+// Append a block of text.
+func (r *LLMContent) WithText(text string) *LLMContent {
+	q := r.query.Select("withText")
+	q = q.Arg("text", text)
+
+	return &LLMContent{
+		query: q,
+	}
+}
+
+// AsNode returns this LLMContent as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMContent) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A single piece of content within an LLM message.
 type LLMContentBlock struct {
 	query *querybuilder.Selection
@@ -16211,46 +16359,15 @@ func (r *Query) LLM(opts ...LLMOpts) *LLM {
 	}
 }
 
-// LLMContentBlockOpts contains options for Query.LLMContentBlock
-type LLMContentBlockOpts struct {
-	// The text content (for TEXT).
-	Text string
-	// A media file whose contents become the block's inline bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
-	File *File
-	// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media.
-	Data string
-	// The media MIME type, e.g. "image/png". Required with data; inferred from a file's contents when omitted.
-	MimeType string
-}
-
-// Create a block of text or media content, independent of any conversation.
+// Start an empty run of text and media content, independent of any conversation.
 //
-// A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.
+// Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
 //
 // Experimental: LLM support is not yet stabilized
-func (r *Query) LLMContentBlock(kind LLMContentBlockKind, opts ...LLMContentBlockOpts) *LLMContentBlock {
-	q := r.query.Select("llmContentBlock")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `text` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Text) {
-			q = q.Arg("text", opts[i].Text)
-		}
-		// `file` optional argument
-		if !querybuilder.IsZeroValue(opts[i].File) {
-			q = q.Arg("file", opts[i].File)
-		}
-		// `data` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Data) {
-			q = q.Arg("data", opts[i].Data)
-		}
-		// `mimeType` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MimeType) {
-			q = q.Arg("mimeType", opts[i].MimeType)
-		}
-	}
-	q = q.Arg("kind", kind)
+func (r *Query) LLMContent() *LLMContent {
+	q := r.query.Select("llmContent")
 
-	return &LLMContentBlock{
+	return &LLMContent{
 		query: q,
 	}
 }

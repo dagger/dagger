@@ -12702,6 +12702,112 @@ class LLM(Type):
 
 
 @typecheck
+class LLMContent(Type):
+    """An ordered run of text and media content for a model to read, built
+    outside any conversation."""
+
+    async def blocks(self) -> list["LLMContentBlock"]:
+        """The ordered text and media blocks."""
+        _args: list[Arg] = []
+        _ctx = self._select("blocks", _args)
+        return await _ctx.execute_object_list(LLMContentBlock)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMContent.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def with_data(self, data: Bytes, mime_type: str) -> Self:
+        """Append image, audio, or PDF bytes as an inline media block. The media
+        kind follows the MIME type.
+
+        Prefer withFile for anything but small payloads: the bytes become part
+        of the content's identity, so they travel with every reference to it.
+
+        Parameters
+        ----------
+        data:
+            The media bytes.
+        mime_type:
+            The media MIME type, e.g. "image/png".
+        """
+        _args = [
+            Arg("data", data),
+            Arg("mimeType", mime_type),
+        ]
+        _ctx = self._select("withData", _args)
+        return LLMContent(_ctx)
+
+    def with_file(
+        self,
+        file: File,
+        *,
+        mime_type: str | None = "",
+    ) -> Self:
+        """Append an image, audio, or PDF file as an inline media block. The
+        media kind follows the MIME type.
+
+        Parameters
+        ----------
+        file:
+            The media file. Its contents become the block's inline bytes.
+        mime_type:
+            The media MIME type, e.g. "image/png". Inferred from the file's
+            contents when omitted.
+        """
+        _args = [
+            Arg("file", file),
+            Arg("mimeType", mime_type, ""),
+        ]
+        _ctx = self._select("withFile", _args)
+        return LLMContent(_ctx)
+
+    def with_text(self, text: str) -> Self:
+        """Append a block of text.
+
+        Parameters
+        ----------
+        text:
+            The text.
+        """
+        _args = [
+            Arg("text", text),
+        ]
+        _ctx = self._select("withText", _args)
+        return LLMContent(_ctx)
+
+    def with_(self, cb: Callable[["LLMContent"], "LLMContent"]) -> "LLMContent":
+        """Call the provided callable with current LLMContent.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class LLMContentBlock(Type):
     """A single piece of content within an LLM message."""
 
@@ -15471,51 +15577,21 @@ class Query(Root):
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
 
-    def llm_content_block(
-        self,
-        kind: LLMContentBlockKind,
-        *,
-        text: str | None = "",
-        file: File | None = None,
-        data: str | None = "",
-        mime_type: str | None = "",
-    ) -> LLMContentBlock:
-        """Create a block of text or media content, independent of any
+    def llm_content(self) -> LLMContent:
+        """Start an empty run of text and media content, independent of any
         conversation.
 
-        A function exposed as an LLM tool can return a content block, or a
-        list of them, to give the model text and media as the tool's result,
-        e.g. a screenshot for the model to look at.
+        Add blocks with withText, withFile, and withData. A function exposed
+        as an LLM tool can return the content to give the model text and media
+        as the tool's result, e.g. a caption and a screenshot for the model to
+        look at.
 
         .. caution::
             Experimental: LLM support is not yet stabilized
-
-        Parameters
-        ----------
-        kind:
-            The kind of content: TEXT, IMAGE, AUDIO, or DOCUMENT.
-        text:
-            The text content (for TEXT).
-        file:
-            A media file whose contents become the block's inline bytes (for
-            IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for
-            media.
-        data:
-            Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply
-            exactly one of file or data for media.
-        mime_type:
-            The media MIME type, e.g. "image/png". Required with data;
-            inferred from a file's contents when omitted.
         """
-        _args = [
-            Arg("kind", kind),
-            Arg("text", text, ""),
-            Arg("file", file, None),
-            Arg("data", data, ""),
-            Arg("mimeType", mime_type, ""),
-        ]
-        _ctx = self._select("llmContentBlock", _args)
-        return LLMContentBlock(_ctx)
+        _args: list[Arg] = []
+        _ctx = self._select("llmContent", _args)
+        return LLMContent(_ctx)
 
     def module(self) -> Module:
         """Create a new module."""
@@ -19907,6 +19983,7 @@ __all__ = [
     "InputTypeDef",
     "InterfaceTypeDef",
     "JSONValue",
+    "LLMContent",
     "LLMContentBlock",
     "LLMContentBlockInput",
     "LLMContentBlockKind",
