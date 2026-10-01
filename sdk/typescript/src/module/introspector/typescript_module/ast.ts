@@ -296,11 +296,9 @@ export class AST {
       return false
     }
 
-    // Match the exact name, so that `@start` does not match `@startTimer()`.
-    const decorator = decorators.find((d) => {
-      const text = d.expression.getText()
-      return text === daggerDecorator || text.startsWith(`${daggerDecorator}(`)
-    })
+    const decorator = decorators.find((d) =>
+      d.expression.getText().startsWith(daggerDecorator),
+    )
     if (!decorator) {
       return false
     }
@@ -325,11 +323,9 @@ export class AST {
       return undefined
     }
 
-    // Match the exact name, so that `@start` does not match `@startTimer()`.
-    const decorator = decorators.find((d) => {
-      const text = d.expression.getText()
-      return text === daggerDecorator || text.startsWith(`${daggerDecorator}(`)
-    })
+    const decorator = decorators.find((d) =>
+      d.expression.getText().startsWith(daggerDecorator),
+    )
     if (!decorator) {
       return undefined
     }

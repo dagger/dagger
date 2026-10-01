@@ -66,7 +66,7 @@ func (UpSuite) TestUpDirectSDK(ctx context.Context, t *testctx.T) {
 				require.NoError(t, err)
 				require.Contains(t, out, "web")
 				require.Contains(t, out, "redis")
-				require.Contains(t, out, "infra/database") // marked with the former pragma name
+				require.Contains(t, out, "infra/database")
 			}
 		})
 	}
@@ -129,25 +129,25 @@ func (UpSuite) TestUpValidationRejectsBadSignature(ctx context.Context, t *testc
 		modGen, err := upTestEnv(t, c)
 		require.NoError(t, err)
 
-		// badup-return's @start returns Container!, which must be rejected at module load.
+		// badup-return's @up returns Container!, which must be rejected at module load.
 		out, err := modGen.WithWorkdir("badup-return").
 			With(daggerExecFail("start", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "@start functions must return the core Service! type")
+		require.Contains(t, out, "@up functions must return the core Service! type")
 	})
 
 	t.Run("required arg", func(ctx context.Context, t *testctx.T) {
 		modGen, err := upTestEnv(t, c)
 		require.NoError(t, err)
 
-		// badup-arg's @start declares a required `image: String!`, which must be
+		// badup-arg's @up declares a required `image: String!`, which must be
 		// rejected at module load.
 		out, err := modGen.WithWorkdir("badup-arg").
 			With(daggerExecFail("start", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "@start functions must be callable with no arguments")
+		require.Contains(t, out, "@up functions must be callable with no arguments")
 	})
 }
 

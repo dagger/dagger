@@ -46,7 +46,7 @@ from dagger.mod._utils import (
 
 CHECK_DEF_KEY: str = "__dagger_check__"
 GENERATOR_DEF_KEY: str = "__dagger_generate__"
-START_DEF_KEY: str = "__dagger_start__"
+UP_DEF_KEY: str = "__dagger_up__"
 AGENT_DEF_KEY: str = "__dagger_agent__"
 
 logger = logging.getLogger(__package__)
@@ -120,9 +120,9 @@ class Function(Generic[P, R]):
 
     @property
     def service(self) -> bool:
-        """Indicates whether the function is a service for dagger start."""
+        """Indicates whether the function is configured as a service for dagger up."""
         # Check both the metadata and the attribute to support either decorator order
-        return self.meta.service or getattr(self.wrapped, START_DEF_KEY, False)
+        return self.meta.service or getattr(self.wrapped, UP_DEF_KEY, False)
 
     @property
     def agent(self) -> bool:

@@ -191,7 +191,7 @@ func (fn *Function) Directives() []*ast.Directive {
 	}
 	if fn.IsUp {
 		directives = append(directives, &ast.Directive{
-			Name: "start",
+			Name: "up",
 		})
 	}
 	if fn.IsAgent {

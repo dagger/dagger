@@ -1,7 +1,7 @@
-"""A deliberately malformed service module (@start returning a non-Service) for validation tests."""
+"""A deliberately malformed service module (@up returning a non-Service) for validation tests."""
 type BadupReturn {
-  """@start that does not return Service!, which the contract forbids."""
-  @start
+  """@up that does not return Service!, which the contract forbids."""
+  @up
   pub web: Container! {
     container.from("nginx:alpine")
   }
