@@ -10,7 +10,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
@@ -40,7 +39,7 @@ func TestNativeCommitBaseCacheScope(t *testing.T) {
 		refs[i] = resolverAttach(t, ctx, srv, cache, username+"-ref", &core.GitRef{Repo: repo, Ref: ref, Backend: backend})
 		// Stronger than production auth digests: deliberately equate content.
 		// The dynamic recipe input must still partition owned promotions.
-		refs[i], err = refs[i].WithContentDigest(ctx, hashutil.HashStrings("same-content"), call.ExtraDigestLabelRemoteCache)
+		refs[i], err = refs[i].WithContentDigest(ctx, hashutil.HashStrings("same-content"))
 		require.NoError(t, err)
 	}
 	firstRecipe, err := refs[0].RecipeDigest(ctx)
@@ -73,7 +72,7 @@ func TestNativeCommitBaseCacheScope(t *testing.T) {
 		dir.SetPath("/")
 		dir.SetSnapshot(nil)
 		storage := resolverAttach(t, ctx, srv, cache, key, dir)
-		storage, err = storage.WithContentDigest(ctx, hashutil.HashStrings("same-storage-content"), call.ExtraDigestLabelRemoteCache)
+		storage, err = storage.WithContentDigest(ctx, hashutil.HashStrings("same-storage-content"))
 		require.NoError(t, err)
 		id, err := storage.RecipeID(ctx)
 		require.NoError(t, err)
