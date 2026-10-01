@@ -23,7 +23,6 @@ field = _default_mod.field
 generate = _default_mod.generate
 interface = _default_mod.interface
 object_type = _default_mod.object_type
-start = _default_mod.start
 up = _default_mod.up
 
 
@@ -52,6 +51,5 @@ __all__ = [
     "interface",
     "keys",
     "object_type",
-    "start",
     "up",
 ]

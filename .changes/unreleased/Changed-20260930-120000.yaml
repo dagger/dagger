@@ -1,9 +1,6 @@
 kind: Changed
 body: |
-  `dagger up` is now `dagger start`, and the service marker is now `start`:
-  `// +start` in Go, `@start` in Python and Dang, `@start()` in TypeScript, and
-  `@Start` in Java. The former names still work. Service artifacts now report
-  the `start` directive instead of `up`.
+  `dagger up` is now `dagger start`. `dagger up` still works as a hidden alias.
 time: 2026-09-30T12:00:00Z
 custom:
   Author: shykes

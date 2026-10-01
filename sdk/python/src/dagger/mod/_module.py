@@ -63,7 +63,7 @@ FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
 CHECK_DEF_KEY: typing.Final[str] = "__dagger_check__"
 GENERATOR_DEF_KEY: typing.Final[str] = "__dagger_generate__"
-START_DEF_KEY: typing.Final[str] = "__dagger_start__"
+UP_DEF_KEY: typing.Final[str] = "__dagger_up__"
 AGENT_DEF_KEY: typing.Final[str] = "__dagger_agent__"
 COLLECTION_DEF_KEY: typing.Final[str] = "__dagger_collection__"
 COLLECTION_GET_DEF_KEY: typing.Final[str] = "__dagger_get__"
@@ -750,20 +750,17 @@ class Module:
 
         return wrapper(func) if func else wrapper
 
-    def start(
+    def up(
         self,
         func: Func[P, R] | None = None,
     ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
-        """Mark a function as a service for ``dagger start``."""
+        """Mark a function as a service for ``dagger up``."""
 
         def wrapper(fn: Func[P, R]) -> Func[P, R]:
-            setattr(fn, START_DEF_KEY, True)
+            setattr(fn, UP_DEF_KEY, True)
             return fn
 
         return wrapper(func) if func else wrapper
-
-    # Former name of :py:meth:`start`.
-    up = start
 
     def agent(
         self,
@@ -862,7 +859,7 @@ class Module:
             # Check if function is marked as a check or generator
             check = getattr(func, CHECK_DEF_KEY, False)
             generator = getattr(func, GENERATOR_DEF_KEY, False)
-            service = getattr(func, START_DEF_KEY, False)
+            service = getattr(func, UP_DEF_KEY, False)
             agent = getattr(func, AGENT_DEF_KEY, False)
 
             meta = FunctionDefinition(

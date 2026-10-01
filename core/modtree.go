@@ -797,7 +797,7 @@ func attachModTreeNodeDependencyResultsWithSeen(
 }
 
 func isArtifactDirective(name string) bool {
-	return name == "check" || name == "generate" || name == "start" || name == "agent"
+	return name == "check" || name == "generate" || name == "up" || name == "agent"
 }
 
 // NewArtifactTree starts discovery at an engine object, such as an installed SDK.
