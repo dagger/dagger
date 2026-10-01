@@ -128,7 +128,7 @@ func TestOpenAIWAVMediaFromBytes(t *testing.T) {
 	wav := []byte("RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x40\x1f\x00\x00\x80\x3e\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
 	for _, mimeType := range []string{"", "audio/wav", "audio/wave", "audio/x-wav"} {
 		t.Run(mimeType, func(t *testing.T) {
-			block, err := llmContentFromBytes(wav, mimeType)
+			block, err := LLMContentFromBytes(wav, mimeType)
 			require.NoError(t, err)
 			require.Equal(t, LLMContentAudio, block.Kind)
 			messages, err := convertHistoryToOpenAI([]*LLMMessage{{

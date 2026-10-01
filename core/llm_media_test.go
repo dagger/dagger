@@ -152,15 +152,15 @@ func TestLLMContentFromBytes(t *testing.T) {
 		{"RIFF\x00\x00\x00\x00WAVE", "audio/wav", LLMContentAudio},
 		{"%PDF-1.7\n", "application/pdf", LLMContentDocument},
 	} {
-		block, err := llmContentFromBytes([]byte(tc.data), "")
+		block, err := LLMContentFromBytes([]byte(tc.data), "")
 		require.NoError(t, err)
 		require.Equal(t, tc.mime, block.MIMEType)
 		require.Equal(t, tc.kind, block.Kind)
 		require.Equal(t, base64.StdEncoding.EncodeToString([]byte(tc.data)), block.Data)
 	}
-	_, err := llmContentFromBytes([]byte("plain text"), "")
+	_, err := LLMContentFromBytes([]byte("plain text"), "")
 	require.ErrorContains(t, err, "unsupported")
-	_, err = llmContentFromBytes(nil, "image/png")
+	_, err = LLMContentFromBytes(nil, "image/png")
 	require.Error(t, err)
 }
 

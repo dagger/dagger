@@ -138,24 +138,23 @@ func (MCPSuite) TestFailureIncludesDiagnosticLogs(ctx context.Context, t *testct
 	require.NotContains(t, text, "<exitCode>")
 }
 
-// A method returning content blocks is served as native MCP content: text and
-// media in order, not a description of the LLMContentBlock objects.
-func (MCPSuite) TestContentBlockResult(ctx context.Context, t *testctx.T) {
+// A method returning LLMContent is served as native MCP content: text and
+// media in order, not a description of the LLMContent object.
+func (MCPSuite) TestLLMContentResult(ctx context.Context, t *testctx.T) {
 	const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
 	modDir := t.TempDir()
 	for name, contents := range map[string]string{
 		"dagger.toml": "[modules.test]\nsource = \".\"\nentrypoint = true\n",
 		"dagger.json": `{"name":"test","engineVersion":"v1.0.0","sdk":"dang"}`,
 		"main.dang": `type Test {
-  screenshots: [LLMContentBlock!]! {
-    [
-      llmContentBlock(kind: LLMContentBlockKind.TEXT, text: "the page"),
-      llmContentBlock(kind: LLMContentBlockKind.IMAGE, data: "` + png + `", mimeType: "image/png")
-    ]
+  screenshots: LLMContent! {
+    llmContent
+      .withText("the page")
+      .withData(data: "` + png + `", mimeType: "image/png")
   }
 
-  screenshot: LLMContentBlock! {
-    llmContentBlock(kind: LLMContentBlockKind.IMAGE, data: "` + png + `", mimeType: "image/png")
+  screenshot: LLMContent! {
+    llmContent.withData(data: "` + png + `", mimeType: "image/png")
   }
 }
 `,

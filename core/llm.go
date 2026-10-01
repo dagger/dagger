@@ -39,9 +39,12 @@ import (
 func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
 	// Acronyms only match a whole name, so a module type definition naming
-	// this core type would otherwise normalize to "LlmcontentBlock", miss the
-	// core type, and be namespaced as a module-local object. Modules return it
-	// from functions exposed as LLM tools.
+	// these core types would otherwise normalize to "Llmcontent" /
+	// "LlmcontentBlock", miss the core type, and be namespaced as a
+	// module-local object. Modules return LLMContent from functions exposed
+	// as LLM tools. Registering names one by one is a stopgap; see
+	// dagger/dagger#13668 for the underlying acronym-handling problem.
+	strcase.ConfigureAcronym("LLMContent", "LLMContent")
 	strcase.ConfigureAcronym("LLMContentBlock", "LLMContentBlock")
 }
 
@@ -634,10 +637,12 @@ func LLMContentFromFile(ctx context.Context, id FileID, mimeType string) (*LLMCo
 	if err != nil {
 		return nil, err
 	}
-	return llmContentFromBytes(data, mimeType)
+	return LLMContentFromBytes(data, mimeType)
 }
 
-func llmContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error) {
+// LLMContentFromBytes builds a media block from raw bytes, inferring the
+// media kind (and, when mimeType is empty, the MIME type) from its contents.
+func LLMContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error) {
 	if len(data) == 0 || len(data) > MaxLLMMediaBytes {
 		return nil, fmt.Errorf("media must contain 1 to %d bytes", MaxLLMMediaBytes)
 	}
@@ -663,6 +668,44 @@ func llmContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error)
 		return nil, err
 	}
 	return block, nil
+}
+
+// LLMContent is an ordered run of text and media blocks built outside any
+// conversation. A function exposed as an LLM tool returns it to make the
+// blocks the tool result's own content (e.g. a caption and a screenshot), in
+// the order they were added.
+type LLMContent struct {
+	Blocks []*LLMContentBlock `field:"true" json:"blocks" doc:"The ordered text and media blocks."`
+}
+
+func (*LLMContent) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMContent",
+		NonNull:   true,
+	}
+}
+
+func (*LLMContent) TypeDescription() string {
+	return "An ordered run of text and media content for a model to read, built outside any conversation."
+}
+
+func (c *LLMContent) Clone() *LLMContent {
+	if c == nil {
+		return nil
+	}
+	return &LLMContent{Blocks: cloneLLMContent(c.Blocks)}
+}
+
+// WithBlock appends a block, enforcing the per-message media budget across
+// the whole run so an oversized result fails where it is built rather than
+// when the tool result is validated.
+func (c *LLMContent) WithBlock(block *LLMContentBlock) (*LLMContent, error) {
+	cp := c.Clone()
+	cp.Blocks = append(cp.Blocks, block)
+	if err := ValidateLLMContent(cp.Blocks); err != nil {
+		return nil, err
+	}
+	return cp, nil
 }
 
 // LLMMessageOriginKind classifies who put a message on the conversation

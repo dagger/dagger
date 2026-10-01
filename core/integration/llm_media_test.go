@@ -245,70 +245,76 @@ type Browser {
 	require.Contains(t, logs, caption+"[image: image/png]")
 }
 
-func (LLMSuite) TestMediaContentBlockConstructor(ctx context.Context, t *testctx.T) {
+// llmContentBlocks reads a built content's blocks.
+func llmContentBlocks(t *testctx.T, c *dagger.Client, content *dagger.LLMContent) []mediaBlock {
+	t.Helper()
+	id, err := content.ID(t.Context())
+	require.NoError(t, err)
+	res, err := testutil.QueryWithClient[struct {
+		Node struct {
+			Blocks []mediaBlock `json:"blocks"`
+		} `json:"node"`
+	}](c, t, `query($id: ID!) { node(id: $id) { ... on LLMContent { blocks { kind text data mimeType } } } }`,
+		&testutil.QueryOptions{Variables: map[string]any{"id": id}})
+	require.NoError(t, err)
+	return res.Node.Blocks
+}
+
+func (LLMSuite) TestMediaContentBuilder(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	png := c.Container().From(alpineImage).
 		WithNewFile("/image.b64", mediaPNG).
 		WithExec([]string{"sh", "-c", "base64 -d /image.b64 > /image.png"}).File("/image.png")
-
-	text := c.LLMContentBlock(dagger.LLMContentBlockKindText, dagger.LLMContentBlockOpts{Text: "caption"})
-	kind, err := text.Kind(ctx)
-	require.NoError(t, err)
-	require.Equal(t, dagger.LLMContentBlockKindText, kind)
-	body, err := text.Text(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "caption", body)
-
-	// A file resolves to inline bytes, its MIME type inferred.
-	image := c.LLMContentBlock(dagger.LLMContentBlockKindImage, dagger.LLMContentBlockOpts{File: png})
-	data, err := image.Data(ctx)
-	require.NoError(t, err)
-	require.Equal(t, mediaPNG, data)
-	mimeType, err := image.MimeType(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "image/png", mimeType)
-
 	pdf := base64.StdEncoding.EncodeToString([]byte(mediaPDF))
-	document := c.LLMContentBlock(dagger.LLMContentBlockKindDocument, dagger.LLMContentBlockOpts{Data: pdf, MimeType: "application/pdf"})
-	data, err = document.Data(ctx)
-	require.NoError(t, err)
-	require.Equal(t, pdf, data)
+
+	// Blocks keep the order they were added in. A file resolves to inline
+	// bytes with its kind and MIME type inferred; data takes its kind from the
+	// given MIME type.
+	content := c.LLMContent().
+		WithText("caption").
+		WithFile(png).
+		WithData(dagger.Bytes(pdf), "application/pdf")
+	require.Equal(t, []mediaBlock{
+		{Kind: "TEXT", Text: "caption"},
+		{Kind: "IMAGE", Data: mediaPNG, MIMEType: "image/png"},
+		{Kind: "DOCUMENT", Data: pdf, MIMEType: "application/pdf"},
+	}, llmContentBlocks(t, c, content))
+
+	// Each step is a new value: the shorter run is unchanged.
+	require.Len(t, llmContentBlocks(t, c, c.LLMContent().WithText("caption")), 1)
+	require.Empty(t, llmContentBlocks(t, c, c.LLMContent()))
 
 	for _, tc := range []struct {
-		name string
-		kind dagger.LLMContentBlockKind
-		opts dagger.LLMContentBlockOpts
+		name    string
+		content *dagger.LLMContent
 	}{
-		{"tool call", dagger.LLMContentBlockKindToolCall, dagger.LLMContentBlockOpts{}},
-		{"tool result", dagger.LLMContentBlockKindToolResult, dagger.LLMContentBlockOpts{Text: "result"}},
-		{"thinking", dagger.LLMContentBlockKindThinking, dagger.LLMContentBlockOpts{Text: "hmm"}},
-		{"text carrying a file", dagger.LLMContentBlockKindText, dagger.LLMContentBlockOpts{File: png}},
-		{"media carrying text", dagger.LLMContentBlockKindImage, dagger.LLMContentBlockOpts{Text: "caption", Data: mediaPNG, MimeType: "image/png"}},
-		{"both file and data", dagger.LLMContentBlockKindImage, dagger.LLMContentBlockOpts{File: png, Data: mediaPNG}},
-		{"data without MIME type", dagger.LLMContentBlockKindImage, dagger.LLMContentBlockOpts{Data: mediaPNG}},
-		{"file of another kind", dagger.LLMContentBlockKindAudio, dagger.LLMContentBlockOpts{File: png}},
+		{"file of an unsupported type", c.LLMContent().WithFile(c.File("notes.txt", "plain text"))},
+		{"data of an unsupported type", c.LLMContent().WithData(dagger.Bytes(mediaPNG), "text/plain")},
+		{"empty data", c.LLMContent().WithData(dagger.Bytes(""), "image/png")},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			_, err := c.LLMContentBlock(tc.kind, tc.opts).Kind(ctx)
+			_, err := tc.content.ID(ctx)
 			require.Error(t, err)
 		})
 	}
 }
 
-// A tool returns text and media as its own result by returning content blocks,
+// A tool returns text and media as its own result by returning LLMContent,
 // rather than appending a user message to a conversation it returns: the
 // blocks land inside the tool result, in order, directly after the tool call.
 func (LLMSuite) TestMediaToolReturnedContent(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	const prompt = "show the screenshots"
 	const caption = "Screenshot from the browser"
-	// Both calls in one response, like the parallel calls that produced a
-	// user message between a tool call and its result under the old pattern.
+	// All calls in one response, like the parallel calls that produced a user
+	// message between a tool call and its result under the old pattern. The
+	// third tool returns empty content, which reads as a void return.
 	conversation := c.LLM().
 		WithPrompt(prompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "shots", ToolName: "screenshots"},
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "shot", ToolName: "screenshot"},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "none", ToolName: "nothing"},
 		}).
 		WithToolResult("shots", "", false, dagger.LLMWithToolResultOpts{
 			Blocks: []dagger.LLMContentBlockInput{
@@ -321,6 +327,7 @@ func (LLMSuite) TestMediaToolReturnedContent(ctx context.Context, t *testctx.T) 
 				{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
 			},
 		}).
+		WithToolResult("none", "(done)", false).
 		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}})
 	id, err := conversation.ID(ctx)
 	require.NoError(t, err)
@@ -342,15 +349,18 @@ func (LLMSuite) TestMediaToolReturnedContent(ctx context.Context, t *testctx.T) 
 		WithNewFile("browser/dagger.json", `{"name":"browser","engineVersion":"v1.0.0-0","sdk":"dang"}`).
 		WithNewFile("browser/main.dang", fmt.Sprintf(`
 type Browser {
-  screenshots: [LLMContentBlock!]! {
-    [
-      llmContentBlock(kind: LLMContentBlockKind.TEXT, text: %q),
-      llmContentBlock(kind: LLMContentBlockKind.IMAGE, data: %q, mimeType: "image/png")
-    ]
+  screenshots: LLMContent! {
+    llmContent
+      .withText(%q)
+      .withData(data: %q, mimeType: "image/png")
   }
 
-  screenshot: LLMContentBlock! {
-    llmContentBlock(kind: LLMContentBlockKind.IMAGE, data: %q, mimeType: "image/png")
+  screenshot: LLMContent! {
+    llmContent.withData(data: %q, mimeType: "image/png")
+  }
+
+  nothing: LLMContent! {
+    llmContent
   }
 }
 `, caption, mediaPNG, mediaPNG)).

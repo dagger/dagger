@@ -1,9 +1,10 @@
 kind: Experimental
 body: |
-  Add `llmContentBlock` for building text and media content blocks without
-  a conversation. Functions exposed as LLM tools can return an
-  `LLMContentBlock` or a list of them, and the model receives the blocks as
-  the tool result's own content, e.g. a screenshot for it to look at.
+  Add `llmContent`, a builder for ordered text and media content outside any
+  conversation: `llmContent().withText(...).withFile(...)`. A function exposed
+  as an LLM tool can return `LLMContent`, and the model receives its blocks as
+  the tool result's own content, e.g. a caption and a screenshot for it to
+  look at.
 time: 2026-09-30T19:30:00.000000000Z
 custom:
     Author: vito

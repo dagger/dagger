@@ -52,7 +52,7 @@ The LLM acts through the methods of the objects it's bound to via
   | the bound object's own type | **rebind** it as the new state; the tool's `print` output is the response |
   | `Changeset` | apply to the workspace overlay; return the patch summary |
   | `Workspace` | **rebind the LLM's workspace** to it, with a before/after diff summary |
-  | `LLMContentBlock` / `[LLMContentBlock]` | return the text and media as the tool result's content, after the tool's `print` output |
+  | `LLMContent` | return its text and media blocks as the tool result's content, after the tool's `print` output |
   | scalar / `[scalar]` | return the value |
   | any other object | `sync()` it and return the logs it emitted |
   | `Void` / null | return logs, else `(done)` |

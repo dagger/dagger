@@ -1014,7 +1014,7 @@ func liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDe
 //   - Changeset: overlay onto the workspace, return the patch summary.
 //   - Workspace: replace the current workspace, return the diff summary.
 //   - LLM: replace the conversation — the loop resumes from it (a continuation).
-//   - LLMContentBlock or a list of them: the tool result's text and media.
+//   - LLMContent: the tool result's text and media, in order.
 //   - the bound object's own type: rebind it as the new state, return its print.
 //   - any other object: sync it, return its print (else a type description).
 //   - Void/null: return its print, else "(done)".
@@ -1035,18 +1035,16 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 		return out, err
 	}
 
-	// Content blocks are the tool's result content, in order, after anything
-	// the method printed. This is how a tool shows the model media (e.g. a
+	// Content is the tool's result content, in order, after anything the
+	// method printed. This is how a tool shows the model media (e.g. a
 	// screenshot): as its own result, not as a user message appended to the
 	// conversation it would have to return.
-	if blocks, ok, err := objectMethodContent(val); ok {
-		if err != nil {
-			return nil, err
-		}
-		if len(blocks) == 0 {
+	if content, ok := dagql.UnwrapAs[*LLMContent](val); ok {
+		if content == nil || len(content.Blocks) == 0 {
 			return m.logsOrDone(ctx), nil
 		}
-		return &LLMContentBlock{Kind: LLMContentToolResult, Text: m.toolLogs(ctx), Content: blocks}, nil
+		// Clone so the tool result never aliases a cached value.
+		return &LLMContentBlock{Kind: LLMContentToolResult, Text: m.toolLogs(ctx), Content: cloneLLMContent(content.Blocks)}, nil
 	}
 
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
@@ -1076,39 +1074,6 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 
 	// Scalar, list, enum, or record: return the value directly.
 	return m.outputToLLM(ctx, srv, val)
-}
-
-// objectMethodContent extracts the blocks a method returned as
-// LLMContentBlock! or [LLMContentBlock!]!, cloned so the tool result never
-// aliases a cached value. ok reports whether val has one of those types.
-func objectMethodContent(val dagql.AnyResult) (_ []*LLMContentBlock, ok bool, _ error) {
-	if val == nil {
-		return nil, false, nil
-	}
-	if block, ok := dagql.UnwrapAs[*LLMContentBlock](val); ok {
-		if block == nil {
-			// A null LLMContentBlock return: no content.
-			return nil, true, nil
-		}
-		return []*LLMContentBlock{block.Clone()}, true, nil
-	}
-	list, ok := dagql.UnwrapAs[dagql.Enumerable](val)
-	if !ok || list.Element() == nil || list.Element().Type().Name() != (&LLMContentBlock{}).Type().Name() {
-		return nil, false, nil
-	}
-	blocks := make([]*LLMContentBlock, 0, list.Len())
-	for i := 1; i <= list.Len(); i++ {
-		elem, err := list.Nth(i)
-		if err != nil {
-			return nil, true, fmt.Errorf("content block %d: %w", i, err)
-		}
-		block, ok := dagql.UnwrapAs[*LLMContentBlock](elem)
-		if !ok || block == nil {
-			return nil, true, fmt.Errorf("content block %d: unexpected %T", i, elem)
-		}
-		blocks = append(blocks, block.Clone())
-	}
-	return blocks, true, nil
 }
 
 // syncObject forces an object result (running its side effects) when it has a

@@ -32,17 +32,33 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls for this LLM").
 					View(BeforeVersion("v1.0.0-0")),
 			),
-		dagql.Func("llmContentBlock", s.llmContentBlock).
+		dagql.Func("llmContent", s.llmContent).
 			View(AfterVersion("v1.0.0-0")).
 			Experimental("LLM support is not yet stabilized").
-			Doc(`Create a block of text or media content, independent of any conversation.`,
-				`A function exposed as an LLM tool can return a content block, or a list of them, to give the model text and media as the tool's result, e.g. a screenshot for the model to look at.`).
+			Doc(`Start an empty run of text and media content, independent of any conversation.`,
+				`Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.`),
+	}.Install(srv)
+	// Like the content-block message model below, the content builder is only
+	// visible to v1+ views.
+	srv.InstallObject(dagql.NewClass[*core.LLMContent](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.LLMContent]{
+		dagql.Func("withText", s.llmContentWithText).
+			Doc(`Append a block of text.`).
 			Args(
-				dagql.Arg("kind").Doc("The kind of content: TEXT, IMAGE, AUDIO, or DOCUMENT."),
-				dagql.Arg("text").Doc("The text content (for TEXT)."),
-				dagql.Arg("file").Doc("A media file whose contents become the block's inline bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media."),
-				dagql.Arg("data").Doc("Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT). Supply exactly one of file or data for media."),
-				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png". Required with data; inferred from a file's contents when omitted.`),
+				dagql.Arg("text").Doc("The text."),
+			),
+		dagql.Func("withFile", s.llmContentWithFile).
+			Doc(`Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.`).
+			Args(
+				dagql.Arg("file").Doc("The media file. Its contents become the block's inline bytes."),
+				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.`),
+			),
+		dagql.Func("withData", s.llmContentWithData).
+			Doc(`Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.`,
+				`Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.`).
+			Args(
+				dagql.Arg("data").Doc("The media bytes."),
+				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png".`),
 			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
@@ -442,28 +458,38 @@ func resolveLLMContent(ctx context.Context, inputs []dagql.InputObject[core.LLMC
 	return blocks, nil
 }
 
-// llmContentBlock builds a standalone text or media block. It shares
-// LLMContentBlockInput's resolution, so a file resolves to inline bytes and
-// the block is validated exactly as withContent would validate it.
-func (s *llmSchema) llmContentBlock(ctx context.Context, _ *core.Query, args struct {
-	Kind     core.LLMContentBlockKind
-	Text     string `default:""`
-	File     dagql.Optional[core.FileID]
-	Data     string `default:""`
+func (s *llmSchema) llmContent(ctx context.Context, _ *core.Query, _ struct{}) (*core.LLMContent, error) {
+	return &core.LLMContent{}, nil
+}
+
+func (s *llmSchema) llmContentWithText(ctx context.Context, content *core.LLMContent, args struct {
+	Text string
+}) (*core.LLMContent, error) {
+	return content.WithBlock(&core.LLMContentBlock{Kind: core.LLMContentText, Text: args.Text})
+}
+
+// llmContentWithFile resolves the file to inline bytes exactly as
+// LLM.withContentFile does, so the media kind is inferred the same way.
+func (s *llmSchema) llmContentWithFile(ctx context.Context, content *core.LLMContent, args struct {
+	File     core.FileID
 	MIMEType string `name:"mimeType" default:""`
-}) (*core.LLMContentBlock, error) {
-	switch args.Kind {
-	case core.LLMContentText, core.LLMContentImage, core.LLMContentAudio, core.LLMContentDocument:
-	default:
-		return nil, fmt.Errorf("%s is not text or media content", args.Kind)
+}) (*core.LLMContent, error) {
+	block, err := core.LLMContentFromFile(ctx, args.File, args.MIMEType)
+	if err != nil {
+		return nil, err
 	}
-	return core.LLMContentBlockInput{
-		Kind:     args.Kind,
-		Text:     args.Text,
-		File:     args.File,
-		Data:     args.Data,
-		MIMEType: args.MIMEType,
-	}.Resolve(ctx)
+	return content.WithBlock(block)
+}
+
+func (s *llmSchema) llmContentWithData(ctx context.Context, content *core.LLMContent, args struct {
+	Data     dagql.Bytes
+	MIMEType string `name:"mimeType"`
+}) (*core.LLMContent, error) {
+	block, err := core.LLMContentFromBytes(args.Data, args.MIMEType)
+	if err != nil {
+		return nil, err
+	}
+	return content.WithBlock(block)
 }
 
 func (s *llmSchema) withContent(ctx context.Context, llm *core.LLM, args struct {

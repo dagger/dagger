@@ -164,7 +164,7 @@ func TestGenaiWAVMIMETypes(t *testing.T) {
 	wav := []byte("RIFF\x24\x00\x00\x00WAVEfmt ")
 	for _, mimeType := range []string{"", "audio/wav", "audio/wave", "audio/x-wav"} {
 		t.Run(mimeType, func(t *testing.T) {
-			audio, err := llmContentFromBytes(wav, mimeType)
+			audio, err := LLMContentFromBytes(wav, mimeType)
 			require.NoError(t, err)
 			require.Equal(t, LLMContentAudio, audio.Kind)
 			if mimeType != "" {
