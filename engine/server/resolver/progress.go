@@ -114,6 +114,34 @@ type progressWriter struct {
 	lastEmit time.Time
 }
 
+// attributedWriter publishes bytes only after the registry commits them. A
+// failed attempt can therefore undercount bytes sent before the failure, but it
+// cannot report buffered bytes that never reached the registry.
+type attributedWriter struct {
+	content.Writer
+	network *enginetelemetry.NetworkAccumulator
+	written int64
+}
+
+func (w *attributedWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	w.written += int64(n)
+	return n, err
+}
+
+func (w *attributedWriter) Commit(
+	ctx context.Context,
+	size int64,
+	expected digest.Digest,
+	opts ...content.Opt,
+) error {
+	if err := w.Writer.Commit(ctx, size, expected, opts...); err != nil {
+		return err
+	}
+	w.network.Add(w.written)
+	return nil
+}
+
 func (pw *progressWriter) Status() (content.Status, error) {
 	status, err := pw.Writer.Status()
 	if err != nil {
