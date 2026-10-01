@@ -248,7 +248,7 @@ clients = ["./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes.".dagger/modules/test-split"]
 is-module = true
-clients = ["./.dagger/modules/engine-dev"]
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/go"]
 
 [sdks.dang.scopes.".dagger/modules/typescript-client-dev"]
 is-module = true
