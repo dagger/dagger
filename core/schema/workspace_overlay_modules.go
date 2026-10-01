@@ -176,7 +176,7 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 				return nil, nil, err
 			}
 			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort)}
-			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
+			if workspace.IsLocalRef(entry.Source, "") {
 				failure.Dir = filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 			}
 			failures = append(failures, failure)
@@ -286,7 +286,7 @@ func (s *workspaceSchema) workspaceOverlayModuleSource(
 ) (src dagql.ObjectResult[*core.ModuleSource], relevant bool, _ error) {
 	ws := parent.Self()
 
-	if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
+	if workspace.IsLocalRef(entry.Source, "") {
 		resolved := workspace.ResolveModuleEntrySource(configDir, entry.Source)
 		if !filepath.IsAbs(resolved) {
 			if !configTouched && !overlayTouchesTree(ws, resolved) {
