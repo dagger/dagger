@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
+	"github.com/vito/tuist"
 	"github.com/yuin/goldmark"
 	emoji "github.com/yuin/goldmark-emoji"
 	"github.com/yuin/goldmark/ast"
@@ -39,9 +40,79 @@ func renderMarkdown(content string, width int, style glamouransi.StyleConfig, ru
 	// Extensions register HTML renderers too; replace them after extension setup,
 	// just as glamour.NewTermRenderer does.
 	md.SetRenderer(mdrenderer.NewRenderer(mdrenderer.WithNodeRenderers(util.Prioritized(r, 1000))))
+	source := []byte(content)
+	hasTabs := bytes.IndexByte(source, '\t') >= 0
+	if hasTabs {
+		source = expandCodeBlockTabs(md.Parser(), source)
+	}
 	var out bytes.Buffer
-	err := md.Convert([]byte(content), &out)
-	return out.String(), err
+	if err := md.Convert(source, &out); err != nil {
+		return out.String(), err
+	}
+	if !hasTabs {
+		return out.String(), nil
+	}
+	// Tabs left outside code blocks (prose, inline code) measure as zero
+	// columns, so anything laying the output out by width -- wrapping,
+	// overlays composited on top of it -- would disagree with the terminal,
+	// which advances them to the next tab stop.
+	lines := strings.Split(out.String(), "\n")
+	for i, line := range lines {
+		lines[i] = tuist.ExpandTabs(line, markdownTabWidth)
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+// markdownTabWidth matches the diff view's tab stops.
+const markdownTabWidth = diffTabWidth
+
+// expandCodeBlockTabs replaces the tabs inside code blocks with spaces, with
+// tab stops counted from the start of the code rather than from wherever the
+// block lands on screen, so nested indentation stays even.
+func expandCodeBlockTabs(p parser.Parser, source []byte) []byte {
+	doc := p.Parse(text.NewReader(source))
+	var segments []text.Segment
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n.Kind() {
+		case ast.KindCodeBlock, ast.KindFencedCodeBlock:
+			lines := n.Lines()
+			for i := 0; i < lines.Len(); i++ {
+				segments = append(segments, lines.At(i))
+			}
+			return ast.WalkSkipChildren, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	var out bytes.Buffer
+	out.Grow(len(source))
+	pos := 0
+	for _, seg := range segments {
+		if seg.Start < pos || seg.Stop > len(source) {
+			continue
+		}
+		out.Write(source[pos:seg.Start])
+		col := seg.Padding
+		for _, r := range string(source[seg.Start:seg.Stop]) {
+			switch r {
+			case '\t':
+				spaces := markdownTabWidth - col%markdownTabWidth
+				out.WriteString(strings.Repeat(" ", spaces))
+				col += spaces
+			case '\n':
+				out.WriteRune(r)
+				col = 0
+			default:
+				out.WriteRune(r)
+				col += ansi.StringWidth(string(r))
+			}
+		}
+		pos = seg.Stop
+	}
+	out.Write(source[pos:])
+	return out.Bytes()
 }
 
 // trimMarkdownPadding removes Glamour's surrounding blank lines, but preserves
