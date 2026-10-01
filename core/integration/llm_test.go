@@ -258,12 +258,11 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 
 // TestGeneratorSeesOverlayEdits locks in that the LLM's bound (overlaid)
 // Workspace propagates through a module's `generate` tool into the generator
-// leaves it rolls up and runs. Regression test for the rebase break where an
-// auto-injected Workspace! on a generator leaf — resolved while running inside
-// the module runtime — was rejected by loadWorkspaceArg's
-// callerInModuleFunction guard *before* it consulted the seeded bound
-// workspace, so the generator read stale (frozen) source and the agent's edit
-// had no effect (see hack/designs/workspace-agents.md §4).
+// leaves it rolls up and runs. An auto-injected Workspace! on a generator leaf
+// resolves to the seeded bound workspace even though it is resolved while
+// running inside the module runtime, so the generator reads the agent's
+// overlaid source rather than the frozen source (see
+// hack/designs/workspace-agents.md §4).
 //
 // The gen-agent fixture's generator reads input.txt and writes
 // output.txt = "generated from: <input>". The canned conversation edits
@@ -323,8 +322,8 @@ func (LLMSuite) TestGeneratorSeesOverlayEdits(ctx context.Context, t *testctx.T)
 // TestToolLogsExcludeInternal locks in captureLogs' internal-span filtering:
 // a tool result surfaces the print output of the tool's real work, but not
 // logs from beneath spans marked dagger.io/ui.internal — e.g. ComputePaths'
-// "computing paths" task prints (added:/removed:/...), which used to leak
-// into Workspace-returning tool results ahead of the patch summary.
+// "computing paths" task prints (added:/removed:/...), so they don't appear
+// in Workspace-returning tool results ahead of the patch summary.
 func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -445,7 +444,7 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 // under — as containerized SDKs do via the injected traceparent — and the tool
 // result classifies that output as the tool's own and keeps it verbatim.
 //
-// A successful tool result now contains its own output and surfaced sections,
+// A successful tool result contains its own output and surfaced sections,
 // falling back to abridged flat logs when nothing was surfaced. The raw span
 // tree itself remains available through ReadTrace instead of being transcribed
 // into every result.
@@ -1059,8 +1058,9 @@ func (LLMSuite) TestTraceRecipeAfterChangesExport(ctx context.Context, t *testct
 	require.Equal(t, origHist, reloadedHist)
 }
 
-// Exercise overlays made by filesystem tools, not only withChanges. Previously
-// these retained an already-exported overlay and reported stale pending edits.
+// Exercise overlays made by filesystem tools, not only withChanges. After the
+// overlay is exported and the exported snapshot rebound, the captured recipe
+// carries no stale pending edits from the exported overlay.
 func (LLMSuite) TestTraceRecipeAfterFileExport(ctx context.Context, t *testctx.T) {
 	workdir, git := workspaceExportCheckout(ctx, t)
 	publishCheckpointRemote(ctx, t, workdir)

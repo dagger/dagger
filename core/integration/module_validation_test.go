@@ -103,7 +103,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 
 	t.Run("id", func(ctx context.Context, t *testctx.T) {
 		t.Run("arg", func(ctx context.Context, t *testctx.T) {
-			// id used to be disallowed as an arg name, but is allowed now, test it works
+			// `id` is a valid argument name.
 
 			for _, tc := range []testCase{
 				{

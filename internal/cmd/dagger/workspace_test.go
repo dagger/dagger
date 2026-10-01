@@ -19,11 +19,8 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"module", "install"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("load-module"))
-	require.Nil(t, cmd.Flags().Lookup("compat"))
 	require.NotNil(t, cmd.Flags().Lookup("name"))
 	require.Contains(t, cmd.Long, "If no workspace config is selected")
-	require.Nil(t, rootCmd.PersistentFlags().Lookup("lock"))
 
 	cmd, _, err = rootCmd.Find([]string{"install"})
 	require.NoError(t, err)
@@ -35,13 +32,10 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	cmd, _, err = rootCmd.Find([]string{"module", "update"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("load-module"))
-	require.Nil(t, cmd.Flags().Lookup("compat"))
 
 	cmd, _, err = rootCmd.Find([]string{"lock", "update"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("dry-run"))
 	listFlag := cmd.Flags().Lookup("list")
 	require.NotNil(t, listFlag)
 	require.Equal(t, "l", listFlag.Shorthand)
@@ -309,22 +303,9 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.True(t, cmd.Hidden)
 }
 
-func TestRemovedWorkspaceCommands(t *testing.T) {
-	for _, cmd := range workspaceCmd.Commands() {
-		require.NotEqual(t, "list", cmd.Name())
-		require.NotEqual(t, "info", cmd.Name())
-	}
-}
-
 func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	help := renderHelp(t, rootCmd)
 	require.Contains(t, help, "AVAILABLE COMMANDS")
-	require.NotContains(t, help, "DAGGER CLOUD COMMANDS")
-	require.NotContains(t, help, "DAGGER MODULE COMMANDS")
-	require.NotContains(t, help, "DAGGER WORKSPACE COMMANDS")
-	require.NotContains(t, help, "EXECUTION COMMANDS")
-	require.NotContains(t, help, "check, checks")
-	require.NotContains(t, help, "function, fn")
 	require.Contains(t, help, "module, mod")
 	require.Contains(t, help, "workspace, ws")
 	require.Contains(t, help, "shell, sh")

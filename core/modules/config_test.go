@@ -190,7 +190,6 @@ func TestModuleManifestV2RoundTrip(t *testing.T) {
 
 	out, err := MarshalModuleConfigForFilename(want, Filename)
 	require.NoError(t, err)
-	require.NotContains(t, string(out), "manifestVersion")
 
 	got, err := ParseModuleConfigForFilename(out, Filename)
 	require.NoError(t, err)

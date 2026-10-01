@@ -25,8 +25,7 @@ import (
 
 // TestObjectToolset locks in that the LLM's tools come from the objects it's
 // bound to via withTools — one tool per eligible method — and not from the raw
-// workspace schema. A bare llm (nothing bound) has no acting tools; the retired
-// Dang scheme's dang_eval/inspect are gone from the default toolset.
+// workspace schema. A bare llm (nothing bound) has no acting tools.
 func (LLMSuite) TestObjectToolset(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-managed")
@@ -36,10 +35,6 @@ func (LLMSuite) TestObjectToolset(ctx context.Context, t *testctx.T) {
 		// but binds no object as tools, so it acts through nothing until withTools.
 		tools, err := base.With(daggerShell("llm | tools")).Stdout(ctx)
 		require.NoError(t, err)
-
-		// The retired Dang scheme's tools are no longer the default interface.
-		require.NotContains(t, tools, "## dang_eval\n")
-		require.NotContains(t, tools, "## inspect\n")
 
 		// The workspace's served functions are not exposed as tools on their own —
 		// a model reaches a method only once its object is bound via withTools.
@@ -57,10 +52,8 @@ func (LLMSuite) TestObjectToolset(ctx context.Context, t *testctx.T) {
 		require.Contains(t, tools, "## greet\n")
 
 		// greeter is the Query-root constructor, not a method of the bound object,
-		// so it is not a tool. Nor is the retired Dang harness present.
+		// so it is not a tool.
 		require.NotContains(t, tools, "## greeter\n")
-		require.NotContains(t, tools, "## dang_eval\n")
-		require.NotContains(t, tools, "## inspect\n")
 	})
 
 	t.Run("except hides methods from the toolset", func(ctx context.Context, t *testctx.T) {

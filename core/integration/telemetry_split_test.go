@@ -414,9 +414,9 @@ func (m *HelloWithChecks) SplitCheck(ctx context.Context) error {
 
 // TestTelemetrySplitScaleOut runs a check scaled out from a new parent
 // engine to a new remote engine. The remote publishes its own session, and
-// the check's output reaches Cloud once. Released clients and engines are
-// not covered: they run checks through Workspace.checks, which this engine
-// no longer has.
+// the check's output reaches Cloud once. Released clients and engines run
+// checks through Workspace.checks, which this engine does not serve, so they
+// are not covered.
 func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	cli := daggerCliFile(t, c)

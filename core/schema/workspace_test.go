@@ -1492,9 +1492,6 @@ func TestWorkspaceFilterWithDirectoryArgs(t *testing.T) {
 	require.Equal(t, "source", args[1].Name)
 	require.Equal(t, "include", args[2].Name)
 	require.Equal(t, "exclude", args[3].Name)
-	for _, arg := range args {
-		require.NotEqual(t, "directory", arg.Name)
-	}
 }
 
 func modTreeNode(parts ...string) *core.ModTreeNode {

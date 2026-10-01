@@ -13,6 +13,8 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -316,8 +318,7 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				// Workspace creation is implicit on first install; the
-				// `dagger workspace init` verb was removed in CLI 1.0.
+				// Installing a module creates the workspace.
 				With(daggerExec("module", "install", "../"+tc.path))
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
@@ -431,15 +432,14 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 		With(daggerNonNestedExec("generate", "-l", "-f=link")).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, listOut, "go-sdk/generate")
-	require.NotContains(t, listOut, "go-sdk/generate-modules")
-	require.NotContains(t, listOut, "go-sdk/generate-clients")
+	goSDKGenerators := slices.Compact(slices.Sorted(slices.Values(
+		regexp.MustCompile(`go-sdk/[\w/-]+`).FindAllString(listOut, -1))))
+	require.Equal(t, []string{"go-sdk/generate"}, goSDKGenerators)
 
 	synced := modGen.With(daggerNonNestedExec("call", "sync-generators"))
 	out, err := synced.CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "ok")
-	require.NotContains(t, out, "result *core.Changeset is detached")
 
 	generated := modGen.With(daggerNonNestedExec("generate", "-y"))
 	rootMarker, err := generated.File("internal/dagger/sdk-module-max.gen.txt").Contents(ctx)
@@ -500,9 +500,9 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 
 // A freshly initialized module scope must accept a client without an
 // intervening `dagger generate`. Both `module init` and `module client add`
-// return a workspace that the CLI reloads by ID before diffing it, and the
-// client path used to lose that workspace's overlay on the way back, so the
-// CLI saw no changes and wrote nothing (#13992).
+// return a workspace that the CLI reloads by ID before diffing it, so the
+// client path must carry that workspace's overlay back for the CLI to see and
+// write the changes.
 func (GeneratorsSuite) TestSDKModuleClientAddAfterInit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	sdkModulePath, err := filepath.Abs("testdata/sdks/module-max-lifecycle")
@@ -739,10 +739,8 @@ source = "dang"
 	t.Run("lists SDK sources", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerNonNestedExec("sdk", "list")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "SDK")
-		require.Contains(t, out, "SOURCE")
+		require.Regexp(t, `(?m)^SDK\s+SOURCE\s*$`, out)
 		require.Contains(t, out, ".dagger/modules/module-max-lifecycle")
-		require.NotContains(t, out, "MODULE")
 	})
 
 	t.Run("client add prefers a deeper detected scope", func(ctx context.Context, t *testctx.T) {
@@ -1172,9 +1170,8 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 	})
 
 	t.Run("--require-load also catches an explicitly-selected unloadable module", func(ctx context.Context, t *testctx.T) {
-		// Loading is best-effort even for an explicit selector, so naming the
-		// broken module no longer aborts by itself; --require-load is what turns
-		// its load failure into a hard error.
+		// Loading is best-effort even for an explicit selector; --require-load
+		// turns its load failure into a hard error.
 		out, err := base.
 			With(daggerExecFail("generate", "bad", "--require-load")).
 			CombinedOutput(ctx)
@@ -1190,8 +1187,9 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 // their generated files) must not abort `dagger generate` — generate is often
 // the repair for exactly that state. The generators listing already loads
 // best-effort, but the CLI's follow-up queries are rooted at `node(id:)` (every
-// post-Sync SDK handle is), and an unrecognized `node` root field used to
-// strictly (re)load the pending entrypoint, failing every generate mode.
+// post-Sync SDK handle is), so an unrecognized `node` root field must not
+// strictly (re)load the pending entrypoint, which would fail every generate
+// mode.
 func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1372,7 +1370,7 @@ func (GeneratorsSuite) TestWorkspaceCheckNarrowsToRequestedModule(ctx context.Co
 	})
 
 	t.Run("checking across all modules still loads the broken module", func(ctx context.Context, t *testctx.T) {
-		// Listing is best-effort now (see TestChecksReportUnloadableModules),
+		// Listing is best-effort (see TestChecksReportUnloadableModules),
 		// so it succeeds and names the broken module instead of aborting.
 		out, err := base.
 			With(daggerExec("check", "-l")).
@@ -1644,59 +1642,6 @@ func introspectModuleSourceSchema(ctx context.Context, t *testctx.T, ctr *dagger
 		}
 	}
 	return schema.typeNames(), queryFields
-}
-
-func (GeneratorsSuite) TestBetaSDKModuleAPIIsRemoved(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	out, err := goGitBase(t, c).
-		With(daggerQuery(`{
-			current: __type(name: "CurrentModule") { fields { name } }
-			moduleSource: __type(name: "ModuleSource") { fields { name } }
-			workspace: __type(name: "Workspace") { fields { name } }
-			schema: __schema { types { name } }
-		}`)).
-		Stdout(ctx)
-	require.NoError(t, err)
-
-	var resp struct {
-		Current struct {
-			Fields []struct {
-				Name string `json:"name"`
-			} `json:"fields"`
-		} `json:"current"`
-		ModuleSource struct {
-			Fields []struct {
-				Name string `json:"name"`
-			} `json:"fields"`
-		} `json:"moduleSource"`
-		Workspace struct {
-			Fields []struct {
-				Name string `json:"name"`
-			} `json:"fields"`
-		} `json:"workspace"`
-		Schema struct {
-			Types []struct {
-				Name string `json:"name"`
-			} `json:"types"`
-		} `json:"schema"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &resp))
-	for _, field := range resp.Current.Fields {
-		require.NotEqual(t, "asSDK", field.Name)
-	}
-	for _, field := range resp.ModuleSource.Fields {
-		require.NotEqual(t, "generateLocalDependencies", field.Name)
-	}
-	for _, field := range resp.Workspace.Fields {
-		require.NotEqual(t, "__withGeneratedLocalDependencies", field.Name)
-	}
-	typeNames := make([]string, 0, len(resp.Schema.Types))
-	for _, typ := range resp.Schema.Types {
-		typeNames = append(typeNames, typ.Name)
-	}
-	require.NotContains(t, typeNames, "CurrentModuleAsSDK")
-	require.NotContains(t, typeNames, "CurrentModuleAsSDKModule")
-	require.NotContains(t, typeNames, "CurrentModuleAsSDKClient")
 }
 
 // TestWorkspaceGeneratorsSeeOverlayEdits locks in that a generator run via

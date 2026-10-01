@@ -399,9 +399,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 		},
 		{
 			// a prerelease of v2.0.0 shares base v2.0.0, so it satisfies a
-			// ">= v2.0.0" gate under base-version comparison (previously this
-			// was rejected because strict semver ranks a prerelease below its
-			// release)
+			// ">= v2.0.0" gate under base-version comparison
 			name:             "prerelease of the required version",
 			engineVersion:    "v2.0.0-foobar",
 			engineMinVersion: "v2.0.0",
@@ -441,7 +439,6 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 		{
 			// differing prerelease suffixes still share base v2.0.0, so they
 			// are compatible too: base-version comparison ignores the suffix
-			// (this used to require an exact match)
 			name:             "prereleases of the same base",
 			engineVersion:    "v2.0.0-foo-123",
 			engineMinVersion: "v2.0.0-foo-456",
@@ -1060,14 +1057,9 @@ func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T
 		return found, nil
 	}
 
-	// Seed the workload directly via the Dagger Go API. The CLI commands
-	// 'dagger module init' / 'dagger module install' were removed on this
-	// branch (see commit d2b365b83), so the workload's go module, its
-	// python dependency, and the dep wiring all have to be written by the
-	// test itself. Putting that in Go (instead of shell heredocs in the
-	// WithExec) keeps it readable and confines the WithExec to what the
-	// test is actually measuring: repeated schema loads via dagger
-	// functions.
+	// Write the workload's Go module, its Python dependency and the dep
+	// wiring directly with the Go API so the WithExec measures only repeated
+	// schema loads via dagger api functions.
 	workloadDir := c.Directory().
 		WithNewFile("dagger.json", `{"name":"main","engineVersion":"latest","sdk":{"source":"go"},"dependencies":[{"name":"dep","source":"./dep"}]}`).
 		WithNewFile("main.go", `package main

@@ -4,13 +4,6 @@ package core
 // reads, writes, workspace boundaries, and how `[modules.<name>.settings]`
 // affects loaded modules.
 //
-// The CLI 1.0 redesign moved raw config to `dagger workspace config` (the
-// top-level `dagger config` alias was dropped) and removed the explicit
-// `dagger workspace init` command — workspace creation is now implicit on the
-// first `dagger module install` (covered in workspace_modules_test.go's "install
-// initializes empty workspace"). The old TestConfigAlias and
-// TestWorkspaceInitCommand tests were dropped accordingly.
-//
 // See also:
 // - workspace_env_management_test.go: config while an environment is selected.
 // - workspace_settings_test.go: typed setting commands backed by config.

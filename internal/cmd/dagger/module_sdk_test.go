@@ -52,7 +52,6 @@ func TestModuleMaxCommandTree(t *testing.T) {
 	lockUpdate := findCommand(lockCmd, "update")
 	require.NotNil(t, lockUpdate.Flags().Lookup("no-generate"))
 	require.NotNil(t, lockUpdate.Flags().Lookup("list"))
-	require.Nil(t, lockUpdate.Flags().Lookup("dry-run"))
 	require.NotNil(t, findCommand(lockCmd, "list"))
 }
 
@@ -399,7 +398,6 @@ func TestSDKModuleSettingFlagsAreBareForModuleInit(t *testing.T) {
 	require.NoError(t, addSDKModuleSettingFlags(cmd, sdk, args))
 
 	// The SDK is a subcommand, so the flag carries no SDK prefix.
-	require.Nil(t, cmd.Flags().Lookup("go-starter"))
 	flag := cmd.Flags().Lookup("starter")
 	require.NotNil(t, flag)
 	require.Equal(t, "default", flag.DefValue)

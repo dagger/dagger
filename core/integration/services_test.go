@@ -623,7 +623,7 @@ func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *te
 	srv := c.Container().
 		From(alpineImage).
 		WithFile("/bin/app", script).
-		WithSymlink("doesnt", "matter"). // Note this is done via a dagOp; which broke things at one point
+		WithSymlink("doesnt", "matter"). // WithSymlink runs as a dagOp, so this covers services built from dagOp-produced containers
 		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
 		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
 		WithExposedPort(1337)

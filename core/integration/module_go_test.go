@@ -402,7 +402,7 @@ func (GoSuite) TestPragmaParsing(ctx context.Context, t *testctx.T) {
 }
 
 func (GoSuite) TestWeirdFields(ctx context.Context, t *testctx.T) {
-	// these are all cases that used to panic due to the disparity in the type spec and the ast
+	// fields whose type spec and AST disagree must still load and resolve
 
 	c := connect(ctx, t)
 
@@ -455,7 +455,8 @@ func (GoSuite) TestJSONField(ctx context.Context, t *testctx.T) {
 	require.JSONEq(t, `{"config":"{\"a\":1}"}`, out)
 }
 
-// this is no longer allowed, but verify the Engine errors out
+// A module cannot add methods to core types; the query against the extended
+// type fails.
 func (GoSuite) TestExtendCore(ctx context.Context, t *testctx.T) {
 	moreContents := `package dagger
 
@@ -480,8 +481,8 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
 
-		// With lazy module loading, the error is no longer thrown by the SDK but directly by the engine
-		// when evaluating the query against the engine GQL schema.
+		// The engine rejects the query when evaluating it against the engine GQL
+		// schema.
 		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
 	})
 
@@ -496,9 +497,8 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		// With self calls always enabled for Go, a module type shadowing a
-		// core type no longer fails the load; the core type keeps winning in
-		// the client schema, so the extension method is simply absent — same
+		// A module type shadowing a core type loads, but the core type wins
+		// in the client schema, so the extension method is absent — same
 		// engine-side validation error as the different-mod-name case.
 		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
 	})
