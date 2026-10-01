@@ -2697,9 +2697,9 @@ export type LLMContentBlockInput = {
   content?: LLMContentBlockInput[]
 
   /**
-   * Base64-encoded media bytes. Supply exactly one of data or file for media.
+   * Media bytes. Supply exactly one of data or file for media.
    */
-  data?: string
+  data?: Bytes
 
   /**
    * Whether the tool call resulted in an error (for TOOL_RESULT kind).
@@ -13604,7 +13604,7 @@ export class LLMContentBlock extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _arguments?: JSON = undefined
   private readonly _callId?: string = undefined
-  private readonly _data?: string = undefined
+  private readonly _data?: Bytes = undefined
   private readonly _errored?: boolean = undefined
   private readonly _kind?: LLMContentBlockKind = undefined
   private readonly _mimeType?: string = undefined
@@ -13620,7 +13620,7 @@ export class LLMContentBlock extends BaseClient {
     _id?: ID,
     _arguments?: JSON,
     _callId?: string,
-    _data?: string,
+    _data?: Bytes,
     _errored?: boolean,
     _kind?: LLMContentBlockKind,
     _mimeType?: string,
@@ -13706,16 +13706,16 @@ export class LLMContentBlock extends BaseClient {
   }
 
   /**
-   * Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+   * The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
    */
-  data = async (): Promise<string> => {
+  data = async (): Promise<Bytes> => {
     if (this._data) {
       return this._data
     }
 
     const ctx = this._ctx.select("data")
 
-    const response: Awaited<string> = await ctx.execute()
+    const response: Awaited<Bytes> = await ctx.execute()
 
     return response
   }

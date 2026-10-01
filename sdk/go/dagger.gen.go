@@ -173,8 +173,8 @@ type LLMContentBlockInput struct {
 	// Ordered TEXT or media blocks returned by a tool.
 	Content []LLMContentBlockInput `json:"content,omitempty"`
 
-	// Base64-encoded media bytes. Supply exactly one of data or file for media.
-	Data string `json:"data,omitempty"`
+	// Media bytes. Supply exactly one of data or file for media.
+	Data Bytes `json:"data"`
 
 	// Whether the tool call resulted in an error (for TOOL_RESULT kind).
 	Errored bool `json:"errored,omitempty"`
@@ -13320,7 +13320,7 @@ type LLMContentBlock struct {
 
 	arguments *JSON
 	callId    *string
-	data      *string
+	data      *Bytes
 	errored   *bool
 	id        *ID
 	kind      *LLMContentBlockKind
@@ -13395,14 +13395,14 @@ func (r *LLMContentBlock) Content(ctx context.Context) ([]LLMContentBlock, error
 	return convert(response), nil
 }
 
-// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
-func (r *LLMContentBlock) Data(ctx context.Context) (string, error) {
+// The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+func (r *LLMContentBlock) Data(ctx context.Context) (Bytes, error) {
 	if r.data != nil {
 		return *r.data, nil
 	}
 	q := r.query.Select("data")
 
-	var response string
+	var response Bytes
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

@@ -112,7 +112,7 @@ pub struct LlmContentBlockInput {
     pub arguments: Json,
     pub call_id: String,
     pub content: Vec<LlmContentBlockInput>,
-    pub data: String,
+    pub data: Bytes,
     pub errored: bool,
     pub file: Id,
     pub kind: LlmContentBlockKind,
@@ -13329,8 +13329,8 @@ impl LlmContentBlock {
         let query = self.selection.select("mimeType");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
-    pub async fn data(&self) -> Result<String, DaggerError> {
+    /// The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+    pub async fn data(&self) -> Result<Bytes, DaggerError> {
         let query = self.selection.select("data");
         query.execute(self.graphql_client.clone()).await
     }

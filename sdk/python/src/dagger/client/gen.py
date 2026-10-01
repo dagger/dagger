@@ -482,8 +482,8 @@ class LLMContentBlockInput(Input):
     content: "list[LLMContentBlockInput] | None" = None
     """Ordered TEXT or media blocks returned by a tool."""
 
-    data: str | None = ""
-    """Base64-encoded media bytes. Supply exactly one of data or file for media."""
+    data: Bytes | None = None
+    """Media bytes. Supply exactly one of data or file for media."""
 
     errored: bool | None = False
     """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
@@ -12859,15 +12859,13 @@ class LLMContentBlock(Type):
         _ctx = self._select("content", _args)
         return await _ctx.execute_object_list(LLMContentBlock)
 
-    async def data(self) -> str:
-        """Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+    async def data(self) -> Bytes:
+        """The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        Bytes
+            Arbitrary binary data, represented as a base64-encoded string.
 
         Raises
         ------
@@ -12878,7 +12876,7 @@ class LLMContentBlock(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("data", _args)
-        return await _ctx.execute(str)
+        return await _ctx.execute(Bytes)
 
     async def errored(self) -> bool:
         """Whether the tool call resulted in an error (for TOOL_RESULT kind).

@@ -5032,8 +5032,8 @@ type LLMContentBlock implements Node {
   """The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds)."""
   mimeType: String!
 
-  """Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."""
-  data: String!
+  """The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."""
+  data: Bytes!
 
   """
   Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
@@ -5072,10 +5072,8 @@ input LLMContentBlockInput {
   """Media MIME type; required for inline data, inferred for a file."""
   mimeType: String = ""
 
-  """
-  Base64-encoded media bytes. Supply exactly one of data or file for media.
-  """
-  data: String = ""
+  """Media bytes. Supply exactly one of data or file for media."""
+  data: Bytes
 
   """A media file to resolve to inline bytes."""
   file: ID @expectedType(name: "File")
