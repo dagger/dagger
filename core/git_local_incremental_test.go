@@ -151,6 +151,45 @@ func TestIncrementalGitCheckoutGates(t *testing.T) {
 	require.Equal(t, "gitlinks", reason)
 }
 
+// A .gitattributes that is itself converted on checkout differs from its blob
+// in the parent tree. A full checkout reads attributes from the index; the
+// delta must too, rather than parsing the converted worktree copy.
+func TestIncrementalGitCheckoutConvertedAttributes(t *testing.T) {
+	for _, attrs := range []string{
+		"* text working-tree-encoding=UTF-16LE eol=lf\n",
+		"* text eol=crlf\n",
+	} {
+		t.Run(attrs, func(t *testing.T) {
+			ctx := context.Background()
+			source := historyRepo(t, "sha1")
+			stage := func(p, data string) {
+				tmp := filepath.Join(t.TempDir(), "blob")
+				require.NoError(t, os.WriteFile(tmp, []byte(data), 0644))
+				blob := gitMirrorTestRun(t, source, "hash-object", "-w", "--no-filters", tmp)
+				gitMirrorTestRun(t, source, "update-index", "--add", "--cacheinfo", "100644,"+blob+","+p)
+			}
+			stage(".gitattributes", attrs)
+			stage("a.txt", "one\n")
+			gitMirrorTestRun(t, source, "commit", "-m", "base")
+			parent := gitMirrorTestRun(t, source, "rev-parse", "HEAD")
+			stage("a.txt", "one\ntwo\n")
+			stage("dir/b.txt", "new\n")
+			gitMirrorTestRun(t, source, "commit", "-m", "child")
+			child := gitMirrorTestRun(t, source, "rev-parse", "HEAD")
+			cli := gitutil.NewGitCLI(gitutil.WithDir(source))
+			dest := t.TempDir()
+			require.NoError(t, doLocalGitTreeCheckout(ctx, cli, localTreeCheckoutCLI(dest), nil, source, &gitutil.Ref{SHA: parent}))
+			plan, reason, err := planIncrementalGitCheckout(ctx, cli, parent, child)
+			require.NoError(t, err)
+			require.Empty(t, reason)
+			require.NoError(t, applyIncrementalGitCheckout(ctx, cli, dest, child, plan))
+			fresh := t.TempDir()
+			require.NoError(t, doLocalGitTreeCheckout(ctx, cli, localTreeCheckoutCLI(fresh), nil, source, &gitutil.Ref{SHA: child}))
+			require.Equal(t, localTreeSnapshot(t, fresh), localTreeSnapshot(t, dest))
+		})
+	}
+}
+
 func TestIncrementalGitCheckoutActualParent(t *testing.T) {
 	ctx := context.Background()
 	source := historyRepo(t, "sha1")

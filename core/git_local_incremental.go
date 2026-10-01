@@ -284,8 +284,13 @@ func applyIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, de
 			}
 		}
 	}
+	// A full checkout reads .gitattributes from the index, but checkout-index
+	// reads the worktree copy first, which differs from its blob when the file
+	// is itself converted on checkout (working-tree-encoding, ident). Read them
+	// from the checked out commit, as the index has them.
+	attrCheckout := checkout.New(gitutil.WithArgs("--attr-source=" + child))
 	for _, batch := range batchPathSpecs(plan.checkout) {
-		if _, err := checkout.Run(ctx, append([]string{"checkout-index", "--force", "--"}, batch...)...); err != nil {
+		if _, err := attrCheckout.Run(ctx, append([]string{"checkout-index", "--force", "--"}, batch...)...); err != nil {
 			return err
 		}
 	}
