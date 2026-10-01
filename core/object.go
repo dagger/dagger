@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"weak"
 
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -1485,6 +1486,7 @@ func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject], err erro
 
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]dagql.Field[*ModuleObject], error) {
 	var fields []dagql.Field[*ModuleObject]
+	installed := newInstalledServer(dag)
 	for _, fn := range obj.TypeDef.Functions {
 		fun := fn.Self()
 		authored := fun
@@ -1520,7 +1522,9 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 					inputs = append(inputs, CallInput{Name: name, Value: value})
 				}
 				sort.Slice(inputs, func(i, j int) bool { return inputs[i].Name < inputs[j].Name })
-				return dagql.NewObjectResultForCurrentCall(ctx, dag, &Check{
+				// Check is a core type, so any server with the core schema can
+				// wrap it.
+				return dagql.NewObjectResultForCurrentCall(ctx, installed.orCurrent(ctx), &Check{
 					Assertion: dagql.NonNull(dagql.String(fun.Description)),
 					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace, CacheTTL: field.Spec.TTL,
 				})
@@ -1571,6 +1575,47 @@ func objField(mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field
 	}, nil
 }
 
+// installedServer is the server a module object type's resolvers were
+// installed into. It is held weakly: the type's class rides along with cached
+// object results (another module object's field value, a check's receiver, an
+// interface value, ...), and a strong reference would keep the whole server
+// alive long after the client that built it is gone.
+type installedServer struct {
+	srv weak.Pointer[dagql.Server]
+}
+
+func newInstalledServer(srv *dagql.Server) installedServer {
+	return installedServer{srv: weak.Make(srv)}
+}
+
+// orCurrent returns the installed server while it is alive, or else the server
+// running the current call. Use it where any server with the core schema will
+// do.
+func (s installedServer) orCurrent(ctx context.Context) *dagql.Server {
+	if srv := s.srv.Value(); srv != nil {
+		return srv
+	}
+	return dagql.CurrentDagqlServer(ctx)
+}
+
+// forObject returns the installed server while it is alive, or else a server
+// with the module that produced obj installed, built from obj's call graph
+// through the client's schema memo.
+func (s installedServer) forObject(ctx context.Context, obj dagql.AnyResult) (*dagql.Server, error) {
+	if srv := s.srv.Value(); srv != nil {
+		return srv, nil
+	}
+	resultCall, err := obj.ResultCall()
+	if err != nil {
+		return nil, fmt.Errorf("module server for %s: %w", obj.Type().Name(), err)
+	}
+	srv, err := serverForResultCall(ctx, resultCall)
+	if err != nil {
+		return nil, fmt.Errorf("module server for %s: %w", obj.Type().Name(), err)
+	}
+	return srv, nil
+}
+
 // objFun creates a dagql.Field for a function defined on a module object type.
 // This is used during the GraphQL schema installation process to convert
 // user-defined functions in module object types into callable GraphQL fields.
@@ -1617,6 +1662,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 	spec.ModuleProvider = moduleProvider
 	spec.GetDynamicInput = modFun.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
+	installed := newInstalledServer(dag)
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
@@ -1625,7 +1671,9 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 				ParentTyped:    obj,
 				ParentFields:   obj.Self().Fields,
 				SkipSelfSchema: false,
-				Server:         dag,
+				// Only applies ignore patterns to Directory args, which any
+				// server with the core schema can do.
+				Server: installed.orCurrent(ctx),
 			}
 			for name, val := range args {
 				opts.Inputs = append(opts.Inputs, CallInput{
