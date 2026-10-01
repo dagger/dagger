@@ -91,11 +91,7 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 	return err
 }
 
-func (c *Client) ReadCallerHostFile(ctx context.Context, path string) (_ []byte, rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "uploading "+path, telemetry.Encapsulated(), telemetry.Encapsulate())
-	defer func() {
-		tracing.FinishWithError(span, rerr)
-	}()
+func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
 	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create host file network recorder: %w", err)
