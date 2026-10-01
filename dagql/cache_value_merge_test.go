@@ -107,6 +107,12 @@ func TestMergeValuesReplacesAnExpiredEntryNothingUses(t *testing.T) {
 	require.NotNil(t, envelope)
 	require.Equal(t, uint64(1), replacements)
 	require.Same(t, row, current)
+	b.egraphMu.RLock()
+	payloadBytes := row.payloadBytes
+	b.egraphMu.RUnlock()
+	require.Equal(t, persistedEnvelopePayloadBytes(envelope), payloadBytes, "the row counts the record's envelope")
+	total, sum := cacheTestPayloadTotalConsistent(b)
+	require.Equal(t, sum, total)
 }
 
 // An expired entry that a session still uses is retired: it leaves the

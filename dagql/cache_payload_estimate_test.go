@@ -3,6 +3,8 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -161,4 +163,83 @@ func TestCachePayloadBytesUnwrapsNullable(t *testing.T) {
 	assert.Equal(t, int64(0), cachePayloadBytes(Null[String]()))
 	assert.Equal(t, int64(0), cachePayloadBytes(NewInt(1)))
 	assert.Equal(t, int64(0), cachePayloadBytes(nil))
+}
+
+// cacheTestPayloadTotalConsistent reports whether the maintained payload
+// total equals the sum over the registered results.
+func cacheTestPayloadTotalConsistent(c *Cache) (int64, int64) {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	var sum int64
+	for _, res := range c.resultsByID {
+		sum += res.payloadBytes
+	}
+	return c.resultPayloadBytes, sum
+}
+
+func TestCachePayloadBytesFollowInPlaceReplacement(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	frame := cacheTestStringCall("payload-replace")
+	publish := func(session, value string) AnyResult {
+		res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(NewString(value), frame)
+		})
+		assert.NilError(t, err)
+		return res
+	}
+	old := publish("session-a", strings.Repeat("o", 1000))
+	assert.NilError(t, c.ReleaseSession(ctx, "session-a"))
+	assert.Equal(t, int64(1000), c.MetadataEstimate().PayloadBytes)
+	currentEntryTestExpire(c, old)
+
+	res := publish("session-b", "new")
+	assert.Equal(t, old.cacheSharedResult().id, res.cacheSharedResult().id, "replaced in place")
+	assert.Equal(t, int64(3), c.MetadataEstimate().PayloadBytes)
+	total, sum := cacheTestPayloadTotalConsistent(c)
+	assert.Equal(t, total, sum)
+	assert.NilError(t, c.ReleaseSession(ctx, "session-b"))
+}
+
+func TestCachePayloadBytesAcrossRestart(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	value := strings.Repeat("p", 1000)
+	frame := cacheTestStringCall("payload-restart")
+
+	cA, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	_, err = cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(NewString(value), frame)
+	})
+	assert.NilError(t, err)
+	cacheTestReleaseSession(t, cA, ctx)
+	assert.NilError(t, cA.persistCurrentState(ctx))
+	assert.NilError(t, cA.Close(context.Background()))
+
+	cB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, cB.Close(context.Background()))
+	}()
+	// Imported, the row counts its encoded envelope or, once decoded, its
+	// value.
+	imported := cB.MetadataEstimate().PayloadBytes
+	assert.Assert(t, imported == int64(len(value)) || imported == int64(len(value)+2), "imported payload %d", imported)
+
+	res, err := cB.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return nil, errors.New("unexpected initializer call")
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, res.HitCache())
+	assert.Equal(t, int64(len(value)), cB.MetadataEstimate().PayloadBytes)
+	total, sum := cacheTestPayloadTotalConsistent(cB)
+	assert.Equal(t, total, sum)
+	cacheTestReleaseSession(t, cB, ctx)
 }
