@@ -166,7 +166,9 @@ type TestSplit {
   Package patterns covered by the package-test shard
   """
   pub packagePatterns: String! {
-    go(ws: self.ws, race: true, cgo: true).env.withExec([
+    # Match the source tree used by engine-dev tests: workspace-only tools
+    # excluded from that tree must not become explicit package arguments.
+    go(ws: self.ws, source: engineDev(ws: self.ws).source, race: true, cgo: true).env.withExec([
       "go", "list", "-race", "-f",
       "{{if ne .ImportPath \"github.com/dagger/dagger/core/integration\"}}{{.ImportPath}}{{end}}",
       "./...",
