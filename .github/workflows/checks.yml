@@ -26,6 +26,8 @@ jobs:
           - "docs/**"
           - "installers/**"
           - "test-split/test-base"
+          - "test-split/test-base-extra"
+          - "test-split/test-packages"
           - "test-split/test-cgroups"
           - "test-split/test-call-and-shell"
           - "test-split/test-cli-engine"
