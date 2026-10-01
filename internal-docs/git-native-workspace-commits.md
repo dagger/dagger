@@ -98,14 +98,16 @@ type GitCheckoutBase struct {
 
 When `LocalGitRef.Tree(discardGitDir: true)` is requested for exactly `CommitSHA`, and both SHAs are full SHA-1s, `incrementalTree`:
 
-1. Plans from Git metadata alone, before evaluating the parent tree. The storage must pass the native commit layout gates, and the commit's raw headers (read with `cat-file`, bypassing replace refs and grafts) must name `Parent` as its single parent. `diff-tree` supplies the delta.
+1. Plans from Git metadata alone, before evaluating the parent tree. The storage must pass the native commit layout gates, and the commit's raw headers (read with `cat-file`, bypassing replace refs and grafts) must name `Parent` as its single parent. `diff-tree` supplies the delta, whose modes are checked for gitlinks.
 2. Selects the parent's canonical `tree(discardGitDir: true)` and creates a COW child of its snapshot.
 3. Initializes a private scratch Git directory and index with the same borrowed objects and clean checkout config as a full source checkout, never the source repository's config, attributes or worktree. It removes old leaves deepest first and `checkout-index`es only the added and modified paths, below verified directory ancestors. Attributes are read from the commit (`--attr-source`), as a full checkout reads them from the index, not from parent-tree `.gitattributes` files that were themselves converted on checkout.
 4. Normalizes the rewritten paths, their ancestors and the root to mtime 1, as a full checkout would, without following symlinks (`normalizeIncrementalGitCheckout`). Untouched inodes are left alone.
 
 Other refs of the same repository never inherit the annotated tip's materialization, and retained `.git` checkouts keep the full path. A cold parent may still need one full materialization; after that, each commit costs its delta.
 
-Unsupported inputs fall back to the full checkout with a fixed reason code: `commit-format`, `repository-layout`, `parent-mismatch`, `gitlinks` (a gitlink anywhere in either tree), `unsafe-path` and `checkout-controls` (a changed `.gitattributes` or `.gitmodules`, which could change the checkout of unchanged files).
+Unsupported inputs fall back to the full checkout with a fixed reason code: `commit-format`, `repository-layout`, `parent-mismatch`, `unsafe-path`, `gitlink-change` (a gitlink added, removed or changed in the delta, including inside a replaced directory) and `checkout-controls` (a changed `.gitattributes` or `.gitmodules`, which could change the checkout of unchanged files).
+
+Planning reads only the delta (`diff-tree --raw -r`), never either full tree. A full checkout initializes submodules from the gitlinks and `.gitmodules` alone, and the content is pinned by the gitlink SHA, so gitlinks the delta leaves unchanged are already present in the parent's canonical tree.
 
 The span `materialize incremental git checkout` records `dagger.git.checkout.incremental.supported`, `dagger.git.checkout.incremental.fallback` and `dagger.git.checkout.incremental.changed_paths`.
 
@@ -126,7 +128,7 @@ Unit tests (`go test ./core -count=1`):
 - `core/git_commit_test.go`: `TestGitNativeCommitMatchesCheckout` (exact commit SHAs against `git commit`, including attributes, ignore rules, signoff, packed parents and detached SHA-named refs), `TestGitNativeCommitPublicationIsRooted`, `TestGitNativeCommitLargeFile`, `TestGitNativeCommitRejectsGitlinks`, `TestGitNativeCommitObjectMetrics`, `TestGitNativeCommitRefStorageEligibility`, `TestGitNativeCommitStorageEligibility`.
 - `core/git_commit_create_test.go`: `TestNativeCommitFallback`, `TestNativeFallbackPolicy`, `TestNativeSnapshotDepthBound`.
 - `core/changeset_native_test.go`: `TestNativeWorkspaceMergeMatchesCheckout` (complete filesystem manifests against the legacy checkout sequence under umasks 022 and 000, including attributes, ownership, xattrs, replacements, renames, noops, conflicts and packed storage), `TestNativeWorkspaceMergeFallbacksAndErrors`, `TestNativeWorkspaceMergeBaseEvidence`, `TestNativeWorkspaceDeltaReplacedAncestors`, `TestNativeWorkspaceDeltaMetadataFallback`.
-- `core/git_local_incremental_test.go`: `TestIncrementalGitCheckout` (complete source manifests against a fresh full checkout under umasks 022 and 000, including attributes, type replacements, symlinks, same-tree commits, untouched inodes and pack mtimes), `TestIncrementalGitCheckoutGates`, `TestIncrementalGitCheckoutConvertedAttributes`, `TestIncrementalGitCheckoutActualParent` (grafts and replace refs), `TestIncrementalGitCheckoutProvenance`. `core/git_persistence_test.go`: `TestGitCheckoutBasePersistence` (dependency retention across cache restarts, malformed payloads).
+- `core/git_local_incremental_test.go`: `TestIncrementalGitCheckout` (complete source manifests against a fresh full checkout under umasks 022 and 000, including attributes, type replacements, symlinks, same-tree commits, untouched inodes and pack mtimes), `TestIncrementalGitCheckoutGates`, `TestIncrementalGitCheckoutGitlinks` (unchanged submodules against a full checkout, and gitlink changes in the delta), `TestIncrementalGitCheckoutConvertedAttributes`, `TestIncrementalGitCheckoutActualParent` (grafts and replace refs), `TestIncrementalGitCheckoutProvenance`. `core/git_persistence_test.go`: `TestGitCheckoutBasePersistence` (dependency retention across cache restarts, malformed payloads).
 
 Integration tests run against a from-source engine, e.g. `dagger call engine-dev test --pkg ./core/integration --run 'TestGit/TestGitRefWithCommitNative'`:
 

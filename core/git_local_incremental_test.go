@@ -137,18 +137,94 @@ func TestIncrementalGitCheckoutGates(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "checkout-controls", reason)
 	}
-	gitMirrorTestRun(t, source, "reset", "--hard", parent)
-	gitMirrorTestRun(t, source, "update-index", "--add", "--cacheinfo", "160000,"+parent+",sub")
-	gitMirrorTestRun(t, source, "commit", "-m", "gitlink")
-	tip := gitMirrorTestRun(t, source, "rev-parse", "HEAD")
-	_, reason, err = planIncrementalGitCheckout(ctx, cli, parent, tip)
+	_, _, err = parseIncrementalGitCheckoutPlan([]byte("M\x00file\x00"))
+	require.ErrorContains(t, err, "invalid git tree diff entry")
+}
+
+// A full checkout initializes submodules from the gitlinks and .gitmodules
+// alone. Gitlinks the delta leaves alone are already in the parent's tree;
+// any gitlink in the delta, even inside a replaced directory, falls back.
+func TestIncrementalGitCheckoutGitlinks(t *testing.T) {
+	ctx := context.Background()
+	// Only these private fixtures allow local submodule URLs.
+	allowFile := gitutil.WithArgs("-c", "protocol.file.allow=always")
+	submodule := historyRepo(t, "sha1")
+	pinned := historyCommit(t, submodule, "value", "pinned")
+	later := historyCommit(t, submodule, "value", "later")
+	source := historyRepo(t, "sha1")
+	run := func(args ...string) string {
+		return gitMirrorTestRun(t, source, append([]string{"-c", "protocol.file.allow=always"}, args...)...)
+	}
+	write := func(p, data string) {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(source, p)), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(source, p), []byte(data), 0644))
+	}
+	run("submodule", "add", "file://"+submodule, "vendor/module")
+	gitMirrorTestRun(t, filepath.Join(source, "vendor/module"), "checkout", pinned)
+	write("file", "base")
+	write("vendor/file", "base")
+	run("add", ".")
+	run("commit", "-m", "base")
+	parent := run("rev-parse", "HEAD")
+	cli := gitutil.NewGitCLI(gitutil.WithDir(source), allowFile)
+	full := func(sha string) string {
+		dest := t.TempDir()
+		checkout := gitutil.NewGitCLI(gitutil.WithDir(dest), gitutil.WithWorkTree(dest), gitutil.WithGitDir(filepath.Join(dest, ".git")), allowFile)
+		require.NoError(t, doLocalGitTreeCheckout(ctx, cli, checkout, nil, source, &gitutil.Ref{SHA: sha}))
+		return dest
+	}
+	dest := full(parent)
+	data, err := os.ReadFile(filepath.Join(dest, "vendor/module/value"))
 	require.NoError(t, err)
-	require.Equal(t, "gitlinks", reason)
-	gitMirrorTestRun(t, source, "commit", "--allow-empty", "-m", "unchanged gitlink")
-	next := gitMirrorTestRun(t, source, "rev-parse", "HEAD")
-	_, reason, err = planIncrementalGitCheckout(ctx, cli, tip, next)
+	require.Equal(t, "pinned", string(data))
+	submoduleFile, err := os.Stat(filepath.Join(dest, "vendor/module/value"))
 	require.NoError(t, err)
-	require.Equal(t, "gitlinks", reason)
+
+	// Unchanged gitlinks, next to changed files and a file/directory replacement.
+	write("file", "child")
+	require.NoError(t, os.Remove(filepath.Join(source, "vendor/file")))
+	write("vendor/file/inner", "replaced")
+	write("vendor/new/deep", "new")
+	run("add", "-A", "file", "vendor/file", "vendor/new")
+	run("commit", "-m", "child")
+	child := run("rev-parse", "HEAD")
+	plan, reason, err := planIncrementalGitCheckout(ctx, cli, parent, child)
+	require.NoError(t, err)
+	require.Empty(t, reason)
+	require.ElementsMatch(t, []string{"file", "vendor/file", "vendor/file/inner", "vendor/new/deep"}, plan.changed)
+	require.NoError(t, applyIncrementalGitCheckout(ctx, cli, dest, child, plan))
+	require.Equal(t, localTreeSnapshot(t, full(child)), localTreeSnapshot(t, dest))
+	after, err := os.Stat(filepath.Join(dest, "vendor/module/value"))
+	require.NoError(t, err)
+	require.True(t, os.SameFile(submoduleFile, after), "unchanged submodule content must not be rewritten")
+
+	blob := func(data string) string {
+		tmp := filepath.Join(t.TempDir(), "blob")
+		require.NoError(t, os.WriteFile(tmp, []byte(data), 0644))
+		return run("hash-object", "-w", "--no-filters", tmp)
+	}
+	file := blob("file")
+	for name, edit := range map[string][]string{
+		"bumped":                   {"--cacheinfo", "160000," + later + ",vendor/module"},
+		"added":                    {"--add", "--cacheinfo", "160000," + pinned + ",other"},
+		"added within directory":   {"--add", "--cacheinfo", "160000," + pinned + ",added/dir/module"},
+		"removed":                  {"--force-remove", "vendor/module"},
+		"replaced by file":         {"--force-remove", "vendor/module", "--add", "--cacheinfo", "100644," + file + ",vendor/module"},
+		"replaced by directory":    {"--force-remove", "vendor/module", "--add", "--cacheinfo", "100644," + file + ",vendor/module/file"},
+		"file replaced by gitlink": {"--force-remove", "file", "--add", "--cacheinfo", "160000," + pinned + ",file"},
+		// The directory holding the gitlink becomes a file: diff-tree -r
+		// still lists the gitlink leaf under the removed directory.
+		"within replaced directory": {"--force-remove", "vendor/module", "vendor/file/inner", "vendor/new/deep", "--add", "--cacheinfo", "100644," + file + ",vendor"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			run("read-tree", child)
+			run(append([]string{"update-index"}, edit...)...)
+			tip := run("commit-tree", "-p", child, "-m", name, run("write-tree"))
+			_, reason, err := planIncrementalGitCheckout(ctx, cli, child, tip)
+			require.NoError(t, err)
+			require.Equal(t, "gitlink-change", reason)
+		})
+	}
 }
 
 // A .gitattributes that is itself converted on checkout differs from its blob

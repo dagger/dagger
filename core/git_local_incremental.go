@@ -161,24 +161,20 @@ func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, par
 	if len(parents) != 1 || parents[0] != parent {
 		return nil, "parent-mismatch", nil
 	}
-	for _, sha := range []string{parent, child} {
-		entries, err := source.Run(ctx, "ls-tree", "-r", "-z", sha)
-		if err != nil {
-			return nil, "", err
-		}
-		for _, entry := range splitOnNul(entries) {
-			if strings.HasPrefix(entry, "160000 ") {
-				return nil, "gitlinks", nil
-			}
-		}
-	}
-	changes, err := source.Run(ctx, "diff-tree", "--no-commit-id", "--no-renames", "--name-status", "-r", "-z", parent, child)
+	// Only the delta is inspected, never either full tree. A full checkout's
+	// submodule step depends only on the gitlinks and .gitmodules, so when the
+	// delta changes neither, the parent's canonical tree already holds the
+	// child's submodule content. diff-tree -r lists gitlinks as leaves,
+	// including those inside added, removed or replaced directories.
+	changes, err := source.Run(ctx, "diff-tree", "--no-commit-id", "--no-renames", "--raw", "-r", "-z", parent, child)
 	if err != nil {
 		return nil, "", err
 	}
 	return parseIncrementalGitCheckoutPlan(changes)
 }
 
+// parseIncrementalGitCheckoutPlan reads `diff-tree --raw -z` output:
+// ":<src mode> <dst mode> <src sha> <dst sha> <status>" NUL "<path>" NUL.
 func parseIncrementalGitCheckoutPlan(changes []byte) (*incrementalGitCheckoutPlan, string, error) {
 	entries := splitOnNul(changes)
 	if len(entries)%2 != 0 {
@@ -186,9 +182,20 @@ func parseIncrementalGitCheckoutPlan(changes []byte) (*incrementalGitCheckoutPla
 	}
 	plan := &incrementalGitCheckoutPlan{}
 	for i := 0; i < len(entries); i += 2 {
-		status, p := entries[i], entries[i+1]
+		header, p := entries[i], entries[i+1]
+		fields := strings.Fields(strings.TrimPrefix(header, ":"))
+		if !strings.HasPrefix(header, ":") || len(fields) != 5 {
+			return nil, "", fmt.Errorf("invalid git tree diff entry")
+		}
+		status := fields[4]
 		if path.Clean(p) != p || path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") || gitMetaPath(p) {
 			return nil, "unsafe-path", nil
+		}
+		// The full checkout initializes submodules: a gitlink added, removed
+		// or changed (directly or within a replaced directory) changes more
+		// than checkout-index would write.
+		if fields[0] == "160000" || fields[1] == "160000" {
+			return nil, "gitlink-change", nil
 		}
 		if path.Base(p) == ".gitattributes" || path.Base(p) == ".gitmodules" {
 			return nil, "checkout-controls", nil
