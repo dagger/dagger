@@ -1,6 +1,6 @@
 """
 Tools with required object-typed args, for the address-lifting integration
-tests (hack/designs/sandboxes.md §4).
+tests (liftableObjectArg in core/llm_object_tools.go).
 """
 type Runner {
   """
@@ -18,11 +18,28 @@ type Runner {
   """
   List a directory's entries.
 
-  The required Directory! arg is NOT address-liftable (Directory addresses
-  fall back to host paths — a capability the model must not gain), so this
-  function must NOT be exposed as a tool.
+  Directory is address-liftable too, so this function is a tool.
   """
   lsDir(dir: Directory!): [String!]! {
     dir.entries
+  }
+
+  """
+  Report the commit a git ref points to.
+
+  GitRef is address-liftable: a git URL with a #ref resolves to that ref.
+  """
+  commitOf(ref: GitRef!): String! {
+    "commit: " + ref.commitSHA
+  }
+
+  """
+  Use a token.
+
+  Secret is blocklisted — a model-typed env:// or file:// address would mint
+  a secret it was never handed — so this function must NOT be a tool.
+  """
+  useToken(token: Secret!): String! {
+    if (token.plaintext == "") { "empty" } else { "set" }
   }
 }

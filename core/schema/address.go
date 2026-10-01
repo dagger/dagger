@@ -83,6 +83,14 @@ func resolveModuleRef(ctx context.Context, address *core.Address, typeName strin
 	return true, nil
 }
 
+// hasModuleRefScope reports whether a decoder that skips legacy module
+// references (the git decoders) must still try resolveModuleRef: always with
+// a workspace, and always for a DAG address, so that one without a workspace
+// fails instead of falling through to a local path on the caller's host.
+func hasModuleRefScope(address *core.Address) bool {
+	return address.BoundWorkspace.Self() != nil || dagaddress.IsAddress(address.Value)
+}
+
 // resolveWorkspaceArtifact is Workspace.artifacts(include: [path]).filterUri(uri).one().
 // The include pattern narrows module loading to the modules the path names.
 func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], parsed *dagaddress.Address, uri string) (*core.Artifact, error) {
@@ -97,25 +105,7 @@ func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.W
 	if err := checkArtifactAddressWorkspace(artifacts.Entries, parsed, uri); err != nil {
 		return nil, err
 	}
-	// Apply the type assertion as a filter only to choose among several
-	// matches, so a single artifact of another type reports the assertion.
-	untyped := *parsed
-	untyped.Types = nil
-	selected, err := artifacts.FilterURI(&untyped)
-	if err != nil {
-		return nil, fmt.Errorf("resolve %q: %w", uri, err)
-	}
-	if len(selected.Entries) > 1 && len(parsed.Types) > 0 {
-		selected = selected.FilterTypeNames(parsed.Types)
-	}
-	selected, err = expandArtifacts(ctx, selected)
-	if err != nil {
-		return nil, fmt.Errorf("resolve %q: %w", uri, err)
-	}
-	if len(selected.Entries) == 0 {
-		return nil, fmt.Errorf("resolve %q: no artifact matches", uri)
-	}
-	artifact, err := selected.One()
+	artifact, err := artifacts.ResolveURI(ctx, parsed, expandArtifacts)
 	if err != nil {
 		return nil, fmt.Errorf("resolve %q: %w", uri, err)
 	}
@@ -624,7 +614,7 @@ func (s *addressSchema) gitRepository(
 	err error,
 ) {
 	var q []dagql.Selector
-	if r.Self().BoundWorkspace.Self() != nil {
+	if hasModuleRefScope(r.Self()) {
 		if matched, err := resolveModuleRef(ctx, r.Self(), "GitRepository", &inst); matched {
 			return inst, err
 		}
@@ -719,7 +709,7 @@ func (s *addressSchema) gitRef(
 	err error,
 ) {
 	var q []dagql.Selector
-	if r.Self().BoundWorkspace.Self() != nil {
+	if hasModuleRefScope(r.Self()) {
 		if matched, err := resolveModuleRef(ctx, r.Self(), "GitRef", &inst); matched {
 			return inst, err
 		}

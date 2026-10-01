@@ -614,6 +614,71 @@ func (a *Artifact) AssertType(types []string) error {
 	return fmt.Errorf("%s is a %s, not %s", uri, a.TypeName, strings.Join(types, " or "))
 }
 
+// ResolveURI selects the one artifact a DAG address names. The address's path
+// and dimension keys filter the selection; its type assertion only chooses
+// among several matches, so a single artifact of another type is left for
+// AssertType to report. expand enumerates the selected collections' keys.
+func (a *Artifacts) ResolveURI(ctx context.Context, addr *dagaddress.Address, expand func(context.Context, *Artifacts) (*Artifacts, error)) (*Artifact, error) {
+	untyped := *addr
+	untyped.Types = nil
+	selected, err := a.FilterURI(&untyped)
+	if err != nil {
+		return nil, err
+	}
+	if len(selected.Entries) > 1 && len(addr.Types) > 0 {
+		selected = selected.FilterTypeNames(addr.Types)
+	}
+	selected, err = expand(ctx, selected)
+	if err != nil {
+		return nil, err
+	}
+	if len(selected.Entries) == 0 {
+		return nil, errors.New("no artifact matches")
+	}
+	return selected.One()
+}
+
+// BoundArtifacts discovers the artifacts of a module rooted at a live value of
+// one of its objects rather than a fresh construction of its main object:
+// evaluating one selects its path from root. Paths are qualified with the
+// module name, as a workspace module's are, but never use entrypoint
+// shorthand. Unlike workspace discovery, a constructor that requires
+// arguments does not hide the tree, since it is never called.
+func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root dagql.AnyObjectResult) (*Artifacts, error) {
+	tree, err := NewModTree(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
+	// Root the tree at the bound value's own type: the main object, or
+	// another object of the module (e.g. a narrower view of it).
+	rootType, ok := tree.types[root.Type().Name()]
+	if !ok {
+		return nil, fmt.Errorf("module %q has no object type %q", mod.Self().Name(), root.Type().Name())
+	}
+	tree.Type = rootType
+	var nodes []*ModTreeNode
+	if err := walkArtifactNodes(ctx, tree, func(node *ModTreeNode) { nodes = append(nodes, node) }, map[string]bool{}); err != nil {
+		return nil, err
+	}
+	// Name the root after the module under a synthetic parent, like a
+	// workspace module root, so paths and dimension names match.
+	tree.RootValue = root
+	tree.Parent = &ModTreeNode{}
+	tree.Name = mod.Self().Name()
+	artifacts := &Artifacts{Entries: []*Artifact{}}
+	for _, node := range nodes {
+		if node == tree {
+			continue
+		}
+		artifacts.Entries = append(artifacts.Entries, &Artifact{
+			ModuleName: tree.Name, Path: node.Path().CliCase(), DimensionKeys: []*ArtifactDimensionKey{},
+			Directives: node.Directives, TypeName: node.ObjectType().Name, Node: node,
+		})
+	}
+	slices.SortFunc(artifacts.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
+	return artifacts, nil
+}
+
 // Evaluate selects the artifact's value in the caller's session. The cached
 // module tree carries the dagql server that discovered it, whose field specs
 // reference module provenance results owned by that session. A fresh server
