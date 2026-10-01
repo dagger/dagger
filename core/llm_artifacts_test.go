@@ -222,6 +222,94 @@ func TestSelectScopeBindings(t *testing.T) {
 	require.Equal(t, []string{"GitToolsView", "GitToolsAdmin"}, typeNames("git-tools"))
 }
 
+// TestQualifyCollidingTrees covers bound objects of one module whose trees
+// share a path: each colliding tree is qualified by its bound type, so every
+// artifact has an address of its own, and the plain address still selects
+// them all.
+func TestQualifyCollidingTrees(t *testing.T) {
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "qualify-test",
+		SessionID: "qualify-test",
+	})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*scopeLiftRunner]{Typed: &scopeLiftRunner{}}))
+	dagql.Fields[*Query]{
+		dagql.Func("runner", func(context.Context, *Query, struct{}) (*scopeLiftRunner, error) {
+			return &scopeLiftRunner{}, nil
+		}),
+	}.Install(srv)
+	var value dagql.AnyObjectResult
+	require.NoError(t, srv.Select(ctx, srv.Root(), &value, dagql.Selector{Field: "runner"}))
+
+	// tree builds a bound object's artifacts, as BoundArtifacts roots them:
+	// under the module name, below a synthetic parent.
+	tree := func(typeName string, fields ...string) boundTree {
+		root := &ModTreeNode{Name: "staff", RootValue: value, Parent: &ModTreeNode{}}
+		var entries []*Artifact
+		for _, field := range fields {
+			parent := root
+			for segment := range strings.SplitSeq(field, "/") {
+				node := &ModTreeNode{Name: segment, Parent: parent}
+				entries = append(entries, &Artifact{ModuleName: "staff", Path: node.Path().CliCase(), TypeName: "Directory", Node: node})
+				parent = node
+			}
+		}
+		return boundTree{typeName: typeName, entries: entries}
+	}
+	view := tree("StaffView", "members/head")
+	pulls := tree("StaffPullTools", "members/head", "logOf")
+	line := tree("StaffChiefLine", "inbox")
+	qualifyCollidingTrees([]boundTree{view, pulls, line})
+
+	var all []*Artifact
+	var paths []string
+	for _, tree := range []boundTree{view, pulls, line} {
+		for _, entry := range tree.entries {
+			all = append(all, entry)
+			paths = append(paths, strings.Join(entry.Path, "/"))
+		}
+	}
+	require.Equal(t, []string{
+		"staff/staff-view/members",
+		"staff/staff-view/members/head",
+		"staff/staff-pull-tools/members",
+		"staff/staff-pull-tools/members/head",
+		// The colliding tree is qualified as a whole.
+		"staff/staff-pull-tools/log-of",
+		// A tree that collides with no other keeps its plain paths.
+		"staff/inbox",
+	}, paths)
+	// The root keeps its value: evaluation is unchanged.
+	require.NotNil(t, view.entries[0].BoundRoot())
+
+	scope := &Artifacts{Entries: all}
+	filter := func(addr string) *Artifacts {
+		t.Helper()
+		parsed, err := dagaddress.Parse(addr)
+		require.NoError(t, err)
+		selected, err := scope.FilterURI(parsed)
+		require.NoError(t, err)
+		return selected
+	}
+	// A qualified address names one artifact.
+	one, err := filter("dag://staff/staff-pull-tools/members/head").One()
+	require.NoError(t, err)
+	require.Equal(t, []string{"staff", "staff-pull-tools", "members", "head"}, one.Path)
+	// The plain address selects the artifact of every colliding object; where
+	// one is required, the error lists addresses that tell them apart.
+	_, err = filter("dag://staff/members/head").One()
+	require.ErrorContains(t, err, "matches 2 artifacts:\ndag://staff/staff-view/members/head\ndag://staff/staff-pull-tools/members/head")
+	require.Len(t, filter("staff/members/*").Entries, 2)
+	require.Len(t, filter("staff/inbox").Entries, 1)
+	// Include patterns match the plain path too.
+	match, err := matchesInclude(pulls.entries[2], []string{IncludePattern("staff/log-of")})
+	require.NoError(t, err)
+	require.True(t, match)
+}
+
 func TestMergeScopeArtifacts(t *testing.T) {
 	bound := []*Artifact{
 		{ModuleName: "roster", Path: []string{"roster", "members"}, TypeName: "Directory"},
