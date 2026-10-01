@@ -2617,7 +2617,7 @@ func (fs ModuleSourceFS) ReadFile(ctx context.Context, path string) ([]byte, err
 		// Read straight from the caller's host, as the workspace config is
 		// read: syncing the file's directory into the engine just to read
 		// one file costs a round trip and a snapshot on every module load.
-		path, err := fs.src.localContextFilePath(path)
+		localPath, err := fs.src.localContextFilePath(path)
 		if err != nil {
 			return nil, err
 		}
@@ -2630,7 +2630,12 @@ func (fs ModuleSourceFS) ReadFile(ctx context.Context, path string) ([]byte, err
 			return nil, fmt.Errorf("failed to get client metadata: %w", err)
 		}
 		ctx = engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
-		return fs.bk.ReadCallerHostFile(ctx, path)
+		contents, err := fs.bk.ReadCallerHostFile(ctx, localPath)
+		if err == nil {
+			return contents, nil
+		}
+		// The session's single-file read has a smaller size limit than File.contents.
+		// Retain the existing path when the direct read cannot serve the file.
 	}
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
