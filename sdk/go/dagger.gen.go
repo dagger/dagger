@@ -250,9 +250,23 @@ func (r *Address) WithGraphQLQuery(q *querybuilder.Selection) *Address {
 	}
 }
 
+// AddressContainerOpts contains options for Address.Container
+type AddressContainerOpts struct {
+	// Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
+}
+
 // Load a container from the address.
-func (r *Address) Container() *Container {
+func (r *Address) Container(opts ...AddressContainerOpts) *Container {
 	q := r.query.Select("container")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 
 	return &Container{
 		query: q,
@@ -268,6 +282,10 @@ type AddressDirectoryOpts struct {
 	Gitignore bool
 
 	NoCache bool
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
 }
 
 // Load a directory from the address.
@@ -290,6 +308,10 @@ func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
 		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
 	}
 
 	return &Directory{
@@ -306,6 +328,10 @@ type AddressFileOpts struct {
 	Gitignore bool
 
 	NoCache bool
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
 }
 
 // Load a file from the address.
@@ -328,6 +354,10 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
 		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
 	}
 
 	return &File{
@@ -335,9 +365,23 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 	}
 }
 
+// AddressGitRefOpts contains options for Address.GitRef
+type AddressGitRefOpts struct {
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
+}
+
 // Load a git ref (branch, tag or commit) from the address.
-func (r *Address) GitRef() *GitRef {
+func (r *Address) GitRef(opts ...AddressGitRefOpts) *GitRef {
 	q := r.query.Select("gitRef")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 
 	return &GitRef{
 		query: q,
@@ -3903,6 +3947,8 @@ type ContainerFromOpts struct {
 	Protocol RegistryProtocol
 	// Allow HTTPS registry communication without verifying the server certificate.
 	InsecureSkipTLSVerify bool
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
 }
 
 // Download a container image, and apply it to the container state. All previous state will be lost.
@@ -3924,6 +3970,10 @@ func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 		// `insecureSkipTLSVerify` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
 			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
 		}
 	}
 	q = q.Arg("address", address)
@@ -11201,9 +11251,21 @@ func (r *GitRepository) AsWorkspace(opts ...GitRepositoryAsWorkspaceOpts) *Works
 	}
 }
 
+// GitRepositoryBranchOpts contains options for GitRepository.Branch
+type GitRepositoryBranchOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details of a branch.
-func (r *GitRepository) Branch(name string) *GitRef {
+func (r *GitRepository) Branch(name string, opts ...GitRepositoryBranchOpts) *GitRef {
 	q := r.query.Select("branch")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
@@ -11265,9 +11327,21 @@ func (r *GitRepository) Commit(id string) *GitCommit {
 	}
 }
 
+// GitRepositoryHeadOpts contains options for GitRepository.Head
+type GitRepositoryHeadOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details for HEAD.
-func (r *GitRepository) Head() *GitRef {
+func (r *GitRepository) Head(opts ...GitRepositoryHeadOpts) *GitRef {
 	q := r.query.Select("head")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 
 	return &GitRef{
 		query: q,
@@ -11318,17 +11392,23 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 type GitRepositoryLatestOpts struct {
 	// Version query used to select the greatest matching release ref.
 	Version string
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
 }
 
 // Return the latest stable release tag, falling back to HEAD when no release exists.
 //
-// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
 func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
 	q := r.query.Select("latest")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
+		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
 		}
 	}
 
@@ -11337,9 +11417,21 @@ func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
 	}
 }
 
+// GitRepositoryRefOpts contains options for GitRepository.Ref
+type GitRepositoryRefOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details of a ref.
-func (r *GitRepository) Ref(name string) *GitRef {
+func (r *GitRepository) Ref(name string, opts ...GitRepositoryRefOpts) *GitRef {
 	q := r.query.Select("ref")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
@@ -11347,9 +11439,21 @@ func (r *GitRepository) Ref(name string) *GitRef {
 	}
 }
 
+// GitRepositoryTagOpts contains options for GitRepository.Tag
+type GitRepositoryTagOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details of a tag.
-func (r *GitRepository) Tag(name string) *GitRef {
+func (r *GitRepository) Tag(name string, opts ...GitRepositoryTagOpts) *GitRef {
 	q := r.query.Select("tag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &GitRef{

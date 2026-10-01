@@ -34,9 +34,12 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Load a container from the address.
      */
-    public function container(): Container
+    public function container(?bool $noLock = false): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('container');
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
+        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -48,6 +51,7 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
         ?array $include = [],
         ?bool $gitignore = false,
         ?bool $noCache = false,
+        ?bool $noLock = false,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         if (null !== $exclude) {
@@ -62,6 +66,9 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $noCache) {
         $innerQueryBuilder->setArgument('noCache', $noCache);
         }
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -73,6 +80,7 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
         ?array $include = [],
         ?bool $gitignore = false,
         ?bool $noCache = false,
+        ?bool $noLock = false,
     ): File {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
         if (null !== $exclude) {
@@ -87,15 +95,21 @@ class Address extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $noCache) {
         $innerQueryBuilder->setArgument('noCache', $noCache);
         }
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
+        }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Load a git ref (branch, tag or commit) from the address.
      */
-    public function gitRef(): GitRef
+    public function gitRef(?bool $noLock = false): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('gitRef');
+        if (null !== $noLock) {
+        $innerQueryBuilder->setArgument('noLock', $noLock);
+        }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

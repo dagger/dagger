@@ -83,16 +83,60 @@ type Address implements Node {
   value: String!
 
   """Load a container from the address."""
-  container: Container!
+  container(
+    """
+    Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+
+    A DAG address is unaffected: its module evaluates as usual.
+    """
+    noLock: Boolean = false
+  ): Container!
 
   """Load a directory from the address."""
-  directory(exclude: [String!] = [], include: [String!] = [], gitignore: Boolean = false, noCache: Boolean = false): Directory!
+  directory(
+    exclude: [String!] = []
+
+    include: [String!] = []
+
+    gitignore: Boolean = false
+
+    noCache: Boolean = false
+
+    """
+    Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+
+    A DAG address is unaffected: its module evaluates as usual.
+    """
+    noLock: Boolean = false
+  ): Directory!
 
   """Load a file from the address."""
-  file(exclude: [String!] = [], include: [String!] = [], gitignore: Boolean = false, noCache: Boolean = false): File!
+  file(
+    exclude: [String!] = []
+
+    include: [String!] = []
+
+    gitignore: Boolean = false
+
+    noCache: Boolean = false
+
+    """
+    Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+
+    A DAG address is unaffected: its module evaluates as usual.
+    """
+    noLock: Boolean = false
+  ): File!
 
   """Load a git ref (branch, tag or commit) from the address."""
-  gitRef: GitRef!
+  gitRef(
+    """
+    Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+
+    A DAG address is unaffected: its module evaluates as usual.
+    """
+    noLock: Boolean = false
+  ): GitRef!
 
   """Load a git repository from the address."""
   gitRepository: GitRepository!
@@ -1060,6 +1104,9 @@ type Container implements Exportable & Node & Syncer {
     Allow HTTPS registry communication without verifying the server certificate.
     """
     insecureSkipTLSVerify: Boolean = false
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): Container!
 
   """
@@ -4136,7 +4183,10 @@ type GitRepository implements Node {
   id: ID!
 
   """Returns details for HEAD."""
-  head: GitRef!
+  head(
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
+  ): GitRef!
 
   """Returns details of a ref."""
   ref(
@@ -4158,18 +4208,27 @@ type GitRepository implements Node {
     (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
     """
     name: String!
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): GitRef!
 
   """Returns details of a branch."""
   branch(
     """Branch's name (e.g., "main")."""
     name: String!
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): GitRef!
 
   """Returns details of a tag."""
   tag(
     """Tag's name (e.g., "v0.3.9")."""
     name: String!
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): GitRef!
 
   """Returns details of a commit."""
@@ -4189,11 +4248,15 @@ type GitRepository implements Node {
   Return the latest stable release tag, falling back to HEAD when no release exists.
 
   Release selection accepts an optional "v" prefix, incomplete versions, and
-  zero-padded numeric components. This operation is pinned.
+  zero-padded numeric components. This operation is pinned unless noLock is
+  enabled.
   """
   latest(
     """Version query used to select the greatest matching release ref."""
     version: String = ""
+
+    """Ignore the workspace lockfile for this lookup."""
+    noLock: Boolean = false
   ): GitRef!
 
   """tags that match any of the given glob patterns."""

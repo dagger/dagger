@@ -377,7 +377,8 @@ defmodule Dagger.Container do
           {:version, String.t() | nil},
           {:registry_service, Dagger.Service.t() | nil},
           {:protocol, Dagger.RegistryProtocol.t() | nil},
-          {:insecure_skip_tls_verify, boolean() | nil}
+          {:insecure_skip_tls_verify, boolean() | nil},
+          {:no_lock, boolean() | nil}
         ]) :: Dagger.Container.t()
   def from(%__MODULE__{} = container, address, optional_args \\ []) do
     query_builder =
@@ -394,6 +395,7 @@ defmodule Dagger.Container do
       )
       |> QB.maybe_put_arg("protocol", optional_args[:protocol])
       |> QB.maybe_put_arg("insecureSkipTLSVerify", optional_args[:insecure_skip_tls_verify])
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.Container{
       query_builder: query_builder,
