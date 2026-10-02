@@ -176,6 +176,9 @@ type DaggerEngineID string
 type DaggerEngineLoadedEngineID string
 
 // A unique identifier for an object.
+type DaggerEngineTestProfileResultID string
+
+// A unique identifier for an object.
 type DiffStatID string
 
 // A unique identifier for an object.
@@ -10483,6 +10486,16 @@ func (r *Query) LoadDaggerEngineLoadedEngineFromID(id DaggerEngineLoadedEngineID
 	q = q.Arg("id", id)
 
 	return &DaggerEngineLoadedEngine{
+		query: q,
+	}
+}
+
+// Load a DaggerEngineTestProfileResult from its ID.
+func (r *Query) LoadDaggerEngineTestProfileResultFromID(id DaggerEngineTestProfileResultID) *DaggerEngineTestProfileResult {
+	q := r.query.Select("loadDaggerEngineTestProfileResultFromID")
+	q = q.Arg("id", id)
+
+	return &DaggerEngineTestProfileResult{
 		query: q,
 	}
 }
