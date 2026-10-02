@@ -897,6 +897,128 @@ func (LLMSuite) TestChangesetToolUnwrapsPureEdits(ctx context.Context, t *testct
 	check(ctx, t, dagger.Ref[*dagger.LLM](connect(ctx, t), recipe).Workspace())
 }
 
+// cwdDang has an edit and a generator measured from the workspace cwd, as
+// vito/editor's tools are, and a generator measured from the workspace root.
+const cwdDang = `
+type Codegen {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  edit(source: Workspace!, label: String!): Changeset! {
+    let base = source.directory(".", include: ["notes.txt"])
+    base.withFile("notes.txt", source.file("notes.txt").withReplaced("old", label)).changes(base)
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  generate(source: Workspace!, label: String!): Changeset! {
+    container.from("alpine:3.22")
+      .withWorkdir("/src")
+      .withDirectory(".", source.directory("."))
+      .withEnvVariable("LABEL", label)
+      .withEnvVariable("CACHEBUST", UUID.v7)
+      .withExec(["sh", "-ec", "echo \"$LABEL\" >> notes.txt; mkdir -p made/empty"])
+      .directory(".")
+      .changes(source.directory("."))
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  generateAtRoot(source: Workspace!, label: String!): Changeset! {
+    let before = container.from("alpine:3.22")
+      .withWorkdir("/src")
+      .withDirectory(".", source.directory("/"))
+      .withEnvVariable("LABEL", label)
+      .withEnvVariable("CACHEBUST", UUID.v7)
+    let after = before.withExec(["sh", "-ec", "echo \"$LABEL\" >> sub/notes.txt; mkdir -p sub/made/empty"]).sync
+    after.directory(".").changes(before.directory("."))
+  }
+}
+`
+
+// TestChangesetToolAppliesAtCwd covers a workspace whose cwd is not its root,
+// with tools that measure their changesets from the cwd, like vito/editor's.
+// The workspace applies changesets at its root, so the changeset has to be
+// placed at the cwd first, or the edit lands on the root's file of the same
+// name. A changeset measured from the root still applies there.
+func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name, tool, want string
+		patched          bool
+	}{
+		{name: "pure edit", tool: "edit", want: "sub new\n"},
+		{name: "generator", tool: "generate", want: "sub old\nnew\n", patched: true},
+		{name: "generator at the root", tool: "generateAtRoot", want: "sub old\nnew\n", patched: true},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c, sink := connectWithTrace(ctx, t)
+			source := generatorWorkspace(c, cwdDang).
+				WithNewFile("notes.txt", "root old\n").
+				WithNewFile("sub/notes.txt", "sub old\n")
+			ws := source.AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "sub"})
+			result := runToolTurns(ctx, t, c, ws, tc.tool, "new")
+			transcript, err := result.Transcript(ctx)
+			require.NoError(t, err)
+			require.Contains(t, transcript, "new done")
+
+			check := func(ctx context.Context, t *testctx.T, ws *dagger.Workspace) {
+				t.Helper()
+				got, err := ws.File("/sub/notes.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, tc.want, got)
+				got, err = ws.File("/notes.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "root old\n", got, "the edit must not land at the workspace root")
+				entries, err := ws.Directory("/").Entries(ctx)
+				require.NoError(t, err)
+				require.NotContains(t, entries, "made/")
+				if tc.patched {
+					made, err := ws.Directory("/sub/made").Entries(ctx)
+					require.NoError(t, err)
+					require.Equal(t, []string{"empty/"}, made)
+				}
+			}
+			check(ctx, t, result.Workspace())
+
+			recipe, fields := recipeFields(ctx, t, c, sink, result)
+			require.False(t, fields[tc.tool])
+			require.Equal(t, tc.patched, fields["__withPatch"])
+			require.NoError(t, c.Close())
+			check(ctx, t, dagger.Ref[*dagger.LLM](connect(ctx, t), recipe).Workspace())
+		})
+	}
+
+	t.Run("host workspace", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		base := workspaceFixture(t, c, "workspace-tool-return").
+			WithNewFile("notes.txt", "root old\n").
+			WithNewFile("nested/notes.txt", "sub old\n").
+			WithNewFile(".dagger/modules/swapper/main.dang", `
+type Swapper {
+  edit(source: Workspace!, label: String!): Changeset! {
+    let base = source.directory(".", include: ["notes.txt"])
+    base.withFile("notes.txt", source.file("notes.txt").withReplaced("old", label)).changes(base)
+  }
+}
+`)
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
+			WithPrompt("edit the notes").
+			WithResponse([]dagger.LLMContentBlockInput{{
+				Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "edit",
+				Arguments: dagger.JSON(`{"label":"new"}`),
+			}}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+		out, err := base.With(daggerShell(fmt.Sprintf(`
+ws=$(current-workspace | with-workdir nested)
+r=$(llm --model="%s" | with-workspace --workspace $ws | with-tools $(swapper) | with-prompt "edit the notes" | loop)
+$r | workspace | file /nested/notes.txt | contents
+$r | workspace | file /notes.txt | contents
+`, model))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "sub new\nroot old\n", out)
+	})
+}
+
 // TestChangesetToolsApplyInOrder locks in that a turn's Changeset-returning
 // calls take effect in the order the model wrote them (MCP.CallBatch): each
 // is applied before the next one runs, so later calls see earlier ones'
