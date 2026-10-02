@@ -1150,7 +1150,13 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	if err := m.guardStateChange(); err != nil {
 		return err
 	}
-	normalized, err := normalizeChangesetToPatch(ctx, srv, changes)
+	ctx, span := Tracer(ctx).Start(ctx, "bench.apply")
+	defer span.End()
+	var normalized dagql.ObjectResult[*Changeset]
+	err := benchStep(ctx, "normalize", func(ctx context.Context) (err error) {
+		normalized, err = normalizeChangesetToPatch(ctx, srv, changes)
+		return err
+	})
 	if err != nil {
 		// Fall back to the raw changeset: normalization is a durability
 		// upgrade for restored conversations, not a correctness requirement
@@ -1162,7 +1168,15 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	// Changeset (or even its Before recipe) as an overlay: that would make
 	// restoring the conversation evaluate the command again. This bounded
 	// check distinguishes directory-only edits from an actual no-op.
-	if changed, err := normalized.Self().PathCountExceeds(ctx, 0); err == nil && !changed {
+	var changed bool
+	_ = benchStep(ctx, "count", func(ctx context.Context) (err error) {
+		changed, err = normalized.Self().PathCountExceeds(ctx, 0)
+		if err != nil {
+			changed = true
+		}
+		return nil
+	})
+	if !changed {
 		return nil
 	}
 	changesID, err := normalized.ID()
@@ -1170,12 +1184,21 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 		return fmt.Errorf("get changeset ID: %w", err)
 	}
 	var newWS dagql.ObjectResult[*Workspace]
-	if err := srv.Select(ctx, m.workspace, &newWS, dagql.Selector{
-		View:  srv.View,
-		Field: "withChanges",
-		Args: []dagql.NamedInput{
-			{Name: "changes", Value: dagql.NewID[*Changeset](changesID)},
-		},
+	if err := benchStep(ctx, "overlay", func(ctx context.Context) error {
+		if err := srv.Select(ctx, m.workspace, &newWS, dagql.Selector{
+			View:  srv.View,
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*Changeset](changesID)},
+			},
+		}); err != nil {
+			return err
+		}
+		root, err := workspaceRoot(ctx, srv, newWS)
+		if err != nil {
+			return err
+		}
+		return benchEval(ctx, root)
 	}); err != nil {
 		return err
 	}
@@ -1203,48 +1226,55 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 // all of it. The patch travels as a blob, so its size never inflates call
 // arguments. Only a patch File.contents cannot read is kept raw.
 func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
+	pctx, patchSpan := Tracer(ctx).Start(ctx, "bench.patch")
 	var patch dagql.ObjectResult[*File]
-	if err := srv.Select(ctx, changes, &patch, dagql.Selector{
+	if err := srv.Select(pctx, changes, &patch, dagql.Selector{
 		View:  srv.View,
 		Field: "asPatch",
 	}); err != nil {
+		patchSpan.End()
 		return changes, fmt.Errorf("render changeset as patch: %w", err)
 	}
 	// Stat before reading: File.contents refuses files over
 	// MaxFileContentsSize only after reading up to it.
 	var size int
-	if err := srv.Select(ctx, patch, &size, dagql.Selector{
+	if err := srv.Select(pctx, patch, &size, dagql.Selector{
 		View:  srv.View,
 		Field: "size",
 	}); err != nil {
+		patchSpan.End()
 		return changes, fmt.Errorf("stat changeset patch: %w", err)
 	}
 	if size > engineutil.MaxFileContentsSize {
+		patchSpan.End()
 		slog.Debug("changeset patch too large to normalize to patch form; keeping raw changeset",
 			"bytes", size,
 			"max", engineutil.MaxFileContentsSize)
 		return changes, nil
 	}
-	patchData, err := patch.Self().Contents(ctx, patch, nil, nil)
+	patchData, err := patch.Self().Contents(pctx, patch, nil, nil)
 	if err != nil {
+		patchSpan.End()
 		return changes, fmt.Errorf("read changeset patch: %w", err)
 	}
 	before := changes.Self().Before
 	if before.Self() == nil {
+		patchSpan.End()
 		return changes, fmt.Errorf("changeset has no before directory")
 	}
 	beforeID, err := before.ID()
 	if err != nil {
+		patchSpan.End()
 		return changes, err
 	}
 	// Empty patches still need normalization: they may describe directory-only
 	// changes, or a no-op whose raw After retains an expensive tool execution.
 	patched := before
+	var blob dagql.ObjectResult[*File]
 	if len(patchData) > 0 {
 		// No View: blob postdates some client views, and like
 		// checkpointOverlay's patch blob this is engine-internal plumbing.
-		var blob dagql.ObjectResult[*File]
-		if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
+		if err := srv.Select(pctx, srv.Root(), &blob, dagql.Selector{
 			Field: "blob",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.NewString("changeset.patch")},
@@ -1252,25 +1282,37 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 				{Name: "permissions", Value: dagql.NewInt(0o600)},
 			},
 		}); err != nil {
+			patchSpan.End()
 			return changes, fmt.Errorf("embed changeset patch: %w", err)
 		}
+		_ = benchEval(pctx, blob)
+	}
+	patchSpan.End()
+	if blob.Self() != nil {
 		blobID, err := blob.ID()
 		if err != nil {
 			return changes, err
 		}
-		if err := srv.Select(ctx, before, &patched, dagql.Selector{
-			View:  srv.View,
-			Field: "withPatchFile",
-			Args: []dagql.NamedInput{
-				{Name: "patch", Value: dagql.NewID[*File](blobID)},
-				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
-			},
+		if err := benchStep(ctx, "gitapply", func(ctx context.Context) error {
+			if err := srv.Select(ctx, before, &patched, dagql.Selector{
+				View:  srv.View,
+				Field: "withPatchFile",
+				Args: []dagql.NamedInput{
+					{Name: "patch", Value: dagql.NewID[*File](blobID)},
+					{Name: "onConflict", Value: PatchConflictLeaveMarkers},
+				},
+			}); err != nil {
+				return err
+			}
+			return benchEval(ctx, patched)
 		}); err != nil {
 			return changes, fmt.Errorf("apply patch to before: %w", err)
 		}
 	}
-	patched, err = reconcileDirsAfterPatch(ctx, srv, changes, patched)
-	if err != nil {
+	if err := benchStep(ctx, "reconcile", func(ctx context.Context) (err error) {
+		patched, err = reconcileDirsAfterPatch(ctx, srv, changes, patched)
+		return err
+	}); err != nil {
 		return changes, fmt.Errorf("reconcile directories: %w", err)
 	}
 	var normalized dagql.ObjectResult[*Changeset]
