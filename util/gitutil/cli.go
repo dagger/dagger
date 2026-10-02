@@ -265,8 +265,12 @@ func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 		if stderr != nil {
 			cmd.Stderr = io.MultiWriter(stderr, cmd.Stderr)
 		}
-		defer stdout.Close()
-		defer stderr.Close()
+		if stdout != nil {
+			defer stdout.Close()
+		}
+		if stderr != nil {
+			defer stderr.Close()
+		}
 		defer func() {
 			if rerr != nil {
 				flush()
