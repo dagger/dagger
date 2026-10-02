@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"golang.org/x/sync/errgroup"
 )
 
 // Trace restoration uses verified canonical control facts and their payload
@@ -40,10 +41,13 @@ type agentRestoreSource interface {
 // before any attach, focus last — is testable without an engine, in the style
 // of session_agent_test.go's fake runtime.
 type restoreTarget interface {
+	// Load evaluates the conversation an instance's anchor rebuilt to,
+	// returning a handle on the loaded conversation for Rehydrate. It creates
+	// no runtime, so loads run concurrently.
+	Load(ctx context.Context, entry dagui.AgentRestore, snapshotID string) (string, error)
 	// Rehydrate re-creates the instance's runtime entry from the conversation
-	// its anchor rebuilt to, returning the encoded handle on the restored
-	// agent.
-	Rehydrate(ctx context.Context, entry dagui.AgentRestore, snapshotID string) (string, error)
+	// Load returned, returning the encoded handle on the restored agent.
+	Rehydrate(ctx context.Context, entry dagui.AgentRestore, llmID string) (string, error)
 	// Adopt makes a re-hydrated instance a conversation of this session.
 	Adopt(ctx context.Context, entry dagui.AgentRestore, agentID string) error
 	// Focus points the prompt at one of the adopted conversations.
@@ -68,12 +72,47 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 	return restoreTraceSources(ctx, fe, &sessionRestore{dag: handler.dag, session: handler.llmSession}, req)
 }
 
-// restoredAgent is one entry of the plan, with the handle its anchor rebuilt
-// to and (after re-hydration) the handle on its restored runtime.
+// restoredAgent is one entry of the plan, with the ID its anchor rebuilt to,
+// the handle on its loaded conversation and (after re-hydration) the handle
+// on its restored runtime.
 type restoredAgent struct {
 	entry      dagui.AgentRestore
 	snapshotID string
+	llmID      string
 	agentID    string
+}
+
+// restoreLoadConcurrency bounds how many conversations a restore loads at
+// once.
+const restoreLoadConcurrency = 8
+
+// loadRestoredAgents loads every agent's conversation concurrently, setting
+// each one's llmID. It returns each agent's load error, aligned with agents:
+// one agent failing to load does not stop the others. The returned error is
+// only for cancellation, which abandons the restore.
+func loadRestoredAgents(ctx context.Context, dst restoreTarget, agents []restoredAgent) ([]error, error) {
+	errs := make([]error, len(agents))
+	var eg errgroup.Group
+	eg.SetLimit(restoreLoadConcurrency)
+	for i := range agents {
+		if ctx.Err() != nil {
+			break
+		}
+		eg.Go(func() error {
+			if err := ctx.Err(); err != nil {
+				errs[i] = err
+				return nil
+			}
+			llmID, err := dst.Load(ctx, agents[i].entry, agents[i].snapshotID)
+			agents[i].llmID, errs[i] = llmID, err
+			return nil
+		})
+	}
+	_ = eg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("load restored agents: %w", err)
+	}
+	return errs, nil
 }
 
 func executeRestorePlan(ctx context.Context, src agentRestoreSource, dst restoreTarget, req traceRestore) error {
@@ -131,12 +170,33 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 		return err
 	}
 
+	// Load every conversation before creating any runtime, concurrently.
+	// Loading a snapshot replays its whole recipe, which dominates a restore,
+	// and the agents of one session share much of their history: the engine
+	// dedupes concurrent loads of the same calls, so the restore costs about
+	// as long as its slowest agent instead of the sum of them. Only spawn
+	// has to be parent-first. An agent whose conversation does not load is
+	// skipped like one whose anchor did not resolve.
+	loadErrs, err := loadRestoredAgents(ctx, dst, restoring)
+	if err != nil {
+		return err
+	}
+	loaded := make([]restoredAgent, 0, len(restoring))
+	for i, r := range restoring {
+		if err := loadErrs[i]; err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s: %v", restoreLabel(r.entry), err))
+			warnAgentNotRestored(r.entry, err)
+			continue
+		}
+		loaded = append(loaded, r)
+	}
+
 	// Runtimes are created inert: nothing runs until the prompt does, and
 	// nothing can address them until they are adopted. An agent the engine
 	// refuses is skipped like one whose anchor did not resolve.
-	restored := make([]restoredAgent, 0, len(restoring))
-	agentIDs := make(map[string]string, len(restoring))
-	for _, r := range restoring {
+	restored := make([]restoredAgent, 0, len(loaded))
+	agentIDs := make(map[string]string, len(loaded))
+	for _, r := range loaded {
 		// The plan is parent-first, so a parent that is restored already has
 		// a runtime. One that was skipped, or is absent from the trace, must
 		// not be named: the new session's control records would reference an
@@ -149,7 +209,7 @@ func executeRestoreGraph(ctx context.Context, src agentRestoreSource, dst restor
 				r.entry.ParentAgentID = ""
 			}
 		}
-		agentID, err := dst.Rehydrate(ctx, r.entry, r.snapshotID)
+		agentID, err := dst.Rehydrate(ctx, r.entry, r.llmID)
 		if err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s: %v", restoreLabel(r.entry), err))
 			warnAgentNotRestored(r.entry, err)
@@ -358,6 +418,37 @@ type sessionRestore struct {
 
 var _ restoreTarget = (*sessionRestore)(nil)
 
+// loadQuery evaluates a restored conversation without spawning it, and
+// returns the runtime handle ID of the loaded result. Rehydrate spawns from
+// that handle, which re-addresses the very result this load produced instead
+// of replaying the recipe again.
+const loadQuery = `query LoadRestoredConversation($llm: ID!) {
+  node(id: $llm) {
+    ... on LLM {
+      id
+    }
+  }
+}`
+
+func (r *sessionRestore) Load(ctx context.Context, _ dagui.AgentRestore, snapshotID string) (string, error) {
+	var res struct {
+		Node struct {
+			ID string
+		}
+	}
+	if err := r.dag.Do(ctx, &dagger.Request{
+		Query:     loadQuery,
+		OpName:    "LoadRestoredConversation",
+		Variables: map[string]any{"llm": snapshotID},
+	}, &dagger.Response{Data: &res}); err != nil {
+		return "", err
+	}
+	if res.Node.ID == "" {
+		return "", errors.New("the engine returned no handle on the loaded conversation")
+	}
+	return res.Node.ID, nil
+}
+
 // rehydrateQuery is design §3.2's restore chain: load the committed
 // conversation and spawn it under the handle of the instance it belonged
 // to, which re-creates that instance's runtime entry from it. Written out
@@ -372,7 +463,7 @@ const rehydrateQuery = `query Rehydrate($llm: ID!, $id: String!, $name: String!,
   }
 }`
 
-func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore, snapshotID string) (string, error) {
+func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore, llmID string) (string, error) {
 	var res struct {
 		Node struct {
 			Spawn string
@@ -382,7 +473,7 @@ func (r *sessionRestore) Rehydrate(ctx context.Context, entry dagui.AgentRestore
 		Query:  rehydrateQuery,
 		OpName: "Rehydrate",
 		Variables: map[string]any{
-			"llm":    snapshotID,
+			"llm":    llmID,
 			"id":     entry.ID,
 			"name":   entry.Name,
 			"state":  entry.State,
