@@ -536,6 +536,102 @@ type Runner {
 	}
 }
 
+// TestChangesetToolRebasesOntoWorkspace covers changesets whose Before is
+// expensive to rebuild, like a generator's: a source tree read back out of a
+// container after running its toolchain (e.g. codegen against a dev engine).
+// The workspace overlay records the patch rebased onto the prior workspace,
+// so neither the producer nor its Before stays a recipe dependency of every
+// later workspace. When Before does not match the workspace, the live result
+// is still what the raw changeset would produce.
+func (LLMSuite) TestChangesetToolRebasesOntoWorkspace(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name, setup, want string
+		rebased           bool
+	}{
+		{name: "before from an exec", setup: "true", want: "keep me\ngenerated\n", rebased: true},
+		// Before was computed from another state than the workspace's, so
+		// the patch cannot be replayed onto the workspace as it stands.
+		{name: "stale before", setup: "echo stale > unchanged.txt", want: "stale\ngenerated\n"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c, sink := connectWithTrace(ctx, t)
+			source := c.Directory().
+				WithNewFile("unchanged.txt", "keep me\n").
+				WithNewFile("dagger.toml", "[modules.codegen]\nsource = \"modules/codegen\"\n").
+				WithNewFile("modules/codegen/dagger.json", `{"name":"codegen","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+				WithNewFile("modules/codegen/main.dang", fmt.Sprintf(`
+type Codegen {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  generate(ws: Workspace!): Changeset! {
+    let before = container.from("alpine:3.22")
+      .withMountedCache("/counter", cacheVolume(%q))
+      .withWorkdir("/src")
+      .withDirectory(".", ws.directory("/"))
+      .withEnvVariable("CACHEBUST", UUID.v7)
+      .withExec(["sh", "-ec", %q])
+    let after = before.withExec(["sh", "-ec", "echo generated >> unchanged.txt; echo out > gen.txt"]).sync
+    after.directory(".").changes(before.directory("."))
+  }
+}
+`, "before-replay-"+identity.NewID(), `test ! -f /counter/before || { echo before-replayed >&2; exit 91; }; touch /counter/before; `+tc.setup))
+			model := cannedRecordingModel(ctx, t, c, c.LLM().
+				WithPrompt("generate").
+				WithResponse([]dagger.LLMContentBlockInput{{
+					Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "generate",
+				}}).
+				WithToolResult("call_1", "", false).
+				WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+			ws := source.AsWorkspace()
+			base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+			composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
+			require.NoError(t, err)
+			result := composed.WithPrompt("generate").Loop()
+			transcript, err := result.Transcript(ctx)
+			require.NoError(t, err)
+			require.Contains(t, transcript, "done")
+
+			// The live result is the raw changeset's, rebased or not.
+			got, err := result.Workspace().File("unchanged.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+			gen, err := result.Workspace().File("gen.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "out\n", gen)
+
+			recipe, err := sink.captureLLMRecipe(ctx, t, c, result)
+			require.NoError(t, err)
+			id := new(call.ID)
+			require.NoError(t, id.Decode(string(recipe)))
+			fields := map[string]bool{}
+			collectIDFieldNames(id, fields)
+			require.False(t, fields["generate"], "the tool call must not remain a recipe dependency")
+			require.True(t, fields["withPatchFile"], "the overlay must be patch-normalized")
+			if !tc.rebased {
+				// Falling back to Before keeps its recipe, so the restore
+				// below would replay it.
+				return
+			}
+			require.False(t, fields["withExec"], "the overlay must not retain Before's command")
+
+			// Rebuild the committed LLM in a fresh session. The cache-mounted
+			// sentinel fails Before's command if it replays.
+			require.NoError(t, c.Close())
+			target := connect(ctx, t)
+			restored := dagger.Ref[*dagger.LLM](target, recipe)
+			got, err = restored.Workspace().File("unchanged.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+			gen, err = restored.Workspace().File("gen.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "out\n", gen)
+		})
+	}
+}
+
 // TestChangesetToolKeepsEmptyDirectories locks in that a Changeset-returning
 // tool's empty directories survive the engine's patch normalization
 // (core.normalizeChangesetToPatch). Git patches carry file content only, so
