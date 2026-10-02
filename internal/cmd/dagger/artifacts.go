@@ -192,7 +192,7 @@ func artifactPaths(addresses []*dagaddress.Address, keys ...dagaddress.Pair) []s
 	return paths
 }
 
-func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, flags []dagaddress.Pair, artifacts *dagger.Artifacts) *dagger.Artifacts {
+func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifacts *dagger.Artifacts) *dagger.Artifacts {
 	types, _ := cmd.Flags().GetStringArray("type")
 	if cmd.Flags().Changed("type") {
 		names := make([]string, 0, len(types))
@@ -204,17 +204,35 @@ func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, flags []
 		if len(names) == 0 {
 			artifacts = artifacts.FilterTypes([]string{})
 		} else {
-			artifacts = artifacts.FilterURI((&dagaddress.Address{HasScheme: true, Types: names}).String())
+			artifacts = filterArtifactTypeNames(artifacts, names)
 		}
 	}
 	// Workspace.artifacts(include:) already selected the path and its children.
-	// Send the remaining address and flag filters through the engine's parser.
-	filter := *addr
-	filter.Path = ""
-	filter.Absolute = false
-	filter.Query = slices.Clone(addr.Query)
-	filter.Query = append(filter.Query, flags...)
-	return artifacts.FilterURI(filter.String())
+	return filterArtifactAddress(artifacts, addr)
+}
+
+// filterArtifactAddress applies the type and dimension filters of an address.
+// It does not apply the path: Workspace.artifacts(include:) selects it.
+func filterArtifactAddress(artifacts *dagger.Artifacts, addr *dagaddress.Address) *dagger.Artifacts {
+	artifacts = filterArtifactTypeNames(artifacts, addr.Types)
+	for _, filter := range addr.DimensionFilters() {
+		if filter.Keys == nil {
+			artifacts = artifacts.FilterDimensions([]string{filter.Dimension})
+		} else {
+			artifacts = artifacts.FilterDimensionKeys(filter.Dimension, filter.Keys)
+		}
+	}
+	return artifacts
+}
+
+// filterArtifactTypeNames keeps artifacts of the listed address type names.
+// Only the engine knows which concrete types these names match, so the names
+// go through filterUri.
+func filterArtifactTypeNames(artifacts *dagger.Artifacts, names []string) *dagger.Artifacts {
+	if len(names) == 0 {
+		return artifacts
+	}
+	return artifacts.FilterURI((&dagaddress.Address{HasScheme: true, Types: names}).String())
 }
 
 func artifactKeyFlags(cmd *cobra.Command) []dagaddress.Pair {
@@ -322,7 +340,7 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 					return err
 				}
 			}
-			artifacts = applyArtifactFilters(cmd, &filter, nil, artifacts)
+			artifacts = applyArtifactFilters(cmd, &filter, artifacts)
 			if selected == nil {
 				selected = artifacts
 			} else {

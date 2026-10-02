@@ -143,8 +143,6 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 			}
 		}
 		filter := *address
-		filter.Path = ""
-		filter.Absolute = false
 		filter.Query = append(slices.Clone(address.Query), keys...)
 		if strict {
 			if err := requireArtifactModules(ctx, dag, selection, filter.DimensionFilters()); err != nil {
@@ -165,7 +163,7 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 				return nil, err
 			}
 		}
-		selection = selection.FilterURI(filter.String())
+		selection = filterArtifactAddress(selection, &filter)
 		if selected == nil {
 			selected = selection
 		} else {
@@ -201,7 +199,7 @@ type artifactLoadFailure struct{ URI, LoadError string }
 
 func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]artifactLoadFailure, error) {
 	// Read schema metadata so a collection's own load field stays deferred.
-	artifacts = artifacts.FilterURI("dag://*/load")
+	artifacts = artifacts.FilterPathPattern("*/load")
 	id, err := artifacts.ID(ctx)
 	if err != nil {
 		return nil, err
