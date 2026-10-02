@@ -238,10 +238,9 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 // The stored value is an engine-result handle, and the cached parent object
 // state can be reused by later sessions through default function caching, so
 // the handle must keep the referenced result retained for as long as the
-// parent result lives. Previously private-field handles were invisible to
-// dagql dependency tracking: once the referenced result's owning session
-// closed, a later session's function call loaded the dangling handle from
-// cached state and failed with "missing shared result". The referenced
+// parent result lives. dagql dependency tracking must include private-field
+// handles, so a later session's cache hit can still resolve the referenced
+// result after its owning session closes. The referenced
 // credential result here is produced and read only by never-cached functions,
 // so nothing else retains it across sessions.
 func (ModuleSuite) TestCrossSessionPrivateFieldResultRetention(ctx context.Context, t *testctx.T) {
@@ -377,8 +376,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 	})
 }
 
-// This covers the behavior previously checked through the private
-// _contextDirectory field. A Directory argument with +defaultPath="/" must
+// A Directory argument with +defaultPath="/" must
 // resolve from the module source context even after the client that first
 // loaded the module has closed, so the second client cannot depend on the first
 // client's in-memory module/context lookup state.
@@ -1422,10 +1420,6 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			require.Equal(t, "2", string(outDecoded))
 		}
 	})
-}
-
-func (ModuleSuite) TestCrossSessionDedupeOfNestedExec(ctx context.Context, t *testctx.T) {
-	t.Skip("disabled until Theseus lands")
 }
 
 func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.T) {

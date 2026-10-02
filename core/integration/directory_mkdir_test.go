@@ -16,8 +16,8 @@ func (DirectorySuite) TestWithNewDirectoryNoop(ctx context.Context, t *testctx.T
 		WithNewFile("scope/existing/keep.txt", "keep").
 		Directory("scope")
 
-	// Even though MkdirAll does nothing, committing a snapshot per call used
-	// to exceed overlay mount limits before this chain could be read.
+	// A no-op MkdirAll must not commit a snapshot per call; a 600-call chain
+	// would otherwise exceed overlay mount limits.
 	result := parent
 	for range 600 {
 		result = result.WithNewDirectory("existing", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o700})

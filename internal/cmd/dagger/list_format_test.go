@@ -27,7 +27,7 @@ func TestArtifactListFormats(t *testing.T) {
 		require.Regexp(t, `GO-MODULE +CHECK +DESCRIPTION`, out)
 		require.Regexp(t, `\. +stale +Check files`, out)
 		require.Regexp(t, `\. +test +Check files`, out)
-		require.NotContains(t, out, "LINK")
+		require.Regexp(t, `(?m)^GO-MODULE +CHECK +DESCRIPTION$`, out)
 	})
 	t.Run("cli uses filters", func(t *testing.T) {
 		require.Equal(t, "--go-module=. --check=stale   # Check files\n--go-module=. --check=test    # Check files\n", render("cli", items))
@@ -55,7 +55,7 @@ func TestArtifactListFormats(t *testing.T) {
 		out := render("table", []listedArtifact{item})
 		require.Contains(t, out, "WORKSPACE")
 		require.Contains(t, out, "github.com/acme/ws@abc")
-		require.NotContains(t, out, "LINK")
+		require.Regexp(t, `(?m)^WORKSPACE +GO-MODULE +CHECK +DESCRIPTION$`, out)
 		require.Equal(t, "-W github.com/acme/ws@abc --go-module=. --check=stale   # Check files\n", render("cli", []listedArtifact{item}))
 	})
 	t.Run("collection filters can select descendants", func(t *testing.T) {

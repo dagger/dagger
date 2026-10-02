@@ -111,10 +111,7 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 // dependency is resolved inside that nested execution
 // (generatedContextDirectory -> codegen -> loadDependencyModules ->
 // ResolveDepToSource), so the engine must forward the non-module parent
-// client's Git credentials. Before the fix in
-// ResolveDepToSource, the git resolver only authenticated for the main client
-// (core/schema/git.go), and this failed with "git authentication failed" even
-// though `dagger -m <private-ref> ...` and `dagger develop` worked.
+// client's Git credentials.
 //
 // This runs `dagger` on the host (not nested in a container) so the
 // credential-resolving client has git and the configured credential helper,

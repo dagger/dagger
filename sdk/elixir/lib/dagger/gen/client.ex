@@ -512,6 +512,26 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Start an empty run of text and media content, independent of any conversation.
+
+  Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+
+  > #### Experimental {: .warning}
+  >
+  > "LLM support is not yet stabilized"
+  """
+  @spec llm_content(t()) :: Dagger.LLMContent.t()
+  def llm_content(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("llmContent")
+
+    %Dagger.LLMContent{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new module.
   """
   @spec module(t()) :: Dagger.Module.t()

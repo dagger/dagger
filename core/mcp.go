@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -131,6 +130,11 @@ type MCP struct {
 	// have nothing to be filled from and are treated as unsatisfiable (see
 	// implicitToolArgs). Unlike the per-step scratch above, it survives Clone.
 	standalone bool
+	// scopeBase is the conversation a standalone server (dagger mcp) serves,
+	// with its bindings recorded. No step sets selfLLM there, so tool-argument
+	// addresses resolve in this conversation's scope instead (see
+	// MCP.scopeLLM). Like standalone, it survives Clone.
+	scopeBase dagql.ObjectResult[*LLM]
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -287,6 +291,9 @@ func (m *MCP) LastResult() dagql.Typed {
 // baseServer provides the schema for core tools and dispatch. Bound module
 // tools retain their own defining schemas. Value workspaces use only core here;
 // their modules are loaded from their trees during explicit agent composition.
+// Live workspaces load their modules best-effort: a broken module is left out
+// of the schema (and listed by FindArtifacts as a load failure) instead of
+// failing every step.
 func (m *MCP) baseServer(ctx context.Context) (*dagql.Server, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -350,6 +357,7 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 		return nil, err
 	}
 	m.loadSkillTools(srv, allTools)
+	m.loadArtifactTools(srv, allTools)
 	m.loadBuiltins(srv, allTools)
 	return allTools.Order, nil
 }
@@ -1085,7 +1093,7 @@ func llmContentEqual(a, b *LLMContentBlock) bool {
 	return a.Kind == b.Kind && a.Text == b.Text && a.CallID == b.CallID &&
 		a.ToolName == b.ToolName && string(a.Arguments) == string(b.Arguments) &&
 		a.Errored == b.Errored && a.Signature == b.Signature &&
-		a.MIMEType == b.MIMEType && a.Data == b.Data &&
+		a.MIMEType == b.MIMEType && slices.Equal(a.Data, b.Data) &&
 		slices.EqualFunc(a.Content, b.Content, llmContentEqual)
 }
 
@@ -1739,12 +1747,11 @@ func mcpContentBlocks(result *mcp.CallToolResult) ([]*LLMContentBlock, error) {
 			return nil, fmt.Errorf("nil MCP content at index %d", i)
 		}
 		if block.Kind == LLMContentImage || block.Kind == LLMContentAudio || block.Kind == LLMContentDocument {
-			// Check the decoded budget before allocating a second, larger copy.
 			if len(mediaData) > MaxLLMMediaBytes-mediaBytes {
-				return nil, fmt.Errorf("MCP tool media exceeds %d decoded bytes", MaxLLMMediaBytes)
+				return nil, fmt.Errorf("MCP tool media exceeds %d bytes", MaxLLMMediaBytes)
 			}
 			mediaBytes += len(mediaData)
-			block.Data = base64.StdEncoding.EncodeToString(mediaData)
+			block.Data = dagql.NewBytes(mediaData)
 		}
 		blocks = append(blocks, block)
 	}

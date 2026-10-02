@@ -971,22 +971,14 @@ HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --
 	})
 }
 
-// TestDockerBuildBuildPlatformArg is a regression repro for the layer-caching regression
-// reported upgrading 0.20.8 -> 0.21.x for Dockerfiles that pin stages to the build platform
+// TestDockerBuildBuildPlatformArg covers Dockerfiles that pin stages to the build platform
 // via `FROM --platform=$BUILDPLATFORM`.
 //
 // The predefined BUILDPLATFORM build arg must resolve to the engine's *native* (build host)
-// platform, independent of the target platform being built. That is what BuildKit's frontend
-// did (and what 0.20.8 relied on): dockerui.Client.init always sets BuildPlatforms to the
-// worker's native platform (see internal/buildkit/frontend/dockerui/config.go).
-//
-// In 0.21.x the dagql-native dockerBuild path (core/container.go Container.Build) constructs
-// dockerfile2llb.ConvertOpt with TargetPlatform set but WITHOUT setting BuildPlatforms, so
-// buildPlatformOpt (internal/buildkit/frontend/dockerfile/dockerfile2llb/platform.go) falls
-// back to using TargetPlatform as the build platform. That makes BUILDPLATFORM ==
-// TARGETPLATFORM, which both emulates stages that should run natively on the host and diverges
-// the cache key per target platform, so the identical $BUILDPLATFORM stages of an amd64 vs
-// arm64 build stop sharing cache.
+// platform, independent of the target platform being built, matching BuildKit's frontend
+// (dockerui.Client.init sets BuildPlatforms to the worker's native platform). That keeps
+// $BUILDPLATFORM stages running natively instead of under emulation, and lets the identical
+// $BUILDPLATFORM stages of builds for different target platforms share cache.
 func (DockerfileSuite) TestDockerBuildBuildPlatformArg(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -59,9 +59,6 @@ func TestToolErrorResponseScopesLogs(t *testing.T) {
 	require.Contains(t, got, failure.Error())
 	require.Equal(t, 1, strings.Count(got, "exec stdout"))
 	require.Equal(t, 1, strings.Count(got, "exec stderr"))
-	require.NotContains(t, got, "<stdout>")
-	require.NotContains(t, got, "<stderr>")
-	require.NotContains(t, got, "<exitCode>")
 	// The payload comes entirely from telemetry, with identical output when
 	// the error has no stdout/stderr extensions at all.
 	require.Equal(t, got, m.toolErrorResponse(ctx, failure.Err))

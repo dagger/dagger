@@ -123,7 +123,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Equal(t, "dep", cfg.Modules["dep"].Source)
 	})
 
-	t.Run("install omits commented settings hints", func(ctx context.Context, t *testctx.T) {
+	t.Run("install records only the module source", func(ctx context.Context, t *testctx.T) {
+		// The dependency's constructor has defaulted args; install leaves them
+		// in code rather than writing settings for them.
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")
 
@@ -136,7 +138,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 
 		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
 		require.NoError(t, err)
-		require.NotContains(t, string(configBytes), "# settings.")
+		require.Equal(t, "[modules.dep]\nsource = \"dep\"\n", string(configBytes))
 	})
 
 	t.Run("workspace install pins Git resolution without a modules.resolve entry", func(ctx context.Context, t *testctx.T) {
@@ -208,9 +210,8 @@ entrypoint = true
 
 		require.NoError(t, os.MkdirAll(emptyDir, 0o755))
 		initGitRepo(ctx, t, workdir)
-		// `dagger workspace init` was removed in CLI 1.0; seed an empty native
-		// workspace config directly so the failed install has something to
-		// (not) corrupt.
+		// Seed an empty native workspace config so the failed install has
+		// something to (not) corrupt.
 		writeWorkspaceConfigFile(t, workdir, "[modules]\n")
 
 		_, err := hostDaggerExecRaw(ctx, t, workdir, "module", "install", "./empty")
@@ -271,8 +272,8 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 	t.Run("uninstalling an unknown module errors", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
-		// `dagger workspace init` was removed in CLI 1.0; seed an empty native
-		// workspace config directly so uninstall has a workspace to look in.
+		// Seed an empty native workspace config so uninstall has a workspace
+		// to look in.
 		writeWorkspaceConfigFile(t, workdir, "[modules]\n")
 
 		_, err := hostDaggerExecRaw(ctx, t, workdir, "module", "uninstall", "ghost")

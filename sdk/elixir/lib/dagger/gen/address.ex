@@ -18,10 +18,12 @@ defmodule Dagger.Address do
   @doc """
   Load a container from the address.
   """
-  @spec container(t()) :: Dagger.Container.t()
-  def container(%__MODULE__{} = address) do
+  @spec container(t(), [{:no_lock, boolean() | nil}]) :: Dagger.Container.t()
+  def container(%__MODULE__{} = address, optional_args \\ []) do
     query_builder =
-      address.query_builder |> QB.select("container")
+      address.query_builder
+      |> QB.select("container")
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -36,7 +38,8 @@ defmodule Dagger.Address do
           {:exclude, [String.t()]},
           {:include, [String.t()]},
           {:gitignore, boolean() | nil},
-          {:no_cache, boolean() | nil}
+          {:no_cache, boolean() | nil},
+          {:no_lock, boolean() | nil}
         ]) :: Dagger.Directory.t()
   def directory(%__MODULE__{} = address, optional_args \\ []) do
     query_builder =
@@ -46,6 +49,7 @@ defmodule Dagger.Address do
       |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -60,7 +64,8 @@ defmodule Dagger.Address do
           {:exclude, [String.t()]},
           {:include, [String.t()]},
           {:gitignore, boolean() | nil},
-          {:no_cache, boolean() | nil}
+          {:no_cache, boolean() | nil},
+          {:no_lock, boolean() | nil}
         ]) :: Dagger.File.t()
   def file(%__MODULE__{} = address, optional_args \\ []) do
     query_builder =
@@ -70,6 +75,7 @@ defmodule Dagger.Address do
       |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.File{
       query_builder: query_builder,
@@ -80,10 +86,12 @@ defmodule Dagger.Address do
   @doc """
   Load a git ref (branch, tag or commit) from the address.
   """
-  @spec git_ref(t()) :: Dagger.GitRef.t()
-  def git_ref(%__MODULE__{} = address) do
+  @spec git_ref(t(), [{:no_lock, boolean() | nil}]) :: Dagger.GitRef.t()
+  def git_ref(%__MODULE__{} = address, optional_args \\ []) do
     query_builder =
-      address.query_builder |> QB.select("gitRef")
+      address.query_builder
+      |> QB.select("gitRef")
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.GitRef{
       query_builder: query_builder,

@@ -46,11 +46,10 @@ func (RuntimeCodegenSuite) TestMissingGeneratedFiles(ctx context.Context, t *tes
 // A dagger-module.toml module with a configured client and no committed
 // generated files must still generate on the first run: client generation
 // needs the module's schema, i.e. the module built, and the files it builds
-// from are exactly what the preceding codegen step produced. Loading the
-// module from the original source instead used to fail every first
-// `dagger generate` of such a module with the SDK's "generated file is
-// missing; run `dagger generate`" hint — from inside `dagger generate`
-// (https://github.com/dagger/dagger/issues/13973, "broken state 1").
+// from are exactly what the preceding codegen step produced. Client
+// generation therefore loads the module from the codegen output, not the
+// original source, so the first `dagger generate` succeeds instead of
+// reporting the SDK's "generated file is missing; run `dagger generate`" hint.
 func (RuntimeCodegenSuite) TestClientGenerationFollowsCodegen(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -95,9 +94,9 @@ func (m *Minimal) Hello() string {
 	})
 }
 
-// Legacy dagger.json modules keep runtime codegen unconditionally; a stale
-// codegen.automaticGitignore=false opt-out is not read anymore. Nothing is
-// committed here, so success requires runtime regeneration.
+// Legacy dagger.json modules keep runtime codegen unconditionally and ignore
+// codegen.automaticGitignore=false. Nothing is committed here, so success
+// requires runtime regeneration.
 func (RuntimeCodegenSuite) TestLegacyConfigKeepsRuntimeCodegen(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -190,7 +189,7 @@ func (RuntimeCodegenSuite) TestPythonLegacyConfigKeepsRuntimeCodegen(ctx context
 // fail with the missing-files error, proving the runtime reads the committed
 // files rather than regenerating.
 //
-// The first call also proves codegen no longer gitignores the vendored sdk
+// The first call also proves codegen does not gitignore the vendored sdk
 // for toml modules: local context loading is gitignore-filtered, so an
 // ignored sdk would surface as the missing-files error.
 //

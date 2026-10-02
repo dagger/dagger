@@ -391,9 +391,7 @@ settings.sourceWorkspace = "dag://container-provider/workspace"
 		// engine evaluates the artifact by hand, so it must supply that
 		// workspace before dagql's non-null check; the injection hook that
 		// fills optional Workspace args runs too late to help (see
-		// core/modtree.go boundWorkspaceArgs). Regression: after
-		// Workspace args stopped being published as nullable, this failed
-		// with `missing required argument: "ws"`.
+		// core/modtree.go boundWorkspaceArgs).
 		//
 		// The provider bakes the workspace's marker.txt into PROVIDED_BY,
 		// proving it received the caller's workspace and not just any one.
@@ -504,11 +502,10 @@ settings.base = "dag://container-provider/image/extra"
 
 	t.Run("rejects reference cycle", func(ctx context.Context, t *testctx.T) {
 		// A self-referential module ref (container-provider's own base wired
-		// from dag://container-provider/image) is now caught by the cycle guard in
+		// from dag://container-provider/image) is caught by the cycle guard in
 		// core/schema/address.go (resolveModuleRef, moduleRefCycleKey) and
-		// fails fast with a "module reference cycle detected" error. Before the
-		// guard existed this recursed unboundedly and hung the engine, so a
-		// context deadline is kept as a safety net against a regression wedging CI.
+		// fails fast with a "module reference cycle detected" error. The
+		// context deadline keeps CI from hanging if cycle detection fails.
 		ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
 		_, err := modGen.

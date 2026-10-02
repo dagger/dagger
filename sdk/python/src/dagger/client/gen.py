@@ -482,8 +482,8 @@ class LLMContentBlockInput(Input):
     content: "list[LLMContentBlockInput] | None" = None
     """Ordered TEXT or media blocks returned by a tool."""
 
-    data: str | None = ""
-    """Base64-encoded media bytes. Supply exactly one of data or file for media."""
+    data: Bytes | None = None
+    """Media bytes. Supply exactly one of data or file for media."""
 
     errored: bool | None = False
     """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
@@ -719,9 +719,19 @@ class Address(Type):
     and other object types. Address format depends on the type, and is
     validated at type selection."""
 
-    def container(self) -> "Container":
-        """Load a container from the address."""
-        _args: list[Arg] = []
+    def container(self, *, no_lock: bool | None = False) -> "Container":
+        """Load a container from the address.
+
+        Parameters
+        ----------
+        no_lock:
+            Resolve the address's image tag live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
+        _args = [
+            Arg("noLock", no_lock, False),
+        ]
         _ctx = self._select("container", _args)
         return Container(_ctx)
 
@@ -732,13 +742,27 @@ class Address(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         no_cache: bool | None = False,
+        no_lock: bool | None = False,
     ) -> "Directory":
-        """Load a directory from the address."""
+        """Load a directory from the address.
+
+        Parameters
+        ----------
+        exclude:
+        include:
+        gitignore:
+        no_cache:
+        no_lock:
+            Resolve the address's git ref live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
         _args = [
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("noCache", no_cache, False),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -750,20 +774,44 @@ class Address(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         no_cache: bool | None = False,
+        no_lock: bool | None = False,
     ) -> "File":
-        """Load a file from the address."""
+        """Load a file from the address.
+
+        Parameters
+        ----------
+        exclude:
+        include:
+        gitignore:
+        no_cache:
+        no_lock:
+            Resolve the address's git ref live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
         _args = [
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("noCache", no_cache, False),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    def git_ref(self) -> "GitRef":
-        """Load a git ref (branch, tag or commit) from the address."""
-        _args: list[Arg] = []
+    def git_ref(self, *, no_lock: bool | None = False) -> "GitRef":
+        """Load a git ref (branch, tag or commit) from the address.
+
+        Parameters
+        ----------
+        no_lock:
+            Resolve the address's git ref live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
+        _args = [
+            Arg("noLock", no_lock, False),
+        ]
         _ctx = self._select("gitRef", _args)
         return GitRef(_ctx)
 
@@ -1612,8 +1660,8 @@ class Artifact(Type):
         ----------
         absolute:
             Prefix the workspace's Git address and commit:
-            dag://<workspace>@<commit>:<path>. Fails if the workspace has no
-            Git address.
+            dag://<workspace>@<commit>:<path>. Fails if the artifact has no
+            workspace, or its workspace has no Git address.
         dimension_keys:
             Include the dimension keys as a query. Without them, the address
             is a path selector.
@@ -3791,6 +3839,7 @@ class Container(Type):
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
+        no_lock: bool | None = False,
     ) -> Self:
         """Download a container image, and apply it to the container state. All
         previous state will be lost.
@@ -3815,6 +3864,8 @@ class Container(Type):
         insecure_skip_tls_verify:
             Allow HTTPS registry communication without verifying the server
             certificate.
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("address", address),
@@ -3822,6 +3873,7 @@ class Container(Type):
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -10726,16 +10778,24 @@ class GitRepository(Type):
         _ctx = self._select("asWorkspace", _args)
         return Workspace(_ctx)
 
-    def branch(self, name: str) -> GitRef:
+    def branch(
+        self,
+        name: str,
+        *,
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Returns details of a branch.
 
         Parameters
         ----------
         name:
             Branch's name (e.g., "main").
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("name", name),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("branch", _args)
         return GitRef(_ctx)
@@ -10816,9 +10876,17 @@ class GitRepository(Type):
         _ctx = self._select("commit", _args)
         return GitCommit(_ctx)
 
-    def head(self) -> GitRef:
-        """Returns details for HEAD."""
-        _args: list[Arg] = []
+    def head(self, *, no_lock: bool | None = False) -> GitRef:
+        """Returns details for HEAD.
+
+        Parameters
+        ----------
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
+        """
+        _args = [
+            Arg("noLock", no_lock, False),
+        ]
         _ctx = self._select("head", _args)
         return GitRef(_ctx)
 
@@ -10850,25 +10918,39 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def latest(self, *, version: str | None = "") -> GitRef:
+    def latest(
+        self,
+        *,
+        version: str | None = "",
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Return the latest stable release tag, falling back to HEAD when no
         release exists.
 
         Release selection accepts an optional "v" prefix, incomplete versions,
-        and zero-padded numeric components. This operation is pinned.
+        and zero-padded numeric components. This operation is pinned unless
+        noLock is enabled.
 
         Parameters
         ----------
         version:
             Version query used to select the greatest matching release ref.
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("version", version, ""),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("latest", _args)
         return GitRef(_ctx)
 
-    def ref(self, name: str) -> GitRef:
+    def ref(
+        self,
+        name: str,
+        *,
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Returns details of a ref.
 
         Parameters
@@ -10889,23 +10971,34 @@ class GitRepository(Type):
             the resulting commit; remote repositories fetch the history the
             walk needs. Other git revision syntax (`^{...}`, `@{...}`,
             `:path`, ranges) is not supported.
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("name", name),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("ref", _args)
         return GitRef(_ctx)
 
-    def tag(self, name: str) -> GitRef:
+    def tag(
+        self,
+        name: str,
+        *,
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Returns details of a tag.
 
         Parameters
         ----------
         name:
             Tag's name (e.g., "v0.3.9").
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("name", name),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("tag", _args)
         return GitRef(_ctx)
@@ -11947,6 +12040,49 @@ class LLM(Type):
         _ctx = self._select("agent", _args)
         return Agent(_ctx)
 
+    def artifacts(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> Artifacts:
+        """Discover every artifact this conversation can address, as one
+        selection, without evaluating their values.
+
+        Tool objects bound with withTools contribute their modules' artifacts,
+        rooted at their current values: evaluating one reads the live state of
+        the bound tools, not a fresh construction. If a module's main object
+        is bound, only its tree is included; otherwise each bound object of
+        that module contributes its own tree. Addresses start with the module
+        name. These artifacts have no workspace of their own: they evaluate in
+        the LLM's bound workspace, if any, whoever evaluates them.
+
+        The workspace part is the artifacts of the workspace bound with
+        withWorkspace, as returned by Workspace.artifacts; an LLM with no
+        bound workspace has none. A workspace module with the same name as a
+        module with bound tool objects is omitted: the bound tools shadow it.
+        Unless they are only a plain construction of the module, which has no
+        state of its own: then the workspace module's artifacts are kept
+        instead.
+
+        Tool arguments that take an address resolve it here: a DAG address to
+        one object, or, for Artifacts and Artifact arguments, a selection
+        filtered like filterUri.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
+        Parameters
+        ----------
+        include:
+            Only include artifacts matching these path patterns, as with
+            Workspace.artifacts. A path selects that path and its children.
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("artifacts", _args)
+        return Artifacts(_ctx)
+
     def compose(self, expertise: list[Expertise]) -> Self:
         """Run expertise in list order, passing this conversation through each
         function. Retain existing contributions.
@@ -12726,6 +12862,112 @@ class LLM(Type):
 
 
 @typecheck
+class LLMContent(Type):
+    """An ordered run of text and media content for a model to read, built
+    outside any conversation."""
+
+    async def blocks(self) -> list["LLMContentBlock"]:
+        """The ordered text and media blocks."""
+        _args: list[Arg] = []
+        _ctx = self._select("blocks", _args)
+        return await _ctx.execute_object_list(LLMContentBlock)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMContent.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def with_data(self, data: Bytes, mime_type: str) -> Self:
+        """Append image, audio, or PDF bytes as an inline media block. The media
+        kind follows the MIME type.
+
+        Prefer withFile for anything but small payloads: the bytes become part
+        of the content's identity, so they travel with every reference to it.
+
+        Parameters
+        ----------
+        data:
+            The media bytes.
+        mime_type:
+            The media MIME type, e.g. "image/png".
+        """
+        _args = [
+            Arg("data", data),
+            Arg("mimeType", mime_type),
+        ]
+        _ctx = self._select("withData", _args)
+        return LLMContent(_ctx)
+
+    def with_file(
+        self,
+        file: File,
+        *,
+        mime_type: str | None = "",
+    ) -> Self:
+        """Append an image, audio, or PDF file as an inline media block. The
+        media kind follows the MIME type.
+
+        Parameters
+        ----------
+        file:
+            The media file. Its contents become the block's inline bytes.
+        mime_type:
+            The media MIME type, e.g. "image/png". Inferred from the file's
+            contents when omitted.
+        """
+        _args = [
+            Arg("file", file),
+            Arg("mimeType", mime_type, ""),
+        ]
+        _ctx = self._select("withFile", _args)
+        return LLMContent(_ctx)
+
+    def with_text(self, text: str) -> Self:
+        """Append a block of text.
+
+        Parameters
+        ----------
+        text:
+            The text.
+        """
+        _args = [
+            Arg("text", text),
+        ]
+        _ctx = self._select("withText", _args)
+        return LLMContent(_ctx)
+
+    def with_(self, cb: Callable[["LLMContent"], "LLMContent"]) -> "LLMContent":
+        """Call the provided callable with current LLMContent.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class LLMContentBlock(Type):
     """A single piece of content within an LLM message."""
 
@@ -12777,15 +13019,13 @@ class LLMContentBlock(Type):
         _ctx = self._select("content", _args)
         return await _ctx.execute_object_list(LLMContentBlock)
 
-    async def data(self) -> str:
-        """Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+    async def data(self) -> Bytes:
+        """The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        Bytes
+            Arbitrary binary data, represented as a base64-encoded string.
 
         Raises
         ------
@@ -12796,7 +13036,7 @@ class LLMContentBlock(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("data", _args)
-        return await _ctx.execute(str)
+        return await _ctx.execute(Bytes)
 
     async def errored(self) -> bool:
         """Whether the tool call resulted in an error (for TOOL_RESULT kind).
@@ -15494,6 +15734,22 @@ class Query(Root):
         ]
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
+
+    def llm_content(self) -> LLMContent:
+        """Start an empty run of text and media content, independent of any
+        conversation.
+
+        Add blocks with withText, withFile, and withData. A function exposed
+        as an LLM tool can return the content to give the model text and media
+        as the tool's result, e.g. a caption and a screenshot for the model to
+        look at.
+
+        .. caution::
+            Experimental: LLM support is not yet stabilized
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("llmContent", _args)
+        return LLMContent(_ctx)
 
     def module(self) -> Module:
         """Create a new module."""
@@ -19885,6 +20141,7 @@ __all__ = [
     "InputTypeDef",
     "InterfaceTypeDef",
     "JSONValue",
+    "LLMContent",
     "LLMContentBlock",
     "LLMContentBlockInput",
     "LLMContentBlockKind",

@@ -138,11 +138,7 @@ secretKey = "op://vault/aws"
 		require.NoError(t, err)
 
 		output := string(out)
-		require.Contains(t, output, "MODULE")
-		require.Contains(t, output, "KEY")
-		require.Contains(t, output, "VALUE")
-		require.Contains(t, output, "DESCRIPTION")
-		require.NotContains(t, output, "TYPE")
+		require.Regexp(t, `(?m)^MODULE\s+KEY\s+VALUE\s+DESCRIPTION\s*$`, output)
 		require.Contains(t, output, "aws")
 		require.Contains(t, output, "region")
 		require.Contains(t, output, "us-west-2")

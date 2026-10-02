@@ -239,6 +239,7 @@
                 "reference/api/json-value",
                 "reference/api/label",
                 "reference/api/list-type-def",
+                "reference/api/llm-content",
                 "reference/api/llm-content-block",
                 "reference/api/llm-message",
                 "reference/api/llm-message-origin",

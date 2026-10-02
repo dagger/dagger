@@ -491,6 +491,17 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Start an empty run of text and media content, independent of any conversation.
+     *
+     * Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+     */
+    public function llmContent(): LLMContent
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llmContent');
+        return new \Dagger\LLMContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Initialize a JSON value
      */
     public function json(): JsonValue

@@ -61,9 +61,9 @@ defmodule Dagger.LLMContentBlock do
   end
 
   @doc """
-  Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+  The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
   """
-  @spec data(t()) :: {:ok, String.t()} | {:error, term()}
+  @spec data(t()) :: {:ok, Dagger.Bytes.t()} | {:error, term()}
   def data(%__MODULE__{} = llm_content_block) do
     query_builder =
       llm_content_block.query_builder |> QB.select("data")

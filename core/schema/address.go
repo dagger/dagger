@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,10 +18,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/gitutil"
 )
-
-// moduleRefCycleKey is the context key carrying the chain of in-flight
-// artifact addresses, used to detect reference cycles.
-type moduleRefCycleKey struct{}
 
 // resolveModuleRef resolves a DAG address in the address's workspace. A value
 // without the dag:// scheme keeps its external meaning: it is never looked up
@@ -68,14 +63,10 @@ func resolveModuleRef(ctx context.Context, address *core.Address, typeName strin
 	if err != nil {
 		return true, err
 	}
-	chain, _ := ctx.Value(moduleRefCycleKey{}).([]string)
-	if slices.Contains(chain, normalized) {
-		return true, fmt.Errorf("module reference cycle detected: %s -> %s", strings.Join(chain, " -> "), normalized)
+	ctx, err = core.WithArtifactReference(ctx, normalized)
+	if err != nil {
+		return true, err
 	}
-	newChain := make([]string, len(chain)+1)
-	copy(newChain, chain)
-	newChain[len(chain)] = normalized
-	ctx = context.WithValue(ctx, moduleRefCycleKey{}, newChain)
 
 	if err := artifact.Evaluate(ctx, dest); err != nil {
 		return true, fmt.Errorf("resolve %q: %w", addr, err)
@@ -178,17 +169,10 @@ func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, e
 	// Normalize names so case variants cannot evade cycle detection during
 	// nested module construction.
 	normalized := moduleField + ":" + functionField
-	chain, _ := ctx.Value(moduleRefCycleKey{}).([]string)
-	for _, seen := range chain {
-		if seen == normalized {
-			return true, fmt.Errorf("module reference cycle detected: %s -> %s",
-				strings.Join(chain, " -> "), normalized)
-		}
+	ctx, err := core.WithArtifactReference(ctx, normalized)
+	if err != nil {
+		return true, err
 	}
-	newChain := make([]string, len(chain)+1)
-	copy(newChain, chain)
-	newChain[len(chain)] = normalized
-	ctx = context.WithValue(ctx, moduleRefCycleKey{}, newChain)
 
 	if err := srv.Select(ctx, srv.Root(), dest, selectors...); err != nil {
 		return true, fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
@@ -322,16 +306,20 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			Doc(`The address value`),
 		dagql.NodeFunc("container", s.container).
 			WithInput(dagql.PerCallInput).
-			Doc(`Load a container from the address.`),
+			Doc(`Load a container from the address.`).
+			Args(noLockArg("image tag")),
 		dagql.NodeFunc("directory", s.directory).
 			WithInput(dagql.RequestedCacheInput("noCache")).
-			Doc(`Load a directory from the address.`),
+			Doc(`Load a directory from the address.`).
+			Args(append(copyFilterArgs(), noLockArg("git ref"))...),
 		dagql.NodeFunc("file", s.file).
 			WithInput(dagql.RequestedCacheInput("noCache")).
-			Doc(`Load a file from the address.`),
+			Doc(`Load a file from the address.`).
+			Args(append(copyFilterArgs(), noLockArg("git ref"))...),
 		dagql.NodeFunc("gitRef", s.gitRef).
 			WithInput(dagql.PerClientInput).
-			Doc(`Load a git ref (branch, tag or commit) from the address.`),
+			Doc(`Load a git ref (branch, tag or commit) from the address.`).
+			Args(noLockArg("git ref")),
 		dagql.NodeFunc("gitRepository", s.gitRepository).
 			WithInput(dagql.PerClientInput).
 			Doc(`Load a git repository from the address.`),
@@ -384,6 +372,38 @@ func (s *addressSchema) legacyAddress(ctx context.Context, root *core.Query, arg
 type loadFileArgs struct {
 	core.CopyFilter
 	HostDirCacheConfig
+	AddressLookupArgs
+}
+
+// AddressLookupArgs are the arguments of the Address loaders whose external
+// forms name a mutable reference — an image tag, a git ref — that the
+// workspace lockfile may pin.
+type AddressLookupArgs struct {
+	// NoLock resolves the reference live, like noLock on Container.from and
+	// GitRepository.ref: neither reading a pin nor recording one.
+	NoLock bool `name:"noLock" default:"false"`
+}
+
+// noLockArg documents AddressLookupArgs.NoLock for a loader resolving what.
+func noLockArg(what string) dagql.Argument {
+	return dagql.Arg("noLock").
+		View(AfterVersion("v1.0.0-beta.15")).
+		Doc(
+			`Resolve the address's `+what+` live, ignoring the workspace lockfile: neither read a pinned value nor record one.`,
+			`A DAG address is unaffected: its module evaluates as usual.`,
+		)
+}
+
+// copyFilterArgs lists the loadDirectoryArgs/loadFileArgs arguments that
+// precede noLock, so that patching noLock's docs (dagql.Field.Args moves
+// patched args first) keeps the schema's argument order.
+func copyFilterArgs() []dagql.Argument {
+	return []dagql.Argument{
+		dagql.Arg("exclude"),
+		dagql.Arg("include"),
+		dagql.Arg("gitignore"),
+		dagql.Arg("noCache"),
+	}
 }
 
 func (s *addressSchema) file(
@@ -402,7 +422,7 @@ func (s *addressSchema) file(
 	gitURL, err := gitutil.ParseURL(addr)
 	if err == nil {
 		// Remote file
-		q = queryRemoteGitRoot(gitURL)
+		q = queryRemoteGitRoot(gitURL, args.NoLock)
 		if gitURL.Fragment == nil || gitURL.Fragment.Subdir == "" {
 			return inst, fmt.Errorf("no file path specified within git repository")
 		}
@@ -445,6 +465,7 @@ func (s *addressSchema) file(
 type loadDirectoryArgs struct {
 	core.CopyFilter
 	HostDirCacheConfig
+	AddressLookupArgs
 }
 
 func queryLocalDirectory(path string, filter core.CopyFilter) []dagql.Selector {
@@ -494,7 +515,7 @@ func (s *addressSchema) directory(
 	gitURL, err := gitutil.ParseURL(addr)
 	if err == nil {
 		// Remote directory (using git remote)
-		q = queryRemoteGitRoot(gitURL)
+		q = queryRemoteGitRoot(gitURL, args.NoLock)
 		if gitURL.Fragment != nil && gitURL.Fragment.Subdir != "" {
 			q = append(q, dagql.Selector{
 				Field: "directory",
@@ -519,22 +540,27 @@ func (s *addressSchema) directory(
 	return inst, nil
 }
 
-func queryRemoteGitRef(gitURL *gitutil.GitURL) []dagql.Selector {
+func queryRemoteGitRef(gitURL *gitutil.GitURL, noLock bool) []dagql.Selector {
 	q := queryRemoteGitRepository(gitURL)
+	var lookupArgs []dagql.NamedInput
+	if noLock {
+		lookupArgs = append(lookupArgs, dagql.NamedInput{Name: "noLock", Value: dagql.Boolean(true)})
+	}
 	// Default to repo head
 	if gitURL.Fragment == nil || gitURL.Fragment.Ref == "" {
 		q = append(q, dagql.Selector{
 			Field: "head",
+			Args:  lookupArgs,
 		})
 	} else {
 		q = append(q, dagql.Selector{
 			Field: "ref",
-			Args: []dagql.NamedInput{
+			Args: append([]dagql.NamedInput{
 				{
 					Name:  "name",
 					Value: dagql.NewString(gitURL.Fragment.Ref),
 				},
-			},
+			}, lookupArgs...),
 		})
 	}
 	return q
@@ -542,8 +568,8 @@ func queryRemoteGitRef(gitURL *gitutil.GitURL) []dagql.Selector {
 
 // Build a query for selecting the root of a repo from a git url
 // The subdir path is left to the caller to process (might be a file or directory)
-func queryRemoteGitRoot(gitURL *gitutil.GitURL) []dagql.Selector {
-	q := queryRemoteGitRef(gitURL)
+func queryRemoteGitRoot(gitURL *gitutil.GitURL, noLock bool) []dagql.Selector {
+	q := queryRemoteGitRef(gitURL, noLock)
 	q = append(q, dagql.Selector{
 		Field: "tree",
 	})
@@ -560,7 +586,7 @@ func getLocalPath(path string) string {
 func (s *addressSchema) container(
 	ctx context.Context,
 	r dagql.ObjectResult[*core.Address],
-	args struct{},
+	args AddressLookupArgs,
 ) (
 	inst dagql.ObjectResult[*core.Container],
 	err error,
@@ -571,18 +597,22 @@ func (s *addressSchema) container(
 		// fall through to image interpretation when evaluation fails.
 		return inst, err
 	}
+	fromArgs := []dagql.NamedInput{
+		{
+			Name:  "address",
+			Value: dagql.NewString(addr),
+		},
+	}
+	if args.NoLock {
+		fromArgs = append(fromArgs, dagql.NamedInput{Name: "noLock", Value: dagql.Boolean(true)})
+	}
 	q := []dagql.Selector{
 		{
 			Field: "container",
 		},
 		{
 			Field: "from",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "address",
-					Value: dagql.NewString(addr),
-				},
-			},
+			Args:  fromArgs,
 		},
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -703,7 +733,7 @@ func queryRemoteGitRepository(gitURL *gitutil.GitURL) []dagql.Selector {
 func (s *addressSchema) gitRef(
 	ctx context.Context,
 	r dagql.ObjectResult[*core.Address],
-	args struct{},
+	args AddressLookupArgs,
 ) (
 	inst dagql.ObjectResult[*core.GitRef],
 	err error,
@@ -721,7 +751,7 @@ func (s *addressSchema) gitRef(
 		if gitURL.Fragment != nil && gitURL.Fragment.Subdir != "" {
 			return inst, fmt.Errorf("git ref address cannot contain subdir")
 		}
-		q = queryRemoteGitRef(gitURL)
+		q = queryRemoteGitRef(gitURL, args.NoLock)
 	} else {
 		// Local ref
 		path, ref, _ := strings.Cut(addr, "#")

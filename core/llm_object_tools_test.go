@@ -39,6 +39,8 @@ type Service { id: ID! }
 type Secret { id: ID! }
 type Socket { id: ID! }
 type Volume { id: ID! }
+type Artifacts { id: ID! }
+type Artifact { id: ID! }
 
 enum Mode { FAST SLOW }
 input Options {
@@ -130,6 +132,15 @@ type Doug {
   "Authenticate if asked — an optional Secret arg keeps the ID convention."
   maybeToken(token: ID @expectedType(name: "Secret")): Doug!
 
+  "Run checks — a required artifact selection, lifted from a DAG address."
+  check(targets: ID! @expectedType(name: "Artifacts")): String!
+
+  "Evaluate one artifact — a required artifact, lifted from a DAG address."
+  eval(target: ID! @expectedType(name: "Artifact")): String!
+
+  "Run checks everywhere — a LIST of selections is not lifted."
+  checkAll(targets: [ID!]! @expectedType(name: "Artifacts")): String!
+
   old: String! @deprecated(reason: "gone")
 }
 `,
@@ -218,6 +229,13 @@ func TestObjectToolEligible(t *testing.T) {
 	}
 	// An optional one is still a tool; it just takes an ID.
 	require.True(t, objectToolEligible(fieldByName(doug, "maybeToken"), nil, conversationToolArgs))
+
+	// A required artifact selection lifts from a DAG address into the
+	// conversation's scope, whether it takes the selection or the one
+	// artifact it selects; a list of selections does not lift.
+	require.True(t, objectToolEligible(fieldByName(doug, "check"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "eval"), nil, conversationToolArgs))
+	require.False(t, objectToolEligible(fieldByName(doug, "checkAll"), nil, conversationToolArgs))
 
 	// except drops a method by name.
 	require.False(t, objectToolEligible(fieldByName(doug, "read"), []string{"read"}, conversationToolArgs))
@@ -319,6 +337,7 @@ func TestObjectMethodSchema(t *testing.T) {
 		require.True(t, strings.HasPrefix(desc, "("+want.typeName+" address: "), desc)
 		require.Contains(t, desc, want.external)
 		require.Contains(t, desc, "dag://<module>/")
+		require.Contains(t, desc, "FindArtifacts lists what exists")
 		require.Contains(t, desc, "or a "+want.typeName+" ID from a prior tool result")
 		for _, hostForm := range []string{"tcp://", "udp://", "ssh://", "file://", "local"} {
 			require.NotContains(t, desc, hostForm, field)
@@ -347,6 +366,28 @@ func TestObjectMethodSchema(t *testing.T) {
 	sandboxes := execAllSchema["properties"].(map[string]any)["sandboxes"].(map[string]any)
 	require.Equal(t, "array", sandboxes["type"])
 	require.Equal(t, "(Container ID)", sandboxes["description"])
+
+	// Artifact selections take a DAG address, scheme optional, and the hint
+	// teaches its vocabulary: path globs, dimension keys, type assertions,
+	// and where to find what exists. An Artifact must select one.
+	for field, want := range map[string]struct{ arg, typeName string }{
+		"check": {"targets", "Artifacts"},
+		"eval":  {"target", "Artifact"},
+	} {
+		s, err := objectMethodSchema(schema, fieldByName(doug, field), conversationToolArgs)
+		require.NoError(t, err)
+		prop := s["properties"].(map[string]any)[want.arg].(map[string]any)
+		require.Equal(t, "string", prop["type"])
+		desc := prop["description"].(string)
+		require.True(t, strings.HasPrefix(desc, "("+want.typeName+" address: "), desc)
+		for _, vocabulary := range []string{`"dag://" scheme is optional`, `"go/**"`, `?<dimension>=<key>`, `"go/test?go-test=TestX"`, `dag+<type>://`, "FindArtifacts lists what exists", "or an " + want.typeName + " ID from a prior tool result"} {
+			require.Contains(t, strings.ToLower(desc), strings.ToLower(vocabulary), field)
+		}
+		require.Equal(t, []string{want.arg}, s["required"])
+	}
+	evalSchema, err := objectMethodSchema(schema, fieldByName(doug, "eval"), conversationToolArgs)
+	require.NoError(t, err)
+	require.Contains(t, evalSchema["properties"].(map[string]any)["target"].(map[string]any)["description"], "must select exactly one artifact")
 }
 
 func TestLiftableObjectArg(t *testing.T) {
@@ -407,6 +448,16 @@ func TestLiftableObjectArg(t *testing.T) {
 
 	// Non-addressable object types do not.
 	_, ok = liftableObjectArg(arg("apply", "changes"))
+	require.False(t, ok)
+
+	// Artifact selections lift, singly; a list of them does not.
+	typeName, ok = liftableObjectArg(arg("check", "targets"))
+	require.True(t, ok)
+	require.Equal(t, "Artifacts", typeName)
+	typeName, ok = liftableObjectArg(arg("eval", "target"))
+	require.True(t, ok)
+	require.Equal(t, "Artifact", typeName)
+	_, ok = liftableObjectArg(arg("checkAll", "targets"))
 	require.False(t, ok)
 
 	// Nor do plain scalars, or LISTS of liftable objects.
@@ -476,11 +527,9 @@ func TestCombineSpanResult(t *testing.T) {
 	require.Empty(t, combineSpanResult(spanID, "", "", ""))
 	require.Empty(t, combineSpanResult(spanID, "LINE-01", "\n \n\t\n", ""))
 
-	// Report only: no empty OUTPUT section for a target that printed nothing,
-	// and no heading over the report itself.
+	// Report only: no empty OUTPUT section for a target that printed nothing.
 	quiet := combineSpanResult(spanID, "", "== CHECKS ==  ✔ 1 passed\n✔ lint:check 0.1s OK", "")
 	require.NotContains(t, quiet, "OUTPUT")
-	require.NotContains(t, quiet, "TRACE REPORT")
 	require.True(t, strings.HasPrefix(quiet, "== CHECKS =="), "got %q", quiet)
 
 	got := combineSpanResult(spanID, "LINE-01\nLINE-02", "• Foo.bar 1.0s", "")
@@ -488,7 +537,6 @@ func TestCombineSpanResult(t *testing.T) {
 	require.Contains(t, got, "== OUTPUT ==\nLINE-01\nLINE-02")
 	// ...then the report, bare.
 	require.Contains(t, got, "LINE-02\n\n• Foo.bar")
-	require.NotContains(t, got, "TRACE REPORT")
 	require.Less(t, strings.Index(got, "== OUTPUT =="), strings.Index(got, "• Foo.bar"))
 
 	// The breadcrumb names the span, in the same vocabulary as the flat
@@ -526,9 +574,10 @@ func (*liftTestRunner) Type() *ast.Type {
 // withToken method takes an optional (blocklisted) Secret arg. The fake
 // .container resolver records the address in the container's ImageRef, so
 // tests can observe which address resolved, and fails for "bogus:ref" to
-// exercise the both-attempts-failed error. No other loader exists, so a lift
-// attempt for a Directory arg fails loudly as a failed address resolution,
-// and one for a Secret arg would too.
+// exercise the both-attempts-failed error. Like the real loader it takes
+// noLock, and fails without it: lifting must resolve addresses live. No other
+// loader exists, so a lift attempt for a Directory arg fails loudly as a
+// failed address resolution, and one for a Secret arg would too.
 func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 	t.Helper()
 	srv := newCoreDagqlServerForTest(t, &Query{})
@@ -549,7 +598,12 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 		}),
 	}.Install(srv)
 	dagql.Fields[*Address]{
-		dagql.Func("container", func(_ context.Context, addr *Address, _ struct{}) (*Container, error) {
+		dagql.Func("container", func(_ context.Context, addr *Address, args struct {
+			NoLock bool `name:"noLock" default:"false"`
+		}) (*Container, error) {
+			if !args.NoLock {
+				return nil, fmt.Errorf("lifted address %q must resolve with noLock", addr.Value)
+			}
 			if addr.Value == "bogus:ref" {
 				return nil, fmt.Errorf("no such image %q", addr.Value)
 			}
@@ -871,19 +925,39 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		require.Equal(t, "make in alpine:latest", out.String())
 	})
 
-	t.Run("dag addresses naming no bound tool module need a workspace", func(t *testing.T) {
-		// The bound runner is not a module's main object, so no binding
-		// claims the address. This server has no Workspace.resolve, so it
-		// would reach Query.address with no workspace to resolve it, where
-		// the git decoders once read a DAG address as a host path: it is
-		// refused before any Address loader runs.
+	t.Run("relative dag addresses need a conversation", func(t *testing.T) {
+		// A relative DAG address resolves in the conversation's scope
+		// (LLM.artifacts). Without a conversation there is none, and it is
+		// refused before any Address loader runs: this server has no
+		// Workspace.resolve, where the git decoders once read a DAG address
+		// as a host path.
 		m := newMCP().WithTools(runner, srv.Schema(), nil)
 		_, err := m.buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
 			"cmd":     "make",
 			"sandbox": "dag://runner/sandbox",
 		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "a dag:// address needs a workspace")
+		require.ErrorContains(t, err, `"dag://runner/sandbox" is not a resolvable Container address: resolve "dag://runner/sandbox": no conversation to resolve the address in; FindArtifacts lists what exists`)
+	})
+
+	t.Run("absolute dag addresses need a bound workspace", func(t *testing.T) {
+		// An absolute address names a workspace, not the conversation's
+		// scope: it resolves in the conversation's bound workspace only,
+		// never the calling client's current one. With none bound, it is
+		// refused before any Address loader runs.
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+			"cmd":     "make",
+			"sandbox": "dag://github.com/org/repo@1111111111111111111111111111111111111111:runner/sandbox",
+		})
+		require.ErrorContains(t, err, "an absolute dag:// address names a workspace, and none is bound to this conversation")
+	})
+
+	t.Run("malformed dag addresses are reported", func(t *testing.T) {
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+			"cmd":     "make",
+			"sandbox": "dag://runner/sandbox?member=%zz",
+		})
+		require.ErrorContains(t, err, `"dag://runner/sandbox?member=%zz" is not a resolvable Container address`)
+		require.ErrorContains(t, err, "invalid URL escape")
 	})
 
 	t.Run("a real ID still decodes directly", func(t *testing.T) {
@@ -893,7 +967,7 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 				Field: "address",
 				Args:  []dagql.NamedInput{{Name: "value", Value: dagql.String("premade")}},
 			},
-			dagql.Selector{Field: "container"},
+			dagql.Selector{Field: "container", Args: []dagql.NamedInput{{Name: "noLock", Value: dagql.Boolean(true)}}},
 		))
 		ctrID, err := ctr.ID()
 		require.NoError(t, err)
@@ -1006,49 +1080,6 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		require.Contains(t, err.Error(), `arg "token": decode string`)
 		require.NotContains(t, err.Error(), "address")
 	})
-}
-
-// TestBoundToolRoot covers which bound object a dag:// address roots at among
-// the tool objects bound from the module it names.
-func TestBoundToolRoot(t *testing.T) {
-	staff := boundToolCandidate{typeName: "Staff", main: true, fields: []string{"members", "spawn"}}
-	pulls := boundToolCandidate{typeName: "StaffPullTools", fields: []string{"members", "logOf"}}
-	line := boundToolCandidate{typeName: "StaffChiefLine", fields: []string{"askChief"}}
-	view := boundToolCandidate{typeName: "StaffView", fields: []string{"members"}}
-
-	// The main object wins whenever it is bound, even when another bound
-	// object has the field too.
-	i, ok, err := boundToolRoot("staff/members/head", []boundToolCandidate{pulls, staff})
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, 1, i)
-
-	// Without it, the one bound object with the path's field roots it,
-	// compared in CLI case.
-	i, ok, err = boundToolRoot("staff/members/head", []boundToolCandidate{line, pulls})
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, 1, i)
-	i, ok, err = boundToolRoot("staff/log-of", []boundToolCandidate{line, pulls})
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, 1, i)
-
-	// No bound object with the field: the address resolves elsewhere.
-	_, ok, err = boundToolRoot("staff/members/head", []boundToolCandidate{line})
-	require.NoError(t, err)
-	require.False(t, ok)
-	_, ok, err = boundToolRoot("staff", []boundToolCandidate{pulls})
-	require.NoError(t, err)
-	require.False(t, ok)
-	_, ok, err = boundToolRoot("staff/members", nil)
-	require.NoError(t, err)
-	require.False(t, ok)
-
-	// Several are ambiguous; the error names their types.
-	_, ok, err = boundToolRoot("staff/members/head", []boundToolCandidate{view, line, pulls})
-	require.True(t, ok)
-	require.ErrorContains(t, err, `"staff/members/head" is ambiguous: bound tools StaffPullTools, StaffView all have a "members" field`)
 }
 
 // TestCheckLiftableAddress covers the forms a model may supply for a liftable

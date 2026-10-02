@@ -5232,7 +5232,6 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		require.NotEqual(t, output2a, output2b)
 
 		// we only changed /tmpdir/b/f, so the execs that included /tmpdir/a/f should be cached across clients
-		// this is the assertion that failed before the fix this test was added for
 		require.Equal(t, output1a, output2a)
 		// and the execs that included /tmpdir/b/f should not be cached across clients since we modified that file
 		require.NotEqual(t, output1b, output2b)

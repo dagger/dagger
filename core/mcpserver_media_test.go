@@ -48,10 +48,10 @@ func TestMCPToolResultPreservesTypedMedia(t *testing.T) {
 		Text:    "legacy",
 		Errored: true,
 		Content: []*LLMContentBlock{
-			{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
+			{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 			{Kind: LLMContentText, Text: "caption"},
-			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: "YXVkaW8="},
-			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "cGRm"},
+			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("audio")},
+			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("pdf")},
 		},
 	}
 	for _, input := range []any{input, *input, []*LLMContentBlock{input}} {
@@ -101,7 +101,7 @@ func TestMCPToolResultRejectsInvalidTypedContent(t *testing.T) {
 	for _, input := range []any{
 		(*mcpsdk.CallToolResult)(nil),
 		(*LLMContentBlock)(nil),
-		&LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "invalid!"},
+		&LLMContentBlock{Kind: LLMContentImage, MIMEType: "text/plain", Data: []byte("invalid")},
 		&LLMContentBlock{Kind: LLMContentThinking, Text: "not tool output"},
 		&LLMContentBlock{Kind: "UNKNOWN"},
 		&LLMContentBlock{Kind: LLMContentToolResult, Content: []*LLMContentBlock{{Kind: LLMContentToolCall}}},

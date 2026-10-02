@@ -1,0 +1,22 @@
+"""
+Tools taking artifact selections, for the tool-argument lifting tests: the
+model passes a DAG address, and the tool receives the selection it names in
+the conversation's scope, which it evaluates itself.
+"""
+type Inspector {
+  """
+  Read every selected file artifact.
+  """
+  readAll(targets: Artifacts!): String! {
+    targets.items.{{id, uri}}.map { a =>
+      a.uri + ": " + node(id: a.id).{{... on Artifact!}}.value.{{... on File!}}.contents
+    }.join("\n")
+  }
+
+  """
+  Read one file artifact.
+  """
+  read(target: Artifact!): String! {
+    "read: " + target.value.{{... on File!}}.contents
+  }
+}

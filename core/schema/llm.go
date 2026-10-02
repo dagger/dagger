@@ -32,6 +32,34 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls for this LLM").
 					View(BeforeVersion("v1.0.0-0")),
 			),
+		dagql.Func("llmContent", s.llmContent).
+			View(AfterVersion("v1.0.0-0")).
+			Experimental("LLM support is not yet stabilized").
+			Doc(`Start an empty run of text and media content, independent of any conversation.`,
+				`Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.`),
+	}.Install(srv)
+	// Like the content-block message model below, the content builder is only
+	// visible to v1+ views.
+	srv.InstallObject(dagql.NewClass[*core.LLMContent](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.LLMContent]{
+		dagql.Func("withText", s.llmContentWithText).
+			Doc(`Append a block of text.`).
+			Args(
+				dagql.Arg("text").Doc("The text."),
+			),
+		dagql.Func("withFile", s.llmContentWithFile).
+			Doc(`Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.`).
+			Args(
+				dagql.Arg("file").Doc("The media file. Its contents become the block's inline bytes."),
+				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.`),
+			),
+		dagql.Func("withData", s.llmContentWithData).
+			Doc(`Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.`,
+				`Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.`).
+			Args(
+				dagql.Arg("data").Doc("The media bytes."),
+				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png".`),
+			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
 		dagql.NodeFunc("compose", s.compose).
@@ -77,6 +105,17 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("workspace", s.workspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the workspace the LLM is bound to."),
+		// No per-call input: the scope depends only on the receiver, whose
+		// ID records its bound tools and bound workspace, and the selection
+		// is lazy, so it caches like any other field.
+		dagql.Func("artifacts", s.artifacts).
+			View(AfterVersion("v1.0.0-0")).
+			Experimental("Agent APIs are likely to change.").
+			Doc("Discover every artifact this conversation can address, as one selection, without evaluating their values.",
+				"Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.",
+				"The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.",
+				"Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.").
+			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.")),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
 			Args(
@@ -107,12 +146,12 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")).
 					Doc("The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time."),
 			),
-		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
+		dagql.NodeFunc("__mcp", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.Nullable[core.Void], error) {
 			currentSrv, err := core.CurrentDagqlServer(ctx)
 			if err != nil {
 				return dagql.Null[core.Void](), err
 			}
-			return dagql.Null[core.Void](), self.MCP(ctx, currentSrv)
+			return dagql.Null[core.Void](), self.Self().MCP(ctx, currentSrv, self)
 		}).
 			Doc("instantiates an mcp server"),
 		dagql.Func("withContent", s.withContent).
@@ -332,6 +371,16 @@ func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{})
 	return ws, nil
 }
 
+func (s *llmSchema) artifacts(ctx context.Context, llm *core.LLM, args struct {
+	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+}) (*core.Artifacts, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return llm.Artifacts(ctx, srv, workspaceIncludePatterns(args.Include))
+}
+
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
 	ep, err := llm.Endpoint(ctx)
 	if err != nil {
@@ -428,6 +477,40 @@ func resolveLLMContent(ctx context.Context, inputs []dagql.InputObject[core.LLMC
 		return nil, err
 	}
 	return blocks, nil
+}
+
+func (s *llmSchema) llmContent(ctx context.Context, _ *core.Query, _ struct{}) (*core.LLMContent, error) {
+	return &core.LLMContent{}, nil
+}
+
+func (s *llmSchema) llmContentWithText(ctx context.Context, content *core.LLMContent, args struct {
+	Text string
+}) (*core.LLMContent, error) {
+	return content.WithBlock(&core.LLMContentBlock{Kind: core.LLMContentText, Text: args.Text})
+}
+
+// llmContentWithFile resolves the file to inline bytes exactly as
+// LLM.withContentFile does, so the media kind is inferred the same way.
+func (s *llmSchema) llmContentWithFile(ctx context.Context, content *core.LLMContent, args struct {
+	File     core.FileID
+	MIMEType string `name:"mimeType" default:""`
+}) (*core.LLMContent, error) {
+	block, err := core.LLMContentFromFile(ctx, args.File, args.MIMEType)
+	if err != nil {
+		return nil, err
+	}
+	return content.WithBlock(block)
+}
+
+func (s *llmSchema) llmContentWithData(ctx context.Context, content *core.LLMContent, args struct {
+	Data     dagql.Bytes
+	MIMEType string `name:"mimeType"`
+}) (*core.LLMContent, error) {
+	block, err := core.LLMContentFromBytes(args.Data, args.MIMEType)
+	if err != nil {
+		return nil, err
+	}
+	return content.WithBlock(block)
 }
 
 func (s *llmSchema) withContent(ctx context.Context, llm *core.LLM, args struct {

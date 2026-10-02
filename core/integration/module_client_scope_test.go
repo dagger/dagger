@@ -140,7 +140,7 @@ func (GeneratorsSuite) TestModuleClientAddScopeSelection(ctx context.Context, t 
 			config:  moduleClientScopeConfig + "\n[sdks.go.scopes.app]\nclients = [\"./target\"]\n",
 			wantErr: `client target "./target" already exists in SDK "go" scope "app"`},
 		{name: "SDK settings flag", args: []string{"--starter=empty"}, wantErr: "unknown flag: --starter"},
-		{name: "old SDK argument", args: []string{"go"}, wantErr: "accepts 1 arg(s), received 2"},
+		{name: "positional SDK argument", args: []string{"go"}, wantErr: "accepts 1 arg(s), received 2"},
 	} {
 		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
 			ctr := base

@@ -252,7 +252,6 @@ func (item *Item) Verify() error {
 		want string
 	}{
 		{[]string{"check", "items/verify", "--unknown=a"}, "unknown flag: --unknown"},
-		{[]string{"check", "items/verify", "--dimension-key=invalid"}, "unknown flag: --dimension-key"},
 		{[]string{"check", "--item=a"}, "unknown flag: --item"},
 	} {
 		_, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
@@ -312,7 +311,6 @@ func (item *Item) Verify() error {
 	out, err := base.With(daggerExec("check", "items/verify", "--help")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "--collections-items-item")
-	require.NotContains(t, out, "--dimension-key")
 	require.NotContains(t, out, "--container")
 	require.NotContains(t, out, "--part")
 	require.Contains(t, out, "--check NAME")

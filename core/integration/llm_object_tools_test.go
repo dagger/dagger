@@ -11,6 +11,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -25,8 +26,7 @@ import (
 
 // TestObjectToolset locks in that the LLM's tools come from the objects it's
 // bound to via withTools — one tool per eligible method — and not from the raw
-// workspace schema. A bare llm (nothing bound) has no acting tools; the retired
-// Dang scheme's dang_eval/inspect are gone from the default toolset.
+// workspace schema. A bare llm (nothing bound) has no acting tools.
 func (LLMSuite) TestObjectToolset(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-managed")
@@ -36,10 +36,6 @@ func (LLMSuite) TestObjectToolset(ctx context.Context, t *testctx.T) {
 		// but binds no object as tools, so it acts through nothing until withTools.
 		tools, err := base.With(daggerShell("llm | tools")).Stdout(ctx)
 		require.NoError(t, err)
-
-		// The retired Dang scheme's tools are no longer the default interface.
-		require.NotContains(t, tools, "## dang_eval\n")
-		require.NotContains(t, tools, "## inspect\n")
 
 		// The workspace's served functions are not exposed as tools on their own —
 		// a model reaches a method only once its object is bound via withTools.
@@ -57,10 +53,8 @@ func (LLMSuite) TestObjectToolset(ctx context.Context, t *testctx.T) {
 		require.Contains(t, tools, "## greet\n")
 
 		// greeter is the Query-root constructor, not a method of the bound object,
-		// so it is not a tool. Nor is the retired Dang harness present.
+		// so it is not a tool.
 		require.NotContains(t, tools, "## greeter\n")
-		require.NotContains(t, tools, "## dang_eval\n")
-		require.NotContains(t, tools, "## inspect\n")
 	})
 
 	t.Run("except hides methods from the toolset", func(ctx context.Context, t *testctx.T) {
@@ -1054,7 +1048,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		continued := strings.Join([]string{
 			"[continued via tool startFresh]",
 			"Continuing from the returned conversation.",
-			"Toolset unchanged (21 tools).",
+			"Toolset unchanged (22 tools).",
 			"Conversation history replaced: 2 messages -> 0 messages.",
 		}, "\n")
 		continuationModel := cannedRecordingModel(ctx, t, c, c.LLM().
@@ -1312,7 +1306,8 @@ type Swapper {
 }
 
 // TestBoundToolAddresses covers dag:// addresses at tool dispatch that name a
-// module bound as a tool (MCP.resolveBoundToolAddress): the path is evaluated
+// module bound as a tool: they resolve in the conversation's scope
+// (LLM.artifacts), where the path is evaluated
 // from the LIVE bound object, so it sees state a fresh constructor lacks, and
 // collection items take their key from the address's dimension query.
 func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
@@ -1378,6 +1373,145 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 			`current-workspace | resolve "dag://roster/members/dir?member=a" | directory | entries`,
 		)).Stdout(ctx)
 		requireErrOut(t, err, `resolve "dag://roster/members/dir?member=a": no artifact matches`)
+	})
+
+	t.Run("selection args take addresses in the conversation's scope", func(ctx context.Context, t *testctx.T) {
+		// Artifacts and Artifact args lift a DAG address — scheme optional,
+		// the path a glob — into the part of the conversation's scope it
+		// selects, which the module function then evaluates itself.
+		const prompt = "read the notes"
+		const notes = "hello from the roster | workspace readme"
+		script := c.LLM().WithPrompt(prompt).
+			// Rebind and read in one turn: the read sees the new member.
+			WithResponse([]dagger.LLMContentBlockInput{
+				toolCall("add", "withMember", `{"name":"a","contents":"hello from the roster"}`),
+				toolCall("all", "readAll", `{"targets":"roster/**/notes"}`),
+			}).
+			WithToolResult("add", "", false).
+			WithToolResult("all", "", false)
+		for _, call := range []struct {
+			block   dagger.LLMContentBlockInput
+			isError bool
+		}{
+			{block: toolCall("one", "read", `{"target":"roster/members/notes?member=a"}`)},
+			{block: toolCall("typed", "read", `{"target":"dag+file://roster/members/notes?member=a"}`)},
+			{block: toolCall("many", "read", `{"target":"roster/members/*"}`), isError: true},
+			{block: toolCall("nobody", "readAll", `{"targets":"roster/members/notes?member=nobody"}`), isError: true},
+		} {
+			script = script.
+				WithResponse([]dagger.LLMContentBlockInput{call.block}).
+				WithToolResult(call.block.CallID, "", call.isError)
+		}
+		model := cannedRecordingModel(ctx, t, c, script.WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+		tools, err := base.With(daggerShell("llm | with-tools $(inspector) | tools")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, tools, "## readAll\n")
+		require.Contains(t, tools, "(Artifacts address:")
+		require.Contains(t, tools, "## read\n")
+		require.Contains(t, tools, "(Artifact address:")
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(roster) | with-tools $(inspector) | with-prompt "%s" | loop | transcript`,
+			model, prompt,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The bare glob selects the bound roster's notes, member a included:
+		// the rebinding earlier in the turn is in scope. Evaluated inside the
+		// module function, the notes still get the conversation's workspace.
+		require.Contains(t, out, "dag://roster/members/notes?member=a: "+notes, out)
+		// A keyed address, with or without a type assertion, picks one.
+		require.Equal(t, 2, strings.Count(out, "read: "+notes), out)
+		// An Artifact must be exactly one: several matches are listed.
+		require.Contains(t, out, `"roster/members/*" is not a resolvable Artifact address: dag://roster/members/* matches 2 artifacts`)
+		require.Contains(t, out, "dag://roster/members/dir?member=a")
+		require.Contains(t, out, "FindArtifacts lists what exists")
+		// A collection path with an unknown key has no items: refused, not
+		// handed to the function as an empty selection.
+		require.Contains(t, out, `"roster/members/notes?member=nobody" is not a resolvable Artifacts address: no artifact matches dag://roster/members/notes?member=nobody`)
+		require.Contains(t, out, "done")
+	})
+
+	t.Run("the LLM scope has the bound tools' live artifacts", func(ctx context.Context, t *testctx.T) {
+		const setup = `roster=$(roster | with-member --name a --contents "hello from the roster")
+scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $roster | artifacts)
+`
+		run := func(ctx context.Context, t *testctx.T, script string) string {
+			t.Helper()
+			out, err := base.With(daggerShell(setup + script)).Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+		// The collection's keys come from the bound roster's state...
+		require.Equal(t, "dag://roster/members/dir?member=a\n",
+			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir" | items | uri`))
+		// ...and so does the value.
+		require.Equal(t, "hello from the roster",
+			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir?member=a" | one | value | file f | contents`))
+		// The workspace's other modules are in scope, constructed fresh.
+		require.Equal(t, "dag://notes/docs\n",
+			run(ctx, t, `$scope | filter-uri "dag://notes/**" | items | uri`))
+		require.Equal(t, "README\n",
+			run(ctx, t, `$scope | filter-uri "dag://notes/docs" | one | value | entries`))
+		// The workspace's own roster is shadowed by the bound one: the
+		// collection is listed once, not once per roster.
+		require.Equal(t, "dag://roster/members\n",
+			run(ctx, t, `$scope | filter-uri "dag://roster/members" | items | uri`))
+	})
+
+	t.Run("the LLM scope's workspace part is the bound workspace's", func(ctx context.Context, t *testctx.T) {
+		// A bound workspace's roster is constructed fresh: it has no members.
+		out, err := base.With(daggerShell(
+			`llm | with-workspace --workspace $(current-workspace) | artifacts | filter-uri "dag://roster/members/dir" | items | uri`,
+		)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, out)
+		// Without a bound workspace, the scope has no workspace part: the
+		// calling client's current workspace is not the conversation's.
+		out, err = base.With(daggerShell(
+			`llm | artifacts | filter-uri "dag://{notes,roster}/**" | path-definitions | uri`,
+		)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, out)
+		// Bound tools are in scope all the same.
+		out, err = base.With(daggerShell(
+			`llm | with-tools $(roster) | artifacts | filter-uri "dag://{notes,roster}/**" | path-definitions | uri`,
+		)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "dag://roster/members\n")
+		require.NotContains(t, out, "dag://notes/")
+	})
+
+	t.Run("a freshly constructed binding yields to the workspace", func(ctx context.Context, t *testctx.T) {
+		// Only a workspace artifact has an absolute address, so it tells
+		// which roster the scope kept. The fixture is a local workspace,
+		// which has no Git address either: a workspace artifact fails on
+		// that instead, past the check that refuses a bound one.
+		absolute := func(ctx context.Context, t *testctx.T, roster string) string {
+			t.Helper()
+			out, err := base.With(daggerShell(
+				`llm | with-workspace --workspace $(current-workspace) | with-tools $(` + roster + `) | artifacts | filter-uri "dag://roster/members" | items | uri --absolute`,
+			)).Stdout(ctx)
+			if err != nil {
+				var execErr *dagger.ExecError
+				if errors.As(err, &execErr) {
+					return execErr.Stderr
+				}
+				return err.Error()
+			}
+			return out
+		}
+		// A plain construction has the workspace's values: the workspace's
+		// roster stays, as `dagger mcp` binds every workspace module so.
+		fresh := absolute(ctx, t, "roster")
+		require.Contains(t, fresh, "has no Git address")
+		require.NotContains(t, fresh, "not a workspace artifact")
+		// A roster with state of its own shadows it.
+		stateful := absolute(ctx, t, `roster | with-member --name a --contents x`)
+		require.Contains(t, stateful, "not a workspace artifact")
+		require.NotContains(t, stateful, "has no Git address")
 	})
 }
 
@@ -1466,6 +1600,30 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		require.Contains(t, transcript, "+from the chief")
 	})
 
+	t.Run("FindArtifacts discovers the address", func(ctx context.Context, t *testctx.T) {
+		// The model looks for GitRefs, lists the heads' keyed addresses, and
+		// passes the chief's to a GitRef-taking tool.
+		const prompt = "find the chief's work"
+		model := conversation(prompt,
+			toolCall("find", "FindArtifacts", `{"type":"GitRef"}`),
+			toolCall("items", "FindArtifacts", `{"address":"roster/members/head","view":"items"}`),
+			toolCall("show", "show", `{"from":"dag+git-ref://roster/members/head?member=chief"}`),
+		)
+		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
+		// The path, with a placeholder for the member it needs, is marked as
+		// read from the bound roster...
+		require.Contains(t, transcript,
+			"dag+git-ref://roster/members/head?member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+		// ...followed by the live members' keys, so the model needs no
+		// second call to learn them...
+		require.Contains(t, transcript, "member=<name> — keys: chief")
+		// ...and the items are its live members, fully keyed.
+		require.Contains(t, transcript,
+			"dag+git-ref://roster/members/head?member=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+		require.Contains(t, transcript, "commit "+chiefSHA)
+		require.Contains(t, transcript, "+from the chief")
+	})
+
 	t.Run("an LLM-returning tool advances the bound workspace", func(ctx context.Context, t *testctx.T) {
 		// adopt returns an LLM: a continuation the loop resumes from, with
 		// the chief's commits in its workspace.
@@ -1480,6 +1638,63 @@ roster=$(roster | with-worker --name chief --worker $chief)
 			run(ctx, t, chat(model, "$roster", prompt)+" | workspace | git | head | commit-sha")))
 		require.Equal(t, "from the chief", strings.TrimSpace(
 			run(ctx, t, chat(model, "$roster", prompt)+" | workspace | file chief.txt | contents")))
+	})
+}
+
+// TestFindArtifacts covers the FindArtifacts builtin over a bound workspace: a
+// module that fails to load is listed with its error rather than failing the
+// listing, like `dagger check -l`.
+func (LLMSuite) TestFindArtifacts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// The shell skips loading the workspace's modules (-M): it cannot load a
+	// broken one. Workspace.artifacts still discovers them, best effort.
+	//
+	// The conversation is bound to the live workspace, whose modules
+	// MCP.baseServer loads best effort: the broken one is skipped rather than
+	// failing every step, so FindArtifacts can list it as a load failure.
+	base := workspaceFixture(t, c, "generators-broken")
+	const bind = `with-workspace --workspace $(current-workspace)`
+
+	t.Run("a bound workspace makes it a tool", func(ctx context.Context, t *testctx.T) {
+		// Listing tools succeeds despite the broken module.
+		tools, err := base.With(daggerShellNoMod("llm | " + bind + " | tools")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, tools, "## FindArtifacts\n")
+		// An unbound LLM has an empty scope: nothing to find.
+		tools, err = base.With(daggerShellNoMod("llm | tools")).Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, tools, "## FindArtifacts\n")
+	})
+
+	t.Run("checks and load errors are listed", func(ctx context.Context, t *testctx.T) {
+		const prompt = "which checks are there?"
+		script := c.LLM().WithPrompt(prompt)
+		for i, args := range []string{`{}`, `{"type":"Check"}`} {
+			id := fmt.Sprintf("find_%d", i)
+			script = script.
+				WithResponse([]dagger.LLMContentBlockInput{
+					{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: "FindArtifacts", Arguments: dagger.JSON(args)},
+				}).
+				WithToolResult(id, "", false)
+		}
+		model := cannedRecordingModel(ctx, t, c, script.WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+		out, err := base.With(daggerShellNoMod(fmt.Sprintf(
+			`llm --model="%s" | %s | with-prompt "%s" | loop | transcript`, model, bind, prompt,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The overview counts the loaded module's artifacts by type and names
+		// the module that failed to load.
+		require.Contains(t, out, "Check (")
+		require.Contains(t, out, "Service (1): good")
+		require.Contains(t, out, "Modules that failed to load")
+		// The checks: the loaded module's, and the load failure in place of
+		// the broken module's.
+		require.Contains(t, out, "dag+check://good/verify — A trivial check. Used to prove the module loaded for `dagger check`.")
+		require.Contains(t, out, "dag+check://bad/load — LOAD ERROR: ")
+		require.NotContains(t, out, "dag+service://good/web —")
+		require.Contains(t, out, "done")
 	})
 }
 

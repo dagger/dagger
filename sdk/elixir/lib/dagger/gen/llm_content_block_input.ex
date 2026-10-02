@@ -10,7 +10,7 @@ defmodule Dagger.LLMContentBlockInput do
           arguments: Dagger.JSON.t() | nil,
           call_id: String.t() | nil,
           content: [Dagger.LLMContentBlockInput.t()],
-          data: String.t() | nil,
+          data: Dagger.Bytes.t() | nil,
           errored: boolean() | nil,
           file: String.t() | nil,
           kind: Dagger.LLMContentBlockKind.t(),

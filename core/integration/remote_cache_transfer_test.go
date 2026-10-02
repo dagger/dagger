@@ -238,9 +238,9 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				operational = b.client.ModuleSource(".").AsModule()
 				operational, err = operational.Sync(ctx)
 				require.NoError(t, err)
-				// Schema Files now use FileBlobLazy, so warming the SDK no longer
-				// evaluates an ordinary empty Directory as an incidental input.
-				// Warm that local donor explicitly for both import orders.
+				// Warming the SDK does not evaluate an empty Directory (schema
+				// Files are FileBlobLazy blobs), so warm that local donor
+				// explicitly for both import orders.
 				warmScratch, err := b.client.Directory().Sync(ctx)
 				require.NoError(t, err)
 				warmScratchID, err := warmScratch.ID(ctx)

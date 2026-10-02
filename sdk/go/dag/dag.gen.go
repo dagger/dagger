@@ -216,6 +216,16 @@ func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	return client.LLM(opts...)
 }
 
+// Start an empty run of text and media content, independent of any conversation.
+//
+// Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+//
+// Experimental: LLM support is not yet stabilized
+func LLMContent() *dagger.LLMContent {
+	client := initClient()
+	return client.LLMContent()
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()

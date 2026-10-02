@@ -7,9 +7,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -257,6 +260,74 @@ func TestArchiveDiscoveryIsReadOnlyAndPaginated(t *testing.T) {
 	require.Contains(t, out.String(), "other", "a bare -r lists every retained archive")
 	require.NotContains(t, out.String(), "\x1b")
 	require.Contains(t, out.String(), `title\n\x1b[31m`)
+}
+
+type fakeArchiveLister []archive.Manifest
+
+func (f fakeArchiveLister) ListAll(context.Context, archive.ListOptions) ([]archive.Manifest, error) {
+	return slices.Clone(f), nil
+}
+
+func archiveListFixture() fakeArchiveLister {
+	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	return fakeArchiveLister{
+		{TraceID: "a0", State: archive.StateClosed, Title: "oldest", StartedAt: base},
+		{TraceID: "a1", State: archive.StateActive, Title: "live", StartedAt: base.Add(4 * time.Hour)},
+		{TraceID: "a2", State: archive.StateInterrupted, Title: "crashed", StartedAt: base.Add(3 * time.Hour)},
+		{TraceID: "a3", State: archive.StateFinalizing, Title: "closing", StartedAt: base.Add(5 * time.Hour)},
+		{TraceID: "a4", State: archive.StateClosed, Title: "middle\n\x1b[31m", StartedAt: base.Add(time.Hour)},
+		{TraceID: "a5", State: archive.StateClosed, StartedAt: base.Add(2 * time.Hour)},
+	}
+}
+
+func TestArchiveListIsMostRecentFirst(t *testing.T) {
+	var out bytes.Buffer
+	require.NoError(t, listAgentArchives(t.Context(), archiveListFixture(), &out))
+	var order []string
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n")[1:] {
+		order = append(order, strings.Fields(line)[0])
+	}
+	require.Equal(t, []string{"a3", "a1", "a2", "a5", "a4", "a0"}, order)
+}
+
+func TestArchivePickerOffersResumableSessionsNewestFirst(t *testing.T) {
+	var offered []huh.Option[string]
+	picked, err := pickAgentArchive(t.Context(), archiveListFixture(), func(_ context.Context, options []huh.Option[string]) (string, error) {
+		offered = options
+		return options[1].Value, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "a5", picked)
+	var values []string
+	for _, option := range offered {
+		values = append(values, option.Value)
+	}
+	require.Equal(t, []string{"a2", "a5", "a4", "a0"}, values, "running sessions are not offered")
+	require.Contains(t, offered[0].Key, "crashed [interrupted]")
+	require.Contains(t, offered[1].Key, "(untitled)")
+	require.Contains(t, offered[2].Key, "middle [31m")
+	require.NotContains(t, offered[2].Key, "\x1b")
+	require.NotContains(t, offered[2].Key, "\n")
+	require.True(t, strings.HasSuffix(offered[3].Key, "  a0"), "the trace ID is filterable")
+}
+
+func TestArchivePickerDismissedOrEmpty(t *testing.T) {
+	picked, err := pickAgentArchive(t.Context(), archiveListFixture(), func(context.Context, []huh.Option[string]) (string, error) {
+		return "", nil
+	})
+	require.NoError(t, err)
+	require.Empty(t, picked)
+
+	_, err = pickAgentArchive(t.Context(), fakeArchiveLister{{TraceID: "a1", State: archive.StateActive}}, func(context.Context, []huh.Option[string]) (string, error) {
+		t.Fatal("no picker without resumable sessions")
+		return "", nil
+	})
+	require.ErrorContains(t, err, "no agent sessions to resume")
+}
+
+func TestArchiveLabelTruncatesLongTitles(t *testing.T) {
+	label := archiveLabel(archive.Manifest{TraceID: "t", Title: strings.Repeat("x", 100), StartedAt: time.Date(2026, 9, 1, 12, 34, 0, 0, time.UTC)}, time.UTC)
+	require.Equal(t, "2026-09-01 12:34  "+strings.Repeat("x", archiveLabelTitleMax-1)+"…  t", label)
 }
 
 func TestArchivePromptDoesNotWaitForHistory(t *testing.T) {
