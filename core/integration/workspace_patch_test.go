@@ -223,6 +223,62 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileHost(ctx context.Context, t *tes
 	}, status)
 }
 
+// TestWorkspaceWithPatchFileCreatesExisting creates a file the workspace
+// already has: as with `git apply`, it fails, under LEAVE_CONFLICT_MARKERS
+// too, since conflict markers cannot express it — whether the workspace is a
+// value or host-backed, where the overlay the patch applies to does not hold
+// the host's file.
+func (WorkspaceSuite) TestWorkspaceWithPatchFileCreatesExisting(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	writeTestFile(t, checkout, "exists.txt", "host\n")
+	writeTestFile(t, checkout, "from.txt", strings.Repeat("renamed content\n", 20))
+	writeTestFile(t, checkout, "onto.txt", "host\n")
+	git("add", "-A")
+	git("commit", "-m", "patch fixture")
+
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	newFile := c.Directory().WithNewFile("change.patch", gitPatch(ctx, t, nil, func(dir string) {
+		writeTestFile(t, dir, "exists.txt", "patch\n")
+	})).File("change.patch")
+	renamed := map[string]string{"from.txt": strings.Repeat("renamed content\n", 20)}
+	rename := c.Directory().WithNewFile("change.patch", gitPatch(ctx, t, renamed, func(dir string) {
+		require.NoError(t, os.Rename(filepath.Join(dir, "from.txt"), filepath.Join(dir, "onto.txt")))
+	})).File("change.patch")
+	markers := dagger.WorkspaceWithPatchFileOpts{OnConflict: dagger.PatchConflictLeaveConflictMarkers}
+
+	value := c.Directory().
+		WithNewFile("exists.txt", "host\n").
+		WithNewFile("from.txt", renamed["from.txt"]).
+		WithNewFile("onto.txt", "host\n").
+		AsWorkspace()
+	for name, ws := range map[string]*dagger.Workspace{
+		"value workspace": value,
+		"host workspace":  c.CurrentWorkspace(),
+	} {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			for _, patch := range []*dagger.File{newFile, rename} {
+				_, err := ws.WithPatchFile(patch).File("/exists.txt").Contents(ctx)
+				require.Error(t, err)
+
+				_, err = ws.WithPatchFile(patch, markers).File("/exists.txt").Contents(ctx)
+				require.ErrorContains(t, err, "already exists in working directory")
+				require.ErrorContains(t, err, "could not be patched at all")
+			}
+
+			// A file an earlier edit removed is free to create.
+			got, err := ws.WithoutFile("exists.txt").WithPatchFile(newFile).File("/exists.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "patch\n", got)
+		})
+	}
+
+	err := c.CurrentWorkspace().WithPatchFile(newFile).Export(ctx)
+	require.ErrorContains(t, err, "exists.txt: already exists in working directory")
+	got, err := os.ReadFile(filepath.Join(checkout, "exists.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "host\n", string(got), "the host file must not be overwritten")
+}
+
 // TestWorkspaceWithPatchFileHostMount refuses a patch under a mount of a
 // host-backed workspace too.
 func (WorkspaceSuite) TestWorkspaceWithPatchFileHostMount(ctx context.Context, t *testctx.T) {
