@@ -1194,8 +1194,12 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 //
 //   - A host-backed workspace reads the client's checkout, so a conversation
 //     built on one cannot be reproduced anyway: the raw changeset is applied.
-//   - Otherwise the workspace is already in the engine, and the changeset is
-//     applied as a patch rendered against it (Changeset.RenderPatchOnto) with
+//   - Otherwise the workspace is already in the engine. A changeset built only
+//     from its state and pure Directory and File operations, like a file
+//     edit's, is cheap to replay: it is recorded as After.changes(from:
+//     Before), which drops just the tool call (unwrapPureChangeset).
+//   - Any other changeset (a generator's, a command's) is applied as a patch
+//     rendered against the workspace (Changeset.RenderPatchOnto) with
 //     Workspace.__withPatch. The recorded overlay is the prior workspace plus
 //     the patch: the producer is not replayed, and applying it compares no
 //     trees. The patch is also what the model is shown.
@@ -1215,6 +1219,12 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	}
 	ws := m.workspace.Self()
 	if root, ok := ws.SourceDirectory(); ok && !ws.ClientLocalBase() {
+		if unwrapped, ok := m.unwrapPureChangeset(ctx, srv, root, changes); ok {
+			if err := m.overlayChangeset(ctx, srv, unwrapped); err != nil {
+				return "", err
+			}
+			return m.summarizePatch(ctx, srv, changes), nil
+		}
 		return m.applyChangesetPatch(ctx, srv, root, changes)
 	}
 	if err := m.overlayChangeset(ctx, srv, changes); err != nil {
@@ -1242,6 +1252,61 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 	m.workspace = newWS
 	m.markStateChanged()
 	return nil
+}
+
+// unwrapPureChangeset returns After.changes(from: Before) for a changeset
+// built only from the bound workspace's state (the workspace, its root tree
+// and its mounts) and pure Directory and File operations on it (see
+// impureChangesetRecipe), like a file edit's. Replaying that is cheap, and a
+// patch would only cost a render, so only the call that returned the
+// changeset — the tool — is dropped from the recipe. It reports false for any
+// other changeset.
+func (m *MCP) unwrapPureChangeset(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], bool) {
+	var unwrapped dagql.ObjectResult[*Changeset]
+	before, after := changes.Self().Before, changes.Self().After
+	if before.Self() == nil || after.Self() == nil {
+		return unwrapped, false
+	}
+	// Results' IDs are handles: classify their recipes. A workspace read may
+	// return the root tree or the mounts themselves, so they are leaves too.
+	leaves := map[digest.Digest]bool{}
+	addLeaf := func(dgst digest.Digest, err error) bool {
+		leaves[dgst] = err == nil
+		return err == nil
+	}
+	if !addLeaf(m.workspace.RecipeDigest(ctx)) || !addLeaf(root.RecipeDigest(ctx)) {
+		return unwrapped, false
+	}
+	if mounts, ok := m.workspace.Self().MountsDir(); ok && !addLeaf(mounts.RecipeDigest(ctx)) {
+		return unwrapped, false
+	}
+	beforeRecipe, err := before.RecipeID(ctx)
+	if err != nil {
+		return unwrapped, false
+	}
+	afterRecipe, err := after.RecipeID(ctx)
+	if err != nil {
+		return unwrapped, false
+	}
+	if blocker := impureChangesetRecipe(leaves, beforeRecipe, afterRecipe); blocker != "" {
+		slog.Debug("changeset recipe is not pure; applying it as a patch", "call", blocker)
+		return unwrapped, false
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return unwrapped, false
+	}
+	if err := srv.Select(ctx, after, &unwrapped, dagql.Selector{
+		View:  srv.View,
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
+		},
+	}); err != nil {
+		slog.Debug("cannot unwrap pure changeset; applying it as a patch", "error", err)
+		return unwrapped, false
+	}
+	return unwrapped, true
 }
 
 // applyChangesetPatch applies a changeset to an in-engine workspace as a patch
