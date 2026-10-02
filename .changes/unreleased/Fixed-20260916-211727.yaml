@@ -1,0 +1,6 @@
+kind: Fixed
+body: When a single generator produces changes, `dagger generate` no longer routes them through a Git merge. Generated file permissions and empty directories are preserved, and generating is much faster for generators that write large outputs.
+time: 2026-09-16T21:17:27-07:00
+custom:
+    Author: grouville
+    PR: "14184"
