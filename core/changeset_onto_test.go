@@ -14,8 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// applyPatchOnto applies a rendered patch to dir the way Workspace.__withPatch
-// does: git apply, then the directories a patch cannot express.
+// applyPatchOnto applies a rendered patch to dir the way MCP applies it to a
+// workspace: Workspace.withPatchFile, then the directories a patch cannot
+// express.
 func applyPatchOnto(t *testing.T, dir string, p *PatchOnto) {
 	t.Helper()
 	stdio := telemetry.SpanStreams{
@@ -112,6 +113,21 @@ func TestRenderPatchOnto(t *testing.T) {
 		p := render(t, base, before, after, ".")
 		applyPatchOnto(t, base, p)
 		require.Equal(t, map[string]string{"keep.txt": "keep\n", "new.txt": "new\n"}, readTree(t, base))
+	})
+
+	t.Run("a removed directory the patch empties is left to git apply", func(t *testing.T) {
+		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
+		for _, root := range []string{base, before} {
+			writeDeltaTestFile(t, root, "gone/sub/a.txt", "a\n")
+			writeDeltaTestFile(t, root, "keep.txt", "keep\n")
+		}
+		writeDeltaTestFile(t, after, "keep.txt", "keep\n")
+
+		p := render(t, base, before, after, ".")
+		require.Empty(t, p.RemovedDirectories)
+		require.Empty(t, p.NewDirectories)
+		applyPatchOnto(t, base, p)
+		require.Equal(t, map[string]string{"keep.txt": "keep\n"}, readTree(t, base))
 	})
 
 	t.Run("a removed directory takes base's extra content", func(t *testing.T) {
