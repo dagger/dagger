@@ -1,0 +1,17 @@
+kind: Added
+body: |-
+  Report network receive and transmit bytes for container execs, native Git
+  commands and SSHFS mounts, with protocol-level estimates for HTTP downloads,
+  registry image pulls and pushes, host filesync, host sockets and tunnels,
+  and LLM requests.
+  Container exec metrics separate Dagger-internal traffic from external
+  traffic using TCX eBPF on the host-side CNI veth.
+  Native Git commands and SSHFS mounts use per-command cgroup eBPF counters,
+  including helper processes, instead of progress-based byte estimates.
+  Engine OpenTelemetry resource metrics also report exact cgroup network bytes
+  by internal or external scope and receive or transmit direction. These
+  include subprocess operations but exclude container exec workloads.
+time: 2026-09-14T10:15:00-07:00
+custom:
+  Author: tiborvass
+  PR: ""
