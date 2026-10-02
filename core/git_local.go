@@ -25,6 +25,9 @@ import (
 type LocalGitRepository struct {
 	Directory    dagql.ObjectResult[*Directory]
 	CheckoutBase *GitCheckoutBase
+	// HistorySource is the exact authorized remote anchor of owned shallow
+	// storage. Descendant commits retain one capability, not an ancestry chain.
+	HistorySource dagql.ObjectResult[*GitRef]
 }
 
 // GitCheckoutBase retains the exact canonical parent recipe of a checked commit.
@@ -32,6 +35,67 @@ type LocalGitRepository struct {
 type GitCheckoutBase struct {
 	Parent    dagql.ObjectResult[*GitRef]
 	CommitSHA string
+	// Remote parents additionally pin their exact evaluated canonical tree.
+	// Reusing it must never require another fetch after mirror/cache eviction.
+	Tree dagql.ObjectResult[*Directory]
+}
+
+// validateTree checks the producer recipe, not filesystem equality. Completed
+// Directories may retain only snapshot-backed evaluation state after restart;
+// their call frame still proves the exact parent and source-only tree selector.
+func (base *GitCheckoutBase) validateTree(ctx context.Context) error {
+	if base == nil || base.Tree.Self() == nil {
+		return nil
+	}
+	frame, err := base.Tree.ResultCall()
+	if err != nil {
+		return err
+	}
+	if frame == nil || frame.Field != "tree" || frame.Receiver == nil {
+		return fmt.Errorf("git checkout base tree must be the canonical parent tree")
+	}
+	discard := false
+	for _, arg := range frame.Args {
+		if arg.Name == "discardGitDir" && arg.Value != nil && arg.Value.Kind == dagql.ResultCallLiteralKindBool {
+			discard = arg.Value.BoolValue
+		}
+	}
+	if !discard {
+		return fmt.Errorf("git checkout base tree must discard Git metadata")
+	}
+	receiver, err := frame.ReceiverCall(ctx)
+	if err != nil {
+		return err
+	}
+	if receiver == nil {
+		return fmt.Errorf("git checkout base tree has no parent recipe")
+	}
+	got, err := receiver.RecipeDigest(ctx)
+	if err != nil {
+		return err
+	}
+	want, err := base.Parent.RecipeDigest(ctx)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf("git checkout base tree has a different parent recipe")
+	}
+	return nil
+}
+
+// provenTree returns Tree only when validateTree accepts it. The engine cache
+// may answer tree() on a content-equivalent GitRef (keepGitDir, service hosts
+// and known hosts are outside its content digest) with another recipe's result
+// and frame. Such a tree cannot prove this parent, so it is dropped rather than
+// failing the repository: the parent provenance stays, and only the incremental
+// checkout of a remote parent, which needs the pinned tree, falls back to a
+// full checkout.
+func (base *GitCheckoutBase) provenTree(ctx context.Context) dagql.ObjectResult[*Directory] {
+	if base == nil || base.validateTree(ctx) != nil {
+		return dagql.ObjectResult[*Directory]{}
+	}
+	return base.Tree
 }
 
 var _ GitRepositoryBackend = (*LocalGitRepository)(nil)
@@ -67,10 +131,15 @@ func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, er
 }
 
 // ResolveShortSHA expands an abbreviated commit SHA against the repository's
-// own object database, which is fully available locally.
+// authorized object database. Owned shallow storage hydrates on this explicit
+// demand so unknown ancestry cannot hide an ambiguous prefix.
 func (repo *LocalGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	complete, err := repo.fullHistory(ctx)
+	if err != nil {
+		return "", err
+	}
 	var sha string
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err = complete.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
 		var err error
 		sha, err = git.ResolveShortSHA(ctx, prefix)
 		return err
@@ -248,6 +317,15 @@ func withTemporaryGitIndex(idx io.Reader, tmp *os.File, run func(string) error) 
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
+	// A nil refs list is a raw-storage request (identity, staging, validation).
+	// Bundle/push/export callers explicitly request refs and complete history.
+	if len(refs) > 0 && repo.HistorySource.Self() != nil {
+		complete, err := repo.fullHistory(ctx)
+		if err != nil {
+			return err
+		}
+		return complete.mount(ctx, depth, includeTags, nil, fn)
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -283,7 +361,7 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTag
 }
 
 func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
-	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
+	return ref.mountHistory(ctx, depth, includeTags, fn)
 }
 
 // readGitConfigRemotes reads the remotes configured on the repository the
@@ -373,7 +451,11 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		}
 	}()
 
-	err = ref.mount(ctx, depth, includeTags, func(git *gitutil.GitCLI) error {
+	mountDepth := depth
+	if discardGitDir {
+		mountDepth = 1
+	}
+	err = ref.mount(ctx, mountDepth, includeTags, func(git *gitutil.GitCLI) error {
 		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git url: %w", err)
@@ -455,6 +537,13 @@ func initLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.Git
 	}
 	gitDir, err := checkout.GitDir(ctx)
 	if err != nil {
+		return err
+	}
+	shallow, err := source.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "shallow")
+	if err != nil {
+		return err
+	}
+	if err := copyGitShallowBoundary(filepath.Dir(strings.TrimSuffix(string(shallow), "\n")), gitDir); err != nil {
 		return err
 	}
 	// Remove only Git's output terminator: whitespace can be part of a path.
