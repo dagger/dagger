@@ -235,8 +235,10 @@ func runChangesetBench(ctx context.Context, t *testctx.T, repoID dagger.ID, scen
 		require.NoError(t, id.Decode(string(recipe)))
 		counts := map[string]int{}
 		countIDFields(id, counts, map[string]bool{})
-		s.recipe = fmt.Sprintf(" recipe_bytes=%d withExec=%d withPatchFile=%d withChanges=%d __withPatch=%d",
-			len(recipe), counts["withExec"], counts["withPatchFile"], counts["withChanges"], counts["__withPatch"])
+		s.recipe = fmt.Sprintf(" recipe_bytes=%d withExec=%d withChanges=%d Workspace.withPatchFile=%d Directory.withPatchFile=%d Workspace.withDirectory=%d Workspace.withoutDirectory=%d",
+			len(recipe), counts["withExec"], counts["withChanges"],
+			counts["Workspace.withPatchFile"], counts["Directory.withPatchFile"],
+			counts["Workspace.withDirectory"], counts["Workspace.withoutDirectory"])
 	}
 	// Close now rather than at test cleanup, so runs don't overlap.
 	require.NoError(t, c.Close())
@@ -252,6 +254,11 @@ func countIDFields(id *call.ID, into map[string]int, seen map[string]bool) {
 		}
 		seen[dig] = true
 		into[cur.Field()]++
+		if recv := cur.Receiver(); recv != nil && recv.Type() != nil {
+			// Also by type, e.g. Workspace.withPatchFile apart from
+			// Directory.withPatchFile.
+			into[recv.Type().NamedType()+"."+cur.Field()]++
+		}
 		for _, arg := range cur.Args() {
 			countLiteralFields(arg.Value(), into, seen)
 		}
