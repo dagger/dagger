@@ -1,0 +1,6 @@
+kind: Fixed
+body: Dang nested clients close unused HTTP connections before shutting down their local API server, avoiding a possible five-second wait after concurrent API requests.
+time: 2026-09-16T19:59:29-07:00
+custom:
+    Author: grouville
+    PR: "14180"
