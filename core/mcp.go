@@ -1381,6 +1381,56 @@ func rebasePatchOntoWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 		return changes, err
 	}
 
+	// Fast path: where the workspace agrees with Before at every changed
+	// path, the patch reproduces the changeset by construction, so there is
+	// no need to build what applying the raw changeset would give.
+	var plan *PatchRebasePlan
+	var planned bool
+	if err := benchStep(ctx, "check", func(ctx context.Context) (err error) {
+		plan, planned, err = changes.Self().PlanPatchRebase(ctx, base)
+		return err
+	}); err == nil && planned {
+		var patched dagql.ObjectResult[*Directory]
+		if err := benchStep(ctx, "gitapply", func(ctx context.Context) (err error) {
+			patched, err = applyPatchBlob(ctx, srv, base, blob)
+			if err != nil {
+				return err
+			}
+			return benchEval(ctx, patched)
+		}); err != nil {
+			return changes, fmt.Errorf("apply patch to workspace: %w", err)
+		}
+		if err := benchStep(ctx, "reconcile", func(ctx context.Context) error {
+			for _, dir := range plan.MkDirs {
+				if err := srv.Select(ctx, patched, &patched, dagql.Selector{
+					View:  srv.View,
+					Field: "withNewDirectory",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.NewString(dir.Path)},
+						{Name: "permissions", Value: dagql.NewInt(dir.Permissions)},
+					},
+				}); err != nil {
+					return err
+				}
+			}
+			for _, dir := range plan.RmDirs {
+				if err := srv.Select(ctx, patched, &patched, dagql.Selector{
+					View:  srv.View,
+					Field: "withoutDirectory",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.NewString(dir)},
+					},
+				}); err != nil {
+					return err
+				}
+			}
+			return benchEval(ctx, patched)
+		}); err != nil {
+			return changes, fmt.Errorf("reconcile directories: %w", err)
+		}
+		return changesFrom(ctx, srv, patched, base)
+	}
+
 	// What applying the raw changeset leaves at its paths, as
 	// Workspace.withChanges would: the rebased patch must reproduce it.
 	changesID, err := changes.ID()
