@@ -574,9 +574,10 @@ func (*liftTestRunner) Type() *ast.Type {
 // withToken method takes an optional (blocklisted) Secret arg. The fake
 // .container resolver records the address in the container's ImageRef, so
 // tests can observe which address resolved, and fails for "bogus:ref" to
-// exercise the both-attempts-failed error. No other loader exists, so a lift
-// attempt for a Directory arg fails loudly as a failed address resolution,
-// and one for a Secret arg would too.
+// exercise the both-attempts-failed error. Like the real loader it takes
+// noLock, and fails without it: lifting must resolve addresses live. No other
+// loader exists, so a lift attempt for a Directory arg fails loudly as a
+// failed address resolution, and one for a Secret arg would too.
 func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 	t.Helper()
 	srv := newCoreDagqlServerForTest(t, &Query{})
@@ -597,7 +598,12 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 		}),
 	}.Install(srv)
 	dagql.Fields[*Address]{
-		dagql.Func("container", func(_ context.Context, addr *Address, _ struct{}) (*Container, error) {
+		dagql.Func("container", func(_ context.Context, addr *Address, args struct {
+			NoLock bool `name:"noLock" default:"false"`
+		}) (*Container, error) {
+			if !args.NoLock {
+				return nil, fmt.Errorf("lifted address %q must resolve with noLock", addr.Value)
+			}
 			if addr.Value == "bogus:ref" {
 				return nil, fmt.Errorf("no such image %q", addr.Value)
 			}
@@ -961,7 +967,7 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 				Field: "address",
 				Args:  []dagql.NamedInput{{Name: "value", Value: dagql.String("premade")}},
 			},
-			dagql.Selector{Field: "container"},
+			dagql.Selector{Field: "container", Args: []dagql.NamedInput{{Name: "noLock", Value: dagql.Boolean(true)}}},
 		))
 		ctrID, err := ctr.ID()
 		require.NoError(t, err)

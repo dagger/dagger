@@ -1206,8 +1206,28 @@ func (m *MCP) resolveBoundWorkspaceAddress(ctx context.Context, srv *dagql.Serve
 	var obj dagql.AnyObjectResult
 	err := srv.Select(dagql.WithNonInternalTelemetry(ctx), ws, &obj,
 		dagql.Selector{View: srv.View, Field: "resolve", Args: []dagql.NamedInput{{Name: "value", Value: dagql.String(addr)}}},
-		dagql.Selector{View: srv.View, Field: addressField})
+		addressLoaderSelector(srv, addressField))
 	return obj, err
+}
+
+// addressLoaderSelector selects the Address loader for addressField with
+// noLock: true when the loader takes it (an image tag or git ref lookup), so
+// a model-supplied address resolves live: it neither reads the workspace
+// lockfile's pin nor records a new one.
+func addressLoaderSelector(srv *dagql.Server, addressField string) dagql.Selector {
+	sel := dagql.Selector{View: srv.View, Field: addressField}
+	addressType, ok := srv.ObjectType("Address")
+	if !ok {
+		return sel
+	}
+	spec, ok := addressType.FieldSpec(addressField, srv.View)
+	if !ok {
+		return sel
+	}
+	if _, ok := spec.Args.Input("noLock", srv.View); ok {
+		sel.Args = []dagql.NamedInput{{Name: "noLock", Value: dagql.Boolean(true)}}
+	}
+	return sel
 }
 
 // resolveObjectAddress loads an object from an external address (an image
@@ -1232,7 +1252,7 @@ func resolveObjectAddress(ctx context.Context, srv *dagql.Server, addr, addressF
 	// method call's Select in callObjectMethod) so it renders in the trace as
 	// part of the tool call instead of hiding as internal spans.
 	err = srv.Select(dagql.WithNonInternalTelemetry(ctx), resolved, &obj,
-		dagql.Selector{View: srv.View, Field: addressField})
+		addressLoaderSelector(srv, addressField))
 	return obj, err
 }
 
