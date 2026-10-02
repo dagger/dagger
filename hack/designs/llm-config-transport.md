@@ -1,6 +1,6 @@
 # LLM configuration: one document from the client, not 31 secrets
 
-Status: **in progress**. Hard cut-over, no compatibility shim: an old CLI
+Status: **implemented**. Hard cut-over, no compatibility shim: an old CLI
 against a new engine gets no LLM configuration, and a new CLI against an old
 engine sends a field the engine ignores. See "Contracts that change" at the
 bottom.
@@ -159,6 +159,23 @@ no default is set, which is what env-only CI setups rely on.
   there (no CLI resolver), same as before when the engine had no env.
 - `openrouter` and `gemini` are accepted in the config file but are not
   provider names on the wire or in `llm(provider:)`.
+- **Non-credential values that are secret URIs** (`OPENAI_BASE_URL=op://…`)
+  were resolved by the engine's old loader as a side effect of every value
+  going through `loadSecret`. They now travel as plain strings. Resolving
+  them at startup would run `op` and friends on every command.
+- **An Anthropic API key in the environment next to an OAuth login in the
+  file**: the old engine received both and the OAuth token won. Now the
+  higher-precedence source (the env key) wins and the token is dropped —
+  the `Merge` rule, applied uniformly.
+- **`KEY=` in `.env`** counts as unset. It used to shadow the process env
+  with an empty value.
+- **A literal `*_AUTH_TOKEN` in `.env`** is served as read and never
+  refreshed, so a rejected `.env` bearer can't rotate the file's login.
+- **A malformed `OPENAI_DISABLE_STREAMING`** fails every command that
+  connects to the engine (it used to fail at LLM routing time). An
+  unreadable config file or `.env` is warned about and skipped.
+- The file's `default_provider`/`default_model` are not sent when that
+  provider is disabled.
 
 ## Invariants kept from the OAuth lifecycle work
 

@@ -28,7 +28,7 @@ import (
 const (
 	FieldAPIKey             = "api_key"
 	FieldAuthToken          = "auth_token"
-	FieldAuthTokenExpiresAt = "auth_token_expires_at"
+	FieldAuthTokenExpiresAt = "auth_token_expires_at" //nolint:gosec // a field name, not a credential
 )
 
 // openRouterBaseURL is the endpoint an `openrouter` provider in the config

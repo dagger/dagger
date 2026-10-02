@@ -1,0 +1,20 @@
+kind: Changed
+body: |
+    LLM configuration now travels to the engine once, as a document in the
+    client's session metadata, instead of being flattened into environment
+    variables by the CLI and probed back through dozens of `env://` secret
+    lookups on every `llm()` call. `dagger llm setup`, the documented
+    `ANTHROPIC_API_KEY`/`OPENAI_*`/`GEMINI_*`/`LOCAL_*` variables and `./.env`
+    keep working, with the same precedence (`.env` over the environment over
+    the config file). Credentials reach the engine as secret references
+    resolved on demand for the routed provider only; a new `llmconfig://`
+    secret scheme serves the ones the CLI holds. The config file's explicit
+    default provider and model now win over provider priority.
+
+    A CLI and engine from either side of this change do not exchange LLM
+    configuration: keep them on matching versions. The undocumented
+    `DAGGER_MODEL` variable is removed.
+time: 2026-10-02T19:30:00.000000+00:00
+custom:
+    Author: vito
+    PR: ""
