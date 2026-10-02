@@ -5355,6 +5355,9 @@ type cacheUsageMeasurementInput struct {
 	// ancestorIdentities are the identities that are only parent snapshots
 	// of the payload's own snapshots. The payload cannot size them itself.
 	ancestorIdentities map[string]struct{}
+	// chainsIncomplete reports that some parent link is unresolved, so the
+	// identities may omit snapshots the row retains.
+	chainsIncomplete bool
 }
 
 type cacheUsageIdentityMeasurement struct {

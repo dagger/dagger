@@ -622,7 +622,15 @@ snapshots. In practice:
   the result still retaining them
 
 Parent links never change, so each pass reuses the links the previous pass
-resolved and keeps only the ones it visited.
+resolved and keeps only the ones it visited. If any row's chain has an
+unresolved link (a lookup failed, or the row appeared after sampling), the pass
+is deferred like any other incomplete membership: a row missing ancestors would
+let the simulation credit layers it still retains.
+
+One case stays uncounted. A merge snapshot's recorded usage leaves out files
+hardlinked from other merge inputs, and those inputs are not in its parent
+chain. Once the inputs' results are collected, that data stays on disk with
+the merge without being charged to it.
 
 ## Size Measurement
 

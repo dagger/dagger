@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -158,5 +159,75 @@ func TestCacheUsageReusesParentLinksAcrossPasses(t *testing.T) {
 	}
 	if len(c.usageSnapshotParents) != 2 {
 		t.Fatalf("kept links=%v, want only the image chain", c.usageSnapshotParents)
+	}
+}
+
+// A row that appears after sampling has no resolved parents yet. Treating its
+// chain as ending early would let the simulation credit layers it retains, so
+// the pass is deferred instead.
+func TestCacheUsageDefersLateRowWithUnresolvedChain(t *testing.T) {
+	ctx, c := chainTestCache(t)
+	publishProgressValue(t, ctx, c, "test-session", "from", chainTestValue("image-top", 50), true)
+	cacheTestReleaseSession(t, c, ctx)
+	sample, err := c.collectUsageMeasurementInputs(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sample.close(ctx)
+
+	// An imported, unmaterialized exec result published after sampling.
+	late := publishProgressValue(t, ctx, c, "holder", "late", NewInt(77), false).cacheSharedResult()
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	late.payloadMu.Lock()
+	late.self = nil
+	late.hasValue = false
+	late.snapshotOwnerLinks = []PersistedSnapshotRefLink{{RefKey: "exec-1", Role: "snapshot"}}
+	late.payloadRevision++
+	late.payloadMu.Unlock()
+
+	if _, err := c.pruneUsageIdentitiesLocked(sample); !errors.Is(err, errCacheUsageChanged) {
+		t.Fatalf("err=%v, want the pass deferred", err)
+	}
+}
+
+type failingParentManager struct {
+	*fakeSnapshotManager
+	fail map[string]bool
+}
+
+func (m *failingParentManager) SnapshotParent(ctx context.Context, id string) (string, error) {
+	if m.fail[id] {
+		return "", errors.New("injected metadata read failure")
+	}
+	return m.fakeSnapshotManager.SnapshotParent(ctx, id)
+}
+
+// A failed parent lookup leaves the chain incomplete: the pass is deferred
+// rather than crediting layers the row may retain, and the next pass retries.
+func TestCachePruneDefersOnParentLookupFailure(t *testing.T) {
+	ctx, c := chainTestCache(t)
+	manager := &failingParentManager{fakeSnapshotManager: chainTestManager(), fail: map[string]bool{"exec-1": true}}
+	c.snapshotManager = manager
+	publishProgressValue(t, ctx, c, "test-session", "from", chainTestValue("image-top", 50), true)
+	publishProgressValue(t, ctx, c, "holder", "exec1", chainTestValue("exec-1", 10), false)
+	cacheTestReleaseSession(t, c, ctx)
+
+	// The image is the only candidate, but the live exec retains its layers.
+	report, err := c.Prune(ctx, []CachePrunePolicy{{All: true, MaxUsedSpace: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 0 || report.ReclaimedBytes != 0 {
+		t.Fatalf("pruned %d entries crediting %d bytes during a failed lookup, want the pass deferred", len(report.Entries), report.ReclaimedBytes)
+	}
+
+	manager.fail = nil
+	report, err = c.Prune(ctx, []CachePrunePolicy{{All: true, MaxUsedSpace: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 1 || report.ReclaimedBytes != 0 {
+		t.Fatalf("pruned %d entries crediting %d bytes, want the image pruned with no credit while the exec retains it", len(report.Entries), report.ReclaimedBytes)
 	}
 }

@@ -65,7 +65,7 @@ func (c *Cache) collectUsageMeasurementInputs(ctx context.Context, measure bool)
 				input.identities = cacheUsageIdentitiesFromSnapshotLinks(input.snapshotLinks)
 			}
 			snapshot.chains.load(ctx, input.identities)
-			input.identities, input.ancestorIdentities = snapshot.chains.expand(input.identities)
+			input.identities, input.ancestorIdentities, input.chainsIncomplete = snapshot.chains.expand(input.identities)
 			snapshot.inputs[input.resultID] = *input
 		}
 		if measure {
@@ -150,9 +150,15 @@ func (snapshot *cacheUsageSnapshot) finalizeLocked() (map[sharedResultID][]strin
 				continue
 			}
 			// Parents are only looked up outside E, so a row first seen here
-			// expands as far as this pass already loaded its chain.
-			input.identities, input.ancestorIdentities = snapshot.chains.expand(input.identities)
+			// expands only as far as this pass already resolved its chain.
+			input.identities, input.ancestorIdentities, input.chainsIncomplete = snapshot.chains.expand(input.identities)
 			snapshot.inputs[id] = input
+		}
+		// A row missing some of its ancestors would let the simulation credit
+		// layers it still retains once their other holders are collected.
+		if input.chainsIncomplete {
+			unknown++
+			continue
 		}
 		identities[id] = input.identities
 	}
@@ -250,12 +256,14 @@ func (chains snapshotChains) load(ctx context.Context, snapshotIDs []string) {
 			if !known {
 				var err error
 				parent, err = chains.manager.SnapshotParent(ctx, id)
+				if bkcache.IsNotFound(err) {
+					// The snapshot is gone, so it retains nothing below it.
+					parent, err = "", nil
+				}
 				if err != nil {
-					// A snapshot can disappear while it is sampled; any other
-					// failure only loses accounting for the layers below it.
-					if !bkcache.IsNotFound(err) {
-						slog.Warn("failed to resolve snapshot parent for cache usage", "snapshotID", id, "err", err)
-					}
+					// Leave the link unresolved: the chain stays incomplete
+					// and the next pass retries.
+					slog.Warn("failed to resolve snapshot parent for cache usage", "snapshotID", id, "err", err)
 					break
 				}
 			}
@@ -266,19 +274,28 @@ func (chains snapshotChains) load(ctx context.Context, snapshotIDs []string) {
 }
 
 // expand returns the snapshots plus every resolved ancestor, sorted and
-// deduplicated, and the identities that only appear as ancestors.
-func (chains snapshotChains) expand(snapshotIDs []string) ([]string, map[string]struct{}) {
-	if len(snapshotIDs) == 0 || len(chains.parents) == 0 {
-		return snapshotIDs, nil
+// deduplicated, and the identities that only appear as ancestors. incomplete
+// reports that some link in the chains is unresolved, so the ancestors listed
+// may not be all the snapshots retained.
+func (chains snapshotChains) expand(snapshotIDs []string) (expanded []string, ancestors map[string]struct{}, incomplete bool) {
+	if len(snapshotIDs) == 0 || chains.manager == nil {
+		return snapshotIDs, nil, false
 	}
 	own := make(map[string]struct{}, len(snapshotIDs))
 	for _, id := range snapshotIDs {
 		own[id] = struct{}{}
 	}
-	expanded := slices.Clone(snapshotIDs)
-	var ancestors map[string]struct{}
+	expanded = slices.Clone(snapshotIDs)
 	for _, id := range snapshotIDs {
-		for parent := chains.parents[id]; parent != ""; parent = chains.parents[parent] {
+		for {
+			parent, resolved := chains.parents[id]
+			if !resolved {
+				incomplete = true
+				break
+			}
+			if parent == "" {
+				break
+			}
 			if _, seen := own[parent]; seen {
 				break
 			}
@@ -290,11 +307,12 @@ func (chains snapshotChains) expand(snapshotIDs []string) ([]string, map[string]
 			}
 			ancestors[parent] = struct{}{}
 			expanded = append(expanded, parent)
+			id = parent
 		}
 	}
 	if len(ancestors) == 0 {
-		return snapshotIDs, nil
+		return snapshotIDs, nil, incomplete
 	}
 	slices.Sort(expanded)
-	return expanded, ancestors
+	return expanded, ancestors, incomplete
 }
