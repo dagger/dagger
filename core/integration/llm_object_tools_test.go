@@ -407,7 +407,7 @@ type Editor {
 	require.NoError(t, gid.Decode(string(id)))
 	fields := map[string]bool{}
 	collectIDFieldNames(gid, fields)
-	require.False(t, fields["__withPatch"], "a pure changeset is recorded as its own operations")
+	require.True(t, fields["__withPatch"], "the overlay must be the workspace plus a patch")
 	require.False(t, fields["moveTree"], "the recorded overlay must not retain the tool call")
 
 	entries, err := result.Workspace().Directory("new").Entries(ctx)
@@ -814,10 +814,7 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		fields := map[string]bool{}
 		collectIDFieldNames(gid, fields)
 		require.False(t, fields["addScaffold"], "the recorded overlay must not retain the tool call")
-		// A scaffold is pure: its own operations, empty directory included,
-		// are cheap to replay.
-		require.True(t, fields["withNewDirectory"], "the recorded overlay must be the scaffold's own operations")
-		require.False(t, fields["__withPatch"], "a pure changeset needs no patch")
+		require.True(t, fields["__withPatch"], "the recorded overlay must be the workspace plus a patch")
 	})
 }
 
@@ -843,11 +840,13 @@ type Codegen {
 }
 `
 
-// TestChangesetToolUnwrapsPureEdits covers file edits: their changesets are
-// built from reads of the workspace and pure file operations, so the overlay
-// records those operations, minus the tool call, and restores by replaying
-// them.
-func (LLMSuite) TestChangesetToolUnwrapsPureEdits(ctx context.Context, t *testctx.T) {
+// TestChangesetToolPatchesPureEdits covers file edits: their changesets are
+// built from reads of the workspace and pure file operations, which would be
+// cheap to replay, but are recorded as a workspace patch like any other: their
+// own recipe diffs two trees on the first read of the workspace, while the
+// patch is rendered for the tool result anyway. Rendered once: the result
+// shows that patch, and nothing renders the changeset's own.
+func (LLMSuite) TestChangesetToolPatchesPureEdits(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	source := generatorWorkspace(c, editorDang).
 		WithNewFile("notes.txt", "hello old world\n")
@@ -890,10 +889,26 @@ func (LLMSuite) TestChangesetToolUnwrapsPureEdits(ctx context.Context, t *testct
 	recipe, fields := recipeFields(ctx, t, c, sink, result)
 	require.False(t, fields["edit"], "the tool call must not remain a recipe dependency")
 	require.False(t, fields["mv"], "the tool call must not remain a recipe dependency")
-	require.True(t, fields["withReplaced"], "the edit's own operations are recorded")
-	require.False(t, fields["__withPatch"], "a pure changeset needs no patch")
+	require.False(t, fields["withReplaced"], "the edit's own operations must not be recorded")
+	require.True(t, fields["__withPatch"], "the overlay must be the workspace plus a patch")
 
 	require.NoError(t, c.Close())
+	traces, _ := sink.capture()
+	pathsComputed := map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					require.NotEqual(t, "Changeset.asPatch", span.Name, "the patch must only be rendered once")
+					if span.Name == "computing paths" {
+						pathsComputed[fmt.Sprintf("%x", span.SpanId)] = true
+					}
+				}
+			}
+		}
+	}
+	require.Len(t, pathsComputed, 2, "each tool's changeset computes its paths once")
+
 	check(ctx, t, dagger.Ref[*dagger.LLM](connect(ctx, t), recipe).Workspace())
 }
 
@@ -943,11 +958,11 @@ type Codegen {
 func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		name, tool, want string
-		patched          bool
+		generated        bool
 	}{
 		{name: "pure edit", tool: "edit", want: "sub new\n"},
-		{name: "generator", tool: "generate", want: "sub old\nnew\n", patched: true},
-		{name: "generator at the root", tool: "generateAtRoot", want: "sub old\nnew\n", patched: true},
+		{name: "generator", tool: "generate", want: "sub old\nnew\n", generated: true},
+		{name: "generator at the root", tool: "generateAtRoot", want: "sub old\nnew\n", generated: true},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			c, sink := connectWithTrace(ctx, t)
@@ -959,6 +974,9 @@ func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T)
 			transcript, err := result.Transcript(ctx)
 			require.NoError(t, err)
 			require.Contains(t, transcript, "new done")
+			// The patch rendered against the workspace root, not the
+			// changeset's own (which would say a/notes.txt).
+			require.Contains(t, transcript, "diff --git a/sub/notes.txt b/sub/notes.txt")
 
 			check := func(ctx context.Context, t *testctx.T, ws *dagger.Workspace) {
 				t.Helper()
@@ -971,7 +989,7 @@ func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T)
 				entries, err := ws.Directory("/").Entries(ctx)
 				require.NoError(t, err)
 				require.NotContains(t, entries, "made/")
-				if tc.patched {
+				if tc.generated {
 					made, err := ws.Directory("/sub/made").Entries(ctx)
 					require.NoError(t, err)
 					require.Equal(t, []string{"empty/"}, made)
@@ -981,7 +999,7 @@ func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T)
 
 			recipe, fields := recipeFields(ctx, t, c, sink, result)
 			require.False(t, fields[tc.tool])
-			require.Equal(t, tc.patched, fields["__withPatch"])
+			require.True(t, fields["__withPatch"])
 			require.NoError(t, c.Close())
 			check(ctx, t, dagger.Ref[*dagger.LLM](connect(ctx, t), recipe).Workspace())
 		})
