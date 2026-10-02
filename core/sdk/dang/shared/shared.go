@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/util/httptransport"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/propagation"
@@ -66,7 +67,7 @@ func WithNestedClientServer(
 	}
 	// Give the invocation its own connection pool rather than sharing the
 	// process-wide http.DefaultTransport, so serveNestedClient can drain it.
-	return serveNestedClient(ctx, httpSrv, http.DefaultTransport.(*http.Transport).Clone(), fn)
+	return serveNestedClient(ctx, httpSrv, httptransport.New(), fn)
 }
 
 // serveNestedClient serves httpSrv on a loopback listener, calls fn with a

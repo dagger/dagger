@@ -24,6 +24,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
+	"github.com/dagger/dagger/util/httptransport"
 )
 
 // The engine side's limits.
@@ -230,7 +231,7 @@ func (b *backoff) next(jitter float64) time.Duration {
 // uploadClient is the HTTP client for blob uploads: the default transport,
 // with a bound on the wait for the response once the request is sent.
 func uploadClient(responseTimeout time.Duration) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := httptransport.New()
 	transport.ResponseHeaderTimeout = responseTimeout
 	return &http.Client{Transport: transport}
 }

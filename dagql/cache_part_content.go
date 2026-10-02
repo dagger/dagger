@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/util/httptransport"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -96,7 +97,7 @@ func (s *PartContentSource) attachedBridge() *RemoteCacheBridge {
 }
 
 var defaultPartTransport = sync.OnceValue(func() http.RoundTripper {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := httptransport.New()
 	// Verify the offered compressed bytes unchanged.
 	transport.DisableCompression = true
 	return transport
