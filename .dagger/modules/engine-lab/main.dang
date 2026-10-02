@@ -21,7 +21,8 @@
 #   - `debugGet`/`debugJq`: curl the engine's debug HTTP server (routes are
 #     defined in cmd/engine/debug.go).
 #   - `engineTest`: run engine tests via the engine-dev toolchain (spins its
-#     own ephemeral engine; independent of `start`).
+#     own ephemeral engine; independent of `start`), optionally recording a
+#     wcprof capture of that engine.
 #   - `dumpId`: build and run the repo's own `cmd/dump-id` against a file in
 #     the workspace — recipe forensics on a base64 call ID, with no engine
 #     needed.
@@ -358,6 +359,14 @@ type EngineLab {
   Keep runs tight: pkg ./core/integration with run TestSuite/TestSub. On
   failure the error tail is returned; full test output lives in telemetry,
   readable with ReadLogs on the failing span.
+
+  With `wcprofCapture` set, the test engine records wcprof from startup
+  (engine-dev's testProfile) and its dump is kept as a capture under that
+  name, exactly like `wcprofCapture` keeps one from the `start` engine: slice
+  it with `wcprofReport`, or `compare` it with another capture. Benchmark
+  tests gated on _DAGGER_BENCH run in this mode (select them with `run`). A
+  failing run still yields its capture; the result reports the exit code,
+  the output tail and the capture summary.
   """
   engineTest(
     source: Workspace!,
@@ -373,11 +382,40 @@ type EngineLab {
     Enable verbose test output
     """
     testVerbose: Boolean! = false,
-  ): Void @cache(policy: FunctionCachePolicy.Never) {
-    # NOTE: engine-dev's test() is +cache="session" on its side, so an
-    # identical re-run in one session may be served from the session cache;
-    # any workspace edit changes the engine source and forces a real re-run.
-    engineDev(ws: source).test(pkg: pkg, run: run, testVerbose: testVerbose)
+    """
+    Profile the test engine with wcprof and keep the recording as a capture
+    under this name, e.g. "before" or "after" ("" = don't profile).
+    """
+    wcprofCapture: String! = "",
+  ): EngineLab! @cache(policy: FunctionCachePolicy.Never) {
+    # NOTE: engine-dev's test() and testProfile() are +cache="session" on its
+    # side, so an identical re-run in one session may be served from the
+    # session cache; any workspace edit changes the engine source and forces
+    # a real re-run.
+    let dev = engineDev(ws: source)
+    if (wcprofCapture == "") {
+      dev.test(pkg: pkg, run: run, testVerbose: testVerbose)
+      print("tests passed")
+      return self
+    }
+    let profiled = dev.testProfile(pkg: pkg, run: run, testVerbose: testVerbose)
+    let status = profiled.{{exitCode, output}}
+    # The dump is the same session-cached testProfile result, so reading it
+    # does not re-run the tests.
+    let dump = profiled.dump
+    let summary = wcprofRun(source, dump, ["-view", "summary", "-top", "8"])
+    let names = wcprofCaptureNames + [wcprofCapture]
+    self.wcprofCaptureNames = names
+    self.wcprofDumps = wcprofDumps + [dump]
+    let verdict = if (status.exitCode == 0) {
+      "tests passed"
+    } else {
+      "TESTS FAILED (exit " + toString(status.exitCode) + ")"
+    }
+    print(
+      verdict + "; output tail:\n" + tail(status.output, 80) + "\n\ncapture \"" + wcprofCapture + "\" (captures: " + names.uniq.join(", ") + ")\n" + summary,
+    )
+    self
   }
 
   """
@@ -858,6 +896,16 @@ type EngineLab {
     } else {
       let dropped = toString(all.length - lines)
       all.takeFirst(lines).join("\n") + "\n… (" + dropped + " more lines truncated; raise `limit`, or narrow" + " the report with `find`/`spine`/`depth`) …"
+    }
+  }
+
+  # Tail-truncate test output: unlike a report, its verdict is at the end.
+  let tail(s: String!, lines: Int!): String! {
+    let all = s.split("\n")
+    if (all.length <= lines) {
+      s
+    } else {
+      "… (" + toString(all.length - lines) + " earlier lines omitted) …\n" + all.takeLast(lines).join("\n")
     }
   }
 }
