@@ -28,11 +28,15 @@ much disk space the cache may use:
 }
 ```
 
-- `maxUsedSpace` is the largest the cache may grow. Above it, the engine prunes
-  the cache back to this size.
-- `reservedSpace` is a floor for that pruning, which never takes the cache
-  below this size.
-- `minFreeSpace` is the free disk space the engine prunes to keep.
+- `maxUsedSpace`: when the cache grows larger than this, the engine prunes it
+  back to this size.
+- `reservedSpace`: pruning for `maxUsedSpace` aims to keep at least this much
+  of the cache.
+- `minFreeSpace`: when free disk space falls below this, the engine prunes
+  enough of the cache to restore it.
+
+These are targets. The engine prunes whole cache entries, so a pass can remove
+more than its target asks for.
 
 A disk space value is a number of bytes (`512000000`), a size with a unit
 (`"512MB"`), or a percentage of the disk holding the engine state (`"10%"`).
