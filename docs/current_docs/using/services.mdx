@@ -9,7 +9,7 @@ description: "Start dev services and expose them locally"
 Start all services defined in your workspace:
 
 ```shell
-dagger up
+dagger start
 ```
 
 Services run in ephemeral containers. Dagger tunnels their ports to your local machine. Stop with Ctrl+C.
@@ -17,9 +17,9 @@ Services run in ephemeral containers. Dagger tunnels their ports to your local m
 ## Listing and filtering services
 
 ```shell
-dagger up -l                    # list available services
-dagger up web                   # start only the 'web' service
-dagger up web api redis         # start multiple services
+dagger start -l                    # list available services
+dagger start web                   # start only the 'web' service
+dagger start web api redis         # start multiple services
 ```
 
 ## Use cases
@@ -69,7 +69,7 @@ A service defined in a module can be exposed to your local machine:
 
 ```shell
 # Start an HTTP service and access it locally
-dagger up web
+dagger start web
 curl http://localhost:80
 ```
 

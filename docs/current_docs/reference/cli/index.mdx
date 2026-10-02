@@ -35,8 +35,8 @@ dagger [options] [subcommand | file...]
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
 * [dagger settings](#dagger-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger shell](#dagger-shell)	 - Open a terminal for a container or directory in your project
+* [dagger start](#dagger-start)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
-* [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger update](#dagger-update)	 - Update installed module versions and lockfile state
 * [dagger version](#dagger-version)	 - Print dagger version
 * [dagger workspace](#dagger-workspace)	 - Inspect workspace files and config
@@ -2566,6 +2566,44 @@ dagger shell [FILTERS] [OPTIONS]
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 
+## dagger start
+
+Run your project's services for local development — databases, APIs, dev servers, etc.
+
+```
+dagger start [FILTERS] [OPTIONS]
+```
+
+### Options
+
+```
+      --absolute        Show absolute links (alias: --abs)
+  -a, --all             Expand collections and list each item
+  -f, --format FORMAT   Output FORMAT: table, link, or cli (requires --list) (default "table")
+  -l, --list            List available services
+      --module NAME     Select artifacts from module NAME
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string         Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+
 ## dagger uninstall
 
 Uninstall a module from your workspace
@@ -2603,44 +2641,6 @@ dagger module uninstall hello
       --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
-```
-
-### SEE ALSO
-
-* [dagger](#dagger)	 - A tool to run composable workflows in containers
-
-## dagger up
-
-Run your project's services for local development — databases, APIs, dev servers, etc.
-
-```
-dagger up [FILTERS] [OPTIONS]
-```
-
-### Options
-
-```
-      --absolute        Show absolute links (alias: --abs)
-  -a, --all             Expand collections and list each item
-  -f, --format FORMAT   Output FORMAT: table, link, or cli (requires --list) (default "table")
-  -l, --list            List available services
-      --module NAME     Select artifacts from module NAME
-```
-
-### Options inherited from parent commands
-
-```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
 

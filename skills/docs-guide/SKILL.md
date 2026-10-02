@@ -160,7 +160,7 @@ source and diffing the guide against it. Write to that standard:
   `dagger module install dagger.io/<module>`, `dagger module install
   dagger.io/sdk/<sdk>`, `dagger module init <sdk> --name <name>`,
   `dagger module settings <module> [key] [value]` (`-u` unsets),
-  `dagger check [-l]`, `dagger generate`, `dagger up -l`, `dagger api call`.
+  `dagger check [-l]`, `dagger generate`, `dagger start -l`, `dagger api call`.
   Confirm against `docs/current_docs/reference/cli/index.mdx` after merging
   main, since the CLI surface moves.
 
