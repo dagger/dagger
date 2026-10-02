@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"path"
 	"regexp"
 	"slices"
 	"sort"
@@ -1203,6 +1204,11 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 //     Workspace.__withPatch. The recorded overlay is the prior workspace plus
 //     the patch: the producer is not replayed, and applying it compares no
 //     trees. The patch is also what the model is shown.
+//
+// A tool may measure its changeset from the workspace cwd rather than its
+// root: vito/editor's tools read the workspace at ".", which resolves from the
+// cwd. Workspace.withChanges applies at the root, so such a changeset is first
+// placed at the cwd (workspaceTreePrefix).
 func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (string, error) {
 	if m.workspace.Self() == nil {
 		return "", fmt.Errorf("cannot apply changes: no workspace bound")
@@ -1218,19 +1224,126 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 		return "", nil
 	}
 	ws := m.workspace.Self()
-	if root, ok := ws.SourceDirectory(); ok && !ws.ClientLocalBase() {
-		if unwrapped, ok := m.unwrapPureChangeset(ctx, srv, root, changes); ok {
-			if err := m.overlayChangeset(ctx, srv, unwrapped); err != nil {
+	root, inEngine := ws.SourceDirectory()
+	inEngine = inEngine && !ws.ClientLocalBase()
+	state := m.workspaceState(ctx, root)
+	prefix := changesetWorkspacePrefix(ctx, ws, state, changes)
+
+	if inEngine {
+		if unwrapped, ok := m.unwrapPureChangeset(ctx, srv, state, changes); ok {
+			placed, err := changesetAt(ctx, srv, unwrapped, prefix)
+			if err != nil {
+				return "", err
+			}
+			if err := m.overlayChangeset(ctx, srv, placed); err != nil {
 				return "", err
 			}
 			return m.summarizePatch(ctx, srv, changes), nil
 		}
-		return m.applyChangesetPatch(ctx, srv, root, changes)
+		out, err := m.applyChangesetPatch(ctx, srv, root, prefix, changes)
+		if !errors.Is(err, ErrPatchTooLarge) {
+			return out, err
+		}
+		slog.Debug("changeset patch too large to embed; applying the raw changeset",
+			"max", engineutil.MaxFileContentsSize)
 	}
-	if err := m.overlayChangeset(ctx, srv, changes); err != nil {
+	placed, err := changesetAt(ctx, srv, changes, prefix)
+	if err != nil {
+		return "", err
+	}
+	if err := m.overlayChangeset(ctx, srv, placed); err != nil {
 		return "", err
 	}
 	return m.summarizePatch(ctx, srv, changes), nil
+}
+
+// workspaceState returns the recipe digests of the bound workspace's own
+// state: the workspace, and the trees its reads may return as they are, its
+// root (when in the engine) and its mounts. A digest that cannot be had is
+// left out, which only makes changesets built from it look foreign.
+func (m *MCP) workspaceState(ctx context.Context, root dagql.ObjectResult[*Directory]) map[digest.Digest]bool {
+	state := map[digest.Digest]bool{}
+	results := []interface {
+		RecipeDigest(context.Context) (digest.Digest, error)
+	}{m.workspace}
+	if root.Self() != nil {
+		results = append(results, root)
+	}
+	if mounts, ok := m.workspace.Self().MountsDir(); ok {
+		results = append(results, mounts)
+	}
+	for _, res := range results {
+		if dgst, err := res.RecipeDigest(ctx); err == nil {
+			state[dgst] = true
+		}
+	}
+	return state
+}
+
+// changesetWorkspacePrefix reports where in the workspace root a changeset
+// was measured from: where its Before reads the workspace (see
+// workspaceTreePrefix), or the root when that cannot be told, e.g. for a tree
+// read back out of a container.
+func changesetWorkspacePrefix(ctx context.Context, ws *Workspace, state map[digest.Digest]bool, changes dagql.ObjectResult[*Changeset]) string {
+	before := changes.Self().Before
+	if before.Self() == nil {
+		return "."
+	}
+	recipe, err := before.RecipeID(ctx)
+	if err != nil {
+		return "."
+	}
+	if prefix, ok := workspaceTreePrefix(recipe, state, ws); ok {
+		return prefix
+	}
+	return "."
+}
+
+// changesetAt places a changeset measured from a directory of the workspace
+// at that directory, for Workspace.withChanges, which applies at the root:
+// both sides are copied there in otherwise empty trees.
+func changesetAt(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset], prefix string) (dagql.ObjectResult[*Changeset], error) {
+	if prefix == "." || prefix == "" {
+		return changes, nil
+	}
+	place := func(dir dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
+		var placed dagql.ObjectResult[*Directory]
+		dirID, err := dir.ID()
+		if err != nil {
+			return placed, err
+		}
+		err = srv.Select(ctx, srv.Root(), &placed,
+			dagql.Selector{View: srv.View, Field: "directory"},
+			dagql.Selector{View: srv.View, Field: "withDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(prefix)},
+				{Name: "source", Value: dagql.NewID[*Directory](dirID)},
+			}},
+		)
+		return placed, err
+	}
+	var placed dagql.ObjectResult[*Changeset]
+	before, err := place(changes.Self().Before)
+	if err != nil {
+		return placed, fmt.Errorf("place changeset at %q: %w", prefix, err)
+	}
+	after, err := place(changes.Self().After)
+	if err != nil {
+		return placed, fmt.Errorf("place changeset at %q: %w", prefix, err)
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return placed, err
+	}
+	if err := srv.Select(ctx, after, &placed, dagql.Selector{
+		View:  srv.View,
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
+		},
+	}); err != nil {
+		return placed, fmt.Errorf("place changeset at %q: %w", prefix, err)
+	}
+	return placed, nil
 }
 
 // overlayChangeset applies a changeset as is, with Workspace.withChanges.
@@ -1255,31 +1368,18 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 }
 
 // unwrapPureChangeset returns After.changes(from: Before) for a changeset
-// built only from the bound workspace's state (the workspace, its root tree
-// and its mounts) and pure Directory and File operations on it (see
-// impureChangesetRecipe), like a file edit's. Replaying that is cheap, and a
-// patch would only cost a render, so only the call that returned the
-// changeset — the tool — is dropped from the recipe. It reports false for any
-// other changeset.
-func (m *MCP) unwrapPureChangeset(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], bool) {
+// built only from the bound workspace's state (see workspaceState) and pure
+// Directory and File operations on it (see impureChangesetRecipe), like a file
+// edit's. Replaying that is cheap, and a patch would only cost a render, so
+// only the call that returned the changeset — the tool — is dropped from the
+// recipe. It reports false for any other changeset.
+func (m *MCP) unwrapPureChangeset(ctx context.Context, srv *dagql.Server, state map[digest.Digest]bool, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], bool) {
 	var unwrapped dagql.ObjectResult[*Changeset]
 	before, after := changes.Self().Before, changes.Self().After
 	if before.Self() == nil || after.Self() == nil {
 		return unwrapped, false
 	}
-	// Results' IDs are handles: classify their recipes. A workspace read may
-	// return the root tree or the mounts themselves, so they are leaves too.
-	leaves := map[digest.Digest]bool{}
-	addLeaf := func(dgst digest.Digest, err error) bool {
-		leaves[dgst] = err == nil
-		return err == nil
-	}
-	if !addLeaf(m.workspace.RecipeDigest(ctx)) || !addLeaf(root.RecipeDigest(ctx)) {
-		return unwrapped, false
-	}
-	if mounts, ok := m.workspace.Self().MountsDir(); ok && !addLeaf(mounts.RecipeDigest(ctx)) {
-		return unwrapped, false
-	}
+	// Results' IDs are handles: classify their recipes.
 	beforeRecipe, err := before.RecipeID(ctx)
 	if err != nil {
 		return unwrapped, false
@@ -1288,7 +1388,7 @@ func (m *MCP) unwrapPureChangeset(ctx context.Context, srv *dagql.Server, root d
 	if err != nil {
 		return unwrapped, false
 	}
-	if blocker := impureChangesetRecipe(leaves, beforeRecipe, afterRecipe); blocker != "" {
+	if blocker := impureChangesetRecipe(state, beforeRecipe, afterRecipe); blocker != "" {
 		slog.Debug("changeset recipe is not pure; applying it as a patch", "call", blocker)
 		return unwrapped, false
 	}
@@ -1310,34 +1410,30 @@ func (m *MCP) unwrapPureChangeset(ctx context.Context, srv *dagql.Server, root d
 }
 
 // applyChangesetPatch applies a changeset to an in-engine workspace as a patch
-// rendered against the workspace's root, with Workspace.__withPatch.
+// rendered against the workspace's root, with Workspace.__withPatch. The
+// changeset applies at prefix, the directory it was measured from.
 //
 // The patch starts from the workspace's own content, so applying it
 // reproduces what Workspace.withChanges would by construction: there is
 // nothing to check and nothing to fall back to. Only a changeset that touches
-// a workspace mount is refused, as withChanges refuses it, and only a patch
-// too large to embed is applied raw.
-func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], changes dagql.ObjectResult[*Changeset]) (string, error) {
+// a workspace mount is refused, as withChanges refuses it; a patch too large
+// to embed fails with ErrPatchTooLarge, for the caller to apply it raw.
+func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], prefix string, changes dagql.ObjectResult[*Changeset]) (string, error) {
 	paths, err := changes.Self().ComputePaths(ctx)
 	if err != nil {
 		return "", fmt.Errorf("compute changeset paths: %w", err)
 	}
 	for _, p := range slices.Concat(paths.Added, paths.Modified, paths.AllRemoved) {
-		p = strings.TrimSuffix(p, "/")
+		p = path.Join(prefix, strings.TrimSuffix(p, "/"))
 		if m.workspace.Self().MountedPath(p) {
 			return "", fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", p)
 		}
 	}
-	rendered, err := changes.Self().RenderPatchOnto(ctx, root, ".", engineutil.MaxFileContentsSize)
-	if errors.Is(err, ErrPatchTooLarge) {
-		slog.Debug("changeset patch too large to embed; applying the raw changeset",
-			"max", engineutil.MaxFileContentsSize)
-		if err := m.overlayChangeset(ctx, srv, changes); err != nil {
+	rendered, err := changes.Self().RenderPatchOnto(ctx, root, prefix, engineutil.MaxFileContentsSize)
+	if err != nil {
+		if errors.Is(err, ErrPatchTooLarge) {
 			return "", err
 		}
-		return m.summarizePatch(ctx, srv, changes), nil
-	}
-	if err != nil {
 		return "", fmt.Errorf("render changeset patch: %w", err)
 	}
 	if rendered.IsEmpty() {
