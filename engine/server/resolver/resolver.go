@@ -707,6 +707,13 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if img == nil {
 		return errors.New("pushed image is nil")
 	}
+	network, err := enginetelemetry.NewNetworkAccumulator(
+		ctx,
+		enginetelemetry.NetworkTX,
+	)
+	if err != nil {
+		return fmt.Errorf("create registry push network recorder: %w", err)
+	}
 
 	ctx = contentutil.RegisterContentPayloadTypes(ctx)
 	rootDesc := img.RootDesc
@@ -733,7 +740,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	}
 
 	pushUpdateSourceHandler, err := updateDistributionSourceHandler(r.contentStore, images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
-		_, err := pushHandler(pusher, img.Provider)(ctx, desc)
+		_, err := pushHandler(pusher, img.Provider, network)(ctx, desc)
 		return nil, err
 	}), ref)
 	if err != nil {
@@ -772,7 +779,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if err != nil {
 		return err
 	}
-	pushLeaf := pushHandler(pusher, img.Provider)
+	pushLeaf := pushHandler(pusher, img.Provider, network)
 	for i := len(manifestStack) - 1; i >= 0; i-- {
 		if _, err := pushLeaf(ctx, manifestStack[i]); err != nil {
 			return err
@@ -1275,7 +1282,11 @@ func collectManifestStack(ctx context.Context, provider content.Provider, rootDe
 	return stack, nil
 }
 
-func pushHandler(pusher remotes.Pusher, provider content.Provider) images.HandlerFunc {
+func pushHandler(
+	pusher remotes.Pusher,
+	provider content.Provider,
+	network *enginetelemetry.NetworkAccumulator,
+) images.HandlerFunc {
 	return func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
 		cw, err := pusher.Push(ctx, desc)
 		if err != nil {
@@ -1292,7 +1303,10 @@ func pushHandler(pusher remotes.Pusher, provider content.Provider) images.Handle
 		defer ra.Close()
 		// stream upload progress per layer, attributed to the "pushing
 		// <ref>" span carried by ctx
-		w := wrapProgressWriter(ctx, cw, desc)
+		w := &attributedWriter{
+			Writer:  wrapProgressWriter(ctx, cw, desc),
+			network: network,
+		}
 		if err := content.Copy(ctx, w, io.NewSectionReader(ra, 0, desc.Size), desc.Size, desc.Digest); err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
 				return nil, nil
