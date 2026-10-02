@@ -166,18 +166,21 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileGit(ctx context.Context, t *test
 // TestWorkspaceWithPatchFileHost patches a host-backed workspace and exports
 // it: the patch applies to the overlay with the host's content at its paths,
 // and the export writes just its changes, keeping the files beside the ones it
-// removes (dagger/dagger#14057).
+// removes (dagger/dagger#14057), while a directory the patch empties goes, as
+// with `git apply` on the checkout.
 func (WorkspaceSuite) TestWorkspaceWithPatchFileHost(ctx context.Context, t *testctx.T) {
 	checkout, git := workspaceExportCheckout(ctx, t)
 	for name, contents := range patchTestFiles {
 		writeTestFile(t, checkout, name, contents)
 	}
-	// A directory the patch empties: on the host it stays, empty.
+	// Directories the patch empties: of a file, and of a directory holding
+	// only that file's directory.
 	writeTestFile(t, checkout, "lonely/only.txt", "only\n")
+	writeTestFile(t, checkout, "nest/deep/only.txt", "only\n")
 	git("add", "-A")
 	git("commit", "-m", "patch fixture")
 
-	files := map[string]string{"lonely/only.txt": "only\n"}
+	files := map[string]string{"lonely/only.txt": "only\n", "nest/deep/only.txt": "only\n"}
 	for name, contents := range patchTestFiles {
 		files[name] = contents
 	}
@@ -185,6 +188,7 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileHost(ctx context.Context, t *tes
 	patchText := gitPatch(ctx, t, files, func(dir string) {
 		edit(dir)
 		require.NoError(t, os.Remove(filepath.Join(dir, "lonely/only.txt")))
+		require.NoError(t, os.Remove(filepath.Join(dir, "nest/deep/only.txt")))
 	})
 	require.Contains(t, patchText, "rename from ren/from.txt")
 	require.Contains(t, patchText, "GIT binary patch")
@@ -192,7 +196,7 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileHost(ctx context.Context, t *tes
 	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(checkout, "sub")))
 	patch := c.Directory().WithNewFile("change.patch", patchText).File("change.patch")
 	ws := c.CurrentWorkspace().WithPatchFile(patch)
-	removed := append([]string{"lonely/only.txt"}, patchTestRemoved...)
+	removed := append([]string{"lonely/only.txt", "nest/deep/only.txt"}, patchTestRemoved...)
 	requireWorkspaceFiles(ctx, t, ws, patchTestWant, removed)
 
 	require.NoError(t, ws.Export(ctx))
@@ -201,13 +205,16 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileHost(ctx context.Context, t *tes
 		require.NoError(t, err, name)
 		require.Equal(t, contents, string(got), name)
 	}
-	for _, name := range removed {
+	for _, name := range append([]string{"lonely", "nest"}, removed...) {
 		_, err := os.Stat(filepath.Join(checkout, name))
 		require.ErrorIs(t, err, os.ErrNotExist, name)
 	}
-	info, err := os.Stat(filepath.Join(checkout, "lonely"))
-	require.NoError(t, err, "the directory the patch empties is kept")
-	require.True(t, info.IsDir())
+	// The directories losing one of two files stay, with the other.
+	for _, dir := range []string{"gone", "ren"} {
+		info, err := os.Stat(filepath.Join(checkout, dir))
+		require.NoError(t, err, dir)
+		require.True(t, info.IsDir(), dir)
+	}
 	var status []string
 	for line := range strings.SplitSeq(git("status", "--porcelain"), "\n") {
 		status = append(status, strings.Join(strings.Fields(line), " "))
@@ -216,11 +223,57 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileHost(ctx context.Context, t *tes
 		"M bin.dat",
 		"D gone/del.txt",
 		"D lonely/only.txt",
+		"D nest/deep/only.txt",
 		"D ren/from.txt",
 		"M sub/mod.txt",
 		"?? new/",
 		"?? ren/to.txt",
 	}, status)
+}
+
+// TestWorkspaceWithPatchFileHostEmptiedDir pins which directories a patch
+// emptying them removes from a host-backed workspace: only those the host
+// holds nothing else in, and for good, through later edits.
+func (WorkspaceSuite) TestWorkspaceWithPatchFileHostEmptiedDir(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	files := map[string]string{
+		"lonely/only.txt":    "only\n",
+		"pair/del.txt":       "bye\n",
+		"pair/sibling.txt":   "stays\n",
+		"shared/sub/del.txt": "bye\n",
+	}
+	for name, contents := range files {
+		writeTestFile(t, checkout, name, contents)
+	}
+	git("add", "-A")
+	git("commit", "-m", "patch fixture")
+	// Neither in the patch nor tracked: it keeps its directory, as for git.
+	writeTestFile(t, checkout, "shared/untracked.txt", "mine\n")
+
+	patchText := gitPatch(ctx, t, files, func(dir string) {
+		for _, name := range []string{"lonely/only.txt", "pair/del.txt", "shared/sub/del.txt"} {
+			require.NoError(t, os.Remove(filepath.Join(dir, name)))
+		}
+	})
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	patch := c.Directory().WithNewFile("change.patch", patchText).File("change.patch")
+	// A later edit must not bring the emptied directory back.
+	ws := c.CurrentWorkspace().WithPatchFile(patch).WithNewFile("later.txt", "later\n")
+	require.NoError(t, ws.Export(ctx))
+
+	for _, name := range []string{"lonely", "pair/del.txt", "shared/sub"} {
+		_, err := os.Stat(filepath.Join(checkout, name))
+		require.ErrorIs(t, err, os.ErrNotExist, name)
+	}
+	for name, contents := range map[string]string{
+		"pair/sibling.txt":     "stays\n",
+		"shared/untracked.txt": "mine\n",
+		"later.txt":            "later\n",
+	} {
+		got, err := os.ReadFile(filepath.Join(checkout, name))
+		require.NoError(t, err, name)
+		require.Equal(t, contents, string(got), name)
+	}
 }
 
 // TestWorkspaceWithPatchFileCreatesExisting creates a file the workspace
