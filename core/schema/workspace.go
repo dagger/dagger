@@ -2048,8 +2048,10 @@ type workspaceWithPatchFileArgs struct {
 // so the patch applies to those, with the host's content at the paths the
 // patch reads from (what it modifies, deletes, or renames or copies from)
 // seeded in first. Those paths come from the patch's own headers. What the
-// overlay does not hold, `git apply` cannot see, so a path the patch creates
-// is checked against the host instead (refuseExistingCreates).
+// overlay does not hold, `git apply` cannot see, so two of its checks on the
+// tree are made against the host instead: a path the patch creates must not
+// exist yet (refuseExistingCreates), and a directory the patch empties is
+// removed only if the host holds nothing else in it (restorePrunedParents).
 func (s *workspaceSchema) withPatchFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -2078,6 +2080,10 @@ func (s *workspaceSchema) withPatchFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	// Every path the overlay's delta root has the final say on once the
+	// patch is in.
+	touchedAll := unionPaths(ws.OverlayTouchedPaths(), paths.touched)
+	var emptied []string
 	return s.overlayEditWithHost(ctx, parent, paths.touched, paths.reads, func(base, hostBase dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		if host {
 			if err := refuseExistingCreates(ctx, srv, ws, hostBase, paths.created, args.OnConflict); err != nil {
@@ -2097,8 +2103,17 @@ func (s *workspaceSchema) withPatchFile(
 		if !host {
 			return patched, nil
 		}
-		return restorePrunedParents(ctx, srv, base, patched, paths.removed)
-	}, nil)
+		restored, dirs, err := s.restorePrunedParents(ctx, srv, ws, touchedAll, base, hostBase, patched, paths.removed)
+		emptied = dirs
+		return restored, err
+	}, func(newWS *core.Workspace) {
+		// The directories the patch emptied are the overlay's from now on:
+		// left untouched, the next edit would seed them back into the delta
+		// root as the parents of the removed files (seedDeltaRootParents).
+		if overlay, ok := newWS.Source().(*core.WorkspaceSourceOverlay); ok && len(emptied) > 0 {
+			overlay.TouchedPaths = unionPaths(overlay.TouchedPaths, emptied)
+		}
+	})
 }
 
 // refuseExistingCreates fails, as `git apply` does, when a host-backed
@@ -2142,30 +2157,79 @@ func refuseExistingCreates(
 }
 
 // restorePrunedParents puts back the parent directories of removed paths
-// that `git apply` pruned from a host-backed overlay's delta root. There they
-// hold only the overlay's paths, so emptying one says nothing about the host
-// directory, which may hold other files: diffed against the sparse host base,
-// a pruned parent would read as removed, and exporting would delete the whole
-// host directory (dagger/dagger#14057). So a directory the patch empties on
-// the host is kept, empty, where `git apply` on the checkout would remove it.
-func restorePrunedParents(
+// that `git apply` pruned from a host-backed overlay's delta root, unless the
+// host holds nothing else in them. The delta root holds only the overlay's
+// paths, so emptying a directory there says nothing about the host directory,
+// which may hold other files: diffed against the sparse host base, a pruned
+// parent would read as removed, and exporting would delete the whole host
+// directory with its siblings (dagger/dagger#14057).
+//
+// So each pruned directory that exists on the host is listed there, names
+// only, and stays removed only if every entry is a path the overlay has the
+// final say on (touched, so gone with the directory) or a subdirectory that is
+// itself emptied — which is when `git apply` on the checkout would remove it.
+// It returns the directories it leaves removed.
+func (s *workspaceSchema) restorePrunedParents(
 	ctx context.Context,
 	srv *dagql.Server,
-	base, patched dagql.ObjectResult[*core.Directory],
+	ws *core.Workspace,
+	touched []string,
+	base, hostBase, patched dagql.ObjectResult[*core.Directory],
 	removed []string,
-) (dagql.ObjectResult[*core.Directory], error) {
-	for _, dir := range touchedParentDirs(removed) {
-		var existed dagql.Boolean
-		if err := srv.Select(ctx, base, &existed, dagql.Selector{
+) (dagql.ObjectResult[*core.Directory], []string, error) {
+	dirExists := func(dir dagql.ObjectResult[*core.Directory], p string) (bool, error) {
+		var exists dagql.Boolean
+		err := srv.Select(ctx, dir, &exists, dagql.Selector{
 			Field: "exists",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(dir)},
+				{Name: "path", Value: dagql.NewString(p)},
 				{Name: "expectedType", Value: dagql.Opt(core.ExistsTypeDirectory)},
 			},
-		}); err != nil {
-			return patched, fmt.Errorf("restore pruned parent %q: %w", dir, err)
+		})
+		return bool(exists), err
+	}
+	// Outermost first: every directory comes before those under it.
+	parents := touchedParentDirs(removed)
+	pruned := make(map[string]bool, len(parents))
+	for _, dir := range parents {
+		onHost, err := dirExists(hostBase, dir)
+		if err != nil {
+			return patched, nil, fmt.Errorf("restore pruned parent %q: %w", dir, err)
 		}
-		if !existed {
+		if !onHost {
+			continue
+		}
+		kept, err := dirExists(patched, dir)
+		if err != nil {
+			return patched, nil, fmt.Errorf("restore pruned parent %q: %w", dir, err)
+		}
+		pruned[dir] = !kept
+	}
+	// Innermost first, so a directory's emptied subdirectories are known.
+	emptied := make(map[string]bool, len(pruned))
+	for _, dir := range slices.Backward(parents) {
+		if !pruned[dir] {
+			continue
+		}
+		entries, err := s.listHostDir(ctx, ws, dir)
+		if err != nil {
+			return patched, nil, fmt.Errorf("restore pruned parent %q: %w", dir, err)
+		}
+		emptied[dir] = !slices.ContainsFunc(entries, func(entry string) bool {
+			p := path.Join(dir, strings.TrimSuffix(entry, "/"))
+			if strings.HasSuffix(entry, "/") && emptied[p] {
+				return false
+			}
+			return !pathUnderAny(p, touched)
+		})
+	}
+	var gone []string
+	for _, dir := range parents {
+		if !pruned[dir] {
+			continue
+		}
+		if emptied[dir] {
+			gone = append(gone, dir)
 			continue
 		}
 		var info *core.Stat
@@ -2173,9 +2237,8 @@ func restorePrunedParents(
 			Field: "stat",
 			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(dir)}},
 		}); err != nil {
-			return patched, fmt.Errorf("restore pruned parent %q: %w", dir, err)
+			return patched, nil, fmt.Errorf("restore pruned parent %q: %w", dir, err)
 		}
-		// A no-op where the directory survived the patch.
 		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
 			Field: "withNewDirectory",
 			Args: []dagql.NamedInput{
@@ -2183,10 +2246,42 @@ func restorePrunedParents(
 				{Name: "permissions", Value: dagql.NewInt(info.Permissions)},
 			},
 		}); err != nil {
-			return patched, fmt.Errorf("restore pruned parent %q: %w", dir, err)
+			return patched, nil, fmt.Errorf("restore pruned parent %q: %w", dir, err)
 		}
 	}
-	return patched, nil
+	return patched, gone, nil
+}
+
+// listHostDir lists the entries of a host-backed workspace's directory on the
+// host, by name (a directory's with a trailing "/"), without syncing any
+// content: the client walks the directory and its subdirectories, one level
+// down, and sends back just the names.
+func (s *workspaceSchema) listHostDir(ctx context.Context, ws *core.Workspace, dir string) ([]string, error) {
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+	absPath, err := pathutil.ResolvePathWithinRoot(dir, ws.HostPath())
+	if err != nil {
+		return nil, err
+	}
+	return bk.GlobCallerHostPath(ctx, absPath, "*")
+}
+
+// pathUnderAny reports whether p is one of paths or under one of them.
+func pathUnderAny(p string, paths []string) bool {
+	return slices.ContainsFunc(paths, func(other string) bool {
+		other = strings.TrimPrefix(path.Clean(filepath.ToSlash(other)), "/")
+		return p == other || strings.HasPrefix(p, other+"/")
+	})
 }
 
 // patchedWorkspacePaths are the workspace-root-relative paths a patch
