@@ -142,20 +142,31 @@ func TestRenderPatchOnto(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Join(after, "added/empty"), 0o755))
 		require.NoError(t, os.Chmod(filepath.Join(after, "added/empty"), 0o700))
 		writeDeltaTestFile(t, after, "added/file.txt", "file\n")
+		// Files deep in new directories: the patch creates all of them.
+		writeDeltaTestFile(t, after, "vendor/a/b/lib.txt", "lib\n")
+		// A new directory holding only an empty one: no file creates it.
+		require.NoError(t, os.MkdirAll(filepath.Join(after, "shell/inner"), 0o755))
 
 		p := render(t, base, before, after, ".")
 		require.Equal(t, []PatchOntoDirectory{
-			{Path: "added", Permissions: 0o755},
 			{Path: "added/empty", Permissions: 0o700},
 			{Path: "emptied", Permissions: 0o755},
-		}, p.NewDirectories)
+			{Path: "shell", Permissions: 0o755},
+			{Path: "shell/inner", Permissions: 0o755},
+		}, p.NewDirectories, "a new directory with files in it is left to the patch")
 		require.Equal(t, []string{"removed"}, p.RemovedDirectories)
 		applyPatchOnto(t, base, p)
 		require.Equal(t, map[string]string{
-			"added/":         "",
-			"added/empty/":   "",
-			"added/file.txt": "file\n",
-			"emptied/":       "",
+			"added/":             "",
+			"added/empty/":       "",
+			"added/file.txt":     "file\n",
+			"emptied/":           "",
+			"shell/":             "",
+			"shell/inner/":       "",
+			"vendor/":            "",
+			"vendor/a/":          "",
+			"vendor/a/b/":        "",
+			"vendor/a/b/lib.txt": "lib\n",
 		}, readTree(t, base))
 		fi, err := os.Stat(filepath.Join(base, "added/empty"))
 		require.NoError(t, err)
