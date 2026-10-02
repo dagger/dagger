@@ -407,7 +407,7 @@ type Editor {
 	require.NoError(t, gid.Decode(string(id)))
 	fields := map[string]bool{}
 	collectIDFieldNames(gid, fields)
-	require.True(t, fields["__withPatch"], "oversized changesets must be recorded as a patch too")
+	require.False(t, fields["__withPatch"], "a pure changeset is recorded as its own operations")
 	require.False(t, fields["moveTree"], "the recorded overlay must not retain the tool call")
 
 	entries, err := result.Workspace().Directory("new").Entries(ctx)
@@ -814,8 +814,87 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		fields := map[string]bool{}
 		collectIDFieldNames(gid, fields)
 		require.False(t, fields["addScaffold"], "the recorded overlay must not retain the tool call")
-		require.True(t, fields["__withPatch"], "the recorded overlay must be the workspace plus a patch")
+		// A scaffold is pure: its own operations, empty directory included,
+		// are cheap to replay.
+		require.True(t, fields["withNewDirectory"], "the recorded overlay must be the scaffold's own operations")
+		require.False(t, fields["__withPatch"], "a pure changeset needs no patch")
 	})
+}
+
+// editorDang is a codegen module with vito/editor's edit and mv tools: pure
+// changesets built from reads of the workspace, relative to its cwd.
+const editorDang = `
+type Codegen {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  edit(source: Workspace!, filePath: String!, oldText: String!, newText: String!): Changeset! {
+    let base = source.directory(".", include: [filePath])
+    base
+      .withFile(filePath, source.file(filePath).withReplaced(oldText, newText))
+      .changes(base)
+  }
+
+  mv(source: Workspace!, oldPath: String!, newPath: String!): Changeset! {
+    let base = source.directory(".")
+    base.withFile(newPath, base.file(oldPath)).withoutFile(oldPath).changes(base)
+  }
+}
+`
+
+// TestChangesetToolUnwrapsPureEdits covers file edits: their changesets are
+// built from reads of the workspace and pure file operations, so the overlay
+// records those operations, minus the tool call, and restores by replaying
+// them.
+func (LLMSuite) TestChangesetToolUnwrapsPureEdits(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	source := generatorWorkspace(c, editorDang).
+		WithNewFile("notes.txt", "hello old world\n")
+	toolCall := func(id, tool, args string) dagger.LLMContentBlockInput {
+		return dagger.LLMContentBlockInput{
+			Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: tool, Arguments: dagger.JSON(args),
+		}
+	}
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("edit and move").
+		WithResponse([]dagger.LLMContentBlockInput{
+			toolCall("call_1", "edit", `{"filePath":"notes.txt","oldText":"old","newText":"new"}`),
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			toolCall("call_2", "mv", `{"oldPath":"notes.txt","newPath":"moved.txt"}`),
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+	ws := source.AsWorkspace()
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws))
+	require.NoError(t, err)
+	result := composed.WithPrompt("edit and move").Loop()
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "done")
+	require.Contains(t, transcript, "-hello old world\n+hello new world\n")
+
+	check := func(ctx context.Context, t *testctx.T, ws *dagger.Workspace) {
+		t.Helper()
+		got, err := ws.File("moved.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello new world\n", got)
+		entries, err := ws.Directory("/").Entries(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, entries, "notes.txt")
+	}
+	check(ctx, t, result.Workspace())
+
+	recipe, fields := recipeFields(ctx, t, c, sink, result)
+	require.False(t, fields["edit"], "the tool call must not remain a recipe dependency")
+	require.False(t, fields["mv"], "the tool call must not remain a recipe dependency")
+	require.True(t, fields["withReplaced"], "the edit's own operations are recorded")
+	require.False(t, fields["__withPatch"], "a pure changeset needs no patch")
+
+	require.NoError(t, c.Close())
+	check(ctx, t, dagger.Ref[*dagger.LLM](connect(ctx, t), recipe).Workspace())
 }
 
 // TestChangesetToolsApplyInOrder locks in that a turn's Changeset-returning
