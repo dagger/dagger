@@ -51,6 +51,36 @@ final readonly class DecodesValue
         );
     }
 
+    /**
+     * The engine identifies an enum member by its case name, not by the
+     * enum's backing value, so resolve the case rather than calling from().
+     *
+     * @param class-string $enum
+     * @throws RuntimeException if the name is not a case of the enum
+     */
+    private static function decodeEnumCase(string $enum, mixed $case): \UnitEnum
+    {
+        $reflection = new \ReflectionEnum($enum);
+
+        if (is_string($case)) {
+            try {
+                return $reflection->getCase($case)->getValue();
+            } catch (\ReflectionException) {
+                // Fall through to the error below, which lists the cases.
+            }
+        }
+
+        throw new RuntimeException(sprintf(
+            "'%s' is not a case of '%s', available cases are: '%s'",
+            is_string($case) ? $case : get_debug_type($case),
+            $enum,
+            implode("', '", array_map(
+                fn($c) => $c->getName(),
+                $reflection->getCases(),
+            )),
+        ));
+    }
+
     private function decodeType(string $value, Type $type): mixed
     {
         switch ($type->typeDefKind) {
@@ -64,7 +94,7 @@ final readonly class DecodesValue
             case TypeDefKind::VOID_KIND:
                 return null;
             case TypeDefKind::ENUM_KIND:
-                return ($type->name)::from($value);
+                return self::decodeEnumCase($type->name, json_decode($value));
             case TypeDefKind::INTERFACE_KIND:
                 throw new RuntimeException(sprintf(
                     'Currently cannot decode custom interfaces: %s',
