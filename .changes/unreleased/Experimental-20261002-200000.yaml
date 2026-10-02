@@ -1,0 +1,10 @@
+kind: Experimental
+body: |
+  Add `Workspace.withPatchFile`, which applies a Git patch to a workspace like
+  `Directory.withPatchFile` does to a directory, including on a host-backed
+  workspace. Paths in the patch are relative to the workspace root, whatever
+  its cwd.
+time: 2026-10-02T20:00:00Z
+custom:
+  Author: vito
+  PR: "14460"

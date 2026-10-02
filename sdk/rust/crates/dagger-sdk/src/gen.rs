@@ -18105,6 +18105,12 @@ pub struct WorkspaceWithFileOpts {
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithPatchFileOpts {
+    /// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<PatchConflict>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithModuleOpts<'a> {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
@@ -19095,6 +19101,57 @@ impl Workspace {
                 Box::pin(async move { changes.into_id().await.unwrap().quote() })
             }),
         );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+    /// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `patch` - File containing the patch to apply
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_patch_file(&self, patch: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withPatchFile");
+        query = query.arg_lazy(
+            "patch",
+            Box::new(move || {
+                let patch = patch.clone();
+                Box::pin(async move { patch.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+    /// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `patch` - File containing the patch to apply
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_patch_file_opts(
+        &self,
+        patch: impl IntoID<Id>,
+        opts: WorkspaceWithPatchFileOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withPatchFile");
+        query = query.arg_lazy(
+            "patch",
+            Box::new(move || {
+                let patch = patch.clone();
+                Box::pin(async move { patch.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
         Workspace {
             proc: self.proc.clone(),
             selection: query,

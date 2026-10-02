@@ -4175,6 +4175,13 @@ export type WorkspaceWithNewFileOpts = {
   permissions?: number
 }
 
+export type WorkspaceWithPatchFileOpts = {
+  /**
+   * How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   */
+  onConflict?: PatchConflict
+}
+
 export type WorkspaceWithResetOpts = {
   /**
    * Discard uncommitted changes, resetting the working tree to the commit.
@@ -18578,6 +18585,30 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithNewFileOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+   *
+   * Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+   * @param patch File containing the patch to apply
+   * @param opts.onConflict How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   * @experimental
+   */
+  withPatchFile = (
+    patch: File,
+    opts?: WorkspaceWithPatchFileOpts,
+  ): Workspace => {
+    const metadata = {
+      onConflict: { is_enum: true, value_to_name: PatchConflictValueToName },
+    }
+
+    const ctx = this._ctx.select("withPatchFile", {
+      patch,
+      ...opts,
+      __metadata: metadata,
+    })
     return new Workspace(ctx)
   }
 
