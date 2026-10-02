@@ -194,6 +194,9 @@ type EngineDevID string
 type EngineDevLoadedEngineID string
 
 // A unique identifier for an object.
+type EngineDevTestProfileResultID string
+
+// A unique identifier for an object.
 type EnumTypeDefID string
 
 // A unique identifier for an object.
@@ -10594,6 +10597,16 @@ func (r *Query) LoadEngineDevLoadedEngineFromID(id EngineDevLoadedEngineID) *Eng
 	q = q.Arg("id", id)
 
 	return &EngineDevLoadedEngine{
+		query: q,
+	}
+}
+
+// Load a EngineDevTestProfileResult from its ID.
+func (r *Query) LoadEngineDevTestProfileResultFromID(id EngineDevTestProfileResultID) *EngineDevTestProfileResult {
+	q := r.query.Select("loadEngineDevTestProfileResultFromID")
+	q = q.Arg("id", id)
+
+	return &EngineDevTestProfileResult{
 		query: q,
 	}
 }
