@@ -3400,10 +3400,6 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 	}
 	dir.SetPath(ourDir)
 
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get dagql server: %w", err)
-	}
 	currentSnapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
 	if err != nil {
 		return err
@@ -3439,42 +3435,28 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 		return nil
 	}
 
-	var diffDir dagql.ObjectResult[*Directory]
-	afterID, err := changes.Self().After.ID()
+	// Copy the changed paths straight out of After rather than out of a
+	// structural Before.diff(After): the copy is filtered to the changeset's
+	// declared paths either way, and only descends into their parents, so it
+	// costs the size of the change. A structural diff instead walks both
+	// whole trees, and forces Before to be built just for that.
+	after := changes.Self().After
+	if err := cache.Evaluate(ctx, after); err != nil {
+		return fmt.Errorf("evaluate after: %w", err)
+	}
+	afterSnapshot, err := after.Self().Snapshot.GetOrEval(ctx, after.Result)
 	if err != nil {
-		return fmt.Errorf("after ID: %w", err)
+		return fmt.Errorf("after snapshot: %w", err)
 	}
-	if err := srv.Select(ctx, changes.Self().Before, &diffDir,
-		dagql.Selector{
-			Field: "diff",
-			Args: []dagql.NamedInput{
-				{Name: "other", Value: dagql.NewID[*Directory](afterID)},
-			},
-		},
-	); err != nil {
-		return fmt.Errorf("compute structural diff: %w", err)
+	afterPath, err := after.Self().Dir.GetOrEval(ctx, after.Result)
+	if err != nil {
+		return fmt.Errorf("after path: %w", err)
 	}
-	if err := cache.Evaluate(ctx, diffDir); err != nil {
-		return fmt.Errorf("evaluate structural diff: %w", err)
+	if afterPath == "" {
+		afterPath = "/"
 	}
 
-	var diffSnapshot bkcache.ImmutableRef
-	diffPath := "/"
-	if diffDir.Self() != nil {
-		diffSnapshot, err = diffDir.Self().Snapshot.GetOrEval(ctx, diffDir.Result)
-		if err != nil {
-			return fmt.Errorf("diff snapshot: %w", err)
-		}
-		diffPath, err = diffDir.Self().Dir.GetOrEval(ctx, diffDir.Result)
-		if err != nil {
-			return fmt.Errorf("diff path: %w", err)
-		}
-		if diffPath == "" {
-			diffPath = "/"
-		}
-	}
-
-	currentSnapshot, err = dir.applyChangesToSnapshot(ctx, currentSnapshot, ourDir, diffSnapshot, diffPath, paths)
+	currentSnapshot, err = dir.applyChangesToSnapshot(ctx, currentSnapshot, ourDir, afterSnapshot, afterPath, paths)
 	if err != nil {
 		return fmt.Errorf("apply changes to target: %w", err)
 	}
@@ -3496,8 +3478,8 @@ func (dir *Directory) applyChangesToSnapshot(
 	ctx context.Context,
 	parentSnapshot bkcache.ImmutableRef,
 	targetDir string,
-	diffSnapshot bkcache.ImmutableRef,
-	diffPath string,
+	srcSnapshot bkcache.ImmutableRef,
+	srcPath string,
 	paths *ChangesetPaths,
 ) (bkcache.ImmutableRef, error) {
 	query, err := CurrentQuery(ctx)
@@ -3515,9 +3497,10 @@ func (dir *Directory) applyChangesToSnapshot(
 	}
 	defer newRef.Release(context.WithoutCancel(ctx))
 
-	// Structural diffs can contain metadata-only changes that the changeset
-	// excludes. Copy only its declared paths so those extra files cannot
-	// overwrite independent edits in the target.
+	// The source holds more than the changeset declares: all of After, which
+	// can also carry metadata-only changes the changeset excludes. Copy only
+	// its declared paths so nothing else can overwrite independent edits in
+	// the target.
 	changedPaths := make(map[string]struct{})
 	for _, p := range slices.Concat(paths.Added, paths.Modified) {
 		changedPaths[p] = struct{}{}
@@ -3535,11 +3518,11 @@ func (dir *Directory) applyChangesToSnapshot(
 			return err
 		}
 
-		if diffSnapshot != nil {
-			err = MountRef(ctx, diffSnapshot, func(srcRoot string, srcMnt *mount.Mount) error {
+		if srcSnapshot != nil {
+			err = MountRef(ctx, srcSnapshot, func(srcRoot string, srcMnt *mount.Mount) error {
 				return copier.Copy(ctx,
 					layercopy.Mount{Root: srcRoot, Mount: srcMnt},
-					diffPath,
+					srcPath,
 					targetDir,
 					layercopy.CopyOptions{
 						CopyDirContents: true,
