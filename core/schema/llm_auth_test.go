@@ -55,7 +55,14 @@ func TestLLMCredentialReloadAfterRoutingCall(t *testing.T) {
 			t.Cleanup(providerServer.Close)
 			env := &llmAuthSecrets{vars: map[string]string{
 				"env://ANTHROPIC_AUTH_TOKEN": "token-v1",
-				"env://ANTHROPIC_BASE_URL":   providerServer.URL,
+			}}
+			// The main client's configuration: the nested client, when
+			// present, sends none of its own and inherits it.
+			main.LLMConfig = &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
+				"anthropic": {
+					AuthToken: "env://ANTHROPIC_AUTH_TOKEN",
+					BaseURL:   providerServer.URL,
+				},
 			}}
 			srv := &llmAuthSchemaServer{
 				currentTypeDefsTestServer: &currentTypeDefsTestServer{mainClient: main},
@@ -159,6 +166,12 @@ func TestComposedLLMCredentialIsolatedAcrossSessions(t *testing.T) {
 			for _, session := range []string{"first", "second"} {
 				t.Run(session, func(t *testing.T) {
 					md := &engine.ClientMetadata{SessionID: session, ClientID: session + "-client"}
+					md.LLMConfig = &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
+						"anthropic": {
+							AuthToken: "env://ANTHROPIC_AUTH_TOKEN",
+							Model:     "claude-sonnet-4-5",
+						},
+					}}
 					var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
 					newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
 						return engine.NewClientLifecycleLease(kind, owner, nil, func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
@@ -174,7 +187,7 @@ func TestComposedLLMCredentialIsolatedAcrossSessions(t *testing.T) {
 					ctx = dagql.ContextWithCache(ctx, cache)
 					env := &llmAuthSecrets{vars: map[string]string{
 						"env://ANTHROPIC_AUTH_TOKEN": "token-" + session,
-						"env://ANTHROPIC_MODEL":      "claude-sonnet-4-5",
+						"env://SOME_RESOURCE":        "resource-" + session,
 					}}
 					srv := &llmAuthSchemaServer{
 						currentTypeDefsTestServer: &currentTypeDefsTestServer{mainClient: md},
@@ -226,13 +239,13 @@ func TestComposedLLMCredentialIsolatedAcrossSessions(t *testing.T) {
 					if withResource {
 						// Model a middleware result retaining a secret. On the next
 						// session's compose lookup this handle is unavailable, forcing
-						// execution rather than a direct cache hit. Default routing
-						// loads the same model secret and makes the old result eligible
-						// again before compose publishes its returned-result alias.
+						// execution rather than a direct cache hit, and the old
+						// result must not become eligible again before compose
+						// publishes its returned-result alias.
 						var secret dagql.ObjectResult[*core.Secret]
 						require.NoError(t, dag.Select(ctx, dag.Root(), &secret, dagql.Selector{
 							Field: "secret",
-							Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString("env://ANTHROPIC_MODEL")}},
+							Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString("env://SOME_RESOURCE")}},
 						}))
 						require.NoError(t, cache.AddExplicitDependency(ctx, llm, secret, "test compose resource dependency"))
 					}
@@ -273,7 +286,7 @@ func (s *llmAuthSecrets) GetSecret(ctx context.Context, req *secrets.GetSecretRe
 		return nil, s.err
 	}
 	if s.refreshRejected && req.ID == "env://ANTHROPIC_AUTH_TOKEN" {
-		if rejected := secretprovider.RejectedEnvValue(ctx); rejected != "" {
+		if rejected := secretprovider.RejectedSecretValue(ctx); rejected != "" {
 			s.lastRejected = rejected
 			if rejected == fmt.Sprintf("%x", sha256.Sum256([]byte(s.vars[req.ID]))) {
 				s.vars[req.ID] = "token-v3"

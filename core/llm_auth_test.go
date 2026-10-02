@@ -11,24 +11,20 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 )
 
 // llmEndpointTestServer is the minimal Query.Server an LLM.Endpoint()
-// resolution needs: a dagql server to run the `secret(uri:){plaintext}`
-// lookups against, and one client identity to load config from (so
-// loadLLMRouter's main-client/parent-client layering collapses to a single
-// load).
+// resolution needs: session attachables to resolve credential URIs against,
+// and one client identity to load config from (so loadLLMRouter's
+// main-client/parent-client layering collapses to a single load).
 type llmEndpointTestServer struct {
 	*mockServer
-	srv *dagql.Server
-	md  *engine.ClientMetadata
-}
-
-func (s *llmEndpointTestServer) Server(context.Context) (*dagql.Server, error) {
-	return s.srv, nil
+	md *engine.ClientMetadata
 }
 
 func (s *llmEndpointTestServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
@@ -39,15 +35,18 @@ func (s *llmEndpointTestServer) NonModuleParentClientMetadata(context.Context) (
 	return s.md, nil
 }
 
-// llmEnv is a mutable stand-in for the client's environment, so a test can
-// rotate ANTHROPIC_AUTH_TOKEN mid-"session" the way the CLI's env refresher
-// does when the OAuth access token expires.
+// llmEnv is a mutable stand-in for the client's secret provider, so a test can
+// rotate ANTHROPIC_AUTH_TOKEN mid-"session" the way the CLI's llmconfig://
+// resolver does when the OAuth access token expires. anthropic is the
+// provider config the client sent, mutable until the endpoint is routed.
 type llmEnv struct {
 	mu   sync.Mutex
 	vars map[string]string
-	// reads counts env:// lookups, i.e. how often the engine actually went
+	// reads counts secret lookups, i.e. how often the engine actually went
 	// back to the client for a value.
 	reads map[string]int
+
+	anthropic *engine.LLMProviderConfig
 }
 
 func (e *llmEnv) get(uri string) string {
@@ -69,9 +68,32 @@ func (e *llmEnv) readCount(uri string) int {
 	return e.reads[uri]
 }
 
+// llmEnvSecretsServer serves a client's secrets attachable from an llmEnv,
+// one GetSecret RPC per lookup, like the real client's secret provider.
+type llmEnvSecretsServer struct {
+	secrets.UnimplementedSecretsServer
+	resolve func(ctx context.Context, uri string) (string, error)
+}
+
+func (s *llmEnvSecretsServer) GetSecret(ctx context.Context, req *secrets.GetSecretRequest) (*secrets.GetSecretResponse, error) {
+	v, err := s.resolve(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &secrets.GetSecretResponse{Data: []byte(v)}, nil
+}
+
+func newLLMEnvAttachable(t *testing.T, resolve func(ctx context.Context, uri string) (string, error)) *grpc.ClientConn {
+	t.Helper()
+	return newTestAttachableConn(t, func(server *grpc.Server) {
+		secrets.RegisterSecretsServer(server, &llmEnvSecretsServer{resolve: resolve})
+	})
+}
+
 // newLLMEndpointTestCtx wires a context in which (*LLM).Endpoint resolves for
-// real: it routes through loadLLMRouter -> LoadClientConfig -> the mocked
-// `secret(uri:){plaintext}` selection, reading from the returned llmEnv.
+// real: it routes through loadLLMRouter -> the client's LLMConfig -> credential
+// URIs resolved over the client's secrets attachable, reading from the
+// returned llmEnv.
 func newLLMEndpointTestCtx(t *testing.T) (context.Context, *llmEnv) {
 	t.Helper()
 	return newLLMEndpointTestClientCtx(t, &engine.ClientMetadata{ClientID: "llm-test-client", SessionID: "llm-test-session"})
@@ -82,38 +104,32 @@ func newLLMEndpointTestClientCtx(t *testing.T, md *engine.ClientMetadata) (conte
 
 	env := &llmEnv{
 		vars: map[string]string{
-			"file://.env":                "",
 			"env://ANTHROPIC_AUTH_TOKEN": "token-v1",
-			"env://ANTHROPIC_MODEL":      "claude-sonnet-4-5",
 		},
 		reads: map[string]int{},
+		anthropic: &engine.LLMProviderConfig{
+			AuthToken:          "env://ANTHROPIC_AUTH_TOKEN",
+			AuthTokenExpiresAt: "env://ANTHROPIC_AUTH_TOKEN_EXPIRES_AT",
+			Model:              "claude-sonnet-4-5",
+		},
 	}
-
-	// Mirror the real secret schema's cache semantics (core/schema/secret.go):
-	// `secret(uri:)` is PerCallInput and `plaintext` is DoNotCache, so every
-	// resolution really does go back to the client — which is what the CLI's
-	// env refresher hook relies on.
-	srv := newCoreDagqlServerForTest(t, LLMTestQuery{})
-	dagql.Fields[LLMTestQuery]{
-		dagql.Func("secret", func(_ context.Context, _ LLMTestQuery, args struct {
-			URI string
-		}) (mockSecret, error) {
-			return mockSecret{uri: args.URI}, nil
-		}).WithInput(dagql.PerCallInput),
-	}.Install(srv)
-	dagql.Fields[mockSecret]{
-		dagql.Func("plaintext", func(_ context.Context, self mockSecret, _ struct{}) (string, error) {
-			return env.get(self.uri), nil
-		}).DoNotCache("plaintext is read fresh from the client"),
-	}.Install(srv)
+	md.LLMConfig = &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
+		"anthropic": env.anthropic,
+	}}
 
 	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
 	require.NoError(t, err)
 
 	query := &Query{Server: &llmEndpointTestServer{
-		mockServer: &mockServer{clientMetadata: md},
-		srv:        srv,
-		md:         md,
+		mockServer: &mockServer{
+			clientMetadata: md,
+			attachables: map[string]*grpc.ClientConn{
+				md.ClientID: newLLMEnvAttachable(t, func(_ context.Context, uri string) (string, error) {
+					return env.get(uri), nil
+				}),
+			},
+		},
+		md: md,
 	}}
 
 	ctx := dagql.ContextWithCache(engine.ContextWithClientMetadata(t.Context(), md), cache)
@@ -158,7 +174,7 @@ func TestLLMEndpointCredentialOutlivesRoutingScope(t *testing.T) {
 		defer mu.Unlock()
 		seen = append(seen, auth)
 	})
-	env.set("env://ANTHROPIC_BASE_URL", ts.URL)
+	env.anthropic.BaseURL = ts.URL
 	md, err := engine.ClientMetadataFromContext(ctx)
 	require.NoError(t, err)
 	var held atomic.Int64
@@ -226,7 +242,7 @@ func TestLLMEndpointCredentialsStayInSession(t *testing.T) {
 			newSession := func(id string) context.Context {
 				md := &engine.ClientMetadata{ClientID: "client-" + id, SessionID: id}
 				ctx, env := newLLMEndpointTestClientCtx(t, md)
-				env.set("env://ANTHROPIC_BASE_URL", ts.URL)
+				env.anthropic.BaseURL = ts.URL
 				env.set("env://ANTHROPIC_AUTH_TOKEN", "token-"+id)
 				var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
 				newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
@@ -297,7 +313,7 @@ func TestLLMEndpointResolvesCredentialPerRequest(t *testing.T) {
 		defer mu.Unlock()
 		seen = append(seen, auth)
 	})
-	env.set("env://ANTHROPIC_BASE_URL", ts.URL)
+	env.anthropic.BaseURL = ts.URL
 
 	llm, err := query.NewLLM(ctx, "claude-sonnet-4-5", "")
 	require.NoError(t, err)
@@ -315,8 +331,8 @@ func TestLLMEndpointResolvesCredentialPerRequest(t *testing.T) {
 	_, err = ep.Client.SendQuery(ctx, llmTestHistory(), nil, &LLMCallOpts{})
 	require.Error(t, err)
 
-	// The client refreshes the expired access token (secretprovider's
-	// EnvRefresher hook + os.Setenv, engine/client/secretprovider/env.go).
+	// The client refreshes the expired access token behind its llmconfig://
+	// resolver (internal/cmd/dagger/llmconfig).
 	env.set("env://ANTHROPIC_AUTH_TOKEN", "token-v2")
 	clk.Advance(credentialRefreshTTL + time.Second)
 
@@ -383,7 +399,7 @@ func TestLLMEndpointHonorsReportedExpiry(t *testing.T) {
 		defer mu.Unlock()
 		seen = append(seen, auth)
 	})
-	env.set("env://ANTHROPIC_BASE_URL", ts.URL)
+	env.anthropic.BaseURL = ts.URL
 
 	// The login has three minutes left on it: short of credentialMaxTTL, so
 	// the reported expiry is what governs the horizon here.
@@ -445,7 +461,7 @@ func TestLLMAuthFailureRetriesOnceWithFreshToken(t *testing.T) {
 		// the token it cached before that happened.
 		env.set("env://ANTHROPIC_AUTH_TOKEN", "token-v2")
 	})
-	env.set("env://ANTHROPIC_BASE_URL", ts.URL)
+	env.anthropic.BaseURL = ts.URL
 
 	llm, err := query.NewLLM(ctx, "claude-sonnet-4-5", "")
 	require.NoError(t, err)
@@ -598,45 +614,45 @@ func TestCodexClientRotatesAccountIDWithToken(t *testing.T) {
 // credentials: the reload runs against the client whose configuration supplied
 // the token, whoever happens to be making the request.
 func TestLLMCredentialResolvesAgainstLoadingClient(t *testing.T) {
-	srv := newCoreDagqlServerForTest(t, LLMTestQuery{})
-	dagql.Fields[LLMTestQuery]{
-		dagql.Func("secret", func(_ context.Context, _ LLMTestQuery, args struct {
-			URI string
-		}) (mockSecret, error) {
-			return mockSecret{uri: args.URI}, nil
-		}).WithInput(dagql.PerCallInput),
-	}.Install(srv)
-	dagql.Fields[mockSecret]{
-		dagql.Func("plaintext", func(ctx context.Context, self mockSecret, _ struct{}) (string, error) {
-			md, err := engine.ClientMetadataFromContext(ctx)
-			if err != nil {
-				return "", err
-			}
-			if self.uri == "env://ANTHROPIC_AUTH_TOKEN" {
-				return "token-of-" + md.ClientID, nil
+	attachables := map[string]*grpc.ClientConn{}
+	for _, id := range []string{"host", "nested-agent"} {
+		attachables[id] = newLLMEnvAttachable(t, func(_ context.Context, uri string) (string, error) {
+			if uri == "env://ANTHROPIC_AUTH_TOKEN" {
+				return "token-of-" + id, nil
 			}
 			return "", nil
-		}).DoNotCache("plaintext is read fresh from the client"),
-	}.Install(srv)
-
+		})
+	}
 	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
 	require.NoError(t, err)
+	query := &Query{Server: &mockServer{attachables: attachables}}
 	withClient := func(id string) context.Context {
-		return dagql.ContextWithCache(engine.ContextWithClientMetadata(t.Context(),
+		ctx := ContextWithQuery(t.Context(), query)
+		return dagql.ContextWithCache(engine.ContextWithClientMetadata(ctx,
 			&engine.ClientMetadata{ClientID: id, SessionID: "llm-test-session"}), cache)
 	}
 
+	host := &engine.ClientMetadata{ClientID: "host", SessionID: "llm-test-session"}
 	router := new(LLMRouter)
-	_, err = router.LoadClientConfig(withClient("host"), srv)
-	require.NoError(t, err)
-	require.Equal(t, "token-of-host", router.AnthropicAuthToken)
-	require.NotNil(t, router.reloadAnthropicAuthToken)
+	require.NoError(t, router.Apply(&engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
+		"anthropic": {AuthToken: "env://ANTHROPIC_AUTH_TOKEN"},
+	}}, host))
+	route := router.Providers[Anthropic]
+	require.Same(t, host, route.client)
 
 	// The request that needs the credential comes from a nested client, which
 	// has no login of its own. Resolution must still land on the host's.
-	cred, err := router.reloadAnthropicAuthToken.detach(withClient("host"))(withClient("nested-agent"))
+	reload := credentialReloader(route.resolveCredential, route.AuthToken, route.AuthTokenExpiresAt)
+	cred, err := reload.detach(withClient("host"))(withClient("nested-agent"))
 	require.NoError(t, err)
 	assert.Equal(t, "token-of-host", cred.Token)
+
+	// Routing the endpoint from the nested client resolves the host's token
+	// into the routing-time snapshot too.
+	ep, err := router.Endpoint(withClient("nested-agent"), "claude-sonnet-4-5", "")
+	require.NoError(t, err)
+	assert.Equal(t, "token-of-host", ep.AuthToken)
+	assert.True(t, ep.IsOAuth)
 }
 
 // TestLLMEndpointConcurrentCloneAndResolve exercises the Clone()/Endpoint()
