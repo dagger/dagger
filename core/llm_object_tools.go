@@ -1484,9 +1484,15 @@ func toolCallReportOpts() traceReportOpts {
 		// conversation rather than work. ReadLogs remains the discovery path.
 		HideNoise: true,
 		// The report is about this tool call, not about the agent that made
-		// it: drop the whole-trace CONVERSATION/SERVICES sections, which would
-		// otherwise render the caller's own transcript back at it.
+		// it: drop the whole-trace verdict header and the live-tree
+		// promotions, which would otherwise render the caller's own run back
+		// at it. (The surfaced sections are already relative to the tool
+		// call; this flag does not scope them.)
 		Scoped: true,
+		// A tool that runs a nested LLM loop (summarize this page, delegate
+		// to a sub-agent) is called to keep that conversation out of the
+		// caller's context. Render a pointer to it, not the transcript.
+		HideConversation: true,
 		// Nested work is abridged to a tail, exactly as in the flat path; the
 		// OUTPUT section carries the tool's own lines unabridged.
 		NestedLogLines: llmToolLogsMaxLines,
@@ -1495,9 +1501,9 @@ func toolCallReportOpts() traceReportOpts {
 		// check "<name>"` commands it cannot run.
 		SuggestReadTrace: true,
 		// A tool result is about the RESULT, not about the machinery: keep
-		// what the call surfaced (CHECKS, TESTS, SERVICES, conversation) and
-		// the tool's own OUTPUT, and drop the span tree. An agent that wants
-		// the tree asks for it with ReadTrace, which keeps rendering it.
+		// what the call surfaced (CHECKS, TESTS, SERVICES) and the tool's own
+		// OUTPUT, and drop the span tree. An agent that wants the tree asks
+		// for it with ReadTrace, which keeps rendering it.
 		HideSpanTree: true,
 	}
 }
