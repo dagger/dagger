@@ -8,6 +8,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 )
 
@@ -97,5 +98,23 @@ func TestGCLockedCollectsGarbageWithGCDisabled(t *testing.T) {
 		snapshotGarbage: garbage,
 	}
 	require.NoError(t, srv.gcLocked(ctx, localCacheGCScheduled))
+	requireSnapshotCollected(t, store, releasedID)
+}
+
+// An explicit prune that removes no entries still reclaims released data.
+func TestExplicitPruneCollectsReleasedSnapshots(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	garbage := newSnapshotGarbage(store.DB)
+
+	released, releasedOwner := store.Build(t, nil, "released", "released data")
+	releasedID := released.SnapshotID()
+	require.NoError(t, released.Release(ctx))
+	require.NoError(t, store.Manager.RemoveLease(ctx, releasedOwner))
+
+	srv := &Server{rootDir: t.TempDir(), engineCache: newGCTestCache(t), snapshotGarbage: garbage}
+	_, err := srv.PruneEngineLocalCacheEntries(ctx, core.EngineCachePruneOptions{})
+	require.NoError(t, err)
 	requireSnapshotCollected(t, store, releasedID)
 }

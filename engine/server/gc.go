@@ -130,6 +130,11 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 			rerr = errors.Join(rerr, fmt.Errorf("failed to prune dagql cache metadata: %w", err))
 		}
 	}
+	// Like a GC pass, an explicit prune also reclaims data released outside
+	// any prune, even when it removes no entries itself.
+	if err := srv.snapshotGarbage.CollectIfPending(ctx); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("collect snapshot garbage: %w", err))
+	}
 	if rerr != nil {
 		return nil, rerr
 	}
