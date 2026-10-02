@@ -2047,7 +2047,9 @@ type workspaceWithPatchFileArgs struct {
 // A host-backed workspace's overlay holds just its edits (see overlayEdit),
 // so the patch applies to those, with the host's content at the paths the
 // patch reads from (what it modifies, deletes, or renames or copies from)
-// seeded in first. Those paths come from the patch's own headers.
+// seeded in first. Those paths come from the patch's own headers. What the
+// overlay does not hold, `git apply` cannot see, so a path the patch creates
+// is checked against the host instead (refuseExistingCreates).
 func (s *workspaceSchema) withPatchFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -2076,7 +2078,12 @@ func (s *workspaceSchema) withPatchFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, paths.touched, paths.reads, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.overlayEditWithHost(ctx, parent, paths.touched, paths.reads, func(base, hostBase dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		if host {
+			if err := refuseExistingCreates(ctx, srv, ws, hostBase, paths.created, args.OnConflict); err != nil {
+				return base, err
+			}
+		}
 		var patched dagql.ObjectResult[*core.Directory]
 		if err := srv.Select(ctx, base, &patched, dagql.Selector{
 			Field: "withPatchFile",
@@ -2092,6 +2099,46 @@ func (s *workspaceSchema) withPatchFile(
 		}
 		return restorePrunedParents(ctx, srv, base, patched, paths.removed)
 	}, nil)
+}
+
+// refuseExistingCreates fails, as `git apply` does, when a host-backed
+// workspace already holds a path the patch creates. The patch applies to the
+// overlay's delta root, which holds only paths earlier edits touched, so git
+// apply catches just those; anywhere else the workspace holds what the host
+// does, and the sparse host base carries it, the patch's own paths being
+// touched. A path the patch also removes (a type change, a rename onto a
+// renamed-away path) is free, as for git apply.
+func refuseExistingCreates(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws *core.Workspace,
+	hostBase dagql.ObjectResult[*core.Directory],
+	created []string,
+	onConflict core.PatchConflict,
+) error {
+	var existing []string
+	for _, p := range created {
+		if ws.OverlayPathTouched(p) {
+			continue
+		}
+		var exists dagql.Boolean
+		if err := srv.Select(ctx, hostBase, &exists, dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(p)},
+				{Name: "doNotFollowSymlinks", Value: dagql.Opt(dagql.Boolean(true))},
+			},
+		}); err != nil {
+			return fmt.Errorf("check patch target %q: %w", p, err)
+		}
+		if exists {
+			existing = append(existing, p)
+		}
+	}
+	if len(existing) > 0 {
+		return core.PatchCreatesExistingError(onConflict, existing)
+	}
+	return nil
 }
 
 // restorePrunedParents puts back the parent directories of removed paths
@@ -2152,6 +2199,9 @@ type patchedWorkspacePaths struct {
 	reads []string
 	// removed are the paths it deletes or renames from.
 	removed []string
+	// created are the paths it creates — new files, rename and copy
+	// targets — and does not also remove.
+	created []string
 }
 
 // patchWorkspacePaths returns the paths a patch touches, refusing any at or
@@ -2193,6 +2243,9 @@ func patchWorkspacePaths(ctx context.Context, ws *core.Workspace, patch dagql.Ob
 				return out, err
 			}
 			out.touched = append(out.touched, newPath)
+			if newPath != oldPath {
+				out.created = append(out.created, newPath)
+			}
 		}
 		if oldPath != "" && newPath != oldPath && !f.Copy {
 			out.removed = append(out.removed, oldPath)
@@ -2201,6 +2254,9 @@ func patchWorkspacePaths(ctx context.Context, ws *core.Workspace, patch dagql.Ob
 	out.touched = unionPaths(nil, out.touched)
 	out.reads = unionPaths(nil, out.reads)
 	out.removed = unionPaths(nil, out.removed)
+	out.created = slices.DeleteFunc(unionPaths(nil, out.created), func(p string) bool {
+		return slices.Contains(out.removed, p)
+	})
 	return out, nil
 }
 
@@ -2778,6 +2834,24 @@ func (s *workspaceSchema) overlayEdit(
 	edit func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error),
 	mutate func(*core.Workspace),
 ) (dagql.ObjectResult[*core.Workspace], error) {
+	return s.overlayEditWithHost(ctx, parent, touched, readsExisting, func(base, _ dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		return edit(base)
+	}, mutate)
+}
+
+// overlayEditWithHost is overlayEdit for an edit that also consults the host:
+// for a host-backed workspace, `edit` gets the sparse host base over the
+// touched paths alongside the delta root — the host's content at those paths,
+// read once for the diff anyway, so consulting it adds no host reads. For any
+// other workspace it gets a zero result: the base is already the full tree.
+func (s *workspaceSchema) overlayEditWithHost(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	touched []string,
+	readsExisting []string,
+	edit func(base, host dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error),
+	mutate func(*core.Workspace),
+) (dagql.ObjectResult[*core.Workspace], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -2791,7 +2865,7 @@ func (s *workspaceSchema) overlayEdit(
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
-		fullRoot, err := edit(fullBase)
+		fullRoot, err := edit(fullBase, dagql.ObjectResult[*core.Directory]{})
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
@@ -2827,7 +2901,7 @@ func (s *workspaceSchema) overlayEdit(
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
 	}
-	deltaRoot, err := edit(deltaBase)
+	deltaRoot, err := edit(deltaBase, sparseBase)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
