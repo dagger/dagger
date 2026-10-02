@@ -105,24 +105,22 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	if err != nil {
 		return nil, err
 	}
-	srv, err := dagql.NewServer(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("create module dagql server: %w", err)
-	}
-	srv.Around(AroundFunc)
-	InstallCoreSchemaLoaders(srv)
 	// Install default "dependencies" (ie the core)
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%q: load core schema: %w", main.Name(), err)
 	}
-	// Install dependencies
-	for _, defaultDep := range defaultDeps.Mods() {
-		if err := defaultDep.Install(ctx, srv); err != nil {
-			return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
-		}
+	coreSchema, err := defaultDeps.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
 	}
-	// Install the main module
+	srv, err := coreSchema.Fork(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("%q: fork core schema: %w", main.Name(), err)
+	}
+	// Artifact discovery needs the unversioned API, including newer core fields.
+	srv.View = ""
+	InstallCoreSchemaLoaders(srv)
 	if err := NewUserMod(mod).Install(ctx, srv); err != nil {
 		return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
 	}
