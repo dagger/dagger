@@ -28,8 +28,10 @@ much disk space the cache may use:
 }
 ```
 
-- `maxUsedSpace` is the cache size above which the engine prunes.
-- `reservedSpace` is the cache size that pruning for `maxUsedSpace` keeps.
+- `maxUsedSpace` is the largest the cache may grow. Above it, the engine prunes
+  the cache back to this size.
+- `reservedSpace` is a floor for that pruning, which never takes the cache
+  below this size.
 - `minFreeSpace` is the free disk space the engine prunes to keep.
 
 A disk space value is a number of bytes (`512000000`), a size with a unit
@@ -41,9 +43,10 @@ The engine turns these settings into a list of pruning policies. To control
 pruning in more detail, set `gc.policies` instead. Each policy can match
 entries by filter and has its own space settings. A policy's `keepDuration`
 keeps entries used within that time out of the policy, even when free space is
-below `minFreeSpace`. End a custom list with a policy that matches all entries,
-has space settings, and has no `keepDuration`, so recent entries can still be
-pruned when the disk fills:
+below `minFreeSpace`. An entry whose cache TTL has expired is not kept. End a
+custom list with a policy that matches all entries, has space settings, and
+has no `keepDuration`, so recent entries can still be pruned when the disk
+fills:
 
 ```json
 {
