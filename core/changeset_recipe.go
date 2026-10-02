@@ -178,71 +178,45 @@ func workspaceTreePrefix(id *call.ID, leaves map[digest.Digest]bool, ws *Workspa
 	if leaves[id.Digest()] {
 		return ".", true
 	}
-	stringArg := func(name string) (string, bool) {
-		arg := id.Arg(name)
-		if arg == nil {
-			return "", false
-		}
-		lit, ok := arg.Value().(*call.LiteralString)
-		if !ok {
-			return "", false
-		}
-		return lit.Value(), true
-	}
-	within := func(p string) (string, bool) {
-		p = path.Clean(p)
-		if p == ".." || strings.HasPrefix(p, "../") || path.IsAbs(p) {
-			return "", false
-		}
-		return p, true
-	}
 	receiver := id.Receiver()
 	if receiver == nil || receiver.Type() == nil || id.Module() != nil {
 		return "", false
 	}
 	switch parent, field := receiver.Type().NamedType(), id.Field(); {
-	case parent == "Workspace" && (field == "directory"):
+	case parent == "Workspace" && field == "directory":
 		if !leaves[stableIDDigest(receiver)] {
 			return "", false
 		}
-		p, ok := stringArg("path")
+		p, ok := pathArg(id)
 		if !ok {
 			p = "."
 		}
 		if strings.HasPrefix(p, "/") {
-			return within(strings.TrimPrefix(p, "/"))
+			return withinTree(strings.TrimPrefix(p, "/"))
 		}
-		return within(path.Join(ws.Cwd, p))
+		return withinTree(path.Join(ws.Cwd, p))
 	case parent == "Host" && field == "directory":
-		hostRoot := ws.HostPath()
-		p, ok := stringArg("path")
-		if hostRoot == "" || !ok {
-			return "", false
-		}
-		hostRoot = path.Clean(filepath.ToSlash(hostRoot))
-		p = path.Clean(filepath.ToSlash(p))
-		if p == hostRoot {
-			return ".", true
-		}
-		rel, inside := strings.CutPrefix(p, hostRoot+"/")
-		if !inside {
-			return "", false
-		}
-		return within(rel)
-	case parent != "Directory":
-		return "", false
+		return hostReadPrefix(id, ws)
+	case parent == "Directory":
+		return directoryTreePrefix(id, receiver, leaves, ws)
+	}
+	return "", false
+}
+
+// directoryTreePrefix is workspaceTreePrefix for a Directory field.
+func directoryTreePrefix(id, receiver *call.ID, leaves map[digest.Digest]bool, ws *Workspace) (string, bool) {
+	switch field := id.Field(); {
 	case field == "directory":
 		base, ok := workspaceTreePrefix(receiver, leaves, ws)
-		sub, hasPath := stringArg("path")
+		sub, hasPath := pathArg(id)
 		if !ok || !hasPath {
 			return "", false
 		}
-		return within(path.Join(base, strings.TrimPrefix(sub, "/")))
+		return withinTree(path.Join(base, strings.TrimPrefix(sub, "/")))
 	case field == "withDirectory" && receiver.Field() == "directory" && receiver.Receiver() == nil:
 		// An empty directory with a tree copied to its root: the copy, e.g.
 		// a filtered workspace read.
-		dest, _ := stringArg("path")
-		if path.Clean("/"+dest) != "/" {
+		if dest, _ := pathArg(id); path.Clean("/"+dest) != "/" {
 			return "", false
 		}
 		source := id.Arg("source")
@@ -258,6 +232,48 @@ func workspaceTreePrefix(id *call.ID, leaves map[digest.Digest]bool, ws *Workspa
 		return workspaceTreePrefix(receiver, leaves, ws)
 	}
 	return "", false
+}
+
+// hostReadPrefix places a host directory read within a host-backed
+// workspace's host path.
+func hostReadPrefix(id *call.ID, ws *Workspace) (string, bool) {
+	hostRoot := ws.HostPath()
+	p, ok := pathArg(id)
+	if hostRoot == "" || !ok {
+		return "", false
+	}
+	hostRoot = path.Clean(filepath.ToSlash(hostRoot))
+	p = path.Clean(filepath.ToSlash(p))
+	if p == hostRoot {
+		return ".", true
+	}
+	rel, inside := strings.CutPrefix(p, hostRoot+"/")
+	if !inside {
+		return "", false
+	}
+	return withinTree(rel)
+}
+
+// pathArg returns a call's path argument.
+func pathArg(id *call.ID) (string, bool) {
+	arg := id.Arg("path")
+	if arg == nil {
+		return "", false
+	}
+	lit, ok := arg.Value().(*call.LiteralString)
+	if !ok {
+		return "", false
+	}
+	return lit.Value(), true
+}
+
+// withinTree cleans a relative path, refusing one that leaves its tree.
+func withinTree(p string) (string, bool) {
+	p = path.Clean(p)
+	if p == ".." || strings.HasPrefix(p, "../") || path.IsAbs(p) {
+		return "", false
+	}
+	return p, true
 }
 
 func impureLiteral(lit call.Literal, leaves map[digest.Digest]bool, memo map[digest.Digest]string) string {
