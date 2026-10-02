@@ -1,7 +1,10 @@
 package core
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,10 +12,107 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/stretchr/testify/require"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+type unsentLLMTransport struct{}
+
+func (unsentLLMTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	defer req.Body.Close()
+	if _, err := io.Copy(io.Discard, req.Body); err != nil {
+		return nil, err
+	}
+	return nil, errors.New("request buffered but not sent")
+}
+
+func TestLLMUnsentRequestHasNoNetworkEstimate(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, mp.Shutdown(t.Context())) })
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	t.Cleanup(func() { require.NoError(t, tp.Shutdown(t.Context())) })
+	ctx, span := tp.Tracer("test").Start(t.Context(), "llm")
+	defer span.End()
+	ctx, err := enginetelemetry.WithNetworkRecording(telemetry.WithMeterProvider(ctx, mp))
+	require.NoError(t, err)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://unused.invalid", strings.NewReader(`{"model":"test"}`))
+	require.NoError(t, err)
+	resp, err := newLLMOTelTransport(unsentLLMTransport{}, "test").RoundTrip(req)
+	if resp != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+	require.ErrorContains(t, err, "request buffered but not sent")
+	var data metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(ctx, &data))
+	for _, scope := range data.ScopeMetrics {
+		require.Empty(t, scope.Metrics)
+	}
+}
+
+func TestLLMAttributedNetworkBytes(t *testing.T) {
+	const requestBody = `{"model":"test"}`
+	responseBody := strings.Repeat(`{"ok":true}`, 1024)
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	_, err := io.WriteString(zw, responseBody)
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	compressedBody := compressed.Bytes()
+	var acceptEncoding string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		acceptEncoding = r.Header.Get("Accept-Encoding")
+		_, err := io.Copy(io.Discard, r.Body)
+		require.NoError(t, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		_, err = w.Write(compressedBody)
+		require.NoError(t, err)
+	}))
+	t.Cleanup(srv.Close)
+
+	reader := sdkmetric.NewManualReader()
+	meterProvider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, meterProvider.Shutdown(t.Context())) })
+	traceProvider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	t.Cleanup(func() { require.NoError(t, traceProvider.Shutdown(t.Context())) })
+	ctx, span := traceProvider.Tracer("test").Start(context.Background(), "llm")
+	defer span.End()
+	ctx = telemetry.WithMeterProvider(ctx, meterProvider)
+	ctx, err = enginetelemetry.WithNetworkRecording(ctx)
+	require.NoError(t, err)
+
+	client := &http.Client{Transport: newLLMOTelTransport(nil, "test")}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, srv.URL, strings.NewReader(requestBody),
+	)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	gotBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, "gzip", acceptEncoding)
+	require.Equal(t, responseBody, string(gotBody))
+	require.Less(t, len(compressedBody), len(responseBody))
+
+	var data metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(ctx, &data))
+	got := map[string]int64{}
+	for _, current := range data.ScopeMetrics[0].Metrics {
+		gauge := current.Data.(metricdata.Gauge[int64])
+		got[current.Name] = gauge.DataPoints[0].Value
+	}
+	require.Equal(t, map[string]int64{
+		telemetryattrs.NetworkEstimatedRxBytes: int64(len(compressedBody)),
+	}, got)
+}
 
 // TestCaptureBodyTruncatesOnRuneBoundary: a body cut at the capture limit
 // must stay valid UTF-8 whatever character straddles the limit, since the
