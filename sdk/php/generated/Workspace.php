@@ -441,6 +441,21 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+     *
+     * Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+     */
+    public function withPatchFile(File $patch, ?PatchConflict $onConflict = null): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatchFile');
+        $innerQueryBuilder->setArgument('patch', $patch);
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with its working directory pointed at the given workspace-relative path.
      */
     public function withWorkdir(string $path): Workspace
