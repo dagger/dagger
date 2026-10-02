@@ -11,6 +11,99 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Exercise the actual nested CLI, exec transport, and interactive prompt
+// attachable together. No LLM or Cloud credentials are needed.
+func (WorkspaceSuite) TestNestedCLISnapshotApproval(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	changes, err := c.Directory().WithNewFile("created.txt", "created").Changes(c.Directory()).ID(ctx)
+	require.NoError(t, err)
+	query := fmt.Sprintf(`{ currentWorkspace { snapshot {
+		file(path: "untracked.txt") { contents }
+		withNewFile(path: "created.txt", contents: "created") {
+			withCommit(changes: %q, message: "nested approval", date: "2026-09-05T12:00:00Z") {
+				file(path: "created.txt") { contents }
+				git { head { targetCommit { message } } }
+			}
+		}
+	} } }`, changes)
+	out, err := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "python3"}).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/repo").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"git", "config", "user.name", "Nested CLI"}).
+		WithExec([]string{"git", "config", "user.email", "nested@example.com"}).
+		WithNewFile("tracked.txt", "tracked").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		WithNewFile("untracked.txt", "approved").
+		WithNewFile("/query.graphql", query).
+		WithNewFile("/drive-console.py", `
+import json, os, signal, socket, subprocess, time, urllib.request
+
+with socket.socket() as listener:
+    listener.bind(("127.0.0.1", 0))
+    address = "127.0.0.1:" + str(listener.getsockname()[1])
+url = "http://" + address
+os.environ["DAGGER_TUI_CONSOLE"] = address
+screen = ""
+result = None
+with open("/stdout", "w+") as stdout, open("/stderr", "w+") as stderr:
+    cli = subprocess.Popen(["dagger", "-m", "core", "api", "query", "--doc=/query.graphql"],
+                           stdout=stdout, stderr=stderr)
+    try:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                with urllib.request.urlopen(url + "/screen", timeout=2) as response:
+                    screen = response.read().decode()
+            except OSError:
+                pass
+            if "Include workspace changes?" in screen:
+                break
+            if cli.poll() is not None:
+                raise AssertionError("CLI exited without prompting")
+            time.sleep(0.1)
+        else:
+            raise AssertionError("nested CLI never displayed approval")
+        assert "untracked.txt" in screen, screen
+        # Cancel is the safe default; explicitly select Include.
+        request = urllib.request.Request(url + "/key", data=b"up up enter", method="POST")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert response.status == 200
+        while time.monotonic() < deadline:
+            with urllib.request.urlopen(url + "/spans?q=dagger", timeout=2) as response:
+                spans = response.read().decode()
+            if any("  ok " in line and "api query" in line for line in spans.splitlines()):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("snapshot query never completed after approval: " + spans)
+        cli.send_signal(signal.SIGINT)  # The console stays open after completion.
+        assert cli.wait(timeout=10) == 0
+        stdout.seek(0)
+        result = json.loads(stdout.read())
+        snapshot = result["currentWorkspace"]["snapshot"]
+        assert snapshot["file"]["contents"] == "approved", result
+        commit = snapshot["withNewFile"]["withCommit"]
+        assert commit["file"]["contents"] == "created", result
+        assert commit["git"]["head"]["targetCommit"]["message"].strip() == "nested approval", result
+        print(json.dumps(result))
+    finally:
+        if cli.poll() is None:
+            cli.kill()
+            cli.wait(timeout=5)
+        if result is None:
+            stderr.seek(0)
+            print(stderr.read())
+            print(screen)
+`).
+		WithExec([]string{"python3", "/drive-console.py"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `"contents": "approved"`)
+	require.Contains(t, out, `"contents": "created"`)
+}
+
 func (WorkspaceSuite) TestGitCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
