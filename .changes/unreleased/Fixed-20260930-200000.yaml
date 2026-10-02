@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  LLM requests now send a turn's tool results before any other user content
+  that landed between the tool calls and their results, e.g. media appended
+  by a tool that returned a conversation. Providers rejected that order on
+  every later step (Anthropic: "tool_use ids were found without tool_result
+  blocks immediately after"), leaving the conversation stuck.
+time: 2026-09-30T20:00:00.000000000Z
+custom:
+    Author: vito
+    PR: "14430"
