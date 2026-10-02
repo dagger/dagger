@@ -192,7 +192,7 @@ func artifactPaths(addresses []*dagaddress.Address, keys ...dagaddress.Pair) []s
 	return paths
 }
 
-func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, flags []dagaddress.Pair, artifacts *dagger.Artifacts) *dagger.Artifacts {
+func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifacts *dagger.Artifacts) *dagger.Artifacts {
 	types, _ := cmd.Flags().GetStringArray("type")
 	if cmd.Flags().Changed("type") {
 		names := make([]string, 0, len(types))
@@ -208,9 +208,7 @@ func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, flags []
 		}
 	}
 	// Workspace.artifacts(include:) already selected the path and its children.
-	filter := *addr
-	filter.Query = append(slices.Clone(addr.Query), flags...)
-	return filterArtifactAddress(artifacts, &filter)
+	return filterArtifactAddress(artifacts, addr)
 }
 
 // filterArtifactAddress applies the type and dimension filters of an address.
@@ -342,7 +340,7 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 					return err
 				}
 			}
-			artifacts = applyArtifactFilters(cmd, &filter, nil, artifacts)
+			artifacts = applyArtifactFilters(cmd, &filter, artifacts)
 			if selected == nil {
 				selected = artifacts
 			} else {
