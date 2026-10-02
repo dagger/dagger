@@ -104,7 +104,7 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Evaluate the target in the workspace that supplied this artifact. An artifact of an LLM's bound tool object has no workspace of its own: it is evaluated from that object's value, in the workspace bound to the LLM, if any.
+     * Evaluate the target in the workspace that supplied this artifact.
      */
     public function value(?Json $arguments = null): Node
     {

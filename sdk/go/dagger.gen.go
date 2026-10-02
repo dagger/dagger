@@ -1235,7 +1235,7 @@ type ArtifactValueOpts struct {
 	Arguments JSON
 }
 
-// Evaluate the target in the workspace that supplied this artifact. An artifact of an LLM's bound tool object has no workspace of its own: it is evaluated from that object's value, in the workspace bound to the LLM, if any.
+// Evaluate the target in the workspace that supplied this artifact.
 func (r *Artifact) Value(opts ...ArtifactValueOpts) Node {
 	q := r.query.Select("value")
 	for i := len(opts) - 1; i >= 0; i-- {
