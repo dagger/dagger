@@ -33,16 +33,18 @@ func fileConfig(defaultProvider, defaultModel string, providers map[string]Provi
 }
 
 func TestAssembleFromFile(t *testing.T) {
-	file := fileConfig("gemini", "gemini-2.5-pro", map[string]Provider{
+	file := fileConfig("google", "gemini-2.5-pro", map[string]Provider{
 		"anthropic": {
 			AuthType: "oauth", AuthToken: "oauth-token", RefreshToken: "rt",
 			SmallModel: "claude-haiku", ReasoningEffort: "high",
 			ClaudeCodeVersion: "2.1.0", Enabled: true,
 		},
 		"openai-codex": {AuthType: "oauth", AuthToken: "codex-token", Model: "gpt-5.5", Enabled: true},
-		"gemini":       {APIKey: "gem-key", BaseURL: "https://gemini.example", Enabled: true},
+		"openrouter":   {APIKey: "or-key", Model: "anthropic/claude-sonnet-4.5", Enabled: true},
+		"google":       {APIKey: "gem-key", BaseURL: "https://gemini.example", Enabled: true},
 		"local":        {BaseURL: "http://localhost:11434/v1", APICompat: "openai", APIKey: "local-key", Model: "llama", Enabled: true},
 		"openai":       {APIKey: "disabled-key", Model: "gpt-4.1", Enabled: false},
+		"gemini":       {APIKey: "not-a-provider", Enabled: true},
 	})
 	cfg, literals, err := assemble(file, mapEnv(nil), nil)
 	require.NoError(t, err)
@@ -63,6 +65,10 @@ func TestAssembleFromFile(t *testing.T) {
 				AuthToken:          "llmconfig://openai-codex/auth_token",
 				AuthTokenExpiresAt: "llmconfig://openai-codex/auth_token_expires_at",
 				Model:              "gpt-5.5",
+			},
+			"openrouter": {
+				APIKey: "llmconfig://openrouter/api_key",
+				Model:  "anthropic/claude-sonnet-4.5",
 			},
 			"google": {
 				APIKey:  "llmconfig://google/api_key",
@@ -91,51 +97,34 @@ func TestAssembleNothingConfigured(t *testing.T) {
 	require.Nil(t, cfg)
 }
 
-// The openai and openrouter providers share the wire openai slot. Exactly one
-// owns it — the default provider if it is one of them, else openai — so map
-// iteration order can't pair one provider's key with the other's base URL.
-func TestAssembleOpenAISlot(t *testing.T) {
-	for _, tc := range []struct {
-		defaultProvider string
-		wantOwner       string
-		wantBaseURL     string
-	}{
-		{defaultProvider: "openrouter", wantOwner: "openrouter", wantBaseURL: openRouterBaseURL},
-		{defaultProvider: "anthropic", wantOwner: "openai", wantBaseURL: ""},
-		{defaultProvider: "openai", wantOwner: "openai", wantBaseURL: ""},
-	} {
-		t.Run(tc.defaultProvider, func(t *testing.T) {
-			file := fileConfig(tc.defaultProvider, "", map[string]Provider{
-				"openai":     {APIKey: "sk-openai", Model: "gpt-openai", Enabled: true},
-				"openrouter": {APIKey: "sk-openrouter", Model: "gpt-openrouter", Enabled: true},
-				"anthropic":  {APIKey: "sk-anthropic", Enabled: true},
-			})
-			owner, ok := file.FileProviderName("openai")
-			require.True(t, ok)
-			require.Equal(t, tc.wantOwner, owner)
-
-			cfg, _, err := assemble(file, mapEnv(nil), nil)
-			require.NoError(t, err)
-			openai := cfg.Providers["openai"]
-			require.Equal(t, "llmconfig://openai/api_key", openai.APIKey)
-			require.Equal(t, tc.wantBaseURL, openai.BaseURL)
-			require.Equal(t, "gpt-"+tc.wantOwner, openai.Model)
-			require.Equal(t, WireProviderName(tc.defaultProvider), cfg.DefaultProvider)
-
-			// The resolver serves the same owner's key.
-			useTempConfig(t, file)
-			got, err := ResolveSecret(t.Context(), "openai/api_key")
-			require.NoError(t, err)
-			require.Equal(t, "sk-"+tc.wantOwner, string(got))
-		})
-	}
-
-	// A lone openrouter gets its default base URL whatever the default is.
-	cfg, _, err := assemble(fileConfig("", "", map[string]Provider{
-		"openrouter": {APIKey: "sk-or", Enabled: true},
-	}), mapEnv(nil), nil)
+// openai and openrouter are distinct providers with their own credentials;
+// both travel, and the resolver serves each one's own key.
+func TestAssembleOpenAIAndOpenRouterCoexist(t *testing.T) {
+	file := fileConfig("openrouter", "anthropic/claude-sonnet-4.5", map[string]Provider{
+		"openai":     {APIKey: "sk-openai", Model: "gpt-openai", Enabled: true},
+		"openrouter": {APIKey: "sk-openrouter", Model: "gpt-openrouter", Enabled: true},
+	})
+	cfg, _, err := assemble(file, mapEnv(map[string]string{
+		"OPENROUTER_BASE_URL": "https://proxy.example/v1",
+	}), nil)
 	require.NoError(t, err)
-	require.Equal(t, openRouterBaseURL, cfg.Providers["openai"].BaseURL)
+	require.Equal(t, "openrouter", cfg.DefaultProvider)
+	require.Equal(t, &engine.LLMProviderConfig{APIKey: "llmconfig://openai/api_key", Model: "gpt-openai"}, cfg.Providers["openai"])
+	require.Equal(t, &engine.LLMProviderConfig{
+		APIKey:  "llmconfig://openrouter/api_key",
+		Model:   "gpt-openrouter",
+		BaseURL: "https://proxy.example/v1",
+	}, cfg.Providers["openrouter"])
+
+	useTempConfig(t, file)
+	for _, tc := range []struct{ path, want string }{
+		{"openai/api_key", "sk-openai"},
+		{"openrouter/api_key", "sk-openrouter"},
+	} {
+		got, err := ResolveSecret(t.Context(), tc.path)
+		require.NoError(t, err)
+		require.Equal(t, tc.want, string(got))
+	}
 }
 
 // Precedence is ./.env over the process environment over the config file,
@@ -429,7 +418,7 @@ func TestResolveSecretErrors(t *testing.T) {
 		"openai":    {APIKey: "llmconfig://openai/api_key", Enabled: true},
 		"local":     {BaseURL: "http://localhost", Enabled: true},
 	}))
-	for _, path := range []string{"anthropic", "nope/api_key", "openrouter/api_key", "gemini/api_key", "openai/password"} {
+	for _, path := range []string{"anthropic", "nope/api_key", "gemini/api_key", "openai/password"} {
 		_, err := ResolveSecret(t.Context(), path)
 		require.Error(t, err, path)
 		require.NotErrorIs(t, err, secrets.ErrNotFound, path)
@@ -437,6 +426,7 @@ func TestResolveSecretErrors(t *testing.T) {
 	for _, path := range []string{
 		"anthropic/api_key",                  // disabled
 		"google/api_key",                     // absent
+		"openrouter/api_key",                 // absent
 		"local/api_key",                      // no key
 		"openai/auth_token",                  // not OAuth
 		"openai/auth_token_expires_at",       // not OAuth
@@ -453,7 +443,7 @@ func TestResolveSecretErrors(t *testing.T) {
 func TestResolveSecretAPIKey(t *testing.T) {
 	t.Setenv("STORED_KEY_SOURCE", "from-env-ref")
 	useTempConfig(t, fileConfig("", "", map[string]Provider{
-		"gemini":    {APIKey: "gem-key", Enabled: true},
+		"google":    {APIKey: "gem-key", Enabled: true},
 		"anthropic": {APIKey: "env://STORED_KEY_SOURCE", Enabled: true},
 	}))
 	got, err := ResolveSecret(t.Context(), "google/api_key")

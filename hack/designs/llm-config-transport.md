@@ -61,12 +61,15 @@ It travels in `ClientMetadata.LLMConfig` (`llm_config` in the
 with a direct `provider → router fields` mapping: **zero RPCs** at routing
 time.
 
-Provider names on the wire are the engine's `LLMProvider` names:
-`anthropic`, `openai`, `openai-codex`, `google`, `local`. The CLI normalizes
-the config file's `gemini` → `google` and `openrouter` → `openai` (with the
-OpenRouter base URL); when both `openai` and `openrouter` are enabled, the
-default provider wins the slot, else `openai` — the one slot is a real
-constraint of OpenAI-compatible routing, not a legacy wart.
+Provider names are one vocabulary end to end: the config file's
+`[llm.providers.<name>]` keys, the wire, `llm(provider:)` and `LLM.provider`
+all use `anthropic`, `openai`, `openai-codex`, `openrouter`, `google`,
+`local`. OpenRouter is a first-class engine provider (OpenAI-compatible
+client, its own credential, default base URL `https://openrouter.ai/api/v1`),
+so an `openai` key and an `openrouter` key coexist; its model names carry
+the upstream vendor as a prefix (`anthropic/claude-…`), so it is only ever
+selected explicitly — by provider or as the configured default — never
+inferred from a name. The old `gemini` alias for `google` is gone.
 
 Layering is unchanged: the session's main client seeds the router, the
 calling (non-module) client overlays it field by field, and whichever client
@@ -157,8 +160,16 @@ no default is set, which is what env-only CI setups rely on.
   metadata like `Workspace` and `CloudAuth`. `env://` URIs resolve against
   the forwarding engine's environment; `llmconfig://` URIs cannot resolve
   there (no CLI resolver), same as before when the engine had no env.
-- `openrouter` and `gemini` are accepted in the config file but are not
-  provider names on the wire or in `llm(provider:)`.
+- **`openrouter` is a provider of its own.** Previously it was folded into
+  the `openai` slot, so only one of the two could be configured at a time
+  and `llm(provider: "openrouter")` was an error. `LLM.provider` now reports
+  `openrouter` for such conversations, and `OPENROUTER_API_KEY` /
+  `OPENROUTER_BASE_URL` / `OPENROUTER_MODEL` / `OPENROUTER_SMALL_MODEL` /
+  `OPENROUTER_REASONING_EFFORT` configure it from the environment. A CI
+  setup that pointed `OPENAI_BASE_URL` at OpenRouter keeps working as the
+  `openai` provider.
+- **`[llm.providers.gemini]` is no longer recognized.** `dagger llm setup`
+  always wrote `google`; a hand-edited `gemini` section must be renamed.
 - **Non-credential values that are secret URIs** (`OPENAI_BASE_URL=op://…`)
   were resolved by the engine's old loader as a side effect of every value
   going through `loadSecret`. They now travel as plain strings. Resolving

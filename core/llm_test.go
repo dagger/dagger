@@ -248,21 +248,51 @@ func TestLLMRouterDefaultRoute(t *testing.T) {
 		assert.Equal(t, Anthropic, provider)
 	})
 
-	t.Run("explicit default provider routes a model that looks like another provider's", func(t *testing.T) {
-		// OpenRouter: an OpenAI-compatible endpoint serving "anthropic/..."
-		// model names. Prefix matching alone would send it to Anthropic.
+	t.Run("openrouter is only ever selected explicitly", func(t *testing.T) {
+		// An OpenAI-compatible aggregator serving "anthropic/..." model names.
+		// Prefix matching alone would send those to Anthropic, so the
+		// provider must come from the config's default or the caller.
 		r, err := NewLLMRouter(&engine.LLMConfig{
-			DefaultProvider: "openai",
+			DefaultProvider: "openrouter",
 			DefaultModel:    "anthropic/claude-sonnet-4.5",
 			Providers: map[string]*engine.LLMProviderConfig{
-				"openai": {APIKey: "env://OPENAI_API_KEY", BaseURL: "https://openrouter.ai/api/v1"},
+				"openrouter": {APIKey: "env://OPENROUTER_API_KEY"},
+				"openai":     {APIKey: "env://OPENAI_API_KEY"},
 			},
 		}, &engine.ClientMetadata{})
 		require.NoError(t, err)
 		ep, err := r.Route("", "")
 		require.NoError(t, err)
-		assert.Equal(t, OpenAI, ep.Provider)
+		assert.Equal(t, OpenRouter, ep.Provider)
 		assert.Equal(t, "anthropic/claude-sonnet-4.5", ep.Model)
+		assert.Equal(t, openRouterBaseURL, ep.BaseURL, "the base URL defaults when the config names none")
+
+		// Both OpenAI-compatible providers coexist with their own credentials.
+		ep, err = r.Route("gpt-4.1", "")
+		require.NoError(t, err)
+		assert.Equal(t, OpenAI, ep.Provider)
+		ep, err = r.Route("openai/gpt-4.1", string(OpenRouter))
+		require.NoError(t, err)
+		assert.Equal(t, OpenRouter, ep.Provider)
+
+		// A configured openrouter model pins the provider too.
+		r = routerWith(t, map[string]*engine.LLMProviderConfig{
+			"openrouter": {APIKey: "env://OPENROUTER_API_KEY", Model: "google/gemini-2.5-pro", BaseURL: "https://proxy.example/v1"},
+		})
+		model, provider := r.DefaultRoute()
+		assert.Equal(t, "google/gemini-2.5-pro", model)
+		assert.Equal(t, OpenRouter, provider)
+		ep, err = r.Route(model, string(provider))
+		require.NoError(t, err)
+		assert.Equal(t, "https://proxy.example/v1", ep.BaseURL)
+
+		// A key alone selects OpenRouter's default model.
+		r = routerWith(t, map[string]*engine.LLMProviderConfig{
+			"openrouter": {APIKey: "env://OPENROUTER_API_KEY"},
+		})
+		model, provider = r.DefaultRoute()
+		assert.Equal(t, modelDefaultOpenRouter, model)
+		assert.Equal(t, OpenRouter, provider)
 	})
 
 	t.Run("provider priority among configured models", func(t *testing.T) {

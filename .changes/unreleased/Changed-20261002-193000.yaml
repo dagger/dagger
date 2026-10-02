@@ -9,7 +9,11 @@ body: |
     the config file). Credentials reach the engine as secret references
     resolved on demand for the routed provider only; a new `llmconfig://`
     secret scheme serves the ones the CLI holds. The config file's explicit
-    default provider and model now win over provider priority.
+    default provider and model now win over provider priority. OpenRouter is
+    now a provider in its own right (`llm(provider: "openrouter")`,
+    `OPENROUTER_API_KEY` and friends) and no longer displaces an `openai`
+    key; the `gemini` spelling of the `google` provider in the config file is
+    no longer accepted.
 
     A CLI and engine from either side of this change do not exchange LLM
     configuration: keep them on matching versions. The undocumented
