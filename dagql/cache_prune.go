@@ -283,23 +283,35 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 
 	now := time.Now()
 	compactedNeeded := false
+	var (
+		activeRoots map[sharedResultID]struct{}
+		snapshot    pruneSnapshot
+		// measured reports that snapshot is still current. Measuring is most
+		// of the cost of a pass and holds E, so later policies reuse it until
+		// a policy removes entries; most passes remove none.
+		measured bool
+	)
 	for policyIdx, policy := range policies {
-		activeRoots := c.snapshotSessionResultIDs()
-		if err := c.measureAllResultSizes(ctx); err != nil {
+		if !measured {
+			activeRoots = c.snapshotSessionResultIDs()
+			if err := c.measureAllResultSizes(ctx); err != nil {
+				if err == errCacheUsageChanged {
+					slog.Debug("dagql prune defer policy: incomplete usage measurement", "policyIndex", policyIdx)
+					continue
+				}
+				return report, err
+			}
+			var err error
+			snapshot, err = c.snapshotPruneStateCancelable(activeRoots, pruneSnapshotDisk, 0, newPruneCancellationChecker(ctx))
 			if err == errCacheUsageChanged {
-				slog.Debug("dagql prune defer policy: incomplete usage measurement", "policyIndex", policyIdx)
+				// Unknown identity membership could overstate physical reclaim.
+				slog.Debug("dagql prune defer policy: incomplete identity population", "policyIndex", policyIdx)
 				continue
 			}
-			return report, err
-		}
-		snapshot, err := c.snapshotPruneStateCancelable(activeRoots, pruneSnapshotDisk, 0, newPruneCancellationChecker(ctx))
-		if err == errCacheUsageChanged {
-			// Unknown identity membership could overstate physical reclaim.
-			slog.Debug("dagql prune defer policy: incomplete identity population", "policyIndex", policyIdx)
-			continue
-		}
-		if err != nil {
-			return report, err
+			if err != nil {
+				return report, err
+			}
+			measured = true
 		}
 
 		targetBytes, _ := pruneTargetBytes(policy, snapshot.usedBytes)
@@ -370,6 +382,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 		}
 
 		if policyApplied > 0 {
+			measured = false
 			slog.Debug("dagql prune applied plan",
 				"policyIndex", policyIdx,
 				"plannedCandidates", len(plan),

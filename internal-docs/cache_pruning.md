@@ -367,6 +367,10 @@ At a high level, the prune implementation in `dagql/cache_prune.go` does this:
 10. compact eq-classes if needed
 11. trigger snapshot metadata GC if something was actually reclaimed
 
+Steps 1-4 run once per pass, and again only after a policy removes entries.
+Later policies reuse the measured state, since measuring holds the lock and is
+most of a pass's cost.
+
 This is absolutely a best-effort pruning pass, not an optimal solver.
 
 ## Structural Estimate And Memory Pruning

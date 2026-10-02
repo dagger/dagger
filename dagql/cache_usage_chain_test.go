@@ -236,3 +236,48 @@ func TestCachePruneDefersOnParentLookupFailure(t *testing.T) {
 	}
 }
 
+// Measuring holds E and is most of a pass's cost. Later policies reuse the
+// measured state until a policy removes entries.
+func TestCachePruneMeasuresOncePerPassUntilRemoval(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	var identityCalls int
+	live := &usageCallbackValue{Int: NewInt(1), callback: func(kind string) {
+		if kind == "identities" {
+			identityCalls++
+		}
+	}}
+	publishProgressValue(t, ctx, c, "holder", "live", live, false)
+	private := cacheTestSizedInt{Int: NewInt(2), usageIdentities: []string{"private"}, sizeByIdentity: map[string]int64{"private": 100}}
+	publishProgressValue(t, ctx, c, "test-session", "private", private, true)
+	cacheTestReleaseSession(t, c, ctx)
+
+	noTarget := CachePrunePolicy{All: true, MaxUsedSpace: 1 << 40}
+	identityCalls = 0
+	if _, err := c.Prune(ctx, []CachePrunePolicy{noTarget, noTarget, noTarget}); err != nil {
+		t.Fatal(err)
+	}
+	if identityCalls != 2 {
+		t.Fatalf("three policies that remove nothing sampled identities %d times, want one measurement (2)", identityCalls)
+	}
+
+	identityCalls = 0
+	report, err := c.Prune(ctx, []CachePrunePolicy{{All: true, MaxUsedSpace: 1}, noTarget, noTarget})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 1 {
+		t.Fatalf("pruned %d entries, want the persisted private entry", len(report.Entries))
+	}
+	if identityCalls != 4 {
+		t.Fatalf("sampled identities %d times, want one measurement before the removal and one after (4)", identityCalls)
+	}
+}
