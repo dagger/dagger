@@ -324,3 +324,24 @@ func TestCacheUsageFinalizeLeavesPublishedChainsUnchanged(t *testing.T) {
 	}
 }
 
+// A later policy reuses the measurement only to decide it has nothing to do.
+// Before planning removals it measures again, so a result published since
+// then still protects the layers it retains.
+func TestCachePruneRemeasuresBeforePlanningLaterPolicy(t *testing.T) {
+	ctx, c := chainTestCache(t)
+	publishProgressValue(t, ctx, c, "test-session", "from", chainTestValue("image-top", 50), true)
+	cacheTestReleaseSession(t, c, ctx)
+	c.testBeforePrunePolicy = func(policyIdx int) {
+		if policyIdx == 1 {
+			publishProgressValue(t, ctx, c, "holder", "exec1", chainTestValue("exec-1", 10), false)
+		}
+	}
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{All: true, MaxUsedSpace: 1000}, {All: true, MaxUsedSpace: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ReclaimedBytes != 0 {
+		t.Fatalf("credited %d bytes the new active exec still retains", report.ReclaimedBytes)
+	}
+}

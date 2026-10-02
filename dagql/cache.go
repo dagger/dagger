@@ -2331,6 +2331,8 @@ type Cache struct {
 	testAfterSessionOperationEnter  func(string)
 	testBeforeSessionOperationExit  func(string)
 	testAfterCacheClosing           func()
+	// testBeforePrunePolicy runs at the start of each disk prune policy.
+	testBeforePrunePolicy func(policyIdx int)
 	// testAfterLazyAttemptReleased runs on the attempt's goroutine after its
 	// row hold is released and before its operation ends: the point after
 	// which a caller returned by attempt.done can count ownership.

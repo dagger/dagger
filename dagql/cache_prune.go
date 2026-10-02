@@ -275,6 +275,30 @@ func metadataPruneLog(ctx context.Context, report CacheMetadataPruneReport, err 
 	slog.InfoContext(ctx, "dagql metadata prune finished", attrs...)
 }
 
+// measurePruneState measures result sizes and snapshots the prune state for
+// a policy. ok=false means the measurement was incomplete and the policy is
+// deferred.
+func (c *Cache) measurePruneState(ctx context.Context, policyIdx int) (map[sharedResultID]struct{}, pruneSnapshot, bool, error) {
+	activeRoots := c.snapshotSessionResultIDs()
+	if err := c.measureAllResultSizes(ctx); err != nil {
+		if err == errCacheUsageChanged {
+			slog.Debug("dagql prune defer policy: incomplete usage measurement", "policyIndex", policyIdx)
+			return nil, pruneSnapshot{}, false, nil
+		}
+		return nil, pruneSnapshot{}, false, err
+	}
+	snapshot, err := c.snapshotPruneStateCancelable(activeRoots, pruneSnapshotDisk, 0, newPruneCancellationChecker(ctx))
+	if err == errCacheUsageChanged {
+		// Unknown identity membership could overstate physical reclaim.
+		slog.Debug("dagql prune defer policy: incomplete identity population", "policyIndex", policyIdx)
+		return nil, pruneSnapshot{}, false, nil
+	}
+	if err != nil {
+		return nil, pruneSnapshot{}, false, err
+	}
+	return activeRoots, snapshot, true, nil
+}
+
 func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePruneReport, error) {
 	report := CachePruneReport{}
 	if len(policies) == 0 {
@@ -286,35 +310,45 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	var (
 		activeRoots map[sharedResultID]struct{}
 		snapshot    pruneSnapshot
-		// measured reports that snapshot is still current. Measuring is most
-		// of the cost of a pass and holds E, so later policies reuse it until
-		// a policy removes entries; most passes remove none.
+		// measured reports that snapshot is still usable. Measuring is most
+		// of the cost of a pass and holds E, so a later policy reuses it to
+		// decide it has nothing to do; most passes remove nothing.
 		measured bool
 	)
 	for policyIdx, policy := range policies {
+		if c.testBeforePrunePolicy != nil {
+			c.testBeforePrunePolicy(policyIdx)
+		}
+		fresh := false
 		if !measured {
-			activeRoots = c.snapshotSessionResultIDs()
-			if err := c.measureAllResultSizes(ctx); err != nil {
-				if err == errCacheUsageChanged {
-					slog.Debug("dagql prune defer policy: incomplete usage measurement", "policyIndex", policyIdx)
-					continue
-				}
-				return report, err
-			}
+			var ok bool
 			var err error
-			snapshot, err = c.snapshotPruneStateCancelable(activeRoots, pruneSnapshotDisk, 0, newPruneCancellationChecker(ctx))
-			if err == errCacheUsageChanged {
-				// Unknown identity membership could overstate physical reclaim.
-				slog.Debug("dagql prune defer policy: incomplete identity population", "policyIndex", policyIdx)
-				continue
-			}
+			activeRoots, snapshot, ok, err = c.measurePruneState(ctx, policyIdx)
 			if err != nil {
 				return report, err
 			}
-			measured = true
+			if !ok {
+				continue
+			}
+			measured, fresh = true, true
 		}
 
 		targetBytes, _ := pruneTargetBytes(policy, snapshot.usedBytes)
+		if targetBytes > 0 && !fresh {
+			// Results published since the reused measurement may retain what
+			// this policy would remove, so measure again before planning.
+			var ok bool
+			var err error
+			activeRoots, snapshot, ok, err = c.measurePruneState(ctx, policyIdx)
+			if err != nil {
+				return report, err
+			}
+			if !ok {
+				measured = false
+				continue
+			}
+			targetBytes, _ = pruneTargetBytes(policy, snapshot.usedBytes)
+		}
 		if targetBytes <= 0 {
 			slog.Debug("dagql prune skip policy: no reclaim target",
 				"policyIndex", policyIdx,
