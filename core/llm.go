@@ -43,13 +43,18 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic = anthropic.ModelClaudeSonnet4_5
-	modelDefaultGoogle    = "gemini-2.5-flash"
-	modelDefaultOpenAI    = "gpt-4.1"
-	modelDefaultCodex     = "gpt-5.5"
-	modelDefaultMeta      = "llama-3.2"
-	modelDefaultMistral   = "mistral-7b-instruct"
+	modelDefaultAnthropic  = anthropic.ModelClaudeSonnet4_5
+	modelDefaultGoogle     = "gemini-2.5-flash"
+	modelDefaultOpenAI     = "gpt-4.1"
+	modelDefaultCodex      = "gpt-5.5"
+	modelDefaultOpenRouter = "anthropic/claude-sonnet-4.5"
+	modelDefaultMeta       = "llama-3.2"
+	modelDefaultMistral    = "mistral-7b-instruct"
 )
+
+// openRouterBaseURL is OpenRouter's OpenAI-compatible endpoint, the default
+// for the openrouter provider when its configuration names none.
+const openRouterBaseURL = "https://openrouter.ai/api/v1"
 
 // codexModelPrefix pins a model to the Codex (ChatGPT subscription) backend.
 // Current Codex models (gpt-5.5, gpt-5.4, …) no longer carry "codex" in their
@@ -1025,6 +1030,7 @@ type LLMToolCall struct {
 const (
 	OpenAI      LLMProvider = "openai"
 	OpenAICodex LLMProvider = "openai-codex"
+	OpenRouter  LLMProvider = "openrouter"
 	Anthropic   LLMProvider = "anthropic"
 	Google      LLMProvider = "google"
 	Meta        LLMProvider = "meta"

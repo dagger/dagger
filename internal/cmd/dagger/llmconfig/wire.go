@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,55 +30,26 @@ const (
 	FieldAuthTokenExpiresAt = "auth_token_expires_at" //nolint:gosec // a field name, not a credential
 )
 
-// openRouterBaseURL is the endpoint an `openrouter` provider in the config
-// file routes to when it names none: OpenRouter is OpenAI-compatible, so it
-// rides in the wire `openai` slot.
-const openRouterBaseURL = "https://openrouter.ai/api/v1"
+// providers are the provider names, shared by the config file's
+// [llm.providers.<name>] keys and the engine's LLMProvider values.
+var providers = []string{"anthropic", "openai", "openai-codex", "openrouter", "google", "local"}
 
-// wireSlots maps each wire provider name (the engine's LLMProvider names) to
-// the config-file provider keys that can fill it, in tie-break order. Only one
-// file provider can own a slot; see FileProviderName.
-var wireSlots = map[string][]string{
-	"anthropic":    {"anthropic"},
-	"openai":       {"openai", "openrouter"},
-	"openai-codex": {"openai-codex"},
-	"google":       {"google", "gemini"},
-	"local":        {"local"},
+// IsProvider reports whether name is a provider the engine can route to.
+func IsProvider(name string) bool {
+	return slices.Contains(providers, name)
 }
 
-// WireProviderName normalizes a config-file provider key to its wire name:
-// `gemini` is `google`, `openrouter` is `openai`. It returns "" for a name the
-// engine has no slot for.
-func WireProviderName(name string) string {
-	for wire, names := range wireSlots {
-		if slices.Contains(names, name) {
-			return wire
-		}
-	}
-	return ""
-}
-
-// FileProviderName returns the config-file provider that fills the wire
-// provider's slot, and false when no enabled provider does. When several
-// enabled file providers share a slot (openai and openrouter, google and
-// gemini), the default provider owns it, else the first in tie-break order —
-// so map iteration order can never pair one provider's key with another's
-// base URL.
-func (c *Config) FileProviderName(wire string) (string, bool) {
+// enabledProvider returns the named provider's file config when it is present
+// and enabled.
+func (c *Config) enabledProvider(name string) (Provider, bool) {
 	if c == nil {
-		return "", false
+		return Provider{}, false
 	}
-	owner := ""
-	for _, name := range wireSlots[wire] {
-		p, ok := c.LLM.Providers[name]
-		if !ok || !p.Enabled {
-			continue
-		}
-		if owner == "" || name == c.LLM.DefaultProvider {
-			owner = name
-		}
+	p, ok := c.LLM.Providers[name]
+	if !ok || !p.Enabled {
+		return Provider{}, false
 	}
-	return owner, owner != ""
+	return p, true
 }
 
 // envVar is one variable of the environment table: process env and ./.env
@@ -117,6 +87,12 @@ var envVars = []envVar{
 	{name: "OPENAI_CODEX_SMALL_MODEL", provider: "openai-codex", set: func(p *engine.LLMProviderConfig, v string) { p.SmallModel = v }},
 	{name: "OPENAI_CODEX_REASONING_EFFORT", provider: "openai-codex", set: func(p *engine.LLMProviderConfig, v string) { p.ReasoningEffort = v }},
 
+	{name: "OPENROUTER_API_KEY", provider: "openrouter", credential: FieldAPIKey},
+	{name: "OPENROUTER_BASE_URL", provider: "openrouter", set: func(p *engine.LLMProviderConfig, v string) { p.BaseURL = v }},
+	{name: "OPENROUTER_MODEL", provider: "openrouter", set: func(p *engine.LLMProviderConfig, v string) { p.Model = v }},
+	{name: "OPENROUTER_SMALL_MODEL", provider: "openrouter", set: func(p *engine.LLMProviderConfig, v string) { p.SmallModel = v }},
+	{name: "OPENROUTER_REASONING_EFFORT", provider: "openrouter", set: func(p *engine.LLMProviderConfig, v string) { p.ReasoningEffort = v }},
+
 	{name: "GEMINI_API_KEY", provider: "google", credential: FieldAPIKey},
 	{name: "GEMINI_BASE_URL", provider: "google", set: func(p *engine.LLMProviderConfig, v string) { p.BaseURL = v }},
 	{name: "GEMINI_MODEL", provider: "google", set: func(p *engine.LLMProviderConfig, v string) { p.Model = v }},
@@ -149,6 +125,7 @@ func tokenVarFor(provider string) string {
 var defaultModelVars = []struct{ provider, name string }{
 	{"openai", "OPENAI_MODEL"},
 	{"openai-codex", "OPENAI_CODEX_MODEL"},
+	{"openrouter", "OPENROUTER_MODEL"},
 	{"anthropic", "ANTHROPIC_MODEL"},
 	{"google", "GEMINI_MODEL"},
 	{"local", "LOCAL_MODEL"},
@@ -319,12 +296,11 @@ func fileLayer(file *Config) *engine.LLMConfig {
 	if file == nil {
 		return cfg
 	}
-	for _, wire := range slices.Sorted(maps.Keys(wireSlots)) {
-		name, ok := file.FileProviderName(wire)
+	for _, name := range providers {
+		p, ok := file.enabledProvider(name)
 		if !ok {
 			continue
 		}
-		p := file.LLM.Providers[name]
 		wp := &engine.LLMProviderConfig{
 			BaseURL:           p.BaseURL,
 			Model:             p.Model,
@@ -335,35 +311,28 @@ func fileLayer(file *Config) *engine.LLMConfig {
 			DisableStreaming:  p.DisableStreaming,
 			ClaudeCodeVersion: p.ClaudeCodeVersion,
 		}
-		if name == "openrouter" && wp.BaseURL == "" {
-			wp.BaseURL = openRouterBaseURL
-		}
 		switch {
 		case p.IsOAuth():
 			// The token is served — and refreshed when due or rejected — by
 			// ResolveSecret, which re-reads the file at every resolution.
 			if p.AuthToken != "" {
-				wp.AuthToken = fileCredential(wire, FieldAuthToken, p.AuthToken)
-				wp.AuthTokenExpiresAt = llmConfigURI(wire, FieldAuthTokenExpiresAt)
+				wp.AuthToken = fileCredential(name, FieldAuthToken, p.AuthToken)
+				wp.AuthTokenExpiresAt = llmConfigURI(name, FieldAuthTokenExpiresAt)
 			}
 		case p.APIKey != "":
-			wp.APIKey = fileCredential(wire, FieldAPIKey, p.APIKey)
+			wp.APIKey = fileCredential(name, FieldAPIKey, p.APIKey)
 		}
 		if !wp.IsEmpty() {
-			*cfg.Provider(wire) = *wp
+			*cfg.Provider(name) = *wp
 		}
 	}
 
 	if file.LLM.DefaultProvider != "" || file.LLM.DefaultModel != "" {
-		defaultProvider := file.LLM.DefaultProvider
-		if p, ok := file.LLM.Providers[defaultProvider]; ok && !p.Enabled {
+		if p, ok := file.LLM.Providers[file.LLM.DefaultProvider]; ok && !p.Enabled {
 			// A disabled default contributes nothing, its model included.
 			return cfg
 		}
-		if wire := WireProviderName(defaultProvider); wire != "" {
-			defaultProvider = wire
-		}
-		cfg.DefaultProvider = defaultProvider
+		cfg.DefaultProvider = file.LLM.DefaultProvider
 		cfg.DefaultModel = file.LLM.DefaultModel
 	}
 	return cfg
@@ -397,8 +366,8 @@ var (
 	dotEnvSecrets   map[string]string
 )
 
-// ResolveSecret serves llmconfig://<provider>/<field> secrets, provider being
-// a wire name. It is registered as the scheme's resolver by the CLI.
+// ResolveSecret serves llmconfig://<provider>/<field> secrets. It is
+// registered as the scheme's resolver by the CLI.
 //
 // A credential Assemble took from ./.env is served as read. Anything else is
 // read from the config file at every resolution:
@@ -413,12 +382,12 @@ var (
 //
 // A provider that is absent or disabled is a not-found error.
 func ResolveSecret(ctx context.Context, path string) ([]byte, error) {
-	wire, field, ok := strings.Cut(path, "/")
+	name, field, ok := strings.Cut(path, "/")
 	if !ok {
 		return nil, fmt.Errorf("llmconfig: malformed path %q, want <provider>/<field>", path)
 	}
-	if _, ok := wireSlots[wire]; !ok {
-		return nil, fmt.Errorf("llmconfig: unknown provider %q", wire)
+	if !IsProvider(name) {
+		return nil, fmt.Errorf("llmconfig: unknown provider %q", name)
 	}
 	switch field {
 	case FieldAPIKey, FieldAuthToken, FieldAuthTokenExpiresAt:
@@ -437,11 +406,10 @@ func ResolveSecret(ctx context.Context, path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	name, ok := cfg.FileProviderName(wire)
+	p, ok := cfg.enabledProvider(name)
 	if !ok {
-		return nil, fmt.Errorf("llmconfig: provider %q is not configured or not enabled: %w", wire, secrets.ErrNotFound)
+		return nil, fmt.Errorf("llmconfig: provider %q is not configured or not enabled: %w", name, secrets.ErrNotFound)
 	}
-	p := cfg.LLM.Providers[name]
 	switch field {
 	case FieldAPIKey:
 		if p.APIKey == "" {

@@ -70,7 +70,7 @@ func resolveClientSecret(ctx context.Context, client *engine.ClientMetadata, uri
 // llmProviderPriority is the order in which providers are considered when no
 // default route is configured explicitly: the legacy env-var behaviour that
 // CI setups with a single exported key rely on.
-var llmProviderPriority = []LLMProvider{OpenAI, OpenAICodex, Anthropic, Google, Local}
+var llmProviderPriority = []LLMProvider{OpenAI, OpenAICodex, OpenRouter, Anthropic, Google, Local}
 
 // NewLLMRouter builds a router from a single client's configuration.
 func NewLLMRouter(cfg *engine.LLMConfig, client *engine.ClientMetadata) (*LLMRouter, error) {
@@ -210,6 +210,23 @@ func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
 	}
 }
 
+// routeOpenRouterModel routes to OpenRouter: an OpenAI-compatible aggregator
+// whose model names carry the upstream vendor as a prefix
+// ("anthropic/claude-…"), so it is only ever selected explicitly — by
+// provider, or as the configured default — never inferred from a name.
+func (r *LLMRouter) routeOpenRouterModel() *LLMEndpoint {
+	cfg := r.provider(OpenRouter)
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = openRouterBaseURL
+	}
+	return &LLMEndpoint{
+		Provider:        OpenRouter,
+		BaseURL:         baseURL,
+		ReasoningEffort: cfg.ReasoningEffort,
+	}
+}
+
 func (r *LLMRouter) routeGoogleModel() *LLMEndpoint {
 	cfg := r.provider(Google)
 	return &LLMEndpoint{
@@ -287,7 +304,8 @@ func (r *LLMRouter) DefaultRoute() (model string, provider LLMProvider) {
 			// configured model (e.g. gpt-5.5) shares OpenAI's naming.
 			return normalizeCodexModel(cfg.Model), provider
 		}
-		if provider == Local {
+		if provider == Local || provider == OpenRouter {
+			// Neither has a model naming convention to infer from.
 			return cfg.Model, provider
 		}
 		return cfg.Model, ""
@@ -297,6 +315,8 @@ func (r *LLMRouter) DefaultRoute() (model string, provider LLMProvider) {
 		return modelDefaultOpenAI, ""
 	case r.provider(OpenAICodex).AuthToken != "":
 		return normalizeCodexModel(modelDefaultCodex), OpenAICodex
+	case r.provider(OpenRouter).APIKey != "":
+		return modelDefaultOpenRouter, OpenRouter
 	case r.provider(Anthropic).HasCredential():
 		return modelDefaultAnthropic, ""
 	case r.provider(OpenAI).BaseURL != "":
@@ -330,6 +350,8 @@ func (r *LLMRouter) routeProvider(provider LLMProvider) (*LLMEndpoint, error) {
 		return r.routeOpenAIModel(), nil
 	case OpenAICodex:
 		return r.routeCodexModel(), nil
+	case OpenRouter:
+		return r.routeOpenRouterModel(), nil
 	case Google:
 		return r.routeGoogleModel(), nil
 	case Local:
@@ -337,8 +359,8 @@ func (r *LLMRouter) routeProvider(provider LLMProvider) (*LLMEndpoint, error) {
 	case Other:
 		return r.routeOtherModel(), nil
 	default:
-		return nil, fmt.Errorf("unknown LLM provider %q (expected one of %q, %q, %q, %q, %q, %q)",
-			provider, Anthropic, Google, Local, OpenAI, OpenAICodex, Other)
+		return nil, fmt.Errorf("unknown LLM provider %q (expected one of %q, %q, %q, %q, %q, %q, %q)",
+			provider, Anthropic, Google, Local, OpenAI, OpenAICodex, OpenRouter, Other)
 	}
 }
 
@@ -456,6 +478,8 @@ func (endpoint *LLMEndpoint) newClient() (LLMClient, error) {
 		return newAnthropicClient(endpoint), nil
 	case OpenAI, Other:
 		return newOpenAIClient(endpoint, endpoint.azureVersion, endpoint.disableStreaming), nil
+	case OpenRouter:
+		return newOpenAIClient(endpoint, "", false), nil
 	case OpenAICodex:
 		return newOpenAICodexClient(endpoint), nil
 	case Google:
