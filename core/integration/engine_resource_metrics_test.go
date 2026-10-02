@@ -123,12 +123,17 @@ exec dagger query
 	})
 	assertEngineMemory(t, second)
 	// Check collections during the client executions too, not just after the
-	// workload cgroups have been removed.
+	// workload cgroups have been removed. Subprocess network accounting may
+	// create one empty dagger-commands-* child of the engine cgroup. These
+	// workloads only sleep, so no command accounting children are expected.
+	// Both concurrent withExec cgroups must remain outside the engine cgroup.
 	previousCPU := int64(0)
 	for _, snapshot := range sink.collectedSnapshots() {
 		require.Equal(t, first.instanceID, snapshot.instanceID)
 		require.GreaterOrEqual(t, snapshot.cpuTotal, previousCPU)
-		require.Equal(t, int64(0), snapshot.liveDescendants)
+		require.GreaterOrEqual(t, snapshot.liveDescendants, int64(0))
+		require.LessOrEqual(t, snapshot.liveDescendants, int64(1),
+			"only the optional subprocess accounting subtree may be below the engine cgroup")
 		previousCPU = snapshot.cpuTotal
 	}
 

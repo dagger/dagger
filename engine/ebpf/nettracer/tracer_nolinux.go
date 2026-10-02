@@ -1,11 +1,11 @@
-//go:build !linux
+//go:build !linux || (!386 && !amd64 && !arm64)
 
 // Package nettracer accounts for engine and container network traffic.
 package nettracer
 
 import "errors"
 
-var errUnsupported = errors.New("eBPF network accounting requires Linux")
+var errUnsupported = errors.New("eBPF network accounting requires Linux on x86 or arm64")
 
 type Sample struct {
 	InternalRX uint64

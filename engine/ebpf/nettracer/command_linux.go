@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && (386 || amd64 || arm64)
 
 package nettracer
 

@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && (386 || amd64 || arm64)
 
 // Package nettracer accounts for engine traffic at cgroup socket-buffer hooks
 // and container traffic at TCX hooks on host-side veths.

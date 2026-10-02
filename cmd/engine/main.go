@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/ebpf"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetry/networkmetrics"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
 	"github.com/dagger/dagger/internal/buildkit/util/appcontext"
@@ -383,6 +384,7 @@ func main() { //nolint:gocyclo
 		remoteCache := newRemoteCacheIntegration(&cfg)
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
 		networkAccounting, err = nettracer.New()
+		enginetel.SetCommandNetworkHook(networkmetrics.PrepareCommandNetwork)
 		if err != nil {
 			bklog.G(ctx).Warnf("network accounting unavailable: %s", err)
 		} else if err := nettracer.EngineAccountingError(); err != nil {

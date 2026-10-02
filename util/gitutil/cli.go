@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -299,6 +300,8 @@ func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+cli.indexFile)
 	}
 
+	finishNetwork := enginetelemetry.PrepareCommandNetwork(ctx, cmd)
+	defer finishNetwork()
 	var err error
 	if cli.exec != nil {
 		// remote git commands spawn helper processes that inherit FDs and don't

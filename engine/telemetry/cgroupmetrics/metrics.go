@@ -2,8 +2,8 @@
 // Dagger engine process.
 //
 // CPU usage and memory accounting include processes in descendant cgroups.
-// The standard engine layout expects the engine cgroup to have no cgroup
-// descendants. CPU usage values are cumulative since cgroup creation, and the
+// Subprocess network accounting creates descendants for engine commands, not
+// executor workloads. CPU usage values are cumulative since cgroup creation, and the
 // total value reported by the kernel is the accounting source; user and system
 // values are diagnostic components. Memory peak is the peak for the cgroup
 // lifetime. Memory breakdown fields are diagnostic and can overlap. These
@@ -245,7 +245,7 @@ func newInstruments(meter metric.Meter) (instruments, error) {
 	}
 	inst.cgroupDescendants, err = meter.Int64ObservableGauge(CgroupDescendantsName,
 		metric.WithUnit("1"),
-		metric.WithDescription("Live and dying cgroup descendants below the engine process cgroup; the standard engine layout expects zero live descendants."),
+		metric.WithDescription("Live and dying cgroup descendants below the engine process cgroup, including subprocess network accounting cgroups but excluding executor workloads in the standard engine layout."),
 	)
 	if err != nil {
 		return inst, err
