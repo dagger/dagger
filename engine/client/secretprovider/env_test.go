@@ -8,52 +8,48 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// TestEnvProviderRefresherError verifies that a failing refresher does not
-// mask the variable that is actually set: refresh is best-effort, so a stale
-// (or explicitly exported) value still resolves. The failure is reported
-// through the logger and the current span instead of being swallowed.
-func TestEnvProviderRefresherError(t *testing.T) {
-	t.Setenv("DAGGER_TEST_SECRET_ENV", "stale-but-usable")
-
-	var called int
-	RegisterEnvRefresher(func(context.Context, string) error {
-		called++
-		return errors.New("token endpoint unreachable")
-	})
-	t.Cleanup(func() { RegisterEnvRefresher(nil) })
-
-	got, err := envProvider(t.Context(), "DAGGER_TEST_SECRET_ENV")
-	if err != nil {
-		t.Fatalf("envProvider() failed: %v", err)
+func TestRejectedSecretValueMetadata(t *testing.T) {
+	outgoing := ContextWithRejectedSecretValue(t.Context(), "fingerprint")
+	if got := RejectedSecretValue(outgoing); got != "fingerprint" {
+		t.Fatalf("outgoing fingerprint = %q", got)
 	}
-	if string(got) != "stale-but-usable" {
-		t.Errorf("envProvider() = %q, want %q", got, "stale-but-usable")
+	md, _ := metadata.FromOutgoingContext(outgoing)
+	incoming := metadata.NewIncomingContext(t.Context(), md)
+	if got := RejectedSecretValue(incoming); got != "fingerprint" {
+		t.Fatalf("incoming fingerprint = %q", got)
 	}
-	if called != 1 {
-		t.Errorf("refresher called %d times, want 1", called)
+	if got := RejectedSecretValue(ContextWithRejectedSecretValue(incoming, "")); got != "" {
+		t.Fatalf("cleared rejection = %q", got)
 	}
 }
 
-func TestEnvProviderRejectedValueRefreshError(t *testing.T) {
-	t.Setenv("DAGGER_TEST_SECRET_ENV", "known-bad")
-	refreshErr := errors.New("token endpoint unreachable")
-	RegisterEnvRefresher(func(ctx context.Context, _ string) error {
-		if got := RejectedEnvValue(ctx); got != "fingerprint" {
-			t.Errorf("rejected value fingerprint = %q", got)
-		}
-		return refreshErr
-	})
-	t.Cleanup(func() { RegisterEnvRefresher(nil) })
-
-	outgoing := ContextWithRejectedEnvValue(t.Context(), "fingerprint")
-	md, _ := metadata.FromOutgoingContext(outgoing)
-	incoming := metadata.NewIncomingContext(t.Context(), md)
-	got, err := envProvider(incoming, "DAGGER_TEST_SECRET_ENV")
-	if !errors.Is(err, refreshErr) || got != nil {
-		t.Fatalf("rejected value must not mask refresh failure: got %q, %v", got, err)
+func TestLLMConfigProvider(t *testing.T) {
+	_, err := llmConfigProvider(t.Context(), "anthropic/api_key")
+	if !errors.Is(err, ErrNoLLMConfigResolver) {
+		t.Fatalf("unregistered resolver: err = %v", err)
 	}
-	if got := RejectedEnvValue(ContextWithRejectedEnvValue(incoming, "")); got != "" {
-		t.Fatalf("cleared rejection = %q", got)
+
+	RegisterLLMConfigResolver(func(ctx context.Context, path string) ([]byte, error) {
+		if path != "anthropic/api_key" {
+			t.Errorf("path = %q", path)
+		}
+		if got := RejectedSecretValue(ctx); got != "fp" {
+			t.Errorf("rejected fingerprint = %q", got)
+		}
+		return []byte("key"), nil
+	})
+	t.Cleanup(func() { RegisterLLMConfigResolver(nil) })
+
+	resolver, path, err := ResolverForID("llmconfig://anthropic/api_key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolver(ContextWithRejectedSecretValue(t.Context(), "fp"), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "key" {
+		t.Fatalf("value = %q", got)
 	}
 }
 

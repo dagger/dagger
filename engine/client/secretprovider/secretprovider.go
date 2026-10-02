@@ -27,6 +27,7 @@ var resolvers = map[string]SecretResolver{
 	"gcp":       gcpProvider,
 	"aws+sm":    awsSecretManagerProvider,
 	"aws+ps":    awsParameterStoreProvider,
+	"llmconfig": llmConfigProvider,
 }
 
 func Schemes() []string {

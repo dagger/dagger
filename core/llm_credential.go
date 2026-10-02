@@ -145,7 +145,7 @@ func (src *CredentialSource) Credential(ctx context.Context) (Credential, error)
 	}
 
 	if src.rejected != "" {
-		ctx = secretprovider.ContextWithRejectedEnvValue(ctx, src.rejected)
+		ctx = secretprovider.ContextWithRejectedSecretValue(ctx, src.rejected)
 	}
 	cred, err := src.resolve(ctx)
 	if err != nil {
