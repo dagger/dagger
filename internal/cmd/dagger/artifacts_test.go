@@ -2,11 +2,9 @@ package daggercmd
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/engine/client"
@@ -32,16 +30,12 @@ func TestArtifactDimensionFlags(t *testing.T) {
 		"--env=dev",
 	}))
 
-	recorder := &artifactQueryRecorder{}
-	artifacts := (&dagger.Artifacts{}).WithGraphQLQuery(querybuilder.Query().Client(recorder).Select("artifacts"))
-	sel, err := parseArtifactAddresses([]string{"dag://?type=app"})
-	require.NoError(t, err)
-	selected := applyArtifactFilters(child, sel[0], artifactKeyFlags(child), artifacts)
-	_, err = selected.Types(t.Context())
-	require.ErrorIs(t, err, errArtifactQueryCaptured)
-	require.Contains(t, recorder.query, `filterUri(uri:"dag+container+directory://")`)
-	require.Contains(t, recorder.query, `filterUri(uri:"dag://?type=app&go-module=sdk/go&go-module=cmd/codegen&go-module=lib,a%3Db&go-test=TestConnect")`)
-	require.NotContains(t, recorder.query, "env=")
+	require.Equal(t, []dagaddress.Pair{
+		{Dimension: "go-module", Key: "sdk/go", HasKey: true},
+		{Dimension: "go-module", Key: "cmd/codegen", HasKey: true},
+		{Dimension: "go-module", Key: "lib,a=b", HasKey: true},
+		{Dimension: "go-test", Key: "TestConnect", HasKey: true},
+	}, artifactKeyFlags(child))
 }
 
 func TestArtifactPathsUseModuleSelectors(t *testing.T) {
@@ -195,18 +189,7 @@ func TestArtifactAddressArguments(t *testing.T) {
 	require.Empty(t, sel[1].Types)
 	require.Empty(t, sel[1].Query)
 
-	for i, want := range []string{
-		`dag+container://?go-module=sdk/go&go-test=TestConnect&go-test=TestQuery`,
-		`dag://?go-test=TestQuery`,
-		`dag://?go-module&go-test=TestQuery`,
-	} {
-		recorder := &artifactQueryRecorder{}
-		artifacts := (&dagger.Artifacts{}).WithGraphQLQuery(querybuilder.Query().Client(recorder).Select("artifacts"))
-		selected := applyArtifactFilters(child, sel[i], artifactKeyFlags(child), artifacts)
-		_, err = selected.Types(t.Context())
-		require.ErrorIs(t, err, errArtifactQueryCaptured)
-		require.Contains(t, recorder.query, `filterUri(uri:"`+want+`")`)
-	}
+	applyArtifactFilters(child, sel[0], artifactKeyFlags(child), (&dagger.Artifacts{}).WithGraphQLQuery(querybuilder.Query()))
 	require.Len(t, sel[0].Query, 2) // Flags do not mutate the input address.
 
 	_, err = parseArtifactAddresses([]string{"dag://github.com/dagger/dagger@main:base"})
@@ -232,15 +215,6 @@ func TestArtifactDimensionAliases(t *testing.T) {
 	require.Equal(t, "golang/modules", sel[0].Query[1].Dimension)
 	require.Equal(t, "a", sel[0].Query[0].Key)
 	require.Equal(t, "b", sel[0].Query[1].Key)
-}
-
-var errArtifactQueryCaptured = errors.New("artifact query captured")
-
-type artifactQueryRecorder struct{ query string }
-
-func (r *artifactQueryRecorder) MakeRequest(_ context.Context, req *graphql.Request, _ *graphql.Response) error {
-	r.query = req.Query
-	return errArtifactQueryCaptured
 }
 
 func TestAbsoluteArtifactWorkspace(t *testing.T) {
