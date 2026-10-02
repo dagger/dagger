@@ -361,10 +361,10 @@ type Swapper {
 }
 
 // TestLargeChangesetToolSkipsPatchWork covers a move with both additions and
-// removals: the tool-result summary must not compute full paths, which would
-// stage every file for rename detection. The recorded overlay is still
-// normalized to a patch: keeping a large changeset raw would make restoring
-// the conversation re-run the tool that produced it (e.g. a generator).
+// removals: the tool-result summary must not show a patch over the path
+// budget. The recorded overlay still drops the tool call: keeping a large
+// changeset raw would make restoring the conversation re-run the tool that
+// produced it (e.g. a generator).
 func (LLMSuite) TestLargeChangesetToolSkipsPatchWork(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	source := c.Directory().
@@ -407,7 +407,7 @@ type Editor {
 	require.NoError(t, gid.Decode(string(id)))
 	fields := map[string]bool{}
 	collectIDFieldNames(gid, fields)
-	require.True(t, fields["withPatchFile"], "oversized changesets must be patch-normalized too")
+	require.True(t, fields["__withPatch"], "oversized changesets must be recorded as a patch too")
 	require.False(t, fields["moveTree"], "the recorded overlay must not retain the tool call")
 
 	entries, err := result.Workspace().Directory("new").Entries(ctx)
@@ -495,6 +495,7 @@ type Runner {
 			require.False(t, fields["withExec"], "neither After nor Before may retain a command")
 			if tc.edit == "true" {
 				require.False(t, fields["withChanges"], "no-op commands must not advance workspace state")
+				require.False(t, fields["__withPatch"], "no-op commands must not advance workspace state")
 			}
 
 			// End the producing session before rebuilding the committed LLM. The
@@ -536,65 +537,110 @@ type Runner {
 	}
 }
 
-// TestChangesetToolRebasesOntoWorkspace covers changesets whose Before is
-// expensive to rebuild, like a generator's: a source tree read back out of a
-// container after running its toolchain (e.g. codegen against a dev engine).
-// The workspace overlay records the patch rebased onto the prior workspace,
-// so neither the producer nor its Before stays a recipe dependency of every
-// later workspace. When Before does not match the workspace, the live result
-// is still what the raw changeset would produce.
-func (LLMSuite) TestChangesetToolRebasesOntoWorkspace(ctx context.Context, t *testctx.T) {
-	for _, tc := range []struct {
-		name, setup, want string
-		rebased           bool
-	}{
-		{name: "before from an exec", setup: "true", want: "keep me\ngenerated\n", rebased: true},
-		// Before was computed from another state than the workspace's, so
-		// the patch cannot be replayed onto the workspace as it stands.
-		{name: "stale before", setup: "echo stale > unchanged.txt", want: "stale\ngenerated\n"},
-	} {
-		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			c, sink := connectWithTrace(ctx, t)
-			source := c.Directory().
-				WithNewFile("unchanged.txt", "keep me\n").
-				WithNewFile("dagger.toml", "[modules.codegen]\nsource = \"modules/codegen\"\n").
-				WithNewFile("modules/codegen/dagger.json", `{"name":"codegen","engineVersion":"v1.0.0-0","sdk":"dang"}`).
-				WithNewFile("modules/codegen/main.dang", fmt.Sprintf(`
+// generatorWorkspace is a value workspace with one module, codegen, whose
+// main.dang is given. Its tools run a sentinel command guarded by a cache
+// volume unique to the test, so a restore that replays one fails.
+func generatorWorkspace(c *dagger.Client, mainDang string) *dagger.Directory {
+	return c.Directory().
+		WithNewFile("dagger.toml", "[modules.codegen]\nsource = \"modules/codegen\"\n").
+		WithNewFile("modules/codegen/dagger.json", `{"name":"codegen","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("modules/codegen/main.dang", mainDang)
+}
+
+// generatorDang is a codegen module whose generate tool copies the workspace
+// root (from), at cwd, into a container and returns what script changed
+// there. The script fails if the same label ever runs twice.
+func generatorDang(from, script string) string {
+	return fmt.Sprintf(`
 type Codegen {
   agent(base: LLM!): LLM! @agent {
     base.withTools(currentNode)
   }
 
   @cache(policy: FunctionCachePolicy.Never)
-  generate(ws: Workspace!): Changeset! {
+  generate(ws: Workspace!, label: String!): Changeset! {
     let before = container.from("alpine:3.22")
       .withMountedCache("/counter", cacheVolume(%q))
       .withWorkdir("/src")
-      .withDirectory(".", ws.directory("/"))
+      .withDirectory(".", %s)
+      .withEnvVariable("LABEL", label)
       .withEnvVariable("CACHEBUST", UUID.v7)
-      .withExec(["sh", "-ec", %q])
-    let after = before.withExec(["sh", "-ec", "echo generated >> unchanged.txt; echo out > gen.txt"]).sync
+    let after = before.withExec(["sh", "-ec", %q]).sync
     after.directory(".").changes(before.directory("."))
   }
 }
-`, "before-replay-"+identity.NewID(), `test ! -f /counter/before || { echo before-replayed >&2; exit 91; }; touch /counter/before; `+tc.setup))
-			model := cannedRecordingModel(ctx, t, c, c.LLM().
-				WithPrompt("generate").
-				WithResponse([]dagger.LLMContentBlockInput{{
-					Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "generate",
-				}}).
-				WithToolResult("call_1", "", false).
-				WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
-			ws := source.AsWorkspace()
-			base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
-			composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
-			require.NoError(t, err)
-			result := composed.WithPrompt("generate").Loop()
+`, "generator-replay-"+identity.NewID(), from,
+		`test ! -f /counter/"$LABEL" || { echo producer-replayed >&2; exit 91; }; touch /counter/"$LABEL"; `+script)
+}
+
+// runToolTurns runs one turn per label, each calling tool once with that
+// label, on an agent composed over ws.
+func runToolTurns(ctx context.Context, t *testctx.T, c *dagger.Client, ws *dagger.Workspace, tool string, labels ...string) *dagger.LLM {
+	t.Helper()
+	recording := c.LLM()
+	for i, label := range labels {
+		callID := fmt.Sprintf("call_%d", i+1)
+		recording = recording.
+			WithPrompt("run "+label).
+			WithResponse([]dagger.LLMContentBlockInput{{
+				Kind: dagger.LLMContentBlockKindToolCall, CallID: callID, ToolName: tool,
+				Arguments: dagger.JSON(fmt.Sprintf(`{"label":%q}`, label)),
+			}}).
+			WithToolResult(callID, "", false).
+			WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: label + " done"}})
+	}
+	model := cannedRecordingModel(ctx, t, c, recording)
+	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
+	require.NoError(t, err)
+	result := composed
+	for _, label := range labels {
+		result = result.WithPrompt("run " + label).Loop()
+	}
+	return result
+}
+
+// recipeFields captures an LLM's recipe and the field names reachable in it.
+func recipeFields(ctx context.Context, t *testctx.T, c *dagger.Client, sink *agentTraceSink, llm *dagger.LLM) (dagger.ID, map[string]bool) {
+	t.Helper()
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, llm)
+	require.NoError(t, err)
+	id := new(call.ID)
+	require.NoError(t, id.Decode(string(recipe)))
+	fields := map[string]bool{}
+	collectIDFieldNames(id, fields)
+	return recipe, fields
+}
+
+// TestChangesetToolPatchesWorkspace covers changesets whose Before is
+// expensive to rebuild, like a generator's: a source tree read back out of a
+// container after running its toolchain (e.g. codegen against a dev engine).
+// The overlay records a patch rendered against the workspace itself, so
+// neither the producer nor its Before stays a recipe dependency of every
+// later workspace. When Before does not match the workspace, the result is
+// still what the raw changeset would produce.
+func (LLMSuite) TestChangesetToolPatchesWorkspace(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name, setup, want, shown string
+	}{
+		{name: "before from an exec", setup: "true", want: "keep me\ngenerated\n", shown: " keep me\n+generated\n"},
+		// Before was computed from another state than the workspace's: the
+		// patch still starts from the workspace's own content.
+		{name: "stale before", setup: "echo stale > unchanged.txt", want: "stale\ngenerated\n", shown: "-keep me\n+stale\n+generated\n"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c, sink := connectWithTrace(ctx, t)
+			source := generatorWorkspace(c, generatorDang(`ws.directory("/")`,
+				tc.setup+`; echo generated >> unchanged.txt; echo out > gen.txt`)).
+				WithNewFile("unchanged.txt", "keep me\n")
+			result := runToolTurns(ctx, t, c, source.AsWorkspace(), "generate", "gen")
 			transcript, err := result.Transcript(ctx)
 			require.NoError(t, err)
-			require.Contains(t, transcript, "done")
+			require.Contains(t, transcript, "gen done")
+			// The model is shown the patch that was applied to its workspace.
+			require.Contains(t, transcript, tc.shown)
+			require.Contains(t, transcript, "+out\n")
 
-			// The live result is the raw changeset's, rebased or not.
 			got, err := result.Workspace().File("unchanged.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
@@ -602,23 +648,13 @@ type Codegen {
 			require.NoError(t, err)
 			require.Equal(t, "out\n", gen)
 
-			recipe, err := sink.captureLLMRecipe(ctx, t, c, result)
-			require.NoError(t, err)
-			id := new(call.ID)
-			require.NoError(t, id.Decode(string(recipe)))
-			fields := map[string]bool{}
-			collectIDFieldNames(id, fields)
+			recipe, fields := recipeFields(ctx, t, c, sink, result)
 			require.False(t, fields["generate"], "the tool call must not remain a recipe dependency")
-			require.True(t, fields["withPatchFile"], "the overlay must be patch-normalized")
-			if !tc.rebased {
-				// Falling back to Before keeps its recipe, so the restore
-				// below would replay it.
-				return
-			}
 			require.False(t, fields["withExec"], "the overlay must not retain Before's command")
+			require.True(t, fields["__withPatch"], "the overlay must be the workspace plus a patch")
 
 			// Rebuild the committed LLM in a fresh session. The cache-mounted
-			// sentinel fails Before's command if it replays.
+			// sentinel fails the command if it replays.
 			require.NoError(t, c.Close())
 			target := connect(ctx, t)
 			restored := dagger.Ref[*dagger.LLM](target, recipe)
@@ -632,16 +668,115 @@ type Codegen {
 	}
 }
 
+// TestChangesetToolRegeneratesIgnoredFile runs a generator twice that copies
+// the workspace with gitignore, so its Before never has the ignored file it
+// generates. The second run's changeset adds a file the workspace already
+// has: a patch rendered from Before would create it, and git apply would
+// refuse. Rendered against the workspace, it is a modification.
+func (LLMSuite) TestChangesetToolRegeneratesIgnoredFile(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	source := generatorWorkspace(c, generatorDang(`ws.directory("/", gitignore: true)`, `echo "$LABEL" > gen.txt`)).
+		WithNewFile(".gitignore", "gen.txt\n")
+	result := runToolTurns(ctx, t, c, source.AsWorkspace(), "generate", "first", "second")
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "second done")
+	require.NotContains(t, transcript, "already exists")
+	require.Contains(t, transcript, "-first\n+second\n")
+
+	got, err := result.Workspace().File("gen.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "second\n", got)
+
+	recipe, fields := recipeFields(ctx, t, c, sink, result)
+	require.False(t, fields["generate"])
+	require.False(t, fields["withExec"])
+
+	require.NoError(t, c.Close())
+	target := connect(ctx, t)
+	got, err = dagger.Ref[*dagger.LLM](target, recipe).Workspace().File("gen.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "second\n", got)
+}
+
+// TestChangesetToolPatchesDirectories covers what a patch cannot express:
+// empty directories the changeset adds or removes, and a directory that
+// `git apply` prunes once it deletes the last file in it, though the
+// changeset keeps it.
+func (LLMSuite) TestChangesetToolPatchesDirectories(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	source := generatorWorkspace(c, generatorDang(`ws.directory("/")`,
+		`mkdir -p added/empty; chmod 700 added/empty; echo file > added/file.txt; rmdir removed; rm -r removed-tree; rm emptied/only.txt`)).
+		WithNewDirectory("removed").
+		WithNewFile("removed-tree/a.txt", "a\n").
+		WithNewDirectory("removed-tree/empty").
+		WithNewFile("emptied/only.txt", "only\n")
+	result := runToolTurns(ctx, t, c, source.AsWorkspace(), "generate", "dirs")
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "dirs done")
+
+	check := func(ctx context.Context, t *testctx.T, ws *dagger.Workspace) {
+		t.Helper()
+		entries, err := ws.Directory("/").Entries(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, entries, "removed/")
+		require.NotContains(t, entries, "removed-tree/")
+		require.Contains(t, entries, "emptied/")
+		emptied, err := ws.Directory("emptied").Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, emptied)
+		added, err := ws.Directory("added").Entries(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"empty/", "file.txt"}, added)
+		stat, err := ws.Directory("/").Stat(ctx, "added/empty")
+		require.NoError(t, err)
+		permissions, err := stat.Permissions(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0o700, permissions)
+	}
+	check(ctx, t, result.Workspace())
+
+	recipe, fields := recipeFields(ctx, t, c, sink, result)
+	require.False(t, fields["withExec"])
+	require.True(t, fields["__withPatch"])
+
+	require.NoError(t, c.Close())
+	target := connect(ctx, t)
+	check(ctx, t, dagger.Ref[*dagger.LLM](target, recipe).Workspace())
+}
+
+// TestChangesetToolRefusesMounts covers a changeset that writes under a
+// workspace mount: mounted content is read-only, so the tool call fails and
+// nothing of its changeset is applied, as with Workspace.withChanges.
+func (LLMSuite) TestChangesetToolRefusesMounts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := generatorWorkspace(c, generatorDang(`ws.directory("/")`,
+		`echo ok > ok.txt; echo hacked > vendor/dep/hacked.txt`))
+	ws := source.AsWorkspace().
+		WithMountedDirectory("/vendor/dep", c.Directory().WithNewFile("lib.txt", "lib\n"))
+	result := runToolTurns(ctx, t, c, ws, "generate", "mount")
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "mount done")
+	require.Contains(t, transcript, "is a read-only mount")
+
+	entries, err := result.Workspace().Directory("/").Entries(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, entries, "ok.txt")
+	mounted, err := result.Workspace().Directory("vendor/dep").Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"lib.txt"}, mounted)
+}
+
 // TestChangesetToolKeepsEmptyDirectories locks in that a Changeset-returning
-// tool's empty directories survive the engine's patch normalization
-// (core.normalizeChangesetToPatch). Git patches carry file content only, so
-// without the directory reconciliation the normalized changeset — which
-// replaces the original on the live workspace binding — would silently drop
-// the empty directory while keeping the file beside it.
+// tool's empty directory survives being recorded on a snapshot workspace,
+// beside the file it scaffolds: the overlay must not reduce the changeset to
+// what a git patch carries.
 func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	// Use the existing remote-backed snapshot contract, not session-local Git
-	// history, when asserting portable normalization of the tool's changeset.
+	// history, for a workspace whose recipe is portable.
 	base := checkpointCheckoutBase(ctx, t, c).
 		With(withWorkspaceFixture(t, c, ".", "workspaces/workspace-tool-return")).
 		WithExec([]string{"git", "add", "."}).
@@ -656,49 +791,30 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 		}))
+	const loop = `llm --model="%s" | with-workspace --workspace $(current-workspace | snapshot) | with-tools $(swapper) | with-prompt "scaffold the project" | loop`
 
 	t.Run("the file beside the empty directory lands", func(ctx context.Context, t *testctx.T) {
-		// Control: the file edit rode the patch path, so normalization ran
-		// rather than falling back to the raw changeset.
-		out, err := base.With(daggerShell(fmt.Sprintf(
-			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "scaffold the project" | loop | workspace | file scaffold/README.md | contents`,
-			model,
-		))).Stdout(ctx)
+		out, err := base.With(daggerShell(fmt.Sprintf(loop+` | workspace | file scaffold/README.md | contents`, model))).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "scaffolded", strings.TrimSpace(out))
 	})
 
-	t.Run("the empty directory survives normalization", func(ctx context.Context, t *testctx.T) {
-		// Resolving the directory errors if the patch round trip dropped it.
-		_, err := base.With(daggerShell(fmt.Sprintf(
-			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "scaffold the project" | loop | workspace | directory scaffold/empty-dir | entries`,
-			model,
-		))).Stdout(ctx)
+	t.Run("the empty directory survives", func(ctx context.Context, t *testctx.T) {
+		// Resolving the directory errors if recording the overlay dropped it.
+		_, err := base.With(daggerShell(fmt.Sprintf(loop+` | workspace | directory scaffold/empty-dir | entries`, model))).Stdout(ctx)
 		require.NoError(t, err,
-			"an empty directory created by a tool's changeset must survive patch normalization")
+			"an empty directory created by a tool's changeset must survive")
 	})
 
-	t.Run("normalization actually ran", func(ctx context.Context, t *testctx.T) {
-		// The empty directory would also survive if normalization silently
-		// fell back to the raw changeset, so the subtest above cannot tell
-		// reconciliation from a skipped normalization. The recorded overlay
-		// discriminates: a normalized overlay is withPatchFile plus the
-		// withNewDirectory that restored the empty directory, while the raw
-		// changeset's chain has the tool's operations and no withPatchFile.
-		out, err := sink.captureShellRecipe(ctx, t, base, fmt.Sprintf(
-			`llm --model="%s" | with-workspace --workspace $(current-workspace | snapshot) | with-tools $(swapper) | with-prompt "scaffold the project" | loop`,
-			model,
-		))
+	t.Run("the overlay drops the tool call", func(ctx context.Context, t *testctx.T) {
+		out, err := sink.captureShellRecipe(ctx, t, base, fmt.Sprintf(loop, model))
 		require.NoError(t, err)
-
 		gid := new(call.ID)
 		require.NoError(t, gid.Decode(strings.TrimSpace(out)))
 		fields := map[string]bool{}
 		collectIDFieldNames(gid, fields)
-		require.True(t, fields["withPatchFile"],
-			"the recorded overlay must be patch-normalized, not the raw changeset")
-		require.True(t, fields["withNewDirectory"],
-			"the reconciliation must record the empty directory's restoration")
+		require.False(t, fields["addScaffold"], "the recorded overlay must not retain the tool call")
+		require.True(t, fields["__withPatch"], "the recorded overlay must be the workspace plus a patch")
 	})
 }
 

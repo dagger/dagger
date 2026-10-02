@@ -446,7 +446,7 @@ type changesetPathsMemo struct {
 
 	// bound memoizes PathCountExceeds' partial walk for the last limit asked
 	// about. The callers that apply a tool's changeset ask the same question
-	// in turn — whether to normalize it to a patch, then whether to show it in
+	// in turn — whether it changes anything, then whether to show it in
 	// full — and shouldn't each mount and walk the delta again.
 	boundMu      sync.Mutex
 	boundLimit   int

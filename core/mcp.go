@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	_ "embed"
@@ -462,7 +463,7 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
 	}
 	if tooLarge {
-		return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", patchSummaryMaxPaths)
+		return patchBudgetExceeded()
 	}
 
 	// Inspect stats before generating a patch. Keep these transient entries
@@ -488,7 +489,39 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 			}
 		}
 	}
+	return summarizeDiffStats(stats)
+}
 
+// summarizeAppliedPatch is summarizePatch for a changeset applied as a patch
+// rendered against the workspace (Changeset.RenderPatchOnto): that patch is
+// what actually changed in the workspace, so it is the one shown, within the
+// same bounds, rather than a second render of the changeset's own.
+func (m *MCP) summarizeAppliedPatch(ctx context.Context, changes dagql.ObjectResult[*Changeset], patch []byte) string {
+	tooLarge, err := changesetTooLarge(ctx, changes)
+	if err != nil {
+		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
+	}
+	if tooLarge {
+		return patchBudgetExceeded()
+	}
+	if preview, ok := readPatchPreview(bytes.NewReader(patch)); ok {
+		return preview
+	}
+	stats, err := changes.Self().DiffStats(ctx)
+	if err != nil {
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
+	}
+	if len(stats) == 0 {
+		return ""
+	}
+	return summarizeDiffStats(stats)
+}
+
+func patchBudgetExceeded() string {
+	return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", patchSummaryMaxPaths)
+}
+
+func summarizeDiffStats(stats []*DiffStat) string {
 	const summaryWidth = 80
 
 	entries := make([]patchpreview.Entry, len(stats))
@@ -629,10 +662,11 @@ func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql
 				return true, "", err
 			}
 		}
-		if err := m.applyChangeset(ctx, srv, changes); err != nil {
+		out, err := m.applyChangeset(ctx, srv, changes)
+		if err != nil {
 			return true, "", err
 		}
-		return true, m.summarizePatch(ctx, srv, changes), nil
+		return true, out, nil
 	}
 	if ws, ok := dagql.UnwrapAs[dagql.ObjectResult[*Workspace]](val); ok {
 		out, err := m.rebindWorkspace(ctx, srv, ws)
@@ -1149,38 +1183,49 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 	return strings.Join(lines, "\n")
 }
 
-// applyChangeset overlays a Changeset onto the bound workspace and updates
-// m.workspace to the new overlay Workspace.
-func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) error {
+// applyChangeset overlays a Changeset onto the bound workspace, updates
+// m.workspace to the new overlay Workspace, and tells the model what changed.
+//
+// How the overlay is recorded decides what restoring the conversation, and
+// every commit, recompose and module load built from its workspace, replays.
+// The changeset's own recipe is whatever its producer chose: a tool call, and
+// often a container's output, e.g. a generator's source tree after codegen
+// against a dev engine. So:
+//
+//   - A host-backed workspace reads the client's checkout, so a conversation
+//     built on one cannot be reproduced anyway: the raw changeset is applied.
+//   - Otherwise the workspace is already in the engine, and the changeset is
+//     applied as a patch rendered against it (Changeset.RenderPatchOnto) with
+//     Workspace.__withPatch. The recorded overlay is the prior workspace plus
+//     the patch: the producer is not replayed, and applying it compares no
+//     trees. The patch is also what the model is shown.
+func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (string, error) {
 	if m.workspace.Self() == nil {
-		return fmt.Errorf("cannot apply changes: no workspace bound")
+		return "", fmt.Errorf("cannot apply changes: no workspace bound")
 	}
 	if err := m.guardStateChange(); err != nil {
-		return err
-	}
-	normalized := changes
-	if !m.workspace.Self().ClientLocalBase() {
-		// A host-backed workspace reads the client's checkout, so a session
-		// built on one cannot be reproduced anyway: normalizing its
-		// changesets would only add cost.
-		var err error
-		normalized, err = normalizeChangesetToPatch(ctx, srv, m.workspace, changes)
-		if err != nil {
-			// Fall back to the raw changeset: normalization is a durability
-			// upgrade for restored conversations, not a correctness
-			// requirement for the live one.
-			slog.Warn("failed to normalize changeset to patch form", "error", err)
-			normalized = changes
-		}
+		return "", err
 	}
 	// A successful command need not change any files. Do not retain its
 	// Changeset (or even its Before recipe) as an overlay: that would make
 	// restoring the conversation evaluate the command again. This bounded
 	// check distinguishes directory-only edits from an actual no-op.
-	if changed, err := normalized.Self().PathCountExceeds(ctx, 0); err == nil && !changed {
-		return nil
+	if changed, err := changes.Self().PathCountExceeds(ctx, 0); err == nil && !changed {
+		return "", nil
 	}
-	changesID, err := normalized.ID()
+	ws := m.workspace.Self()
+	if root, ok := ws.SourceDirectory(); ok && !ws.ClientLocalBase() {
+		return m.applyChangesetPatch(ctx, srv, root, changes)
+	}
+	if err := m.overlayChangeset(ctx, srv, changes); err != nil {
+		return "", err
+	}
+	return m.summarizePatch(ctx, srv, changes), nil
+}
+
+// overlayChangeset applies a changeset as is, with Workspace.withChanges.
+func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) error {
+	changesID, err := changes.ID()
 	if err != nil {
 		return fmt.Errorf("get changeset ID: %w", err)
 	}
@@ -1199,317 +1244,91 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	return nil
 }
 
-// normalizeChangesetToPatch rewrites a changeset into pure patch data, rebased
-// onto the workspace it is about to be applied to:
+// applyChangesetPatch applies a changeset to an in-engine workspace as a patch
+// rendered against the workspace's root, with Workspace.__withPatch.
 //
-//	base    = ws.directory("/", include: <the changeset's paths>)
-//	after   = base.withPatchFile(blob(patch), onConflict: LEAVE_CONFLICT_MARKERS)
-//	changes = after.changes(from: base)
-//
-// A tool-built changeset's After is an operation chain (e.g.
-// File.withReplaced) rooted at live workspace reads. Reapplying those
-// operations when a conversation is restored fails once the files have moved
-// on (the search text is gone), or silently re-applies them when it hasn't.
-// Capturing the patch now — while the content the operations ran against is
-// known — makes the recorded overlay pure data, and its restoration a tolerant
-// application: hunks that fit apply, hunks that don't leave conflict markers
-// for the agent to resolve.
-//
-// Size alone is no reason to keep the raw changeset: a large one is typically
-// a generator's output, whose raw form retains the generator's execution — dev
-// engines, codegen, toolchains — and makes restoring the conversation re-run
-// all of it. The patch travels as a blob, so its size never inflates call
-// arguments. Only a patch File.contents cannot read is kept raw.
-//
-// The patch is rebased onto the workspace rather than the changeset's own
-// Before, which is whatever its producer chose: often a container's output,
-// e.g. a generator's source tree after codegen against a dev engine. Recording
-// Before would make every later workspace — and every commit, recompose and
-// module load built from one — rebuild it. Rebased, the recorded overlay is
-// just the prior workspace plus a blob. The base is sparse, holding only the
-// changeset's paths, since Workspace.withChanges applies only those anyway.
-// Host-backed workspaces are never normalized (see applyChangeset).
-//
-// Rebasing must not change the live result. Before may differ from the
-// workspace (a stale or partial tree), where the patch would apply differently
-// or conflict, so the rebased tree is checked against what applying the raw
-// changeset to the same base yields. On any file-level difference, or when the
-// changeset touches a workspace mount, the patch is rebased onto Before
-// instead, as it always was.
-func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace], changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	blob, ok, err := changesetPatchBlob(ctx, srv, changes)
-	if err != nil || !ok {
-		return changes, err
-	}
-	if ws.Self() != nil {
-		normalized, err := rebasePatchOntoWorkspace(ctx, srv, ws, changes, blob)
-		if err == nil {
-			return normalized, nil
-		}
-		slog.Debug("cannot rebase changeset patch onto the workspace; rebasing onto the changeset's before",
-			"error", err)
-	}
-	return rebasePatchOntoBefore(ctx, srv, changes, blob)
-}
-
-// changesetPatchBlob renders a changeset as a patch and embeds it as a blob.
-// The blob is zero for an empty patch, and ok is false for a patch too large
-// to read, which the caller keeps raw.
-func changesetPatchBlob(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (blob dagql.ObjectResult[*File], ok bool, _ error) {
-	var patch dagql.ObjectResult[*File]
-	if err := srv.Select(ctx, changes, &patch, dagql.Selector{
-		View:  srv.View,
-		Field: "asPatch",
-	}); err != nil {
-		return blob, false, fmt.Errorf("render changeset as patch: %w", err)
-	}
-	// Stat before reading: File.contents refuses files over
-	// MaxFileContentsSize only after reading up to it.
-	var size int
-	if err := srv.Select(ctx, patch, &size, dagql.Selector{
-		View:  srv.View,
-		Field: "size",
-	}); err != nil {
-		return blob, false, fmt.Errorf("stat changeset patch: %w", err)
-	}
-	if size > engineutil.MaxFileContentsSize {
-		slog.Debug("changeset patch too large to normalize to patch form; keeping raw changeset",
-			"bytes", size,
-			"max", engineutil.MaxFileContentsSize)
-		return blob, false, nil
-	}
-	patchData, err := patch.Self().Contents(ctx, patch, nil, nil)
+// The patch starts from the workspace's own content, so applying it
+// reproduces what Workspace.withChanges would by construction: there is
+// nothing to check and nothing to fall back to. Only a changeset that touches
+// a workspace mount is refused, as withChanges refuses it, and only a patch
+// too large to embed is applied raw.
+func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], changes dagql.ObjectResult[*Changeset]) (string, error) {
+	paths, err := changes.Self().ComputePaths(ctx)
 	if err != nil {
-		return blob, false, fmt.Errorf("read changeset patch: %w", err)
+		return "", fmt.Errorf("compute changeset paths: %w", err)
 	}
-	// Empty patches still need normalization: they may describe directory-only
-	// changes, or a no-op whose raw After retains an expensive tool execution.
-	if len(patchData) == 0 {
-		return blob, true, nil
+	for _, p := range slices.Concat(paths.Added, paths.Modified, paths.AllRemoved) {
+		p = strings.TrimSuffix(p, "/")
+		if m.workspace.Self().MountedPath(p) {
+			return "", fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", p)
+		}
 	}
-	// No View: blob postdates some client views, and like checkpointOverlay's
-	// patch blob this is engine-internal plumbing.
+	rendered, err := changes.Self().RenderPatchOnto(ctx, root, ".", engineutil.MaxFileContentsSize)
+	if errors.Is(err, ErrPatchTooLarge) {
+		slog.Debug("changeset patch too large to embed; applying the raw changeset",
+			"max", engineutil.MaxFileContentsSize)
+		if err := m.overlayChangeset(ctx, srv, changes); err != nil {
+			return "", err
+		}
+		return m.summarizePatch(ctx, srv, changes), nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("render changeset patch: %w", err)
+	}
+	if rendered.IsEmpty() {
+		// The workspace already holds what the changeset would leave.
+		return "", nil
+	}
+
+	// No View: blob postdates some client views, and like
+	// checkpointOverlay's patch blob this is engine-internal plumbing.
+	var blob dagql.ObjectResult[*File]
 	if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
 		Field: "blob",
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.NewString("changeset.patch")},
-			{Name: "contents", Value: dagql.Bytes(patchData)},
+			{Name: "contents", Value: dagql.Bytes(rendered.Patch)},
 			{Name: "permissions", Value: dagql.NewInt(0o600)},
 		},
 	}); err != nil {
-		return blob, false, fmt.Errorf("embed changeset patch: %w", err)
-	}
-	return blob, true, nil
-}
-
-// rebasePatchOntoWorkspace applies a changeset's patch to a sparse copy of the
-// workspace holding just the changeset's paths, and returns the result as a
-// changeset from that copy. It fails, for the caller to fall back, when the
-// result differs from applying the raw changeset to the same copy at file
-// level — Before did not match the workspace there — or when the changeset
-// touches a mount, which workspace reads show but Workspace.withChanges
-// refuses to edit.
-func rebasePatchOntoWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace], changes dagql.ObjectResult[*Changeset], blob dagql.ObjectResult[*File]) (dagql.ObjectResult[*Changeset], error) {
-	paths, err := changes.Self().ComputePaths(ctx)
-	if err != nil {
-		return changes, fmt.Errorf("compute changeset paths: %w", err)
-	}
-	var touched []string
-	for _, p := range slices.Concat(paths.Added, paths.Modified, paths.AllRemoved) {
-		p = strings.TrimSuffix(p, "/")
-		if ws.Self().MountedPath(p) || ws.Self().HasMountsUnder(p) {
-			return changes, fmt.Errorf("changeset path %q overlaps a workspace mount", p)
-		}
-		touched = append(touched, p)
-	}
-	slices.Sort(touched)
-	touched = slices.Compact(touched)
-
-	var base dagql.ObjectResult[*Directory]
-	if len(touched) == 0 {
-		// A no-op: an empty base keeps the workspace out of the recipe
-		// entirely, and the caller drops the empty result.
-		if err := srv.Select(ctx, srv.Root(), &base, dagql.Selector{Field: "directory"}); err != nil {
-			return changes, err
-		}
-	} else {
-		// Each path and everything under it: a removed directory takes its
-		// whole subtree with it.
-		include := make(dagql.ArrayInput[dagql.String], 0, 2*len(touched))
-		for _, p := range touched {
-			include = append(include, dagql.String(p), dagql.String(p+"/**"))
-		}
-		// "/" addresses the workspace root whatever its cwd, where the
-		// changeset applies (see workspaceRoot).
-		if err := srv.Select(ctx, ws, &base, dagql.Selector{
-			View:  srv.View,
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("/")},
-				{Name: "include", Value: include},
-			},
-		}); err != nil {
-			return changes, fmt.Errorf("read workspace paths: %w", err)
-		}
-	}
-
-	// What applying the raw changeset leaves at its paths, as
-	// Workspace.withChanges would: the rebased patch must reproduce it.
-	changesID, err := changes.ID()
-	if err != nil {
-		return changes, err
-	}
-	var target dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, base, &target, dagql.Selector{
-		Field: "withChanges",
-		Args: []dagql.NamedInput{
-			{Name: "changes", Value: dagql.NewID[*Changeset](changesID)},
-		},
-	}); err != nil {
-		return changes, fmt.Errorf("apply changeset to workspace paths: %w", err)
-	}
-
-	patched, err := applyPatchBlob(ctx, srv, base, blob)
-	if err != nil {
-		return changes, fmt.Errorf("apply patch to workspace: %w", err)
-	}
-	patched, err = reconcileDirsAfterPatch(ctx, srv, patched, target)
-	if err != nil {
-		return changes, fmt.Errorf("reconcile with workspace: %w", err)
-	}
-	return changesFrom(ctx, srv, patched, base)
-}
-
-// rebasePatchOntoBefore applies a changeset's patch to its own Before. The
-// result reproduces the changeset whatever the workspace holds, but its recipe
-// keeps Before's.
-func rebasePatchOntoBefore(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset], blob dagql.ObjectResult[*File]) (dagql.ObjectResult[*Changeset], error) {
-	before := changes.Self().Before
-	if before.Self() == nil {
-		return changes, fmt.Errorf("changeset has no before directory")
-	}
-	patched, err := applyPatchBlob(ctx, srv, before, blob)
-	if err != nil {
-		return changes, fmt.Errorf("apply patch to before: %w", err)
-	}
-	// Quick check: the changeset's own paths are already computed (memoized by
-	// asPatch). Directories carry a trailing slash; if none changed, the patch
-	// covered everything and there is no residue to look for.
-	origPaths, err := changes.Self().ComputePaths(ctx)
-	if err != nil {
-		return changes, fmt.Errorf("compute changeset paths: %w", err)
-	}
-	dirChanged := slices.ContainsFunc(
-		slices.Concat(origPaths.Added, origPaths.AllRemoved),
-		func(p string) bool { return strings.HasSuffix(p, "/") },
-	)
-	if dirChanged {
-		patched, err = reconcileDirsAfterPatch(ctx, srv, patched, changes.Self().After)
-		if err != nil {
-			return changes, fmt.Errorf("reconcile directories: %w", err)
-		}
-	}
-	return changesFrom(ctx, srv, patched, before)
-}
-
-// applyPatchBlob applies a patch blob to dir, leaving conflict markers where
-// hunks don't fit. A zero blob (an empty patch) leaves dir as is.
-func applyPatchBlob(ctx context.Context, srv *dagql.Server, dir dagql.ObjectResult[*Directory], blob dagql.ObjectResult[*File]) (dagql.ObjectResult[*Directory], error) {
-	if blob.Self() == nil {
-		return dir, nil
+		return "", fmt.Errorf("embed changeset patch: %w", err)
 	}
 	blobID, err := blob.ID()
 	if err != nil {
-		return dir, err
+		return "", err
 	}
-	var patched dagql.ObjectResult[*Directory]
-	err = srv.Select(ctx, dir, &patched, dagql.Selector{
-		View:  srv.View,
-		Field: "withPatchFile",
-		Args: []dagql.NamedInput{
-			{Name: "patch", Value: dagql.NewID[*File](blobID)},
-			{Name: "onConflict", Value: PatchConflictLeaveMarkers},
-		},
-	})
-	return patched, err
-}
-
-// changesFrom returns after.changes(from: before).
-func changesFrom(ctx context.Context, srv *dagql.Server, after, before dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Changeset], error) {
-	var changes dagql.ObjectResult[*Changeset]
-	beforeID, err := before.ID()
-	if err != nil {
-		return changes, err
+	args := []dagql.NamedInput{
+		{Name: "patch", Value: dagql.NewID[*File](blobID)},
 	}
-	if err := srv.Select(ctx, after, &changes, dagql.Selector{
+	if len(rendered.NewDirectories) > 0 {
+		dirs := make(dagql.ArrayInput[dagql.String], len(rendered.NewDirectories))
+		perms := make(dagql.ArrayInput[dagql.Int], len(rendered.NewDirectories))
+		for i, dir := range rendered.NewDirectories {
+			dirs[i] = dagql.NewString(dir.Path)
+			perms[i] = dagql.NewInt(dir.Permissions)
+		}
+		args = append(args,
+			dagql.NamedInput{Name: "directories", Value: dirs},
+			dagql.NamedInput{Name: "directoryPermissions", Value: perms})
+	}
+	if len(rendered.RemovedDirectories) > 0 {
+		removed := make(dagql.ArrayInput[dagql.String], len(rendered.RemovedDirectories))
+		for i, dir := range rendered.RemovedDirectories {
+			removed[i] = dagql.NewString(dir)
+		}
+		args = append(args, dagql.NamedInput{Name: "removedDirectories", Value: removed})
+	}
+	var newWS dagql.ObjectResult[*Workspace]
+	if err := srv.Select(ctx, m.workspace, &newWS, dagql.Selector{
 		View:  srv.View,
-		Field: "changes",
-		Args: []dagql.NamedInput{
-			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
-		},
+		Field: "__withPatch",
+		Args:  args,
 	}); err != nil {
-		return changes, fmt.Errorf("rebuild changeset from patch: %w", err)
+		return "", err
 	}
-	return changes, nil
-}
-
-// reconcileDirsAfterPatch brings a patched tree to its target — what applying
-// the original changeset produces — where a git patch cannot. Git tracks
-// files, not directories: an empty directory added by the changeset is
-// invisible to `git diff`, and applying a patch prunes a directory whose last
-// file it deletes. Since the normalized changeset replaces the original on the
-// live workspace binding, such a loss would not be confined to the saved
-// form. The patch covers file content, so the residue between the patched
-// tree and the target may only be directories; any file-level residue means
-// the patch did not reproduce the changeset, and normalization is abandoned.
-func reconcileDirsAfterPatch(ctx context.Context, srv *dagql.Server, patched, target dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
-	residual, err := NewChangeset(ctx, patched, target)
-	if err != nil {
-		return patched, err
-	}
-	paths, err := residual.ComputePaths(ctx)
-	if err != nil {
-		return patched, fmt.Errorf("compute patch residue: %w", err)
-	}
-	if len(paths.Modified) > 0 || len(paths.Renamed) > 0 {
-		return patched, fmt.Errorf("patch did not reproduce changeset content: modified %v, renamed %v", paths.Modified, paths.Renamed)
-	}
-	for _, p := range slices.Concat(paths.Added, paths.AllRemoved) {
-		if !strings.HasSuffix(p, "/") {
-			return patched, fmt.Errorf("patch did not reproduce changeset file %q", p)
-		}
-	}
-	// Recorded as selectors on the overlay chain, so they are pure data like
-	// the patch itself, and reapply tolerantly: withNewDirectory is mkdir -p,
-	// withoutDirectory ignores an already-missing path.
-	for _, dir := range paths.Added {
-		info, err := target.Self().Stat(ctx, target, srv, strings.TrimSuffix(dir, "/"), true)
-		if err != nil {
-			return patched, fmt.Errorf("stat directory %q: %w", dir, err)
-		}
-		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
-			View:  srv.View,
-			Field: "withNewDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
-				{Name: "permissions", Value: dagql.NewInt(info.Permissions)},
-			},
-		}); err != nil {
-			return patched, fmt.Errorf("restore directory %q: %w", dir, err)
-		}
-	}
-	for _, dir := range paths.Removed {
-		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
-			View:  srv.View,
-			Field: "withoutDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
-			},
-		}); err != nil {
-			return patched, fmt.Errorf("drop directory %q: %w", dir, err)
-		}
-	}
-	return patched, nil
+	m.workspace = newWS
+	m.markStateChanged()
+	return m.summarizeAppliedPatch(ctx, changes, rendered.Patch), nil
 }
 
 // workspaceDirectory returns the bound workspace's root directory, for
@@ -1554,7 +1373,8 @@ func (m *MCP) applyWorkspaceSnapshot(ctx context.Context, srv *dagql.Server, bef
 	}); err != nil {
 		return err
 	}
-	return m.applyChangeset(ctx, srv, changes)
+	_, err = m.applyChangeset(ctx, srv, changes)
+	return err
 }
 
 func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
