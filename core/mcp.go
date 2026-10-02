@@ -1158,13 +1158,20 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	if err := m.guardStateChange(); err != nil {
 		return err
 	}
-	normalized, err := normalizeChangesetToPatch(ctx, srv, m.workspace, changes)
-	if err != nil {
-		// Fall back to the raw changeset: normalization is a durability
-		// upgrade for restored conversations, not a correctness requirement
-		// for the live one.
-		slog.Warn("failed to normalize changeset to patch form", "error", err)
-		normalized = changes
+	normalized := changes
+	if !m.workspace.Self().ClientLocalBase() {
+		// A host-backed workspace reads the client's checkout, so a session
+		// built on one cannot be reproduced anyway: normalizing its
+		// changesets would only add cost.
+		var err error
+		normalized, err = normalizeChangesetToPatch(ctx, srv, m.workspace, changes)
+		if err != nil {
+			// Fall back to the raw changeset: normalization is a durability
+			// upgrade for restored conversations, not a correctness
+			// requirement for the live one.
+			slog.Warn("failed to normalize changeset to patch form", "error", err)
+			normalized = changes
+		}
 	}
 	// A successful command need not change any files. Do not retain its
 	// Changeset (or even its Before recipe) as an overlay: that would make
@@ -1220,8 +1227,8 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 // Before would make every later workspace — and every commit, recompose and
 // module load built from one — rebuild it. Rebased, the recorded overlay is
 // just the prior workspace plus a blob. The base is sparse, holding only the
-// changeset's paths: a host-backed workspace then syncs only those, and
-// Workspace.withChanges applies only the declared paths anyway.
+// changeset's paths, since Workspace.withChanges applies only those anyway.
+// Host-backed workspaces are never normalized (see applyChangeset).
 //
 // Rebasing must not change the live result. Before may differ from the
 // workspace (a stale or partial tree), where the patch would apply differently
