@@ -339,6 +339,20 @@ func (srv *Server) gcLocked(ctx context.Context, reason localCacheGCReason) erro
 		return nil
 	}
 
+	rerr := srv.pruneLocalCacheLocked(ctx, reason)
+
+	// A prune collects garbage itself when it removes entries, but leases
+	// are also released outside any prune. Collect whatever is still
+	// pending regardless of what the policies decided, or that data would
+	// stay on disk until some later prune happened to remove an entry.
+	if err := srv.snapshotGarbage.CollectIfPending(ctx); err != nil {
+		bklog.G(ctx).Errorf("snapshot garbage collection error: %+v", err)
+		rerr = errors.Join(rerr, fmt.Errorf("collect snapshot garbage: %w", err))
+	}
+	return rerr
+}
+
+func (srv *Server) pruneLocalCacheLocked(ctx context.Context, reason localCacheGCReason) error {
 	var rerr error
 	if len(srv.workerGCPolicies) > 0 {
 		dstat, err := disk.GetDiskStat(srv.rootDir)

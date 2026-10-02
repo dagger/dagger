@@ -698,6 +698,14 @@ entries, so this decision uses the aggregate removed-root count. The low-level
 cleanup semantics are intentionally delegated to containerd rather than
 reimplemented in dagql.
 
+Removing a lease only marks the metadata DB dirty, and leases are released
+outside any prune too: session teardown, failed execs, stopped services. So the
+engine also tracks deletions through containerd's mutation callback and, at the
+end of every GC pass, collects whatever is still pending, whatever the policies
+decided (`snapshotGarbage` in `engine/server/snapshot_garbage.go`). The first
+pass after startup always collects, since containerd's deletion count does not
+survive a restart.
+
 That is enough to understand the current prune story at a high level. The
 lease/snapshot side can be documented in finer detail separately.
 
