@@ -1,0 +1,12 @@
+"""
+A workspace module that no tool binding shadows, for the LLM.artifacts scope
+tests: its artifacts come from the workspace, constructed fresh.
+"""
+type Notes {
+  """
+  The notes, as a directory.
+  """
+  docs: Directory! {
+    directory.withNewFile("README", "workspace notes")
+  }
+}

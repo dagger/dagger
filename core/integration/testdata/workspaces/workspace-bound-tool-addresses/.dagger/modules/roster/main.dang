@@ -45,4 +45,12 @@ type Members @collection {
 
 type Member {
   pub dir: Directory!
+
+  """
+  The member's file, annotated with the workspace's README. It needs a
+  Workspace, so evaluating it tests which workspace a bound artifact runs in.
+  """
+  notes(source: Workspace!): File! {
+    directory.withNewFile("notes", dir.file("f").contents + " | " + source.file("README.md").contents).file("notes")
+  }
 }

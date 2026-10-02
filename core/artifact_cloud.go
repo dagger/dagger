@@ -13,6 +13,11 @@ import (
 // QueryCloud evaluates a selection on an artifact's value in another engine.
 // The response is data, not engine-local result handles.
 func (a *Artifact) QueryCloud(ctx context.Context, arguments JSON, fields string, dest any) (rerr error) {
+	if a.Workspace.Self() == nil {
+		// A bound artifact's value is rooted at a live local object, which
+		// another engine cannot reconstruct from a workspace recipe.
+		return fmt.Errorf("artifact %s has no workspace to evaluate in a cloud engine", strings.Join(a.Path, "/"))
+	}
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return err

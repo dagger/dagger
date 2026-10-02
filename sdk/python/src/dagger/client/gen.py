@@ -1660,8 +1660,8 @@ class Artifact(Type):
         ----------
         absolute:
             Prefix the workspace's Git address and commit:
-            dag://<workspace>@<commit>:<path>. Fails if the workspace has no
-            Git address.
+            dag://<workspace>@<commit>:<path>. Fails if the artifact has no
+            workspace, or its workspace has no Git address.
         dimension_keys:
             Include the dimension keys as a query. Without them, the address
             is a path selector.
@@ -12033,6 +12033,49 @@ class LLM(Type):
         ]
         _ctx = self._select("agent", _args)
         return Agent(_ctx)
+
+    def artifacts(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> Artifacts:
+        """Discover every artifact this conversation can address, as one
+        selection, without evaluating their values.
+
+        Tool objects bound with withTools contribute their modules' artifacts,
+        rooted at their current values: evaluating one reads the live state of
+        the bound tools, not a fresh construction. If a module's main object
+        is bound, only its tree is included; otherwise each bound object of
+        that module contributes its own tree. Addresses start with the module
+        name. These artifacts have no workspace of their own: they evaluate in
+        the LLM's bound workspace, if any, whoever evaluates them.
+
+        The workspace part is the artifacts of the workspace bound with
+        withWorkspace, as returned by Workspace.artifacts; an LLM with no
+        bound workspace has none. A workspace module with the same name as a
+        module with bound tool objects is omitted: the bound tools shadow it.
+        Unless they are only a plain construction of the module, which has no
+        state of its own: then the workspace module's artifacts are kept
+        instead.
+
+        Tool arguments that take an address resolve it here: a DAG address to
+        one object, or, for Artifacts and Artifact arguments, a selection
+        filtered like filterUri.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
+        Parameters
+        ----------
+        include:
+            Only include artifacts matching these path patterns, as with
+            Workspace.artifacts. A path selects that path and its children.
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("artifacts", _args)
+        return Artifacts(_ctx)
 
     def compose(self, expertise: list[Expertise]) -> Self:
         """Run expertise in list order, passing this conversation through each

@@ -238,7 +238,7 @@ export function AgentStateNameToValue(name: string): AgentState {
 }
 export type ArtifactUriOpts = {
   /**
-   * Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+   * Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
    */
   absolute?: boolean
 
@@ -2619,6 +2619,13 @@ export type JSONValueContentsOpts = {
    * Optional line prefix
    */
   indent?: string
+}
+
+export type LLMArtifactsOpts = {
+  /**
+   * Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.
+   */
+  include?: string[]
 }
 
 export type LLMLoopOpts = {
@@ -5102,7 +5109,7 @@ export class Artifact extends BaseClient {
 
   /**
    * The artifact's DAG address, such as dag://engine-dev/playground.
-   * @param opts.absolute Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+   * @param opts.absolute Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
    * @param opts.dimensionKeys Include the dimension keys as a query. Without them, the address is a path selector.
    * @param opts.typeAssertion Include the artifact type in the scheme: dag+container://.
    */
@@ -13142,6 +13149,22 @@ export class LLM extends BaseClient {
   agent = (handle: string, name: string): Agent => {
     const ctx = this._ctx.select("agent", { handle, name })
     return new Agent(ctx)
+  }
+
+  /**
+   * Discover every artifact this conversation can address, as one selection, without evaluating their values.
+   *
+   * Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.
+   *
+   * The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
+   *
+   * Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+   * @param opts.include Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.
+   * @experimental
+   */
+  artifacts = (opts?: LLMArtifactsOpts): Artifacts => {
+    const ctx = this._ctx.select("artifacts", { ...opts })
+    return new Artifacts(ctx)
   }
 
   /**

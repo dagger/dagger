@@ -69,11 +69,10 @@ func (a *Expertise) OriginalModule() *Module { return a.Artifact.Node.OriginalMo
 
 func (a *Expertise) Run(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	var result dagql.ObjectResult[*LLM]
-	ctx, err := WorkspaceClientContext(ctx, a.Artifact.Workspace.Self())
+	ctx, err := a.Artifact.WorkspaceContext(ctx)
 	if err != nil {
 		return result, err
 	}
-	ctx = WorkspaceToContext(ctx, a.Artifact.Workspace)
 	id, err := base.ID()
 	if err != nil {
 		return result, err

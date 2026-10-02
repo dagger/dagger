@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,10 +18,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/gitutil"
 )
-
-// moduleRefCycleKey is the context key carrying the chain of in-flight
-// artifact addresses, used to detect reference cycles.
-type moduleRefCycleKey struct{}
 
 // resolveModuleRef resolves a DAG address in the address's workspace. A value
 // without the dag:// scheme keeps its external meaning: it is never looked up
@@ -68,14 +63,10 @@ func resolveModuleRef(ctx context.Context, address *core.Address, typeName strin
 	if err != nil {
 		return true, err
 	}
-	chain, _ := ctx.Value(moduleRefCycleKey{}).([]string)
-	if slices.Contains(chain, normalized) {
-		return true, fmt.Errorf("module reference cycle detected: %s -> %s", strings.Join(chain, " -> "), normalized)
+	ctx, err = core.WithArtifactReference(ctx, normalized)
+	if err != nil {
+		return true, err
 	}
-	newChain := make([]string, len(chain)+1)
-	copy(newChain, chain)
-	newChain[len(chain)] = normalized
-	ctx = context.WithValue(ctx, moduleRefCycleKey{}, newChain)
 
 	if err := artifact.Evaluate(ctx, dest); err != nil {
 		return true, fmt.Errorf("resolve %q: %w", addr, err)
@@ -178,17 +169,10 @@ func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, e
 	// Normalize names so case variants cannot evade cycle detection during
 	// nested module construction.
 	normalized := moduleField + ":" + functionField
-	chain, _ := ctx.Value(moduleRefCycleKey{}).([]string)
-	for _, seen := range chain {
-		if seen == normalized {
-			return true, fmt.Errorf("module reference cycle detected: %s -> %s",
-				strings.Join(chain, " -> "), normalized)
-		}
+	ctx, err := core.WithArtifactReference(ctx, normalized)
+	if err != nil {
+		return true, err
 	}
-	newChain := make([]string, len(chain)+1)
-	copy(newChain, chain)
-	newChain[len(chain)] = normalized
-	ctx = context.WithValue(ctx, moduleRefCycleKey{}, newChain)
 
 	if err := srv.Select(ctx, srv.Root(), dest, selectors...); err != nil {
 		return true, fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
