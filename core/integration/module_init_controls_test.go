@@ -19,7 +19,6 @@ func (GeneratorsSuite) TestSDKModuleInitControls(ctx context.Context, t *testctx
 ignore = [
   'node_modules', # keep
 ]
-future = true
 `
 	const config = prefix + `[modules.writer]
 source = '../sdk'

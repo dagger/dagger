@@ -16,7 +16,6 @@ func (WorkspaceSuite) TestWorkspaceEntrypoint(ctx context.Context, t *testctx.T)
 ignore = [
   'node_modules', # keep
 ]
-future = true
 [modules.old]
 source = './old'
 entrypoint = true

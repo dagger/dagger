@@ -17,7 +17,6 @@ ignore = [
     'dist', # generated output
     "node_modules",
 ]
-future = { enabled = true }
 
 [modules.go-sdk]
 source = 'github.com/dagger/go-sdk'
@@ -55,7 +54,7 @@ clients = [
 	}
 
 	t.Run("uninstall preserves other modules", func(ctx context.Context, t *testctx.T) {
-		const extra = "\n[modules.extra]\nsource = './extra'\nfuture = 'remove with module'\n"
+		const extra = "\n[modules.extra]\nsource = './extra'\n"
 		workdir := newWorkspaceConfigWorkdir(ctx, t, config+extra)
 		_, err := hostDaggerExec(ctx, t, workdir, "mod", "uninstall", "extra")
 		require.NoError(t, err)
