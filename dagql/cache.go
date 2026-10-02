@@ -2314,6 +2314,11 @@ type Cache struct {
 	partContentSource *PartContentSource
 	snapshotGC        func(context.Context) error
 
+	// usageSnapshotParents carries the parent links the last usage pass
+	// resolved into the next one; see snapshotChains.
+	usageSnapshotParentsMu sync.Mutex
+	usageSnapshotParents   map[string]string
+
 	// Test hooks are nil in production. Tests use them to pause inside or
 	// between lifecycle critical sections without timing-based coordination.
 	testAfterSessionResultRecord    func()
@@ -5346,6 +5351,10 @@ type cacheUsageMeasurementInput struct {
 	identities       []string
 	existingSizeByID map[string]int64
 	sizeMayChange    bool
+
+	// ancestorIdentities are the identities that are only parent snapshots
+	// of the payload's own snapshots. The payload cannot size them itself.
+	ancestorIdentities map[string]struct{}
 }
 
 type cacheUsageIdentityMeasurement struct {
@@ -5418,9 +5427,13 @@ func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.Sn
 		}
 
 		if !ok {
-			if input.self != nil {
+			_, ancestor := input.ancestorIdentities[identity]
+			switch {
+			case ancestor:
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
+			case input.self != nil:
 				sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, snapshotManager, input.self, identity)
-			} else if len(input.snapshotLinks) > 0 {
+			case len(input.snapshotLinks) > 0:
 				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
 			}
 			if err != nil {

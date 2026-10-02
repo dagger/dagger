@@ -607,6 +607,23 @@ The basic idea is:
 This is how pruning avoids double-counting shared snapshots or other shared
 storage.
 
+A snapshot's owner lease retains its whole parent chain, so a result's usage
+identities are that chain, not only the snapshots its value reports. The usage
+pass resolves each snapshot's parent outside the lock and adds the ancestors as
+identities (`snapshotChains` in `dagql/cache_usage.go`). Ancestors are sized
+directly by snapshot ID, since the value only knows how to size its own
+snapshots. In practice:
+
+- an image's lower layers count once, against the earliest result that retains
+  them, so the `from` result shows the whole image
+- a result stacked on others shows only its own layer while the results below
+  it are alive, and pruning it is credited with only that layer
+- once the results below are gone, the layers they left behind are charged to
+  the result still retaining them
+
+Parent links never change, so each pass reuses the links the previous pass
+resolved and keeps only the ones it visited.
+
 ## Size Measurement
 
 Disk prune needs approximate physical reclaim sizes, so it measures usage before

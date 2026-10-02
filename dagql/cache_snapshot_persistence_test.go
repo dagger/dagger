@@ -61,6 +61,8 @@ type fakeSnapshotManager struct {
 	persistentRows      bkcache.PersistentMetadataRows
 	loadedRows          bkcache.PersistentMetadataRows
 	snapshotSizes       map[string]int64
+	snapshotParents     map[string]string
+	snapshotParentCalls []string
 	snapshotMetadata    map[string]bkcache.SnapshotRecordMetadata
 	snapshotSizeCalls   []string
 	attachCalls         []struct{ LeaseID, SnapshotID string }
@@ -101,6 +103,12 @@ func (m *fakeSnapshotManager) SnapshotSize(ctx context.Context, snapshotID strin
 	}
 	m.snapshotSizeCalls = append(m.snapshotSizeCalls, snapshotID)
 	return sizeBytes, nil
+}
+
+func (m *fakeSnapshotManager) SnapshotParent(ctx context.Context, snapshotID string) (string, error) {
+	_ = ctx
+	m.snapshotParentCalls = append(m.snapshotParentCalls, snapshotID)
+	return m.snapshotParents[snapshotID], nil
 }
 
 func (m *fakeSnapshotManager) SnapshotRecordMetadata(ctx context.Context, snapshotID string) (bkcache.SnapshotRecordMetadata, bool, error) {
