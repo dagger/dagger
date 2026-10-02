@@ -1205,7 +1205,7 @@ func recordCompletePartKeys(record PersistedRecord) []string {
 // capture still describes the value, and those its part gate has settled.
 func completePartKeysLocked(res *sharedResult) []string {
 	keys := res.settledPartKeys()
-	if cached := res.completeParts.Load(); cached != nil && cached.version.check(res) == nil {
+	if cached := res.completeParts.Load(); cached != nil && cached.stamp.current(res) {
 		keys = append(keys, cached.keys...)
 	}
 	slices.Sort(keys)
