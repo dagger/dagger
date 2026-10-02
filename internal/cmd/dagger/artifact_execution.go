@@ -199,7 +199,7 @@ type artifactLoadFailure struct{ URI, LoadError string }
 
 func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]artifactLoadFailure, error) {
 	// Read schema metadata so a collection's own load field stays deferred.
-	artifacts = artifacts.FilterURI("dag://*/load")
+	artifacts = artifacts.FilterPathPattern("*/load")
 	id, err := artifacts.ID(ctx)
 	if err != nil {
 		return nil, err

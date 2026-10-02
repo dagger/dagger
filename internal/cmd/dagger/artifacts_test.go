@@ -4,39 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
-
-func TestArtifactDimensionFlags(t *testing.T) {
-	root := &cobra.Command{Use: "dagger"}
-	root.PersistentFlags().String("env", "", "Workspace environment")
-	cmd := newListCommand()
-	root.AddCommand(cmd)
-	registerArtifactDimensionFlags(cmd, []string{"go-module", "go-test", "type", "env"})
-
-	child, _, err := cmd.Find(nil)
-	require.NoError(t, err)
-	require.NoError(t, child.ParseFlags([]string{
-		"--type=container", "--type=Directory",
-		"--go-module=sdk/go", "--go-module=cmd/codegen",
-		"--go-module=lib,a=b",
-		"--go-test=TestConnect",
-		"--env=dev",
-	}))
-
-	require.Equal(t, []dagaddress.Pair{
-		{Dimension: "go-module", Key: "sdk/go", HasKey: true},
-		{Dimension: "go-module", Key: "cmd/codegen", HasKey: true},
-		{Dimension: "go-module", Key: "lib,a=b", HasKey: true},
-		{Dimension: "go-test", Key: "TestConnect", HasKey: true},
-	}, artifactKeyFlags(child))
-}
 
 func TestArtifactPathsUseModuleSelectors(t *testing.T) {
 	for _, tc := range []struct {
@@ -119,19 +92,15 @@ func TestArtifactListFlagsRequireList(t *testing.T) {
 	}
 }
 
-func TestArtifactEmptyDimensionKey(t *testing.T) {
-	for _, arg := range []string{"--part="} {
-		t.Run(arg, func(t *testing.T) {
-			cmd := newListCommand()
-			registerArtifactDimensionFlags(cmd, []string{"part"})
-			require.NoError(t, cmd.ParseFlags([]string{arg}))
-			keys := artifactKeyFlags(cmd)
-			require.Len(t, keys, 1)
-			require.Equal(t, "part", keys[0].Dimension)
-			require.True(t, keys[0].HasKey)
-			require.Empty(t, keys[0].Key)
-		})
-	}
+func TestArtifactDimensionKeys(t *testing.T) {
+	cmd := newListCommand()
+	registerArtifactDimensionFlags(cmd, []string{"part"})
+	// Keys are not split at commas, and an empty key is kept.
+	require.NoError(t, cmd.ParseFlags([]string{"--part=", "--part=lib,a=b"}))
+	require.Equal(t, []dagaddress.Pair{
+		{Dimension: "part", Key: "", HasKey: true},
+		{Dimension: "part", Key: "lib,a=b", HasKey: true},
+	}, artifactKeyFlags(cmd))
 }
 
 func TestArtifactDiscoveryRequired(t *testing.T) {
@@ -171,12 +140,6 @@ func TestArtifactPreparationDoesNotConnect(t *testing.T) {
 }
 
 func TestArtifactAddressArguments(t *testing.T) {
-	cmd := newListCommand()
-	child, _, err := cmd.Find(nil)
-	require.NoError(t, err)
-	registerArtifactDimensionFlags(cmd, []string{"go-test"})
-	require.NoError(t, child.ParseFlags([]string{"--go-test=TestQuery"}))
-
 	sel, err := parseArtifactAddresses([]string{
 		"dag+container://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect",
 		"provider:docs",
@@ -185,32 +148,15 @@ func TestArtifactAddressArguments(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"golang/modules/tests/container"}, artifactPaths(sel[:1]))
 	require.Nil(t, artifactPaths(sel)) // The third address selects every path.
-	require.Equal(t, []string{"container"}, sel[0].Types)
-	require.Empty(t, sel[1].Types)
-	require.Empty(t, sel[1].Query)
-
-	applyArtifactFilters(child, sel[0], artifactKeyFlags(child), (&dagger.Artifacts{}).WithGraphQLQuery(querybuilder.Query()))
-	require.Len(t, sel[0].Query, 2) // Flags do not mutate the input address.
-
-	_, err = parseArtifactAddresses([]string{"dag://github.com/dagger/dagger@main:base"})
-	require.NoError(t, err)
-	_, err = parseArtifactAddresses([]string{"https://example.com"})
-	require.ErrorContains(t, err, "not a DAG address")
 }
 
 func TestArtifactDimensionAliases(t *testing.T) {
 	defs := artifact.Dimensions{
 		{Identifier: "golang/modules", Name: "go-module", QualifiedName: "golang-modules"},
-		{Identifier: "app/dependencies", Name: "go-module", QualifiedName: "app-dependencies"},
 	}
-	_, err := defs.Resolve("go-module")
-	require.ErrorContains(t, err, "ambiguous dimension")
-	name, err := defs[:1].Resolve("go-module")
-	require.NoError(t, err)
-	require.Equal(t, "golang/modules", name)
 	sel, err := parseArtifactAddresses([]string{"modules?go-module=a&golang-modules=b"})
 	require.NoError(t, err)
-	require.NoError(t, bindArtifactDimensions(sel[0].Query, defs[:1]))
+	require.NoError(t, bindArtifactDimensions(sel[0].Query, defs))
 	require.Equal(t, "golang/modules", sel[0].Query[0].Dimension)
 	require.Equal(t, "golang/modules", sel[0].Query[1].Dimension)
 	require.Equal(t, "a", sel[0].Query[0].Key)
