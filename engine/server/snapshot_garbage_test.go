@@ -76,3 +76,26 @@ func TestGCLockedCollectsGarbageWhenPruneRemovesNothing(t *testing.T) {
 	requireSnapshotCollected(t, store, releasedID)
 	testutil.CheckFile(t, kept, "kept", "kept data")
 }
+
+// Disabling GC stops pruning, not the collection of data nothing references.
+func TestGCLockedCollectsGarbageWithGCDisabled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	garbage := newSnapshotGarbage(store.DB)
+
+	released, releasedOwner := store.Build(t, nil, "released", "released data")
+	releasedID := released.SnapshotID()
+	require.NoError(t, released.Release(ctx))
+	require.NoError(t, store.Manager.RemoveLease(ctx, releasedOwner))
+
+	// With gc.enabled=false there are no worker policies and structural
+	// pruning is off.
+	srv := &Server{
+		rootDir:         t.TempDir(),
+		engineCache:     newGCTestCache(t),
+		snapshotGarbage: garbage,
+	}
+	require.NoError(t, srv.gcLocked(ctx, localCacheGCScheduled))
+	requireSnapshotCollected(t, store, releasedID)
+}

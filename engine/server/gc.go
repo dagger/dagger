@@ -345,6 +345,8 @@ func (srv *Server) gcLocked(ctx context.Context, reason localCacheGCReason) erro
 	// are also released outside any prune. Collect whatever is still
 	// pending regardless of what the policies decided, or that data would
 	// stay on disk until some later prune happened to remove an entry.
+	// This runs with GC disabled too: disabling GC stops the engine from
+	// choosing entries to drop, but nothing references this data anymore.
 	if err := srv.snapshotGarbage.CollectIfPending(ctx); err != nil {
 		bklog.G(ctx).Errorf("snapshot garbage collection error: %+v", err)
 		rerr = errors.Join(rerr, fmt.Errorf("collect snapshot garbage: %w", err))

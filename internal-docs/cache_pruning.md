@@ -721,7 +721,9 @@ engine also tracks deletions through containerd's mutation callback and, at the
 end of every GC pass, collects whatever is still pending, whatever the policies
 decided (`snapshotGarbage` in `engine/server/snapshot_garbage.go`). The first
 pass after startup always collects, since containerd's deletion count does not
-survive a restart.
+survive a restart. This collection also runs with `gc.enabled=false`: disabling
+GC stops the engine from choosing entries to drop, but nothing references this
+data anymore.
 
 That is enough to understand the current prune story at a high level. The
 lease/snapshot side can be documented in finer detail separately.
