@@ -61,6 +61,26 @@ func (gitURL *GitURL) Remote() string {
 	return gitURLCopy.String()
 }
 
+// HTMLURL returns a best-effort browser URL for the repository, without clone
+// credentials or revision selectors. SSH and Git transport ports are not web
+// ports, so only HTTP(S) ports are retained.
+func (gitURL *GitURL) HTMLURL() string {
+	u := &url.URL{
+		Scheme: gitURL.Scheme,
+		Host:   gitURL.Host,
+		Path:   "/" + strings.TrimPrefix(strings.TrimSuffix(gitURL.Path, ".git"), "/"),
+	}
+	if u.Scheme != HTTPProtocol && u.Scheme != HTTPSProtocol {
+		host := u.Hostname()
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+		u.Scheme = HTTPSProtocol
+		u.Host = host
+	}
+	return u.String()
+}
+
 func (gitURL *GitURL) String() string {
 	if gitURL.scpStyle {
 		result := sshutil.SCPStyleURL{
