@@ -91,9 +91,9 @@ new mode 100755
 				},
 			},
 			{
-				name: "plain unified diff with timestamps",
+				name:  "plain unified diff with timestamps",
 				patch: "--- a/x.txt\t2020-01-01 00:00:00\n+++ b/x.txt\t2020-01-02 00:00:00\n@@ -1 +1 @@\n-a\n+b\n",
-				want: []PatchFilePaths{{Old: "x.txt", New: "x.txt"}},
+				want:  []PatchFilePaths{{Old: "x.txt", New: "x.txt"}},
 			},
 			{name: "empty", patch: "", want: nil},
 		} {

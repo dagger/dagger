@@ -24,113 +24,124 @@ type PatchFilePaths struct {
 // lines of any unified diff, git's C-quoted paths and /dev/null included.
 // Hunk bodies and binary payloads are skipped, never read as headers.
 func ParsePatchPaths(patch []byte) ([]PatchFilePaths, error) {
-	var files []PatchFilePaths
-	var cur *PatchFilePaths
-	// created and deleted are what the extended headers said about cur.
-	var created, deleted bool
-	flush := func() {
-		if cur == nil {
-			return
-		}
-		if created {
-			cur.Old = ""
-		}
-		if deleted {
-			cur.New = ""
-		}
-		if cur.Old != "" || cur.New != "" {
-			files = append(files, *cur)
-		}
-		cur, created, deleted = nil, false, false
-	}
-
+	var p patchPathParser
 	sc := bufio.NewScanner(bytes.NewReader(patch))
 	sc.Buffer(make([]byte, 0, 64*1024), len(patch)+1)
-	// Lines left in the current hunk, old and new side.
-	var hunkOld, hunkNew int
 	for sc.Scan() {
-		line := sc.Text()
-		if hunkOld > 0 || hunkNew > 0 {
-			switch {
-			case strings.HasPrefix(line, "\\"):
-				// "\ No newline at end of file"
-			case strings.HasPrefix(line, "-"):
-				hunkOld--
-			case strings.HasPrefix(line, "+"):
-				hunkNew--
-			default:
-				hunkOld--
-				hunkNew--
-			}
-			continue
-		}
-		switch {
-		case strings.HasPrefix(line, "diff --git "):
-			flush()
-			old, new, err := parseDiffGitHeader(strings.TrimPrefix(line, "diff --git "))
-			if err != nil {
-				return nil, err
-			}
-			cur = &PatchFilePaths{Old: old, New: new}
-		case strings.HasPrefix(line, "--- "):
-			p, err := parseUnifiedPath(strings.TrimPrefix(line, "--- "))
-			if err != nil {
-				return nil, err
-			}
-			if cur == nil {
-				// A plain unified diff: no `diff --git` line opens it.
-				cur = &PatchFilePaths{}
-			}
-			if p == "" {
-				created = true
-			} else {
-				cur.Old = p
-			}
-		case strings.HasPrefix(line, "+++ "):
-			p, err := parseUnifiedPath(strings.TrimPrefix(line, "+++ "))
-			if err != nil {
-				return nil, err
-			}
-			if cur == nil {
-				cur = &PatchFilePaths{}
-			}
-			if p == "" {
-				deleted = true
-			} else {
-				cur.New = p
-			}
-		case strings.HasPrefix(line, "@@ "):
-			var err error
-			hunkOld, hunkNew, err = parseHunkHeader(line)
-			if err != nil {
-				return nil, err
-			}
-		case cur == nil:
-			// Commit messages and other text around the diffs.
-		case strings.HasPrefix(line, "rename from "), strings.HasPrefix(line, "copy from "):
-			p, err := unquotePatchPath(line[strings.Index(line, " from ")+len(" from "):])
-			if err != nil {
-				return nil, err
-			}
-			cur.Old = p
-			cur.Copy = strings.HasPrefix(line, "copy ")
-		case strings.HasPrefix(line, "rename to "), strings.HasPrefix(line, "copy to "):
-			p, err := unquotePatchPath(line[strings.Index(line, " to ")+len(" to "):])
-			if err != nil {
-				return nil, err
-			}
-			cur.New = p
-		case strings.HasPrefix(line, "new file mode "):
-			created = true
-		case strings.HasPrefix(line, "deleted file mode "):
-			deleted = true
+		if err := p.line(sc.Text()); err != nil {
+			return nil, err
 		}
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
-	flush()
-	return files, nil
+	p.flush()
+	return p.files, nil
+}
+
+type patchPathParser struct {
+	files []PatchFilePaths
+	cur   *PatchFilePaths
+	// created and deleted are what the headers said about cur.
+	created, deleted bool
+	// hunkOld and hunkNew are the lines left in the current hunk.
+	hunkOld, hunkNew int
+}
+
+func (p *patchPathParser) flush() {
+	if p.cur == nil {
+		return
+	}
+	if p.created {
+		p.cur.Old = ""
+	}
+	if p.deleted {
+		p.cur.New = ""
+	}
+	if p.cur.Old != "" || p.cur.New != "" {
+		p.files = append(p.files, *p.cur)
+	}
+	p.cur, p.created, p.deleted = nil, false, false
+}
+
+func (p *patchPathParser) line(line string) error {
+	if p.hunkOld > 0 || p.hunkNew > 0 {
+		switch {
+		case strings.HasPrefix(line, "\\"):
+			// "\ No newline at end of file"
+		case strings.HasPrefix(line, "-"):
+			p.hunkOld--
+		case strings.HasPrefix(line, "+"):
+			p.hunkNew--
+		default:
+			p.hunkOld--
+			p.hunkNew--
+		}
+		return nil
+	}
+	var err error
+	switch {
+	case strings.HasPrefix(line, "diff --git "):
+		p.flush()
+		var old, new string
+		if old, new, err = parseDiffGitHeader(strings.TrimPrefix(line, "diff --git ")); err == nil {
+			p.cur = &PatchFilePaths{Old: old, New: new}
+		}
+	case strings.HasPrefix(line, "--- "), strings.HasPrefix(line, "+++ "):
+		err = p.unifiedPath(line)
+	case strings.HasPrefix(line, "@@ "):
+		p.hunkOld, p.hunkNew, err = parseHunkHeader(line)
+	case p.cur != nil:
+		err = p.extendedHeader(line)
+	}
+	return err
+}
+
+// unifiedPath reads a ---/+++ line.
+func (p *patchPathParser) unifiedPath(line string) error {
+	path, err := parseUnifiedPath(line[len("--- "):])
+	if err != nil {
+		return err
+	}
+	if p.cur == nil {
+		// A plain unified diff: no `diff --git` line opens it.
+		p.cur = &PatchFilePaths{}
+	}
+	switch {
+	case strings.HasPrefix(line, "--- ") && path == "":
+		p.created = true
+	case strings.HasPrefix(line, "--- "):
+		p.cur.Old = path
+	case path == "":
+		p.deleted = true
+	default:
+		p.cur.New = path
+	}
+	return nil
+}
+
+// extendedHeader reads one of git's extended header lines.
+func (p *patchPathParser) extendedHeader(line string) error {
+	switch {
+	case strings.HasPrefix(line, "rename from "), strings.HasPrefix(line, "copy from "):
+		path, err := unquotePatchPath(line[strings.Index(line, " from ")+len(" from "):])
+		if err != nil {
+			return err
+		}
+		p.cur.Old = path
+		p.cur.Copy = strings.HasPrefix(line, "copy ")
+	case strings.HasPrefix(line, "rename to "), strings.HasPrefix(line, "copy to "):
+		path, err := unquotePatchPath(line[strings.Index(line, " to ")+len(" to "):])
+		if err != nil {
+			return err
+		}
+		p.cur.New = path
+	case strings.HasPrefix(line, "new file mode "):
+		p.created = true
+	case strings.HasPrefix(line, "deleted file mode "):
+		p.deleted = true
+	}
+	return nil
 }
 
 // parseDiffGitHeader splits the two paths of a `diff --git` line and strips
