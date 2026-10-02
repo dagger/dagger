@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -213,7 +214,11 @@ func (r *Resolver) ResolveImageConfig(
 			}
 		}
 
-		resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport)
+		network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+		if err != nil {
+			return nil, fmt.Errorf("create registry resolve network recorder: %w", err)
+		}
+		resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network)
 		if err != nil {
 			return nil, err
 		}
@@ -283,11 +288,16 @@ func (r *Resolver) ResolveImageDigest(
 		tracing.FinishWithError(span, rerr)
 	}()
 
+	network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return "", "", fmt.Errorf("create registry resolve network recorder: %w", err)
+	}
 	resolvedRef, rootDesc, _, err := r.resolveRemoteRootDescriptor(
 		ctx,
 		ref,
 		opts.Network,
 		opts.RegistryTransport,
+		network,
 	)
 	if err != nil {
 		return "", "", err
@@ -329,7 +339,11 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		}
 	}
 
-	resolvedRef, rootDesc, resolver, err := r.resolvePullRootDescriptor(ctx, ref, opts)
+	network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, fmt.Errorf("create registry pull network recorder: %w", err)
+	}
+	resolvedRef, rootDesc, resolver, err := r.resolvePullRootDescriptor(ctx, ref, opts, network)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +393,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	childrenHandler := images.ChildrenHandler(r.contentStore)
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(progressIngester{r.contentStore}, fetcher),
+		remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher),
 		childrenHandler,
 		dslHandler,
 	)
@@ -453,28 +467,54 @@ type localizedImageClosure struct {
 // the same name to a different registry. A cached blob only remembers the
 // name, so it cannot tell us which registry it really came from. Asking the
 // registry is the only safe option.
-func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, opts PullOpts) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, opts PullOpts, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Resolver, error) {
 	if opts.ResolveMode == ResolveModeDefault && len(opts.Network.HostAliases) == 0 {
 		resolvedRef, rootDesc, _, found, err := r.tryLocalCanonicalConfigMetadata(ctx, ref, ResolveImageConfigOpts{Platform: &opts.Platform})
 		if err != nil {
 			return "", ocispecs.Descriptor{}, nil, err
 		}
 		if found {
-			return resolvedRef, rootDesc, docker.NewResolver(docker.ResolverOptions{Hosts: r.registryHosts(opts.Network, opts.RegistryTransport)}), nil
+			hosts := r.registryHosts(opts.Network, opts.RegistryTransport)
+			fetchHosts := registryHostsWithNetworkRecorder(hosts, recorder)
+			return resolvedRef, rootDesc, docker.NewResolver(docker.ResolverOptions{Hosts: fetchHosts}), nil
 		}
 	}
-	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport)
+	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, recorder)
 }
 
-func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+	hosts := r.registryHosts(network, registryTransport)
+	resolveHosts := registryHostsWithNetworkRecorder(hosts, recorder)
 	resolver := docker.NewResolver(docker.ResolverOptions{
-		Hosts: r.registryHosts(network, registryTransport),
+		Hosts: resolveHosts,
 	})
 	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
+	// The same transport records both resolution and descriptor response bodies.
 	return resolvedRef, rootDesc, resolver, nil
+}
+
+func registryHostsWithNetworkRecorder(hosts docker.RegistryHosts, recorder *enginetelemetry.NetworkAccumulator) docker.RegistryHosts {
+	return func(domain string) ([]docker.RegistryHost, error) {
+		resolved, err := hosts(domain)
+		if err != nil {
+			return nil, err
+		}
+		for i := range resolved {
+			client := cloneHTTPClient(resolved[i].Client)
+			transport := client.Transport
+			if transport == nil {
+				transport = http.DefaultTransport
+			}
+			client.Transport = enginetelemetry.NetworkResponseTransport(transport,
+				func(_ context.Context, n int64) { recorder.Add(n) },
+			)
+			resolved[i].Client = client
+		}
+		return resolved, nil
+	}
 }
 
 func (r *Resolver) tryLocalCanonicalConfig(
