@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/dagger/dagger/util/httptransport"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -33,7 +34,7 @@ const maxBodyCapture = 256 * 1024 // 256 KiB
 func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
 	var base http.RoundTripper
 	if endpoint.dial != nil {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport := httptransport.New()
 		transport.DialContext = endpoint.dial
 		base = transport
 	}

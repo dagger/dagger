@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/dagger/dagger/util/httptransport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,7 +49,7 @@ func TestServeNestedClientDoesNotWaitOnUnusedConnection(t *testing.T) {
 	// the race against A's freed connection.
 	releaseDial := make(chan struct{})
 	var dials atomic.Int32
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := httptransport.New()
 	dial := transport.DialContext
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if dials.Add(1) == 2 {
@@ -102,7 +103,7 @@ func TestServeNestedClientDrainsInFlightRequest(t *testing.T) {
 	}
 
 	inflight := make(chan error, 1)
-	_, err := serveNestedClient(t.Context(), httpSrv, http.DefaultTransport.(*http.Transport).Clone(), func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
+	_, err := serveNestedClient(t.Context(), httpSrv, httptransport.New(), func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		go func() {
 			inflight <- gqlClient.MakeRequest(ctx, &graphql.Request{Query: "{}"}, &graphql.Response{Data: &struct{}{}})
 		}()
