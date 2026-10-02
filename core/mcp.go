@@ -1150,7 +1150,13 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	if err := m.guardStateChange(); err != nil {
 		return err
 	}
-	normalized, err := normalizeChangesetToPatch(ctx, srv, m.workspace, changes)
+	ctx, span := Tracer(ctx).Start(ctx, "bench.apply")
+	defer span.End()
+	var normalized dagql.ObjectResult[*Changeset]
+	err := benchStep(ctx, "normalize", func(ctx context.Context) (err error) {
+		normalized, err = normalizeChangesetToPatch(ctx, srv, m.workspace, changes)
+		return err
+	})
 	if err != nil {
 		// Fall back to the raw changeset: normalization is a durability
 		// upgrade for restored conversations, not a correctness requirement
@@ -1162,7 +1168,15 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	// Changeset (or even its Before recipe) as an overlay: that would make
 	// restoring the conversation evaluate the command again. This bounded
 	// check distinguishes directory-only edits from an actual no-op.
-	if changed, err := normalized.Self().PathCountExceeds(ctx, 0); err == nil && !changed {
+	var changed bool
+	_ = benchStep(ctx, "count", func(ctx context.Context) (err error) {
+		changed, err = normalized.Self().PathCountExceeds(ctx, 0)
+		if err != nil {
+			changed = true
+		}
+		return nil
+	})
+	if !changed {
 		return nil
 	}
 	changesID, err := normalized.ID()
@@ -1170,12 +1184,21 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 		return fmt.Errorf("get changeset ID: %w", err)
 	}
 	var newWS dagql.ObjectResult[*Workspace]
-	if err := srv.Select(ctx, m.workspace, &newWS, dagql.Selector{
-		View:  srv.View,
-		Field: "withChanges",
-		Args: []dagql.NamedInput{
-			{Name: "changes", Value: dagql.NewID[*Changeset](changesID)},
-		},
+	if err := benchStep(ctx, "overlay", func(ctx context.Context) error {
+		if err := srv.Select(ctx, m.workspace, &newWS, dagql.Selector{
+			View:  srv.View,
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*Changeset](changesID)},
+			},
+		}); err != nil {
+			return err
+		}
+		root, err := workspaceRoot(ctx, srv, newWS)
+		if err != nil {
+			return err
+		}
+		return benchEval(ctx, root)
 	}); err != nil {
 		return err
 	}
@@ -1222,19 +1245,36 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 // changeset touches a workspace mount, the patch is rebased onto Before
 // instead, as it always was.
 func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace], changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	blob, ok, err := changesetPatchBlob(ctx, srv, changes)
+	var blob dagql.ObjectResult[*File]
+	var ok bool
+	err := benchStep(ctx, "patch", func(ctx context.Context) (err error) {
+		blob, ok, err = changesetPatchBlob(ctx, srv, changes)
+		if err == nil && blob.Self() != nil {
+			err = benchEval(ctx, blob)
+		}
+		return err
+	})
 	if err != nil || !ok {
 		return changes, err
 	}
 	if ws.Self() != nil {
-		normalized, err := rebasePatchOntoWorkspace(ctx, srv, ws, changes, blob)
+		var normalized dagql.ObjectResult[*Changeset]
+		err := benchStep(ctx, "rebase", func(ctx context.Context) (err error) {
+			normalized, err = rebasePatchOntoWorkspace(ctx, srv, ws, changes, blob)
+			return err
+		})
 		if err == nil {
 			return normalized, nil
 		}
 		slog.Debug("cannot rebase changeset patch onto the workspace; rebasing onto the changeset's before",
 			"error", err)
 	}
-	return rebasePatchOntoBefore(ctx, srv, changes, blob)
+	var normalized dagql.ObjectResult[*Changeset]
+	err = benchStep(ctx, "fallback", func(ctx context.Context) (err error) {
+		normalized, err = rebasePatchOntoBefore(ctx, srv, changes, blob)
+		return err
+	})
+	return normalized, err
 }
 
 // changesetPatchBlob renders a changeset as a patch and embeds it as a blob.
@@ -1337,6 +1377,9 @@ func rebasePatchOntoWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 			return changes, fmt.Errorf("read workspace paths: %w", err)
 		}
 	}
+	if err := benchStep(ctx, "base", func(ctx context.Context) error { return benchEval(ctx, base) }); err != nil {
+		return changes, err
+	}
 
 	// What applying the raw changeset leaves at its paths, as
 	// Workspace.withChanges would: the rebased patch must reproduce it.
@@ -1345,21 +1388,34 @@ func rebasePatchOntoWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 		return changes, err
 	}
 	var target dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, base, &target, dagql.Selector{
-		Field: "withChanges",
-		Args: []dagql.NamedInput{
-			{Name: "changes", Value: dagql.NewID[*Changeset](changesID)},
-		},
+	if err := benchStep(ctx, "target", func(ctx context.Context) error {
+		if err := srv.Select(ctx, base, &target, dagql.Selector{
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*Changeset](changesID)},
+			},
+		}); err != nil {
+			return err
+		}
+		return benchEval(ctx, target)
 	}); err != nil {
 		return changes, fmt.Errorf("apply changeset to workspace paths: %w", err)
 	}
 
-	patched, err := applyPatchBlob(ctx, srv, base, blob)
-	if err != nil {
+	var patched dagql.ObjectResult[*Directory]
+	if err := benchStep(ctx, "gitapply", func(ctx context.Context) (err error) {
+		patched, err = applyPatchBlob(ctx, srv, base, blob)
+		if err != nil {
+			return err
+		}
+		return benchEval(ctx, patched)
+	}); err != nil {
 		return changes, fmt.Errorf("apply patch to workspace: %w", err)
 	}
-	patched, err = reconcileDirsAfterPatch(ctx, srv, patched, target)
-	if err != nil {
+	if err := benchStep(ctx, "reconcile", func(ctx context.Context) (err error) {
+		patched, err = reconcileDirsAfterPatch(ctx, srv, patched, target)
+		return err
+	}); err != nil {
 		return changes, fmt.Errorf("reconcile with workspace: %w", err)
 	}
 	return changesFrom(ctx, srv, patched, base)
@@ -1373,8 +1429,14 @@ func rebasePatchOntoBefore(ctx context.Context, srv *dagql.Server, changes dagql
 	if before.Self() == nil {
 		return changes, fmt.Errorf("changeset has no before directory")
 	}
-	patched, err := applyPatchBlob(ctx, srv, before, blob)
-	if err != nil {
+	var patched dagql.ObjectResult[*Directory]
+	if err := benchStep(ctx, "gitapply", func(ctx context.Context) (err error) {
+		patched, err = applyPatchBlob(ctx, srv, before, blob)
+		if err != nil {
+			return err
+		}
+		return benchEval(ctx, patched)
+	}); err != nil {
 		return changes, fmt.Errorf("apply patch to before: %w", err)
 	}
 	// Quick check: the changeset's own paths are already computed (memoized by
@@ -1389,8 +1451,10 @@ func rebasePatchOntoBefore(ctx context.Context, srv *dagql.Server, changes dagql
 		func(p string) bool { return strings.HasSuffix(p, "/") },
 	)
 	if dirChanged {
-		patched, err = reconcileDirsAfterPatch(ctx, srv, patched, changes.Self().After)
-		if err != nil {
+		if err := benchStep(ctx, "reconcile", func(ctx context.Context) (err error) {
+			patched, err = reconcileDirsAfterPatch(ctx, srv, patched, changes.Self().After)
+			return err
+		}); err != nil {
 			return changes, fmt.Errorf("reconcile directories: %w", err)
 		}
 	}
