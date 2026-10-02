@@ -23,6 +23,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/fsutil"
@@ -237,8 +238,8 @@ func (ch *Changeset) PathCountExceeds(ctx context.Context, limit int) (bool, err
 
 	var exceeds bool
 	var deltaErr error
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		exceeds, deltaErr = changesetDeltaExceeds(ctx, beforeDir, afterDir, limit)
+	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir, upperdir string) error {
+		exceeds, deltaErr = changesetDeltaExceeds(ctx, beforeDir, afterDir, upperdir, limit)
 		return nil
 	})
 	if err != nil {
@@ -270,8 +271,8 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 	}
 
 	var result *ChangesetPaths
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) (err error) {
-		result, _, err = computeChangesetPathsDelta(ctx, beforeDir, afterDir, false)
+	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir, upperdir string) (err error) {
+		result, _, err = computeChangesetPathsDelta(ctx, beforeDir, afterDir, upperdir, false)
 		if err != nil {
 			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
 			result, err = computeChangesetPaths(ctx, beforeDir, afterDir)
@@ -378,8 +379,10 @@ func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*Ch
 	}, nil
 }
 
-// withMountedDirs mounts the before and after directories and calls fn with their paths.
-func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, afterDir string) error) error {
+// withMountedDirs mounts the before and after directories and calls fn with
+// their paths, and with the overlay layer separating them if there is one
+// (see changesetUpperdir).
+func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, afterDir, upperdir string) error) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
@@ -407,21 +410,76 @@ func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, aft
 		return fmt.Errorf("evaluate after selector: %w", err)
 	}
 
-	return MountRef(ctx, beforeRef, func(beforeMount string, _ *mount.Mount) error {
+	return MountRef(ctx, beforeRef, func(beforeMount string, beforeMnt *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(beforeMount, beforeSelector)
 		if err != nil {
 			return err
 		}
 
-		return MountRef(ctx, afterRef, func(afterMount string, _ *mount.Mount) error {
+		return MountRef(ctx, afterRef, func(afterMount string, afterMnt *mount.Mount) error {
 			afterDir, err := containerdfs.RootPath(afterMount, afterSelector)
 			if err != nil {
 				return err
 			}
 
-			return fn(beforeDir, afterDir)
+			upperdir := changesetUpperdir(beforeMount, beforeDir, beforeMnt, afterMount, afterDir, afterMnt)
+			return fn(beforeDir, afterDir, upperdir)
 		}, mountRefAsReadOnly)
 	}, mountRefAsReadOnly)
+}
+
+// changesetUpperdir returns the overlay layer directory holding everything
+// After changes on top of Before, when there is one: After's snapshot is
+// exactly Before's layers plus one more, as when After was made by a single
+// Directory operation on Before, and both select the same directory of their
+// snapshots. Every difference between the trees is then recorded in that
+// layer, and walking it finds them without walking both trees in full.
+// Returns "" otherwise.
+func changesetUpperdir(beforeRoot, beforeDir string, beforeMnt *mount.Mount, afterRoot, afterDir string, afterMnt *mount.Mount) string {
+	if beforeMnt == nil || afterMnt == nil {
+		return ""
+	}
+	// The selected directories, with symlinks resolved, must be the same
+	// path: the layer records changes under their real paths.
+	beforeRel, err := filepath.Rel(beforeRoot, beforeDir)
+	if err != nil {
+		return ""
+	}
+	afterRel, err := filepath.Rel(afterRoot, afterDir)
+	if err != nil || afterRel != beforeRel || strings.HasPrefix(beforeRel, "..") {
+		return ""
+	}
+	layer, err := fsdiff.GetUpperdir([]mount.Mount{*beforeMnt}, []mount.Mount{*afterMnt})
+	if err != nil {
+		return ""
+	}
+	// Walking the layer from the selected directory needs that directory
+	// in it, and neither it nor any parent opaque: an opaque directory
+	// hides all of Before beneath it, which the layer alone doesn't list.
+	usable := func(dir string) bool {
+		fi, err := os.Lstat(dir)
+		if err != nil || !fi.IsDir() {
+			// Absent, the layer changed nothing under it: a rare case,
+			// left to the full walk. Anything else, e.g. a whiteout,
+			// isn't a layer to walk from here.
+			return false
+		}
+		opaque, err := overlayDirIsOpaque(dir)
+		return err == nil && !opaque
+	}
+	dir := layer
+	if !usable(dir) {
+		return ""
+	}
+	if beforeRel != "." {
+		for _, name := range strings.Split(beforeRel, string(filepath.Separator)) {
+			dir = filepath.Join(dir, name)
+			if !usable(dir) {
+				return ""
+			}
+		}
+	}
+	return dir
 }
 
 type Changeset struct {
@@ -676,8 +734,8 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 	}
 
 	var isEmpty bool
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		empty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir)
+	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir, upperdir string) error {
+		empty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir, upperdir)
 		if err == nil {
 			isEmpty = empty
 			return nil
@@ -699,8 +757,8 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	var paths *ChangesetPaths
 	var statsByPath map[string]lineChanges
-	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		computedPaths, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, true)
+	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir, upperdir string) error {
+		computedPaths, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, upperdir, true)
 		if err != nil {
 			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
 			computedPaths, err = computeChangesetPaths(ctx, beforeDir, afterDir)
