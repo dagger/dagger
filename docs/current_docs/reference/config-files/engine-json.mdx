@@ -1,7 +1,7 @@
 ---
 title: "engine.json"
 slug: /reference/config-files/engine-json
-description: "Engine configuration, including opt-in engine resource metrics."
+description: "Engine configuration, including garbage collection and opt-in engine resource metrics."
 ---
 
 # engine.json
@@ -12,6 +12,63 @@ file uses the default settings.
 
 The machine-readable schema is published at
 [engine.schema.json](/reference/engine.schema.json).
+
+## Garbage collection
+
+The engine prunes its local cache automatically. The `gc` settings control how
+much disk space the cache may use:
+
+```json
+{
+  "gc": {
+    "maxUsedSpace": "200GB",
+    "reservedSpace": "10GB",
+    "minFreeSpace": "20%"
+  }
+}
+```
+
+- `maxUsedSpace` is the cache size above which the engine prunes.
+- `reservedSpace` is the cache size that pruning for `maxUsedSpace` keeps.
+- `minFreeSpace` is the free disk space the engine prunes to keep.
+
+A disk space value is a number of bytes (`512000000`), a size with a unit
+(`"512MB"`), or a percentage of the disk holding the engine state (`"10%"`).
+The defaults are a `reservedSpace` of 10% of the disk up to 10GB, a
+`minFreeSpace` of 20%, and a `maxUsedSpace` of 75%.
+
+The engine turns these settings into a list of pruning policies. To control
+pruning in more detail, set `gc.policies` instead. Each policy can match
+entries by filter and has its own space settings. A policy's `keepDuration`
+keeps entries used within that time out of the policy, even when free space is
+below `minFreeSpace`. End a custom list with a policy that matches all entries,
+has space settings, and has no `keepDuration`, so recent entries can still be
+pruned when the disk fills:
+
+```json
+{
+  "gc": {
+    "policies": [
+      {
+        "keepDuration": "72h",
+        "maxUsedSpace": "75%",
+        "minFreeSpace": "20%"
+      },
+      {
+        "all": true,
+        "maxUsedSpace": "75%",
+        "reservedSpace": "10GB",
+        "minFreeSpace": "20%"
+      }
+    ]
+  }
+}
+```
+
+The engine also reads garbage collection settings from `engine.toml`. When
+`engine.json` sets `gc.policies`, the engine ignores the `engine.toml` policies
+and space settings. The `engine.toml` setting `gckeepstorage` corresponds to
+`reservedSpace`, so on its own it does not limit the cache size.
 
 ## Engine resource metrics
 
