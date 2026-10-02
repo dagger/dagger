@@ -90,8 +90,11 @@ type MCP struct {
 	// base schema in baseServer and receives workspace-mutating tool results
 	// (Changeset overlays). The binding also threads the workspace into tool
 	// dispatch so contextual (+defaultPath) and Workspace-typed args resolve
-	// against it. Bound module tools retain their own defining schemas.
-	workspace dagql.ObjectResult[*Workspace]
+	// against it. Bound module tools retain their own defining schemas. Nil
+	// when unbound; a binding made from a recipe is loaded lazily (see
+	// llmWorkspace), so check presence with HasWorkspace and read the value
+	// with Workspace.
+	workspace *llmWorkspace
 	// boundTools are the objects bound via LLM.withTools. Each eligible method of
 	// a bound object becomes a tool; a tool that returns the bound object's own
 	// type rebinds it as the new agent state (hack/designs/workspace-agents.md). At most one
@@ -300,14 +303,19 @@ func (m *MCP) baseServer(ctx context.Context) (*dagql.Server, error) {
 		return nil, err
 	}
 
+	ws, err := m.Workspace(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var deps *SchemaBuilder
 	switch {
-	case m.workspace.Self() == nil:
+	case ws.Self() == nil:
 		deps, err = query.CurrentServedDeps(ctx)
-	case m.workspace.Self().IsValueWorkspace():
+	case ws.Self().IsValueWorkspace():
 		deps, err = query.DefaultDeps(ctx)
 	default:
-		ctx, err = loadWorkspaceOwnerContext(ctx, m.workspace)
+		ctx, err = loadWorkspaceOwnerContext(ctx, ws)
 		if err != nil {
 			return nil, err
 		}
@@ -651,13 +659,20 @@ func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 	if err := m.guardStateChange(); err != nil {
 		return "", err
 	}
-	prev := m.workspace
-	m.workspace = ws
+	prevBinding := m.workspace
+	m.workspace = eagerLLMWorkspace(ws)
 	m.markStateChanged()
-	if prev.Self() == nil {
+	if prevBinding == nil {
 		// No prior workspace to compare against (e.g. the LLM was unbound);
 		// just adopt it without a change summary.
 		return "Set the current workspace.", nil
+	}
+	prev, err := prevBinding.Load(ctx)
+	if err != nil {
+		// The swap itself succeeded; only the summary needs the old value
+		// (normally already loaded to build this step's tools).
+		slog.Warn("failed to load previous workspace to summarize rebind", "error", err)
+		return "Replaced the current workspace.", nil
 	}
 	return m.summarizeWorkspaceChange(ctx, srv, prev, ws)
 }
@@ -1022,16 +1037,36 @@ func (m *MCP) summarizeContinuationWorkspace(ctx context.Context, srv *dagql.Ser
 	if current == nil || next == nil || current.mcp == nil || next.mcp == nil {
 		return ""
 	}
-	prev, ws := current.mcp.workspace, next.mcp.workspace
-	if prev.Self() == nil || ws.Self() == nil {
+	if !current.mcp.HasWorkspace() || !next.mcp.HasWorkspace() {
 		return ""
 	}
-	prevID, err := prev.ID()
+	prevID, err := current.mcp.WorkspaceID()
 	if err != nil {
 		return ""
 	}
-	wsID, err := ws.ID()
+	wsID, err := next.mcp.WorkspaceID()
 	if err != nil {
+		return ""
+	}
+	if stableIDDigest(prevID) == stableIDDigest(wsID) {
+		return ""
+	}
+	prev, err := current.mcp.Workspace(ctx)
+	if err != nil {
+		slog.Warn("failed to load workspace to summarize continuation", "error", err)
+		return "Workspace changed."
+	}
+	ws, err := next.mcp.Workspace(ctx)
+	if err != nil {
+		slog.Warn("failed to load workspace to summarize continuation", "error", err)
+		return "Workspace changed."
+	}
+	// A lazily bound side is identified by its recipe and an eager one by its
+	// result, so the same workspace can look different until both are loaded.
+	if prevID, err = prev.ID(); err != nil {
+		return ""
+	}
+	if wsID, err = ws.ID(); err != nil {
 		return ""
 	}
 	if stableIDDigest(prevID) == stableIDDigest(wsID) {
@@ -1152,7 +1187,7 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 // applyChangeset overlays a Changeset onto the bound workspace and updates
 // m.workspace to the new overlay Workspace.
 func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) error {
-	if m.workspace.Self() == nil {
+	if !m.HasWorkspace() {
 		return fmt.Errorf("cannot apply changes: no workspace bound")
 	}
 	if err := m.guardStateChange(); err != nil {
@@ -1177,8 +1212,12 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	if err != nil {
 		return fmt.Errorf("get changeset ID: %w", err)
 	}
+	ws, err := m.Workspace(ctx)
+	if err != nil {
+		return err
+	}
 	var newWS dagql.ObjectResult[*Workspace]
-	if err := srv.Select(ctx, m.workspace, &newWS, dagql.Selector{
+	if err := srv.Select(ctx, ws, &newWS, dagql.Selector{
 		View:  srv.View,
 		Field: "withChanges",
 		Args: []dagql.NamedInput{
@@ -1187,7 +1226,7 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	}); err != nil {
 		return err
 	}
-	m.workspace = newWS
+	m.workspace = eagerLLMWorkspace(newWS)
 	m.markStateChanged()
 	return nil
 }
@@ -1371,7 +1410,11 @@ func reconcileDirsAfterPatch(ctx context.Context, srv *dagql.Server, changes dag
 // workspaceDirectory returns the bound workspace's root directory, for
 // operations (like external MCP-server sync) that need a plain Directory.
 func (m *MCP) workspaceDirectory(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*Directory], error) {
-	return workspaceRoot(ctx, srv, m.workspace)
+	ws, err := m.Workspace(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	return workspaceRoot(ctx, srv, ws)
 }
 
 // workspaceRoot returns the given workspace's root directory as a plain
@@ -1643,10 +1686,14 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 	}()
 
 	toolCtx := context.WithValue(ctx, agentToolCallKey{}, true)
-	if m.workspace.Self() != nil {
+	if m.HasWorkspace() {
 		// Bind the LLM's Workspace so the tool's contextual (+defaultPath) and
 		// Workspace-typed args resolve against it, not the ambient workspace.
-		toolCtx = WorkspaceToContext(toolCtx, m.workspace)
+		ws, err := m.Workspace(ctx)
+		if err != nil {
+			return errorResult(m.toolErrorResponse(ctx, err))
+		}
+		toolCtx = WorkspaceToContext(toolCtx, ws)
 	}
 	result, err := tool.Call(toolCtx, args)
 	if err != nil {
@@ -2135,7 +2182,7 @@ func (m *MCP) mcpServerSyncsWorkspace(serverName string) bool {
 	}
 	// Snapshotting the workspace requires a bound workspace to diff against
 	// and overlay back onto.
-	return m.workspace.Self() != nil
+	return m.HasWorkspace()
 }
 
 // callBatchMCPServer runs calls to one MCP server — run executes them — with
@@ -3431,16 +3478,6 @@ func (m *MCP) describeObject(ctx context.Context, srv *dagql.Server, target dagq
 		res["data"] = data
 	}
 	return toolStructuredResponse(res)
-}
-
-// WorkspaceID returns the call.ID of the bound workspace, or nil if the LLM is
-// not bound to a workspace. Used by step() to detect (and persist) an in-step
-// workspace change, e.g. a Changeset overlaid by a tool.
-func (m *MCP) WorkspaceID() (*call.ID, error) {
-	if m.workspace.Self() == nil {
-		return nil, nil
-	}
-	return m.workspace.ID()
 }
 
 func toolStructuredResponse(val any) (string, error) {

@@ -1853,16 +1853,18 @@ func (llm *LLM) AttachDependencyResults(
 		return nil, nil
 	}
 	var deps []dagql.AnyResult
-	if llm.mcp.workspace.Self() != nil {
-		attached, err := attach(llm.mcp.workspace)
+	// A lazy workspace binding (made from a recipe) has no loaded value to
+	// attach; it is loaded on first use instead, like a lazy tool binding.
+	if ws := llm.mcp.workspace; ws != nil && ws.bound.Self() != nil {
+		attached, err := attach(ws.bound)
 		if err != nil {
 			return nil, fmt.Errorf("attach llm workspace: %w", err)
 		}
-		ws, ok := attached.(dagql.ObjectResult[*Workspace])
+		attachedWS, ok := attached.(dagql.ObjectResult[*Workspace])
 		if !ok {
 			return nil, fmt.Errorf("attach llm workspace: unexpected result %T", attached)
 		}
-		llm.mcp.workspace = ws
+		llm.mcp.workspace = eagerLLMWorkspace(attachedWS)
 		deps = append(deps, attached)
 	}
 	for i, bound := range llm.mcp.boundTools {
@@ -3287,12 +3289,29 @@ func (llm *LLM) Transcript() string {
 
 func (llm *LLM) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *LLM {
 	llm = llm.Clone()
-	llm.mcp.workspace = ws
+	llm.mcp.workspace = eagerLLMWorkspace(ws)
 	return llm
 }
 
-func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
-	return llm.mcp.workspace
+// WithLazyWorkspace binds a workspace by its recipe ID without loading it.
+// LLM.withWorkspace's workspace argument is a lazy reference, so loading a
+// conversation from its recipe does not re-evaluate every workspace it was
+// ever bound to: only the latest binding is loaded, the first time it is used.
+func (llm *LLM) WithLazyWorkspace(id *call.ID) *LLM {
+	llm = llm.Clone()
+	llm.mcp.workspace = lazyLLMWorkspace(id)
+	return llm
+}
+
+// HasWorkspace reports whether a workspace is bound, without loading it.
+func (llm *LLM) HasWorkspace() bool {
+	return llm.mcp.HasWorkspace()
+}
+
+// Workspace returns the bound workspace, loading it if it was bound lazily. It
+// returns a zero result and no error when no workspace is bound.
+func (llm *LLM) Workspace(ctx context.Context) (dagql.ObjectResult[*Workspace], error) {
+	return llm.mcp.Workspace(ctx)
 }
 
 // Artifacts returns the conversation's artifact scope; see MCP.Artifacts.
