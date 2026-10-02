@@ -421,6 +421,15 @@ func applyWorkspaceClientParams(params *client.Params) error {
 		// user-level workspace overrides.
 		params.UserConfigPath = llmconfig.ConfigFile
 	}
+	if params.LLMConfig == nil {
+		// Assembled from the process's cwd, which --workdir has already
+		// changed, so ./.env is read from where the command runs.
+		cfg, err := assembleLLMConfig()
+		if err != nil {
+			return err
+		}
+		params.LLMConfig = cfg
+	}
 	return nil
 }
 

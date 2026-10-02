@@ -61,8 +61,8 @@ var agentCmd = &cobra.Command{
 		// resumes the chosen session; otherwise it prints the table.
 		pickArchive := listArchives && canPromptForInit(progress, stdinIsTTY, false)
 		// The prompt is about to use the LLM, so renew an expired subscription
-		// login up front. The on-demand refresher hook exports the renewed
-		// token on the engine's first credential lookup.
+		// login up front. The llmconfig:// resolver serves the renewed token
+		// on the engine's first credential lookup.
 		if !agentListMode && (!listArchives || pickArchive) {
 			if err := llmconfig.RefreshOAuthTokensIfNeeded(cmd.Context()); err != nil {
 				slog.Warn("failed to refresh LLM OAuth tokens", "error", err)

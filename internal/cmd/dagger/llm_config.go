@@ -8,139 +8,52 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/cleanups"
 )
 
-// oauthEnvVars maps each subscription OAuth provider to the environment
-// variables the engine resolves against the client: the bearer token, and the
-// true access-token expiry (RFC 3339, UTC; absent or empty means unknown), so
-// the engine can cache the credential until it actually expires. The token is
-// refreshed on demand behind these lookups (see the env refresher registered
-// below), so long-running sessions don't outlive it.
-var oauthEnvVars = map[string]struct{ token, expiresAt string }{
-	"anthropic":    {"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN_EXPIRES_AT"},
-	"openai-codex": {"OPENAI_CODEX_AUTH_TOKEN", "OPENAI_CODEX_AUTH_TOKEN_EXPIRES_AT"},
-}
+// oauthProviders are the subscription OAuth providers the CLI keeps fresh, by
+// config-file name (which is also their wire name).
+var oauthProviders = []string{"anthropic", "openai-codex"}
 
-// oauthEnvProviders maps either of a provider's variables back to the provider
-// that owns it. The engine resolves the token first and the expiry second
-// within one credential resolution and the refresher hook fires on each, so it
-// has to answer to both names.
-var oauthEnvProviders = func() map[string]string {
-	providers := make(map[string]string, 2*len(oauthEnvVars))
-	for provider, vars := range oauthEnvVars {
-		providers[vars.token] = provider
-		providers[vars.expiresAt] = provider
-	}
-	return providers
-}()
-
-// llmEnvExports records the values applyLLMConfigEnv and the OAuth refresher
-// hook exported, keyed by variable name, so a refresh can update its own
-// variables without clobbering one the user exported explicitly. An explicit
-// `export ANTHROPIC_AUTH_TOKEN=...` wins for the whole session, not just at
-// startup.
-var (
-	llmEnvMu      sync.Mutex
-	llmEnvExports = map[string]string{}
-)
-
-// exportLLMEnv sets key to val unless the variable already holds a value we
-// did not put there. Values we do export are remembered, so a later refresh
-// can replace its own. An empty val exports nothing: callers pass whatever the
-// config holds, and a provider that leaves a field unset must not undo a value
-// exported for it earlier in the same pass (the default model, say).
-func exportLLMEnv(key, val string) {
-	if val == "" {
-		return
-	}
-	llmEnvMu.Lock()
-	defer llmEnvMu.Unlock()
-	if cur, set := os.LookupEnv(key); set {
-		if exported, ours := llmEnvExports[key]; !ours || exported != cur {
-			return
-		}
-	}
-	os.Setenv(key, val)
-	llmEnvExports[key] = val
-}
-
-// clearLLMEnv drops a variable we exported earlier, leaving one the user
-// exported explicitly alone.
-func clearLLMEnv(key string) {
-	llmEnvMu.Lock()
-	defer llmEnvMu.Unlock()
-	cur, set := os.LookupEnv(key)
-	if !set {
-		return
-	}
-	if exported, ours := llmEnvExports[key]; !ours || exported != cur {
-		return
-	}
-	os.Unsetenv(key)
-	delete(llmEnvExports, key)
-}
-
-// exportOAuthCredential exports a provider's bearer token together with the
-// expiry that belongs to it. Together, always: the engine resolves the token
-// and the expiry as two lookups of one credential, so leaving a stale expiry
-// next to a fresh token would have it cache the new credential against the old
-// deadline. An expiry we no longer know is cleared rather than left behind.
-func exportOAuthCredential(provider string, p *llmconfig.Provider) {
-	vars, ok := oauthEnvVars[provider]
-	if !ok {
-		return
-	}
-	// Never overwrite credentials the user exported explicitly, even when the
-	// refresh was a no-op and these are just the stored values.
-	exportLLMEnv(vars.token, p.AuthToken)
-	if expiresAt := p.TokenExpiresAtRFC3339(); expiresAt != "" {
-		exportLLMEnv(vars.expiresAt, expiresAt)
-	} else {
-		clearLLMEnv(vars.expiresAt)
-	}
-}
-
-// exportOAuthEnv refreshes provider's token if it is due and exports the
-// result.
-func exportOAuthEnv(ctx context.Context, provider string) error {
-	vars, ok := oauthEnvVars[provider]
-	if !ok {
-		return nil
-	}
-	llmEnvMu.Lock()
-	current, set := os.LookupEnv(vars.token)
-	exported, ours := llmEnvExports[vars.token]
-	explicit := set && (!ours || exported != current)
-	llmEnvMu.Unlock()
-	if explicit {
-		// A user-supplied bearer is not the config's credential. In particular,
-		// its rejection must not rotate an unrelated subscription login.
-		return nil
-	}
-	p, err := llmconfig.RefreshOAuthProviderAfterRejection(ctx, provider, secretprovider.RejectedEnvValue(ctx))
+// assembleLLMConfig builds the LLM configuration this client sends to the
+// engine, from the config file, the environment, and ./.env in the working
+// directory (--workdir has already been applied to the process by then). See
+// hack/designs/llm-config-transport.md.
+//
+// Commands that never touch an LLM must not break over LLM configuration, so
+// a source that cannot be read is warned about and left out. A value that
+// cannot be parsed (llmconfig.ErrMalformed) fails the command instead:
+// dropping it would silently route differently from what the user asked for.
+func assembleLLMConfig() (*engine.LLMConfig, error) {
+	cwd, err := os.Getwd()
 	if err != nil {
-		return err
+		cwd = "." // the same directory, by a relative name
 	}
-	if p == nil {
-		return nil
+	cfg, warnings, err := llmconfig.Assemble(cwd)
+	for _, w := range warnings {
+		slog.Warn("ignoring unreadable LLM configuration", "error", w)
 	}
-	exportOAuthCredential(provider, p)
-	return nil
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // backgroundOAuthRefresh is replaceable so the refresher's scheduling and
 // terminal-error behavior can be tested without a provider endpoint.
-var backgroundOAuthRefresh = exportOAuthEnv
+var backgroundOAuthRefresh = func(ctx context.Context, provider string) error {
+	_, err := llmconfig.RefreshOAuthProviderIfNeeded(ctx, provider)
+	return err
+}
 
 // Timings for the background refresher. Vars, not consts, so tests can shrink
 // them — the same reason llmconfig's endpoint URLs are vars.
@@ -160,16 +73,16 @@ var (
 )
 
 // startOAuthTokenRefresher runs a goroutine that refreshes each enabled
-// subscription OAuth provider shortly before its access token expires and
-// updates the exported token and expiry variables. A `dagger shell` or `dagger
-// agent` session easily outlives an hour-long access token, and refreshing
-// ahead of expiry keeps the round-trip off the critical path: the engine's
-// next pull already finds a fresh token.
+// subscription OAuth provider shortly before its access token expires,
+// persisting the rotated token to the config file. A `dagger shell` or
+// `dagger agent` session easily outlives an hour-long access token, and
+// refreshing ahead of expiry keeps the round-trip off the critical path: the
+// engine's next llmconfig:// lookup already finds a fresh token.
 //
 // It returns a stop function, and is a no-op — no goroutine at all — unless a
 // subscription provider is actually configured and enabled. The on-demand
-// refresher hook remains the safety net; it is what covers a laptop that slept
-// through the timer.
+// refresh in the llmconfig:// resolver remains the safety net; it is what
+// covers a laptop that slept through the timer.
 func startOAuthTokenRefresher(ctx context.Context) func() {
 	providers := enabledOAuthProviders()
 	if len(providers) == 0 {
@@ -221,7 +134,7 @@ func enabledOAuthProviders() []string {
 		return nil
 	}
 	var names []string
-	for name := range oauthEnvVars {
+	for _, name := range oauthProviders {
 		if p, ok := cfg.LLM.Providers[name]; ok && p.Enabled && p.IsOAuth() {
 			names = append(names, name)
 		}
@@ -278,145 +191,13 @@ func init() {
 		llmResetCmd,
 		llmShowConfigCmd,
 	)
-	// Export persisted API-key providers into the process environment so that
-	// `dagger llm setup` takes effect for LLM usage (shell, call, etc.). The
-	// engine's LLM router resolves these via env:// against the client.
-	cobra.OnInitialize(applyLLMConfigEnv)
 
-	// Keep subscription OAuth bearer tokens fresh for the life of the session.
-	// applyLLMConfigEnv exports the persisted token without any network I/O;
-	// the access token typically expires within the hour, so a long-running
-	// session (dagger agent/shell, or a slow module) would keep sending an
-	// expired token and get 401s. The engine re-resolves the token via
-	// env://<KEY> against the client on each LLM router config load, so hook
-	// that resolution: when the engine asks for an OAuth auth-token var, refresh
-	// it if expired and update the process env before it's read.
-	secretprovider.RegisterEnvRefresher(func(ctx context.Context, name string) error {
-		provider, ok := oauthEnvProviders[name]
-		if !ok {
-			return nil
-		}
-		return exportOAuthEnv(ctx, provider)
-	})
-}
-
-// applyLLMConfigEnv loads the persisted LLM config (written by `dagger llm
-// setup`) and exports each enabled provider's credentials into the process
-// environment under the conventional variable names, unless already set
-// (explicit env vars always win). The engine's LLM router resolves these via
-// env:// against the client.
-//
-// OAuth subscription tokens are exported as persisted, even if expired: the
-// env refresher registered in init refreshes them when the engine actually
-// asks for the credential, so commands that never touch an LLM don't pay for
-// a provider round-trip at startup. Only `dagger agent` renews them up front,
-// before starting the engine.
-func applyLLMConfigEnv() {
-	cfg, err := llmconfig.Load()
-	if err != nil || cfg == nil {
-		return
-	}
-	// Honor the configured default model (`dagger llm set-default`), which lives
-	// in cfg.LLM.DefaultModel/DefaultProvider rather than any provider's own
-	// p.Model. The engine's router picks a model from the per-provider *_MODEL
-	// vars (LLMRouter.DefaultModel), so export the default there; otherwise the
-	// default is written to config but never reaches the engine, which then
-	// falls back to its hardcoded default. Done before the provider loop so it
-	// wins over a stale per-provider model; explicit env vars still win via
-	// exportLLMEnv.
-	if cfg.LLM.DefaultModel != "" {
-		switch cfg.LLM.DefaultProvider {
-		case "anthropic":
-			exportLLMEnv("ANTHROPIC_MODEL", cfg.LLM.DefaultModel)
-		case "openai", "openrouter":
-			exportLLMEnv("OPENAI_MODEL", cfg.LLM.DefaultModel)
-		case "openai-codex":
-			exportLLMEnv("OPENAI_CODEX_MODEL", cfg.LLM.DefaultModel)
-		case "google", "gemini":
-			exportLLMEnv("GEMINI_MODEL", cfg.LLM.DefaultModel)
-		case "local":
-			exportLLMEnv("LOCAL_MODEL", cfg.LLM.DefaultModel)
-		}
-	}
-	// The openai and openrouter providers share the OPENAI_* variables. Pick a
-	// single owner for that slot — the default provider if it is one of them,
-	// otherwise openai — so map iteration order can't pair one provider's key
-	// with the other's base URL.
-	openAISlotOwner := ""
-	for _, name := range []string{"openai", "openrouter"} {
-		if p, ok := cfg.LLM.Providers[name]; ok && p.Enabled {
-			if openAISlotOwner == "" || name == cfg.LLM.DefaultProvider {
-				openAISlotOwner = name
-			}
-		}
-	}
-	for name, p := range cfg.LLM.Providers {
-		if !p.Enabled {
-			continue
-		}
-		if p.IsOAuth() {
-			// OAuth subscription providers export a bearer token that the
-			// engine's router picks up, plus the token's true expiry so the
-			// engine can cache the credential exactly that long. Anthropic
-			// (Claude Code) and OpenAI Codex (ChatGPT subscription) are wired
-			// through the engine.
-			exportOAuthCredential(name, &p)
-			switch name {
-			case "anthropic":
-				exportLLMEnv("ANTHROPIC_SMALL_MODEL", p.SmallModel)
-				exportLLMEnv("ANTHROPIC_REASONING_EFFORT", p.ReasoningEffort)
-			case "openai-codex":
-				exportLLMEnv("OPENAI_CODEX_MODEL", p.Model)
-				exportLLMEnv("OPENAI_CODEX_SMALL_MODEL", p.SmallModel)
-				exportLLMEnv("OPENAI_CODEX_REASONING_EFFORT", p.ReasoningEffort)
-			}
-			continue
-		}
-		switch name {
-		case "anthropic":
-			exportLLMEnv("ANTHROPIC_API_KEY", p.APIKey)
-			exportLLMEnv("ANTHROPIC_BASE_URL", p.BaseURL)
-			exportLLMEnv("ANTHROPIC_MODEL", p.Model)
-			exportLLMEnv("ANTHROPIC_SMALL_MODEL", p.SmallModel)
-			exportLLMEnv("ANTHROPIC_REASONING_EFFORT", p.ReasoningEffort)
-		case "openai":
-			if name != openAISlotOwner {
-				continue
-			}
-			exportLLMEnv("OPENAI_API_KEY", p.APIKey)
-			exportLLMEnv("OPENAI_BASE_URL", p.BaseURL)
-			exportLLMEnv("OPENAI_MODEL", p.Model)
-			exportLLMEnv("OPENAI_SMALL_MODEL", p.SmallModel)
-		case "google", "gemini":
-			exportLLMEnv("GEMINI_API_KEY", p.APIKey)
-			exportLLMEnv("GEMINI_BASE_URL", p.BaseURL)
-			exportLLMEnv("GEMINI_MODEL", p.Model)
-			exportLLMEnv("GEMINI_SMALL_MODEL", p.SmallModel)
-			exportLLMEnv("GEMINI_REASONING_EFFORT", p.ReasoningEffort)
-		case "openrouter":
-			// OpenRouter is OpenAI-compatible; route it through the OpenAI vars.
-			if name != openAISlotOwner {
-				continue
-			}
-			exportLLMEnv("OPENAI_API_KEY", p.APIKey)
-			exportLLMEnv("OPENAI_MODEL", p.Model)
-			exportLLMEnv("OPENAI_SMALL_MODEL", p.SmallModel)
-			base := p.BaseURL
-			if base == "" {
-				base = "https://openrouter.ai/api/v1"
-			}
-			exportLLMEnv("OPENAI_BASE_URL", base)
-		case "local":
-			// A self-hosted, OpenAI- or Anthropic-compatible endpoint. The engine
-			// tunnels to it through this client, so it need only be reachable from
-			// here (e.g. Ollama on localhost).
-			exportLLMEnv("LOCAL_BASE_URL", p.BaseURL)
-			exportLLMEnv("LOCAL_MODEL", p.Model)
-			exportLLMEnv("LOCAL_SMALL_MODEL", p.SmallModel)
-			exportLLMEnv("LOCAL_API_COMPAT", p.APICompat)
-			exportLLMEnv("LOCAL_API_KEY", p.APIKey)
-		}
-	}
+	// Serve the llmconfig:// credentials the LLMConfig we send refers to: API
+	// keys stored in the config file or ./.env, and subscription OAuth tokens,
+	// refreshed when due or when the engine reports the current one rejected.
+	// The engine resolves them against this client, only for the provider it
+	// actually routes, so commands that never touch an LLM pay nothing.
+	secretprovider.RegisterLLMConfigResolver(llmconfig.ResolveSecret)
 }
 
 var llmParentCmd = &cobra.Command{
@@ -622,9 +403,9 @@ var llmRemoveKeyCmd = &cobra.Command{
 
 		// If this was the default provider, clear it along with the default
 		// model. The model belongs to the removed provider; leaving it set would
-		// bind it to whatever provider becomes default next, so applyLLMConfigEnv
-		// would export e.g. OPENAI_MODEL=claude-sonnet-4.5. (llmSetDefaultCmd
-		// clears/rebinds the model for the same reason.)
+		// leave a default model with no provider, which the engine would then
+		// route by its name alone — e.g. claude-sonnet-4.5 on an OpenAI key.
+		// (llmSetDefaultCmd clears/rebinds the model for the same reason.)
 		if cfg.LLM.DefaultProvider == provider {
 			cfg.LLM.DefaultProvider = ""
 			cfg.LLM.DefaultModel = ""
@@ -666,8 +447,8 @@ var llmSetDefaultCmd = &cobra.Command{
 			cfg.LLM.DefaultModel = args[1]
 		} else {
 			// Don't carry the previous provider's model over: it would be
-			// exported as this provider's model and prefix routing could send
-			// requests back to the old provider. Prefer the provider's own
+			// sent as this provider's default model and prefix routing could
+			// send requests back to the old provider. Prefer the provider's own
 			// configured model, then its catalog default; otherwise clear it.
 			model := providerCfg.Model
 			if model == "" {
