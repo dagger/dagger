@@ -180,23 +180,19 @@ func renderPatchOntoDirs(ctx context.Context, baseDir, afterDir, prefix string, 
 }
 
 // patchOntoNewDirectories lists the directories a patch cannot leave as the
-// changeset would, with their modes: the directories the changeset adds, and
-// those `git apply` prunes once it deletes their last file but the changeset
-// keeps. Paths are base-relative; After is rooted at prefix.
+// changeset would, with their modes: the empty directories the changeset adds,
+// and those `git apply` prunes once it deletes their last file but the
+// changeset keeps. A directory the changeset adds with files in it is left to
+// the patch, which creates it along with them: its mode is lost, but listing
+// every such directory would make each workspace read replay one more step per
+// directory. Paths are base-relative; After is rooted at prefix.
 func patchOntoNewDirectories(baseDir, afterDir, prefix string, paths *ChangesetPaths, baseFiles, afterFiles []string) ([]PatchOntoDirectory, error) {
 	rooted := func(p string) string {
 		return path.Join(prefix, strings.TrimSuffix(p, "/"))
 	}
-	dirs := map[string]int{}
-	for _, p := range paths.Added {
-		if !strings.HasSuffix(p, "/") {
-			continue
-		}
-		fi, err := lstatInRoot(afterDir, p)
-		if err != nil {
-			return nil, fmt.Errorf("stat added directory %q: %w", p, err)
-		}
-		dirs[rooted(p)] = int(fi.Mode().Perm())
+	dirs, err := addedEmptyDirectories(afterDir, paths, afterFiles, rooted)
+	if err != nil {
+		return nil, err
 	}
 
 	// The files the patch deletes: base has them, After has no file there.
@@ -289,6 +285,31 @@ func patchOntoNewDirectories(baseDir, afterDir, prefix string, paths *ChangesetP
 	// Parents sort before their children.
 	slices.SortFunc(out, func(a, b PatchOntoDirectory) int { return strings.Compare(a.Path, b.Path) })
 	return out, nil
+}
+
+// addedEmptyDirectories returns the directories the changeset adds that no
+// file the patch writes lies beneath, by rooted path, with their modes in
+// After.
+func addedEmptyDirectories(afterDir string, paths *ChangesetPaths, afterFiles []string, rooted func(string) string) (map[string]int, error) {
+	// The directories the patch creates, as parents of the files it writes.
+	holdsFiles := map[string]bool{}
+	for _, p := range afterFiles {
+		for dir := path.Dir(p); dir != "." && dir != "/" && !holdsFiles[dir]; dir = path.Dir(dir) {
+			holdsFiles[dir] = true
+		}
+	}
+	dirs := map[string]int{}
+	for _, p := range paths.Added {
+		if !strings.HasSuffix(p, "/") || holdsFiles[strings.TrimSuffix(p, "/")] {
+			continue
+		}
+		fi, err := lstatInRoot(afterDir, p)
+		if err != nil {
+			return nil, fmt.Errorf("stat added directory %q: %w", p, err)
+		}
+		dirs[rooted(p)] = int(fi.Mode().Perm())
+	}
+	return dirs, nil
 }
 
 // treeFiles returns rel itself if it is a file or symlink under root, every
