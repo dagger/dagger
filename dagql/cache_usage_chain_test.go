@@ -150,15 +150,19 @@ func TestCacheUsageReusesParentLinksAcrossPasses(t *testing.T) {
 		t.Fatal(err)
 	}
 	chainTestUsage(t, ctx, c)
-	c.usageSnapshotParentsMu.Lock()
-	defer c.usageSnapshotParentsMu.Unlock()
+	c.usageSnapshotChainsMu.Lock()
+	defer c.usageSnapshotChainsMu.Unlock()
+	memo := c.usageSnapshotChains
 	for _, gone := range []string{"exec-2", "exec-1"} {
-		if _, kept := c.usageSnapshotParents[gone]; kept {
+		if _, kept := memo.parents[gone]; kept {
 			t.Fatalf("link for %s outlived every result using it", gone)
 		}
+		if _, kept := memo.chains[gone]; kept {
+			t.Fatalf("chain for %s outlived every result using it", gone)
+		}
 	}
-	if len(c.usageSnapshotParents) != 2 {
-		t.Fatalf("kept links=%v, want only the image chain", c.usageSnapshotParents)
+	if len(memo.parents) != 2 || len(memo.chains) != 1 {
+		t.Fatalf("kept parents=%v chains=%v, want only the image chain", memo.parents, memo.chains)
 	}
 }
 
@@ -231,3 +235,4 @@ func TestCachePruneDefersOnParentLookupFailure(t *testing.T) {
 		t.Fatalf("pruned %d entries crediting %d bytes, want the image pruned with no credit while the exec retains it", len(report.Entries), report.ReclaimedBytes)
 	}
 }
+

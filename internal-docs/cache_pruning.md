@@ -621,8 +621,9 @@ snapshots. In practice:
 - once the results below are gone, the layers they left behind are charged to
   the result still retaining them
 
-Parent links never change, so each pass reuses the links the previous pass
-resolved and keeps only the ones it visited. If any row's chain has an
+Parent links never change, so each pass reuses the parents and sorted chains
+the previous pass resolved and keeps only the ones it visited. Rows on the same
+snapshot share its chain slice. If any row's chain has an
 unresolved link (a lookup failed, or the row appeared after sampling), the pass
 is deferred like any other incomplete membership: a row missing ancestors would
 let the simulation credit layers it still retains.

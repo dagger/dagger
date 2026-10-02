@@ -65,7 +65,8 @@ func (c *Cache) collectUsageMeasurementInputs(ctx context.Context, measure bool)
 				input.identities = cacheUsageIdentitiesFromSnapshotLinks(input.snapshotLinks)
 			}
 			snapshot.chains.load(ctx, input.identities)
-			input.identities, input.ancestorIdentities, input.chainsIncomplete = snapshot.chains.expand(input.identities)
+			input.ownIdentities = input.identities
+			input.identities, input.chainsIncomplete = snapshot.chains.expand(input.identities)
 			snapshot.inputs[input.resultID] = *input
 		}
 		if measure {
@@ -151,7 +152,8 @@ func (snapshot *cacheUsageSnapshot) finalizeLocked() (map[sharedResultID][]strin
 			}
 			// Parents are only looked up outside E, so a row first seen here
 			// expands only as far as this pass already resolved its chain.
-			input.identities, input.ancestorIdentities, input.chainsIncomplete = snapshot.chains.expand(input.identities)
+			input.ownIdentities = input.identities
+			input.identities, input.chainsIncomplete = snapshot.chains.expand(input.identities)
 			snapshot.inputs[id] = input
 		}
 		// A row missing some of its ancestors would let the simulation credit
@@ -207,7 +209,7 @@ func (snapshot *cacheUsageSnapshot) close(ctx context.Context) error {
 	return err
 }
 
-// snapshotChains resolves snapshot parents for usage passes.
+// snapshotChains resolves snapshot parent chains for usage passes.
 //
 // An owner lease retains its snapshot's whole parent chain, so a result's
 // usage identities are that chain, not just its top snapshot. Otherwise the
@@ -216,30 +218,48 @@ func (snapshot *cacheUsageSnapshot) close(ctx context.Context) error {
 // deduplicated by identity like any other shared snapshot, and the prune
 // simulation only credits a layer once every result listing it is collected.
 //
-// A snapshot's parent never changes, so each pass reuses the links the
-// previous pass resolved and keeps only the ones it visited: the carried map
-// stays bounded by the live snapshots instead of every snapshot ever seen.
-// Lookups do I/O, so load runs outside E; expand only reads the pass's links.
+// A snapshot's chain never changes, so each pass reuses the parents and
+// sorted chains the previous pass resolved, and keeps only the ones it
+// visited: the carried maps stay bounded by the live snapshots instead of
+// every snapshot ever seen. Rows on the same snapshot share its chain slice,
+// which must not be modified. Lookups do I/O, so load runs outside E; expand
+// only reads what the pass has resolved.
 type snapshotChains struct {
 	manager bkcache.SnapshotManager
-	// known holds the previous pass's links and is never written.
-	known map[string]string
+	// knownParents and knownChains hold the previous pass's results and are
+	// never written.
+	knownParents map[string]string
+	knownChains  map[string][]string
 	// parents maps each snapshot this pass visited to its parent, "" for a
 	// base snapshot.
 	parents map[string]string
+	// chains maps a snapshot to its sorted complete chain: itself and every
+	// ancestor.
+	chains map[string][]string
+}
+
+type snapshotChainMemo struct {
+	parents map[string]string
+	chains  map[string][]string
 }
 
 func (c *Cache) newSnapshotChains() snapshotChains {
-	c.usageSnapshotParentsMu.Lock()
-	known := c.usageSnapshotParents
-	c.usageSnapshotParentsMu.Unlock()
-	return snapshotChains{manager: c.snapshotManager, known: known, parents: make(map[string]string)}
+	c.usageSnapshotChainsMu.Lock()
+	known := c.usageSnapshotChains
+	c.usageSnapshotChainsMu.Unlock()
+	return snapshotChains{
+		manager:      c.snapshotManager,
+		knownParents: known.parents,
+		knownChains:  known.chains,
+		parents:      make(map[string]string),
+		chains:       make(map[string][]string),
+	}
 }
 
 func (c *Cache) keepSnapshotChains(chains snapshotChains) {
-	c.usageSnapshotParentsMu.Lock()
-	c.usageSnapshotParents = chains.parents
-	c.usageSnapshotParentsMu.Unlock()
+	c.usageSnapshotChainsMu.Lock()
+	c.usageSnapshotChains = snapshotChainMemo{parents: chains.parents, chains: chains.chains}
+	c.usageSnapshotChainsMu.Unlock()
 }
 
 // load resolves the parent chain of each snapshot not already visited.
@@ -252,7 +272,7 @@ func (chains snapshotChains) load(ctx context.Context, snapshotIDs []string) {
 			if _, visited := chains.parents[id]; visited {
 				break
 			}
-			parent, known := chains.known[id]
+			parent, known := chains.knownParents[id]
 			if !known {
 				var err error
 				parent, err = chains.manager.SnapshotParent(ctx, id)
@@ -273,46 +293,67 @@ func (chains snapshotChains) load(ctx context.Context, snapshotIDs []string) {
 	}
 }
 
-// expand returns the snapshots plus every resolved ancestor, sorted and
-// deduplicated, and the identities that only appear as ancestors. incomplete
-// reports that some link in the chains is unresolved, so the ancestors listed
-// may not be all the snapshots retained.
-func (chains snapshotChains) expand(snapshotIDs []string) (expanded []string, ancestors map[string]struct{}, incomplete bool) {
-	if len(snapshotIDs) == 0 || chains.manager == nil {
-		return snapshotIDs, nil, false
+// chain returns the snapshot's sorted complete chain, or false if some link
+// in it is unresolved.
+func (chains snapshotChains) chain(id string) ([]string, bool) {
+	if chain, ok := chains.chains[id]; ok {
+		return chain, true
 	}
-	own := make(map[string]struct{}, len(snapshotIDs))
-	for _, id := range snapshotIDs {
-		own[id] = struct{}{}
-	}
-	expanded = slices.Clone(snapshotIDs)
-	for _, id := range snapshotIDs {
-		for {
-			parent, resolved := chains.parents[id]
-			if !resolved {
-				incomplete = true
+	if chain, ok := chains.knownChains[id]; ok {
+		// Still mark every link visited, so the next pass keeps the parents
+		// a new snapshot on top of this chain would need.
+		complete := true
+		for _, link := range chain {
+			parent, ok := chains.parents[link]
+			if !ok {
+				parent, ok = chains.knownParents[link]
+			}
+			if !ok {
+				complete = false
 				break
 			}
-			if parent == "" {
-				break
-			}
-			if _, seen := own[parent]; seen {
-				break
-			}
-			if _, seen := ancestors[parent]; seen {
-				break
-			}
-			if ancestors == nil {
-				ancestors = make(map[string]struct{})
-			}
-			ancestors[parent] = struct{}{}
-			expanded = append(expanded, parent)
-			id = parent
+			chains.parents[link] = parent
+		}
+		if complete {
+			chains.chains[id] = chain
+			return chain, true
 		}
 	}
-	if len(ancestors) == 0 {
-		return snapshotIDs, nil, incomplete
+	var chain []string
+	for link := id; link != ""; {
+		parent, resolved := chains.parents[link]
+		if !resolved {
+			return nil, false
+		}
+		chain = append(chain, link)
+		link = parent
+	}
+	slices.Sort(chain)
+	chains.chains[id] = chain
+	return chain, true
+}
+
+// expand returns the snapshots plus every ancestor, sorted and deduplicated.
+// incomplete reports that some link in the chains is unresolved, so the
+// result may not list every snapshot retained.
+func (chains snapshotChains) expand(snapshotIDs []string) (expanded []string, incomplete bool) {
+	if len(snapshotIDs) == 0 || chains.manager == nil {
+		return snapshotIDs, false
+	}
+	if len(snapshotIDs) == 1 {
+		chain, ok := chains.chain(snapshotIDs[0])
+		if !ok {
+			return snapshotIDs, true
+		}
+		return chain, false
+	}
+	for _, id := range snapshotIDs {
+		chain, ok := chains.chain(id)
+		if !ok {
+			return snapshotIDs, true
+		}
+		expanded = append(expanded, chain...)
 	}
 	slices.Sort(expanded)
-	return expanded, ancestors, incomplete
+	return slices.Compact(expanded), false
 }
