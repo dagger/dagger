@@ -215,11 +215,15 @@ type DB struct {
 
 	// The agent roster is session-wide rather than zoom-relative (see
 	// DB.Agents: an agent born inside a module call is precisely what the
-	// roster exists to surface), so unlike the surfacing memos above it
-	// keys on db.mutations alone.
+	// roster exists to surface). Unlike the surfacing memos above it does
+	// not key on db.mutations: it keys on agentsGen, which only bumps when
+	// something the roster is built from changes, plus the live trace ID.
 	agents          []*AgentNode
 	agentsAt        uint64
+	agentsLive      TraceID
 	agentsInit      bool
+	agentsGen       uint64
+	agentSpans      agentSpanIndex
 	agentControl    agentcontrol.Index
 	agentControlErr error
 
@@ -1225,6 +1229,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	db.Spans.Add(span)
 	db.mutations++
 	db.noteTestSpanUpdated(span)
+
+	// Last, so the index only ever holds spans the DB itself holds.
+	db.indexAgentSpan(span)
 }
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
