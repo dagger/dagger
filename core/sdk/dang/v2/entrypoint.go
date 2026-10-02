@@ -119,6 +119,7 @@ func (r *entrypointRuntime) Call(
 
 	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
+	fnCall.SetPlumbingSpanContext(span.SpanContext())
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

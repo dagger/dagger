@@ -202,8 +202,9 @@ source = "./entrypoint"
 }
 
 // tracedEntrypointSource has the shape of an SDK entrypoint: a build exec that
-// emits no telemetry, then a module process that calls the API under the
-// injected TRACEPARENT and writes the call result to a file.
+// emits no telemetry, then a module process that serves a dependency (here its
+// own module, as a generated client of it would), calls the API under the
+// injected TRACEPARENT, and writes the call result to a file.
 var tracedEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntrypoint {
   pub types(workspace: Workspace!): [TypeDef!]! {
     [
@@ -240,18 +241,22 @@ var tracedEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntry
 }
 `, strconv.Quote(alpineImage), strconv.Quote(`set -e
 auth=$(printf '%s:' "$DAGGER_SESSION_TOKEN" | base64)
-query='{"query":"{ directory { withNewFile(path: \"entrypoint-body\", contents: \"body\") { id } } }"}'
-wget -q -O /dev/null \
-  --header "Authorization: Basic $auth" \
-  --header "traceparent: $TRACEPARENT" \
-  --header "Content-Type: application/json" \
-  --post-data "$query" \
-  "http://127.0.0.1:$DAGGER_SESSION_PORT/query"
+query() {
+  wget -q -O /dev/null \
+    --header "Authorization: Basic $auth" \
+    --header "traceparent: $TRACEPARENT" \
+    --header "Content-Type: application/json" \
+    --post-data "$1" \
+    "http://127.0.0.1:$DAGGER_SESSION_PORT/query"
+}
+query '{"query":"{ serveModule(address: \"/.dagger/modules/traced\") }"}'
+query '{"query":"{ directory { withNewFile(path: \"entrypoint-body\", contents: \"body\") { id } } }"}'
 printf '"body"' > /result.json
 `))
 
 // The module process's API calls are the function body: they belong under the
 // function call span, beside the entrypoint's plumbing rather than inside it.
+// Serving a dependency is plumbing, so it belongs inside.
 func (ModuleSuite) TestModuleEntrypointSpanTree(ctx context.Context, t *testctx.T) {
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
 		t.Skip("needs its own CLI session to forward telemetry to the sink")
@@ -280,7 +285,7 @@ source = "./entrypoint"
 
 	const fnSpan, entrypointSpan = "Traced.body", "call module entrypoint"
 	sink.read(func(db *dagui.DB) {
-		var body, build *dagui.Span
+		var body, build, serve *dagui.Span
 		var runtimeSpans int
 		for span := range db.Spans.Iter() {
 			switch {
@@ -288,6 +293,8 @@ source = "./entrypoint"
 				assert.True(t, span.Internal, "the entrypoint's plumbing is internal")
 			case span.Name == "load sdk runtime":
 				runtimeSpans++
+			case span.Name == "Query.serveModule":
+				serve = span
 			case spanHasStringArg(span, "entrypoint-body"):
 				body = span
 			case spanHasStringArg(span, "echo built > /built"):
@@ -296,9 +303,11 @@ source = "./entrypoint"
 		}
 		require.NotNil(t, body, "the module process's API call was not traced")
 		require.NotNil(t, build, "the build exec was not traced")
+		require.NotNil(t, serve, "the module process's serveModule call was not traced")
 		// Independent properties: report every one that regressed.
 		assert.Equal(t, fnSpan, nearestAncestor(body, fnSpan, entrypointSpan).Name, "the body belongs to the function call")
 		assert.Equal(t, entrypointSpan, nearestAncestor(build, fnSpan, entrypointSpan).Name, "the build belongs to the entrypoint")
+		assert.Equal(t, entrypointSpan, nearestAncestor(serve, fnSpan, entrypointSpan).Name, "serving a dependency belongs to the entrypoint")
 		assert.Zero(t, runtimeSpans, "an entrypoint has no runtime to load")
 	})
 }

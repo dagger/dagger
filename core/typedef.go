@@ -2455,6 +2455,27 @@ type FunctionCall struct {
 	// otherwise parented to the entrypoint's own withExec, which buries the
 	// function body inside the entrypoint's plumbing.
 	processSpan trace.SpanContext
+
+	// plumbingSpan holds the work that runs this call without being its body,
+	// carried engine-side only like processSpan. A module entrypoint sets it
+	// to its own span, so that its module process's dependency loading lands
+	// there too (see WithModuleProcessRequest).
+	plumbingSpan trace.SpanContext
+}
+
+// PlumbingSpanContext returns the span holding the work that runs this call
+// without being its body, if the call's runtime set one.
+func (fnCall *FunctionCall) PlumbingSpanContext() trace.SpanContext {
+	if fnCall == nil {
+		return trace.SpanContext{}
+	}
+	return fnCall.plumbingSpan
+}
+
+// SetPlumbingSpanContext sets the span holding the work that runs this call
+// without being its body.
+func (fnCall *FunctionCall) SetPlumbingSpanContext(spanCtx trace.SpanContext) {
+	fnCall.plumbingSpan = spanCtx
 }
 
 // ProcessSpanContext returns the span that the processes started for this call
