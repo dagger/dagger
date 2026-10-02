@@ -345,4 +345,109 @@ func (m *Caller) Plain() string {
 		require.NoError(t, err)
 		require.Equal(t, first, second)
 	})
+
+	// A caller on a Dang entrypoint runs its module code in an exec the
+	// entrypoint starts. That exec is cached by its own recipe, so the call
+	// keys it through the callDigest argument its call declares.
+	entrypointWorkdir := func(t *testctx.T) *dagger.Container {
+		return goGitBase(t, connect(ctx, t)).
+			WithNewFile("dagger.toml", `[modules.epcaller]
+source = ".dagger/modules/epcaller"
+
+[modules.go]
+source = "go"
+
+[sdks.go]
+module = "go"
+
+[sdks.go.scopes.".dagger/modules/epcaller"]
+is-module = true
+clients = ["./.dagger/modules/hello"]
+`).
+			WithNewFile(".dagger/modules/epcaller/dagger-module.toml", `name = "epcaller"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+			WithNewFile(".dagger/modules/epcaller/entrypoint/main.dang", `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Epcaller")
+        .withConstructor(function("", typeDef.withObject("Epcaller")))
+        .withFunction(function("message", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+    callDigest: String,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      let result = container
+        .from("`+alpineImage+`")
+        .withFile("/call.sh", currentModule.source.file("call.sh"))
+        .withExec(["sh", "/call.sh"], stdin: JSON.encode({{fnName: fnName, callDigest: callDigest}}))
+        .file("/result.json")
+        .contents
+      (result :: JSON!)
+    }
+  }
+}
+`).
+			// Serves the declared client and returns its message with a nonce.
+			WithNewFile(".dagger/modules/epcaller/call.sh", `set -e
+auth=$(printf '%s:' "$DAGGER_SESSION_TOKEN" | base64 | tr -d '\n')
+q() {
+  wget -qO- --header "Authorization: Basic $auth" --header "Content-Type: application/json" \
+    --post-data "$1" "http://127.0.0.1:$DAGGER_SESSION_PORT/query"
+}
+q '{"query":"{ serveModule(address: \"/.dagger/modules/hello\") }"}' >/dev/null
+message=$(q '{"query":"{ hello { message } }"}' | sed 's/.*"message":"\([^"]*\)".*/\1/')
+printf '"%s at %s"' "$message" "$(cat /proc/sys/kernel/random/uuid)" >/result.json
+`).
+			WithNewFile(".dagger/modules/epcaller/subtest.txt", t.Name()+"\n").
+			WithNewFile(".dagger/modules/hello/dagger-module.toml", serveModuleHelloManifest).
+			WithNewFile(".dagger/modules/hello/main.dang", serveModuleHelloSource)
+	}
+	entrypointCall := func(ctr *dagger.Container, run string) (string, error) {
+		return ctr.
+			WithEnvVariable("SERVE_MODULE_RUN", run).
+			With(daggerCallAt("epcaller", "message")).
+			Stdout(ctx)
+	}
+
+	t.Run("unchanged target hits the cache from an entrypoint", func(ctx context.Context, t *testctx.T) {
+		ctr := entrypointWorkdir(t)
+		first, err := entrypointCall(ctr, "1")
+		require.NoError(t, err)
+		require.Contains(t, first, "hi from hello at ")
+
+		second, err := entrypointCall(ctr, "2")
+		require.NoError(t, err)
+		require.Equal(t, first, second)
+	})
+
+	t.Run("changed target misses the cache from an entrypoint", func(ctx context.Context, t *testctx.T) {
+		ctr := entrypointWorkdir(t)
+		first, err := entrypointCall(ctr, "1")
+		require.NoError(t, err)
+		require.Contains(t, first, "hi from hello at ")
+
+		ctr = ctr.WithNewFile(".dagger/modules/hello/main.dang", changedHello)
+		changed, err := entrypointCall(ctr, "2")
+		require.NoError(t, err)
+		require.Contains(t, changed, "changed hello at ")
+
+		again, err := entrypointCall(ctr, "3")
+		require.NoError(t, err)
+		require.Equal(t, changed, again)
+	})
 }
