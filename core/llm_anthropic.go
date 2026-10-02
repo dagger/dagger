@@ -142,13 +142,14 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		return nil, err
 	}
 
-	// Reasoning (extended thinking) is enabled for this request only when an
-	// effort is configured. This single condition controls both OutputConfig.Effort
-	// below and whether prior thinking blocks may be resubmitted: Anthropic rejects
-	// a request that carries thinking blocks when thinking isn't enabled for it
+	// Size the reply and configure reasoning (extended thinking) up front.
+	// Whether thinking ends up enabled for this request also decides whether
+	// prior thinking blocks may be resubmitted: Anthropic rejects a request
+	// that carries thinking blocks when thinking isn't enabled for it
 	// ("thinking blocks without thinking enabled"). If a prior turn produced
 	// thinking but this turn has reasoning off, the stored blocks must be dropped.
-	reasoningEnabled := c.endpoint.ReasoningEffort != "" && c.endpoint.ReasoningEffort != "none"
+	reasoning := c.reasoningParams(history, tools, opts)
+	reasoningEnabled := reasoning.enabled
 
 	// Convert content-block messages to Anthropic-specific message parameters.
 	var messages []anthropic.MessageParam
@@ -340,52 +341,14 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		systemPrompts = append([]anthropic.TextBlockParam{claudeCodePrompt}, systemPrompts...)
 	}
 
-	// Prepare parameters for the streaming call. The API requires max_tokens;
-	// default to the model's own output cap (from the catwalk catalog) so
-	// replies are never artificially truncated, keeping a conservative
-	// fallback for models the catalog doesn't know (e.g. Anthropic-compatible
-	// local endpoints).
-	userSetMaxTokens := opts != nil && opts.MaxTokens > 0
-	maxTokens := c.endpoint.DefaultMaxTokens
-	if maxTokens <= 0 {
-		maxTokens = 8192
-	}
-	if userSetMaxTokens {
-		maxTokens = int64(opts.MaxTokens)
-	}
-
-	// Configure reasoning effort, if requested. Anthropic takes the level
-	// straight through as output_config.effort; when on the conservative
-	// fallback default, leave room for reasoning tokens on top of the reply
-	// so the answer isn't truncated. An explicit maxTokens cap is respected
-	// as-is.
-	var outputConfig anthropic.OutputConfigParam
-	var thinkingConfig anthropic.ThinkingConfigParamUnion
-	if reasoningEnabled {
-		outputConfig.Effort = anthropic.OutputConfigEffort(c.endpoint.ReasoningEffort)
-		// Adaptive thinking pairs with effort-based reasoning; request
-		// summarized display so thinking summaries stream back as visible
-		// thinking blocks rather than being omitted.
-		thinkingConfig.OfAdaptive = &anthropic.ThinkingConfigAdaptiveParam{
-			Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
-		}
-		if !userSetMaxTokens && maxTokens < 16384 {
-			maxTokens = 16384
-		}
-	}
-
-	// Cap max_tokens to the context window's remaining space; the API rejects
-	// requests whose input tokens + max_tokens exceed it.
-	maxTokens = clampMaxTokensToContext(maxTokens, c.endpoint.ContextWindow, history, tools)
-
 	params := anthropic.MessageNewParams{
 		Model:        c.endpoint.Model,
-		MaxTokens:    maxTokens,
+		MaxTokens:    reasoning.maxTokens,
 		Messages:     messages,
 		Tools:        toolsConfig,
 		System:       systemPrompts,
-		OutputConfig: outputConfig,
-		Thinking:     thinkingConfig,
+		OutputConfig: reasoning.outputConfig,
+		Thinking:     reasoning.thinking,
 	}
 
 	// Start a streaming request.
@@ -519,6 +482,114 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		DisplaySpans:     displaySpans,
 		ToolCallDisplays: toolCallDisplays,
 	}, nil
+}
+
+// anthropicReasoning is a request's output-token cap and reasoning
+// configuration, as worked out by reasoningParams.
+type anthropicReasoning struct {
+	maxTokens    int64
+	outputConfig anthropic.OutputConfigParam
+	thinking     anthropic.ThinkingConfigParamUnion
+	// enabled reports whether thinking is on for the request, and so whether
+	// prior thinking blocks may be resubmitted.
+	enabled bool
+}
+
+// anthropicThinkingBudgets maps reasoning effort levels onto extended-thinking
+// token budgets, for models that take a budget rather than an effort level.
+var anthropicThinkingBudgets = map[string]int64{
+	"minimal": 1024,
+	"low":     4096,
+	"medium":  8192,
+	"high":    16384,
+	"xhigh":   32768,
+	"max":     65536,
+}
+
+const (
+	// anthropicMinThinkingBudget is the smallest budget_tokens the API takes.
+	anthropicMinThinkingBudget = 1024
+	// anthropicDefaultThinkingBudget is used for an effort level without a
+	// known budget mapping.
+	anthropicDefaultThinkingBudget = 8192
+)
+
+// reasoningParams sizes max_tokens and translates the endpoint's reasoning
+// effort into the form the model takes:
+//
+//   - models that take an effort level, and models the catalog doesn't know
+//     (e.g. newer than the embedded catalog), get output_config.effort with
+//     adaptive thinking;
+//   - models that only take a thinking budget (e.g. Claude Haiku 4.5, which
+//     rejects adaptive thinking) get extended thinking with budget_tokens
+//     mapped from the effort level;
+//   - models that can't reason get no reasoning configuration at all.
+func (c *AnthropicClient) reasoningParams(history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) anthropicReasoning {
+	// The API requires max_tokens; default to the model's own output cap
+	// (from the catwalk catalog) so replies are never artificially truncated,
+	// keeping a conservative fallback for models the catalog doesn't know
+	// (e.g. Anthropic-compatible local endpoints).
+	userSetMaxTokens := opts != nil && opts.MaxTokens > 0
+	maxTokens := c.endpoint.DefaultMaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 8192
+	}
+	if userSetMaxTokens {
+		maxTokens = int64(opts.MaxTokens)
+	}
+
+	effort := c.endpoint.ReasoningEffort
+	if effort == "" || effort == "none" || c.endpoint.ReasoningMode == LLMReasoningUnsupported {
+		// Cap max_tokens to the context window's remaining space; the API
+		// rejects requests whose input tokens + max_tokens exceed it.
+		return anthropicReasoning{
+			maxTokens: clampMaxTokensToContext(maxTokens, c.endpoint.ContextWindow, history, tools),
+		}
+	}
+
+	// When on the conservative fallback default, leave room for reasoning
+	// tokens on top of the reply so the answer isn't truncated. An explicit
+	// maxTokens cap is respected as-is.
+	if !userSetMaxTokens && maxTokens < 16384 {
+		maxTokens = 16384
+	}
+	maxTokens = clampMaxTokensToContext(maxTokens, c.endpoint.ContextWindow, history, tools)
+
+	if c.endpoint.ReasoningMode == LLMReasoningBudget {
+		budget, ok := anthropicThinkingBudgets[effort]
+		if !ok {
+			budget = anthropicDefaultThinkingBudget
+		}
+		// budget_tokens must stay below max_tokens; keep at least half of
+		// the cap for the reply itself. If that leaves less than the
+		// minimum budget, reason not at all rather than fail the request.
+		budget = min(budget, maxTokens/2)
+		if budget < anthropicMinThinkingBudget {
+			return anthropicReasoning{maxTokens: maxTokens}
+		}
+		return anthropicReasoning{
+			maxTokens: maxTokens,
+			thinking:  anthropic.ThinkingConfigParamOfEnabled(budget),
+			enabled:   true,
+		}
+	}
+
+	// Anthropic takes the level straight through as output_config.effort.
+	// Adaptive thinking pairs with effort-based reasoning; request summarized
+	// display so thinking summaries stream back as visible thinking blocks
+	// rather than being omitted.
+	return anthropicReasoning{
+		maxTokens: maxTokens,
+		outputConfig: anthropic.OutputConfigParam{
+			Effort: anthropic.OutputConfigEffort(effort),
+		},
+		thinking: anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+				Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
+			},
+		},
+		enabled: true,
+	}
 }
 
 // anthropicInputBlock translates the content allowed in user input and tool
