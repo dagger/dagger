@@ -28,4 +28,4 @@ $ typescript: Typescript! X.Xs CACHED
     ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

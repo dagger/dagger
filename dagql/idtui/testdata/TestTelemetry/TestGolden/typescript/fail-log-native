@@ -17,4 +17,4 @@ $ typescript: Typescript! X.Xs CACHED
 ┃ and then failing
 ! i failed
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

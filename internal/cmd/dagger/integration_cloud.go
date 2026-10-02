@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -14,7 +15,16 @@ import (
 
 var githubOpen bool
 
-const githubOAuthRedirect = "https://dagger.cloud/github/callback"
+// githubOAuthRedirect returns the Cloud frontend URL GitHub sends the user
+// back to after consent. It follows the same environment rule as
+// gitHubAppInstallURL: the local frontend when DAGGER_CLOUD_URL points
+// somewhere other than production, and dagger.cloud otherwise.
+func githubOAuthRedirect() string {
+	if url := os.Getenv("DAGGER_CLOUD_URL"); url != "" && !strings.Contains(url, "://api.dagger.cloud") {
+		return "http://localhost:3000/github/callback"
+	}
+	return "https://dagger.cloud/github/callback"
+}
 
 // cloudIntegrationCmd is the `dagger cloud integration` group. The original
 // top-level `dagger integration` was singleton-shaped (one provider per type,
@@ -120,6 +130,19 @@ func (cli *CloudCLI) integrationSetupGitHub(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	// If GitHub is already usable there's nothing to set up: skip the OAuth URL
+	// rather than sending the user through the flow again.
+	if connected, login := cli.githubConnected(cmd.Context(), client); connected {
+		if cloudJSON {
+			return writeCloudJSON(cmd, map[string]string{"status": "connected", "githubLogin": login})
+		}
+		if login != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "GitHub is already connected as %s.\n", login)
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "GitHub is already connected.")
+		}
+		return nil
+	}
 	setup, err := cli.githubConnectHandoff(cmd.Context(), client)
 	if err != nil {
 		return err
@@ -134,14 +157,39 @@ func (cli *CloudCLI) integrationSetupGitHub(cmd *cobra.Command) error {
 	return nil
 }
 
+// githubConnected reports whether the user already has a usable GitHub identity,
+// along with the connected login when known.
+//
+// A GitHub identity can come from two places (see the Cloud API's Sources
+// resolver): an explicit connection stored in user_github_connections, or the
+// Auth0 GitHub identity of a user who logged into Cloud with GitHub. The latter
+// has no stored row, so a githubConnection lookup alone misses it. Since
+// Sources() needs a working GitHub token from either path, a successful
+// Sources() call is the definitive "GitHub is usable" signal.
+//
+// Best-effort: any lookup error is treated as "not connected", so the caller
+// falls back to offering the OAuth flow.
+func (cli *CloudCLI) githubConnected(ctx context.Context, client *cloudapi.Client) (bool, string) {
+	// Explicit connection: cheap, and carries the login for a nicer message.
+	if conn, err := client.GitHubConnection(ctx); err == nil && conn != nil {
+		return true, conn.GitHubLogin
+	}
+	// No stored connection, but a GitHub identity may be available via Auth0.
+	if _, err := client.Sources(ctx); err == nil {
+		return true, ""
+	}
+	return false, ""
+}
+
 func (cli *CloudCLI) githubConnectHandoff(ctx context.Context, client *cloudapi.Client) (*githubSetupHandoff, error) {
-	oauthURL, err := client.GitHubOAuthURL(ctx, githubOAuthRedirect)
+	redirectURI := githubOAuthRedirect()
+	oauthURL, err := client.GitHubOAuthURL(ctx, redirectURI)
 	if err != nil {
 		return nil, err
 	}
 	return &githubSetupHandoff{
 		URL:         oauthURL,
-		RedirectURI: githubOAuthRedirect,
+		RedirectURI: redirectURI,
 	}, nil
 }
 

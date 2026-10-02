@@ -17,4 +17,4 @@ $ viztest: Viztest! X.Xs CACHED
 ╰╴✘ .failingFunction: Void X.Xs ERROR
   ! this function always fails
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

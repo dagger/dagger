@@ -39,4 +39,4 @@ $ viztest: Viztest! X.Xs CACHED
 ╰╴✔ withExec wget -q -O- http://exec-service X.Xs
   ┃ <h1>hello, world!</h1>
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

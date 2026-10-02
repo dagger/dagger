@@ -2,17 +2,23 @@ package daggercmd
 
 import (
 	"fmt"
-	"strings"
-	"text/tabwriter"
+	"io"
+	"os"
+	"runtime"
 
-	cloudapi "github.com/dagger/dagger/internal/cloud"
+	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
+
+	"github.com/dagger/dagger/dagql/idtui"
+	cloudapi "github.com/dagger/dagger/internal/cloud"
 )
 
 var billingOpen bool
 
 var cloudBillingCmd = newBillingCmd(false)
+
+// billingCmd is a hidden alias for 'dagger cloud billing'.
 var billingCmd = newBillingCmd(true)
 
 func init() {
@@ -22,56 +28,25 @@ func init() {
 
 func newBillingCmd(hidden bool) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "billing",
-		Short:  "Manage Dagger Cloud billing",
-		Args:   cobra.NoArgs,
+		Use:   "billing [org]",
+		Short: "Manage your Dagger Cloud subscription, payment method, and billing information",
+		Long: `Manage your Dagger Cloud subscription, payment method, and billing information.
+
+Opens the billing portal of the org (the argument, or the current org) in a
+browser when running in an interactive terminal, and prints its URL.`,
+		Args:   cobra.MaximumNArgs(1),
 		Hidden: hidden,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
-		},
+		RunE:   cloudCLI.Billing,
 	}
-	cmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
-	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "plans",
-			Short: "List Dagger Cloud plans available at signup",
-			Args:  cobra.NoArgs,
-			RunE:  cloudCLI.BillingPlans,
-		},
-		newBillingManageCmd(),
-	)
+	cmd.Flags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
+	cmd.Flags().BoolVar(&billingOpen, "open", false, "Open the billing portal in a browser (default: in an interactive terminal)")
 	return cmd
 }
 
-func newBillingManageCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "manage [org]",
-		Aliases: []string{"portal"},
-		Short:   "Open the billing portal for a Dagger Cloud org",
-		Args:    cobra.MaximumNArgs(1),
-		RunE:    cloudCLI.BillingManage,
-	}
-	cmd.Flags().BoolVar(&billingOpen, "open", false, "Open the billing portal in a browser")
-	return cmd
-}
-
-func (cli *CloudCLI) BillingPlans(cmd *cobra.Command, args []string) error {
-	client, err := cloudapi.NewClient(cmd.Context(), nil)
-	if err != nil {
-		return err
-	}
-	plans, err := client.Plans(cmd.Context())
-	if err != nil {
-		return err
-	}
-	if cloudJSON {
-		return writeCloudJSON(cmd, plans)
-	}
-	printBillingPlans(cmd, plans.Plans)
-	return nil
-}
-
-func (cli *CloudCLI) BillingManage(cmd *cobra.Command, args []string) error {
+// Billing resolves the target org (the argument, or the current org), asks
+// Cloud for its billing portal, and reports it: opened in a browser
+// when that can reach the user, as JSON with --json, otherwise printed.
+func (cli *CloudCLI) Billing(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	client, cloudAuth, err := cli.cloudClient(ctx)
 	if err != nil {
@@ -86,56 +61,67 @@ func (cli *CloudCLI) BillingManage(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	portalURL, err := client.CreatePortalSession(ctx, org.ID)
+	url, err := client.CreatePortalSession(ctx, org.ID)
 	if err != nil {
 		return err
 	}
-	if billingOpen {
-		if err := browser.OpenURL(portalURL); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Failed to open browser: %s\n", err)
-		}
+
+	// Open the page like dagger login does: automatically in an interactive
+	// terminal, unless --open says otherwise.
+	open := billingOpen
+	if !cmd.Flags().Changed("open") {
+		open = canOpenBrowser()
 	}
+	browserOpened := open && openBrowser(url)
+
 	if cloudJSON {
-		return writeCloudJSON(cmd, map[string]any{"org": org, "url": portalURL})
+		return writeCloudJSON(cmd, map[string]any{"org": org, "url": url, "opened": browserOpened})
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), portalURL)
+	printBillingPortal(cmd.OutOrStdout(), org.Name, url, browserOpened, stdoutIsTTY)
 	return nil
 }
 
-func printBillingPlans(cmd *cobra.Command, plans []cloudapi.Plan) {
-	if len(plans) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No Dagger Cloud plans found.")
+// printBillingPortal reports the billing portal URL. Piped output is the URL
+// alone, so scripts keep working.
+func printBillingPortal(w io.Writer, org, url string, opened, interactive bool) {
+	if !interactive {
+		fmt.Fprintln(w, url)
 		return
 	}
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PLAN\tPRICE\tPERIOD\tPRICE ID")
-	for _, plan := range plans {
-		if len(plan.Price) == 0 {
-			fmt.Fprintf(w, "%s\t\t\t\n", planName(plan))
-			continue
-		}
-		for _, price := range plan.Price {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-				planName(plan),
-				formatPlanPrice(price),
-				price.PeriodUnit,
-				price.ID,
-			)
-		}
+	out := idtui.NewOutput(w)
+	if opened {
+		fmt.Fprintf(w, "%s Opened the billing portal for %s in your browser.\n",
+			out.String("✓").Foreground(termenv.ANSIGreen), out.String(org).Bold())
+		fmt.Fprintln(w, "Use it to manage your subscription, payment method, and billing information. If it didn't open, visit:")
+	} else {
+		fmt.Fprintf(w, "Open the billing portal to manage the subscription, payment method, and billing information of %s:\n", out.String(org).Bold())
 	}
-	_ = w.Flush()
+	fmt.Fprintf(w, "  %s\n", out.String(url).Underline())
 }
 
-func planName(plan cloudapi.Plan) string {
-	if strings.TrimSpace(plan.Item.ExternalName) != "" {
-		return plan.Item.ExternalName
+// canOpenBrowser reports whether opening a browser can reach the user: an
+// interactive terminal on the machine with a graphical session.
+func canOpenBrowser() bool {
+	if !canOpenShellOnError(progress, stdinIsTTY) || cloudJSON {
+		return false
 	}
-	return plan.Item.ID
+	// Over SSH the browser would open on the remote machine.
+	if os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_TTY") != "" {
+		return false
+	}
+	// Without a display, the fallback can be a text browser that takes over
+	// the terminal.
+	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		return false
+	}
+	return true
 }
 
-func formatPlanPrice(price cloudapi.PlanPrice) string {
-	if price.Price == 0 {
-		return "free"
-	}
-	return fmt.Sprintf("$%.2f", float64(price.Price)/100)
+// openBrowser opens url and reports whether it did. The launcher's own output
+// is dropped, as dagger login does: the command prints the URL either way.
+func openBrowser(url string) bool {
+	stdout, stderr := browser.Stdout, browser.Stderr
+	defer func() { browser.Stdout, browser.Stderr = stdout, stderr }()
+	browser.Stdout, browser.Stderr = io.Discard, io.Discard
+	return browser.OpenURL(url) == nil
 }

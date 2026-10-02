@@ -28,4 +28,4 @@ $ viztest: Viztest! X.Xs CACHED
     ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

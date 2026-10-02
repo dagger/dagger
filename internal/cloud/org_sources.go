@@ -2,9 +2,8 @@ package cloud
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"net/http"
 )
 
 type Source struct {
@@ -59,29 +58,6 @@ type OrgDetails struct {
 	CreatedAt    string           `json:"createdAt"`
 	Subscription SubscriptionInfo `json:"subscription"`
 	Features     []Feature        `json:"features"`
-}
-
-type PlanItem struct {
-	ID           string `json:"id"`
-	ExternalName string `json:"external_name"`
-}
-
-type PlanPrice struct {
-	ID           string `json:"id"`
-	ItemID       string `json:"item_id"`
-	ExternalName string `json:"external_name"`
-	Unit         string `json:"unit"`
-	Price        uint   `json:"price"`
-	PeriodUnit   string `json:"period_unit"`
-}
-
-type Plan struct {
-	Item  PlanItem    `json:"item"`
-	Price []PlanPrice `json:"price"`
-}
-
-type PlansResponse struct {
-	Plans []Plan `json:"plans"`
 }
 
 const getSourcesOperation = `
@@ -217,6 +193,90 @@ func (c *Client) ConfigureSource(ctx context.Context, installationID, mode strin
 	return &data.ConfigureSource, nil
 }
 
+const createQuickstartOrgOperation = `
+mutation CreateQuickstartOrg($name: String!) {
+	createQuickstartOrg(name: $name) {
+		id
+		name
+	}
+}
+`
+
+// CreateQuickstartOrg creates a free "quickstart" org for the authenticated
+// user without any browser interaction, returning the new org's id and name.
+// The requested name may be adjusted server-side (e.g. to resolve collisions),
+// so callers must use the returned name rather than the requested one.
+func (c *Client) CreateQuickstartOrg(ctx context.Context, name string) (*OrgResponse, error) {
+	if c.g == nil {
+		return nil, errors.New("no user logged in")
+	}
+	var data struct {
+		CreateQuickstartOrg OrgResponse `json:"createQuickstartOrg"`
+	}
+	if err := c.doGraphQL(ctx, "CreateQuickstartOrg", createQuickstartOrgOperation, map[string]any{
+		"name": name,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.CreateQuickstartOrg, nil
+}
+
+// GitHubConnection is a user's linked GitHub identity in Dagger Cloud.
+type GitHubConnection struct {
+	GitHubLogin string `json:"githubLogin"`
+	ConnectedAt string `json:"connectedAt"`
+}
+
+const getGithubConnectionOperation = `
+query GetGithubConnection {
+	githubConnection {
+		githubLogin
+		connectedAt
+	}
+}
+`
+
+// GitHubConnection returns the authenticated user's GitHub connection, or nil
+// when no GitHub account is connected yet.
+func (c *Client) GitHubConnection(ctx context.Context) (*GitHubConnection, error) {
+	var data struct {
+		GitHubConnection *GitHubConnection `json:"githubConnection"`
+	}
+	if err := c.doGraphQL(ctx, "GetGithubConnection", getGithubConnectionOperation, nil, &data); err != nil {
+		return nil, err
+	}
+	return data.GitHubConnection, nil
+}
+
+const configureOrgSourceOperation = `
+mutation ConfigureOrgSource($org: ID!, $installationId: ID!, $mode: SourceMode!, $repositories: [String!]!) {
+	configureOrgSource(org: $org, source: { installationId: $installationId, mode: $mode, repositories: $repositories }) {
+		sourceName
+		installationId
+		mode
+	}
+}
+`
+
+// ConfigureOrgSource maps the given GitHub App installation to org (creating the
+// mapping if needed) and applies the repo selection. Unlike ConfigureSource, it
+// does not require the installation to already be mapped, so it is used to
+// onboard a freshly installed app into the user's org. Requires org admin.
+func (c *Client) ConfigureOrgSource(ctx context.Context, orgID, installationID, mode string, repositories []string) (*MappedSource, error) {
+	var data struct {
+		ConfigureOrgSource MappedSource `json:"configureOrgSource"`
+	}
+	if err := c.doGraphQL(ctx, "ConfigureOrgSource", configureOrgSourceOperation, map[string]any{
+		"org":            orgID,
+		"installationId": installationID,
+		"mode":           mode,
+		"repositories":   repositories,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.ConfigureOrgSource, nil
+}
+
 const getGithubOAuthURLOperation = `
 query GetGithubOAuthURL($redirectURI: String!) {
 	githubOAuthURL(redirectURI: $redirectURI)
@@ -274,24 +334,44 @@ func (c *Client) OrgDetails(ctx context.Context, orgName string) (*OrgDetails, e
 	return data.Org, nil
 }
 
-func (c *Client) Plans(ctx context.Context) (*PlansResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.u.JoinPath("/plans").String(), nil)
-	if err != nil {
+const getOrgPaymentStatusOperation = `
+query GetOrgPaymentStatus($org: String!) {
+	org(name: $org) {
+		subscription {
+			status
+			trialEnd
+			hasPaymentMethod
+		}
+	}
+}
+`
+
+// PaymentStatus is an org's subscription status and whether its billing
+// customer has a payment method.
+type PaymentStatus struct {
+	Status           string  `json:"status"`
+	TrialEnd         *string `json:"trialEnd,omitempty"`
+	HasPaymentMethod bool    `json:"hasPaymentMethod"`
+}
+
+// OrgPaymentStatus returns the org's subscription status and whether it has
+// a payment method to charge when its trial ends. Cloud keeps the latter
+// current from billing webhooks, so asking is cheap.
+func (c *Client) OrgPaymentStatus(ctx context.Context, orgName string) (*PaymentStatus, error) {
+	var data struct {
+		Org *struct {
+			Subscription PaymentStatus `json:"subscription"`
+		} `json:"org"`
+	}
+	if err := c.doGraphQL(ctx, "GetOrgPaymentStatus", getOrgPaymentStatusOperation, map[string]any{
+		"org": orgName,
+	}, &data); err != nil {
 		return nil, err
 	}
-	resp, err := c.h.Do(req)
-	if err != nil {
-		return nil, err
+	if data.Org == nil {
+		return nil, fmt.Errorf("org %q not found", orgName)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("list plans: %s", resp.Status)
-	}
-	var plans PlansResponse
-	if err := json.NewDecoder(resp.Body).Decode(&plans); err != nil {
-		return nil, err
-	}
-	return &plans, nil
+	return &data.Org.Subscription, nil
 }
 
 const createPortalSessionOperation = `

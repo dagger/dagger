@@ -21,4 +21,4 @@ $ viztest: Viztest! X.Xs CACHED
   │
   ╰╴✔ file(name: "c", contents: "CCC"): File! X.Xs
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1
