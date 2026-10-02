@@ -2350,6 +2350,86 @@ func (ChangesetSuite) TestFilter(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "docs", after)
 }
 
+func (ChangesetSuite) TestFilterWithoutPatternsSelectsAll(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	before := c.Directory().WithNewFile("src/edit.txt", "old").WithNewFile("src/delete.txt", "delete").WithNewDirectory("gone")
+	after := before.WithNewFile("src/edit.txt", "new").WithoutFile("src/delete.txt").WithNewFile("add.txt", "added").WithoutDirectory("gone")
+	selected := after.Changes(before).Filter()
+	added, err := selected.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"add.txt"}, added)
+	removed, err := selected.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"gone/", "src/delete.txt"}, removed)
+	modified, err := selected.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"src/edit.txt"}, modified)
+	equal, err := before.WithChanges(selected).Changes(after).IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, equal, "applying an unfiltered selection must reproduce the after tree")
+}
+
+// Diffing base.withChanges(C) against base shares C's path scan when base is
+// C's own baseline. Both answers must still be exactly what a fresh scan of
+// either pair would report, and a different base must never borrow them.
+func (ChangesetSuite) TestChangesOfAppliedChangeset(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := c.Directory().
+		WithNewFile("keep.txt", "keep").
+		WithNewFile("edit.txt", "old").
+		WithNewFile("move/from.txt", "moved content\nwith lines\n").
+		WithNewFile("gone/a.txt", "a")
+	after := base.
+		WithNewFile("edit.txt", "new").
+		WithoutFile("move/from.txt").
+		WithNewFile("move/to.txt", "moved content\nwith lines\n").
+		WithoutDirectory("gone").
+		WithNewFile("added/new.txt", "added")
+	changes := after.Changes(base)
+	type pathSets struct{ added, removed, modified []string }
+	pathsOf := func(cs *dagger.Changeset) pathSets {
+		added, err := cs.AddedPaths(ctx)
+		require.NoError(t, err)
+		removed, err := cs.RemovedPaths(ctx)
+		require.NoError(t, err)
+		modified, err := cs.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		return pathSets{added, removed, modified}
+	}
+	want := pathSets{
+		added:    []string{"added/", "added/new.txt", "move/to.txt"},
+		removed:  []string{"gone/", "move/from.txt"},
+		modified: []string{"edit.txt"},
+	}
+	// Ask the re-applied changeset first: its paths come from C's, and
+	// evaluating its own After side needs C's paths too. Computing them in
+	// this order once deadlocked on a shared memo.
+	reapplied := base.WithChanges(changes).Changes(base)
+	require.Equal(t, want, pathsOf(reapplied))
+	require.Equal(t, want, pathsOf(changes))
+	stats, err := reapplied.DiffStats(ctx)
+	require.NoError(t, err)
+	var renamed []string
+	for _, stat := range stats {
+		kind, err := stat.Kind(ctx)
+		require.NoError(t, err)
+		if kind == dagger.DiffStatKindRenamed {
+			path, err := stat.Path(ctx)
+			require.NoError(t, err)
+			renamed = append(renamed, path)
+		}
+	}
+	require.Equal(t, []string{"move/to.txt"}, renamed)
+
+	// Onto a different base, the same changeset leaves that base's own
+	// content in place, and the diff must report it rather than C's paths.
+	other := base.WithNewFile("extra.txt", "extra")
+	onOther := other.WithChanges(changes).Changes(base)
+	got := pathsOf(onOther)
+	require.Contains(t, got.added, "extra.txt")
+	require.NotEqual(t, want, got)
+}
+
 // Selecting a single deletion must not remove its siblings. Filtering both
 // sides down to the selected path leaves the after side without the parent
 // directory at all, and re-applying that selection to the complete baseline
