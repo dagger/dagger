@@ -143,8 +143,6 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 			}
 		}
 		filter := *address
-		filter.Path = ""
-		filter.Absolute = false
 		filter.Query = append(slices.Clone(address.Query), keys...)
 		if strict {
 			if err := requireArtifactModules(ctx, dag, selection, filter.DimensionFilters()); err != nil {
@@ -165,7 +163,7 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 				return nil, err
 			}
 		}
-		selection = selection.FilterURI(filter.String())
+		selection = filterArtifactAddress(selection, &filter)
 		if selected == nil {
 			selected = selection
 		} else {
