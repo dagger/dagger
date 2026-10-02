@@ -232,7 +232,7 @@ func (dev *EngineDev) test(
 		args = append(args, "-skip", opts.skipTestRegex)
 	}
 
-	args = append(args, opts.pkg)
+	args = append(args, strings.Fields(opts.pkg)...)
 
 	if opts.update {
 		args = append(args, "-update")
