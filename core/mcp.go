@@ -1195,15 +1195,15 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 //
 //   - A host-backed workspace reads the client's checkout, so a conversation
 //     built on one cannot be reproduced anyway: the raw changeset is applied.
-//   - Otherwise the workspace is already in the engine. A changeset built only
-//     from its state and pure Directory and File operations, like a file
-//     edit's, is cheap to replay: it is recorded as After.changes(from:
-//     Before), which drops just the tool call (unwrapPureChangeset).
-//   - Any other changeset (a generator's, a command's) is applied as a patch
-//     rendered against the workspace (Changeset.RenderPatchOnto) with
+//   - Otherwise the workspace is already in the engine, and the changeset is
+//     applied as a patch rendered against it (Changeset.RenderPatchOnto) with
 //     Workspace.__withPatch. The recorded overlay is the prior workspace plus
 //     the patch: the producer is not replayed, and applying it compares no
-//     trees. The patch is also what the model is shown.
+//     trees. The patch is also what the model is shown. This holds for a file
+//     edit's changeset too, though its own recipe would be cheap to replay:
+//     that recipe diffs Before and After, a full-tree diff the first read of
+//     the workspace would pay when Before is the whole root, while the patch
+//     is rendered for the tool result anyway.
 //
 // A tool may measure its changeset from the workspace cwd rather than its
 // root: vito/editor's tools read the workspace at ".", which resolves from the
@@ -1230,16 +1230,6 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	prefix := changesetWorkspacePrefix(ctx, ws, state, changes)
 
 	if inEngine {
-		if unwrapped, ok := m.unwrapPureChangeset(ctx, srv, state, changes); ok {
-			placed, err := changesetAt(ctx, srv, unwrapped, prefix)
-			if err != nil {
-				return "", err
-			}
-			if err := m.overlayChangeset(ctx, srv, placed); err != nil {
-				return "", err
-			}
-			return m.summarizePatch(ctx, srv, changes), nil
-		}
 		out, err := m.applyChangesetPatch(ctx, srv, root, prefix, changes)
 		if !errors.Is(err, ErrPatchTooLarge) {
 			return out, err
@@ -1260,7 +1250,8 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 // workspaceState returns the recipe digests of the bound workspace's own
 // state: the workspace, and the trees its reads may return as they are, its
 // root (when in the engine) and its mounts. A digest that cannot be had is
-// left out, which only makes changesets built from it look foreign.
+// left out, which only keeps a changeset read from it from being placed at
+// the directory it was read from (see changesetWorkspacePrefix).
 func (m *MCP) workspaceState(ctx context.Context, root dagql.ObjectResult[*Directory]) map[digest.Digest]bool {
 	state := map[digest.Digest]bool{}
 	results := []interface {
@@ -1365,48 +1356,6 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 	m.workspace = newWS
 	m.markStateChanged()
 	return nil
-}
-
-// unwrapPureChangeset returns After.changes(from: Before) for a changeset
-// built only from the bound workspace's state (see workspaceState) and pure
-// Directory and File operations on it (see impureChangesetRecipe), like a file
-// edit's. Replaying that is cheap, and a patch would only cost a render, so
-// only the call that returned the changeset — the tool — is dropped from the
-// recipe. It reports false for any other changeset.
-func (m *MCP) unwrapPureChangeset(ctx context.Context, srv *dagql.Server, state map[digest.Digest]bool, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], bool) {
-	var unwrapped dagql.ObjectResult[*Changeset]
-	before, after := changes.Self().Before, changes.Self().After
-	if before.Self() == nil || after.Self() == nil {
-		return unwrapped, false
-	}
-	// Results' IDs are handles: classify their recipes.
-	beforeRecipe, err := before.RecipeID(ctx)
-	if err != nil {
-		return unwrapped, false
-	}
-	afterRecipe, err := after.RecipeID(ctx)
-	if err != nil {
-		return unwrapped, false
-	}
-	if blocker := impureChangesetRecipe(state, beforeRecipe, afterRecipe); blocker != "" {
-		slog.Debug("changeset recipe is not pure; applying it as a patch", "call", blocker)
-		return unwrapped, false
-	}
-	beforeID, err := before.ID()
-	if err != nil {
-		return unwrapped, false
-	}
-	if err := srv.Select(ctx, after, &unwrapped, dagql.Selector{
-		View:  srv.View,
-		Field: "changes",
-		Args: []dagql.NamedInput{
-			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
-		},
-	}); err != nil {
-		slog.Debug("cannot unwrap pure changeset; applying it as a patch", "error", err)
-		return unwrapped, false
-	}
-	return unwrapped, true
 }
 
 // applyChangesetPatch applies a changeset to an in-engine workspace as a patch
