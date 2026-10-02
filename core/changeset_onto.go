@@ -30,9 +30,9 @@ type PatchOnto struct {
 	// that `git apply` prunes once it deletes their last file. Parents come
 	// before their children.
 	NewDirectories []PatchOntoDirectory
-	// RemovedDirectories are the directories the changeset removes. Their
-	// files are deleted by Patch already; this removes what remains, e.g.
-	// empty subdirectories.
+	// RemovedDirectories are the directories the changeset removes that the
+	// patch leaves behind: it deletes their files, and `git apply` removes
+	// the directories that leaves empty, but not, e.g., empty subdirectories.
 	RemovedDirectories []string
 }
 
@@ -159,7 +159,8 @@ func renderPatchOntoDirs(ctx context.Context, baseDir, afterDir, prefix string, 
 		out.Patch = patch.Bytes()
 	}
 
-	out.NewDirectories, err = patchOntoNewDirectories(baseDir, afterDir, prefix, paths, baseFiles, afterFiles)
+	prunes := newPatchPrunes(baseDir, baseFiles, afterFiles, prefix)
+	out.NewDirectories, err = patchOntoNewDirectories(baseDir, afterDir, prefix, paths, afterFiles, prunes)
 	if err != nil {
 		return nil, err
 	}
@@ -174,9 +175,79 @@ func renderPatchOntoDirs(ctx context.Context, baseDir, afterDir, prefix string, 
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
 		}
-		out.RemovedDirectories = append(out.RemovedDirectories, rooted(p))
+		dir := rooted(p)
+		// Nothing to remove when base lacks it, or the patch's deletions
+		// already leave it empty, so `git apply` removes it.
+		if fi, err := lstatInRoot(baseDir, dir); errors.Is(err, fs.ErrNotExist) || (err == nil && !fi.IsDir()) {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		gone, err := prunes.gone(dir)
+		if err != nil {
+			return nil, fmt.Errorf("inspect directory %q: %w", dir, err)
+		}
+		if !gone {
+			out.RemovedDirectories = append(out.RemovedDirectories, dir)
+		}
 	}
 	return out, nil
+}
+
+// patchPrunes models which directories of base `git apply` removes: after
+// deleting a file, it removes each parent the deletion leaves empty.
+type patchPrunes struct {
+	baseDir string
+	// deleted are the files the patch deletes: base has them, After has no
+	// file there.
+	deleted map[string]bool
+	memo    map[string]bool
+}
+
+func newPatchPrunes(baseDir string, baseFiles, afterFiles []string, prefix string) *patchPrunes {
+	written := make(map[string]bool, len(afterFiles))
+	for _, p := range afterFiles {
+		written[path.Join(prefix, p)] = true
+	}
+	deleted := map[string]bool{}
+	for _, p := range baseFiles {
+		if !written[p] {
+			deleted[p] = true
+		}
+	}
+	return &patchPrunes{baseDir: baseDir, deleted: deleted, memo: map[string]bool{}}
+}
+
+// gone reports whether `git apply` removes the base directory dir: it holds
+// something, and only deleted files and directories that go too. A directory
+// that holds nothing is never removed, since no deletion leads to it.
+func (p *patchPrunes) gone(dir string) (bool, error) {
+	if v, ok := p.memo[dir]; ok {
+		return v, nil
+	}
+	entries, err := os.ReadDir(filepath.Join(p.baseDir, dir))
+	if err != nil {
+		return false, err
+	}
+	result := len(entries) > 0
+	for _, ent := range entries {
+		rel := path.Join(dir, ent.Name())
+		if ent.IsDir() {
+			sub, err := p.gone(rel)
+			if err != nil {
+				return false, err
+			}
+			if !sub {
+				result = false
+				break
+			}
+		} else if !p.deleted[rel] {
+			result = false
+			break
+		}
+	}
+	p.memo[dir] = result
+	return result, nil
 }
 
 // patchOntoNewDirectories lists the directories a patch cannot leave as the
@@ -186,7 +257,7 @@ func renderPatchOntoDirs(ctx context.Context, baseDir, afterDir, prefix string, 
 // the patch, which creates it along with them: its mode is lost, but listing
 // every such directory would make each workspace read replay one more step per
 // directory. Paths are base-relative; After is rooted at prefix.
-func patchOntoNewDirectories(baseDir, afterDir, prefix string, paths *ChangesetPaths, baseFiles, afterFiles []string) ([]PatchOntoDirectory, error) {
+func patchOntoNewDirectories(baseDir, afterDir, prefix string, paths *ChangesetPaths, afterFiles []string, prunes *patchPrunes) ([]PatchOntoDirectory, error) {
 	rooted := func(p string) string {
 		return path.Join(prefix, strings.TrimSuffix(p, "/"))
 	}
@@ -195,52 +266,8 @@ func patchOntoNewDirectories(baseDir, afterDir, prefix string, paths *ChangesetP
 		return nil, err
 	}
 
-	// The files the patch deletes: base has them, After has no file there.
-	written := make(map[string]bool, len(afterFiles))
-	for _, p := range afterFiles {
-		written[rooted(p)] = true
-	}
-	deleted := map[string]bool{}
-	for _, p := range baseFiles {
-		if !written[p] {
-			deleted[p] = true
-		}
-	}
-	// emptied reports whether deleting those files leaves nothing under dir,
-	// so `git apply` removes it.
-	emptiedMemo := map[string]bool{}
-	var emptied func(dir string) (bool, error)
-	emptied = func(dir string) (bool, error) {
-		if v, ok := emptiedMemo[dir]; ok {
-			return v, nil
-		}
-		entries, err := os.ReadDir(filepath.Join(baseDir, dir))
-		if err != nil {
-			return false, err
-		}
-		result := true
-		for _, ent := range entries {
-			rel := path.Join(dir, ent.Name())
-			if ent.IsDir() {
-				sub, err := emptied(rel)
-				if err != nil {
-					return false, err
-				}
-				if !sub {
-					result = false
-					break
-				}
-			} else if !deleted[rel] {
-				result = false
-				break
-			}
-		}
-		emptiedMemo[dir] = result
-		return result, nil
-	}
-
 	parents := map[string]struct{}{}
-	for p := range deleted {
+	for p := range prunes.deleted {
 		for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
 			parents[dir] = struct{}{}
 		}
@@ -249,7 +276,7 @@ func patchOntoNewDirectories(baseDir, afterDir, prefix string, paths *ChangesetP
 		if _, ok := dirs[dir]; ok {
 			continue
 		}
-		gone, err := emptied(dir)
+		gone, err := prunes.gone(dir)
 		if err != nil {
 			return nil, fmt.Errorf("inspect directory %q: %w", dir, err)
 		}

@@ -1197,7 +1197,7 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 //     built on one cannot be reproduced anyway: the raw changeset is applied.
 //   - Otherwise the workspace is already in the engine, and the changeset is
 //     applied as a patch rendered against it (Changeset.RenderPatchOnto) with
-//     Workspace.__withPatch. The recorded overlay is the prior workspace plus
+//     Workspace.withPatchFile. The recorded overlay is the prior workspace plus
 //     the patch: the producer is not replayed, and applying it compares no
 //     trees. The patch is also what the model is shown. This holds for a file
 //     edit's changeset too, though its own recipe would be cheap to replay:
@@ -1359,7 +1359,7 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 }
 
 // applyChangesetPatch applies a changeset to an in-engine workspace as a patch
-// rendered against the workspace's root, with Workspace.__withPatch. The
+// rendered against the workspace's root, with Workspace.withPatchFile. The
 // changeset applies at prefix, the directory it was measured from.
 //
 // The patch starts from the workspace's own content, so applying it
@@ -1390,51 +1390,76 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 		return "", nil
 	}
 
-	// No View: blob postdates some client views, and like
-	// checkpointOverlay's patch blob this is engine-internal plumbing.
-	var blob dagql.ObjectResult[*File]
-	if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
-		Field: "blob",
-		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.NewString("changeset.patch")},
-			{Name: "contents", Value: dagql.Bytes(rendered.Patch)},
-			{Name: "permissions", Value: dagql.NewInt(0o600)},
-		},
-	}); err != nil {
-		return "", fmt.Errorf("embed changeset patch: %w", err)
+	newWS := m.workspace
+	selectWS := func(sel dagql.Selector) error {
+		sel.View = srv.View
+		return srv.Select(ctx, newWS, &newWS, sel)
 	}
-	blobID, err := blob.ID()
-	if err != nil {
-		return "", err
-	}
-	args := []dagql.NamedInput{
-		{Name: "patch", Value: dagql.NewID[*File](blobID)},
-	}
-	if len(rendered.NewDirectories) > 0 {
-		dirs := make(dagql.ArrayInput[dagql.String], len(rendered.NewDirectories))
-		perms := make(dagql.ArrayInput[dagql.Int], len(rendered.NewDirectories))
-		for i, dir := range rendered.NewDirectories {
-			dirs[i] = dagql.NewString(dir.Path)
-			perms[i] = dagql.NewInt(dir.Permissions)
+	if len(rendered.Patch) > 0 {
+		// No View: blob postdates some client views, and like
+		// checkpointOverlay's patch blob this is engine-internal plumbing.
+		var blob dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
+			Field: "blob",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString("changeset.patch")},
+				{Name: "contents", Value: dagql.Bytes(rendered.Patch)},
+				{Name: "permissions", Value: dagql.NewInt(0o600)},
+			},
+		}); err != nil {
+			return "", fmt.Errorf("embed changeset patch: %w", err)
 		}
-		args = append(args,
-			dagql.NamedInput{Name: "directories", Value: dirs},
-			dagql.NamedInput{Name: "directoryPermissions", Value: perms})
-	}
-	if len(rendered.RemovedDirectories) > 0 {
-		removed := make(dagql.ArrayInput[dagql.String], len(rendered.RemovedDirectories))
-		for i, dir := range rendered.RemovedDirectories {
-			removed[i] = dagql.NewString(dir)
+		blobID, err := blob.ID()
+		if err != nil {
+			return "", err
 		}
-		args = append(args, dagql.NamedInput{Name: "removedDirectories", Value: removed})
+		if err := selectWS(dagql.Selector{
+			Field: "withPatchFile",
+			Args:  []dagql.NamedInput{{Name: "patch", Value: dagql.NewID[*File](blobID)}},
+		}); err != nil {
+			return "", err
+		}
 	}
-	var newWS dagql.ObjectResult[*Workspace]
-	if err := srv.Select(ctx, m.workspace, &newWS, dagql.Selector{
-		View:  srv.View,
-		Field: "__withPatch",
-		Args:  args,
-	}); err != nil {
-		return "", err
+	// What a patch cannot express. Paths are absolute: the workspace
+	// resolves relative ones from its cwd.
+	for _, dir := range rendered.RemovedDirectories {
+		if err := selectWS(dagql.Selector{
+			Field: "withoutDirectory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/" + dir)}},
+		}); err != nil {
+			return "", err
+		}
+	}
+	for _, dir := range rendered.NewDirectories {
+		// Merged in rather than replaced (withNewDirectory), which would drop
+		// what the workspace holds there and Before did not, e.g. ignored
+		// files. A directory created by the merge takes the source's mode.
+		var empty dagql.ObjectResult[*Directory]
+		if err := srv.Select(ctx, srv.Root(), &empty,
+			dagql.Selector{View: srv.View, Field: "directory"},
+			dagql.Selector{View: srv.View, Field: "withNewDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("dir")},
+				{Name: "permissions", Value: dagql.NewInt(dir.Permissions)},
+			}},
+			dagql.Selector{View: srv.View, Field: "directory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("dir")},
+			}},
+		); err != nil {
+			return "", fmt.Errorf("directory %q: %w", dir.Path, err)
+		}
+		emptyID, err := empty.ID()
+		if err != nil {
+			return "", err
+		}
+		if err := selectWS(dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("/" + dir.Path)},
+				{Name: "source", Value: dagql.NewID[*Directory](emptyID)},
+			},
+		}); err != nil {
+			return "", err
+		}
 	}
 	m.workspace = newWS
 	m.markStateChanged()

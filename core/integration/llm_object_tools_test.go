@@ -407,7 +407,7 @@ type Editor {
 	require.NoError(t, gid.Decode(string(id)))
 	fields := map[string]bool{}
 	collectIDFieldNames(gid, fields)
-	require.True(t, fields["__withPatch"], "the overlay must be the workspace plus a patch")
+	require.True(t, fields["withPatchFile"], "the overlay must be the workspace plus a patch")
 	require.False(t, fields["moveTree"], "the recorded overlay must not retain the tool call")
 
 	entries, err := result.Workspace().Directory("new").Entries(ctx)
@@ -495,7 +495,7 @@ type Runner {
 			require.False(t, fields["withExec"], "neither After nor Before may retain a command")
 			if tc.edit == "true" {
 				require.False(t, fields["withChanges"], "no-op commands must not advance workspace state")
-				require.False(t, fields["__withPatch"], "no-op commands must not advance workspace state")
+				require.False(t, fields["withPatchFile"], "no-op commands must not advance workspace state")
 			}
 
 			// End the producing session before rebuilding the committed LLM. The
@@ -651,7 +651,7 @@ func (LLMSuite) TestChangesetToolPatchesWorkspace(ctx context.Context, t *testct
 			recipe, fields := recipeFields(ctx, t, c, sink, result)
 			require.False(t, fields["generate"], "the tool call must not remain a recipe dependency")
 			require.False(t, fields["withExec"], "the overlay must not retain Before's command")
-			require.True(t, fields["__withPatch"], "the overlay must be the workspace plus a patch")
+			require.True(t, fields["withPatchFile"], "the overlay must be the workspace plus a patch")
 
 			// Rebuild the committed LLM in a fresh session. The cache-mounted
 			// sentinel fails the command if it replays.
@@ -739,7 +739,7 @@ func (LLMSuite) TestChangesetToolPatchesDirectories(ctx context.Context, t *test
 
 	recipe, fields := recipeFields(ctx, t, c, sink, result)
 	require.False(t, fields["withExec"])
-	require.True(t, fields["__withPatch"])
+	require.True(t, fields["withPatchFile"])
 
 	require.NoError(t, c.Close())
 	target := connect(ctx, t)
@@ -814,7 +814,7 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 		fields := map[string]bool{}
 		collectIDFieldNames(gid, fields)
 		require.False(t, fields["addScaffold"], "the recorded overlay must not retain the tool call")
-		require.True(t, fields["__withPatch"], "the recorded overlay must be the workspace plus a patch")
+		require.True(t, fields["withPatchFile"], "the recorded overlay must be the workspace plus a patch")
 	})
 }
 
@@ -890,7 +890,7 @@ func (LLMSuite) TestChangesetToolPatchesPureEdits(ctx context.Context, t *testct
 	require.False(t, fields["edit"], "the tool call must not remain a recipe dependency")
 	require.False(t, fields["mv"], "the tool call must not remain a recipe dependency")
 	require.False(t, fields["withReplaced"], "the edit's own operations must not be recorded")
-	require.True(t, fields["__withPatch"], "the overlay must be the workspace plus a patch")
+	require.True(t, fields["withPatchFile"], "the overlay must be the workspace plus a patch")
 
 	require.NoError(t, c.Close())
 	traces, _ := sink.capture()
@@ -999,7 +999,7 @@ func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T)
 
 			recipe, fields := recipeFields(ctx, t, c, sink, result)
 			require.False(t, fields[tc.tool])
-			require.True(t, fields["__withPatch"])
+			require.True(t, fields["withPatchFile"])
 			require.NoError(t, c.Close())
 			check(ctx, t, dagger.Ref[*dagger.LLM](connect(ctx, t), recipe).Workspace())
 		})
