@@ -152,6 +152,24 @@ const collectionDeltaExpected = `{"items":{
   }}
 }}`
 
+// The item type of this fixture is reachable only through get, so nothing the
+// author wrote mentions a list of it — only the projected list field does. The
+// CLI resolves every return type in the command tree up front, so leaving that
+// element type out of the closure broke every `dagger call` into the
+// collection, not only the one selecting list.
+func (CollectionsSuite) TestCallProjectedList(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c)).WithWorkdir("/work")
+
+	out, err := base.With(daggerCallAt("./collections", "items", "keys")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "b\na\nc\n", out)
+
+	out, err = base.With(daggerCallAt("./collections", "items", "list")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 3, strings.Count(out, "CollectionsItem@"))
+}
+
 func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c)).WithWorkdir("/work")
