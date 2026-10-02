@@ -259,7 +259,7 @@ func parseCredentialExpiry(value string) time.Time {
 // base outlives that call's cancellation, but still carries the call's released
 // client lease. Use base only for session identity and cancellation. Each
 // resolution borrows a fresh scope from the active request or agent turn;
-// LoadClientConfig separately pins the client supplying the credential.
+// the route separately pins the client supplying the credential.
 func (resolve credentialResolver) detach(base context.Context) credentialResolver {
 	if resolve == nil {
 		return nil
