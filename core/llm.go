@@ -10,9 +10,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,17 +19,14 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
-	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -177,6 +172,12 @@ type LLMEndpoint struct {
 	// tunnel (forwarding through the client's session) while BaseURL keeps
 	// the original host for TLS verification/SNI and the Host header.
 	dial func(ctx context.Context, network, addr string) (net.Conn, error)
+
+	// Provider-specific client construction options, carried from the
+	// provider's configuration to newClient.
+	azureVersion     string
+	disableStreaming bool
+	apiCompat        string
 }
 
 type LLMProvider string
@@ -1033,95 +1034,6 @@ const (
 	Other       LLMProvider = "other"
 )
 
-// A LLM routing configuration
-type LLMRouter struct {
-	AnthropicAPIKey            string
-	AnthropicAuthToken         string
-	AnthropicIsOAuth           bool
-	AnthropicBaseURL           string
-	AnthropicModel             string
-	AnthropicSmallModel        string
-	AnthropicReasoningEffort   string
-	AnthropicClaudeCodeVersion string
-
-	OpenAIAPIKey           string
-	OpenAIAzureVersion     string
-	OpenAIBaseURL          string
-	OpenAIModel            string
-	OpenAISmallModel       string
-	OpenAIDisableStreaming bool
-
-	// OpenAI Codex uses the Responses API against the ChatGPT backend with a
-	// ChatGPT subscription OAuth token.
-	OpenAICodexAuthToken       string
-	OpenAICodexModel           string
-	OpenAICodexSmallModel      string
-	OpenAICodexReasoningEffort string
-
-	GeminiAPIKey          string
-	GeminiBaseURL         string
-	GeminiModel           string
-	GeminiSmallModel      string
-	GeminiReasoningEffort string
-
-	// Local is a self-hosted, OpenAI- or Anthropic-compatible endpoint (e.g.
-	// Ollama, LM Studio, vLLM) reachable from the client's host. Its traffic is
-	// tunneled to the engine through the client's session, since the engine may
-	// not be able to reach the endpoint directly. APICompat selects the wire
-	// protocol ("openai" or "anthropic"); APIKey is optional.
-	LocalBaseURL    string
-	LocalModel      string
-	LocalSmallModel string
-	LocalAPICompat  string
-	LocalAPIKey     string
-
-	// localClient is the client whose configuration supplied LocalBaseURL.
-	// A local endpoint is reachable from that client's host, so the tunnel
-	// (see LLM.Endpoint) must run through that client's session. Set by
-	// loadLLMRouter; nil when the router was built for a single client.
-	localClient *engine.ClientMetadata
-
-	// reloadAnthropicAuthToken / reloadCodexAuthToken re-run the lookup that
-	// supplied each subscription OAuth token, against the client that
-	// supplied it. They are what makes a token a live credential rather than
-	// a snapshot: the client's secret provider re-reads (and, for the CLI,
-	// refreshes) the token on every resolution, so asking again at request
-	// time yields the current one. Nil when no token was configured.
-	reloadAnthropicAuthToken credentialResolver
-	reloadCodexAuthToken     credentialResolver
-}
-
-func (r *LLMRouter) isAnthropicModel(model string) bool {
-	return strings.HasPrefix(model, "claude-") || strings.HasPrefix(model, "anthropic/")
-}
-
-func (r *LLMRouter) isOpenAIModel(model string) bool {
-	return strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "openai/")
-}
-
-func (r *LLMRouter) isCodexModel(model string) bool {
-	return strings.Contains(model, "codex") || strings.HasPrefix(model, "openai-codex/")
-}
-
-func (r *LLMRouter) isGoogleModel(model string) bool {
-	return strings.HasPrefix(model, "gemini-") || strings.HasPrefix(model, "google/")
-}
-
-func (r *LLMRouter) isMistralModel(model string) bool {
-	return strings.HasPrefix(model, "mistral-") || strings.HasPrefix(model, "mistral/")
-}
-
-// isLocalModel reports whether model is served by the configured local
-// endpoint. Unlike the other providers, local models have no naming convention
-// to key on, so we match the configured model name exactly.
-func (r *LLMRouter) isLocalModel(model string) bool {
-	return r.LocalBaseURL != "" && r.LocalAPICompat != "" && r.LocalModel == model
-}
-
-func (r *LLMRouter) isRecording(model string) bool {
-	return strings.HasPrefix(model, "recording-") || strings.HasPrefix(model, "recording/")
-}
-
 func (r *LLMRouter) getRecording(model string) ([]*LLMMessage, error) {
 	model, ok := strings.CutPrefix(model, "recording-")
 	if !ok {
@@ -1136,530 +1048,6 @@ func (r *LLMRouter) getRecording(model string) ([]*LLMMessage, error) {
 		return nil, err
 	}
 	return decodeRecordedMessages(result)
-}
-
-func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
-	endpoint := &LLMEndpoint{
-		BaseURL:           r.AnthropicBaseURL,
-		Key:               r.AnthropicAPIKey,
-		Provider:          Anthropic,
-		AuthToken:         r.AnthropicAuthToken,
-		IsOAuth:           r.AnthropicIsOAuth,
-		AuthTokenSource:   newCredentialSource(r.reloadAnthropicAuthToken),
-		ReasoningEffort:   r.AnthropicReasoningEffort,
-		ClaudeCodeVersion: r.AnthropicClaudeCodeVersion,
-	}
-	endpoint.Client = newAnthropicClient(endpoint)
-
-	return endpoint
-}
-
-func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
-	endpoint := &LLMEndpoint{
-		BaseURL:  r.OpenAIBaseURL,
-		Key:      r.OpenAIAPIKey,
-		Provider: OpenAI,
-	}
-	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion, r.OpenAIDisableStreaming)
-
-	return endpoint
-}
-
-func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
-	endpoint := &LLMEndpoint{
-		// The Codex client appends "/codex" to reach the Responses API.
-		BaseURL:         "https://chatgpt.com/backend-api",
-		Provider:        OpenAICodex,
-		AuthToken:       r.OpenAICodexAuthToken,
-		IsOAuth:         true,
-		AuthTokenSource: newCredentialSource(r.reloadCodexAuthToken),
-		ReasoningEffort: r.OpenAICodexReasoningEffort,
-	}
-	endpoint.Client = newOpenAICodexClient(endpoint)
-
-	return endpoint
-}
-
-func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
-	endpoint := &LLMEndpoint{
-		BaseURL:         r.GeminiBaseURL,
-		Key:             r.GeminiAPIKey,
-		Provider:        Google,
-		ReasoningEffort: r.GeminiReasoningEffort,
-	}
-	client, err := newGenaiClient(endpoint)
-	if err != nil {
-		return nil, err
-	}
-	endpoint.Client = client
-
-	return endpoint, nil
-}
-
-func (r *LLMRouter) routeLocalModel() (*LLMEndpoint, error) {
-	endpoint := &LLMEndpoint{
-		BaseURL:  r.LocalBaseURL,
-		Key:      r.LocalAPIKey,
-		Provider: Local,
-	}
-	switch r.LocalAPICompat {
-	case "openai":
-		endpoint.Client = newOpenAIClient(endpoint, "", false)
-	case "anthropic":
-		endpoint.Client = newAnthropicClient(endpoint)
-	default:
-		return nil, fmt.Errorf("unsupported local API compatibility mode: %q (must be %q or %q)", r.LocalAPICompat, "openai", "anthropic")
-	}
-	return endpoint, nil
-}
-
-func (r *LLMRouter) routeOtherModel() *LLMEndpoint {
-	// default to openAI compat from other providers
-	endpoint := &LLMEndpoint{
-		BaseURL:  r.OpenAIBaseURL,
-		Key:      r.OpenAIAPIKey,
-		Provider: Other,
-	}
-	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion, r.OpenAIDisableStreaming)
-
-	return endpoint
-}
-
-func (r *LLMRouter) routeRecordingModel(model string) (*LLMEndpoint, error) {
-	recording, err := r.getRecording(model)
-	if err != nil {
-		return nil, err
-	}
-	endpoint := &LLMEndpoint{}
-	endpoint.Client = newRecordedResponseProvider(recording)
-	return endpoint, nil
-}
-
-// Return a default model, if configured
-func (r *LLMRouter) DefaultModel() string {
-	if r.OpenAIModel != "" {
-		return r.OpenAIModel
-	}
-	if r.OpenAICodexModel != "" {
-		// The codex slot is unambiguous, so pin it to Codex even if the
-		// configured model (e.g. gpt-5.5) shares OpenAI's naming.
-		return normalizeCodexModel(r.OpenAICodexModel)
-	}
-	if r.AnthropicModel != "" {
-		return r.AnthropicModel
-	}
-	if r.GeminiModel != "" {
-		return r.GeminiModel
-	}
-	if r.LocalModel != "" {
-		return r.LocalModel
-	}
-	if r.OpenAIAPIKey != "" {
-		return modelDefaultOpenAI
-	}
-	if r.OpenAICodexAuthToken != "" {
-		return normalizeCodexModel(modelDefaultCodex)
-	}
-	if r.AnthropicAPIKey != "" || r.AnthropicAuthToken != "" {
-		return modelDefaultAnthropic
-	}
-	if r.OpenAIBaseURL != "" {
-		return modelDefaultMeta
-	}
-	if r.GeminiAPIKey != "" {
-		return modelDefaultGoogle
-	}
-	return ""
-}
-
-// SmallModel returns the user-configured small model for provider, falling
-// back to Catwalk's recommendation. Unknown and local providers without an
-// explicit small model return no route, allowing the caller to retain the
-// concrete model it is already using.
-func (r *LLMRouter) SmallModel(provider LLMProvider) (string, bool) {
-	var configured string
-	switch provider {
-	case Anthropic:
-		configured = r.AnthropicSmallModel
-	case OpenAI:
-		configured = r.OpenAISmallModel
-	case OpenAICodex:
-		configured = r.OpenAICodexSmallModel
-	case Google:
-		configured = r.GeminiSmallModel
-	case Local:
-		configured = r.LocalSmallModel
-	}
-	if configured != "" {
-		return configured, true
-	}
-	return defaultSmallModel(provider)
-}
-
-// routeProvider dispatches directly to the named provider, bypassing
-// model-name pattern matching.
-func (r *LLMRouter) routeProvider(provider LLMProvider) (*LLMEndpoint, error) {
-	switch provider {
-	case Anthropic:
-		return r.routeAnthropicModel(), nil
-	case OpenAI:
-		return r.routeOpenAIModel(), nil
-	case OpenAICodex:
-		return r.routeCodexModel(), nil
-	case Google:
-		return r.routeGoogleModel()
-	case Local:
-		return r.routeLocalModel()
-	case Other:
-		return r.routeOtherModel(), nil
-	default:
-		return nil, fmt.Errorf("unknown LLM provider %q (expected one of %q, %q, %q, %q, %q, %q)",
-			provider, Anthropic, Google, Local, OpenAI, OpenAICodex, Other)
-	}
-}
-
-// Route returns an endpoint for the requested model. If the model name is not
-// set, a default will be selected. If provider is set, it selects the
-// provider explicitly; otherwise the provider is inferred from the model
-// name.
-func (r *LLMRouter) Route(model, provider string) (*LLMEndpoint, error) {
-	if model == "" {
-		model = r.DefaultModel()
-	} else {
-		model = resolveModelAlias(model)
-	}
-	var endpoint *LLMEndpoint
-	var err error
-	switch {
-	case provider != "":
-		endpoint, err = r.routeProvider(LLMProvider(provider))
-		if err != nil {
-			return nil, err
-		}
-	// NB: must precede the prefix-based matchers — a local model may be named to
-	// look like any provider's (e.g. "gpt-oss"), so an exact configured-model
-	// match wins.
-	case r.isLocalModel(model):
-		endpoint, err = r.routeLocalModel()
-		if err != nil {
-			return nil, err
-		}
-	case r.isAnthropicModel(model):
-		endpoint = r.routeAnthropicModel()
-	// NB: must precede isOpenAIModel — a "codex"-named model (e.g. gpt-5.3-codex)
-	// also matches the gpt- prefix; the codexModelPrefix form does not, but is
-	// caught here too.
-	case r.isCodexModel(model):
-		endpoint = r.routeCodexModel()
-	case r.isOpenAIModel(model):
-		endpoint = r.routeOpenAIModel()
-	case r.isGoogleModel(model):
-		endpoint, err = r.routeGoogleModel()
-		if err != nil {
-			return nil, err
-		}
-	case r.isMistralModel(model):
-		return nil, fmt.Errorf("mistral models are not yet supported")
-	case r.isRecording(model):
-		endpoint, err = r.routeRecordingModel(model)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		endpoint = r.routeOtherModel()
-	}
-	// Strip the Codex routing prefix (if any) so the model displays and is sent
-	// to the provider under its bare name; non-Codex models are unaffected.
-	endpoint.Model = strings.TrimPrefix(model, codexModelPrefix)
-	if m, ok := lookupCatalogModel(endpoint.Provider, endpoint.Model); ok {
-		endpoint.DefaultMaxTokens = m.DefaultMaxTokens
-		endpoint.ContextWindow = m.ContextWindow
-	}
-	return endpoint, nil
-}
-
-func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) (suppliedLocal bool, _ error) {
-	return r.loadConfig(ctx, getenv, getenv)
-}
-
-func (r *LLMRouter) loadConfig(ctx context.Context, getenv, reloadEnv func(context.Context, string) (string, error)) (suppliedLocal bool, _ error) {
-	if getenv == nil {
-		getenv = func(_ context.Context, key string) (string, error) { //nolint:unparam // The injected getenv callback requires an error return.
-			return os.Getenv(key), nil
-		}
-	}
-	if reloadEnv == nil {
-		reloadEnv = getenv
-	}
-
-	save := func(key string, dest *string) error {
-		value, err := getenv(ctx, key)
-		if err != nil {
-			return fmt.Errorf("get %q: %w", key, err)
-		}
-		if value != "" {
-			*dest = value
-		}
-		return nil
-	}
-
-	var eg errgroup.Group
-	var anthropicKeySet, anthropicTokenSet bool
-	eg.Go(func() error {
-		var v string
-		if err := save("ANTHROPIC_API_KEY", &v); err != nil {
-			return err
-		}
-		if v != "" {
-			r.AnthropicAPIKey = v
-			anthropicKeySet = true
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		return save("ANTHROPIC_BASE_URL", &r.AnthropicBaseURL)
-	})
-	eg.Go(func() error {
-		return save("ANTHROPIC_MODEL", &r.AnthropicModel)
-	})
-	eg.Go(func() error {
-		return save("ANTHROPIC_SMALL_MODEL", &r.AnthropicSmallModel)
-	})
-	eg.Go(func() error {
-		// OAuth (Claude Code subscription) bearer token, exported client-side
-		// from the persisted llmconfig by `dagger llm`.
-		var v string
-		if err := save("ANTHROPIC_AUTH_TOKEN", &v); err != nil {
-			return err
-		}
-		if v != "" {
-			r.AnthropicAuthToken = v
-			r.reloadAnthropicAuthToken = credentialReloader(reloadEnv, "ANTHROPIC_AUTH_TOKEN")
-			anthropicTokenSet = true
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		return save("ANTHROPIC_REASONING_EFFORT", &r.AnthropicReasoningEffort)
-	})
-	eg.Go(func() error {
-		// Claude Code release to present when authenticating with a
-		// subscription OAuth token; unblocks newly gated models between
-		// Dagger releases. See defaultClaudeCodeVersion.
-		return save("ANTHROPIC_CLAUDE_CODE_VERSION", &r.AnthropicClaudeCodeVersion)
-	})
-
-	eg.Go(func() error {
-		return save("OPENAI_API_KEY", &r.OpenAIAPIKey)
-	})
-	eg.Go(func() error {
-		return save("OPENAI_AZURE_VERSION", &r.OpenAIAzureVersion)
-	})
-	eg.Go(func() error {
-		return save("OPENAI_BASE_URL", &r.OpenAIBaseURL)
-	})
-	eg.Go(func() error {
-		return save("OPENAI_MODEL", &r.OpenAIModel)
-	})
-	eg.Go(func() error {
-		return save("OPENAI_SMALL_MODEL", &r.OpenAISmallModel)
-	})
-
-	eg.Go(func() error {
-		// OAuth (ChatGPT subscription) bearer token for the Codex Responses API,
-		// exported client-side from the persisted llmconfig by `dagger llm`.
-		var v string
-		if err := save("OPENAI_CODEX_AUTH_TOKEN", &v); err != nil {
-			return err
-		}
-		if v != "" {
-			r.OpenAICodexAuthToken = v
-			r.reloadCodexAuthToken = credentialReloader(reloadEnv, "OPENAI_CODEX_AUTH_TOKEN")
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		return save("OPENAI_CODEX_MODEL", &r.OpenAICodexModel)
-	})
-	eg.Go(func() error {
-		return save("OPENAI_CODEX_SMALL_MODEL", &r.OpenAICodexSmallModel)
-	})
-	eg.Go(func() error {
-		return save("OPENAI_CODEX_REASONING_EFFORT", &r.OpenAICodexReasoningEffort)
-	})
-
-	eg.Go(func() error {
-		return save("GEMINI_API_KEY", &r.GeminiAPIKey)
-	})
-	eg.Go(func() error {
-		return save("GEMINI_BASE_URL", &r.GeminiBaseURL)
-	})
-	eg.Go(func() error {
-		return save("GEMINI_MODEL", &r.GeminiModel)
-	})
-	eg.Go(func() error {
-		return save("GEMINI_SMALL_MODEL", &r.GeminiSmallModel)
-	})
-	eg.Go(func() error {
-		return save("GEMINI_REASONING_EFFORT", &r.GeminiReasoningEffort)
-	})
-
-	eg.Go(func() error {
-		var v string
-		if err := save("LOCAL_BASE_URL", &v); err != nil {
-			return err
-		}
-		if v != "" {
-			r.LocalBaseURL = v
-			suppliedLocal = true
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		return save("LOCAL_MODEL", &r.LocalModel)
-	})
-	eg.Go(func() error {
-		return save("LOCAL_SMALL_MODEL", &r.LocalSmallModel)
-	})
-	eg.Go(func() error {
-		return save("LOCAL_API_COMPAT", &r.LocalAPICompat)
-	})
-	eg.Go(func() error {
-		return save("LOCAL_API_KEY", &r.LocalAPIKey)
-	})
-
-	var openAIDisableStreaming string
-	eg.Go(func() error {
-		var err error
-		openAIDisableStreaming, err = getenv(ctx, "OPENAI_DISABLE_STREAMING")
-		return err
-	})
-
-	if err := eg.Wait(); err != nil {
-		return false, err
-	}
-
-	if openAIDisableStreaming != "" {
-		v, err := strconv.ParseBool(openAIDisableStreaming)
-		if err != nil {
-			return false, err
-		}
-		r.OpenAIDisableStreaming = v
-	}
-
-	// The version is embedded verbatim in the Claude Code user-agent, so a
-	// malformed value would present a client that never existed. Fail loudly
-	// rather than silently falling back to the default the user was trying
-	// to replace.
-	if v := r.AnthropicClaudeCodeVersion; v != "" && !claudeCodeVersionPattern.MatchString(v) {
-		return false, fmt.Errorf("ANTHROPIC_CLAUDE_CODE_VERSION must be a bare X.Y.Z version, got %q", v)
-	}
-
-	// API key and subscription OAuth token are alternative credentials for
-	// the same provider. When this load supplies one but not the other, the
-	// supplied credential wins outright: clear the other so a value layered
-	// in by an earlier load (e.g. the host's OAuth login when a nested
-	// client sets an explicit API key) can't shadow it at request time —
-	// the Anthropic client prefers OAuth whenever a token is present.
-	if anthropicKeySet && !anthropicTokenSet {
-		r.AnthropicAuthToken = ""
-		r.reloadAnthropicAuthToken = nil
-	}
-	if anthropicTokenSet && !anthropicKeySet {
-		r.AnthropicAPIKey = ""
-	}
-
-	// A bearer token implies OAuth (Claude Code) auth for Anthropic.
-	r.AnthropicIsOAuth = r.AnthropicAuthToken != ""
-
-	return suppliedLocal, nil
-}
-
-// LoadClientConfig loads LLM configuration from one client's environment into
-// the router: the client's ./.env file (if any) first, then its environment
-// variables. Only values the client actually provides overwrite fields already
-// set on the router, so configuration can be layered — e.g. the session's main
-// client as the base with the calling client's own values on top.
-func (r *LLMRouter) LoadClientConfig(ctx context.Context, srv *dagql.Server) (suppliedLocal bool, _ error) {
-	// Pin the client whose configuration this load reads. The getenv closure
-	// below outlives this call — a credential reloader keeps it to re-resolve
-	// a rotated OAuth token at request time — and by then the ambient context
-	// belongs to whichever client is making the LLM call, which may be a
-	// different (e.g. nested) client that cannot see this one's environment.
-	loadClient, clientErr := engine.ClientMetadataFromContext(ctx)
-	bindClient := func(ctx context.Context) context.Context {
-		if clientErr != nil {
-			return ctx
-		}
-		return engine.ContextWithClientMetadata(ctx, loadClient)
-	}
-
-	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
-	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
-		if _, _, err := secretprovider.ResolverForID(uriOrPlaintext); err == nil {
-			var result string
-			// If it's a valid secret reference:
-			if err := srv.Select(ctx, srv.Root(), &result,
-				dagql.Selector{
-					Field: "secret",
-					Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString(uriOrPlaintext)}},
-				},
-				dagql.Selector{
-					Field: "plaintext",
-				},
-			); err != nil {
-				return "", err
-			}
-			return result, nil
-		}
-		// If it's a regular plaintext:
-		return uriOrPlaintext, nil
-	}
-	env := make(map[string]string)
-	// Load .env from current directory, if it exists
-	if envFile, err := loadSecret(ctx, "file://.env"); err == nil {
-		if e, err := godotenv.Unmarshal(envFile); err == nil {
-			env = e
-		}
-	}
-	getenv := func(ctx context.Context, k string, optional bool) (string, error) {
-		ctx = bindClient(ctx)
-		// First lookup in the .env file
-		if v, ok := env[k]; ok {
-			return loadSecret(ctx, v)
-		}
-		// Second: lookup in client env directly
-		v, err := loadSecret(ctx, "env://"+k)
-		if err != nil {
-			if optional {
-				return "", nil
-			}
-			return "", err
-		}
-		// Allow the env var itself to be a secret reference
-		return loadSecret(ctx, v)
-	}
-	return r.loadConfig(ctx,
-		func(ctx context.Context, k string) (string, error) {
-			// Discovery probes many unset variables, including from nested
-			// clients that inherit all their credentials from the main client.
-			return getenv(ctx, k, true)
-		},
-		func(ctx context.Context, k string) (string, error) {
-			// A live source was already configured. Its lookup failing is not
-			// an absent configuration: preserve the error rather than silently
-			// falling back to the SDK's routing-time credential.
-			return getenv(ctx, k, false)
-		},
-	)
-}
-
-func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
-	router := new(LLMRouter)
-	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
-	_, err := router.LoadClientConfig(ctx, srv)
-	return router, err
 }
 
 func (q *Query) NewLLM(ctx context.Context, model, provider string) (*LLM, error) {
@@ -1679,82 +1067,6 @@ func (q *Query) NewLLM(ctx context.Context, model, provider string) (*LLM, error
 	}, nil
 }
 
-// loadLLMRouter creates an LLM router for the calling client. LLM
-// configuration is a session-wide concern: the router is seeded from the
-// session's main client (the CLI on the host), then overlaid with the calling
-// (non-module) client's own configuration, which wins wherever it sets a
-// value.
-//
-// The seeding is what lets a nested client — e.g. an
-// experimentalPrivilegedNesting exec running `dagger agent` — inherit the
-// session's LLM auth without ever holding the credentials: the env:// and
-// file://.env lookups resolve through the *main* client's session, and only
-// the engine-side router sees the plaintext. Nothing is injected into the
-// nested container, so its processes cannot read the keys (its own env:// or
-// file:// secrets still resolve inside the container); they can only use the
-// LLM through the API.
-func loadLLMRouter(ctx context.Context, query *Query) (_ *LLMRouter, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	parentClient, err := query.NonModuleParentClientMetadata(ctx)
-	if err != nil {
-		return nil, err
-	}
-	router := new(LLMRouter)
-	loadFrom := func(client *engine.ClientMetadata) error {
-		clientCtx := engine.ContextWithClientMetadata(ctx, client)
-		srv, err := query.Server.Server(clientCtx)
-		if err != nil {
-			return err
-		}
-		suppliedLocal, err := router.LoadClientConfig(clientCtx, srv)
-		if err != nil {
-			return err
-		}
-		// Remember which client supplied the local endpoint: a local base URL
-		// is reachable from that client's host, so the tunnel (see
-		// LLM.Endpoint) must run through that client's session. Later loads
-		// win regardless of whether the URL string differs — localhost names
-		// a different host per client.
-		if suppliedLocal {
-			router.localClient = client
-		}
-		return nil
-	}
-	mainClient, err := query.MainClientCallerMetadata(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if mainClient.ClientID != parentClient.ClientID {
-		if err := loadFrom(mainClient); err != nil {
-			return nil, err
-		}
-	}
-	if err := loadFrom(parentClient); err != nil {
-		return nil, err
-	}
-
-	// Re-resolution of a credential must outlive this call. The endpoint this
-	// router routes is memoized for the whole conversation and re-asked on
-	// every provider request — including by an agent loop still stepping long
-	// after the request that first routed it completed — so binding resolution
-	// to this call's context would make the credential die with it. Scope it
-	// to the session instead. This context supplies cancellation only: detach
-	// borrows execution authority from each active request, since this call's
-	// client lease will already be released. The parent client identifies the
-	// session rather than the possibly-module ambient client.
-	sessionCtx, err := query.Server.SessionScopedContext(
-		engine.ContextWithClientMetadata(ctx, parentClient))
-	if err != nil {
-		return nil, fmt.Errorf("LLM credentials: session context: %w", err)
-	}
-	router.reloadAnthropicAuthToken = router.reloadAnthropicAuthToken.detach(sessionCtx)
-	router.reloadCodexAuthToken = router.reloadCodexAuthToken.detach(sessionCtx)
-
-	return router, nil
-}
-
 // DefaultLLMRoute resolves the configured default model and the provider it
 // routes to, so llm() can re-call itself with both pinned (the way
 // Container.from re-calls itself with the digested ref). provider, when
@@ -1765,9 +1077,12 @@ func (q *Query) DefaultLLMRoute(ctx context.Context, provider string) (string, s
 	if err != nil {
 		return "", "", err
 	}
-	model := router.DefaultModel()
+	model, defaultProvider := router.DefaultRoute()
 	if model == "" {
 		return "", "", nil
+	}
+	if provider == "" {
+		provider = string(defaultProvider)
 	}
 	if provider == "" {
 		endpoint, err := router.Route(model, "")
@@ -1941,7 +1256,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	endpoint, err := router.Route(llm.model, llm.provider)
+	endpoint, err := router.Endpoint(ctx, llm.model, llm.provider)
 	if err != nil {
 		return nil, err
 	}
@@ -1951,7 +1266,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 
 	// A local endpoint is reachable from the client's host, not necessarily the
 	// engine (which may run in a container or on another host). Tunnel its
-	// traffic through the client's session, then rebuild the client so it
+	// traffic through the client's session before building the client, so it
 	// dials through the tunnel.
 	if endpoint.Provider == Local {
 		// Tunnel through the session of the client that configured the local
@@ -1975,12 +1290,6 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 		if err := setupLocalTunnel(tunnelCtx, endpoint); err != nil {
 			return nil, fmt.Errorf("setup local LLM tunnel: %w", err)
 		}
-		switch router.LocalAPICompat {
-		case "openai":
-			endpoint.Client = newOpenAIClient(endpoint, "", false)
-		case "anthropic":
-			endpoint.Client = newAnthropicClient(endpoint)
-		}
 	}
 
 	// Apply the conversation-level reasoning effort override, if any. Route()
@@ -1989,6 +1298,13 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	// but it must override a non-empty provider-configured effort.
 	if llm.reasoningEffort != "" {
 		endpoint.ReasoningEffort = llm.reasoningEffort
+	}
+
+	if endpoint.Client == nil {
+		endpoint.Client, err = endpoint.newClient()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	llm.endpoint = endpoint
