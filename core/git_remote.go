@@ -113,6 +113,36 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	return remoteFromCacheResult(cacheRes.Value())
 }
 
+// PrimePublicRemote reuses the anonymous visibility probe's advertisement in
+// the existing session-owned metadata cache. It never changes a repository
+// object shared by several sessions, and never seeds a credentialed or
+// service-bound lookup. Existing metadata (including an in-flight load) wins.
+func (repo *RemoteGitRepository) PrimePublicRemote(ctx context.Context, remote *gitutil.Remote) error {
+	if remote == nil || repo.URL == nil || repo.URL.User != nil ||
+		(repo.URL.Scheme != "http" && repo.URL.Scheme != "https") ||
+		repo.AuthUsername != "" || repo.AuthToken.Self() != nil ||
+		repo.AuthHeader.Self() != nil || repo.SSHAuthSocket.Self() != nil || len(repo.Services) != 0 {
+		return nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil //nolint:nilerr // Priming is optional when the context has no engine cache.
+	}
+	cacheKey, err := repo.remoteCacheKey(ctx)
+	if err != nil {
+		return err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(context.Context) (any, error) {
+		payload, err := json.Marshal(remote)
+		return string(payload), err
+	})
+	return err
+}
+
 func remoteFromCacheResult(cacheRes any) (*gitutil.Remote, error) {
 	payload, ok := cacheRes.(string)
 	if !ok {
