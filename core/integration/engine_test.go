@@ -761,6 +761,15 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 
 	clientCtr := engineClientContainer(ctx, t, c, devEngine)
 
+	// Seed the disk cache explicitly before checking its gauges.
+	out, err := clientCtr.WithExec([]string{
+		"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN",
+		"dagger", "-m", "core", "api", "query",
+	}, dagger.ContainerWithExecOpts{
+		Stdin: `{directory{withNewFile(path: "metrics-fixture", contents: "cached"){sync}}}`,
+	}).Stdout(ctx)
+	require.NoError(t, err, out)
+
 	var eg errgroup.Group
 	clientCtx, clientCancel := context.WithCancel(ctx)
 	t.Cleanup(clientCancel)
