@@ -730,6 +730,9 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	if err := bkcache.ReleaseTransferLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
 		return localCacheStateResetNone, fmt.Errorf("release previous snapshot transfers: %w", err)
 	}
+	if err := bkcache.ReleaseOperationLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("release previous operation leases: %w", err)
+	}
 
 	return localCacheStateResetNone, nil
 }
