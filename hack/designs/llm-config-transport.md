@@ -10,7 +10,7 @@ bottom.
 LLM configuration reached the engine through two systems glued together by
 an env-var flattening step:
 
-```
+```text
 ~/.config/dagger/config.toml [llm]      $ANTHROPIC_API_KEY, ...     ./.env
         │ llmconfig.Load()                     │                       │
         ▼                                      │                       │
