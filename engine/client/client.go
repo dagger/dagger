@@ -159,6 +159,10 @@ type Params struct {
 	// file, read by the engine for user-level workspace overrides.
 	UserConfigPath string
 
+	// LLMConfig is this client's LLM routing configuration; credentials in
+	// it are secret URIs the engine resolves against this client.
+	LLMConfig *engine.LLMConfig
+
 	// WorkspaceModuleScope hints at the workspace module this client's first
 	// schema introspection targets (the leading CLI command token, unresolved).
 	WorkspaceModuleScope string
@@ -1810,6 +1814,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.UserConfigPath != "" {
 		md.UserConfigPath = c.UserConfigPath
+	}
+	if !c.LLMConfig.IsEmpty() {
+		md.LLMConfig = c.LLMConfig
 	}
 
 	return md

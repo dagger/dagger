@@ -111,6 +111,11 @@ type Provider struct {
 	// Values: "openai" (OpenAI-compatible) or "anthropic" (Anthropic-compatible).
 	// When set, BaseURL is used as the endpoint and the model name is passed through.
 	APICompat string `toml:"api_compat,omitempty"`
+
+	// ClaudeCodeVersion is the Claude Code release (a bare X.Y.Z) to present
+	// when authenticating Anthropic with a subscription OAuth token, overriding
+	// the engine's built-in default.
+	ClaudeCodeVersion string `toml:"claude_code_version,omitempty"`
 }
 
 // IsOAuth returns true if this provider uses OAuth authentication.
@@ -386,7 +391,7 @@ func refreshProviderToken(ctx context.Context, name string, provider Provider) (
 
 func refreshProviderTokenAfterRejection(ctx context.Context, name string, provider Provider, rejected string) (_ Provider, _ bool, rerr error) {
 	force := rejected != "" && rejected == fmt.Sprintf("%x", sha256.Sum256([]byte(provider.AuthToken)))
-	// A disabled provider's credentials are never exported (applyLLMConfigEnv
+	// A disabled provider's credentials are never sent to the engine (Assemble
 	// skips it), so refreshing it would spend its single-use grant for nothing
 	// — and rotate a refresh token the user still expects to work when they
 	// re-enable the provider.

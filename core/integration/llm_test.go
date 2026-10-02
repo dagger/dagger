@@ -1192,15 +1192,15 @@ func (LLMSuite) TestWorkspaceSnapshotRefreshesBinding(ctx context.Context, t *te
 // `dagger agent` running inside a container) with no LLM configuration of its
 // own inherits the session main client's config; its own config still wins
 // where set; and the underlying credentials never become readable from inside
-// the nested container — the env:// lookups resolve through the *main*
-// client's session, so nesting grants use of the LLM, not the keys.
+// the nested container — the credential references resolve through the
+// *main* client's session, so nesting grants use of the LLM, not the keys.
 func (LLMSuite) TestNestedClientInheritsSessionConfig(ctx context.Context, t *testctx.T) {
-	// Config on the session's main client (this test process): the router
-	// resolves env:// through the client's session attachables at load time,
-	// so a plain os.Setenv is all it takes (same pattern as
-	// AddressSuite/TestSecret). The values are inert for other tests: recording
-	// models ignore credentials, and an anthropic model only routes when
-	// nothing higher-priority is configured.
+	// Config on the session's main client (this test process): the CLI the
+	// SDK spawns assembles its LLMConfig from its environment, so a plain
+	// os.Setenv is all it takes (same pattern as AddressSuite/TestSecret).
+	// The values are inert for other tests: recording models ignore
+	// credentials, and an anthropic model only routes when nothing
+	// higher-priority is configured.
 	sessionModel := "claude-session-wide-model"
 	apiKey := "secret" + identity.NewID()
 	os.Setenv("ANTHROPIC_MODEL", sessionModel)

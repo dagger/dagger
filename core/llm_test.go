@@ -29,17 +29,6 @@ func (LLMTestQuery) Type() *ast.Type {
 	}
 }
 
-type mockSecret struct {
-	uri string
-}
-
-func (mockSecret) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Secret",
-		NonNull:   true,
-	}
-}
-
 func llmTestContext() context.Context {
 	return engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
 		ClientID:  "llm-test-client",
@@ -47,206 +36,309 @@ func llmTestContext() context.Context {
 	})
 }
 
-func TestLlmConfig(t *testing.T) {
-	q := LLMTestQuery{}
-
-	baseCache, err := dagql.NewCache(context.Background(), "", nil, nil)
-	assert.NoError(t, err)
-	srv := newCoreDagqlServerForTest(t, q)
-
-	vars := map[string]string{
-		"file://.env":                         "",
-		"env://ANTHROPIC_API_KEY":             "anthropic-api-key",
-		"env://ANTHROPIC_BASE_URL":            "anthropic-base-url",
-		"env://ANTHROPIC_MODEL":               "anthropic-model",
-		"env://ANTHROPIC_SMALL_MODEL":         "anthropic-small-model",
-		"env://ANTHROPIC_AUTH_TOKEN":          "anthropic-auth-token",
-		"env://ANTHROPIC_REASONING_EFFORT":    "anthropic-reasoning-effort",
-		"env://ANTHROPIC_CLAUDE_CODE_VERSION": "2.1.999",
-		"env://OPENAI_API_KEY":                "openai-api-key",
-		"env://OPENAI_AZURE_VERSION":          "openai-azure-version",
-		"env://OPENAI_BASE_URL":               "openai-base-url",
-		"env://OPENAI_MODEL":                  "openai-model",
-		"env://OPENAI_SMALL_MODEL":            "openai-small-model",
-		"env://OPENAI_DISABLE_STREAMING":      "t",
-		"env://OPENAI_CODEX_AUTH_TOKEN":       "openai-codex-auth-token",
-		"env://OPENAI_CODEX_MODEL":            "openai-codex-model",
-		"env://OPENAI_CODEX_SMALL_MODEL":      "openai-codex-small-model",
-		"env://OPENAI_CODEX_REASONING_EFFORT": "openai-codex-reasoning-effort",
-		"env://GEMINI_API_KEY":                "gemini-api-key",
-		"env://GEMINI_BASE_URL":               "gemini-base-url",
-		"env://GEMINI_MODEL":                  "gemini-model",
-		"env://GEMINI_SMALL_MODEL":            "gemini-small-model",
-		"env://GEMINI_REASONING_EFFORT":       "gemini-reasoning-effort",
-		"env://LOCAL_BASE_URL":                "local-base-url",
-		"env://LOCAL_MODEL":                   "local-model",
-		"env://LOCAL_SMALL_MODEL":             "local-small-model",
-		"env://LOCAL_API_COMPAT":              "openai",
-		"env://LOCAL_API_KEY":                 "local-api-key",
-	}
-
-	dagql.Fields[LLMTestQuery]{
-		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
-			URI string
-		}) (mockSecret, error) {
-			if _, ok := vars[args.URI]; !ok {
-				t.Fatalf("uri not found: %s", args.URI)
-			}
-			return mockSecret{uri: args.URI}, nil
-		}),
-	}.Install(srv)
-
-	dagql.Fields[mockSecret]{
-		dagql.Func("plaintext", func(ctx context.Context, self mockSecret, _ struct{}) (string, error) {
-			return vars[self.uri], nil
-		}),
-	}.Install(srv)
-
-	ctx := dagql.ContextWithCache(llmTestContext(), baseCache)
-	r, err := NewLLMRouter(ctx, srv)
-	assert.NoError(t, err)
-	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
-	assert.Equal(t, "anthropic-base-url", r.AnthropicBaseURL)
-	assert.Equal(t, "anthropic-model", r.AnthropicModel)
-	assert.Equal(t, "anthropic-small-model", r.AnthropicSmallModel)
-	assert.Equal(t, "openai-api-key", r.OpenAIAPIKey)
-	assert.Equal(t, "openai-azure-version", r.OpenAIAzureVersion)
-	assert.Equal(t, "openai-base-url", r.OpenAIBaseURL)
-	assert.Equal(t, "openai-model", r.OpenAIModel)
-	assert.Equal(t, "openai-small-model", r.OpenAISmallModel)
-	assert.True(t, r.OpenAIDisableStreaming)
-	assert.Equal(t, "openai-codex-auth-token", r.OpenAICodexAuthToken)
-	assert.Equal(t, "openai-codex-model", r.OpenAICodexModel)
-	assert.Equal(t, "openai-codex-small-model", r.OpenAICodexSmallModel)
-	assert.Equal(t, "openai-codex-reasoning-effort", r.OpenAICodexReasoningEffort)
-	assert.Equal(t, "anthropic-auth-token", r.AnthropicAuthToken)
-	assert.Equal(t, "anthropic-reasoning-effort", r.AnthropicReasoningEffort)
-	assert.Equal(t, "2.1.999", r.AnthropicClaudeCodeVersion)
-	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
-	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
-	assert.Equal(t, "gemini-model", r.GeminiModel)
-	assert.Equal(t, "gemini-small-model", r.GeminiSmallModel)
-	assert.Equal(t, "gemini-reasoning-effort", r.GeminiReasoningEffort)
-	assert.Equal(t, "local-base-url", r.LocalBaseURL)
-	assert.Equal(t, "local-model", r.LocalModel)
-	assert.Equal(t, "local-small-model", r.LocalSmallModel)
-	assert.Equal(t, "openai", r.LocalAPICompat)
-	assert.Equal(t, "local-api-key", r.LocalAPIKey)
+// routerWith builds a router from a single client's provider configs, the way
+// a CLI with exactly that configuration would.
+func routerWith(t *testing.T, providers map[string]*engine.LLMProviderConfig) *LLMRouter {
+	t.Helper()
+	r, err := NewLLMRouter(&engine.LLMConfig{Providers: providers}, &engine.ClientMetadata{ClientID: "test"})
+	require.NoError(t, err)
+	return r
 }
 
-// getenvFrom builds a LoadConfig getenv func serving values from a plain map,
-// so layering tests need no dagql plumbing.
-func getenvFrom(m map[string]string) func(context.Context, string) (string, error) {
-	return func(_ context.Context, k string) (string, error) {
-		return m[k], nil
+func TestLLMRouterApply(t *testing.T) {
+	client := &engine.ClientMetadata{ClientID: "host"}
+	r, err := NewLLMRouter(&engine.LLMConfig{
+		DefaultProvider: "anthropic",
+		DefaultModel:    "claude-x",
+		Providers: map[string]*engine.LLMProviderConfig{
+			"anthropic": {
+				APIKey:            "env://ANTHROPIC_API_KEY",
+				BaseURL:           "anthropic-base-url",
+				Model:             "anthropic-model",
+				SmallModel:        "anthropic-small-model",
+				ReasoningEffort:   "high",
+				ClaudeCodeVersion: "2.1.999",
+			},
+			"openai": {
+				APIKey:           "llmconfig://openai/api_key",
+				BaseURL:          "openai-base-url",
+				Model:            "openai-model",
+				SmallModel:       "openai-small-model",
+				AzureVersion:     "openai-azure-version",
+				DisableStreaming: true,
+			},
+			"openai-codex": {
+				AuthToken:          "llmconfig://openai-codex/auth_token",
+				AuthTokenExpiresAt: "llmconfig://openai-codex/auth_token_expires_at",
+				Model:              "codex-model",
+				SmallModel:         "codex-small-model",
+				ReasoningEffort:    "medium",
+			},
+			"google": {
+				APIKey:          "env://GEMINI_API_KEY",
+				BaseURL:         "gemini-base-url",
+				Model:           "gemini-model",
+				SmallModel:      "gemini-small-model",
+				ReasoningEffort: "low",
+			},
+			"local": {
+				APIKey:     "env://LOCAL_API_KEY",
+				BaseURL:    "http://localhost:11434",
+				Model:      "llama3",
+				SmallModel: "llama3-small",
+				APICompat:  "openai",
+			},
+			"empty": {},
+		},
+	}, client)
+	require.NoError(t, err)
+
+	model, provider := r.DefaultRoute()
+	assert.Equal(t, "claude-x", model)
+	assert.Equal(t, Anthropic, provider)
+
+	anthropic := r.Providers[Anthropic]
+	assert.Equal(t, "env://ANTHROPIC_API_KEY", anthropic.APIKey)
+	assert.Equal(t, "anthropic-base-url", anthropic.BaseURL)
+	assert.Equal(t, "anthropic-model", anthropic.Model)
+	assert.Equal(t, "anthropic-small-model", anthropic.SmallModel)
+	assert.Equal(t, "high", anthropic.ReasoningEffort)
+	assert.Equal(t, "2.1.999", anthropic.ClaudeCodeVersion)
+	assert.Same(t, client, anthropic.client)
+
+	openai := r.Providers[OpenAI]
+	assert.Equal(t, "llmconfig://openai/api_key", openai.APIKey)
+	assert.Equal(t, "openai-azure-version", openai.AzureVersion)
+	assert.True(t, openai.DisableStreaming)
+
+	codex := r.Providers[OpenAICodex]
+	assert.Equal(t, "llmconfig://openai-codex/auth_token", codex.AuthToken)
+	assert.Equal(t, "llmconfig://openai-codex/auth_token_expires_at", codex.AuthTokenExpiresAt)
+	assert.Equal(t, "medium", codex.ReasoningEffort)
+
+	assert.Equal(t, "gemini-model", r.Providers[Google].Model)
+	assert.Equal(t, "openai", r.Providers[Local].APICompat)
+	assert.Same(t, client, r.localClient)
+
+	// An empty provider entry configures nothing.
+	assert.NotContains(t, r.Providers, LLMProvider("empty"))
+
+	// The routing fields land on the endpoints.
+	ep, err := r.Route("openai-model", "")
+	require.NoError(t, err)
+	assert.Equal(t, "openai-azure-version", ep.azureVersion)
+	assert.True(t, ep.disableStreaming)
+	ep, err = r.Route("claude-x", "")
+	require.NoError(t, err)
+	assert.Equal(t, "2.1.999", ep.ClaudeCodeVersion)
+	assert.False(t, ep.IsOAuth)
+}
+
+// TestLLMRouterClaudeCodeVersion covers the claude_code_version override:
+// accepted as a bare X.Y.Z, and rejected loudly otherwise rather than falling
+// back to the default the user was trying to replace.
+func TestLLMRouterClaudeCodeVersion(t *testing.T) {
+	for _, bad := range []string{"v2.1.260", "2.1", "latest", "2.1.260-beta"} {
+		_, err := NewLLMRouter(&engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
+			"anthropic": {ClaudeCodeVersion: bad},
+		}}, &engine.ClientMetadata{})
+		require.Error(t, err, bad)
+		assert.Contains(t, err.Error(), "claude_code_version")
 	}
 }
 
-// TestLlmConfigLayeredAnthropicAuth covers layered config loads (host client
+// TestLLMRouterLayeredAnthropicAuth covers layered config loads (host client
 // first, then the calling/nested client): the Anthropic API key and the
 // subscription OAuth token are alternative credentials for the same slot, so
 // whichever one a later load supplies must win outright rather than being
-// shadowed by a credential accumulated from an earlier load.
-func TestLlmConfigLayeredAnthropicAuth(t *testing.T) {
-	ctx := context.Background()
+// shadowed by a credential accumulated from an earlier load — and the
+// credential must resolve against the client that supplied it.
+func TestLLMRouterLayeredAnthropicAuth(t *testing.T) {
+	host := &engine.ClientMetadata{ClientID: "host"}
+	container := &engine.ClientMetadata{ClientID: "container"}
+	anthropic := func(cfg *engine.LLMProviderConfig) *engine.LLMConfig {
+		return &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{"anthropic": cfg}}
+	}
 
 	t.Run("container API key overrides host OAuth login", func(t *testing.T) {
 		r := new(LLMRouter)
-		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
-			"ANTHROPIC_AUTH_TOKEN": "host-oauth",
-		}))
+		require.NoError(t, r.Apply(anthropic(&engine.LLMProviderConfig{AuthToken: "llmconfig://anthropic/auth_token"}), host))
+		require.NoError(t, r.Apply(anthropic(&engine.LLMProviderConfig{APIKey: "env://ANTHROPIC_API_KEY"}), container))
+		route := r.Providers[Anthropic]
+		assert.Equal(t, "env://ANTHROPIC_API_KEY", route.APIKey)
+		assert.Empty(t, route.AuthToken)
+		assert.Same(t, container, route.client)
+		ep, err := r.Route("claude-x", "")
 		require.NoError(t, err)
-		_, err = r.LoadConfig(ctx, getenvFrom(map[string]string{
-			"ANTHROPIC_API_KEY": "container-key",
-		}))
-		require.NoError(t, err)
-		assert.Equal(t, "container-key", r.AnthropicAPIKey)
-		assert.Empty(t, r.AnthropicAuthToken)
-		assert.False(t, r.AnthropicIsOAuth)
+		assert.False(t, ep.IsOAuth)
 	})
 
 	t.Run("container OAuth overrides host API key", func(t *testing.T) {
 		r := new(LLMRouter)
-		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
-			"ANTHROPIC_API_KEY": "host-key",
-		}))
+		require.NoError(t, r.Apply(anthropic(&engine.LLMProviderConfig{APIKey: "env://ANTHROPIC_API_KEY"}), host))
+		require.NoError(t, r.Apply(anthropic(&engine.LLMProviderConfig{AuthToken: "env://ANTHROPIC_AUTH_TOKEN"}), container))
+		route := r.Providers[Anthropic]
+		assert.Equal(t, "env://ANTHROPIC_AUTH_TOKEN", route.AuthToken)
+		assert.Empty(t, route.APIKey)
+		assert.Same(t, container, route.client)
+		ep, err := r.Route("claude-x", "")
 		require.NoError(t, err)
-		_, err = r.LoadConfig(ctx, getenvFrom(map[string]string{
-			"ANTHROPIC_AUTH_TOKEN": "container-oauth",
-		}))
-		require.NoError(t, err)
-		assert.Equal(t, "container-oauth", r.AnthropicAuthToken)
-		assert.Empty(t, r.AnthropicAPIKey)
-		assert.True(t, r.AnthropicIsOAuth)
+		assert.True(t, ep.IsOAuth)
 	})
 
 	t.Run("container with no auth inherits host OAuth", func(t *testing.T) {
 		r := new(LLMRouter)
-		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
-			"ANTHROPIC_AUTH_TOKEN": "host-oauth",
-		}))
-		require.NoError(t, err)
-		_, err = r.LoadConfig(ctx, getenvFrom(map[string]string{}))
-		require.NoError(t, err)
-		assert.Equal(t, "host-oauth", r.AnthropicAuthToken)
-		assert.True(t, r.AnthropicIsOAuth)
+		require.NoError(t, r.Apply(anthropic(&engine.LLMProviderConfig{AuthToken: "llmconfig://anthropic/auth_token"}), host))
+		require.NoError(t, r.Apply(anthropic(&engine.LLMProviderConfig{Model: "claude-nested"}), container))
+		route := r.Providers[Anthropic]
+		assert.Equal(t, "llmconfig://anthropic/auth_token", route.AuthToken)
+		assert.Equal(t, "claude-nested", route.Model)
+		assert.Same(t, host, route.client, "the credential stays with the client that supplied it")
 	})
 
-	t.Run("single load with both prefers OAuth", func(t *testing.T) {
+	t.Run("single load with both keeps both", func(t *testing.T) {
 		r := new(LLMRouter)
-		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
-			"ANTHROPIC_API_KEY":    "key",
-			"ANTHROPIC_AUTH_TOKEN": "oauth",
-		}))
-		require.NoError(t, err)
-		assert.Equal(t, "key", r.AnthropicAPIKey)
-		assert.Equal(t, "oauth", r.AnthropicAuthToken)
-		assert.True(t, r.AnthropicIsOAuth)
+		require.NoError(t, r.Apply(anthropic(&engine.LLMProviderConfig{
+			APIKey:    "env://ANTHROPIC_API_KEY",
+			AuthToken: "env://ANTHROPIC_AUTH_TOKEN",
+		}), host))
+		route := r.Providers[Anthropic]
+		assert.Equal(t, "env://ANTHROPIC_API_KEY", route.APIKey)
+		assert.Equal(t, "env://ANTHROPIC_AUTH_TOKEN", route.AuthToken)
 	})
 }
 
-// TestLlmConfigLocalSupplied covers LoadConfig's report of whether THIS load
-// supplied a local base URL. The tunnel to a local model must run through the
-// session of the client that configured it, and localhost names a different
-// host per client — so the signal must fire even when the URL string is
-// unchanged from an earlier load.
-func TestLlmConfigLocalSupplied(t *testing.T) {
-	ctx := context.Background()
+// TestLLMRouterLocalClient covers which client owns the local endpoint. The
+// tunnel to a local model must run through the session of the client that
+// configured it, and localhost names a different host per client — so a later
+// load supplying the same URL string must still take ownership.
+func TestLLMRouterLocalClient(t *testing.T) {
+	host := &engine.ClientMetadata{ClientID: "host"}
+	container := &engine.ClientMetadata{ClientID: "container"}
+	local := func(cfg *engine.LLMProviderConfig) *engine.LLMConfig {
+		return &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{"local": cfg}}
+	}
 
 	r := new(LLMRouter)
-	supplied, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
-		"LOCAL_BASE_URL": "http://localhost:11434",
-	}))
-	require.NoError(t, err)
-	assert.True(t, supplied)
-	assert.Equal(t, "http://localhost:11434", r.LocalBaseURL)
+	require.NoError(t, r.Apply(local(&engine.LLMProviderConfig{BaseURL: "http://localhost:11434"}), host))
+	assert.Same(t, host, r.localClient)
 
-	// A load supplying nothing leaves the URL alone and reports false.
-	supplied, err = r.LoadConfig(ctx, getenvFrom(map[string]string{}))
-	require.NoError(t, err)
-	assert.False(t, supplied)
-	assert.Equal(t, "http://localhost:11434", r.LocalBaseURL)
+	// A load supplying nothing leaves the URL and its owner alone.
+	require.NoError(t, r.Apply(local(&engine.LLMProviderConfig{Model: "llama3"}), container))
+	assert.Same(t, host, r.localClient)
+	assert.Equal(t, "http://localhost:11434", r.Providers[Local].BaseURL)
 
-	// Supplying a value identical to the already-loaded one must still count:
-	// the same "http://localhost:11434" string reaches a different host from
-	// each client.
-	supplied, err = r.LoadConfig(ctx, getenvFrom(map[string]string{
-		"LOCAL_BASE_URL": "http://localhost:11434",
-	}))
-	require.NoError(t, err)
-	assert.True(t, supplied)
-	assert.Equal(t, "http://localhost:11434", r.LocalBaseURL)
+	require.NoError(t, r.Apply(local(&engine.LLMProviderConfig{BaseURL: "http://localhost:11434"}), container))
+	assert.Same(t, container, r.localClient)
+}
+
+func TestLLMRouterDefaultRoute(t *testing.T) {
+	t.Run("explicit default wins over provider priority", func(t *testing.T) {
+		r, err := NewLLMRouter(&engine.LLMConfig{
+			DefaultProvider: "anthropic",
+			DefaultModel:    "claude-x",
+			Providers: map[string]*engine.LLMProviderConfig{
+				"openai":    {APIKey: "env://OPENAI_API_KEY", Model: "gpt-y"},
+				"anthropic": {APIKey: "env://ANTHROPIC_API_KEY"},
+			},
+		}, &engine.ClientMetadata{})
+		require.NoError(t, err)
+		model, provider := r.DefaultRoute()
+		assert.Equal(t, "claude-x", model)
+		assert.Equal(t, Anthropic, provider)
+	})
+
+	t.Run("openrouter is only ever selected explicitly", func(t *testing.T) {
+		// An OpenAI-compatible aggregator serving "anthropic/..." model names.
+		// Prefix matching alone would send those to Anthropic, so the
+		// provider must come from the config's default or the caller.
+		r, err := NewLLMRouter(&engine.LLMConfig{
+			DefaultProvider: "openrouter",
+			DefaultModel:    "anthropic/claude-sonnet-4.5",
+			Providers: map[string]*engine.LLMProviderConfig{
+				"openrouter": {APIKey: "env://OPENROUTER_API_KEY"},
+				"openai":     {APIKey: "env://OPENAI_API_KEY"},
+			},
+		}, &engine.ClientMetadata{})
+		require.NoError(t, err)
+		ep, err := r.Route("", "")
+		require.NoError(t, err)
+		assert.Equal(t, OpenRouter, ep.Provider)
+		assert.Equal(t, "anthropic/claude-sonnet-4.5", ep.Model)
+		assert.Equal(t, openRouterBaseURL, ep.BaseURL, "the base URL defaults when the config names none")
+
+		// Both OpenAI-compatible providers coexist with their own credentials.
+		ep, err = r.Route("gpt-4.1", "")
+		require.NoError(t, err)
+		assert.Equal(t, OpenAI, ep.Provider)
+		ep, err = r.Route("openai/gpt-4.1", string(OpenRouter))
+		require.NoError(t, err)
+		assert.Equal(t, OpenRouter, ep.Provider)
+
+		// A configured openrouter model pins the provider too.
+		r = routerWith(t, map[string]*engine.LLMProviderConfig{
+			"openrouter": {APIKey: "env://OPENROUTER_API_KEY", Model: "google/gemini-2.5-pro", BaseURL: "https://proxy.example/v1"},
+		})
+		model, provider := r.DefaultRoute()
+		assert.Equal(t, "google/gemini-2.5-pro", model)
+		assert.Equal(t, OpenRouter, provider)
+		ep, err = r.Route(model, string(provider))
+		require.NoError(t, err)
+		assert.Equal(t, "https://proxy.example/v1", ep.BaseURL)
+
+		// A key alone selects OpenRouter's default model.
+		r = routerWith(t, map[string]*engine.LLMProviderConfig{
+			"openrouter": {APIKey: "env://OPENROUTER_API_KEY"},
+		})
+		model, provider = r.DefaultRoute()
+		assert.Equal(t, modelDefaultOpenRouter, model)
+		assert.Equal(t, OpenRouter, provider)
+	})
+
+	t.Run("provider priority among configured models", func(t *testing.T) {
+		r := routerWith(t, map[string]*engine.LLMProviderConfig{
+			"anthropic": {Model: "claude-x"},
+			"google":    {Model: "gemini-y"},
+		})
+		assert.Equal(t, "claude-x", r.DefaultModel())
+		r = routerWith(t, map[string]*engine.LLMProviderConfig{
+			"anthropic": {Model: "claude-x"},
+			"openai":    {Model: "gpt-z"},
+		})
+		assert.Equal(t, "gpt-z", r.DefaultModel())
+	})
+
+	t.Run("credential alone selects the provider's built-in default", func(t *testing.T) {
+		r := routerWith(t, map[string]*engine.LLMProviderConfig{
+			"anthropic": {APIKey: "env://ANTHROPIC_API_KEY"},
+		})
+		assert.Equal(t, modelDefaultAnthropic, r.DefaultModel())
+		r = routerWith(t, map[string]*engine.LLMProviderConfig{
+			"google": {APIKey: "env://GEMINI_API_KEY"},
+		})
+		assert.Equal(t, modelDefaultGoogle, r.DefaultModel())
+		r = routerWith(t, map[string]*engine.LLMProviderConfig{
+			"openai": {BaseURL: "http://model-runner/engines/v1"},
+		})
+		assert.Equal(t, modelDefaultMeta, r.DefaultModel())
+	})
+
+	t.Run("nothing configured", func(t *testing.T) {
+		assert.Empty(t, new(LLMRouter).DefaultModel())
+	})
 }
 
 func TestLocalModelRouting(t *testing.T) {
 	// A local endpoint is keyed by an exact model-name match (it has no naming
 	// convention to detect), and wins ahead of the prefix-based heuristics.
-	r := &LLMRouter{
-		LocalBaseURL:   "http://localhost:11434",
-		LocalModel:     "llama3",
-		LocalAPICompat: "openai",
-		LocalAPIKey:    "sk-local",
-	}
+	r := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"local": {
+			BaseURL:   "http://localhost:11434",
+			Model:     "llama3",
+			APICompat: "openai",
+			APIKey:    "env://LOCAL_API_KEY",
+		},
+	})
 	// With only a local endpoint configured, its model is the default.
 	assert.Equal(t, "llama3", r.DefaultModel())
 
@@ -255,14 +347,12 @@ func TestLocalModelRouting(t *testing.T) {
 	assert.Equal(t, Local, ep.Provider)
 	assert.Equal(t, "llama3", ep.Model)
 	assert.Equal(t, "http://localhost:11434", ep.BaseURL)
-	assert.Equal(t, "sk-local", ep.Key)
+	assert.Equal(t, "openai", ep.apiCompat)
 
 	// A local model named to look like another provider's still routes local.
-	r2 := &LLMRouter{
-		LocalBaseURL:   "http://localhost:1234",
-		LocalModel:     "gpt-oss",
-		LocalAPICompat: "anthropic",
-	}
+	r2 := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"local": {BaseURL: "http://localhost:1234", Model: "gpt-oss", APICompat: "anthropic"},
+	})
 	ep2, err := r2.Route("gpt-oss", "")
 	assert.NoError(t, err)
 	assert.Equal(t, Local, ep2.Provider)
@@ -270,14 +360,14 @@ func TestLocalModelRouting(t *testing.T) {
 	// A different model name does not match the local slot.
 	assert.False(t, r.isLocalModel("some-other-model"))
 	// Nor does the slot match when it is not fully configured.
-	assert.False(t, (&LLMRouter{LocalModel: "llama3"}).isLocalModel("llama3"))
+	assert.False(t, routerWith(t, map[string]*engine.LLMProviderConfig{
+		"local": {Model: "llama3"},
+	}).isLocalModel("llama3"))
 
 	// An unsupported API compatibility mode is a routing error.
-	r3 := &LLMRouter{
-		LocalBaseURL:   "http://localhost:11434",
-		LocalModel:     "llama3",
-		LocalAPICompat: "bogus",
-	}
+	r3 := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"local": {BaseURL: "http://localhost:11434", Model: "llama3", APICompat: "bogus"},
+	})
 	_, err = r3.Route("llama3", "")
 	assert.Error(t, err)
 }
@@ -286,10 +376,9 @@ func TestCodexModelRouting(t *testing.T) {
 	// A model configured in the Codex slot pins to the Codex backend even when
 	// its name looks like a plain OpenAI model (post-GPT-5.4, Codex model IDs
 	// no longer contain "codex").
-	r := &LLMRouter{
-		OpenAICodexAuthToken: "tok",
-		OpenAICodexModel:     "gpt-5.5",
-	}
+	r := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"openai-codex": {AuthToken: "llmconfig://openai-codex/auth_token", Model: "gpt-5.5"},
+	})
 	assert.Equal(t, "openai-codex/gpt-5.5", r.DefaultModel())
 
 	ep, err := r.Route("", "")
@@ -299,7 +388,9 @@ func TestCodexModelRouting(t *testing.T) {
 	assert.Equal(t, "gpt-5.5", ep.Model)
 
 	// With only a Codex token, the default model routes to Codex too.
-	r2 := &LLMRouter{OpenAICodexAuthToken: "tok"}
+	r2 := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"openai-codex": {AuthToken: "llmconfig://openai-codex/auth_token"},
+	})
 	assert.Equal(t, "openai-codex/"+modelDefaultCodex, r2.DefaultModel())
 	epDefault, err := r2.Route("", "")
 	assert.NoError(t, err)
@@ -317,11 +408,23 @@ func TestCodexModelRouting(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, OpenAICodex, epNamed.Provider)
 	assert.Equal(t, "gpt-5.3-codex", epNamed.Model)
+
+	// An explicit Codex default is pinned to Codex as well.
+	r3, err := NewLLMRouter(&engine.LLMConfig{
+		DefaultProvider: "openai-codex",
+		DefaultModel:    "gpt-5.5",
+	}, &engine.ClientMetadata{})
+	require.NoError(t, err)
+	model, provider := r3.DefaultRoute()
+	assert.Equal(t, "openai-codex/gpt-5.5", model)
+	assert.Equal(t, OpenAICodex, provider)
 }
 
 func TestSmallModelRouting(t *testing.T) {
 	t.Run("configured model wins and provider remains concrete", func(t *testing.T) {
-		r := &LLMRouter{OpenAISmallModel: "my-fast-model"}
+		r := routerWith(t, map[string]*engine.LLMProviderConfig{
+			"openai": {SmallModel: "my-fast-model"},
+		})
 		model, ok := r.SmallModel(OpenAI)
 		require.True(t, ok)
 		assert.Equal(t, "my-fast-model", model)
@@ -349,7 +452,9 @@ func TestSmallModelRouting(t *testing.T) {
 	})
 
 	t.Run("configured local model is supported", func(t *testing.T) {
-		r := &LLMRouter{LocalSmallModel: "qwen3:small"}
+		r := routerWith(t, map[string]*engine.LLMProviderConfig{
+			"local": {SmallModel: "qwen3:small"},
+		})
 		model, ok := r.SmallModel(Local)
 		require.True(t, ok)
 		assert.Equal(t, "qwen3:small", model)
@@ -357,10 +462,10 @@ func TestSmallModelRouting(t *testing.T) {
 }
 
 func TestExplicitProviderRouting(t *testing.T) {
-	r := &LLMRouter{
-		AnthropicAPIKey: "ak",
-		OpenAIAPIKey:    "ok",
-	}
+	r := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"anthropic": {APIKey: "env://ANTHROPIC_API_KEY"},
+		"openai":    {APIKey: "env://OPENAI_API_KEY"},
+	})
 
 	// An explicit provider overrides model-name pattern matching: a "codex"-
 	// named fine-tune can be pinned to plain OpenAI, and a model with no
@@ -651,122 +756,4 @@ func TestCodexConvertToolResults(t *testing.T) {
 			assert.JSONEq(t, tc.want, string(data))
 		})
 	}
-}
-
-func TestLlmConfigDisableStreaming(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		envFile  string
-		expected bool
-	}{
-		{
-			"not disabled by default",
-			"",
-			false,
-		},
-		{
-			"explicitly not disabled, FALSE",
-			"OPENAI_DISABLE_STREAMING=FALSE",
-			false,
-		},
-		{
-			"explicitly not disabled, 0",
-			"OPENAI_DISABLE_STREAMING=0",
-			false,
-		},
-		{
-			"disabled, true",
-			"OPENAI_DISABLE_STREAMING=true",
-			true,
-		},
-		{
-			"disabled, 1",
-			"OPENAI_DISABLE_STREAMING=1",
-			true,
-		},
-		{
-			"empty value",
-			"OPENAI_DISABLE_STREAMING=",
-			false,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			q := LLMTestQuery{}
-
-			baseCache, err := dagql.NewCache(context.Background(), "", nil, nil)
-			assert.NoError(t, err)
-			srv := newCoreDagqlServerForTest(t, q)
-			dagql.Fields[LLMTestQuery]{
-				dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
-					URI string
-				}) (mockSecret, error) {
-					return mockSecret{uri: args.URI}, nil
-				}),
-			}.Install(srv)
-
-			dagql.Fields[mockSecret]{
-				dagql.Func("plaintext", func(ctx context.Context, self mockSecret, _ struct{}) (string, error) {
-					if self.uri == "file://.env" {
-						return tc.envFile, nil
-					}
-					return "", nil
-				}),
-			}.Install(srv)
-
-			ctx := dagql.ContextWithCache(llmTestContext(), baseCache)
-			r, err := NewLLMRouter(ctx, srv)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expected, r.OpenAIDisableStreaming)
-		})
-	}
-}
-
-func TestLlmConfigEnvFile(t *testing.T) {
-	q := LLMTestQuery{}
-
-	baseCache, err := dagql.NewCache(context.Background(), "", nil, nil)
-	assert.NoError(t, err)
-	srv := newCoreDagqlServerForTest(t, q)
-	dagql.Fields[LLMTestQuery]{
-		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
-			URI string
-		}) (mockSecret, error) {
-			return mockSecret{uri: args.URI}, nil
-		}),
-	}.Install(srv)
-
-	dagql.Fields[mockSecret]{
-		dagql.Func("plaintext", func(ctx context.Context, self mockSecret, _ struct{}) (string, error) {
-			if self.uri == "file://.env" {
-				return `ANTHRIOPIC_API_KEY=anthropic-api-key
-ANTHROPIC_BASE_URL=anthropic-base-url
-ANTHROPIC_MODEL=anthropic-model
-ANTHROPIC_API_KEY=anthropic-api-key
-OPENAI_API_KEY=openai-api-key
-OPENAI_AZURE_VERSION=openai-azure-version
-OPENAI_BASE_URL=openai-base-url
-OPENAI_MODEL=openai-model
-OPENAI_DISABLE_STREAMING=TRUE
-GEMINI_API_KEY=gemini-api-key
-GEMINI_BASE_URL=gemini-base-url
-GEMINI_MODEL=gemini-model`, nil
-			}
-			return "", nil
-		}),
-	}.Install(srv)
-
-	ctx := dagql.ContextWithCache(llmTestContext(), baseCache)
-	r, err := NewLLMRouter(ctx, srv)
-	assert.NoError(t, err)
-	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
-	assert.Equal(t, "anthropic-base-url", r.AnthropicBaseURL)
-	assert.Equal(t, "anthropic-model", r.AnthropicModel)
-	assert.Equal(t, "openai-api-key", r.OpenAIAPIKey)
-	assert.Equal(t, "openai-azure-version", r.OpenAIAzureVersion)
-	assert.Equal(t, "openai-base-url", r.OpenAIBaseURL)
-	assert.Equal(t, "openai-model", r.OpenAIModel)
-	assert.True(t, r.OpenAIDisableStreaming)
-	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
-	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
-	assert.Equal(t, "gemini-model", r.GeminiModel)
 }

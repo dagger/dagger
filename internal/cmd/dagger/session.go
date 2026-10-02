@@ -165,6 +165,8 @@ func sessionClientParams(secretToken string) (client.Params, error) {
 	if sessionWorkspace != "" {
 		params.Workspace = &sessionWorkspace
 	}
-	applyWorkspaceClientParams(&params)
+	if err := applyWorkspaceClientParams(&params); err != nil {
+		return client.Params{}, err
+	}
 	return params, nil
 }

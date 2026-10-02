@@ -10,6 +10,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/engine"
 )
 
 // TestAnthropicOAuthUserAgent locks in the Claude Code identity the
@@ -69,37 +71,25 @@ func TestAnthropicOAuthUserAgent(t *testing.T) {
 	}
 }
 
-// TestLlmConfigClaudeCodeVersion covers the ANTHROPIC_CLAUDE_CODE_VERSION
-// override: a bare X.Y.Z is accepted, and anything else is rejected at load
-// time rather than silently falling back to the bundled default the user was
-// trying to replace.
+// TestLlmConfigClaudeCodeVersion covers the claude_code_version override on
+// an endpoint: a configured bare X.Y.Z reaches the Claude Code user-agent, and
+// the router rejects anything else (see TestLLMRouterClaudeCodeVersion).
 func TestLlmConfigClaudeCodeVersion(t *testing.T) {
-	ctx := llmTestContext()
-
 	t.Run("unset leaves the default in place", func(t *testing.T) {
-		r := new(LLMRouter)
-		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{}))
+		r := routerWith(t, map[string]*engine.LLMProviderConfig{
+			"anthropic": {AuthToken: "env://ANTHROPIC_AUTH_TOKEN"},
+		})
+		ep, err := r.Route("claude-x", "")
 		require.NoError(t, err)
-		assert.Empty(t, r.AnthropicClaudeCodeVersion)
+		assert.Empty(t, ep.ClaudeCodeVersion)
 	})
 
 	t.Run("bare X.Y.Z is accepted", func(t *testing.T) {
-		r := new(LLMRouter)
-		_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
-			"ANTHROPIC_CLAUDE_CODE_VERSION": "2.1.260",
-		}))
-		require.NoError(t, err)
-		assert.Equal(t, "2.1.260", r.AnthropicClaudeCodeVersion)
-	})
-
-	for _, bad := range []string{"v2.1.260", "2.1", "2.1.260-beta", "latest"} {
-		t.Run("rejects "+bad, func(t *testing.T) {
-			r := new(LLMRouter)
-			_, err := r.LoadConfig(ctx, getenvFrom(map[string]string{
-				"ANTHROPIC_CLAUDE_CODE_VERSION": bad,
-			}))
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "ANTHROPIC_CLAUDE_CODE_VERSION")
+		r := routerWith(t, map[string]*engine.LLMProviderConfig{
+			"anthropic": {AuthToken: "env://ANTHROPIC_AUTH_TOKEN", ClaudeCodeVersion: "2.1.260"},
 		})
-	}
+		ep, err := r.Route("claude-x", "")
+		require.NoError(t, err)
+		assert.Equal(t, "2.1.260", ep.ClaudeCodeVersion)
+	})
 }
