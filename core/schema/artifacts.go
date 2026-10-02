@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/artifact"
@@ -62,7 +63,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme."), dagql.Arg("dimension").Doc("Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.")),
 		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		// Each invocation gets a new cache key. Retain its results so SDK clients can load their IDs.
-		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
+		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object."), dagql.Arg("maxConcurrency").Doc("Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.")),
 		dagql.Func("modules", s.modules).Doc("List the modules represented in this selection without evaluating artifact values."),
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
 		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive. Does not filter by type or workspace settings.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
@@ -820,9 +821,13 @@ func (*artifactsSchema) evaluationItems(ctx context.Context, parent *core.Artifa
 }
 
 func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], args struct {
-	FailFast  bool      `default:"false"`
-	Arguments core.JSON `default:"{}"`
+	FailFast       bool      `default:"false"`
+	Arguments      core.JSON `default:"{}"`
+	MaxConcurrency int       `default:"0"`
 }) ([]*core.ArtifactResult, error) {
+	if args.MaxConcurrency < 0 {
+		return nil, fmt.Errorf("maxConcurrency must not be negative: %d", args.MaxConcurrency)
+	}
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -837,7 +842,13 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 	}
 	results := make([]*core.ArtifactResult, len(selection))
 	evaluationErrors := make([]error, len(selection))
-	jobs := parallel.New().WithContextualTracer(true).WithFailFast(args.FailFast).WithRollupLogs(true).WithRollupSpans(true)
+	remoteJobs := parallel.New().WithContextualTracer(true).WithFailFast(args.FailFast).WithRollupLogs(true).WithRollupSpans(true)
+	// Checks that scale out run on cloud engines, so the limit applies only to
+	// the jobs this engine runs.
+	localJobs := remoteJobs
+	if args.MaxConcurrency > 0 {
+		localJobs = localJobs.WithLimit(args.MaxConcurrency)
+	}
 	for i, selected := range selection {
 		artifact := selected.Self()
 		uri, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
@@ -854,7 +865,11 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		if slices.Contains(artifact.Directives, "generate") {
 			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, uri))
 		}
-		jobs = jobs.WithJob(uri, func(ctx context.Context) error {
+		group := &localJobs
+		if artifact.TypeName == "Check" && !localCheck {
+			group = &remoteJobs
+		}
+		*group = group.WithJob(uri, func(ctx context.Context) error {
 			ctx = core.WithCheckName(ctx, uri)
 			srv, err := core.CurrentDagqlServer(ctx)
 			if err == nil {
@@ -885,7 +900,7 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		}, attrs...)
 	}
 	// Failures are data in the result list, including cancellation by fail-fast.
-	_ = jobs.Run(ctx)
+	runArtifactJobs(ctx, args.FailFast, localJobs, remoteJobs)
 	for i, err := range evaluationErrors {
 		if err == nil {
 			continue
@@ -898,6 +913,27 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		results[i].Error = dagql.NonNull(failure)
 	}
 	return results, nil
+}
+
+// runArtifactJobs runs the groups at the same time. With fail-fast, the first
+// failure in any group cancels the jobs in every group.
+func runArtifactJobs(ctx context.Context, failFast bool, groups ...parallel.Jobs) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	var wg sync.WaitGroup
+	for _, group := range groups {
+		if len(group.Jobs) == 0 {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := group.Run(ctx); err != nil && failFast {
+				cancel(err)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func (*artifactsSchema) resultValue(ctx context.Context, parent dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {

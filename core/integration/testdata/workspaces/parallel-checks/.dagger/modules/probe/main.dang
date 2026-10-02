@@ -1,0 +1,42 @@
+# Four slow checks that fail when more than two of them run at once. Each
+# check marks itself running on a shared cache volume, samples how many
+# checks are marked for a few seconds, then clears its mark. A test runs
+# them with and without `dagger check --parallel 2`.
+#
+# The volume is keyed by bust.txt at the workspace root, so each run counts
+# only its own checks.
+"""
+Checks that detect how many of them run at once.
+"""
+type Probe {
+  """
+  Mark this check running, and fail if more than two checks are marked at
+  once.
+  """
+  probe(name: String!, ws: Directory!): Void {
+    container
+      .from("alpine:3.20")
+      .withMountedCache("/sync", cacheVolume("parallel-checks"))
+      .withEnvVariable("BUST", ws.file("bust.txt").contents)
+      .withEnvVariable("NAME", name)
+      .withExec(["sh", "-c", "set -e; dir=/sync/$BUST; mkdir -p $dir; touch $dir/$NAME; peak=0; i=0; while [ $i -lt 30 ]; do n=$(ls $dir | wc -l); if [ $n -gt $peak ]; then peak=$n; fi; i=$((i+1)); sleep 0.2; done; rm $dir/$NAME; echo \"peak $peak\"; if [ $peak -gt 2 ]; then echo \"$peak checks ran at once\" >&2; exit 1; fi"])
+      .sync
+    null
+  }
+
+  pub one(ws: Directory! @defaultPath(path: "/")): Void @check {
+    probe("one", ws)
+  }
+
+  pub two(ws: Directory! @defaultPath(path: "/")): Void @check {
+    probe("two", ws)
+  }
+
+  pub three(ws: Directory! @defaultPath(path: "/")): Void @check {
+    probe("three", ws)
+  }
+
+  pub four(ws: Directory! @defaultPath(path: "/")): Void @check {
+    probe("four", ws)
+  }
+}

@@ -1541,6 +1541,9 @@ pub struct ArtifactsValuesOpts {
     /// Cancel remaining work after the first failure.
     #[builder(setter(into, strip_option), default)]
     pub fail_fast: Option<bool>,
+    /// Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
+    #[builder(setter(into, strip_option), default)]
+    pub max_concurrency: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsFilterDirectivesOpts {
@@ -1787,6 +1790,9 @@ impl Artifacts {
         }
         if let Some(arguments) = opts.arguments {
             query = query.arg("arguments", arguments);
+        }
+        if let Some(max_concurrency) = opts.max_concurrency {
+            query = query.arg("maxConcurrency", max_concurrency);
         }
         let query = query.select("id");
         let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;

@@ -340,6 +340,7 @@ dagger check [--failfast] [FILTERS] [OPTIONS]
   -l, --list                 List available checks
   -m, --load-module string   Use a one-off module (local path or git ref)
       --module NAME          Select artifacts from module NAME
+  -j, --parallel int         Run at most this many checks at once; 0 means no limit. Defaults to $DAGGER_CHECK_PARALLEL
       --skip link            Exclude checks selected by this link
 ```
 
@@ -1169,6 +1170,7 @@ dagger generate [FILTERS] [OPTIONS]
   -l, --list            List available generators
       --module NAME     Select artifacts from module NAME
       --no-apply        Compute and show a summary of generated changes without applying them
+  -j, --parallel int    Run at most this many generators at once; 0 means no limit
       --require-load    Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)
 ```
 

@@ -2,11 +2,16 @@ package schema
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/util/parallel"
 	"github.com/stretchr/testify/require"
 )
 
@@ -85,6 +90,70 @@ func TestArtifactTypedConversion(t *testing.T) {
 			require.Equal(t, tc.wantValues, evaluations)
 		})
 	}
+}
+
+func TestRunArtifactJobsLimitsOnlyLimitedGroup(t *testing.T) {
+	const limit, localCount, remoteCount = 2, 6, 4
+	var running, peak, ran, remoteStarted atomic.Int32
+	local := parallel.New().WithLimit(limit)
+	for i := range localCount {
+		local = local.WithJob(fmt.Sprintf("local-%d", i), func(context.Context) error {
+			n := running.Add(1)
+			defer running.Add(-1)
+			for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+			}
+			time.Sleep(20 * time.Millisecond)
+			ran.Add(1)
+			return nil
+		})
+	}
+	remote := parallel.New()
+	remoteErrs := make([]error, remoteCount)
+	for i := range remoteCount {
+		remote = remote.WithJob(fmt.Sprintf("remote-%d", i), func(context.Context) error {
+			// Each remote job waits for all of them, so this passes only if
+			// they run at once.
+			remoteStarted.Add(1)
+			deadline := time.Now().Add(10 * time.Second)
+			for remoteStarted.Load() < remoteCount {
+				if time.Now().After(deadline) {
+					remoteErrs[i] = fmt.Errorf("only %d remote jobs started", remoteStarted.Load())
+					return remoteErrs[i]
+				}
+				time.Sleep(time.Millisecond)
+			}
+			return nil
+		})
+	}
+	runArtifactJobs(t.Context(), false, local, remote)
+	require.EqualValues(t, localCount, ran.Load())
+	require.LessOrEqual(t, peak.Load(), int32(limit))
+	for _, err := range remoteErrs {
+		require.NoError(t, err)
+	}
+}
+
+func TestRunArtifactJobsFailFastCancelsEveryGroup(t *testing.T) {
+	var canceled atomic.Int32
+	wait := func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			canceled.Add(1)
+			return ctx.Err()
+		case <-time.After(30 * time.Second):
+			return nil
+		}
+	}
+	// With a limit of 1, the failing job runs first and the others queue.
+	local := parallel.New().WithFailFast(true).WithLimit(1).
+		WithJob("fail", func(context.Context) error { return errors.New("boom") }).
+		WithJob("queued-1", wait).
+		WithJob("queued-2", wait)
+	remote := parallel.New().WithFailFast(true).WithJob("remote", wait)
+	start := time.Now()
+	runArtifactJobs(t.Context(), true, local, remote)
+	require.Less(t, time.Since(start), 10*time.Second)
+	require.EqualValues(t, 3, canceled.Load())
 }
 
 // TestArtifactScopeMixesWorkspaceAndBoundArtifacts covers selections that mix

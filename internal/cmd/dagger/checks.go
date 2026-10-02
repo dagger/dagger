@@ -3,6 +3,8 @@ package daggercmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -21,7 +23,11 @@ var (
 	checksGenerated bool
 	checksSkip      []string
 	checksScaleOut  bool
+	checksParallel  int
 )
+
+// checksParallelEnv sets the default for 'dagger check --parallel'.
+const checksParallelEnv = "DAGGER_CHECK_PARALLEL"
 
 func init() {
 	registerCommandArtifactFlags(checksCmd)
@@ -31,6 +37,7 @@ func init() {
 	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Exclude checks selected by this `link`")
 	checksCmd.Flags().BoolVar(&checksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	checksCmd.Flags().Lookup("scale-out").Hidden = true
+	checksCmd.Flags().IntVarP(&checksParallel, "parallel", "j", 0, "Run at most this many checks at once; 0 means no limit. Defaults to $"+checksParallelEnv)
 }
 
 var checksCmd = &cobra.Command{
@@ -41,6 +48,18 @@ var checksCmd = &cobra.Command{
 }
 
 func runChecksCommand(cmd *cobra.Command, args []string) error {
+	if !cmd.Flags().Changed("parallel") {
+		if value := os.Getenv(checksParallelEnv); value != "" {
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("%s: %w", checksParallelEnv, err)
+			}
+			checksParallel = n
+		}
+	}
+	if err := validateParallel(checksParallel); err != nil {
+		return err
+	}
 	params := client.Params{
 		EnableCloudScaleOut:  checksScaleOut,
 		SkipWorkspaceModules: true,
@@ -79,7 +98,7 @@ func runChecks(ctx context.Context, dag *dagger.Client, checks *dagger.Artifacts
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	results, err := evaluateArtifacts(ctx, dag, checks, checksFailFast)
+	results, err := evaluateArtifacts(ctx, dag, checks, checksFailFast, checksParallel)
 	if err != nil {
 		return err
 	}
@@ -88,6 +107,13 @@ func runChecks(ctx context.Context, dag *dagger.Client, checks *dagger.Artifacts
 	}
 	if err := artifactResultErrors(results); err != nil {
 		return idtui.ExitError{OriginalCode: 1, Original: err}
+	}
+	return nil
+}
+
+func validateParallel(n int) error {
+	if n < 0 {
+		return fmt.Errorf("--parallel must not be negative: %d", n)
 	}
 	return nil
 }

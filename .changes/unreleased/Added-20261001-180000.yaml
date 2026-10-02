@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  Limit how many checks run at once with `dagger check --parallel N` (or `-j N`),
+  or set a default with `DAGGER_CHECK_PARALLEL`. `dagger generate` takes the same
+  flag. The new `maxConcurrency` argument on `Artifacts.values` sets the limit
+  through the API.
+time: 2026-10-01T18:00:00Z
+custom:
+  Author: kpenfound
+  PR: ""
