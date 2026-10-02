@@ -292,8 +292,9 @@ func init() {
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline)
 	}
+	// Trace display reads retained engine archives before falling back to Cloud.
 	for _, cmd := range []*cobra.Command{traceCmd, cloudTracesViewCmd, cloudLogsCmd} {
-		setCommandCapabilities(cmd, mayRenderPipeline)
+		setCommandCapabilities(cmd, mayCallEngine, mayRenderPipeline)
 	}
 
 	for _, cmd := range []*cobra.Command{
