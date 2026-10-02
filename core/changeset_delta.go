@@ -13,7 +13,9 @@ import (
 	"strings"
 
 	continuityfs "github.com/containerd/continuity/fs"
+	"golang.org/x/sys/unix"
 
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 )
 
@@ -40,9 +42,11 @@ type changesetDelta struct {
 // instead of content-diffing both full trees like computeChangesetPaths.
 // Rename detection and line counts still come from git, but scoped to the
 // changed files only. When withStats is true it also returns per-path
-// line-change counts matching `git diff --numstat` semantics.
-func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string, withStats bool) (*ChangesetPaths, map[string]lineChanges, error) {
-	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir)
+// line-change counts matching `git diff --numstat` semantics. A non-empty
+// upperdir is the overlay layer separating the trees (see changesetUpperdir),
+// which is walked instead of both trees.
+func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir, upperdir string, withStats bool) (*ChangesetPaths, map[string]lineChanges, error) {
+	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir, upperdir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("collect delta: %w", err)
 	}
@@ -164,9 +168,10 @@ func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string,
 // reading content only when metadata alone is inconclusive: files backed by
 // the same inode are unchanged (snapshots sharing a lineage resolve unchanged
 // files to the same backing file), and distinct files whose stat happens to
-// match are content-compared rather than trusted.
-func collectChangesetDelta(ctx context.Context, beforeDir, afterDir string) (*changesetDelta, error) {
-	delta, _, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, -1)
+// match are content-compared rather than trusted. With a non-empty upperdir,
+// only that overlay layer is walked (see changesetUpperdir).
+func collectChangesetDelta(ctx context.Context, beforeDir, afterDir, upperdir string) (*changesetDelta, error) {
+	delta, _, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, upperdir, -1)
 	return delta, err
 }
 
@@ -179,15 +184,37 @@ var errDeltaLimitExceeded = errors.New("changeset delta entry limit exceeded")
 // been collected, returning exceeded=true and no delta rather than finishing a
 // walk whose result the caller has already decided is too big. A negative
 // limit walks everything.
-func collectChangesetDeltaBounded(ctx context.Context, beforeDir, afterDir string, limit int) (_ *changesetDelta, exceeded bool, _ error) {
-	delta := &changesetDelta{limit: limit}
+func collectChangesetDeltaBounded(ctx context.Context, beforeDir, afterDir, upperdir string, limit int) (_ *changesetDelta, exceeded bool, _ error) {
 	comparison := fsdiff.CompareInodeThenContent
 	if limit >= 0 {
 		// Count distinct backing files conservatively, even when their stat
 		// matches. Reading content here would defeat the inspection budget.
 		comparison = fsdiff.CompareInodeOnly
 	}
-	err := fsdiff.WalkChanges(ctx, beforeDir, afterDir, comparison, func(kind continuityfs.ChangeKind, path string, f os.FileInfo, prevErr error) error {
+	if upperdir != "" {
+		// After is Before plus this one layer, so the layer lists every
+		// difference: the walk costs the size of the change, not of the
+		// trees. Whiteouts mark removals and opaque directories are diffed
+		// in full by the walker; anything it can't interpret (e.g. a
+		// redirect_dir) is an error, and the trees are walked instead.
+		delta, exceeded, err := walkChangesetDelta(beforeDir, limit, func(fn continuityfs.ChangeFunc) error {
+			return fsdiff.WalkUpperdirChanges(ctx, fn, upperdir, afterDir, beforeDir, comparison)
+		})
+		if err == nil || ctx.Err() != nil {
+			return delta, exceeded, err
+		}
+		slog.Debug("changeset overlay delta failed; walking both trees", "error", err)
+	}
+	return walkChangesetDelta(beforeDir, limit, func(fn continuityfs.ChangeFunc) error {
+		return fsdiff.WalkChanges(ctx, beforeDir, afterDir, comparison, fn)
+	})
+}
+
+// walkChangesetDelta collects a changesetDelta from the changes walk reports
+// against the before tree at beforeDir.
+func walkChangesetDelta(beforeDir string, limit int, walk func(continuityfs.ChangeFunc) error) (_ *changesetDelta, exceeded bool, _ error) {
+	delta := &changesetDelta{limit: limit}
+	err := walk(func(kind continuityfs.ChangeKind, path string, f os.FileInfo, prevErr error) error {
 		if prevErr != nil {
 			return prevErr
 		}
@@ -305,8 +332,8 @@ func (d *changesetDelta) appendRemovedTree(root, rel string) error {
 // report (see changesetDelta.count). Distinct backing files count even if
 // their contents match, so true means more than limit candidates; false
 // guarantees at most limit paths changed.
-func changesetDeltaExceeds(ctx context.Context, beforeDir, afterDir string, limit int) (bool, error) {
-	_, exceeded, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, limit)
+func changesetDeltaExceeds(ctx context.Context, beforeDir, afterDir, upperdir string, limit int) (bool, error) {
+	_, exceeded, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, upperdir, limit)
 	if err != nil {
 		return false, fmt.Errorf("collect delta: %w", err)
 	}
@@ -382,8 +409,8 @@ func modifiedFileDiffers(beforeDir, afterDir, rel string) (bool, error) {
 // non-empty regardless of how git would pair them into renames, and
 // metadata-suspect files are verified by content with an early exit on the
 // first real difference.
-func changesetDeltaIsEmpty(ctx context.Context, beforeDir, afterDir string) (bool, error) {
-	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir)
+func changesetDeltaIsEmpty(ctx context.Context, beforeDir, afterDir, upperdir string) (bool, error) {
+	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir, upperdir)
 	if err != nil {
 		return false, fmt.Errorf("collect delta: %w", err)
 	}
@@ -403,6 +430,28 @@ func changesetDeltaIsEmpty(ctx context.Context, beforeDir, afterDir string) (boo
 		}
 	}
 	return true, nil
+}
+
+// overlayDirIsOpaque reports whether an overlay layer's directory is marked
+// opaque, hiding everything beneath it in the layers below.
+func overlayDirIsOpaque(dir string) (bool, error) {
+	for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
+		buf := make([]byte, 1)
+		n, err := unix.Lgetxattr(dir, key, buf)
+		switch {
+		case errors.Is(err, unix.ENODATA):
+			continue
+		case errors.Is(err, unix.ERANGE):
+			// Longer than "y": not the opaque marker overlayfs writes, so
+			// don't claim to understand it.
+			return false, fmt.Errorf("unexpected %s xattr on %s", key, dir)
+		case err != nil:
+			return false, fmt.Errorf("get %s xattr of %s: %w", key, dir, err)
+		case n == 1 && buf[0] == 'y':
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // gitFileMode maps a file's mode onto the modes git tracks: symlink, and
