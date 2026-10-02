@@ -7668,7 +7668,8 @@ type Workspace implements Node {
     version: String = ""
 
     """
-    New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+    New source for exactly one selected module. Resolved like an install source.
+    Cannot be combined with a version or a version suffix.
     """
     source: String = ""
   ): Workspace!

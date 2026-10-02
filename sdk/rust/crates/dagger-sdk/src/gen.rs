@@ -18220,12 +18220,12 @@ pub struct WorkspaceWithUpdatedModulesOpts<'a> {
     /// Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
     #[builder(setter(into, strip_option), default)]
     pub names: Option<Vec<&'a str>>,
-    /// New version request for exactly one selected module. Cannot be combined with a version suffix.
-    #[builder(setter(into, strip_option), default)]
-    pub version: Option<&'a str>,
     /// New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
     #[builder(setter(into, strip_option), default)]
     pub source: Option<&'a str>,
+    /// New version request for exactly one selected module. Cannot be combined with a version suffix.
+    #[builder(setter(into, strip_option), default)]
+    pub version: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceChangesOpts {
