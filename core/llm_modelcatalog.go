@@ -24,6 +24,37 @@ func defaultSmallModel(provider LLMProvider) (string, bool) {
 	return modelcatalog.DefaultSmallModel(string(provider))
 }
 
+// LLMReasoningMode is how a model takes reasoning configuration.
+type LLMReasoningMode int
+
+const (
+	// LLMReasoningUnknown is for models the catalog doesn't know (local
+	// endpoints, models newer than the embedded catalog). Providers pass the
+	// reasoning effort through in their native effort form.
+	LLMReasoningUnknown LLMReasoningMode = iota
+	// LLMReasoningUnsupported models can't reason; any effort is ignored.
+	LLMReasoningUnsupported
+	// LLMReasoningBudget models reason only with a thinking-token budget,
+	// not an effort level (e.g. Claude Haiku 4.5, Claude Sonnet 4.5).
+	LLMReasoningBudget
+	// LLMReasoningEffort models accept an effort level natively.
+	LLMReasoningEffort
+)
+
+// catalogReasoningMode derives a catalogued model's reasoning mode. Catwalk
+// lists effort levels only for models that take one; a model that can reason
+// but lists none takes a thinking-token budget instead.
+func catalogReasoningMode(m catwalk.Model) LLMReasoningMode {
+	switch {
+	case !m.CanReason:
+		return LLMReasoningUnsupported
+	case len(m.ReasoningLevels) == 0:
+		return LLMReasoningBudget
+	default:
+		return LLMReasoningEffort
+	}
+}
+
 const (
 	// llmCharsPerToken is the rough chars-per-token ratio used to estimate
 	// how much of the context window the conversation occupies.
