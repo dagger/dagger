@@ -82,6 +82,9 @@ func (c *Cache) collectUsageMeasurementInputs(ctx context.Context, measure bool)
 		return nil, errors.Join(err, snapshot.close(ctx))
 	}
 	c.keepSnapshotChains(snapshot.chains)
+	// Other passes now read these maps without a lock, so rows that only
+	// finalization sees must expand without caching anything.
+	snapshot.chains.published = true
 	return snapshot, nil
 }
 
@@ -236,6 +239,9 @@ type snapshotChains struct {
 	// chains maps a snapshot to its sorted complete chain: itself and every
 	// ancestor.
 	chains map[string][]string
+	// published reports that parents and chains were handed to later passes
+	// and must no longer be written.
+	published bool
 }
 
 type snapshotChainMemo struct {
@@ -299,6 +305,9 @@ func (chains snapshotChains) chain(id string) ([]string, bool) {
 	if chain, ok := chains.chains[id]; ok {
 		return chain, true
 	}
+	if chains.published {
+		return chains.uncachedChain(id)
+	}
 	if chain, ok := chains.knownChains[id]; ok {
 		// Still mark every link visited, so the next pass keeps the parents
 		// a new snapshot on top of this chain would need.
@@ -319,6 +328,16 @@ func (chains snapshotChains) chain(id string) ([]string, bool) {
 			return chain, true
 		}
 	}
+	chain, ok := chains.uncachedChain(id)
+	if ok {
+		chains.chains[id] = chain
+	}
+	return chain, ok
+}
+
+// uncachedChain assembles the snapshot's sorted chain from this pass's
+// parents without writing anything.
+func (chains snapshotChains) uncachedChain(id string) ([]string, bool) {
 	var chain []string
 	for link := id; link != ""; {
 		parent, resolved := chains.parents[link]
@@ -329,7 +348,6 @@ func (chains snapshotChains) chain(id string) ([]string, bool) {
 		link = parent
 	}
 	slices.Sort(chain)
-	chains.chains[id] = chain
 	return chain, true
 }
 

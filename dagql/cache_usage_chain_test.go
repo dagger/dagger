@@ -281,3 +281,46 @@ func TestCachePruneMeasuresOncePerPassUntilRemoval(t *testing.T) {
 		t.Fatalf("sampled identities %d times, want one measurement before the removal and one after (4)", identityCalls)
 	}
 }
+
+// Once a pass publishes its chains, later passes read them without a lock. A
+// row only finalization sees must expand without writing to them.
+func TestCacheUsageFinalizeLeavesPublishedChainsUnchanged(t *testing.T) {
+	ctx, c := chainTestCache(t)
+	publishProgressValue(t, ctx, c, "test-session", "exec2", chainTestValue("exec-2", 20), true)
+	cacheTestReleaseSession(t, c, ctx)
+	sample, err := c.collectUsageMeasurementInputs(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sample.close(ctx)
+	reader := c.newSnapshotChains()
+	if _, cached := reader.knownChains["image-top"]; cached {
+		t.Fatal("image-top chain cached before any row used it")
+	}
+
+	late := publishProgressValue(t, ctx, c, "holder", "late", NewInt(77), false).cacheSharedResult()
+	c.egraphMu.Lock()
+	late.payloadMu.Lock()
+	late.self = nil
+	late.hasValue = false
+	late.snapshotOwnerLinks = []PersistedSnapshotRefLink{{RefKey: "image-top", Role: "snapshot"}}
+	late.payloadRevision++
+	late.payloadMu.Unlock()
+
+	// Run a later pass's read concurrently, for the race detector.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		reader.chain("exec-2")
+	}()
+	_, err = sample.finalizeLocked()
+	c.egraphMu.Unlock()
+	<-done
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chain, cached := reader.knownChains["image-top"]; cached {
+		t.Fatalf("finalization wrote image-top=%v into the published chains", chain)
+	}
+}
+
