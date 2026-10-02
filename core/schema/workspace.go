@@ -274,6 +274,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("changes").Doc("Changes to apply."),
 			),
+		dagql.NodeFunc("__withPatch", s.withPatch).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("(Internal-only) Return this workspace with a Git patch applied at its root, without mutating the source.",
+				"Unlike withChanges, nothing is compared: the patch is applied as is, and must apply cleanly. Paths are relative to the workspace root, whatever its cwd. Not supported for host-backed workspaces.").
+			Args(
+				dagql.Arg("patch").Doc("Patch to apply."),
+				dagql.Arg("directories").Doc("Directories to create once the patch is applied, unless they exist: a patch cannot express an empty directory."),
+				dagql.Arg("directoryPermissions").Doc("Permissions of each of directories, in the same order."),
+				dagql.Arg("removedDirectories").Doc("Directories to remove once the patch is applied, with anything left in them."),
+			),
 		dagql.NodeFunc("withWorkdir", s.withWorkdir).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with its working directory pointed at the given workspace-relative path.").
@@ -2021,6 +2031,98 @@ func (s *workspaceSchema) applyChangeset(
 		})
 		return updated, err
 	}, mutate)
+}
+
+type workspaceWithPatchArgs struct {
+	Patch                core.FileID
+	Directories          []string `default:"[]"`
+	DirectoryPermissions []int    `default:"[]"`
+	RemovedDirectories   []string `default:"[]"`
+}
+
+// withPatch applies a Git patch to the workspace root. It is how an agent's
+// expensive changesets (a generator's, a command's) are recorded: the patch is
+// rendered against the workspace itself (core.Changeset.RenderPatchOnto), so
+// the overlay's recipe is the prior workspace plus the patch, rather than the
+// producer of the changeset, and applying it compares no trees.
+func (s *workspaceSchema) withPatch(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithPatchArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := parent.Self()
+	if ws.ClientLocalBase() {
+		// The overlay of a host-backed workspace holds only its edits, which
+		// a patch against the whole root cannot apply to.
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("cannot apply a patch to a host-backed workspace")
+	}
+	if len(args.Directories) != len(args.DirectoryPermissions) {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("got %d directories but %d directory permissions", len(args.Directories), len(args.DirectoryPermissions))
+	}
+	resolveDirs := func(dirs []string) ([]string, error) {
+		resolved := make([]string, len(dirs))
+		for i, dir := range dirs {
+			p, err := resolveWorkspacePath("/"+dir, ".")
+			if err != nil {
+				return nil, err
+			}
+			if p == "." {
+				return nil, fmt.Errorf("directory %q is the workspace root", dir)
+			}
+			if err := guardMountedPath(ws, p); err != nil {
+				return nil, err
+			}
+			resolved[i] = p
+		}
+		return resolved, nil
+	}
+	newDirs, err := resolveDirs(args.Directories)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	removedDirs, err := resolveDirs(args.RemovedDirectories)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	patchID, err := args.Patch.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return s.overlayEdit(ctx, parent, nil, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var patched dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, base, &patched, dagql.Selector{
+			Field: "withPatchFile",
+			Args:  []dagql.NamedInput{{Name: "patch", Value: dagql.NewID[*core.File](patchID)}},
+		}); err != nil {
+			return patched, err
+		}
+		for _, dir := range removedDirs {
+			if err := srv.Select(ctx, patched, &patched, dagql.Selector{
+				Field: "withoutDirectory",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(dir)}},
+			}); err != nil {
+				return patched, err
+			}
+		}
+		for i, dir := range newDirs {
+			// A no-op for a directory that exists: the patch already made
+			// it, or it never went away.
+			if err := srv.Select(ctx, patched, &patched, dagql.Selector{
+				Field: "withNewDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(dir)},
+					{Name: "permissions", Value: dagql.NewInt(args.DirectoryPermissions[i])},
+				},
+			}); err != nil {
+				return patched, err
+			}
+		}
+		return patched, nil
+	}, nil)
 }
 
 func (s *workspaceSchema) withWorkdir(
