@@ -91,6 +91,14 @@ type RemoteHolding struct {
 	// Replacements is the entry's replacement count in its cache, read with
 	// the value state above; it orders that state (HeldValueState).
 	Replacements uint64
+	// Executed reports that the call computed the entry, as the service
+	// counts executed evidence: once the cache has dropped a value, only a
+	// computation after the drop may bring it back (holding.executed).
+	Executed bool
+	// UsedAtUnixNano is when the span was recorded where the service read
+	// it, a use of the entry (0: unknown). The entry's last use never moves
+	// back.
+	UsedAtUnixNano int64
 }
 
 // RemoteHoldingUpdate is what a later report adds to an existing holding: the
@@ -244,6 +252,13 @@ type holding struct {
 
 	typeName      string
 	contentDigest digest.Digest
+	// executed marks a holding whose cache computed the entry: a call span
+	// with executed evidence named it. A prune that drops the entry's value
+	// clears it on every holding of the entry, so the service takes a
+	// dropped value back only from a cache that computed it after the drop;
+	// copies from placement, and entries a cache only hit, are never
+	// flagged.
+	executed bool
 }
 
 // hasUnexpiredHoldingLocked reports whether another cache holds a copy of res
@@ -390,6 +405,10 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 	if desc.TypeName != "" {
 		h.typeName = desc.TypeName
 	}
+	if desc.Executed {
+		h.executed = true
+	}
+	touchSharedResultLastUsed(entry, desc.UsedAtUnixNano)
 	candidates, changed := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
 		Replacements:  desc.Replacements,
 		Deps:          desc.Deps,
@@ -1221,6 +1240,9 @@ type RemoteHoldingInfo struct {
 	// Replacements is the counterpart's replacement count the value state
 	// describes.
 	Replacements uint64
+	// Executed reports that the holding's cache computed the entry since
+	// the cache last dropped the entry's value (RemoteHolding.Executed).
+	Executed bool
 }
 
 // RemoteEntryInfo returns what the cache holds for the entry of one holding,
@@ -1291,6 +1313,7 @@ func holdingInfo(key HolderKey, h *holding) RemoteHoldingInfo {
 		Retained:      h.retention.retained,
 		Dependents:    h.dependents,
 		Replacements:  h.replacements,
+		Executed:      h.executed,
 	}
 	if h.retention.retained {
 		info.RetentionExpiresAtUnix = h.retention.expiresAtUnix

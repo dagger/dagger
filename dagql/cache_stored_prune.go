@@ -82,8 +82,8 @@ func (c *Cache) dropPrunedValuesLocked(ctx context.Context, queue []*sharedResul
 // dropValueLocked takes res's value away and leaves it as an entry known only
 // through holdings: no record, no stored parts and no dependencies, whose
 // ownership it releases. It keeps its number, its identity in the e-graph and
-// its holdings. It returns the released dependencies. Requires egraphMu for
-// writing.
+// its holdings, whose executed marks it clears. It returns the released
+// dependencies. Requires egraphMu for writing.
 func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*sharedResult, error) {
 	var (
 		deps []*sharedResult
@@ -98,6 +98,11 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 		_, err := c.decrementIncomingOwnershipLocked(ctx, dep, nil)
 		rerr = errors.Join(rerr, err)
 		deps = append(deps, dep)
+	}
+	// The cache takes the value back only from a cache that computes it
+	// after the drop.
+	for _, h := range res.holders {
+		h.executed = false
 	}
 	res.deps = nil
 	res.storedParts = nil
@@ -202,11 +207,12 @@ func (res *sharedResult) storedBlobsLocked() map[digest.Digest]int64 {
 }
 
 // storedBlobUsage is the disk stage's measure of a blob-backed cache: each
-// value's distinct blobs, as usage identities, their sizes, and the bytes of
-// the distinct blobs the pool names.
+// value's distinct blobs, as usage identities, their sizes, and the count
+// and bytes of the distinct blobs the pool names.
 type storedBlobUsage struct {
 	byResult  map[sharedResultID][]string
 	sizes     map[string]int64
+	poolBlobs int
 	poolBytes int64
 }
 
@@ -242,5 +248,6 @@ func (c *Cache) storedBlobUsageLocked(checker *pruneCancellationChecker) (*store
 		slices.Sort(identities)
 		usage.byResult[id] = identities
 	}
+	usage.poolBlobs = len(counted)
 	return usage, nil
 }

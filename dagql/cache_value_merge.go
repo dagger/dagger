@@ -1028,6 +1028,10 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow) {
 		res.createdAtUnixNano = time.Now().UnixNano()
 	}
 	res.payloadMu.Unlock()
+	if c.blobBacked {
+		// On the Cloud, an export that stores a value uses it.
+		touchSharedResultLastUsed(res, time.Now().UnixNano())
+	}
 	res.transferRevision++
 }
 
