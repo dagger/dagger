@@ -122,6 +122,7 @@ type Server struct {
 
 	containerdMetaBoltDB *bolt.DB
 	containerdMetaDB     *ctdmetadata.DB
+	snapshotGarbage      *snapshotGarbage
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
 	builtinContentStore  content.Store
@@ -711,14 +712,8 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	srv.workerDefaultGCPolicy = getDefaultDagqlGCPolicy(cfg, ociCfg.GCConfig, srv.rootDir)
 
 	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
-	snapshotGC := func(ctx context.Context) error {
-		stats, err := srv.containerdMetaDB.GarbageCollect(ctx)
-		if err != nil {
-			return err
-		}
-		slog.Debug("containerd garbage collect after dagql prune", "stats", stats)
-		return nil
-	}
+	srv.snapshotGarbage = newSnapshotGarbage(srv.containerdMetaDB)
+	snapshotGC := srv.snapshotGarbage.Collect
 	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID)}
 	if srv.engineEvents != nil {
 		cacheOpts = append(cacheOpts, dagql.WithSnapshotShareReport(srv.emitShareEvent))
@@ -734,6 +729,9 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	// refs no longer exist, and this server has not admitted any new work yet.
 	if err := bkcache.ReleaseTransferLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
 		return localCacheStateResetNone, fmt.Errorf("release previous snapshot transfers: %w", err)
+	}
+	if err := bkcache.ReleaseOperationLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("release previous operation leases: %w", err)
 	}
 
 	return localCacheStateResetNone, nil
@@ -773,6 +771,7 @@ func (srv *Server) closeLocalCacheStateForReset() error {
 	srv.snapshotterName = ""
 	srv.localContentStore = nil
 	srv.containerdMetaDB = nil
+	srv.snapshotGarbage = nil
 	srv.leaseManager = nil
 	srv.contentStore = nil
 	srv.workerGCPolicies = nil

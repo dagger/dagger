@@ -367,6 +367,12 @@ At a high level, the prune implementation in `dagql/cache_prune.go` does this:
 10. compact eq-classes if needed
 11. trigger snapshot metadata GC if something was actually reclaimed
 
+Steps 1-4 run once per pass. A later policy reuses that measured state only to
+decide it has nothing to do, since measuring holds the lock and is most of a
+pass's cost. Before a later policy plans removals, and after any policy removes
+entries, the state is measured again: results published since may retain what
+the policy would remove.
+
 This is absolutely a best-effort pruning pass, not an optimal solver.
 
 ## Structural Estimate And Memory Pruning
@@ -607,6 +613,32 @@ The basic idea is:
 This is how pruning avoids double-counting shared snapshots or other shared
 storage.
 
+A snapshot's owner lease retains its whole parent chain, so a result's usage
+identities are that chain, not only the snapshots its value reports. The usage
+pass resolves each snapshot's parent outside the lock and adds the ancestors as
+identities (`snapshotChains` in `dagql/cache_usage.go`). Ancestors are sized
+directly by snapshot ID, since the value only knows how to size its own
+snapshots. In practice:
+
+- an image's lower layers count once, against the earliest result that retains
+  them, so the `from` result shows the whole image
+- a result stacked on others shows only its own layer while the results below
+  it are alive, and pruning it is credited with only that layer
+- once the results below are gone, the layers they left behind are charged to
+  the result still retaining them
+
+Parent links never change, so each pass reuses the parents and sorted chains
+the previous pass resolved and keeps only the ones it visited. Rows on the same
+snapshot share its chain slice. If any row's chain has an
+unresolved link (a lookup failed, or the row appeared after sampling), the pass
+is deferred like any other incomplete membership: a row missing ancestors would
+let the simulation credit layers it still retains.
+
+One case stays uncounted. A merge snapshot's recorded usage leaves out files
+hardlinked from other merge inputs, and those inputs are not in its parent
+chain. Once the inputs' results are collected, that data stays on disk with
+the merge without being charged to it.
+
 ## Size Measurement
 
 Disk prune needs approximate physical reclaim sizes, so it measures usage before
@@ -697,6 +729,16 @@ removed persisted roots. Structural reports deliberately have no per-root
 entries, so this decision uses the aggregate removed-root count. The low-level
 cleanup semantics are intentionally delegated to containerd rather than
 reimplemented in dagql.
+
+Removing a lease only marks the metadata DB dirty, and leases are released
+outside any prune too: session teardown, failed execs, stopped services. So the
+engine also tracks deletions through containerd's mutation callback and, at the
+end of every GC pass, collects whatever is still pending, whatever the policies
+decided (`snapshotGarbage` in `engine/server/snapshot_garbage.go`). The first
+pass after startup always collects, since containerd's deletion count does not
+survive a restart. This collection also runs with `gc.enabled=false`: disabling
+GC stops the engine from choosing entries to drop, but nothing references this
+data anymore.
 
 That is enough to understand the current prune story at a high level. The
 lease/snapshot side can be documented in finer detail separately.
