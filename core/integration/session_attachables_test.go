@@ -134,39 +134,145 @@ func (SessionAttachablesSuite) TestPromptGoesToClientWithPromptHandler(ctx conte
 }
 
 const (
-	joinerHelperEnv  = "_DAGGER_TEST_JOINER_SESSION"
-	joinerHelperPort = "_DAGGER_TEST_JOINER_PORT"
-	joinerHelperLine = "JOINER "
+	sessionHelperModeEnv    = "_DAGGER_TEST_SESSION_HELPER"
+	sessionHelperSessionEnv = "_DAGGER_TEST_SESSION_HELPER_SESSION"
+	sessionHelperArgEnv     = "_DAGGER_TEST_SESSION_HELPER_ARG"
+	sessionHelperLine       = "SESSION-HELPER "
 )
 
-// TestSessionJoinerHelperProcess is not a test. It is the second root client
-// of TestHostServiceFailsWhenSourceClientLeaves, run as a separate process so
-// the test can kill it. It joins the session, creates a container-to-host
-// service, prints its client ID and the service ID, and closes when it reads a
-// line on stdin.
-func TestSessionJoinerHelperProcess(t *testing.T) {
-	sessionID := os.Getenv(joinerHelperEnv)
-	if sessionID == "" {
-		t.Skip("helper process for TestSessionAttachables")
+// sessionHelper is a root client run as a separate process, so that a test
+// can kill it.
+type sessionHelper struct {
+	cmd   *exec.Cmd
+	stdin io.Writer
+
+	SessionID string
+	ClientID  string
+	// Value is what the helper's mode reports, such as an object ID.
+	Value string
+}
+
+// startSessionHelper starts TestSessionHelperProcess in the given mode and
+// waits for it to report.
+func startSessionHelper(t *testctx.T, mode, sessionID, arg string) *sessionHelper {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSessionHelperProcess$")
+	cmd.Env = append(os.Environ(),
+		sessionHelperModeEnv+"="+mode,
+		sessionHelperSessionEnv+"="+sessionID,
+		sessionHelperArgEnv+"="+arg,
+	)
+	cmd.Stderr = os.Stderr
+	stdin, err := cmd.StdinPipe()
+	require.NoError(t, err)
+	stdout, err := cmd.StdoutPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	})
+	h := &sessionHelper{cmd: cmd, stdin: stdin}
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		if line, ok := strings.CutPrefix(scanner.Text(), sessionHelperLine); ok {
+			fields := strings.Fields(line)
+			require.Len(t, fields, 3)
+			h.SessionID, h.ClientID, h.Value = fields[0], fields[1], fields[2]
+			break
+		}
+	}
+	require.NotEmpty(t, h.ClientID, "helper did not report: %v", scanner.Err())
+	go io.Copy(io.Discard, stdout)
+	return h
+}
+
+// leave makes the helper close its client ("shutdown") or kills it ("kill").
+func (h *sessionHelper) leave(t *testctx.T, how string) {
+	t.Helper()
+	switch how {
+	case "shutdown":
+		_, err := io.WriteString(h.stdin, "close\n")
+		require.NoError(t, err)
+		require.NoError(t, h.cmd.Wait())
+	case "kill":
+		require.NoError(t, h.cmd.Process.Kill())
+		h.cmd.Wait()
+	default:
+		t.Fatalf("unknown way to leave: %s", how)
+	}
+}
+
+// webService serves body over HTTP on port 8080.
+func webService(c *dagger.Client, body string) *dagger.Service {
+	return c.Container().
+		From(busyboxImage).
+		WithNewFile("/www/index.html", body).
+		WithExposedPort(8080).
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{"httpd", "-f", "-p", "8080", "-h", "/www"},
+		})
+}
+
+// TestSessionHelperProcess is not a test. It is a root client that session
+// tests run as a separate process, so they can kill it. It connects,
+// does what its mode says, prints its session ID, client ID and a value, and
+// closes when it reads a line on stdin. Modes:
+//   - host-service: join the session and create a container-to-host service
+//     forwarding the port in the argument; report the service ID.
+//   - detached-creator: create a detached session and start a web service
+//     serving the argument; report the service ID.
+//   - tunnel: join the session and forward the service whose ID is the
+//     argument to a host port; report the port.
+func TestSessionHelperProcess(t *testing.T) {
+	mode := os.Getenv(sessionHelperModeEnv)
+	if mode == "" {
+		t.Skip("helper process for session tests")
 	}
 	ctx := context.Background()
-	port, err := strconv.Atoi(os.Getenv(joinerHelperPort))
-	require.NoError(t, err)
-
-	joiner, err := client.Connect(ctx, client.Params{
+	arg := os.Getenv(sessionHelperArgEnv)
+	params := client.Params{
 		RunnerHost: os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"),
-		SessionID:  sessionID,
-	})
+		SessionID:  os.Getenv(sessionHelperSessionEnv),
+	}
+	if mode == "detached-creator" {
+		params.DetachedSession = true
+	}
+	c, err := client.Connect(ctx, params)
 	require.NoError(t, err)
+	dag := c.Dagger()
 
-	svcID, err := joiner.Dagger().Host().
-		Service([]dagger.PortForward{{Frontend: port, Backend: port}}, dagger.HostServiceOpts{Host: "127.0.0.1"}).
-		ID(ctx)
-	require.NoError(t, err)
-	fmt.Printf("%s%s %s\n", joinerHelperLine, joiner.ID, svcID)
+	var value string
+	switch mode {
+	case "host-service":
+		port, err := strconv.Atoi(arg)
+		require.NoError(t, err)
+		id, err := dag.Host().
+			Service([]dagger.PortForward{{Frontend: port, Backend: port}}, dagger.HostServiceOpts{Host: "127.0.0.1"}).
+			ID(ctx)
+		require.NoError(t, err)
+		value = string(id)
+	case "detached-creator":
+		svc, err := webService(dag, arg).Start(ctx)
+		require.NoError(t, err)
+		id, err := svc.ID(ctx)
+		require.NoError(t, err)
+		value = string(id)
+	case "tunnel":
+		svc, err := dagger.Load[*dagger.Service](ctx, dag, dagger.ID(arg))
+		require.NoError(t, err)
+		tunnel, err := dag.Host().Tunnel(svc).Start(ctx)
+		require.NoError(t, err)
+		endpoint, err := tunnel.Endpoint(ctx)
+		require.NoError(t, err)
+		value = endpoint
+	default:
+		t.Fatalf("unknown helper mode %q", mode)
+	}
+	fmt.Printf("%s%s %s %s\n", sessionHelperLine, c.SessionID, c.ID, value)
 
 	_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
-	require.NoError(t, joiner.Close())
+	require.NoError(t, c.Close())
 }
 
 func (SessionAttachablesSuite) TestHostServiceFailsWhenSourceClientLeaves(ctx context.Context, t *testctx.T) {
@@ -192,31 +298,8 @@ func (SessionAttachablesSuite) TestHostServiceFailsWhenSourceClientLeaves(ctx co
 			creator := connectEngineClient(ctx, t, client.Params{})
 			c := creator.Dagger()
 
-			helper := exec.Command(os.Args[0], "-test.run=^TestSessionJoinerHelperProcess$")
-			helper.Env = append(os.Environ(),
-				joinerHelperEnv+"="+creator.SessionID,
-				joinerHelperPort+"="+strconv.Itoa(port),
-			)
-			helper.Stderr = os.Stderr
-			helperStdin, err := helper.StdinPipe()
-			require.NoError(t, err)
-			helperStdout, err := helper.StdoutPipe()
-			require.NoError(t, err)
-			require.NoError(t, helper.Start())
-			t.Cleanup(func() {
-				helper.Process.Kill()
-				helper.Wait()
-			})
-			var joinerID, svcID string
-			scanner := bufio.NewScanner(helperStdout)
-			for scanner.Scan() {
-				if fields, ok := strings.CutPrefix(scanner.Text(), joinerHelperLine); ok {
-					joinerID, svcID, _ = strings.Cut(fields, " ")
-					break
-				}
-			}
-			require.NotEmpty(t, svcID, "helper did not report its service: %v", scanner.Err())
-			go io.Copy(io.Discard, helperStdout)
+			joiner := startSessionHelper(t, "host-service", creator.SessionID, strconv.Itoa(port))
+			joinerID, svcID := joiner.ClientID, joiner.Value
 
 			// The joiner's host service, and a container service bound to it
 			// that the creator starts.
@@ -243,15 +326,7 @@ func (SessionAttachablesSuite) TestHostServiceFailsWhenSourceClientLeaves(ctx co
 			require.NoError(t, err)
 			require.Equal(t, "HOSTC2H", out)
 
-			switch leave {
-			case "shutdown":
-				_, err = io.WriteString(helperStdin, "close\n")
-				require.NoError(t, err)
-				require.NoError(t, helper.Wait())
-			case "kill":
-				require.NoError(t, helper.Process.Kill())
-				helper.Wait()
-			}
+			joiner.leave(t, leave)
 			// The engine notices a lost attachables connection after two failed
 			// health checks, 5s apart.
 			time.Sleep(15 * time.Second)
