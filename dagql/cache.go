@@ -84,6 +84,9 @@ type CachePruneReport struct {
 	ReclaimedBytes int64
 	// DroppedEdges are the retention edges the run dropped, in order.
 	DroppedEdges []CacheRetentionDrop
+	// DroppedValues counts the values a blob-backed cache's run dropped:
+	// those that only holdings kept once their stored roots went.
+	DroppedValues int
 }
 
 // CacheRetentionDrop is one retention edge a prune run dropped: the entry's
@@ -137,6 +140,9 @@ type CacheMetadataPruneReport struct {
 	CandidatesExhausted           bool
 	// DroppedEdges are the retention edges the pass dropped, in order.
 	DroppedEdges []CacheRetentionDrop
+	// DroppedValues counts the values a blob-backed cache's pass dropped:
+	// those that only holdings kept once their stored roots went.
+	DroppedValues int
 
 	SnapshotGCAttempted bool
 	SnapshotGCSucceeded bool
@@ -1658,8 +1664,16 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 // lock that deleted it. The one other deletion is a failed in-place
 // replacement's, which collects its entry with the edge (cache_current_entry.go).
 func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, _ error) {
+	droppedAt, removed, _, err := c.removePrunedEdge(ctx, resultID)
+	return droppedAt, removed, err
+}
+
+// removePrunedEdge is removePersistedEdge for a prune. On a blob-backed cache
+// the cascade goes through holdings, and it also reports how many values it
+// dropped (dropPrunedValuesLocked).
+func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, droppedValues int, _ error) {
 	if c == nil || resultID == 0 {
-		return time.Time{}, false, nil
+		return time.Time{}, false, 0, nil
 	}
 
 	var (
@@ -1672,7 +1686,7 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 	edge, found := c.persistedEdgesByResult[resultID]
 	if !found || edge.unpruneable {
 		c.egraphMu.Unlock()
-		return time.Time{}, false, nil
+		return time.Time{}, false, 0, nil
 	}
 	delete(c.persistedEdgesByResult, resultID)
 	droppedAt = time.Now()
@@ -1681,6 +1695,10 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 		var err error
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, res, queue)
 		rerr = errors.Join(rerr, err)
+		if c.blobBacked {
+			queue, droppedValues, err = c.dropPrunedValuesLocked(ctx, []*sharedResult{res})
+			rerr = errors.Join(rerr, err)
+		}
 	}
 	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
@@ -1690,7 +1708,7 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 		c.testAfterRetentionDrop(resultID)
 	}
 
-	return droppedAt, true, errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
+	return droppedAt, true, droppedValues, errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
 }
 
 func (c *Cache) incrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult) {
