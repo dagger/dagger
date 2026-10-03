@@ -14,6 +14,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -266,6 +267,10 @@ func (socket *Socket) forwardAgentClientFromSessionResourceCandidate(ctx context
 }
 
 func (socket *Socket) MountSSHAgent(ctx context.Context) (string, func() error, error) {
+	ctx, err := withSocketNetworkRecording(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("create socket network recorders: %w", err)
+	}
 	dir, err := os.MkdirTemp("", ".dagger-ssh-sock")
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create temp dir: %w", err)
@@ -323,6 +328,10 @@ func (socket *Socket) MountSSHAgent(ctx context.Context) (string, func() error, 
 		_ = os.RemoveAll(dir)
 		return err
 	}, nil
+}
+
+func withSocketNetworkRecording(ctx context.Context) (context.Context, error) {
+	return enginetelemetry.WithNetworkRecording(ctx)
 }
 
 func (socket *Socket) AgentFingerprints(ctx context.Context) ([]string, error) {

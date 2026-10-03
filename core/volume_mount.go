@@ -20,6 +20,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 )
 
 func prepareExecVolumeMount(cfg *execVolumeMountConfig) (bkcache.Mountable, error) {
@@ -142,6 +143,13 @@ func mountSSHFSVolume(ctx context.Context, readonly bool, cfg *SSHFSVolumeConfig
 	var stderr bytes.Buffer
 	cmd := osexec.CommandContext(ctx, "sshfs", args...)
 	cmd.Stderr = &stderr
+	networkCtx, networkSpan := Tracer(ctx).Start(ctx, "sshfs")
+	finishNetwork := enginetelemetry.PrepareCommandNetwork(networkCtx, cmd)
+	release = joinCleanup(func() error {
+		finishNetwork()
+		networkSpan.End()
+		return nil
+	}, release)
 	if err = runProcessGroup(ctx, cmd); err != nil {
 		_ = unmountWithDetachFallback(mountDir)()
 		return nil, nil, fmt.Errorf("mount sshfs volume: %w%s", err, formatCommandStderr(stderr.Bytes()))

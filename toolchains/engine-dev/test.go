@@ -55,6 +55,9 @@ func (dev *EngineDev) Test(
 	// Enable the given ebpf progs in the engine during tests
 	// +optional
 	ebpfProgs []string,
+	// Enable privileged eBPF tests (Linux 6.15 or newer)
+	// +optional
+	ebpf bool,
 ) error {
 	// FIXME: use the damn standard Go toolchain
 	ctr, _, err := dev.testContainer(ctx, ebpfProgs)
@@ -70,6 +73,7 @@ func (dev *EngineDev) Test(
 		timeout:       timeout,
 		race:          race,
 		count:         count,
+		ebpf:          ebpf,
 		envs:          envFile,
 		testVerbose:   testVerbose,
 		update:        update,
@@ -133,6 +137,7 @@ func (dev *EngineDev) TestTelemetry(
 }
 
 type testOpts struct {
+	ebpf          bool
 	runTestRegex  string
 	skipTestRegex string
 	pkg           string
@@ -155,6 +160,9 @@ func (dev *EngineDev) test(
 	// FIXME merge this into chainable functions instead
 	opts *testOpts,
 ) *dagger.Container {
+	if opts.ebpf {
+		container = container.WithEnvVariable("DAGGER_TEST_EBPF", "1")
+	}
 	if opts.envs != nil {
 		container = container.WithMountedSecret("/dagger.env", opts.envs)
 	}
@@ -233,7 +241,11 @@ func (dev *EngineDev) test(
 
 	return container.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithExec(args)
+		WithExec(args, dagger.ContainerWithExecOpts{
+			// The test itself loads BPF and creates cgroups. Privileging only
+			// the separate dev-engine service does not grant it those rights.
+			InsecureRootCapabilities: opts.ebpf,
+		})
 }
 
 // Build an ephemeral test environment ready to run core engine tests

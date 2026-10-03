@@ -754,10 +754,13 @@ func overrideNetworkConfig(hostsOverride, resolvOverride string) error {
 }
 
 func runProcessGroup(ctx context.Context, cmd *exec.Cmd) error {
-	cmd.SysProcAttr = &unix.SysProcAttr{
-		Setpgid:   true,
-		Pdeathsig: unix.SIGTERM,
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &unix.SysProcAttr{}
 	}
+	cmd.SysProcAttr.Setpgid = true
+	cmd.SysProcAttr.Pdeathsig = unix.SIGTERM
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := cmd.Start(); err != nil {
 		return err
 	}

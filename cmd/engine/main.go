@@ -25,6 +25,8 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/ebpf"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetry/networkmetrics"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
 	"github.com/dagger/dagger/internal/buildkit/util/appcontext"
@@ -44,6 +46,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine/ebpf/filetracer"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/ebpf/ovltracer"
 	"github.com/dagger/dagger/engine/engineutil/cacerts"
 	"github.com/dagger/dagger/engine/server"
@@ -310,6 +313,8 @@ func main() { //nolint:gocyclo
 
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
 	var resourceMetrics *sdkmetric.MeterProvider
+	var networkAccounting *nettracer.Tracer
+	var closeCommandPlacement func() error
 
 	app.Action = func(c *cli.Context) error {
 		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
@@ -351,6 +356,21 @@ func main() { //nolint:gocyclo
 			return err
 		}
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
+		networkAccounting, err = nettracer.New()
+		var placementErr error
+		closeCommandPlacement, placementErr = nettracer.InitCommandPlacement()
+		if placementErr != nil {
+			bklog.G(ctx).Warnf("command cgroup placement unavailable: %s", placementErr)
+		}
+		enginetel.SetCommandNetworkHook(networkmetrics.PrepareCommandNetwork)
+		if err != nil {
+			bklog.G(ctx).Warnf("network accounting unavailable: %s", err)
+		} else if err := nettracer.EngineAccountingError(); err != nil {
+			bklog.G(ctx).Warnf(
+				"engine cgroup network accounting unavailable: %s",
+				err,
+			)
+		}
 
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancelCause(context.Background())
@@ -584,6 +604,18 @@ func main() { //nolint:gocyclo
 		fmt.Println("shutting down telemetry...")
 		defer fmt.Println("telemetry shut down complete")
 		closeResourceMetrics(ctx, resourceMetrics)
+		if closeCommandPlacement != nil {
+			if err := closeCommandPlacement(); err != nil {
+				bklog.G(ctx).WithError(err).Warn("command cgroup cleanup incomplete")
+			}
+		}
+		if networkAccounting != nil {
+			if err := networkAccounting.Close(); err != nil {
+				bklog.G(ctx).WithError(err).Warn(
+					"network accounting shutdown incomplete",
+				)
+			}
+		}
 		telemetry.Close()
 		return nil
 	}

@@ -15,7 +15,7 @@ import (
 
 // Exercise the real OCI spec generator, including containerd's default path.
 // This is the boundary runc uses to place withExec and service processes; it
-// must not inherit the engine's /init cgroup as its default parent.
+// must not inherit the engine's /engine cgroup as its default parent.
 func TestGenerateBaseSpecCgroupParent(t *testing.T) {
 	t.Parallel()
 
@@ -25,13 +25,13 @@ func TestGenerateBaseSpecCgroupParent(t *testing.T) {
 		execParent    string
 		want          string
 	}{
-		{name: "default", want: "/buildkit/exec-id"},
-		{name: "explicit root", defaultParent: "/", want: "/buildkit/exec-id"},
-		{name: "configured parent", defaultParent: "/workloads", want: "/workloads/buildkit/exec-id"},
-		{name: "relative parent", defaultParent: "workloads", want: "/workloads/buildkit/exec-id"},
-		{name: "exec overrides configured parent", defaultParent: "/workloads", execParent: "/other", want: "/other/buildkit/exec-id"},
+		{name: "default", want: "/exec/exec-id"},
+		{name: "explicit root", defaultParent: "/", want: "/exec/exec-id"},
+		{name: "configured parent", defaultParent: "/workloads", want: "/workloads/exec/exec-id"},
+		{name: "relative parent", defaultParent: "workloads", want: "/workloads/exec/exec-id"},
+		{name: "exec overrides configured parent", defaultParent: "/workloads", execParent: "/other", want: "/other/exec/exec-id"},
 		{name: "systemd parent", defaultParent: "workloads.slice:dagger:", want: "workloads.slice:dagger:exec-id"},
-		{name: "explicit engine descendant", defaultParent: "/init", want: "/init/buildkit/exec-id"},
+		{name: "explicit engine descendant", defaultParent: "/engine", want: "/engine/exec/exec-id"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

@@ -27,6 +27,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 )
 
 func init() {
@@ -908,6 +909,11 @@ func (llm *LLM) loop(ctx context.Context) error {
 				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			))
+			ctx, sendErr = enginetelemetry.WithNetworkRecording(ctx)
+			if sendErr != nil {
+				telemetry.EndWithCause(span, &sendErr)
+				return backoff.Permanent(sendErr)
+			}
 			res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
 			telemetry.EndWithCause(span, &sendErr)
 			if sendErr != nil {

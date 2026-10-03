@@ -14,6 +14,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -226,6 +227,8 @@ func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd, verbose bo
 		return nil, err
 	}
 	defer out.Close()
+	finish := enginetel.PrepareCommandNetwork(ctx, rg)
+	defer finish()
 	if err := rg.Start(); err != nil {
 		return nil, err
 	}

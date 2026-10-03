@@ -23,7 +23,7 @@ type OpenAIClient struct {
 }
 
 func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreaming bool) *OpenAIClient {
-	var opts []option.RequestOption
+	opts := []option.RequestOption{option.WithHTTPClient(newLLMNetworkClient())}
 	opts = append(opts, option.WithHeader("Content-Type", "application/json"))
 	if azureVersion != "" {
 		opts = append(opts, azure.WithEndpoint(endpoint.BaseURL, azureVersion))

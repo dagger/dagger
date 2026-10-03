@@ -23,6 +23,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -329,7 +330,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	childrenHandler := images.ChildrenHandler(r.contentStore)
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(progressIngester{r.contentStore}, fetcher),
+		remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher),
 		childrenHandler,
 		dslHandler,
 	)
@@ -391,14 +392,40 @@ type localizedImageClosure struct {
 }
 
 func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+	recorder, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return "", ocispecs.Descriptor{}, nil, fmt.Errorf("create registry network recorder: %w", err)
+	}
 	resolver := docker.NewResolver(docker.ResolverOptions{
-		Hosts: r.registryHosts(network),
+		Hosts: registryHostsWithNetworkRecorder(r.registryHosts(network), recorder),
 	})
 	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
+	// The same transport records both resolution and descriptor response bodies.
 	return resolvedRef, rootDesc, resolver, nil
+}
+
+func registryHostsWithNetworkRecorder(hosts docker.RegistryHosts, recorder *enginetelemetry.NetworkAccumulator) docker.RegistryHosts {
+	return func(domain string) ([]docker.RegistryHost, error) {
+		resolved, err := hosts(domain)
+		if err != nil {
+			return nil, err
+		}
+		for i := range resolved {
+			client := cloneHTTPClient(resolved[i].Client)
+			transport := client.Transport
+			if transport == nil {
+				transport = http.DefaultTransport
+			}
+			client.Transport = enginetelemetry.NetworkResponseTransport(transport,
+				func(_ context.Context, n int64) { recorder.Add(n) },
+			)
+			resolved[i].Client = client
+		}
+		return resolved, nil
+	}
 }
 
 func (r *Resolver) tryLocalCanonicalConfig(
@@ -590,6 +617,13 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if img == nil {
 		return errors.New("pushed image is nil")
 	}
+	network, err := enginetelemetry.NewNetworkAccumulator(
+		ctx,
+		enginetelemetry.NetworkTX,
+	)
+	if err != nil {
+		return fmt.Errorf("create registry push network recorder: %w", err)
+	}
 
 	ctx = contentutil.RegisterContentPayloadTypes(ctx)
 	rootDesc := img.RootDesc
@@ -616,7 +650,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	}
 
 	pushUpdateSourceHandler, err := updateDistributionSourceHandler(r.contentStore, images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
-		_, err := pushHandler(pusher, img.Provider)(ctx, desc)
+		_, err := pushHandler(pusher, img.Provider, network)(ctx, desc)
 		return nil, err
 	}), ref)
 	if err != nil {
@@ -655,7 +689,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if err != nil {
 		return err
 	}
-	pushLeaf := pushHandler(pusher, img.Provider)
+	pushLeaf := pushHandler(pusher, img.Provider, network)
 	for i := len(manifestStack) - 1; i >= 0; i-- {
 		if _, err := pushLeaf(ctx, manifestStack[i]); err != nil {
 			return err
@@ -1138,7 +1172,11 @@ func collectManifestStack(ctx context.Context, provider content.Provider, rootDe
 	return stack, nil
 }
 
-func pushHandler(pusher remotes.Pusher, provider content.Provider) images.HandlerFunc {
+func pushHandler(
+	pusher remotes.Pusher,
+	provider content.Provider,
+	network *enginetelemetry.NetworkAccumulator,
+) images.HandlerFunc {
 	return func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
 		cw, err := pusher.Push(ctx, desc)
 		if err != nil {
@@ -1155,7 +1193,10 @@ func pushHandler(pusher remotes.Pusher, provider content.Provider) images.Handle
 		defer ra.Close()
 		// stream upload progress per layer, attributed to the "pushing
 		// <ref>" span carried by ctx
-		w := wrapProgressWriter(ctx, cw, desc)
+		w := &attributedWriter{
+			Writer:  wrapProgressWriter(ctx, cw, desc),
+			network: network,
+		}
 		if err := content.Copy(ctx, w, io.NewSectionReader(ra, 0, desc.Size), desc.Size, desc.Digest); err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
 				return nil, nil

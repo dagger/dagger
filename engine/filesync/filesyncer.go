@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -71,6 +72,10 @@ func (ls *FileSyncer) snapshot(
 ) (_ bkcache.ImmutableRef, _ digest.Digest, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "filesync")
 	defer telemetry.EndWithCause(span, &rerr)
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("create filesync network recorders: %w", err)
+	}
 
 	statCtx := engine.LocalImportOpts{
 		Path:              clientPath,

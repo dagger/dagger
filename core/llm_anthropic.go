@@ -22,7 +22,7 @@ type AnthropicClient struct {
 }
 
 func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
-	opts := []option.RequestOption{option.WithAPIKey(endpoint.Key)}
+	opts := []option.RequestOption{option.WithAPIKey(endpoint.Key), option.WithHTTPClient(newLLMNetworkClient())}
 	if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
 	}

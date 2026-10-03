@@ -67,13 +67,16 @@ func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mou
 	if len(meta.CgroupParent) > 0 {
 		cgroupParent = meta.CgroupParent
 	}
+	if cgroupParent == "" {
+		cgroupParent = "/"
+	}
 	if cgroupParent != "" {
 		var cgroupsPath string
 		lastSeparator := cgroupParent[len(cgroupParent)-1:]
 		if strings.Contains(cgroupParent, ".slice") && lastSeparator == ":" {
 			cgroupsPath = cgroupParent + id
 		} else {
-			cgroupsPath = filepath.Join("/", cgroupParent, "buildkit", id)
+			cgroupsPath = filepath.Join("/", cgroupParent, "exec", id)
 		}
 		opts = append(opts, oci.WithCgroup(cgroupsPath))
 	}

@@ -22,6 +22,7 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/layercopy"
 	"github.com/dagger/dagger/util/patternmatcher"
@@ -1759,6 +1760,8 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 	apply.Stdin = patch
 	apply.Stdout = stdio.Stdout
 	apply.Stderr = stdio.Stderr
+	finishNetwork := enginetel.PrepareCommandNetwork(ctx, apply)
+	defer finishNetwork()
 	if err := apply.Run(); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()

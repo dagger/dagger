@@ -11,11 +11,14 @@ import (
 	"path/filepath"
 
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
+	telemetry "github.com/dagger/otel-go"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 )
 
 func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg any) error {
@@ -45,8 +48,13 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 }
 
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create host file network recorder: %w", err)
+	}
+
 	msg := filesync.BytesMessage{}
-	err := c.diffcopy(ctx, engine.LocalImportOpts{
+	err = c.diffcopy(ctx, engine.LocalImportOpts{
 		Path:               path,
 		ReadSingleFileOnly: true,
 		MaxFileSize:        MaxFileContentsChunkSize,
@@ -117,6 +125,14 @@ func (c *Client) LocalDirExport(
 	if !caller.Supports(method) {
 		return fmt.Errorf("method %s not supported by the client", method)
 	}
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	ctx, err = enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return fmt.Errorf("create directory export network recorder: %w", err)
+	}
 
 	ctx = engine.LocalExportOpts{
 		Path:        destPath,
@@ -166,6 +182,14 @@ func (c *Client) LocalFileExport(
 	stat, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to stat file: %w", err)
+	}
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	ctx, err = enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return fmt.Errorf("create file export network recorder: %w", err)
 	}
 
 	ctx = engine.LocalExportOpts{
@@ -227,6 +251,14 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 	defer func() {
 		slog.TraceContext(ctx, "finished exporting bytes", "err", rerr)
 	}()
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return fmt.Errorf("create reader export network recorder: %w", err)
+	}
 
 	ctx = engine.LocalExportOpts{
 		Path:             destPath,

@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -666,6 +667,8 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				cmd.Dir = root
 				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
 				cmd.Stderr = stdio.Stderr
+				finishNetwork := enginetelemetry.PrepareCommandNetwork(ctx, cmd)
+				defer finishNetwork()
 				if err := cmd.Run(); err != nil {
 					var exitErr *exec.ExitError
 					// Check if it's exit code 1, which is expected for git diff when files differ
@@ -1307,6 +1310,8 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 		"GIT_COMMITTER_NAME=Dagger",
 		"GIT_COMMITTER_EMAIL=dagger@localhost",
 	}
+	finishNetwork := enginetelemetry.PrepareCommandNetwork(ctx, cmd)
+	defer finishNetwork()
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git %v: %w: %s", args, err, output)
 	}

@@ -816,7 +816,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
 				}
 			}
-			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs)
+			var ebpf bool
+			if inputArgs["ebpf"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ebpf"]), &ebpf)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpf", err))
+				}
+			}
+			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf)
 		case "TestDump":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

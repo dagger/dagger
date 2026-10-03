@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -293,6 +294,10 @@ func (state *HTTPState) Resolve(
 		return state.fileResult(ctx, query, name, permissions)
 	}
 
+	resp.Body, err = bkcache.NewNetworkProgressReader(ctx, state.URL, resp.ContentLength, resp.Body, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, fmt.Errorf("create HTTP network progress reader: %w", err)
+	}
 	newCanonical, newDigest, newLastModified, newETag, err := writeHTTPStateSnapshot(ctx, query, state.URL, resp)
 	if err != nil {
 		return nil, err
@@ -453,6 +458,10 @@ func FetchHTTPFile(
 	resp, err := doHTTPClientRequest(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	resp.Body, err = bkcache.NewNetworkProgressReader(ctx, opts.URL, resp.ContentLength, resp.Body, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, fmt.Errorf("create HTTP network progress reader: %w", err)
 	}
 	defer resp.Body.Close()
 
