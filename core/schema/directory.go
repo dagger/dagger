@@ -1770,14 +1770,14 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Obje
 	return buildctxDir, nil
 }
 
-func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
+func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirDockerBuildArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	platform := query.Platform()
@@ -1787,29 +1787,29 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 
 	buildctxDir, err := applyDockerIgnore(ctx, srv, parent, args.Dockerfile)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	ctr := core.NewContainer(platform)
 
 	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	var sshSocket dagql.ObjectResult[*core.Socket]
 	if args.SSH.Valid {
 		sshSocket, err = args.SSH.Value.Load(ctx, srv)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load SSH socket: %w", err)
+			return inst, fmt.Errorf("failed to load SSH socket: %w", err)
 		}
 		if sshSocket.Self() == nil {
-			return nil, fmt.Errorf("failed to load SSH socket: nil socket")
+			return inst, fmt.Errorf("failed to load SSH socket: nil socket")
 		}
 	}
 	buildctxDirID, err := buildctxDir.RecipeID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get build context recipe ID: %w", err)
+		return inst, fmt.Errorf("failed to get build context recipe ID: %w", err)
 	}
 
 	return ctr.Build(

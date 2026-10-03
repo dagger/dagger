@@ -1527,36 +1527,36 @@ func (s *containerSchema) build(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Container],
 	args containerBuildArgs,
-) (*core.Container, error) {
+) (inst dagql.ObjectResult[*core.Container], _ error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
-		return nil, err
+		return inst, err
 	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
 
 	contextDir, err := args.Context.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	buildctxDir, err := applyDockerIgnore(ctx, srv, contextDir, args.Dockerfile)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	buildctxDirID, err := buildctxDir.RecipeID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get build context recipe ID: %w", err)
+		return inst, fmt.Errorf("failed to get build context recipe ID: %w", err)
 	}
 
 	return parent.Self().Build(

@@ -96,3 +96,22 @@ func (RemoteCacheTransferSuite) TestRebuildContainerImageFiles(ctx context.Conte
 		require.Contains(t, manifest, `"layers"`)
 	})
 }
+
+// A Docker build is rebuilt on another engine when its blob is missing.
+func (RemoteCacheTransferSuite) TestRebuildDockerBuild(ctx context.Context, t *testctx.T) {
+	seed := identity.NewID()
+	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+		built, err := c.Directory().
+			WithNewFile("Dockerfile", "FROM "+alpineImage+"\nRUN echo "+seed+" > /built\n").
+			DockerBuild().
+			Sync(ctx)
+		require.NoError(t, err)
+		builtID, err := built.ID(ctx)
+		require.NoError(t, err)
+		return map[string]dagger.ID{"build": builtID}
+	}, func(c *dagger.Client, handles map[string]string) {
+		contents, err := dagger.Ref[*dagger.Container](c, dagger.ID(handles["build"])).File("/built").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, seed+"\n", contents)
+	})
+}
