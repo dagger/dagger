@@ -60,6 +60,17 @@ assets = "frontend:assets"
 source = "source-prep:workspace"
 ```
 
+## Wire a list of objects
+
+A constructor argument typed as a list of objects (`[File!]`, `[Directory!]`,
+`[Container!]`, `[Service!]`, ...) wires the same way: the setting is an array
+of references, and each element resolves independently.
+
+```toml
+[modules.packager.settings]
+files = ["builder:binary", "docs:readme"]
+```
+
 ## Reference the workspace entrypoint
 
 The entrypoint module's functions are hoisted onto the workspace root, so a

@@ -299,7 +299,7 @@ func typeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, conf
 	case core.TypeDefKindList:
 		if td.AsList.Valid && td.AsList.Value.Self() != nil {
 			elemTypeDef := td.AsList.Value.Self().ElementTypeDef.Self()
-			elemLabel, _, elemConfigurable := listElementTypeInfoFromTypeDef(elemTypeDef)
+			elemLabel, elemExample, elemConfigurable := listElementTypeInfoFromTypeDef(elemTypeDef)
 			example := `["..."]`
 			switch {
 			case elemConfigurable && elemTypeDef != nil && elemTypeDef.Kind == core.TypeDefKindBoolean:
@@ -310,6 +310,8 @@ func typeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, conf
 				example = "[0.0]"
 			case elemConfigurable && elemTypeDef != nil && elemTypeDef.Kind == core.TypeDefKindString:
 				example = `[""]`
+			case elemConfigurable && elemExample != "":
+				example = "[" + elemExample + "]"
 			}
 			return "[]" + elemLabel, example, elemConfigurable
 		}
@@ -318,8 +320,21 @@ func typeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, conf
 }
 
 func listElementTypeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, configurable bool) {
-	if td != nil && isWorkspaceSettingScalarKind(td.Kind) {
+	if td == nil {
+		return "", "", false
+	}
+	if isWorkspaceSettingScalarKind(td.Kind) {
 		return typeInfoFromTypeDef(td)
+	}
+	// Lists of address-backed objects (e.g. [File!]) are configurable settings:
+	// the stored value is a list of address strings, each resolved through the
+	// same Address decoders as a single-object setting — so ordinary addresses
+	// and module references ("<module>:<function>") work per element.
+	if td.Kind == core.TypeDefKindObject && td.AsObject.Valid && td.AsObject.Value.Self() != nil {
+		objName := td.AsObject.Value.Self().Name
+		if example, ok := addressSupportedObjectSettingExamples[objName]; ok {
+			return objName, example, true
+		}
 	}
 	return "", "", false
 }
