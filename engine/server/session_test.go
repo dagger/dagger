@@ -3273,7 +3273,7 @@ func TestFailedSessionInitializationCanRetrySameID(t *testing.T) {
 		releasedSessionIDs: map[string]struct{}{},
 	}
 	srv.daggerSessionsMu.Lock()
-	failed, created, err := srv.getOrCreateSessionLocked("s", "m")
+	failed, created, err := srv.getOrCreateSessionLocked("s", "m", false)
 	srv.daggerSessionsMu.Unlock()
 	require.NoError(t, err)
 	require.True(t, created)
@@ -3286,7 +3286,7 @@ func TestFailedSessionInitializationCanRetrySameID(t *testing.T) {
 	require.False(t, sessionIDReleased(srv, "s"))
 
 	srv.daggerSessionsMu.Lock()
-	retry, created, err := srv.getOrCreateSessionLocked("s", "m")
+	retry, created, err := srv.getOrCreateSessionLocked("s", "m", false)
 	srv.daggerSessionsMu.Unlock()
 	require.NoError(t, err)
 	require.True(t, created)
