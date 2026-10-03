@@ -28,8 +28,8 @@ const withModuleObjectFieldName = "__withField"
 // through engine-side selects and recipe replay, which decode arguments from
 // the field spec, so it never surfaces in introspection or generated SDKs.
 type StateValue struct {
-	Scalar  dagql.Optional[JSON]                                   `doc:"A JSON-encoded scalar."`
-	Node    dagql.Optional[dagql.AnyID]                            `doc:"A reference to an object."`
+	Scalar  dagql.Optional[JSON]                                            `doc:"A JSON-encoded scalar."`
+	Node    dagql.Optional[dagql.AnyID]                                     `doc:"A reference to an object."`
 	List    dagql.Optional[dagql.ArrayInput[dagql.InputObject[StateValue]]] `doc:"A list of values."`
 	Entries dagql.Optional[dagql.ArrayInput[dagql.InputObject[StateEntry]]] `doc:"A map or inline object, by key."`
 }
