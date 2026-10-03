@@ -157,7 +157,7 @@ func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult
 	if base.Repo.Self() == nil {
 		return false, nil
 	}
-	if !lazy.DiscardGitDir && !base.Repo.Self().DiscardGitDir || base.Ref.SHA != ref.Ref.SHA {
+	if lazy.KeepGitDir || !lazy.DiscardGitDir && !base.Repo.Self().DiscardGitDir || base.Ref.SHA != ref.Ref.SHA {
 		return false, nil
 	}
 	baseRepo, err := base.Repo.RecipeDigest(ctx)

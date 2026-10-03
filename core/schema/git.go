@@ -2176,9 +2176,25 @@ func (s *gitSchema) fullCheckout(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return inst, err
 	}
-	dir, err := parent.Self().Backend.Tree(ctx, srv, false, 0, false, parent.Self().Repo.Self().Remotes)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
+	}
+	lazy := &core.DirectoryGitTreeLazy{LazyState: core.NewLazyState(), Ref: parent, KeepGitDir: true}
+	// A tree(depth: 0) of a repository that keeps .git is this checkout; it
+	// is content-addressed like that tree once materialized. A repository
+	// that discards .git has no such tree.
+	if _, ok := parent.Self().Repo.Self().Backend.(*core.RemoteGitRepository); ok && !parent.Self().Repo.Self().DiscardGitDir {
+		lazy.ContentDigest, err = calcGitContentDigest(parent.Self(), treeArgs{})
+		if err != nil {
+			return inst, err
+		}
+	}
+	dir := &core.Directory{
+		Platform: query.Platform(),
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     lazy,
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
@@ -2218,41 +2234,29 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	if !ref.Repo.Self().DiscardGitDir && !args.DiscardGitDir && args.Depth == 0 && !args.IncludeTags {
 		// Use one materialization for full retained trees and workspace Git
 		// metadata, even when callers spell the public default args differently.
+		// __fullCheckout carries this tree's content digest itself.
 		err = srv.Select(ctx, parent, &inst, dagql.Selector{Field: "__fullCheckout"})
-	} else {
-		var query *core.Query
-		query, err = core.CurrentQuery(ctx)
-		if err != nil {
-			return inst, err
-		}
-		dir := &core.Directory{
-			Platform: query.Platform(),
-			Dir:      new(core.LazyAccessor[string, *core.Directory]),
-			Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
-			Lazy:     &core.DirectoryGitTreeLazy{LazyState: core.NewLazyState(), Ref: parent, DiscardGitDir: args.DiscardGitDir, Depth: args.Depth, IncludeTags: args.IncludeTags},
-		}
-		inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-	}
-	if err != nil {
 		return inst, err
 	}
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	lazy := &core.DirectoryGitTreeLazy{LazyState: core.NewLazyState(), Ref: parent, DiscardGitDir: args.DiscardGitDir, Depth: args.Depth, IncludeTags: args.IncludeTags}
 	if _, ok := parent.Self().Repo.Self().Backend.(*core.RemoteGitRepository); ok {
-		dgst, err := calcGitContentDigest(parent.Self(), args)
+		lazy.ContentDigest, err = calcGitContentDigest(parent.Self(), args)
 		if err != nil {
 			return inst, err
 		}
-		if lazy, ok := inst.Self().Lazy.(*core.DirectoryGitTreeLazy); ok {
-			lazy.ContentDigest = dgst
-		} else {
-			inst, err = inst.WithContentDigest(ctx, dgst)
-			if err != nil {
-				return inst, err
-			}
-		}
 	}
-
-	return inst, nil
+	dir := &core.Directory{
+		Platform: query.Platform(),
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     lazy,
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 func pinnedGitTree(ctx context.Context, srv *dagql.Server, repo dagql.ObjectResult[*core.GitRepository], sha string, args treeArgs) (inst dagql.ObjectResult[*core.Directory], err error) {

@@ -303,7 +303,7 @@ func resolverAttach[T dagql.Typed](t *testing.T, ctx context.Context, srv *dagql
 func TestLazyOperationResolverOutputCleanup(t *testing.T) { testLazyOperationResolverOutputs(t, false) }
 func TestLazyOperationResolverCapture(t *testing.T) {
 	testLazyOperationResolverOutputs(t, true)
-	for _, kind := range []string{"gitCleaned", "gitTree", "gitCommitTree"} {
+	for _, kind := range []string{"gitCleaned", "gitTree", "gitFullCheckout", "gitCommitTree"} {
 		t.Run(kind, func(t *testing.T) {
 			ctx, srv, cache, server := resolverOutputFixture(t)
 			srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.GitRef]{}))
@@ -323,7 +323,8 @@ func TestLazyOperationResolverCapture(t *testing.T) {
 			dir.Dir.SetValue("/")
 			dir.Snapshot.SetValue(&resolverOutputRef{root: root, id: "source"})
 			input := resolverAttach(t, ctx, srv, cache, "source", dir)
-			repo := &core.GitRepository{Backend: &core.LocalGitRepository{Directory: input}}
+			// The full checkout keeps .git even when the repository discards it.
+			repo := &core.GitRepository{Backend: &core.LocalGitRepository{Directory: input}, DiscardGitDir: kind == "gitFullCheckout"}
 			parent := resolverAttach(t, ctx, srv, cache, "repository", repo)
 			var result dagql.ObjectResult[*core.Directory]
 			var err error
@@ -336,23 +337,37 @@ func TestLazyOperationResolverCapture(t *testing.T) {
 				backend, e := repo.Backend.Get(ctx, ref)
 				require.NoError(t, e)
 				ctx = operationResolverCall(ctx, "tree", dir)
-				if kind == "gitTree" {
+				switch kind {
+				case "gitTree":
 					input := resolverAttach(t, ctx, srv, cache, "ref", &core.GitRef{Repo: parent, Ref: ref, Backend: backend})
 					// Depth 1: see TestProducerResolverCleanup.
 					result, err = (&gitSchema{}).tree(ctx, input, treeArgs{Depth: 1})
-				} else {
+				case "gitFullCheckout":
+					input := resolverAttach(t, ctx, srv, cache, "ref", &core.GitRef{Repo: parent, Ref: ref, Backend: backend})
+					ctx = operationResolverCall(ctx, "__fullCheckout", dir)
+					result, err = (&gitSchema{}).fullCheckout(ctx, input, struct{}{})
+				default:
 					input := resolverAttach(t, ctx, srv, cache, "commit", &core.GitCommit{Repo: parent, Ref: ref, Backend: backend})
 					result, err = (&gitSchema{}).commitTree(ctx, input, commitTreeArgs{})
 				}
 			}
 			require.NoError(t, err)
-			assertResolverLazyOperation(t, ctx, cache, result.Self(), kind)
+			savedKind := kind
+			if kind == "gitFullCheckout" {
+				savedKind = "gitTree"
+				require.True(t, result.Self().Lazy.(*core.DirectoryGitTreeLazy).KeepGitDir)
+			}
+			assertResolverLazyOperation(t, ctx, cache, result.Self(), savedKind)
 			if kind != "gitCleaned" {
 				require.Empty(t, server.manager.outputs)
 				require.False(t, result.Self().Lazy.IsEvaluated())
 				require.NoError(t, result.Self().Lazy.Evaluate(ctx, result.Self()))
 			}
 			require.Len(t, server.manager.outputs, 1)
+			if kind == "gitFullCheckout" {
+				_, err := os.Stat(filepath.Join(server.manager.outputs[0].root, ".git"))
+				require.NoError(t, err)
+			}
 			if kind == "gitCleaned" {
 				require.Zero(t, server.manager.outputs[0].releases)
 			} else {

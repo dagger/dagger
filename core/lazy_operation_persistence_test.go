@@ -45,6 +45,7 @@ func newLazyOperationFixture(t *testing.T) *lazyOperationFixture {
 		&DirectoryGitCleanedLazy{LazyState: NewLazyState(), Repo: repo},
 		&DirectoryGitBundleImportLazy{LazyState: NewLazyState(), Repo: repo, Bundle: bundle, PrerequisiteRef: "refs/heads/main"},
 		&DirectoryGitTreeLazy{LazyState: NewLazyState(), Ref: ref, DiscardGitDir: true, Depth: 0, IncludeTags: false},
+		&DirectoryGitTreeLazy{LazyState: NewLazyState(), Ref: ref, KeepGitDir: true},
 		&DirectoryGitCommitTreeLazy{LazyState: NewLazyState(), Commit: commit, DiscardGitDir: false, Depth: 7, IncludeTags: true},
 		&DirectoryScratchLazy{LazyState: NewLazyState()},
 	}}
