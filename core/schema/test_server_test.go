@@ -190,6 +190,13 @@ func (s *currentTypeDefsTestServer) ClientTelemetry(context.Context, string, str
 func (s *currentTypeDefsTestServer) EngineName() string { return "testEngine" }
 
 func (s *currentTypeDefsTestServer) Clients() []string { return nil }
+func (s *currentTypeDefsTestServer) EngineSessions(context.Context) ([]*core.EngineSession, error) {
+	return nil, nil
+}
+func (s *currentTypeDefsTestServer) StopEngineSession(context.Context, string) error { return nil }
+func (s *currentTypeDefsTestServer) CloseEngineSessionClient(context.Context, string, string) error {
+	return nil
+}
 
 func (s *currentTypeDefsTestServer) CloudEngineClient(context.Context, string, string, []string) (*engineclient.Client, bool, error) {
 	return nil, false, nil

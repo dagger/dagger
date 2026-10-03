@@ -206,6 +206,13 @@ type ClientMetadata struct {
 	// a detached session ends only when it is stopped through the engine API
 	// or when the engine stops. Only the creating client's value is used.
 	DetachedSession bool `json:"detached_session,omitempty"`
+
+	// Background, PID and Command describe the client process for listings:
+	// whether it runs in the background without a terminal, its process ID,
+	// and a short form of its command line.
+	Background bool   `json:"background,omitempty"`
+	PID        int    `json:"pid,omitempty"`
+	Command    string `json:"command,omitempty"`
 }
 
 type suppressTelemetryCtxKey struct{}

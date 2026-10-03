@@ -48,6 +48,8 @@ var TypesHiddenFromModuleSDKs = []dagql.Typed{
 	&EngineCache{},
 	&EngineCacheEntry{},
 	&EngineCacheEntrySet{},
+	&EngineSession{},
+	&EngineSessionClient{},
 }
 
 func (s EnvHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef dagql.ObjectResult[*TypeDef]) (*Module, error) {

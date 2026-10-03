@@ -180,6 +180,11 @@ type Params struct {
 	// DetachedSession makes a session this client creates outlive it; see
 	// engine.ClientMetadata.DetachedSession.
 	DetachedSession bool
+
+	// Background and Command describe this client process in session
+	// listings; see engine.ClientMetadata.
+	Background bool
+	Command    string
 }
 
 type Client struct {
@@ -1784,6 +1789,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudScaleOutEngineID:          remoteEngineID,
 		Profile:                        c.Profile,
 		DetachedSession:                c.DetachedSession,
+		Background:                     c.Background,
+		PID:                            os.Getpid(),
+		Command:                        c.Command,
 	}
 	if c.primarySpan.IsValid() {
 		md.PrimaryTraceID = c.primarySpan.TraceID().String()

@@ -227,6 +227,16 @@ type Server interface {
 	// The list of connected client IDs
 	Clients() []string
 
+	// The sessions on this engine, with the clients that connected directly
+	// to each.
+	EngineSessions(context.Context) ([]*EngineSession, error)
+
+	// Schedule teardown of a session and return without waiting for it.
+	StopEngineSession(ctx context.Context, sessionID string) error
+
+	// Close a client of a session and its attachables connection.
+	CloseEngineSessionClient(ctx context.Context, sessionID, clientID string) error
+
 	// Return a client connected to a cloud engine. If bool return is false, the local engine should be used. Session attachables for the returned client will be proxied back to the calling client.
 	CloudEngineClient(
 		ctx context.Context,
