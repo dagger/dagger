@@ -201,6 +201,11 @@ type ClientMetadata struct {
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
 	Profile bool `json:"profile,omitempty"`
+
+	// DetachedSession asks for the session this client creates to outlive it:
+	// a detached session ends only when it is stopped through the engine API
+	// or when the engine stops. Only the creating client's value is used.
+	DetachedSession bool `json:"detached_session,omitempty"`
 }
 
 type suppressTelemetryCtxKey struct{}
