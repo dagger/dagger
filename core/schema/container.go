@@ -675,6 +675,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				disableNestingArg,
 				legacyNestingArg,
 				deprecatedNestingArg,
+				newSessionNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. Like --privileged in Docker`,
 					`DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.`),
@@ -1715,7 +1716,10 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		args.UseEntrypoint = !*args.SkipEntrypoint
 	}
 	if core.Supports(ctx, defaultNestingVersion) {
-		args.ExperimentalPrivilegedNesting = !args.DisableDaggerInDagger
+		args.ExperimentalPrivilegedNesting, err = v1Nesting(args.DisableDaggerInDagger, args.DaggerInDaggerNewSession)
+		if err != nil {
+			return inst, err
+		}
 	}
 	args.LogRedirectedOutput = !core.Supports(ctx, redirectNotLoggedVersion)
 
