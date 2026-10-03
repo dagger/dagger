@@ -2768,34 +2768,16 @@ exit 1
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 
-	// Create base container with all dependencies
+	// Build against the real module graph, including local replacements. A
+	// partial source copy and a synthetic go.mod drift as Git gains imports.
 	baseContainer := client.Container().
-		From("golang:1.25").
-		WithExec([]string{"apt-get", "update"}).
-		WithExec([]string{"apt-get", "install", "-y", "git"}).
-		WithExec([]string{"mkdir", "-p", "/app/git"}).
+		From(golangImage).
+		With(goCache(client)).
+		WithExec([]string{"apk", "add", "--no-cache", "git"}).
+		WithMountedDirectory("/app", client.Host().Directory(filepath.Join(wd, "../.."), dagger.HostDirectoryOpts{
+			Exclude: []string{".git"},
+		})).
 		WithWorkdir("/app").
-		// create go.mod so that below main() can test our proto handling
-		WithNewFile("/app/go.mod", `
-module testapp
-
-go 1.24
-
-require (
-    github.com/gogo/protobuf v1.3.2
-    google.golang.org/grpc v1.59.0
-)
-
-replace github.com/dagger/dagger => .
-`).
-		// Mount git implementation as the session pkg
-		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
-		WithMountedDirectory("./engine/session/prompt/", client.Host().Directory(filepath.Join(wd, "../../engine/session/prompt"))).
-		WithMountedDirectory("./internal/buildkit/util/sshutil/", client.Host().Directory(filepath.Join(wd, "../../internal/buildkit/util/sshutil"))).
-		WithMountedDirectory("./util/gitutil/", client.Host().Directory(filepath.Join(wd, "../../util/gitutil"))).
-		WithMountedDirectory("./util/hashutil/", client.Host().Directory(filepath.Join(wd, "../../util/hashutil"))).
-		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
-		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "../../util/grpcutil"))).
 
 		// Create test harness that:
 		// 1. Reads request from JSON file
@@ -2810,7 +2792,7 @@ import (
     "fmt"
     "io/ioutil"
 
-    "testapp/git"
+    "github.com/dagger/dagger/engine/session/git"
 )
 
 func main() {
@@ -2838,8 +2820,7 @@ func main() {
 }
 `).
 		WithNewFile("/request.json", "{}").
-		WithWorkdir("/app").
-		WithExec([]string{"go", "mod", "tidy"})
+		WithExec([]string{"go", "build", "-mod=readonly", "-o", "/usr/local/bin/test-git-credentials", "test.go"})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
@@ -2857,7 +2838,7 @@ func main() {
 
 			container = container.
 				WithNewFile("/request.json", string(requestJSON)).
-				WithExec([]string{"go", "run", "test.go"})
+				WithExec([]string{"test-git-credentials"})
 
 			// assert response
 			output, err := container.Stdout(ctx)

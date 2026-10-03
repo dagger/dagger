@@ -391,9 +391,13 @@ type EngineDevTestOpts struct {
 	//
 	EbpfProgs []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:58:2)
 	//
+	// Enable privileged eBPF tests (Linux 6.15 or newer)
+	//
+	Ebpf bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:61:2)
+	//
 	// Elapsed times after the test runner starts at which to dump engine goroutines
 	//
-	DumpAfter []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:61:2)
+	DumpAfter []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:64:2)
 }
 
 // Run core engine tests
@@ -451,6 +455,10 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
 			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
 		}
+		// `ebpf` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ebpf) {
+			q = q.Arg("ebpf", opts[i].Ebpf)
+		}
 		// `dumpAfter` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DumpAfter) {
 			q = q.Arg("dumpAfter", opts[i].DumpAfter)
@@ -465,36 +473,36 @@ type EngineDevTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:101:2)
+	Run string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:105:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:104:2)
+	Skip string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:108:2)
 
-	Update bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:106:2)
+	Update bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:110:2)
 
-	Failfast bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:108:2)
+	Failfast bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:112:2)
 
-	Parallel int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:110:2)
+	Parallel int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:114:2)
 
-	Timeout string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:112:2)
+	Timeout string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:116:2)
 
-	Race bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:114:2)
+	Race bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:118:2)
 
 	// Default: 1
-	Count int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:116:2)
+	Count int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:120:2)
 
-	EnvFile *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:118:2)
+	EnvFile *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:122:2)
 
-	TestVerbose bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:120:2)
+	TestVerbose bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:124:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:123:2)
+	EbpfProgs []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:127:2)
 }
 
 // Run telemetry tests
-func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:97:1)
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:101:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument

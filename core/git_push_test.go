@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,19 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGitPushUnterminatedDiagnostic(t *testing.T) {
+	git := gitutil.NewGitCLI(
+		gitutil.WithExec(func(_ context.Context, cmd *exec.Cmd) error {
+			require.NotContains(t, cmd.Args, "--progress")
+			_, err := io.WriteString(cmd.Stderr, "fatal: Authentication failed")
+			require.NoError(t, err)
+			return errors.New("exit status 128")
+		}),
+	)
+	_, err := runGitPush(t.Context(), git, "https://example.com/repo.git", "refs/heads/main", strings.Repeat("a", 40), "")
+	require.ErrorIs(t, err, gitutil.ErrGitAuthFailed)
+}
 
 type gitPushFixture struct {
 	dir string

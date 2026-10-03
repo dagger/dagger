@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 // fileChanges categorizes files by how they changed between two directories.
@@ -31,6 +33,8 @@ type lineChanges struct {
 func compareDirectories(ctx context.Context, oldDir, newDir string) (fileChanges, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--name-status", "-z", oldDir, newDir)
 	disableGitRepoDiscovery(cmd)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	out, err := cmd.Output()
 	if err != nil {
 		// git diff exits 1 when differences exist, which is not an error here.
@@ -46,6 +50,8 @@ func compareDirectories(ctx context.Context, oldDir, newDir string) (fileChanges
 func compareDirectoriesNumStat(ctx context.Context, oldDir, newDir string) (map[string]lineChanges, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--numstat", "-z", oldDir, newDir)
 	disableGitRepoDiscovery(cmd)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -60,6 +66,8 @@ func compareDirectoriesNumStat(ctx context.Context, oldDir, newDir string) (map[
 func directoriesAreIdentical(ctx context.Context, dir1, dir2 string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--quiet", dir1, dir2)
 	disableGitRepoDiscovery(cmd)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	err := cmd.Run()
 	if err == nil {
 		return true, nil

@@ -85,6 +85,22 @@ const (
 	LogMediaMIMETypeAttr = "dagger.io/log.media.mime_type"
 	LogMediaDataAttr     = "dagger.io/log.media.data"
 
+	// Attributed network byte metrics are exact eBPF counters from an operation's
+	// network boundary. "Internal" means the packet's remote address belongs to
+	// a configured internal network; "external" means it does not.
+	NetworkRxBytes         = "dagger.io/metrics.network.rx.bytes"
+	NetworkTxBytes         = "dagger.io/metrics.network.tx.bytes"
+	NetworkInternalRxBytes = "dagger.io/metrics.network.internal.rx.bytes"
+	NetworkInternalTxBytes = "dagger.io/metrics.network.internal.tx.bytes"
+	NetworkExternalRxBytes = "dagger.io/metrics.network.external.rx.bytes"
+	NetworkExternalTxBytes = "dagger.io/metrics.network.external.tx.bytes"
+	NetworkAvailable       = "dagger.io/metrics.network.available"
+
+	// Estimated network byte metrics are conservative protocol-level lower
+	// bounds for operations without their own kernel network boundary.
+	NetworkEstimatedRxBytes = "dagger.io/metrics.network.estimated.rx.bytes"
+	NetworkEstimatedTxBytes = "dagger.io/metrics.network.estimated.tx.bytes"
+
 	// DagPartialAttr marks a successful lazy-evaluation resume span that
 	// completed one part while the result still had deferred work. Such a
 	// resumption does not resolve the owning API span's pending state. (bool)

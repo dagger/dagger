@@ -123,12 +123,14 @@ exec dagger query
 	})
 	assertEngineMemory(t, second)
 	// Check collections during the client executions too, not just after the
-	// workload cgroups have been removed.
+	// workload cgroups have been removed. Command and withExec cgroups are
+	// siblings of the engine, so neither adds engine descendants.
 	previousCPU := int64(0)
 	for _, snapshot := range sink.collectedSnapshots() {
 		require.Equal(t, first.instanceID, snapshot.instanceID)
 		require.GreaterOrEqual(t, snapshot.cpuTotal, previousCPU)
-		require.Equal(t, int64(0), snapshot.liveDescendants)
+		require.Zero(t, snapshot.liveDescendants,
+			"command and exec cgroups must remain outside the engine cgroup")
 		previousCPU = snapshot.cpuTotal
 	}
 
