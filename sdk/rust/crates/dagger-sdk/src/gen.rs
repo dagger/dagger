@@ -3263,6 +3263,11 @@ pub struct ContainerStatOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
+    /// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+    /// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+    /// Cannot be combined with "disableDaggerInDagger".
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_in_dagger_new_session: Option<bool>,
     /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     #[builder(setter(into, strip_option), default)]
     pub disable_dagger_in_dagger: Option<bool>,
@@ -3487,6 +3492,11 @@ pub struct ContainerAsServiceOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+    /// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+    /// Cannot be combined with "disableDaggerInDagger".
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_in_dagger_new_session: Option<bool>,
     /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     #[builder(setter(into, strip_option), default)]
     pub disable_dagger_in_dagger: Option<bool>,
@@ -3512,6 +3522,11 @@ pub struct ContainerUpOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+    /// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+    /// Cannot be combined with "disableDaggerInDagger".
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_in_dagger_new_session: Option<bool>,
     /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     #[builder(setter(into, strip_option), default)]
     pub disable_dagger_in_dagger: Option<bool>,
@@ -5269,6 +5284,9 @@ impl Container {
                 experimental_privileged_nesting,
             );
         }
+        if let Some(dagger_in_dagger_new_session) = opts.dagger_in_dagger_new_session {
+            query = query.arg("daggerInDaggerNewSession", dagger_in_dagger_new_session);
+        }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
@@ -6163,6 +6181,9 @@ impl Container {
                 experimental_privileged_nesting,
             );
         }
+        if let Some(dagger_in_dagger_new_session) = opts.dagger_in_dagger_new_session {
+            query = query.arg("daggerInDaggerNewSession", dagger_in_dagger_new_session);
+        }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
@@ -6216,6 +6237,9 @@ impl Container {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(dagger_in_dagger_new_session) = opts.dagger_in_dagger_new_session {
+            query = query.arg("daggerInDaggerNewSession", dagger_in_dagger_new_session);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);

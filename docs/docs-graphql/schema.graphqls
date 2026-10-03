@@ -1888,6 +1888,19 @@ type Container implements Exportable & Node & Syncer {
     experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
+    Connect Dagger clients started by the command to the current engine as new
+    sessions, instead of as clients of the current session. Each connection gets
+    its own session, released when that client closes.
+
+    The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger
+    CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the
+    SDK download one.
+
+    Cannot be combined with "disableDaggerInDagger".
+    """
+    daggerInDaggerNewSession: Boolean = false
+
+    """
     Execute the command with all root capabilities. Like --privileged in Docker
 
     DANGER: this grants the command full access to the host system. Only use
@@ -2436,6 +2449,19 @@ type Container implements Exportable & Node & Syncer {
     experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
+    Connect Dagger clients started by the command to the current engine as new
+    sessions, instead of as clients of the current session. Each connection gets
+    its own session, released when that client closes.
+
+    The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger
+    CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the
+    SDK download one.
+
+    Cannot be combined with "disableDaggerInDagger".
+    """
+    daggerInDaggerNewSession: Boolean = false
+
+    """
     Execute the command with all root capabilities. This is similar to running a
     command with "sudo" or executing "docker run" with the "--privileged" flag.
     Containerization does not provide any security guarantees when using this
@@ -2492,6 +2518,19 @@ type Container implements Exportable & Node & Syncer {
     disableDaggerInDagger: Boolean = false
 
     experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
+
+    """
+    Connect Dagger clients started by the command to the current engine as new
+    sessions, instead of as clients of the current session. Each connection gets
+    its own session, released when that client closes.
+
+    The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger
+    CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the
+    SDK download one.
+
+    Cannot be combined with "disableDaggerInDagger".
+    """
+    daggerInDaggerNewSession: Boolean = false
 
     """
     Execute the command with all root capabilities. This is similar to running a

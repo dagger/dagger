@@ -3331,6 +3331,7 @@ class Container(Type):
         use_entrypoint: bool | None = False,
         disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        dagger_in_dagger_new_session: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -3353,6 +3354,15 @@ class Container(Type):
         experimental_privileged_nesting:
             .. deprecated:: Commands can access Dagger by default. Use
             "disableDaggerInDagger" to opt out.
+        dagger_in_dagger_new_session:
+            Connect Dagger clients started by the command to the current
+            engine as new sessions, instead of as clients of the current
+            session. Each connection gets its own session, released when that
+            client closes.
+            The command reaches the engine through DAGGER_ENGINE, so SDKs run
+            a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the
+            container, or let the SDK download one.
+            Cannot be combined with "disableDaggerInDagger".
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -3376,6 +3386,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerInDaggerNewSession", dagger_in_dagger_new_session, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -4326,6 +4337,7 @@ class Container(Type):
         use_entrypoint: bool | None = False,
         disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        dagger_in_dagger_new_session: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -4355,6 +4367,15 @@ class Container(Type):
         experimental_privileged_nesting:
             .. deprecated:: Commands can access Dagger by default. Use
             "disableDaggerInDagger" to opt out.
+        dagger_in_dagger_new_session:
+            Connect Dagger clients started by the command to the current
+            engine as new sessions, instead of as clients of the current
+            session. Each connection gets its own session, released when that
+            client closes.
+            The command reaches the engine through DAGGER_ENGINE, so SDKs run
+            a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the
+            container, or let the SDK download one.
+            Cannot be combined with "disableDaggerInDagger".
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -4393,6 +4414,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerInDaggerNewSession", dagger_in_dagger_new_session, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -4699,6 +4721,7 @@ class Container(Type):
         expect: ReturnType | None = ReturnType.SUCCESS,
         disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        dagger_in_dagger_new_session: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -4738,6 +4761,15 @@ class Container(Type):
         experimental_privileged_nesting:
             .. deprecated:: Commands can access Dagger by default. Use
             "disableDaggerInDagger" to opt out.
+        dagger_in_dagger_new_session:
+            Connect Dagger clients started by the command to the current
+            engine as new sessions, instead of as clients of the current
+            session. Each connection gets its own session, released when that
+            client closes.
+            The command reaches the engine through DAGGER_ENGINE, so SDKs run
+            a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the
+            container, or let the SDK download one.
+            Cannot be combined with "disableDaggerInDagger".
         insecure_root_capabilities:
             Execute the command with all root capabilities. Like --privileged
             in Docker
@@ -4766,6 +4798,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerInDaggerNewSession", dagger_in_dagger_new_session, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
