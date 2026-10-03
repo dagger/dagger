@@ -2530,7 +2530,32 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		panic(fmt.Errorf("handle session attachables: %w", err))
 	}
+
+	// The client has left, with every nested client that used its
+	// attachables. Their tunnels and terminals cannot work anymore, and
+	// nobody else can stop them.
+	if err := record.daggerSession.stopClientServices(context.WithoutCancel(ctx), record.clientID); err != nil {
+		slog.WarnContext(ctx, "failed to stop services of departed client", "clientID", record.clientID, "error", err)
+	}
 	return nil
+}
+
+// stopClientServices stops the client-specific services of the client that
+// serves attachablesClientID and of the nested clients that use its
+// attachables.
+func (sess *daggerSession) stopClientServices(ctx context.Context, attachablesClientID string) error {
+	sess.clientMu.RLock()
+	records := slices.Collect(maps.Values(sess.clientRecords))
+	sess.clientMu.RUnlock()
+	clientIDs := map[string]struct{}{attachablesClientID: {}}
+	sess.scopeMu.Lock()
+	for _, record := range records {
+		if record.attachablesClientID == attachablesClientID {
+			clientIDs[record.clientID] = struct{}{}
+		}
+	}
+	sess.scopeMu.Unlock()
+	return sess.services.StopClientServices(ctx, sess.sessionID, clientIDs)
 }
 
 // withRequestTelemetrySuppression applies a request's telemetry opt-out (the
