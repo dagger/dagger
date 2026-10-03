@@ -608,6 +608,15 @@ export type ContainerAsServiceOpts = {
   experimentalPrivilegedNesting?: boolean
 
   /**
+   * Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
+   */
+  daggerInDaggerNewSession?: boolean
+
+  /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
@@ -910,6 +919,15 @@ export type ContainerUpOpts = {
   experimentalPrivilegedNesting?: boolean
 
   /**
+   * Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
+   */
+  daggerInDaggerNewSession?: boolean
+
+  /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
@@ -1067,6 +1085,15 @@ export type ContainerWithExecOpts = {
    * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
    */
   experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
+   */
+  daggerInDaggerNewSession?: boolean
 
   /**
    * Execute the command with all root capabilities. Like --privileged in Docker
@@ -6742,6 +6769,11 @@ export class Container extends BaseClient {
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   * @param opts.daggerInDaggerNewSession Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -7370,6 +7402,11 @@ export class Container extends BaseClient {
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   * @param opts.daggerInDaggerNewSession Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -7537,6 +7574,11 @@ export class Container extends BaseClient {
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   * @param opts.daggerInDaggerNewSession Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
    *
    * DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.

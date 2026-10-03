@@ -7279,6 +7279,10 @@ type ContainerAsServiceArgs struct {
 	// Disable access to the Dagger API from the service command.
 	DisableDaggerInDagger bool `default:"false"`
 
+	// Connect Dagger clients started by the service command as new sessions
+	// instead of as clients of the current session.
+	DaggerInDaggerNewSession bool `default:"false"`
+
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
@@ -7321,6 +7325,7 @@ func (container *Container) AsService(ctx context.Context, containerRes dagql.Ob
 		Container:                     containerRes,
 		Args:                          cmdargs,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		DaggerInDaggerNewSession:      args.DaggerInDaggerNewSession,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
 		NoInit:                        args.NoInit,
 	}, nil
