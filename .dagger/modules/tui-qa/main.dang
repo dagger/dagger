@@ -107,8 +107,9 @@ type TuiQa {
     cloudCredentials: Secret = null,
     """
     User-level Dagger config for the CLI under test — the contents of the
-    host's ~/.config/dagger/config.toml. This forwards LLM provider settings
-    when the runner connects to a nested engine.
+    host's ~/.config/dagger/config.toml. This forwards LLM provider settings,
+    which is what lets `agent` sessions authenticate when `start` attaches to an
+    engine by `engineAddress` (no nesting, so no inherited auth).
     """
     daggerConfig: Secret = null,
   ) {
@@ -165,9 +166,10 @@ type TuiQa {
     prints. The TUI session then runs against THAT engine, so engine-side
     changes built from the workspace take effect, and its debug endpoints and
     logs observe exactly what the TUI is driving. Required for QA'ing engine
-    changes. Nesting is off in this mode, so LLM auth is whatever that engine
-    itself is configured with; if an `agent` session cannot authenticate, fall
-    back to the default (outer engine, inherited auth) for CLI-only checks.
+    changes. Nesting is off in this mode, but `agent` sessions still
+    authenticate: the CLI under test gets its LLM provider settings from the
+    forwarded `daggerConfig` (see the constructor). Only without `daggerConfig`
+    does an `agent` session here fail to authenticate.
     """
     engineAddress: String! = "",
   ): TuiQa! @cache(policy: FunctionCachePolicy.Never) {
@@ -184,8 +186,9 @@ type TuiQa {
     # session's own engine and inherits its LLM auth (required for `agent`).
     # With `engineAddress`: the same lean client, pointed at the existing engine by
     # address instead — that engine is reachable with no service binding
-    # because engine-lab starts its service under the session DNS domain, but
-    # nothing forwards LLM credentials to it.
+    # because engine-lab starts its service under the session DNS domain. LLM
+    # auth then comes from the forwarded `daggerConfig` (withCredentials below)
+    # rather than from nesting.
     let lean = container
       .from("alpine:3.20")
       .withExec(["apk", "add", "--no-cache", "curl", "git"])

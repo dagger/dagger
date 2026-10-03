@@ -146,7 +146,9 @@ const (
 	// LLMCallDigestAttr is set on LLM prompt/response telemetry spans. Its
 	// value is the DAG digest of the corresponding withPrompt or withResponse
 	// call, enabling the TUI to branch from that point in the conversation.
-	// (string)
+	// A response's spans start streaming before its withResponse exists, so
+	// they open with the request state's digest and are re-stamped with the
+	// withResponse digest before they end. (string)
 	LLMCallDigestAttr = "dagger.io/llm.call.digest"
 
 	// LLMToolResultTokensAttr is set on a tool-call telemetry span with an

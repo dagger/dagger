@@ -1718,7 +1718,7 @@ func (stubShellHandler) EncodeHistory(entry string) string { return entry }
 func (stubShellHandler) DecodeHistory(entry string) string { return entry }
 func (stubShellHandler) SaveBeforeHistory()                {}
 func (stubShellHandler) RestoreAfterHistory()              {}
-func (stubShellHandler) BranchFromID(context.Context, string, BranchSummary) func() {
+func (stubShellHandler) BranchFromID(context.Context, string, BranchSummary) func() error {
 	return nil
 }
 func (stubShellHandler) EditFromID(context.Context, string) func() error { return nil }
@@ -1925,6 +1925,137 @@ func TestPromptEditTarget(t *testing.T) {
 		live.tui.Step()
 		return live.inputFocused() && live.textInput.Value() == "second wording"
 	}, time.Second, 10*time.Millisecond)
+}
+
+// branchShellHandler records which rewind path a branch took.
+type branchShellHandler struct {
+	stubShellHandler
+	calls chan branchCall
+}
+
+type branchCall struct {
+	kind    string // "edit" or "branch"
+	encoded string
+	summary BranchSummary
+}
+
+func (h *branchShellHandler) TargetAgentID() string { return "chief" }
+
+func (h *branchShellHandler) EditFromID(_ context.Context, encoded string) func() error {
+	return func() error {
+		h.calls <- branchCall{kind: "edit", encoded: encoded}
+		return nil
+	}
+}
+
+func (h *branchShellHandler) BranchFromID(_ context.Context, encoded string, summary BranchSummary) func() error {
+	return func() error {
+		h.calls <- branchCall{kind: "branch", encoded: encoded, summary: summary}
+		return nil
+	}
+}
+
+// TestBranchRewindsLikeTreeNavigation covers `b` the way Pi's /tree and
+// Claude Code's /rewind behave: branching from a message — the user's own or
+// an agent's event — goes back to just BEFORE it and returns its text to an
+// empty input (a plain branch IS the inline-edit rewind; a summarized one
+// attaches the summary there); branching from a reply goes to just after it
+// with the input left alone. Nothing is ever submitted.
+func TestBranchRewindsLikeTreeNavigation(t *testing.T) {
+	db := dagui.NewDB()
+	call := func(digest, field, receiver, prompt string) {
+		c := &callpbv1.Call{
+			Digest:         digest,
+			Field:          field,
+			Type:           &callpbv1.Type{NamedType: "LLM"},
+			ReceiverDigest: receiver,
+		}
+		if prompt != "" {
+			c.Args = []*callpbv1.Argument{{
+				Name:  "prompt",
+				Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: prompt}},
+			}}
+		}
+		db.Calls[digest] = c
+	}
+	call("xxh3:branch-base", "llm", "", "")
+	call("xxh3:branch-prompt", "withPrompt", "xxh3:branch-base", "the user's words")
+	call("xxh3:branch-reply", "withResponse", "xxh3:branch-prompt", "")
+	call("xxh3:branch-event", "withPrompt", "xxh3:branch-reply", "alice is now idle")
+	call("xxh3:branch-reply2", "withResponse", "xxh3:branch-event", "")
+
+	start := time.Unix(100, 0)
+	chiefID := prettyTestSpanID(110)
+	promptID := prettyTestSpanID(111)
+	replyID := prettyTestSpanID(112)
+	eventID := prettyTestSpanID(113)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: chiefID, Agent: true, AgentID: "chief", StartTime: start},
+		{ID: promptID, ParentID: chiefID, LLMRole: "user", LLMCallDigest: "xxh3:branch-prompt", StartTime: start.Add(time.Second)},
+		{ID: replyID, ParentID: chiefID, LLMRole: "assistant", LLMCallDigest: "xxh3:branch-reply", StartTime: start.Add(2 * time.Second)},
+		{ID: eventID, ParentID: chiefID, LLMRole: "user", LLMOriginKind: "EVENT", LLMOriginAgentName: "alice", LLMCallDigest: "xxh3:branch-event", StartTime: start.Add(3 * time.Second)},
+	})
+	encoded := func(digest string) string {
+		id, err := encodedIDForCallDigest(db, digest)
+		require.NoError(t, err)
+		return id
+	}
+
+	handler := &branchShellHandler{calls: make(chan branchCall, 1)}
+	live := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(100, 12))
+	live.setupTUI()
+	live.startShell(context.Background(), handler)
+
+	branch := func(t *testing.T, span dagui.SpanID, summary BranchSummary, input string) (branchCall, string) {
+		t.Helper()
+		live.enterNavMode()
+		live.textInput.SetValue(input)
+		target, err := live.branchTargetFor(db.Spans.Map[span])
+		require.NoError(t, err)
+		live.doBranch(target, summary)
+		var got branchCall
+		select {
+		case got = <-handler.calls:
+		case <-time.After(time.Second):
+			t.Fatal("branch did not run")
+		}
+		require.Eventually(t, func() bool {
+			live.tui.Step()
+			return live.inputFocused()
+		}, time.Second, 10*time.Millisecond)
+		return got, live.textInput.Value()
+	}
+
+	t.Run("prompt", func(t *testing.T) {
+		got, input := branch(t, promptID, BranchSummary{}, "")
+		require.Equal(t, branchCall{kind: "edit", encoded: encoded("xxh3:branch-base")}, got,
+			"a plain branch from a prompt is the inline-edit rewind to just before it")
+		require.Equal(t, "the user's words", input)
+	})
+	t.Run("prompt with summary", func(t *testing.T) {
+		summary := BranchSummary{Summarize: true}
+		got, input := branch(t, promptID, summary, "")
+		require.Equal(t, branchCall{kind: "branch", encoded: encoded("xxh3:branch-base"), summary: summary}, got,
+			"the summary attaches just before the prompt")
+		require.Equal(t, "the user's words", input)
+	})
+	t.Run("prompt keeps a draft", func(t *testing.T) {
+		_, input := branch(t, promptID, BranchSummary{}, "a draft")
+		require.Equal(t, "a draft", input, "the prompt only fills an empty input")
+	})
+	t.Run("agent event", func(t *testing.T) {
+		got, input := branch(t, eventID, BranchSummary{}, "")
+		require.Equal(t, branchCall{kind: "edit", encoded: encoded("xxh3:branch-reply")}, got)
+		require.Equal(t, "alice is now idle", input)
+	})
+	for _, summary := range []BranchSummary{{}, {Summarize: true}} {
+		t.Run(fmt.Sprintf("reply/summarize=%t", summary.Summarize), func(t *testing.T) {
+			got, input := branch(t, replyID, summary, "")
+			require.Equal(t, branchCall{kind: "branch", encoded: encoded("xxh3:branch-reply"), summary: summary}, got,
+				"a branch from a reply keeps it")
+			require.Empty(t, input, "a reply loads nothing into the input")
+		})
+	}
 }
 
 // TestFlowingModeDoesNotCropOverflowingTree is the regression guard for the

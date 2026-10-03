@@ -380,9 +380,9 @@ func (a *sessionAgent) attachReferences(ctx context.Context, input string) strin
 
 	if changed {
 		// Mounting references rebinds the workspace: a wholesale change to
-		// the LLM value, so route it through updateLLM -- any live agent
-		// (seeded with the old binding) is dropped, and the submit this call
-		// is part of packages a fresh one from the new value.
+		// the LLM value, so route it through updateLLM -- any live agent is
+		// reseeded with the new binding in place before the submit this call
+		// is part of prompts it.
 		if err := a.updateLLM(llm); err != nil {
 			slog.Warn("failed to refresh LLM after attaching references", "error", err)
 		}

@@ -2,12 +2,17 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
@@ -33,9 +38,15 @@ type fakeRuntime struct {
 	stops      int
 	reseeds    int
 	reseedErr  error
-	snapshot   dagger.ID
-	state      dagger.AgentState
-	delivered  chan string
+	// refuseRunningReseed makes Reseed fail while the state is RUNNING, as
+	// the engine's Agent.reseed does.
+	refuseRunningReseed bool
+	snapshot            dagger.ID
+	state               dagger.AgentState
+	delivered           chan string
+	// verbs logs send, resume, interrupt and (successful) reseed calls in
+	// order, for policies that are about sequencing.
+	verbs []string
 }
 
 var _ agentRuntime = (*fakeRuntime)(nil)
@@ -50,6 +61,7 @@ func newFakeRuntime() *fakeRuntime {
 func (f *fakeRuntime) SendMessage(_ context.Context, msg string) (agentMessage, error) {
 	f.mu.Lock()
 	f.sent = append(f.sent, msg)
+	f.verbs = append(f.verbs, "send")
 	f.mu.Unlock()
 	f.delivered <- msg
 	return fakeMessage{}, nil
@@ -59,6 +71,7 @@ func (f *fakeRuntime) Resume(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.resumes++
+	f.verbs = append(f.verbs, "resume")
 	return nil
 }
 
@@ -66,6 +79,7 @@ func (f *fakeRuntime) Interrupt(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.interrupts++
+	f.verbs = append(f.verbs, "interrupt")
 	f.state = dagger.AgentStatePaused
 	return nil
 }
@@ -101,8 +115,19 @@ func (f *fakeRuntime) Reseed(context.Context, *dagger.LLM) error {
 	if f.reseedErr != nil {
 		return f.reseedErr
 	}
+	if f.refuseRunningReseed && f.state == dagger.AgentStateRunning {
+		// Mirrors the engine: Agent.reseed refuses a running agent.
+		return errors.New("cannot reseed a running agent")
+	}
 	f.reseeds++
+	f.verbs = append(f.verbs, "reseed")
 	return nil
+}
+
+func (f *fakeRuntime) verbLog() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.verbs...)
 }
 
 func (f *fakeRuntime) reseedCount() int {
@@ -568,17 +593,27 @@ func TestRewindWaitsForTheCanceledTurnAndPreservesFocus(t *testing.T) {
 	require.Zero(t, scoutStops)
 	require.Zero(t, scoutRT.reseedCount(), "rewind must not mutate another agent")
 
-	// An attached focused agent is also somebody else's runtime. Rewind may
-	// interrupt the work the user explicitly targeted, but branches locally by
-	// detaching instead of reseeding that runtime.
+	// An attached focused agent (a worker focused from the roster) is the
+	// agent the user is editing: rewind interrupts the work it is doing on its
+	// own, then reseeds that same runtime in place -- it is never detached,
+	// which would fork a same-named duplicate on the next prompt.
 	attached := s.newAgent("attached")
 	attachedRT := newFakeRuntime()
+	attachedRT.refuseRunningReseed = true
 	attached.bindRuntime(attachedRT, "agent-attached", "encoded", false)
 	require.NoError(t, attached.rewindRuntime(context.Background(), nil))
-	require.Nil(t, attached.runtime())
-	_, attachedInterrupts, _ := attachedRT.counts()
+	require.Same(t, attachedRT, attached.runtime(), "rewind keeps the attached runtime")
+	require.Equal(t, "agent-attached", attached.agentHandle, "rewind keeps the roster entry")
+	_, attachedInterrupts, attachedStops := attachedRT.counts()
 	require.Equal(t, 1, attachedInterrupts)
-	require.Zero(t, attachedRT.reseedCount())
+	require.Zero(t, attachedStops)
+	require.Equal(t, 1, attachedRT.reseedCount())
+
+	// A refused reseed abandons the edit without detaching: the conversation
+	// stays bound to the agent it was.
+	attachedRT.reseedErr = errors.New("refused")
+	require.Error(t, attached.rewindRuntime(context.Background(), nil))
+	require.Same(t, attachedRT, attached.runtime())
 }
 
 // TestDropAgentStopsOnlyWhatTheSessionSpawned is the ownership rule: clearing
@@ -610,11 +645,11 @@ func TestDropAgentStopsOnlyWhatTheSessionSpawned(t *testing.T) {
 }
 
 // TestReseedKeepsTheInstance is the continuity rule: a wholesale LLM
-// replacement reseeds the conversation's OWN runtime in place -- same
-// instance, no stop, no successor -- instead of minting a STOPPED tombstone
-// per replacement. The ownership rule carries over unchanged: a runtime the
-// session merely attached to is somebody else's agent, so reseeding it is
-// refused and the caller falls back to detaching.
+// replacement reseeds the conversation's runtime in place -- same instance, no
+// stop, no successor -- instead of minting a STOPPED tombstone per
+// replacement. Ownership does not gate it: an attached runtime (a worker
+// focused from the roster) is the agent the user is operating on, and
+// refusing it used to detach the conversation and fork a duplicate.
 func TestReseedKeepsTheInstance(t *testing.T) {
 	s, agents := testSession(t, "own")
 	own := agents[0]
@@ -627,20 +662,190 @@ func TestReseedKeepsTheInstance(t *testing.T) {
 	require.Zero(t, stops, "reseed must not stop the runtime")
 	require.NotNil(t, own.runtime(), "the runtime stays bound")
 
-	// Attached runtime: refused. Replacing somebody else's conversation is
-	// not this session's call; detaching (the caller's fallback) is the most
-	// it may do.
+	// Attached runtime: reseeded in place just the same, never stopped.
 	attached := s.newAgent("someone-elses")
 	attachedRT := newFakeRuntime()
 	attached.bindRuntime(attachedRT, "agent-attached", "encoded-handle", false)
+	require.NoError(t, attached.reseedAgent(nil))
+	require.Equal(t, 1, attachedRT.reseedCount())
+	_, _, stops = attachedRT.counts()
+	require.Zero(t, stops)
+	require.Same(t, attachedRT, attached.runtime())
+
+	// A refused reseed is reported; reseedAgent itself never detaches.
+	attachedRT.reseedErr = errors.New("refused")
 	require.Error(t, attached.reseedAgent(nil))
-	require.Zero(t, attachedRT.reseedCount())
 	require.NotNil(t, attached.runtime(), "reseedAgent itself never detaches")
 
 	// A conversation with no runtime has nothing to swap: success, so the
 	// caller does NOT drop -- the next prompt submit spawns fresh anyway.
 	fresh := s.newAgent("unspawned")
 	require.NoError(t, fresh.reseedAgent(nil))
+}
+
+// modelOnlyDag is a dagger client answering only the LLM.model reads setLLM
+// makes, enough to drive updateLLM without an engine.
+func modelOnlyDag(t *testing.T) *dagger.Client {
+	t.Helper()
+	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+		var query dagger.Request
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
+		require.Contains(t, query.Query, "model")
+		body := `{"data":{"node":{"model":"test-model"}}}`
+		if strings.Contains(query.Query, "withModel") {
+			// .clear re-applies the selected model to the reset base.
+			body = `{"data":{"node":{"withModel":{"model":"test-model"}}}}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	}}))
+	require.NoError(t, err)
+	t.Cleanup(func() { dag.Close() })
+	return dag
+}
+
+// focusedWorker builds a session whose own agent is "agent" and which has
+// focused an ATTACHED worker "alice" -- the shape `dagger agent` has after the
+// user's agent staff-spawns a worker and the user presses ctrl+2.
+func focusedWorker(t *testing.T) (*LLMSession, *sessionAgent, *fakeRuntime) {
+	t.Helper()
+	dag := modelOnlyDag(t)
+	s, agents := testSession(t, "agent")
+	s.dag = dag
+	agents[0].llm = dagger.Ref[*dagger.LLM](dag, "agent-llm")
+	alice := s.newAgent("alice")
+	alice.llm = dagger.Ref[*dagger.LLM](dag, "alice-llm")
+	// As attach sets it: .clear resets to the traced snapshot sans history.
+	alice.tracedReset = dagger.Ref[*dagger.LLM](dag, "alice-reset")
+	aliceRT := newFakeRuntime()
+	aliceRT.refuseRunningReseed = true
+	aliceRT.setState(dagger.AgentStateIdle)
+	alice.bindRuntime(aliceRT, "agent-alice", "encoded-alice", false)
+	s.agents = append(s.agents, alice)
+	s.SetTarget(alice)
+	return s, alice, aliceRT
+}
+
+// requireStillAlice asserts the focused worker is still the same agent: same
+// runtime, same roster entry, still focused, never stopped, and no second
+// conversation in the session.
+func requireStillAlice(t *testing.T, s *LLMSession, alice *sessionAgent, aliceRT *fakeRuntime) {
+	t.Helper()
+	require.Same(t, aliceRT, alice.runtime(), "the worker's runtime stays bound")
+	require.Same(t, alice, s.Target(), "focus stays on the worker")
+	require.Equal(t, "agent-alice", s.TargetAgentID(), "the conversation still maps to its roster entry")
+	require.Same(t, alice, s.agentByHandle("agent-alice"))
+	require.False(t, alice.owned, "an attached runtime stays attached")
+	require.Len(t, s.agents, 2, "no duplicate conversation")
+	_, _, stops := aliceRT.counts()
+	require.Zero(t, stops, "an attached runtime is never stopped")
+}
+
+// TestCompactingAFocusedWorkerReseedsItInPlace is the /compact bug: updateLLM
+// on an attached worker used to refuse the reseed and detach, clearing the
+// roster mapping (the view fell back to the main agent) and making the next
+// prompt spawn a same-named duplicate.
+func TestCompactingAFocusedWorkerReseedsItInPlace(t *testing.T) {
+	s, alice, aliceRT := focusedWorker(t)
+
+	compacted := dagger.Ref[*dagger.LLM](s.dag, "compacted")
+	require.NoError(t, alice.updateLLM(compacted))
+	require.Equal(t, 1, aliceRT.reseedCount(), "the worker adopts the compacted conversation")
+	require.Same(t, compacted, alice.llm)
+	requireStillAlice(t, s, alice, aliceRT)
+
+	// .clear goes the same way: reseeded in place, not stopped or detached.
+	require.NoError(t, alice.Clear())
+	require.Equal(t, 2, aliceRT.reseedCount())
+	requireStillAlice(t, s, alice, aliceRT)
+}
+
+// TestRefusedReseedDetachesLoudly: when the engine genuinely refuses the swap,
+// the conversation detaches (stopping only what it owns) and adopts the new
+// value -- but says so, instead of silently forking a duplicate on the next
+// prompt.
+func TestRefusedReseedDetachesLoudly(t *testing.T) {
+	s, alice, aliceRT := focusedWorker(t)
+	aliceRT.reseedErr = errors.New("engine says no")
+
+	replacement := dagger.Ref[*dagger.LLM](s.dag, "replacement")
+	err := alice.updateLLM(replacement)
+	var detached *agentDetachedError
+	require.ErrorAs(t, err, &detached)
+	require.ErrorContains(t, err, "engine says no")
+	require.ErrorContains(t, err, "alice")
+	require.Nil(t, alice.runtime(), "the fallback detaches")
+	require.Same(t, replacement, alice.llm, "the replacement is still adopted")
+	require.Never(t, func() bool {
+		_, _, stops := aliceRT.counts()
+		return stops > 0
+	}, 100*time.Millisecond, 10*time.Millisecond, "an attached runtime is never stopped")
+
+	// An owned runtime is stopped by the same fallback.
+	own := s.agents[0]
+	ownRT := runtimeOf(t, own)
+	ownRT.reseedErr = errors.New("engine says no")
+	require.ErrorAs(t, own.updateLLM(replacement), &detached)
+	require.Eventually(t, func() bool {
+		_, _, stops := ownRT.counts()
+		return stops == 1
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+// TestBranchReseedsTheFocusedWorkerInPlace is the `b` bug on a worker: the
+// branch must interrupt the worker if it is running (the engine refuses to
+// reseed a running agent) and reseed it in place.
+func TestBranchReseedsTheFocusedWorkerInPlace(t *testing.T) {
+	s, alice, aliceRT := focusedWorker(t)
+	aliceRT.setState(dagger.AgentStateRunning)
+	h := &shellCallHandler{dag: s.dag, mode: modeShell, llmSession: s}
+
+	work := h.BranchFromID(t.Context(), "branch-point", idtui.BranchSummary{})
+	// Focus moving after the branch was requested must not redirect it.
+	s.SetTarget(s.agents[0])
+	work()
+
+	_, interrupts, _ := aliceRT.counts()
+	require.Equal(t, 1, interrupts, "a running worker is interrupted before reseed")
+	require.Equal(t, 1, aliceRT.reseedCount())
+	require.Equal(t, modePrompt, h.mode)
+	s.SetTarget(alice)
+	requireStillAlice(t, s, alice, aliceRT)
+	require.Zero(t, runtimeOf(t, s.agents[0]).reseedCount(), "the main agent is untouched")
+}
+
+// TestBranchMidTurnWaitsForTheTurn: branching the main agent while its own
+// client turn is in flight used to reseed a RUNNING agent, which the engine
+// refuses -- and the fallback then STOPPED the main agent so the next prompt
+// spawned a duplicate. Branch now cancels the turn and waits for its cleanup
+// (which parks the agent) before reseeding, like rewind.
+func TestBranchMidTurnWaitsForTheTurn(t *testing.T) {
+	s, _, _ := focusedWorker(t)
+	main := s.agents[0]
+	s.SetTarget(main)
+	mainRT := runtimeOf(t, main)
+	mainRT.refuseRunningReseed = true
+	h := &shellCallHandler{dag: s.dag, mode: modePrompt, llmSession: s}
+
+	// Model WithPrompt: on cancel, its cleanup interrupts the runtime (parking
+	// it PAUSED) and only then ends the turn.
+	var cause error
+	canceled := make(chan struct{})
+	main.beginTurn(func(c error) {
+		cause = c
+		close(canceled)
+	})
+	go func() {
+		<-canceled
+		mainRT.Interrupt(context.Background()) //nolint:errcheck
+		main.endTurn()
+	}()
+
+	h.BranchFromID(t.Context(), "branch-point", idtui.BranchSummary{})()
+	require.ErrorIs(t, cause, errAgentRewound)
+	require.Equal(t, 1, mainRT.reseedCount(), "reseeded once the turn parked")
+	require.Same(t, mainRT, main.runtime(), "the main agent keeps its runtime")
+	_, _, stops := mainRT.counts()
+	require.Zero(t, stops, "the main agent is never stopped by a branch")
 }
 
 // TestFocusResolvesToAnExistingConversation: focusing an agent the session

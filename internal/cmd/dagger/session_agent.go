@@ -169,7 +169,9 @@ type sessionAgent struct {
 	// only thing that licenses stopping it. Set where a handle enters the
 	// conversation, read where one leaves (detachAgent), so clearing a
 	// conversation you merely attached to can never kill somebody else's
-	// worker.
+	// worker. It does NOT gate replacing the conversation in place
+	// (reseedAgent): that keeps the runtime alive and is what the user asked
+	// for by operating on the agent they focused.
 	owned bool
 
 	// attachedID is the encoded handle an attached conversation was rebuilt
@@ -254,10 +256,28 @@ type sessionAgent struct {
 // uses, distinguishing "the user preempted this turn" from a canceled session.
 var errAgentInterrupted = errors.New("interrupted")
 
-// errAgentRewound cancels the client-side response when inline editing abandons a
-// turn. The shell suppresses it: unlike Ctrl-C, rewind is a successful control
-// operation whose replacement text is about to appear in the input.
-var errAgentRewound = errors.New("rewound for editing")
+// errAgentRewound cancels the client-side response when an in-place
+// replacement of the conversation (inline-edit rewind, branch, /compact)
+// abandons a turn. The shell suppresses it: unlike Ctrl-C, these are
+// successful control operations that are about to replace the conversation.
+var errAgentRewound = errors.New("rewound")
+
+// agentDetachedError reports the fallback of a wholesale replacement: the
+// runtime refused to adopt the new conversation in place, so the conversation
+// was detached from it (stopping it only if this session owns it) and the
+// next prompt will start a NEW agent from the replacement. It is surfaced to
+// the user rather than swallowed, because a silent fallback forks a
+// same-named duplicate agent on the next prompt.
+type agentDetachedError struct {
+	name string
+	err  error
+}
+
+func (e *agentDetachedError) Error() string {
+	return fmt.Sprintf("could not replace %s's conversation in place: %v (detached from it; the next prompt starts a new agent)", e.name, e.err)
+}
+
+func (e *agentDetachedError) Unwrap() error { return e.err }
 
 // agentInterruptGrace bounds how long an interrupt waits for the preempted
 // step to land (the agent parks PAUSED once it does) before giving up and
@@ -378,15 +398,19 @@ func (a *sessionAgent) setInitialLLM(llm *dagger.LLM) error {
 func (a *sessionAgent) updateSyncedLLM(llm *dagger.LLM, workspace *dagger.Workspace) error {
 	a.lastSyncedWorkspaceL.Lock()
 	defer a.lastSyncedWorkspaceL.Unlock()
-	if err := a.updateLLM(llm); err != nil {
+	err := a.updateLLM(llm)
+	var detached *agentDetachedError
+	if err != nil && !errors.As(err, &detached) {
 		return err
 	}
+	// A detached conversation still adopted the new value; only its runtime
+	// was left behind, so the baseline advances with it.
 	a.lastSyncedWorkspace = workspace
-	return nil
+	return err
 }
 
-func (a *sessionAgent) reset() {
-	a.updateLLM(a.resetLLM()) //nolint:errcheck
+func (a *sessionAgent) reset() error {
+	return a.updateLLM(a.resetLLM())
 }
 
 func (a *sessionAgent) resetLLM() *dagger.LLM {
@@ -505,11 +529,13 @@ func (a *sessionAgent) detachAgent() agentRuntime {
 
 // dropAgent detaches the conversation from its runtime, stopping it in the
 // background when the session owns it (best-effort; the tombstone stays
-// readable). This is the FALLBACK for a wholesale LLM replacement, not the
-// rule: updateLLM reseeds a live owned runtime in place, and drops only when
-// the swap is refused -- an attached runtime (somebody else's to reseed), a
-// suspended turn, or an engine older than the verb. After a drop the next
-// prompt submit spawns a fresh agent from the new value.
+// readable) and merely forgetting it when it is attached. This is the
+// FALLBACK for a wholesale LLM replacement, not the rule: updateLLM reseeds
+// the bound runtime in place, owned or attached, and drops only when the
+// engine refuses the swap (a running agent, an engine older than the verb).
+// After a drop the next prompt submit spawns a fresh agent from the new
+// value, so updateLLM reports the drop as an error instead of letting that
+// duplicate appear silently.
 func (a *sessionAgent) dropAgent() {
 	rt := a.detachAgent()
 	if rt == nil {
@@ -650,13 +676,13 @@ func (a *sessionAgent) Interrupt() bool {
 }
 
 // Rewind abandons this conversation's active branch and replaces it with the
-// immutable LLM state immediately before the prompt being edited. A client turn
-// is canceled and allowed to finish its normal interrupt/snapshot cleanup first;
-// an attached runtime working independently is interrupted directly. An owned
-// parked runtime is reseeded in place, preserving its agent instance; an
-// attached runtime is detached rather than mutating somebody else's agent.
-// Submitting the edited text therefore cannot join the old turn, and no
-// background conversation is touched.
+// immutable LLM state immediately before the prompt being edited. The turn is
+// settled first (settleTurn): a client turn is canceled and allowed to finish
+// its normal interrupt/snapshot cleanup; a runtime working independently is
+// interrupted directly. The parked runtime is then reseeded in place, owned
+// or attached -- the user is editing the agent they focused, so it stays the
+// same instance and roster entry. Submitting the edited text therefore cannot
+// join the old turn, and no background conversation is touched.
 func (a *sessionAgent) Rewind(ctx context.Context, base *dagger.LLM) error {
 	if err := a.rewindRuntime(ctx, base); err != nil {
 		return err
@@ -667,7 +693,36 @@ func (a *sessionAgent) Rewind(ctx context.Context, base *dagger.LLM) error {
 // rewindRuntime synchronizes with the client turn and swaps the engine runtime;
 // split from Rewind so routing and turn-ordering policy can be tested without a
 // live dagger client.
+//
+// Unlike updateLLM, a refused reseed is NOT a reason to detach here: the edit
+// is abandoned with the error and the conversation left exactly as it was,
+// since the inline editor only exposes the old prompt once the rewind holds.
 func (a *sessionAgent) rewindRuntime(ctx context.Context, base *dagger.LLM) error {
+	rt, err := a.settleTurn(ctx)
+	if err != nil {
+		return err
+	}
+	if rt != nil {
+		if err := rt.Reseed(ctx, base); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// settleTurn brings the conversation to rest before an explicit in-place
+// replacement (rewind, branch, /compact), returning the runtime to replace
+// into (nil when there is none). The engine refuses to reseed a RUNNING agent,
+// so a replacement issued mid-turn must first stop that turn:
+//
+//   - a client turn in flight (WithPrompt) is canceled with errAgentRewound
+//     and awaited, so its own cleanup -- the server-side interrupt and the
+//     re-root on the kept prefix -- lands before the replacement does;
+//   - otherwise a runtime working on its own (an attached worker, say) is
+//     interrupted directly and awaited until it parks PAUSED.
+//
+// The abandoned turn's presentation callbacks are drained either way.
+func (a *sessionAgent) settleTurn(ctx context.Context) (agentRuntime, error) {
 	a.turnL.Lock()
 	cancel := a.turnCancel
 	done := a.turnDone
@@ -676,49 +731,95 @@ func (a *sessionAgent) rewindRuntime(ctx context.Context, base *dagger.LLM) erro
 	}
 	a.turnL.Unlock()
 
-	a.agentL.Lock()
-	rt, owned := a.agent, a.owned
-	a.agentL.Unlock()
 	if cancel != nil {
 		cancel(errAgentRewound)
 		if done != nil {
 			select {
 			case <-ctx.Done():
-				return context.Cause(ctx)
+				return nil, context.Cause(ctx)
 			case <-done:
 			}
 		}
-	} else if rt != nil {
+	} else if rt := a.runtime(); rt != nil {
 		state, err := rt.State(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		switch state {
 		case dagger.AgentStateRunning, dagger.AgentStateWaitingInput:
 			if err := rt.Interrupt(ctx); err != nil {
-				return err
+				return nil, err
 			}
 			if err := waitForAgentState(ctx, rt, dagger.AgentStatePaused); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	// Drain the abandoned turn's presentation callbacks before exposing the edit.
+	// Drain the abandoned turn's presentation callbacks before exposing the
+	// replacement.
 	a.stepWG.Wait()
 
+	// Read the runtime only now: a turn that was still opening may have
+	// spawned it while it was being canceled.
+	return a.runtime(), nil
+}
+
+// CompactInPlace is /compact: it settles the conversation, summarizes its
+// latest committed state, and replaces the conversation with the summary IN
+// PLACE -- the focused agent keeps its runtime and roster entry, whether this
+// session spawned it or attached to it.
+func (a *sessionAgent) CompactInPlace(ctx context.Context) error {
+	rt, err := a.settleTurn(ctx)
+	if err != nil {
+		return err
+	}
 	if rt != nil {
-		if !owned {
-			// Rewind creates a local branch from an attached agent; replacing the
-			// attached runtime's conversation would mutate somebody else's worker.
-			a.detachAgent()
-			return nil
-		}
-		if err := rt.Reseed(ctx, base); err != nil {
+		// An attached agent may have advanced on its own since this
+		// conversation last re-rooted; compact what it actually holds.
+		if err := a.syncFromAgent(rt); err != nil {
 			return err
 		}
 	}
-	return nil
+	compacted, err := a.Compact(ctx)
+	if err != nil {
+		return err
+	}
+	return a.updateLLM(compacted)
+}
+
+// Branch replaces the conversation with an earlier state of it (target), IN
+// PLACE like CompactInPlace. With summary.Summarize, the branch being
+// abandoned is summarized first and the summary injected into the target, so
+// context carries forward; a failed summary falls back to a plain branch.
+//
+// Like Pi's /tree and Claude Code's /rewind, a branch never starts a turn: the
+// engine holds whatever the target leaves pending (the summary note, or the
+// tool results of a reply the branch kept) to lead the user's next message.
+// Nothing is resumed afterwards either, so a branch taken mid-turn leaves the
+// interrupted agent parked until that next message.
+func (a *sessionAgent) Branch(ctx context.Context, target *dagger.LLM, summary idtui.BranchSummary) error {
+	rt, err := a.settleTurn(ctx)
+	if err != nil {
+		return err
+	}
+	if summary.Summarize {
+		if rt != nil {
+			if err := a.syncFromAgent(rt); err != nil {
+				slog.Warn("failed to sync conversation before summarizing branch", "error", err)
+			}
+		}
+		summaryText, err := a.BranchSummary(ctx, summary.CustomPrompt)
+		if err != nil {
+			slog.Error("failed to summarize old branch", "error", err)
+		} else {
+			target = target.WithPrompt(fmt.Sprintf(
+				"The user explored a different conversation branch before returning here. Summary of that exploration:\n\n%s",
+				summaryText,
+			))
+		}
+	}
+	return a.updateLLM(target)
 }
 
 // interruptIfBusy preempts a runtime this session is not currently driving,
@@ -816,8 +917,8 @@ func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptIn
 	}
 	if compacted != a.llm {
 		// Compaction rebuilt the conversation: that is a wholesale
-		// replacement (different value digest), so rebase the conversation --
-		// dropping any existing agent -- before packaging it as one below.
+		// replacement (different value digest), so reseed the agent with it
+		// in place before prompting it below.
 		if err := a.updateLLM(compacted); err != nil {
 			return err
 		}
@@ -887,42 +988,46 @@ func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptIn
 }
 
 // updateLLM replaces the conversation's LLM wholesale -- prompt-turn snapshots
-// go through setLLM instead. The conversation remains THE SAME agent: a live
-// owned runtime adopts the new conversation in place (Agent.reseed), keeping
-// its identity, roster entry, and mailbox -- where stopping it and spawning a
-// successor minted a STOPPED tombstone per replacement, splitting one
-// conversation across identically-named roster entries. Dropping the runtime
-// survives as the fallback when the swap is refused; the next prompt submit
-// then packages the new value as a fresh agent.
+// go through setLLM instead. The conversation remains THE SAME agent: its
+// bound runtime adopts the new conversation in place (Agent.reseed), keeping
+// its identity, roster entry, and mailbox -- whether this session spawned it
+// or attached to it. Every caller is an operation on the conversation the
+// user is driving (/compact, branch, .clear, .model, auto-compaction of the
+// turn they submitted, ...), so swapping it out from under them would be the
+// surprise: detaching instead left the conversation mapped to no roster entry
+// and the next prompt spawned a same-named duplicate.
+//
+// Detaching survives only as the fallback when the engine refuses the swap.
+// The new value is still adopted locally, and an agentDetachedError tells the
+// user the next prompt will start a new agent.
 func (a *sessionAgent) updateLLM(llm *dagger.LLM) error {
+	var detached error
 	if err := a.reseedAgent(llm); err != nil {
-		slog.Debug("could not reseed the agent; dropping the runtime instead", "error", err)
+		slog.Debug("could not reseed the agent; detaching from the runtime instead", "error", err)
 		a.dropAgent()
+		detached = &agentDetachedError{name: a.name, err: err}
 	}
-	return a.setLLM(llm)
+	if err := a.setLLM(llm); err != nil {
+		return errors.Join(detached, err)
+	}
+	return detached
 }
 
 // reseedAgent pushes the replacement conversation into the runtime backing
 // this conversation, keeping the instance -- same identity, same roster
 // entry, same transcript. Returns an error when the swap did not happen; the
-// caller decides the fallback (updateLLM drops the runtime, restoring the
-// old stop-and-respawn behavior). A conversation with no runtime reports
-// success with nothing to do: the next prompt submit packages the new value
-// as a fresh agent anyway.
+// caller decides the fallback (updateLLM detaches). A conversation with no
+// runtime reports success with nothing to do: the next prompt submit packages
+// the new value as a fresh agent anyway.
 //
-// An attached runtime is refused here rather than reseeded: it is somebody
-// else's agent (a module's worker, say), and replacing its conversation is
-// not this session's call -- detaching is the most this session may do, the
-// same ownership rule detachAgent applies to stopping.
+// Ownership does not enter into it: an attached runtime (a worker the user's
+// own agent spawned, focused from the roster) is reseeded just like an owned
+// one, because the user is deliberately operating on it. Ownership governs
+// STOPPING (detachAgent), which reseeding never does.
 func (a *sessionAgent) reseedAgent(llm *dagger.LLM) error {
-	a.agentL.Lock()
-	rt, owned := a.agent, a.owned
-	a.agentL.Unlock()
+	rt := a.runtime()
 	if rt == nil {
 		return nil
-	}
-	if !owned {
-		return fmt.Errorf("an attached runtime is somebody else's to reseed")
 	}
 	return rt.Reseed(a.session.plumbingCtx, llm)
 }
@@ -1342,11 +1447,15 @@ func (a *sessionAgent) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rer
 // server-side (Agent.interrupt) and preserve the completed prefix, so that
 // rationale is gone -- re-enabling undo is a deliberate follow-up, not blocked
 // on interrupt semantics anymore.
-func (a *sessionAgent) Clear() {
-	a.reset()
+//
+// The agent's runtime is reseeded with the cleared conversation in place, like
+// any wholesale replacement; an attached runtime is never stopped.
+func (a *sessionAgent) Clear() error {
+	err := a.reset()
 	a.references = nil
 	a.tunnels = nil
 	a.updateReferencesPreview()
+	return err
 }
 
 func (a *sessionAgent) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {

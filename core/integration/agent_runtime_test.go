@@ -917,6 +917,57 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, transcript, oldPrompt)
 	})
 
+	t.Run("held input leads the next turn", func(ctx context.Context, t *testctx.T) {
+		// Compaction (and a branch with a summary) reseeds a conversation
+		// ending in a note the model has not answered. The reseed must HOLD
+		// it — the agent stays IDLE, nothing steps — so the note leads the
+		// user's next message instead of being answered on its own.
+		const (
+			oldPrompt  = "prompt before compaction"
+			oldReply   = "the pre-compaction reply"
+			summary    = "This session is being continued: the summary"
+			nextPrompt = "prompt after compaction"
+			nextReply  = "the post-compaction reply"
+		)
+		oldModel := cannedRecordingModel(ctx, t, c, c.LLM().
+			WithPrompt(oldPrompt).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: oldReply},
+			}))
+		h := spawnAgent(ctx, t, c, spawnOpts{model: oldModel, name: "compacted"})
+		_, got, err := h.sendAndWait(ctx, t, oldPrompt)
+		require.NoError(t, err)
+		require.Equal(t, oldReply, got)
+
+		// The recording has no reply to the summary alone: stepping it would
+		// diverge the replayer and fail the agent.
+		newModel := cannedRecordingModel(ctx, t, c, c.LLM().
+			WithPrompt(summary).
+			WithPrompt(nextPrompt).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: nextReply},
+			}))
+		compacted, err := c.LLM(dagger.LLMOpts{Model: newModel}).WithPrompt(summary).ID(ctx)
+		require.NoError(t, err)
+		require.NoError(t, h.reseedAgent(ctx, t, string(compacted)))
+		require.Equal(t, "IDLE", h.state(ctx, t))
+
+		// The staff sendTo order: resume first — a no-op on an idle agent,
+		// which must not answer the held note — then send.
+		require.Equal(t, "IDLE", h.mustVerb(ctx, t, "resume"))
+		time.Sleep(time.Second)
+		require.Equal(t, "IDLE", h.state(ctx, t), "held input must not start a turn")
+
+		delivery, got, err := h.sendAndWait(ctx, t, nextPrompt)
+		require.NoError(t, err)
+		require.Equal(t, "STARTED", delivery)
+		require.Equal(t, nextReply, got)
+		transcript, lastReply := h.snapshot(ctx, t)
+		require.Equal(t, nextReply, lastReply)
+		require.Equal(t, 1, strings.Count(transcript, summary))
+		require.NotContains(t, transcript, oldPrompt)
+	})
+
 	t.Run("queued mail drains onto the new conversation", func(ctx context.Context, t *testctx.T) {
 		const (
 			newPrompt    = "history on the reseeded conversation"

@@ -1288,6 +1288,8 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 			return fmt.Errorf("unmarshal: %w", err)
 		}
 
+		// The remote engine relays what its containers posted, as is.
+		enginetel.NormalizeTraceRequest(&req)
 		spans := telemetry.SpansFromPB(req.GetResourceSpans())
 
 		slog.ExtraDebug("received spans from engine", "len", len(spans))
@@ -1318,6 +1320,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
+		enginetel.NormalizeLogsRequest(&req)
 		if err := telemetry.ReexportLogsFromPB(ctx, c.engineLogs(exp.enginePublishes), &req); err != nil {
 			return fmt.Errorf("re-export logs: %w", err)
 		}
@@ -1339,6 +1342,7 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal metrics: %w", err)
 		}
+		enginetel.NormalizeMetricsRequest(&req)
 		if err := enginetel.ReexportMetricsFromPB(ctx, c.engineMetrics(exp.enginePublishes), &req); err != nil {
 			return fmt.Errorf("re-export metrics: %w", err)
 		}
