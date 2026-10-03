@@ -125,22 +125,15 @@ func testWorkspaceGitCheckoutReuse(t *testing.T, discard bool, order string) {
 	}
 	var tree dagql.ObjectResult[*core.Directory]
 	checkouts := make([]dagql.ObjectResult[*core.Directory], len(workspaces))
-	// Checkouts are lazy: each caller materializes what it selects.
 	selectTree := func(ctx context.Context) error {
-		if err := srv.Select(ctx, ref, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+		return srv.Select(ctx, ref, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
 			{Name: "depth", Value: dagql.NewInt(0)},
 			{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
 			{Name: "includeTags", Value: dagql.NewBoolean(false)},
-		}}); err != nil {
-			return err
-		}
-		return cache.Evaluate(ctx, tree)
+		}})
 	}
 	selectWorkspace := func(ctx context.Context, i int) error {
-		if err := srv.Select(ctx, workspaces[i], &checkouts[i], dagql.Selector{Field: "__checkout"}); err != nil {
-			return err
-		}
-		return cache.Evaluate(ctx, checkouts[i])
+		return srv.Select(ctx, workspaces[i], &checkouts[i], dagql.Selector{Field: "__checkout"})
 	}
 	switch order {
 	case "tree first":

@@ -4394,22 +4394,21 @@ func (s *containerSchema) asTarball(
 			platformVariants = append(platformVariants, variant)
 		}
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, newContainerImageFile(query, &core.FileContainerImageLazy{
+	return newContainerImageFile(ctx, srv, query, &core.FileContainerImageLazy{
 		LazyState:         core.NewLazyState(),
 		Parent:            parent,
 		PlatformVariants:  platformVariants,
 		ForcedCompression: args.ForcedCompression.Value,
 		MediaTypes:        args.MediaTypes,
-	}))
+	})
 }
 
-func newContainerImageFile(query *core.Query, lazy *core.FileContainerImageLazy) *core.File {
-	return &core.File{
-		Platform: query.Platform(),
-		File:     new(core.LazyAccessor[string, *core.File]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
-		Lazy:     lazy,
+func newContainerImageFile(ctx context.Context, srv *dagql.Server, query *core.Query, lazy *core.FileContainerImageLazy) (dagql.ObjectResult[*core.File], error) {
+	file, err := evaluatedFile(ctx, query, lazy)
+	if err != nil {
+		return dagql.ObjectResult[*core.File]{}, err
 	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
 type containerExportImageArgs struct {
@@ -4585,13 +4584,13 @@ func (s *containerSchema) manifest(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, newContainerImageFile(query, &core.FileContainerImageLazy{
+	return newContainerImageFile(ctx, srv, query, &core.FileContainerImageLazy{
 		LazyState:         core.NewLazyState(),
 		Parent:            parent,
 		ForcedCompression: args.ForcedCompression.Value,
 		MediaTypes:        args.MediaTypes,
 		Manifest:          true,
-	}))
+	})
 }
 
 type containerLayerArgs struct {

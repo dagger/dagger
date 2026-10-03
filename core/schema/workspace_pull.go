@@ -6,7 +6,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type workspaceCommitsFromArgs struct {
@@ -200,10 +199,9 @@ func (s *workspaceSchema) pullDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.Directory{
-		Platform: query.Platform(),
-		Dir:      new(core.LazyAccessor[string, *core.Directory]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
-		Lazy:     &core.DirectoryWorkspacePullLazy{LazyState: core.NewLazyState(), Parent: parent, Source: source, Opts: opts},
-	})
+	dir, err := evaluatedDirectory(ctx, query, &core.DirectoryWorkspacePullLazy{LazyState: core.NewLazyState(), Parent: parent, Source: source, Opts: opts})
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }

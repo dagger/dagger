@@ -8,7 +8,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type gitRefWithCommitArgs struct {
@@ -137,10 +136,9 @@ func (s *gitSchema) gitRefWithCommitDirectory(ctx context.Context, parent dagql.
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.Directory{
-		Platform: query.Platform(),
-		Dir:      new(core.LazyAccessor[string, *core.Directory]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
-		Lazy:     &core.DirectoryGitCommitLazy{LazyState: core.NewLazyState(), Parent: parent, Changes: changes, Opts: opts},
-	})
+	dir, err := evaluatedDirectory(ctx, query, &core.DirectoryGitCommitLazy{LazyState: core.NewLazyState(), Parent: parent, Changes: changes, Opts: opts})
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }

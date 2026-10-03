@@ -72,6 +72,7 @@ func requireRebuiltFile(t *testing.T, b *transferTestEngine, bctx context.Contex
 
 // Changeset.asPatch is rebuilt on another engine when its blob is missing.
 func TestChangesetPatchRebuildsOnAnotherEngine(t *testing.T) {
+	testutil.RequireNativeMount(t)
 	salt := transferTestSalt(t)
 	a, b := newTransferTestEngine(t, salt), newTransferTestEngine(t, salt)
 	actx := dagql.ContextWithServer(a.session(t, "a1"), a.dag)
@@ -79,16 +80,15 @@ func TestChangesetPatchRebuildsOnAnotherEngine(t *testing.T) {
 	var patch dagql.ObjectResult[*core.File]
 	require.NoError(t, a.dag.Select(actx, changes, &patch, dagql.Selector{Field: "asPatch"}))
 	require.IsType(t, &core.FileChangesetPatchLazy{}, patch.Self().Lazy)
+	require.False(t, dagql.HasPendingLazyEvaluation(patch), "the patch is written at the call")
 	requireRebuildRoute(t, actx, a.cache, patch)
-
-	testutil.RequireNativeMount(t)
-	require.NoError(t, a.cache.Evaluate(actx, patch))
 	bctx, loaded := importForRebuild(t, a, actx, b, patch)
 	require.Contains(t, requireRebuiltFile(t, b, bctx, loaded, core.ChangesetPatchFilename), "+after")
 }
 
 // Changeset merges are rebuilt on another engine when their blob is missing.
 func TestChangesetMergesRebuildOnAnotherEngine(t *testing.T) {
+	testutil.RequireNativeMount(t)
 	for _, field := range []string{"__mergeWithChangeset", "__mergeWithChangesets", "__mergeForWorkspaceCommit"} {
 		t.Run(field, func(t *testing.T) {
 			salt := transferTestSalt(t)
@@ -111,10 +111,8 @@ func TestChangesetMergesRebuildOnAnotherEngine(t *testing.T) {
 			lazy, ok := merged.Self().Lazy.(*core.DirectoryMergeChangesetsLazy)
 			require.True(t, ok, "%T", merged.Self().Lazy)
 			require.Equal(t, field == "__mergeForWorkspaceCommit", lazy.Workspace)
+			require.False(t, dagql.HasPendingLazyEvaluation(merged), "the merge runs at the call")
 			requireRebuildRoute(t, actx, a.cache, merged)
-
-			testutil.RequireNativeMount(t)
-			require.NoError(t, a.cache.Evaluate(actx, merged))
 			bctx, loaded := importForRebuild(t, a, actx, b, merged)
 			for _, path := range want {
 				require.Equal(t, "1\n", requireRebuiltFile(t, b, bctx, loaded, path))
@@ -237,8 +235,8 @@ func TestGitCommitDirectoryRebuildsOnAnotherEngine(t *testing.T) {
 		rebuildTestArg("authorEmail", dagql.NewString("author@example.com")),
 	}}))
 	require.IsType(t, &core.DirectoryGitCommitLazy{}, committed.Self().Lazy)
+	require.False(t, dagql.HasPendingLazyEvaluation(committed), "the commit is made at the call")
 	requireRebuildRoute(t, actx, a.cache, committed)
-	require.NoError(t, a.cache.Evaluate(actx, committed))
 	want := rebuildTestHead(t, committed)
 
 	rebuildWithInputs(t, a, actx, b, committed, []dagql.AnyResult{repo}, func(bctx context.Context, loaded dagql.AnyResult) {
@@ -286,8 +284,8 @@ func TestWorkspacePullDirectoryRebuildsOnAnotherEngine(t *testing.T) {
 		rebuildTestArg("committerEmail", dagql.NewString("committer@example.com")),
 	}}))
 	require.IsType(t, &core.DirectoryWorkspacePullLazy{}, pulled.Self().Lazy)
+	require.False(t, dagql.HasPendingLazyEvaluation(pulled), "the pull runs at the call")
 	requireRebuildRoute(t, actx, a.cache, pulled)
-	require.NoError(t, a.cache.Evaluate(actx, pulled))
 	want := rebuildTestHead(t, pulled)
 
 	rebuildWithInputs(t, a, actx, b, pulled, []dagql.AnyResult{repo}, func(bctx context.Context, loaded dagql.AnyResult) {
@@ -295,4 +293,18 @@ func TestWorkspacePullDirectoryRebuildsOnAnotherEngine(t *testing.T) {
 		require.Equal(t, want, rebuildTestHead(t, loaded))
 		require.Equal(t, "pulled\n", requireRebuiltFile(t, b, bctx, loaded, "file.txt"))
 	})
+}
+
+// A merge conflict is reported by the call that asks for the merge, as before
+// merges saved their operation.
+func TestChangesetMergeConflictAtCall(t *testing.T) {
+	testutil.RequireNativeMount(t)
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	ctx := dagql.ContextWithServer(e.session(t, "conflict"), e.dag)
+	ours := rebuildTestChangeset(t, e, ctx, "data", "base\n", "ours\n")
+	theirs, err := rebuildTestChangeset(t, e, ctx, "data", "base\n", "theirs\n").ID()
+	require.NoError(t, err)
+	var merged dagql.ObjectResult[*core.Changeset]
+	err = e.dag.Select(ctx, ours, &merged, dagql.Selector{Field: "withChangeset", Args: []dagql.NamedInput{rebuildTestArg("changes", dagql.NewID[*core.Changeset](theirs))}})
+	require.ErrorContains(t, err, "conflict")
 }

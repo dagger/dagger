@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 )
 
@@ -197,29 +198,35 @@ func importForRebuild(t *testing.T, a *transferTestEngine, actx context.Context,
 }
 
 // The image files are saved with the operation that writes them. Building an
-// image needs a real engine; the integration suite rebuilds one.
+// image needs a real engine, so the file is attached here with its operation
+// unevaluated, as asTarball and manifest build it; the integration suite
+// builds and rebuilds real images.
 func TestContainerImageFilesSaveRecipe(t *testing.T) {
 	salt := transferTestSalt(t)
 	a, b := newTransferTestEngine(t, salt), newTransferTestEngine(t, salt)
 	actx := a.session(t, "a1")
 	dirID := rebuildTestID[*core.Directory](t, a, actx, dagql.Selector{Field: "directory"})
-	variantID := rebuildTestID[*core.Container](t, a, actx, dagql.Selector{Field: "container"}, dagql.Selector{Field: "withEnvVariable", Args: []dagql.NamedInput{rebuildTestArg("name", dagql.NewString("V")), rebuildTestArg("value", dagql.NewString("1"))}})
-	var ctr dagql.ObjectResult[*core.Container]
+	var ctr, variant dagql.ObjectResult[*core.Container]
 	require.NoError(t, a.dag.Select(actx, a.dag.Root(), &ctr, dagql.Selector{Field: "container"}, dagql.Selector{Field: "withRootfs", Args: []dagql.NamedInput{rebuildTestArg("directory", dirID)}}))
-	for _, field := range []dagql.Selector{
-		{Field: "asTarball", Args: []dagql.NamedInput{rebuildTestArg("platformVariants", dagql.ArrayInput[dagql.ID[*core.Container]]{variantID})}},
-		{Field: "manifest"},
-	} {
-		t.Run(field.Field, func(t *testing.T) {
-			var file dagql.ObjectResult[*core.File]
-			require.NoError(t, a.dag.Select(actx, ctr, &file, field))
-			lazy, ok := file.Self().Lazy.(*core.FileContainerImageLazy)
-			require.True(t, ok, "%T", file.Self().Lazy)
-			require.Equal(t, field.Field == "manifest", lazy.Manifest)
-			requireRebuildRoute(t, actx, a.cache, file)
+	require.NoError(t, a.dag.Select(actx, a.dag.Root(), &variant, dagql.Selector{Field: "container"}, dagql.Selector{Field: "withEnvVariable", Args: []dagql.NamedInput{rebuildTestArg("name", dagql.NewString("V")), rebuildTestArg("value", dagql.NewString("1"))}}))
+	parentID, err := a.cache.PersistedResultID(ctr)
+	require.NoError(t, err)
+	for _, field := range []string{"asTarball", "manifest"} {
+		t.Run(field, func(t *testing.T) {
+			lazy := &core.FileContainerImageLazy{LazyState: core.NewLazyState(), Parent: ctr, Manifest: field == "manifest"}
+			if field == "asTarball" {
+				lazy.PlatformVariants = []dagql.ObjectResult[*core.Container]{variant}
+			}
+			value := &core.File{Platform: ctr.Self().Platform, File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Lazy: lazy}
+			frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: field, Receiver: &dagql.ResultCallRef{ResultID: parentID}, Type: dagql.NewResultCallType(value.Type())}
+			attached, err := a.cache.GetOrInitCall(actx, "a1-session", a.dag, &dagql.CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) {
+				return dagql.NewObjectResultForCall(value, a.dag, frame)
+			})
+			require.NoError(t, err)
+			requireRebuildRoute(t, actx, a.cache, attached)
 
 			// The imported row keeps the operation, with its inputs remapped.
-			bctx, loaded := importForRebuild(t, a, actx, b, file)
+			bctx, loaded := importForRebuild(t, a, actx, b, attached)
 			require.True(t, dagql.HasPendingLazyEvaluation(loaded))
 			requireRebuildRoute(t, bctx, b.cache, loaded)
 		})

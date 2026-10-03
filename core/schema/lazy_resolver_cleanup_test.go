@@ -356,7 +356,12 @@ func TestLazyOperationResolverCapture(t *testing.T) {
 				require.True(t, result.Self().Lazy.(*core.DirectoryGitTreeLazy).KeepGitDir)
 			}
 			assertResolverLazyOperation(t, ctx, cache, result.Self(), kind)
-			if kind != "gitCleaned" {
+			switch kind {
+			case "gitCleaned":
+			case "gitFullCheckout":
+				// The full checkout is built at the call, as before it saved its operation.
+				require.True(t, result.Self().Lazy.IsEvaluated())
+			default:
 				require.Empty(t, server.manager.outputs)
 				require.False(t, result.Self().Lazy.IsEvaluated())
 				require.NoError(t, result.Self().Lazy.Evaluate(ctx, result.Self()))

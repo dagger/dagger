@@ -1373,12 +1373,11 @@ func (s *directorySchema) changesetAsPatch(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.File{
-		Platform: query.Platform(),
-		File:     new(core.LazyAccessor[string, *core.File]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
-		Lazy:     &core.FileChangesetPatchLazy{LazyState: core.NewLazyState(), Changeset: parent},
-	})
+	patch, err := evaluatedFile(ctx, query, &core.FileChangesetPatchLazy{LazyState: core.NewLazyState(), Changeset: parent})
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, patch)
 }
 
 type changesetExportArgs struct {
@@ -1692,20 +1691,15 @@ func (s *directorySchema) changesetMergeWithChangesets(ctx context.Context, pare
 	})
 }
 
-// newChangesetMergeDirectory returns the directory a changeset merge produces
-// when it is first read.
+// newChangesetMergeDirectory returns the directory a changeset merge produces,
+// with the merge saved as its operation.
 func newChangesetMergeDirectory(ctx context.Context, lazy *core.DirectoryMergeChangesetsLazy) (*core.Directory, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 	lazy.LazyState = core.NewLazyState()
-	return &core.Directory{
-		Platform: query.Platform(),
-		Dir:      new(core.LazyAccessor[string, *core.Directory]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
-		Lazy:     lazy,
-	}, nil
+	return evaluatedDirectory(ctx, query, lazy)
 }
 
 func (s *directorySchema) changeset(ctx context.Context, q *core.Query, args struct{}) (*core.Changeset, error) {
