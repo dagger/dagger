@@ -545,7 +545,7 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("read clean_shutdown metadata: %w", err)
 	}
-	if found && cleanShutdownVal != "1" && !c.blobBacked {
+	if c.uncleanStore(found, cleanShutdownVal) {
 		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
@@ -593,19 +593,33 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("set persistence schema version: %w", err)
 	}
-	if !c.blobBacked {
-		if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0"); err != nil {
-			if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
-				return nil, errors.Join(fmt.Errorf("mark clean_shutdown=0 at startup: %w", err), closeErr)
-			}
-			return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
+	if err := c.markStoreDirty(ctx); err != nil {
+		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
+			return nil, errors.Join(fmt.Errorf("mark clean_shutdown=0 at startup: %w", err), closeErr)
 		}
+		return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
 	}
 	if err := c.openIdentity(ctx); err != nil {
 		return nil, errors.Join(err, closeCacheDBs(db, c.pdb))
 	}
 	c.countBootRestored()
 	return c, nil
+}
+
+// uncleanStore reports whether an engine's store was left by a stop that
+// was not clean, so its snapshots may no longer match it. A blob-backed
+// cache's never is (see NewCache).
+func (c *Cache) uncleanStore(found bool, cleanShutdown string) bool {
+	return found && cleanShutdown != "1" && !c.blobBacked
+}
+
+// markStoreDirty marks an engine's store in use until a clean close. A
+// blob-backed cache never marks its store dirty (see NewCache).
+func (c *Cache) markStoreDirty(ctx context.Context) error {
+	if c.blobBacked {
+		return nil
+	}
+	return c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0")
 }
 
 // countBootRestored counts, once the restore has fully succeeded, the entries
