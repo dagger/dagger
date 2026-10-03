@@ -25,7 +25,6 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
-	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/patchpreview"
@@ -449,6 +448,11 @@ const (
 	// patchSummaryMaxLines is the longest patch shown verbatim to the model;
 	// anything longer becomes a diff-stat summary.
 	patchSummaryMaxLines = 100
+	// changesetPatchMaxBytes bounds the patch MCP inlines into a workspace's
+	// recipe for a tool's changeset (see applyChangeset). It ends up in
+	// every trace that records the recipe; past this, the changeset is
+	// applied raw and restoring reruns its producer instead.
+	changesetPatchMaxBytes = 16 << 20
 )
 
 // changesetTooLarge checks a metadata upper bound before any full path
@@ -1204,6 +1208,12 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 //     that recipe diffs Before and After, a full-tree diff the first read of
 //     the workspace would pay when Before is the whole root, while the patch
 //     is rendered for the tool result anyway.
+//   - Unless that patch is larger than changesetPatchMaxBytes or carries a
+//     binary file: the patch is inlined in the recipe, and so in every trace
+//     that records it, and a build output (`go build`, `go test -c`) would
+//     fill telemetry with megabytes of base85. Such a changeset is applied
+//     raw, so restoring the conversation reruns its producer instead,
+//     assuming it is hermetic.
 //
 // A tool may measure its changeset from the workspace cwd rather than its
 // root: vito/editor's tools read the workspace at ".", which resolves from the
@@ -1231,11 +1241,11 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 
 	if inEngine {
 		out, err := m.applyChangesetPatch(ctx, srv, root, prefix, changes)
-		if !errors.Is(err, ErrPatchTooLarge) {
+		if !errors.Is(err, ErrPatchTooLarge) && !errors.Is(err, ErrPatchBinary) {
 			return out, err
 		}
-		slog.Debug("changeset patch too large to embed; applying the raw changeset",
-			"max", engineutil.MaxFileContentsSize)
+		slog.Debug("changeset patch not embeddable; applying the raw changeset",
+			"reason", err, "max", changesetPatchMaxBytes)
 	}
 	placed, err := changesetAt(ctx, srv, changes, prefix)
 	if err != nil {
@@ -1365,8 +1375,9 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 // The patch starts from the workspace's own content, so applying it
 // reproduces what Workspace.withChanges would by construction: there is
 // nothing to check and nothing to fall back to. Only a changeset that touches
-// a workspace mount is refused, as withChanges refuses it; a patch too large
-// to embed fails with ErrPatchTooLarge, for the caller to apply it raw.
+// a workspace mount is refused, as withChanges refuses it; a patch that is too
+// large or carries binary content fails with ErrPatchTooLarge or
+// ErrPatchBinary, for the caller to apply it raw.
 func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], prefix string, changes dagql.ObjectResult[*Changeset]) (string, error) {
 	paths, err := changes.Self().ComputePaths(ctx)
 	if err != nil {
@@ -1378,9 +1389,9 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 			return "", fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", p)
 		}
 	}
-	rendered, err := changes.Self().RenderPatchOnto(ctx, root, prefix, engineutil.MaxFileContentsSize)
+	rendered, err := changes.Self().RenderPatchOnto(ctx, root, prefix, changesetPatchMaxBytes)
 	if err != nil {
-		if errors.Is(err, ErrPatchTooLarge) {
+		if errors.Is(err, ErrPatchTooLarge) || errors.Is(err, ErrPatchBinary) {
 			return "", err
 		}
 		return "", fmt.Errorf("render changeset patch: %w", err)

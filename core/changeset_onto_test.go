@@ -244,4 +244,37 @@ func TestRenderPatchOnto(t *testing.T) {
 		_, err = renderPatchOntoDirs(ctx, base, after, ".", paths, 1024)
 		require.ErrorIs(t, err, ErrPatchTooLarge)
 	})
+
+	t.Run("a binary file fails", func(t *testing.T) {
+		bin := map[string]string{"bin": "\x00old"}
+		for _, tc := range []struct {
+			name                string
+			base, before, after map[string]string
+		}{
+			{name: "added", after: map[string]string{"text.txt": "text\n", "bin": "\x00elf"}},
+			{name: "modified", base: bin, before: bin, after: map[string]string{"bin": "\x00new"}},
+			// --binary carries a deleted file's content too, to be reversible.
+			{name: "deleted", base: bin, before: bin},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
+				for dir, files := range map[string]map[string]string{base: tc.base, before: tc.before, after: tc.after} {
+					for name, content := range files {
+						writeDeltaTestFile(t, dir, name, content)
+					}
+				}
+				paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+				require.NoError(t, err)
+				_, err = renderPatchOntoDirs(ctx, base, after, ".", paths, 1<<20)
+				require.ErrorIs(t, err, ErrPatchBinary)
+			})
+		}
+	})
+
+	t.Run("text naming the binary marker is not binary", func(t *testing.T) {
+		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
+		writeDeltaTestFile(t, after, "notes.txt", "GIT binary patch\n")
+		p := render(t, base, before, after, ".")
+		require.Contains(t, string(p.Patch), "+GIT binary patch\n")
+	})
 }

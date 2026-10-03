@@ -418,6 +418,68 @@ type Editor {
 	require.NotContains(t, entries, "old/")
 }
 
+// TestBinaryChangesetToolAppliesRaw covers a build that writes a binary, such
+// as `go build` or `go test -c`: its content is not inlined into the
+// workspace's recipe as a patch, which every trace recording that recipe would
+// carry. The changeset is applied raw instead, and restoring reruns the tool.
+func (LLMSuite) TestBinaryChangesetToolAppliesRaw(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	ws := c.Directory().
+		WithNewFile("main.c", "int main() { return 0; }\n").
+		WithNewFile("dagger.toml", "[modules.builder]\nsource = \"modules/builder\"\n").
+		WithNewFile("modules/builder/dagger.json", `{"name":"builder","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("modules/builder/main.dang", `
+type Builder {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  build(ws: Workspace!): Changeset! {
+    let before = container.from("alpine:3.22")
+      .withWorkdir("/workspace")
+      .withDirectory(".", ws.directory("/"))
+    let after = before.withExec(["sh", "-ec", "printf 'ELF\\000\\001' > main.bin; echo built > build.log"])
+    after.directory(".").changes(before.directory("."))
+  }
+}
+`).
+		AsWorkspace()
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("build it").
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "build",
+		}}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
+	require.NoError(t, err)
+	result := composed.WithPrompt("build it").Loop()
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "done")
+
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, result)
+	require.NoError(t, err)
+	id := new(call.ID)
+	require.NoError(t, id.Decode(string(recipe)))
+	fields := map[string]bool{}
+	collectIDFieldNames(id, fields)
+	require.False(t, fields["withPatchFile"], "a binary must not be inlined as a patch")
+	require.True(t, fields["withChanges"], "the changeset must be applied raw")
+	require.True(t, fields["withExec"], "restoring must rerun the build")
+
+	require.NoError(t, c.Close())
+	target := connect(ctx, t)
+	restored := dagger.Ref[*dagger.LLM](target, recipe)
+	got, err := restored.Workspace().File("main.bin").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ELF\x00\x01", got)
+	got, err = restored.Workspace().File("build.log").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "built\n", got)
+}
+
 // TestChangesetToolPrunesExecution covers commands such as `go test`: they
 // execute successfully but produce no file patch. No-ops and directory-only
 // changes must drop the execution, without mistaking file mode edits for no-ops.
