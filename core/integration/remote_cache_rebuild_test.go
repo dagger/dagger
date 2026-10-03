@@ -2,8 +2,10 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -113,5 +115,53 @@ func (RemoteCacheTransferSuite) TestRebuildDockerBuild(ctx context.Context, t *t
 		contents, err := dagger.Ref[*dagger.Container](c, dagger.ID(handles["build"])).File("/built").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, seed+"\n", contents)
+	})
+}
+
+// A manifest names the layer digests of the engine that built it, and a rebuild
+// elsewhere does not reproduce them. Another engine therefore never answers
+// manifest from it: it builds its own, and every blob that manifest names is
+// available through layer.
+func (RemoteCacheTransferSuite) TestManifestStaysOnEngine(ctx context.Context, t *testctx.T) {
+	seed := identity.NewID()
+	manifestOf := func(c *dagger.Client) (*dagger.Container, *dagger.File) {
+		ctr := c.Container().From(alpineImage).WithNewFile("/data", "per engine "+seed)
+		return ctr, ctr.Manifest()
+	}
+	resultID := func(raw string) uint64 {
+		var id call.ID
+		require.NoError(t, id.Decode(raw))
+		require.True(t, id.IsHandle())
+		return id.EngineResultID()
+	}
+	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+		_, manifest := manifestOf(c)
+		manifest, err := manifest.Sync(ctx)
+		require.NoError(t, err)
+		id, err := manifest.ID(ctx)
+		require.NoError(t, err)
+		return map[string]dagger.ID{"manifest": id}
+	}, func(c *dagger.Client, handles map[string]string) {
+		ctr, manifest := manifestOf(c)
+		id, err := manifest.ID(ctx)
+		require.NoError(t, err)
+		require.NotEqual(t, resultID(handles["manifest"]), resultID(string(id)), "the other engine's manifest must not answer this one's call")
+		contents, err := manifest.Contents(ctx)
+		require.NoError(t, err)
+		var parsed struct {
+			Config struct{ Digest string }
+			Layers []struct{ Digest string }
+		}
+		require.NoError(t, json.Unmarshal([]byte(contents), &parsed))
+		require.NotEmpty(t, parsed.Layers)
+		digests := []string{parsed.Config.Digest}
+		for _, layer := range parsed.Layers {
+			digests = append(digests, layer.Digest)
+		}
+		for _, digest := range digests {
+			size, err := ctr.Layer(digest).Size(ctx)
+			require.NoError(t, err, digest)
+			require.Positive(t, size, digest)
+		}
 	})
 }

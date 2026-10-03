@@ -872,6 +872,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("manifest", s.manifest).
 			View(AfterVersion("v1.0.0-0")).
+			// A manifest names this engine's layer digests, which a rebuild elsewhere
+			// does not reproduce: manifest and layer(id) stay on one engine.
+			WithInput(dagql.PerEngineCacheInput).
 			Doc(`Computes and returns the manifest for this container as a File.`).
 			Args(
 				dagql.Arg("forcedCompression").Doc(
@@ -886,6 +889,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("layer", s.layer).
 			View(AfterVersion("v1.0.0-0")).
+			// A manifest names this engine's layer digests, which a rebuild elsewhere
+			// does not reproduce: manifest and layer(id) stay on one engine.
+			WithInput(dagql.PerEngineCacheInput).
 			Doc(`Returns the image layer or configuration blob with the given digest as a File.`).
 			Args(
 				dagql.Arg("id").Doc(`Digest of the layer or configuration blob (e.g. "sha256:abc123...").`),

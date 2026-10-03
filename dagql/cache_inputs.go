@@ -157,3 +157,24 @@ func inputBoolArg(args map[string]Input, argName string) (bool, error) {
 		return false, fmt.Errorf("cacheAsRequested input %q must be Boolean, got %T", argName, raw)
 	}
 }
+
+// PerEngineCacheInput scopes a call ID to the engine's cache, so a result is
+// reused only by the cache that computed it, including after a clean restart.
+// Another engine's copy never matches. It is the cache's identity ID, or,
+// for a cache without a persistence database, the engine instance's ID.
+var PerEngineCacheInput = ImplicitInput{
+	Name: "cachePerEngineCache",
+	Resolver: func(ctx context.Context, _ map[string]Input) (Input, error) {
+		cache, err := EngineCache(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if id := cache.Identity().ID; id != "" {
+			return NewString(id), nil
+		}
+		if cache.engineInstanceID != "" {
+			return NewString(cache.engineInstanceID), nil
+		}
+		return nil, fmt.Errorf("engine cache has no identity")
+	},
+}
