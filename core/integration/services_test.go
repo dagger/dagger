@@ -156,11 +156,27 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 			})
 		}()
 
-		require.Eventually(t, func() bool { return engineHasClient(ctx, observer, clientID) },
-			3*time.Minute, time.Second, "the service's client never started a session")
+		require.Eventually(t, func() bool {
+			select {
+			case err := <-upErr:
+				// up returned on its own, e.g. its tunnel failed; keep the
+				// result for the check below.
+				upErr <- err
+				return true
+			default:
+			}
+			return engineHasClient(ctx, observer, clientID)
+		}, 3*time.Minute, time.Second, "the service's client never started a session")
+		select {
+		case err := <-upErr:
+			require.Failf(t, "up returned before it was canceled", "%v", err)
+		default:
+		}
 
 		cancel()
-		<-upErr
+		if err := <-upErr; err != nil {
+			require.ErrorIs(t, err, context.Canceled)
+		}
 		require.NoError(t, c.Close())
 		require.Eventually(t, func() bool { return engineLacksClient(ctx, observer, clientID) },
 			time.Minute, time.Second, "the service's session outlived its caller")

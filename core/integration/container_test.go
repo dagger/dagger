@@ -5329,8 +5329,13 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 
 // nestedMainClientCheck is a shell function that succeeds when a Dagger CLI
 // started with the given client ID is the main client of a session:
-// engine.clients lists exactly the main client of every session.
-const nestedMainClientCheck = `isMain() { DAGGER_SESSION_CLIENT_ID="$1" dagger query --doc /clients.graphql | grep -q "\"$1\""; }`
+// engine.clients lists exactly the main client of every session. A failed
+// query exits the shell, so it can never count as "not a main client".
+const nestedMainClientCheck = `isMain() {
+	clients=$(DAGGER_SESSION_CLIENT_ID="$1" dagger query --doc /clients.graphql) || exit 1
+	case "$clients" in *"\"$1\""*) return 0 ;; esac
+	return 1
+}`
 
 func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T) {
 	base := func(c *dagger.Client) *dagger.Container {
