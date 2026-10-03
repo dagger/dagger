@@ -45,7 +45,8 @@ func (handler *nestedTransportSessionHandler) ServeHTTPToNestedClient(
 	handler.served.Add(1)
 }
 
-func (handler *nestedTransportSessionHandler) ServeHTTPToNewSession(http.ResponseWriter, *http.Request) {}
+func (handler *nestedTransportSessionHandler) ServeHTTPToNewSession(http.ResponseWriter, *http.Request) {
+}
 
 func TestNestedClientParentUsesHeldScopeNotContextMetadata(t *testing.T) {
 	t.Parallel()
