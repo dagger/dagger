@@ -195,6 +195,9 @@ func TestCloudRestoresAStoreItNeverClosed(t *testing.T) {
 	require.NoError(t, cloud.Close(ctx))
 	require.ErrorIs(t, cloud.Checkpoint(ctx), ErrCacheClosed)
 
+	_, inMemory := storedPartTestCache(t, WithBlobStore())
+	require.ErrorContains(t, inMemory.Checkpoint(ctx), "no persistence database", "a cache with nowhere to save says so")
+
 	enginePath := filepath.Join(t.TempDir(), "engine.db")
 	ectx := cacheTestContext(t.Context())
 	engine, err := NewCache(ectx, enginePath, nil, nil)
