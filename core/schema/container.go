@@ -4283,37 +4283,32 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, err
-	}
 	platformVariantResults, err := dagql.LoadIDResults(ctx, srv, args.PlatformVariants)
 	if err != nil {
 		return inst, err
 	}
-	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, platformVariantResults...)...); err != nil {
-		return inst, err
-	}
-	platformVariants := make([]*core.Container, 0, len(platformVariantResults))
+	platformVariants := make([]dagql.ObjectResult[*core.Container], 0, len(platformVariantResults))
 	for _, variant := range platformVariantResults {
 		if variant.Self() != nil {
-			platformVariants = append(platformVariants, variant.Self())
+			platformVariants = append(platformVariants, variant)
 		}
 	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, newContainerImageFile(query, &core.FileContainerImageLazy{
+		LazyState:         core.NewLazyState(),
+		Parent:            parent,
+		PlatformVariants:  platformVariants,
+		ForcedCompression: args.ForcedCompression.Value,
+		MediaTypes:        args.MediaTypes,
+	}))
+}
 
-	f, err := parent.Self().AsTarball(ctx, platformVariants,
-		args.ForcedCompression.Value,
-		args.MediaTypes,
-		"container.tar",
-	)
-	if err != nil {
-		return inst, err
+func newContainerImageFile(query *core.Query, lazy *core.FileContainerImageLazy) *core.File {
+	return &core.File{
+		Platform: query.Platform(),
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+		Lazy:     lazy,
 	}
-	fileInst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, f)
-	if err != nil {
-		return inst, err
-	}
-	return fileInst, nil
 }
 
 type containerExportImageArgs struct {
@@ -4489,22 +4484,13 @@ func (s *containerSchema) manifest(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, err
-	}
-	if err := evaluateContainerImageParts(ctx, cache, parent); err != nil {
-		return inst, err
-	}
-	parentDigest, err := parent.RecipeDigest(ctx)
-	if err != nil {
-		return inst, err
-	}
-	f, err := parent.Self().Manifest(ctx, parentDigest, args.ForcedCompression.Value, args.MediaTypes)
-	if err != nil {
-		return inst, err
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, newContainerImageFile(query, &core.FileContainerImageLazy{
+		LazyState:         core.NewLazyState(),
+		Parent:            parent,
+		ForcedCompression: args.ForcedCompression.Value,
+		MediaTypes:        args.MediaTypes,
+		Manifest:          true,
+	}))
 }
 
 type containerLayerArgs struct {

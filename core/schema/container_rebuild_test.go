@@ -170,3 +170,48 @@ func TestContainerMutationsRebuildOnAnotherEngine(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "rebuilt", string(data))
 }
+
+// importForRebuild exports value from a without any blob, merges it into b
+// and loads it there.
+func importForRebuild(t *testing.T, a *transferTestEngine, actx context.Context, b *transferTestEngine, value dagql.AnyResult) (context.Context, dagql.AnyResult) {
+	t.Helper()
+	bundle := a.export(t, actx, value)
+	// Rebuilding decodes saved operations against the session's server.
+	bctx := dagql.ContextWithServer(b.session(t, "b1"), b.dag)
+	reply, err := b.cache.MergeValues(bctx, dagql.CloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Len(t, reply.Imported(), 1)
+	loaded, err := b.cache.LoadResultByResultID(bctx, "b1-session", b.dag, reply.Imported()[0].ResultID)
+	require.NoError(t, err)
+	return bctx, loaded
+}
+
+// The image files are saved with the operation that writes them. Building an
+// image needs a real engine; the integration suite rebuilds one.
+func TestContainerImageFilesSaveRecipe(t *testing.T) {
+	salt := transferTestSalt(t)
+	a, b := newTransferTestEngine(t, salt), newTransferTestEngine(t, salt)
+	actx := a.session(t, "a1")
+	dirID := rebuildTestID[*core.Directory](t, a, actx, dagql.Selector{Field: "directory"})
+	variantID := rebuildTestID[*core.Container](t, a, actx, dagql.Selector{Field: "container"}, dagql.Selector{Field: "withEnvVariable", Args: []dagql.NamedInput{rebuildTestArg("name", dagql.NewString("V")), rebuildTestArg("value", dagql.NewString("1"))}})
+	var ctr dagql.ObjectResult[*core.Container]
+	require.NoError(t, a.dag.Select(actx, a.dag.Root(), &ctr, dagql.Selector{Field: "container"}, dagql.Selector{Field: "withRootfs", Args: []dagql.NamedInput{rebuildTestArg("directory", dirID)}}))
+	for _, field := range []dagql.Selector{
+		{Field: "asTarball", Args: []dagql.NamedInput{rebuildTestArg("platformVariants", dagql.ArrayInput[dagql.ID[*core.Container]]{variantID})}},
+		{Field: "manifest"},
+	} {
+		t.Run(field.Field, func(t *testing.T) {
+			var file dagql.ObjectResult[*core.File]
+			require.NoError(t, a.dag.Select(actx, ctr, &file, field))
+			lazy, ok := file.Self().Lazy.(*core.FileContainerImageLazy)
+			require.True(t, ok, "%T", file.Self().Lazy)
+			require.Equal(t, field.Field == "manifest", lazy.Manifest)
+			requireRebuildRoute(t, actx, a.cache, file)
+
+			// The imported row keeps the operation, with its inputs remapped.
+			bctx, loaded := importForRebuild(t, a, actx, b, file)
+			require.True(t, dagql.HasPendingLazyEvaluation(loaded))
+			requireRebuildRoute(t, bctx, b.cache, loaded)
+		})
+	}
+}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -108,6 +109,31 @@ func moveFileOutput(dst, src *File) error {
 	dst.SetSnapshot(snapshot)
 	src.Snapshot = new(LazyAccessor[bkcache.ImmutableRef, *File])
 	return nil
+}
+
+// evaluateFileOutput runs produce as file's operation body and moves the
+// private output it returns into file. An output that was not moved is
+// released.
+func evaluateFileOutput(ctx context.Context, state *LazyState, op string, file *File, produce func(context.Context) (*File, error)) error {
+	var unmoved *File
+	err := file.evaluateLazy(ctx, state, op, func(ctx context.Context) error {
+		if err := validateLazyFileReceiver(file); err != nil {
+			return err
+		}
+		out, err := produce(ctx)
+		if err != nil {
+			return err
+		}
+		if err := moveFileOutput(file, out); err != nil {
+			unmoved = out
+			return err
+		}
+		return nil
+	})
+	if unmoved != nil {
+		err = errors.Join(err, unmoved.OnRelease(context.WithoutCancel(ctx)))
+	}
+	return err
 }
 
 func attachLazyInput[T dagql.Typed](attach func(dagql.AnyResult) (dagql.AnyResult, error), input dagql.ObjectResult[T], label string) (dagql.ObjectResult[T], error) {

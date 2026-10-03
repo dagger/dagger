@@ -279,6 +279,12 @@ var persistedFileLazyVisitors = map[string]persistedLazyVisitor{
 	persistedFileLazyKindWithReplaced:   parentOnly(func(p *persistedFileWithReplacedLazy) *uint64 { return &p.ParentResultID }),
 	persistedFileLazyKindWithTimestamps: parentOnly(func(p *persistedFileWithTimestampsLazy) *uint64 { return &p.ParentResultID }),
 	persistedFileLazyKindChown:          parentOnly(func(p *persistedFileChownLazy) *uint64 { return &p.ParentResultID }),
+	persistedFileLazyKindContainerImage: persistedLazyStructVisitor(func(p *persistedFileContainerImageLazy, w *persistedRefWalker) error {
+		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
+			return err
+		}
+		return w.children("platformVariantResultIDs", p.PlatformVariantResultIDs)
+	}),
 }
 
 // persistedContainerRecipeVisitors declares the references of every Container
