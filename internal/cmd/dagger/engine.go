@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
@@ -219,6 +220,14 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.AllowedLLMModules = allowedLLMModules
 
 	params.Profile = profileFlag
+
+	if sessionFlag != "" {
+		params.SessionID = sessionFlag
+		params.JoinExistingSession = true
+	}
+	if params.Command == "" {
+		params.Command = strings.Join(append([]string{"dagger"}, os.Args[1:]...), " ")
+	}
 
 	params.CloudURLCallback = Frontend.SetCloudURL
 

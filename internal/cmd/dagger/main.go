@@ -188,6 +188,7 @@ func init() {
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
 	listCmd.GroupID = "toolbox"
+	sessionsCmd.GroupID = "toolbox"
 	listCmd.SetHelpFunc(listHelp)
 
 	versionRoot := versionCmd()
@@ -222,6 +223,7 @@ func init() {
 		callModCmd.Command(),
 		functionsAliasCmd,
 		sessionAliasCmd,
+		sessionsCmd,
 		scriptCmd,
 		mcpCmd,
 	)
@@ -489,6 +491,7 @@ func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags.Lookup("shell-command-on-error").Hidden = true
 	engineFlags.StringVar(&shellCommandOnError, "interactive-command", defaultShellCommandOnError, "")
 	_ = engineFlags.MarkDeprecated("interactive-command", "use --shell-command-on-error instead")
+	engineFlags.StringVar(&sessionFlag, "session", "", "Run in the existing session with this ID instead of a new one (experimental)")
 	engineFlags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
 	engineFlags.Lookup("profile").Hidden = true
 	setFlagSetCapabilities(engineFlags, mayCallEngine)
