@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql"
 )
 
 type Engine struct {
@@ -19,6 +21,53 @@ func (*Engine) Type() *ast.Type {
 
 func (*Engine) TypeDescription() string {
 	return "The Dagger engine configuration and state"
+}
+
+// EngineSession describes one session on the engine.
+type EngineSession struct {
+	SessionID string `field:"true" name:"sessionID" doc:"The session's ID." doNotCache:"live session state"`
+	Detached  bool   `field:"true" doc:"Whether the session outlives the client that created it." doNotCache:"live session state"`
+	CreatedAt string `field:"true" doc:"When the session was created, in RFC 3339 format." doNotCache:"live session state"`
+
+	ClientList []*EngineSessionClient
+}
+
+func (*EngineSession) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "EngineSession",
+		NonNull:   true,
+	}
+}
+
+func (*EngineSession) TypeDescription() string {
+	return "A session on the Dagger engine (experimental)"
+}
+
+// EngineSessionClient describes one client that connected directly to a
+// session.
+type EngineSessionClient struct {
+	ClientID   string                       `field:"true" name:"clientID" doc:"The client's ID." doNotCache:"live session state"`
+	Hostname   string                       `field:"true" doc:"The hostname of the machine the client runs on." doNotCache:"live session state"`
+	PID        dagql.Nullable[dagql.Int]    `field:"true" name:"pid" doc:"The client's process ID." doNotCache:"live session state"`
+	Command    dagql.Nullable[dagql.String] `field:"true" doc:"A short form of the client's command line." doNotCache:"live session state"`
+	Background bool                         `field:"true" doc:"Whether the client runs in the background, without a terminal." doNotCache:"live session state"`
+	Connected  bool                         `field:"true" doc:"Whether the client's attachables connection is open." doNotCache:"live session state"`
+	Provides   []string                     `field:"true" doc:"Attachable kinds this client serves, for example files, secrets, terminal." doNotCache:"live session state"`
+	Workspace  dagql.Nullable[dagql.String] `field:"true" doc:"Address of the workspace this client is bound to, if any." doNotCache:"live session state"`
+
+	SessionID   string
+	ForwardList []Port
+}
+
+func (*EngineSessionClient) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "EngineSessionClient",
+		NonNull:   true,
+	}
+}
+
+func (*EngineSessionClient) TypeDescription() string {
+	return "A client of a session on the Dagger engine (experimental)"
 }
 
 type EngineCache struct {

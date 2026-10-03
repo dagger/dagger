@@ -47,6 +47,7 @@ var errExecEnded = errors.New("the exec ended before its Dagger session helper c
 
 type sessionAttachableCaller struct {
 	ctx       context.Context
+	cancel    context.CancelCauseFunc
 	conn      *grpc.ClientConn
 	supported map[string]struct{}
 	services  map[string]struct{}
@@ -72,6 +73,7 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 
 	caller := &sessionAttachableCaller{
 		ctx:       ctx,
+		cancel:    cancel,
 		conn:      cc,
 		supported: map[string]struct{}{},
 		services:  map[string]struct{}{},
@@ -107,6 +109,16 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 	<-caller.ctx.Done()
 	conn.Close()
 	return nil
+}
+
+// Close ends the attachables connection of clientID, if one is open.
+func (m *sessionAttachableManager) Close(clientID string, cause error) {
+	m.mu.Lock()
+	caller := m.callers[clientID]
+	m.mu.Unlock()
+	if caller != nil {
+		caller.cancel(cause)
+	}
 }
 
 func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCaller, bool) {

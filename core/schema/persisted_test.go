@@ -116,6 +116,8 @@ var persistedSchemaExpectedWithoutCodec = []string{
 	"EngineCache(*core.EngineCache encode=false decode=false family=false)",
 	"EngineCacheEntry(*core.EngineCacheEntry encode=false decode=false family=false)",
 	"EngineCacheEntrySet(*core.EngineCacheEntrySet encode=false decode=false family=false)",
+	"EngineSession(*core.EngineSession encode=false decode=false family=false)",
+	"EngineSessionClient(*core.EngineSessionClient encode=false decode=false family=false)",
 	// Generators, like checks, wrap an unevaluated artifact function and
 	// are never returned from a persistable field.
 	"Generator(*core.Generator encode=false decode=false family=false)",
