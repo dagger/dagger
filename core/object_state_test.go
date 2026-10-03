@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -51,8 +52,16 @@ func TestModuleObjectStateChangedFields(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"a", "c", "d"}, changed)
 
-	_, err = changedStateFields(prev, map[string]any{"a": "x"})
-	require.ErrorContains(t, err, "removed")
+	// A dropped field counts as null: changed unless it already was null.
+	changed, err = changedStateFields(prev, map[string]any{"a": "x", "c": map[string]any{"k": []any{"v"}}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"b"}, changed)
+	changed, err = changedStateFields(map[string]any{"a": nil}, map[string]any{})
+	require.NoError(t, err)
+	require.Empty(t, changed)
+
+	_, err = changedStateFields(prev, map[string]any{"a": "x", "b": math.Inf(1), "c": nil})
+	require.ErrorContains(t, err, `field "b"`)
 }
 
 func TestModuleObjectStateWithFields(t *testing.T) {
@@ -168,4 +177,40 @@ func TestModuleObjectStateWithFields(t *testing.T) {
 	unchanged, err := WithModuleObjectFields(ctx, dag, prev, same)
 	require.NoError(t, err)
 	require.Nil(t, unchanged)
+
+	// A dropped field is recorded as null, not refused.
+	dropped := makeObject("dropping-method", map[string]any{
+		"count": json.Number("1"),
+		"tags":  []any{"a"},
+	})
+	nulled, err := WithModuleObjectFields(ctx, dag, prev, dropped)
+	require.NoError(t, err)
+	nulledRecipe, err := nulled.RecipeID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, withModuleObjectFieldName, nulledRecipe.Field())
+	require.Equal(t, "label", nulledRecipe.Args()[0].Value().ToInput())
+	require.Equal(t, prevRecipe.Digest(), nulledRecipe.Receiver().Digest())
+	nulledObj, ok := dagql.UnwrapAs[*ModuleObject](nulled)
+	require.True(t, ok)
+	require.Contains(t, nulledObj.Fields, "label")
+	require.Nil(t, nulledObj.Fields["label"])
+
+	// A value that can't be encoded fails the tool call; the producing call
+	// is never recorded in its place. Core objects pass through as returned.
+	unencodable := makeObject("unencodable-method", map[string]any{
+		"count": math.Inf(1),
+		"label": "same",
+		"tags":  []any{"a"},
+	})
+	_, err = WithModuleObjectFields(ctx, dag, prev, unencodable)
+	require.ErrorContains(t, err, `field "count"`)
+	_, rebind, err := (&MCP{}).fieldwiseState(ctx, dag, prev, unencodable)
+	require.ErrorContains(t, err, "record Test state")
+	require.False(t, rebind)
+	passed, rebind, err := (&MCP{}).fieldwiseState(ctx, dag, ref, ref)
+	require.NoError(t, err)
+	require.True(t, rebind)
+	passedSource, ok := dagql.UnwrapAs[*ModuleSource](passed)
+	require.True(t, ok)
+	require.Same(t, ref.Self(), passedSource)
 }
