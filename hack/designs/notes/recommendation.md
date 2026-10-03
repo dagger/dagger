@@ -215,7 +215,12 @@ session — is roughly a one-function change in `recipeLoadState`
 (dagql/server.go). It is *mildly* interesting on its own terms: any
 `@cache(Never)` module call under a cross-session recipe load re-executes per
 load and invalidates every recorded call above it, which is a real cost even
-where the call is harmless. But it is not needed here, and shipping it alone
+where the call is harmless. (Observed while testing field-wise tool state:
+within one engine, a fresh client loading such a recipe hit the cache rather
+than re-running the call — the re-execution shows once the result is evicted
+or the engine restarts — and field-wise recording, hack/designs/workspace-agents.md
+§2, keeps those calls out of module tool state altogether, so the question is
+moot there.) But it is not needed here, and shipping it alone
 would be worse than shipping nothing: it turns 33 loud duplicates into 3
 quiet ones — three agents wearing the user's workers' names with none of
 their history, which is precisely the failure item 13 records being
