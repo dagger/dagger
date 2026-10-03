@@ -398,6 +398,7 @@ type TuiQa {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
+    service.start
     client
       .withEnvVariable("TUI_QA_NONCE", Random.string)
       .withExec(["curl", "-s", "--connect-timeout", "10", "--max-time", "300", url + "/agents"])
@@ -446,6 +447,7 @@ type TuiQa {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
+    service.start
     client
       .withEnvVariable("TUI_QA_NONCE", Random.string)
       .withExec([
@@ -615,10 +617,18 @@ type TuiQa {
 
   # ---- helpers ------------------------------------------------------------
 
+  # Every helper that curls the console calls `service.start` first. The
+  # recorded state only references the service; in a new session (e.g. a
+  # resumed agent session) nothing has started it, and the curl's binding
+  # alone would start a fresh TUI for that one call and stop it afterwards.
+  # Service.start is a no-op when the service is already running in this
+  # session.
+
   let get(path: String!, maxTime: Int! = 60): String! {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
+    service.start
     client
       # bust Dagger's exec cache so each read hits the live console, not a
       # cached identical curl (the screen changes but the inputs wouldn't)
@@ -636,6 +646,7 @@ type TuiQa {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
+    service.start
     client
       .withEnvVariable("TUI_QA_NONCE", Random.string)
       .withExec([
@@ -655,6 +666,7 @@ type TuiQa {
     if (pprofUrl == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
+    service.start
     client
       .withEnvVariable("TUI_QA_NONCE", Random.string)
       .withExec([
@@ -676,6 +688,7 @@ type TuiQa {
     if (pprofUrl == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
+    service.start
     let profile = client
       .withEnvVariable("TUI_QA_NONCE", Random.string)
       .withExec([
