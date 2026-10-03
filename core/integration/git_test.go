@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/mod/modfile"
 
 	"dagger.io/dagger"
 	gitsession "github.com/dagger/dagger/engine/session/git"
@@ -2768,26 +2769,43 @@ exit 1
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 
+	// Pin OpenTelemetry to the repo's versions: go mod tidy otherwise picks the
+	// latest releases, which can require a newer Go or mismatch each other.
+	repoModData, err := os.ReadFile(filepath.Join(wd, "../../go.mod"))
+	require.NoError(t, err)
+	repoMod, err := modfile.Parse("go.mod", repoModData, nil)
+	require.NoError(t, err)
+	isPinned := func(mod string) bool {
+		return strings.HasPrefix(mod, "go.opentelemetry.io/") || mod == "github.com/dagger/otel-go"
+	}
+	testMod := &modfile.File{}
+	require.NoError(t, testMod.AddModuleStmt("testapp"))
+	require.NoError(t, testMod.AddGoStmt("1.26"))
+	require.NoError(t, testMod.AddRequire("github.com/gogo/protobuf", "v1.3.2"))
+	require.NoError(t, testMod.AddRequire("google.golang.org/grpc", "v1.59.0"))
+	require.NoError(t, testMod.AddReplace("github.com/dagger/dagger", "", ".", ""))
+	for _, req := range repoMod.Require {
+		if isPinned(req.Mod.Path) {
+			require.NoError(t, testMod.AddRequire(req.Mod.Path, req.Mod.Version))
+		}
+	}
+	for _, rep := range repoMod.Replace {
+		if isPinned(rep.Old.Path) {
+			require.NoError(t, testMod.AddReplace(rep.Old.Path, rep.Old.Version, rep.New.Path, rep.New.Version))
+		}
+	}
+	testModData, err := testMod.Format()
+	require.NoError(t, err)
+
 	// Create base container with all dependencies
 	baseContainer := client.Container().
-		From("golang:1.25").
+		From("golang:1.26").
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "install", "-y", "git"}).
 		WithExec([]string{"mkdir", "-p", "/app/git"}).
 		WithWorkdir("/app").
 		// create go.mod so that below main() can test our proto handling
-		WithNewFile("/app/go.mod", `
-module testapp
-
-go 1.24
-
-require (
-    github.com/gogo/protobuf v1.3.2
-    google.golang.org/grpc v1.59.0
-)
-
-replace github.com/dagger/dagger => .
-`).
+		WithNewFile("/app/go.mod", string(testModData)).
 		// Mount git implementation as the session pkg
 		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
 		WithMountedDirectory("./engine/session/prompt/", client.Host().Directory(filepath.Join(wd, "../../engine/session/prompt"))).

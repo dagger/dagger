@@ -4233,6 +4233,11 @@ export type WorkspaceWithUpdatedModulesOpts = {
    * New version request for exactly one selected module. Cannot be combined with a version suffix.
    */
   version?: string
+
+  /**
+   * New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+   */
+  source?: string
 }
 
 export type WorkspaceWithoutClientOpts = {
@@ -18636,11 +18641,12 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with updated module versions and lockfile state.
+   * Return this workspace with updated module sources, versions and lockfile state.
    *
    * An SDK client scope is regenerated when it targets an updated module.
    * @param opts.names Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
    * @param opts.version New version request for exactly one selected module. Cannot be combined with a version suffix.
+   * @param opts.source New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
    */
   withUpdatedModules = (opts?: WorkspaceWithUpdatedModulesOpts): Workspace => {
     const ctx = this._ctx.select("withUpdatedModules", { ...opts })
