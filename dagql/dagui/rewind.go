@@ -108,9 +108,10 @@ func (db *DB) buildRewinds() ([]*Rewind, map[SpanID]*Rewind) {
 		}
 		// A reply span carries its withResponse digest, but one recorded
 		// before the engine re-stamped it (or still streaming) carries its
-		// REQUEST's. A rewind TO that request keeps the request and answers
-		// it afresh: the old reply is gone even though its digest is the
-		// adopted one. A rewind to a withResponse keeps that reply.
+		// REQUEST's. A rewind TO that request state keeps the request but not
+		// the reply that answered it: the old reply is gone even though its
+		// digest is the adopted one. A rewind to a withResponse keeps that
+		// reply.
 		answeredAt := ""
 		if call := db.Call(marker.AgentRewindTo); call != nil && call.Field != "withResponse" {
 			answeredAt = marker.AgentRewindTo
