@@ -261,6 +261,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	defer func() {
 		if rerr != nil {
 			c.internalCancel(errors.New("Connect failed"))
+			if closer, ok := c.connector.(io.Closer); ok {
+				rerr = errors.Join(rerr, closer.Close())
+			}
 		}
 	}()
 
@@ -429,6 +432,9 @@ func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ 
 	defer func() {
 		if rerr != nil {
 			c.internalCancel(errors.New("Connect failed"))
+			if closer, ok := c.connector.(io.Closer); ok {
+				rerr = errors.Join(rerr, closer.Close())
+			}
 		}
 	}()
 
@@ -934,6 +940,9 @@ func (c *Client) Close() (rerr error) {
 	}
 	if c.bkClient != nil {
 		c.eg.Go(c.bkClient.Close)
+	}
+	if closer, ok := c.connector.(io.Closer); ok {
+		c.eg.Go(closer.Close)
 	}
 	if err := c.eg.Wait(); err != nil {
 		rerr = errors.Join(rerr, err)

@@ -144,28 +144,38 @@ func (apple) ContainerExists(ctx context.Context, name string) (bool, error) {
 }
 
 func (apple) ContainerIsRunning(ctx context.Context, name string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "container", "ls", "-a", "--format", "json")
+	cmd := exec.CommandContext(ctx, "container", "inspect", name)
 	stdout, _, err := traceexec.ExecOutput(ctx, cmd)
 	if err != nil {
 		return false, err
 	}
+	return appleContainerRunning(stdout)
+}
 
+func appleContainerRunning(stdout string) (bool, error) {
 	var result []struct {
-		Status        string `json:"status"`
-		Configuration struct {
-			ID string `json:"id"`
-		} `json:"configuration"`
+		Status json.RawMessage `json:"status"`
 	}
-	err = json.Unmarshal([]byte(stdout), &result)
-	if err != nil {
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
 		return false, err
 	}
-	for _, res := range result {
-		if res.Configuration.ID == name && res.Status == "running" {
-			return true, nil
-		}
+	if len(result) != 1 {
+		return false, fmt.Errorf("expected one container from inspect, got %d", len(result))
 	}
-	return false, nil
+
+	// Apple container before 1.0 encoded status as a string. Newer versions
+	// encode it as an object with a state field.
+	var status string
+	if err := json.Unmarshal(result[0].Status, &status); err == nil {
+		return status == "running", nil
+	}
+	var statusObject struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(result[0].Status, &statusObject); err != nil {
+		return false, err
+	}
+	return statusObject.State == "running", nil
 }
 
 func (apple) ContainerLs(ctx context.Context) ([]string, error) {
