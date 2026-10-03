@@ -212,6 +212,10 @@ type WorkspaceSourceOverlay struct {
 	// they edit that file on disk.
 	SeededPaths []string
 	Changes     dagql.ObjectResult[*Changeset]
+	// ExplicitWrites holds the cumulative explicit writes performed on this
+	// overlay, starting from an empty base and excluding host content seeded for
+	// directory merges.
+	ExplicitWrites dagql.ObjectResult[*Directory]
 }
 
 func (*WorkspaceSourceOverlay) workspaceSource() {}
@@ -246,6 +250,7 @@ func NewWorkspaceSourceOverlay(
 	touchedPaths []string,
 	seededPaths []string,
 	changes dagql.ObjectResult[*Changeset],
+	explicitWrites dagql.ObjectResult[*Directory],
 ) WorkspaceSource {
 	if overlay, ok := base.(*WorkspaceSourceOverlay); ok {
 		base = overlay.Base
@@ -254,10 +259,11 @@ func NewWorkspaceSourceOverlay(
 	// parent overlay's) before constructing, so they are already cumulative
 	// here.
 	return &WorkspaceSourceOverlay{
-		Base:         base,
-		TouchedPaths: touchedPaths,
-		SeededPaths:  seededPaths,
-		Changes:      changes,
+		Base:           base,
+		TouchedPaths:   touchedPaths,
+		SeededPaths:    seededPaths,
+		Changes:        changes,
+		ExplicitWrites: explicitWrites,
 	}
 }
 
@@ -387,6 +393,19 @@ func (ws *Workspace) OverlaySeededPaths() []string {
 		return nil
 	}
 	return overlay.SeededPaths
+}
+
+// OverlayExplicitWrites returns the accumulated explicit writes performed on
+// the overlay, excluding host content seeded for merges.
+func (ws *Workspace) OverlayExplicitWrites() (dagql.ObjectResult[*Directory], bool) {
+	if !ws.ClientLocalBase() {
+		return dagql.ObjectResult[*Directory]{}, false
+	}
+	overlay, ok := ws.Source().(*WorkspaceSourceOverlay)
+	if !ok || overlay.ExplicitWrites.Self() == nil {
+		return dagql.ObjectResult[*Directory]{}, false
+	}
+	return overlay.ExplicitWrites, true
 }
 
 // OverlayPathTouched reports whether the overlay's edits affect the given
@@ -647,10 +666,11 @@ type persistedWorkspaceSource struct {
 	GitRefResultID uint64                    `json:"gitRefResultID,omitempty"`
 	ExplicitCommit bool                      `json:"explicitCommit,omitempty"`
 	ChangesID      uint64                    `json:"changesID,omitempty"`
-	TouchedPaths   []string                  `json:"touchedPaths,omitempty"`
-	SeededPaths    []string                  `json:"seededPaths,omitempty"`
-	HostPath       string                    `json:"hostPath,omitempty"`
-	Base           *persistedWorkspaceSource `json:"base,omitempty"`
+	TouchedPaths     []string                  `json:"touchedPaths,omitempty"`
+	SeededPaths      []string                  `json:"seededPaths,omitempty"`
+	ExplicitWritesID uint64                    `json:"explicitWritesID,omitempty"`
+	HostPath         string                    `json:"hostPath,omitempty"`
+	Base             *persistedWorkspaceSource `json:"base,omitempty"`
 }
 
 const (
@@ -708,6 +728,13 @@ func encodePersistedWorkspaceSource(enc *dagql.PersistEncodeContext, src Workspa
 			}
 			payload.ChangesID = changesID
 		}
+		if src.ExplicitWrites.Self() != nil {
+			writesID, err := encodePersistedObjectRef(cache, src.ExplicitWrites, "workspace overlay explicit writes")
+			if err != nil {
+				return nil, err
+			}
+			payload.ExplicitWritesID = writesID
+		}
 		return payload, nil
 	default:
 		return nil, fmt.Errorf("encode persisted workspace source: unsupported source %T", src)
@@ -764,7 +791,14 @@ func decodePersistedWorkspaceSource(
 				return nil, err
 			}
 		}
-		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, persisted.SeededPaths, changes), nil
+		var explicitWrites dagql.ObjectResult[*Directory]
+		if persisted.ExplicitWritesID != 0 {
+			explicitWrites, err = loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ExplicitWritesID, "workspace overlay explicit writes")
+			if err != nil {
+				return nil, err
+			}
+		}
+		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, persisted.SeededPaths, changes, explicitWrites), nil
 	default:
 		return nil, fmt.Errorf("decode persisted workspace source: unsupported source kind %q", persisted.Kind)
 	}
@@ -982,6 +1016,18 @@ func attachWorkspaceSource(
 			}
 			src.Changes = changes
 			deps = append(deps, changes)
+		}
+		if src.ExplicitWrites.Self() != nil {
+			attached, err := attach(src.ExplicitWrites)
+			if err != nil {
+				return nil, fmt.Errorf("attach workspace overlay explicit writes: %w", err)
+			}
+			writes, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach workspace overlay explicit writes: unexpected result %T", attached)
+			}
+			src.ExplicitWrites = writes
+			deps = append(deps, writes)
 		}
 		return deps, nil
 	default:
