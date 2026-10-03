@@ -1060,7 +1060,8 @@ func TestClientRecordLookupsAreIndependentFromExecutableRuntime(t *testing.T) {
 		parentClientIDs: []string{"root"},
 	}
 	sess := &daggerSession{
-		sessionID: "session",
+		sessionID:          "session",
+		mainClientCallerID: "root",
 		clientRecords: map[string]*clientRecord{
 			root.clientID:  root,
 			child.clientID: child,
@@ -1730,7 +1731,7 @@ func TestClientAncestryAndTelemetryRouteOrdering(t *testing.T) {
 	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}}
 	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent", parentClientIDs: []string{"root"}}}
 	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child", parentClientIDs: []string{"root", "parent"}}}
-	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
+	sess := &daggerSession{mainClientCallerID: "root", clientRuntimes: map[string]*clientRuntime{
 		root.clientID:   root,
 		parent.clientID: parent,
 		child.clientID:  child,
