@@ -2019,7 +2019,10 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		// turn short) and no mailbox continuation (queued mail waits for
 		// resume too).
 		rt.mu.Lock()
-		if !rt.paused && len(rt.mailbox) > 0 && !rt.stopRequested && ctx.Err() == nil {
+		if !rt.paused && !rt.stopRequested && ctx.Err() == nil &&
+			(len(rt.mailbox) > 0 || (rt.last.Self() != nil && rt.last.Self().HasPending())) {
+			// Queued mail, or input a Reseed committed after the inner loop
+			// last looked (a branch re-running a prompt): keep the turn going.
 			rt.mu.Unlock()
 			continue
 		}
@@ -2230,6 +2233,13 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 // would be silently overwritten. So reseed requires the loop parked — idle,
 // paused, failed, or never started. A non-paused suspended turn remains refused,
 // and a stopped agent is refused until send or resume relaunches its loop.
+//
+// A conversation that ends in pending input — branching from a prompt, which
+// re-runs it, or a branch whose summary arrives as a fresh prompt — is
+// "retry from here": on a live, unpaused loop reseed opens a turn and wakes the
+// loop to step it, so the projection's RUNNING is true rather than a parked
+// loop's claim. Paused, failed and never-started entries leave it for resume or
+// start, which step pending input anyway.
 func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM]) error {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -2250,6 +2260,14 @@ func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM
 	if rt.turnOpen && !rt.paused {
 		return fmt.Errorf("agent %q has a suspended turn; pause or interrupt it before reseeding", rt.name)
 	}
+	// A live, unpaused loop is parked in receive, and nothing but a wake
+	// moves it. A conversation ending in pending input (branching from a
+	// prompt re-runs it; a branch summary is a fresh prompt) must be stepped
+	// now: committing it silently would project RUNNING over a parked loop
+	// forever, and the next send would glue its prompt onto the unstepped one.
+	// Paused, failed and never-started entries step it on resume or start.
+	retry := rt.started && !rt.done && !rt.paused &&
+		next.Self() != nil && next.Self().HasPending()
 	rt.transitionLocked(func() {
 		if rt.turnOpen {
 			err := fmt.Errorf("agent %q rewound before completing the turn that consumed this message", rt.name)
@@ -2261,7 +2279,19 @@ func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM
 		}
 		rt.publishRewindLocked(ctx, next)
 		rt.commitLast(ctx, next)
+		if retry {
+			// The retried input opens a turn in this same transition, the
+			// way a FAILED resume does: a send racing the wake below joins
+			// it (STEERED) rather than claiming to start a new one.
+			rt.turnOpen = true
+		}
 	})
+	if retry {
+		select {
+		case rt.wake <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 

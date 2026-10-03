@@ -917,6 +917,53 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, transcript, oldPrompt)
 	})
 
+	t.Run("a conversation with pending input retries from there", func(ctx context.Context, t *testctx.T) {
+		// Branching from a prompt reseeds the conversation that ends in it:
+		// the loop is parked IDLE, and the reseed must wake it to re-run the
+		// prompt — not commit it silently, projecting RUNNING over a parked
+		// loop until the next send glues its prompt onto the unstepped one.
+		const (
+			prompt     = "prompt to branch from"
+			reply      = "the reply to the branched prompt"
+			nextPrompt = "prompt sent after the retry"
+			nextReply  = "the post-retry reply"
+		)
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
+			WithPrompt(prompt).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: reply},
+			}).
+			WithPrompt(nextPrompt).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: nextReply},
+			}))
+		h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "branched"})
+		_, got, err := h.sendAndWait(ctx, t, prompt)
+		require.NoError(t, err)
+		require.Equal(t, reply, got)
+
+		branch, err := c.LLM(dagger.LLMOpts{Model: model}).WithPrompt(prompt).ID(ctx)
+		require.NoError(t, err)
+		require.NoError(t, h.reseedAgent(ctx, t, string(branch)))
+
+		// The retried turn runs to completion: IDLE again, with the prompt
+		// answered exactly once.
+		state, err := h.waitFor(ctx, t, "IDLE")
+		require.NoError(t, err)
+		require.Equal(t, "IDLE", state)
+		transcript, lastReply := h.snapshot(ctx, t)
+		require.Equal(t, reply, lastReply)
+		require.Equal(t, 1, strings.Count(transcript, prompt))
+
+		// The next send opens its own turn on the settled history: the
+		// recorded follow-up resolving is the replay provider's proof that
+		// it was not merged into the branched prompt.
+		delivery, got, err := h.sendAndWait(ctx, t, nextPrompt)
+		require.NoError(t, err)
+		require.Equal(t, "STARTED", delivery)
+		require.Equal(t, nextReply, got)
+	})
+
 	t.Run("queued mail drains onto the new conversation", func(ctx context.Context, t *testctx.T) {
 		const (
 			newPrompt    = "history on the reseeded conversation"
