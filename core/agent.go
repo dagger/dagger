@@ -1173,6 +1173,7 @@ type AgentRuntime struct {
 	stepping      bool                     // a Step is in flight
 	turnOpen      bool                     // a turn has consumed input and not yet resolved
 	draining      bool                     // a popped message is being recorded into the turn
+	held          bool                     // last's pending input was reseeded in to wait for the next turn, not to be stepped now
 	paused        bool                     // pause requested: park without draining or stepping
 	stopRequested bool                     // a graceful stop was requested
 	done          bool                     // the loop has ended (tombstone)
@@ -1308,6 +1309,9 @@ func (rt *AgentRuntime) publishStateLocked() {
 // a state that no longer matches the conversation it is reading.
 func (rt *AgentRuntime) commitLast(ctx context.Context, next dagql.ObjectResult[*LLM]) {
 	rt.last = next
+	// Whatever input the new commit holds is the loop's own to step; only
+	// Reseed holds it back, and it marks that after committing.
+	rt.held = false
 	// New committed work makes the next IDLE event news again — see
 	// idleEventDue.
 	rt.idleEventDue = true
@@ -1356,12 +1360,14 @@ func (rt *AgentRuntime) stateLocked() AgentState {
 		// predates the message, and Reseed swap the conversation out from
 		// under the drain's imminent commit.
 		return AgentStateRunning
-	case rt.started && rt.last.Self() != nil && rt.last.Self().HasPending():
+	case rt.started && !rt.held && rt.last.Self() != nil && rt.last.Self().HasPending():
 		// The loop is live and its committed snapshot still holds pending
 		// input it is about to step: a relaunch retrying a FAILED step, or
 		// a start whose seed carries an unstepped prompt. IDLE means the
 		// turn is COMPLETE; pending input is the opposite, and projecting
 		// IDLE here fired stale idle events on the FAILED→relaunch edge.
+		// Input a reseed HELD is not about to be stepped — it waits to
+		// lead the next turn — so that agent is IDLE.
 		return AgentStateRunning
 	default:
 		// Started with nothing in flight (blocked in receive), or created
@@ -1948,7 +1954,9 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 				break
 			}
 			inst := rt.last
-			if !inst.Self().HasPending() {
+			if rt.held || !inst.Self().HasPending() {
+				// Nothing to step — or only input a reseed held for the
+				// next turn, which a stray wake must not answer on its own.
 				rt.mu.Unlock()
 				break
 			}
@@ -2020,9 +2028,10 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		// resume too).
 		rt.mu.Lock()
 		if !rt.paused && !rt.stopRequested && ctx.Err() == nil &&
-			(len(rt.mailbox) > 0 || (rt.last.Self() != nil && rt.last.Self().HasPending())) {
-			// Queued mail, or input a Reseed committed after the inner loop
-			// last looked (a branch re-running a prompt): keep the turn going.
+			(len(rt.mailbox) > 0 || (!rt.held && rt.last.Self() != nil && rt.last.Self().HasPending())) {
+			// Queued mail, or input to step that landed after the inner
+			// loop last looked (a Resume retrying a branched-from prompt):
+			// keep the turn going. Held input waits for the next turn.
 			rt.mu.Unlock()
 			continue
 		}
@@ -2137,6 +2146,8 @@ func (rt *AgentRuntime) resetForRelaunchLocked() {
 	rt.loopErr = nil
 	rt.cancel = nil
 	rt.stepCancel = nil
+	// A relaunched loop steps whatever input the snapshot holds.
+	rt.held = false
 }
 
 // Resume clears the paused flag and wakes the loop: the suspended turn (if
@@ -2148,7 +2159,9 @@ func (rt *AgentRuntime) resetForRelaunchLocked() {
 // QUEUED mail drains into the turn. A STOPPED tombstone relaunches from the
 // same preserved snapshot, keeping the instance and runtime entry. A
 // never-started agent's loop is started, so a seed with pending input steps
-// it. On a running or idle non-paused agent resume is a no-op.
+// it. Input a Reseed held for the next turn is stepped now: resume after a
+// reseed is how a caller retries the conversation's last prompt. On a running
+// or idle non-paused agent with nothing held resume is a no-op.
 func (rt *AgentRuntime) Resume(ctx context.Context) error {
 	rt.mu.Lock()
 	if rt.closing {
@@ -2190,9 +2203,20 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 		}()
 		return nil
 	}
-	if rt.paused {
+	if rt.paused || rt.held {
 		rt.transitionLocked(func() {
 			rt.paused = false
+			if rt.held {
+				// Resume is the explicit "step it now" for input a reseed
+				// held (a branch retrying its prompt). On a live loop the
+				// retried input opens a turn in this same transition, the
+				// way a FAILED relaunch does: a send racing the wake below
+				// joins it (STEERED) rather than claiming a new one.
+				rt.held = false
+				if rt.started {
+					rt.turnOpen = true
+				}
+			}
 		})
 	}
 	started := rt.started
@@ -2234,12 +2258,12 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 // paused, failed, or never started. A non-paused suspended turn remains refused,
 // and a stopped agent is refused until send or resume relaunches its loop.
 //
-// A conversation that ends in pending input — branching from a prompt, which
-// re-runs it, or a branch whose summary arrives as a fresh prompt — is
-// "retry from here": on a live, unpaused loop reseed opens a turn and wakes the
-// loop to step it, so the projection's RUNNING is true rather than a parked
-// loop's claim. Paused, failed and never-started entries leave it for resume or
-// start, which step pending input anyway.
+// A conversation that ends in pending input is never stepped by the reseed
+// itself: the input is HELD, the agent stays IDLE (or wherever it was), and the
+// input leads the next turn — a compaction or branch summary sits in front of
+// the user's next message rather than being answered on its own. Retrying it
+// instead ("retry from here", branching from a prompt) is the caller's explicit
+// choice: follow the reseed with Resume, which steps held input.
 func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM]) error {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -2260,14 +2284,6 @@ func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM
 	if rt.turnOpen && !rt.paused {
 		return fmt.Errorf("agent %q has a suspended turn; pause or interrupt it before reseeding", rt.name)
 	}
-	// A live, unpaused loop is parked in receive, and nothing but a wake
-	// moves it. A conversation ending in pending input (branching from a
-	// prompt re-runs it; a branch summary is a fresh prompt) must be stepped
-	// now: committing it silently would project RUNNING over a parked loop
-	// forever, and the next send would glue its prompt onto the unstepped one.
-	// Paused, failed and never-started entries step it on resume or start.
-	retry := rt.started && !rt.done && !rt.paused &&
-		next.Self() != nil && next.Self().HasPending()
 	rt.transitionLocked(func() {
 		if rt.turnOpen {
 			err := fmt.Errorf("agent %q rewound before completing the turn that consumed this message", rt.name)
@@ -2279,19 +2295,10 @@ func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM
 		}
 		rt.publishRewindLocked(ctx, next)
 		rt.commitLast(ctx, next)
-		if retry {
-			// The retried input opens a turn in this same transition, the
-			// way a FAILED resume does: a send racing the wake below joins
-			// it (STEERED) rather than claiming to start a new one.
-			rt.turnOpen = true
-		}
+		// Pending input on the new conversation is HELD: it leads the next
+		// turn instead of being answered on its own.
+		rt.held = next.Self() != nil && next.Self().HasPending()
 	})
-	if retry {
-		select {
-		case rt.wake <- struct{}{}:
-		default:
-		}
-	}
 	return nil
 }
 

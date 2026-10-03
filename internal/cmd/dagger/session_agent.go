@@ -37,7 +37,9 @@ type agentRuntime interface {
 	// SendMessage enqueues a message, returning a handle on the turn that
 	// consumes it. Never blocks on the turn itself.
 	SendMessage(ctx context.Context, msg string) (agentMessage, error)
-	// Resume un-parks a paused (or failed) runtime; a no-op otherwise.
+	// Resume un-parks a paused (or failed) runtime, and steps input a reseed
+	// held for the next turn (retrying a branched-from prompt); a no-op
+	// otherwise.
 	Resume(ctx context.Context) error
 	// Interrupt preempts the in-flight step, keeping the completed prefix,
 	// and parks the runtime PAUSED.
@@ -792,11 +794,18 @@ func (a *sessionAgent) CompactInPlace(ctx context.Context) error {
 // PLACE like CompactInPlace. With summary.Summarize, the branch being
 // abandoned is summarized first and the summary injected into the target, so
 // context carries forward; a failed summary falls back to a plain branch.
+//
+// A plain branch is "retry from here": the runtime is resumed after the
+// reseed, so a target ending in a prompt (the user branched from that prompt)
+// is answered again, and an interrupted agent is un-parked. A summary branch
+// is not: the engine holds the summary note, like a compaction summary, to
+// lead the user's next message rather than be answered on its own.
 func (a *sessionAgent) Branch(ctx context.Context, target *dagger.LLM, summary idtui.BranchSummary) error {
 	rt, err := a.settleTurn(ctx)
 	if err != nil {
 		return err
 	}
+	retry := true
 	if summary.Summarize {
 		if rt != nil {
 			if err := a.syncFromAgent(rt); err != nil {
@@ -811,9 +820,16 @@ func (a *sessionAgent) Branch(ctx context.Context, target *dagger.LLM, summary i
 				"The user explored a different conversation branch before returning here. Summary of that exploration:\n\n%s",
 				summaryText,
 			))
+			retry = false
 		}
 	}
-	return a.updateLLM(target)
+	if err := a.updateLLM(target); err != nil {
+		return err
+	}
+	if rt := a.runtime(); retry && rt != nil {
+		return rt.Resume(a.session.plumbingCtx)
+	}
+	return nil
 }
 
 // interruptIfBusy preempts a runtime this session is not currently driving,
