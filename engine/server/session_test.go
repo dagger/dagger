@@ -5544,3 +5544,40 @@ func TestIsCoreRootFieldCoversEveryCoreQueryField(t *testing.T) {
 	// name, and that error needs the module loaded to be produced at all.
 	require.False(t, isCoreRootField("id"))
 }
+
+// Telemetry of another root client reaches the main client's store only in
+// a detached session; in an attached one the main client's store, which its
+// own display reads, holds only its own work.
+func TestOtherRootTelemetryReachesMainStoreOnlyWhenDetached(t *testing.T) {
+	t.Parallel()
+
+	for _, detached := range []bool{false, true} {
+		main := &clientRecord{clientID: "main"}
+		other := &clientRecord{clientID: "other"}
+		child := &clientRecord{clientID: "child", parentClientIDs: []string{"other"}}
+		sess := &daggerSession{
+			mainClientCallerID: "main",
+			detached:           detached,
+			clientRecords: map[string]*clientRecord{
+				main.clientID:  main,
+				other.clientID: other,
+				child.clientID: child,
+			},
+		}
+		want := []string{"child", "other"}
+		if detached {
+			want = append(want, "main")
+		}
+
+		route, err := sess.telemetryRouteOriginClientID("child")
+		require.NoError(t, err)
+		require.Equal(t, want, route, "detached=%v", detached)
+		route, err = sess.telemetryRouteClientIDs(child)
+		require.NoError(t, err)
+		require.Equal(t, want, route, "detached=%v", detached)
+
+		route, err = sess.telemetryRouteOriginClientID("main")
+		require.NoError(t, err)
+		require.Equal(t, []string{"main"}, route, "detached=%v", detached)
+	}
+}

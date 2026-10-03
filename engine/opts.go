@@ -286,9 +286,11 @@ const (
 	CloudTelemetryPublisherHeader = "X-Dagger-Cloud-Telemetry-Publisher"
 
 	// SessionTelemetryHeader, set to "true" on a telemetry subscription,
-	// subscribes to the whole session's telemetry instead of the client's
-	// own: the stream replays and follows the store of the session's main
-	// client, which every client's telemetry reaches, until the session ends.
+	// subscribes to the session's telemetry instead of the client's own: the
+	// stream replays and follows the store of the session's main client until
+	// the session ends. In a detached session every client's telemetry
+	// reaches that store; in an attached one, the main client's and its
+	// nested clients'.
 	SessionTelemetryHeader = "X-Dagger-Session-Telemetry"
 )
 

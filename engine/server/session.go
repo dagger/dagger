@@ -618,9 +618,14 @@ func (sess *daggerSession) telemetryRouteOriginClientID(originClientID string) (
 }
 
 // withSessionStore appends the main client to a telemetry route whose root is
-// another root client, so the main client's store holds the telemetry of
-// the whole session.
+// another root client in a detached session, so the main client's store holds
+// the telemetry of the whole session for the session stream. In an attached
+// session the main client's store holds only its own work, since that is
+// what its display shows.
 func (sess *daggerSession) withSessionStore(route []string) []string {
+	if !sess.detached {
+		return route
+	}
 	// route is the origin followed by its ancestors from the root.
 	root := route[0]
 	if len(route) > 1 {

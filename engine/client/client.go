@@ -186,8 +186,8 @@ type Params struct {
 	JoinExistingSession bool
 
 	// SessionTelemetry subscribes EngineTrace, EngineLogs and EngineMetrics
-	// to the whole session's telemetry, from its start until the session
-	// ends, instead of this client's own.
+	// to the session's telemetry, from its start until the session ends,
+	// instead of this client's own; see engine.SessionTelemetryHeader.
 	SessionTelemetry bool
 
 	// Background and Command describe this client process in session
