@@ -128,6 +128,11 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 			Doc(`Start the service and wait for its health checks to succeed.`,
 				`Services bound to a Container do not need to be manually started.`),
 
+		dagql.NodeFunc("__pinned", s.pinned).
+			Doc(`(Internal-only) The same service, marked to be kept running once started.`,
+				`Selected by start, so the service ID it returns records the intent to keep the service running. `+
+					`Binding a pinned service starts it if needed and keeps it running for the rest of the session.`),
+
 		dagql.NodeFunc("up", s.up).
 			DoNotCache("Starts a host tunnel, possibly with ports that change each time it's started.").
 			Doc(`Creates a tunnel that forwards traffic from the caller's network to this service.`).
@@ -481,12 +486,80 @@ func (s *serviceSchema) start(ctx context.Context, parent dagql.ObjectResult[*co
 		return res, err
 	}
 
-	parentID, err := parent.ID()
+	// Return the service marked as pinned, so whoever keeps the returned ID
+	// (e.g. a module storing it in its state, restored in a later session)
+	// keeps the intent to have it running, not just a reference to it.
+	pinned := parent
+	if !parent.Self().Pinned {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return res, err
+		}
+		if err := srv.Select(ctx, parent, &pinned, dagql.Selector{Field: "__pinned"}); err != nil {
+			return res, fmt.Errorf("pin service: %w", err)
+		}
+	}
+	pinnedID, err := pinned.ID()
 	if err != nil {
 		return res, fmt.Errorf("service ID: %w", err)
 	}
-	id := dagql.NewID[*core.Service](parentID)
+	id := dagql.NewID[*core.Service](pinnedID)
 	return dagql.NewResultForCurrentCall(ctx, id)
+}
+
+// pinned returns the receiver marked as pinned. The result keeps the
+// receiver's identity: its content digest is the receiver's content-preferred
+// digest, which is what services are keyed and named by (see
+// Services.Start, Service.Hostname), so the pinned and unpinned values
+// address the same running instance.
+func (s *serviceSchema) pinned(ctx context.Context, parent dagql.ObjectResult[*core.Service], _ struct{}) (inst dagql.ObjectResult[*core.Service], _ error) {
+	if parent.Self().Pinned {
+		return parent, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	parentDig, err := parent.ContentPreferredDigest(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("service digest: %w", err)
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, parent.Self().WithPinned())
+	if err != nil {
+		return inst, err
+	}
+	return inst.WithContentDigest(ctx, parentDig)
+}
+
+// unpinned returns the unpinned service a pinned one was derived from, i.e.
+// the receiver of its __pinned selection. Services that aren't pinned are
+// returned as they are.
+func unpinned(ctx context.Context, svc dagql.ObjectResult[*core.Service]) (dagql.ObjectResult[*core.Service], error) {
+	if !svc.Self().Pinned {
+		return svc, nil
+	}
+	call, err := svc.ResultCall()
+	if err != nil {
+		return svc, err
+	}
+	if call.Field != "__pinned" {
+		// pinned by other means (e.g. a cache hit on an equivalent value);
+		// nothing to unwrap to
+		return svc, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return svc, err
+	}
+	recv, err := svc.Receiver(ctx, srv)
+	if err != nil {
+		return svc, fmt.Errorf("pinned service receiver: %w", err)
+	}
+	unpinnedSvc, ok := recv.(dagql.ObjectResult[*core.Service])
+	if !ok {
+		return svc, fmt.Errorf("pinned service receiver: expected %T, got %T", unpinnedSvc, recv)
+	}
+	return unpinnedSvc, nil
 }
 
 type serviceStopArgs struct {
@@ -501,11 +574,17 @@ func (s *serviceSchema) stop(ctx context.Context, parent dagql.ObjectResult[*cor
 	if err := parent.Self().Stop(ctx, parentDig, args.Kill); err != nil {
 		return res, err
 	}
-	parentID, err := parent.ID()
+	// Return the unpinned service: a stopped service should not come back up
+	// on its own the next time something binds the stored result.
+	stopped, err := unpinned(ctx, parent)
+	if err != nil {
+		return res, err
+	}
+	stoppedID, err := stopped.ID()
 	if err != nil {
 		return res, fmt.Errorf("service ID: %w", err)
 	}
-	id := dagql.NewID[*core.Service](parentID)
+	id := dagql.NewID[*core.Service](stoppedID)
 	return dagql.NewResultForCurrentCall(ctx, id)
 }
 
