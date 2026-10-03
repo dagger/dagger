@@ -47,9 +47,14 @@ func (p *PatchOnto) IsEmpty() bool {
 	return len(p.Patch) == 0 && len(p.NewDirectories) == 0 && len(p.RemovedDirectories) == 0
 }
 
-// ErrPatchTooLarge is returned by RenderPatchOnto when the patch exceeds its
-// size budget.
-var ErrPatchTooLarge = errors.New("patch exceeds the size budget")
+var (
+	// ErrPatchTooLarge is returned by RenderPatchOnto when the patch exceeds
+	// its size budget.
+	ErrPatchTooLarge = errors.New("patch exceeds the size budget")
+	// ErrPatchBinary is returned by RenderPatchOnto when the patch would
+	// carry a binary file's content.
+	ErrPatchBinary = errors.New("patch has binary content")
+)
 
 // RenderPatchOnto renders the changeset as a patch against base, a tree the
 // changeset is about to be applied to at prefix (a base-relative directory;
@@ -63,6 +68,11 @@ var ErrPatchTooLarge = errors.New("patch exceeds the size budget")
 // becomes a modification, and a file it removes that base never had drops out.
 //
 // The patch is read into memory; past maxBytes it fails with ErrPatchTooLarge.
+// It is meant to be embedded in a recipe, and a binary file's content does not
+// belong there: a build output such as a compiled binary is better rebuilt
+// from its producer than carried, base85-encoded, in every recipe and trace
+// that includes the patch. So a patch that adds, modifies or deletes a binary
+// file fails with ErrPatchBinary, as soon as git writes its first binary hunk.
 func (ch *Changeset) RenderPatchOnto(ctx context.Context, base dagql.ObjectResult[*Directory], prefix string, maxBytes int64) (*PatchOnto, error) {
 	paths, err := ch.ComputePaths(ctx)
 	if err != nil {
@@ -150,10 +160,13 @@ func renderPatchOntoDirs(ctx context.Context, baseDir, afterDir, prefix string, 
 		var patch bytes.Buffer
 		var stderr strings.Builder
 		budget := &patchBudgetWriter{w: &patch, remaining: maxBytes}
-		if err := writeGitDiffPatch(ctx, stage, nil, budget, io.Discard, &stderr); err != nil {
-			if budget.exceeded {
-				return nil, ErrPatchTooLarge
-			}
+		err := writeGitDiffPatch(ctx, stage, nil, budget, io.Discard, &stderr)
+		// Checked first: a small patch fits in the pipe, so git can exit
+		// as usual before it notices we stopped reading.
+		if budget.err != nil {
+			return nil, budget.err
+		}
+		if err != nil {
 			return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
 		}
 		out.Patch = patch.Bytes()
@@ -416,17 +429,26 @@ func mountDirectoryOrEmpty(ctx context.Context, dir dagql.ObjectResult[*Director
 	return fn(empty)
 }
 
-// patchBudgetWriter fails writes past its budget, recording that it did.
+// gitBinaryPatchLine starts each binary hunk of a `git diff --binary`. Text
+// hunk lines always start with ' ', '+', '-' or '\', so it cannot be content.
+var gitBinaryPatchLine = []byte("GIT binary patch\n")
+
+// patchBudgetWriter fails writes past its budget, or of a binary hunk,
+// recording why. It expects whole lines, as writeGitDiffPatch writes them.
 type patchBudgetWriter struct {
 	w         io.Writer
 	remaining int64
-	exceeded  bool
+	err       error
 }
 
 func (l *patchBudgetWriter) Write(p []byte) (int, error) {
+	if bytes.Equal(p, gitBinaryPatchLine) {
+		l.err = ErrPatchBinary
+		return 0, l.err
+	}
 	if int64(len(p)) > l.remaining {
-		l.exceeded = true
-		return 0, ErrPatchTooLarge
+		l.err = ErrPatchTooLarge
+		return 0, l.err
 	}
 	l.remaining -= int64(len(p))
 	return l.w.Write(p)
