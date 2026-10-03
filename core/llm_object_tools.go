@@ -14,7 +14,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -1402,15 +1401,6 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 	return m.outputToLLM(ctx, srv, val)
 }
 
-// Span attributes on a tool call that returned its bound object's own type:
-// the call that produced the new state, and the state recorded in its place.
-// The recorded state no longer mentions the producing call, so this is where
-// its provenance survives.
-const (
-	toolStateProducerAttr = "dagger.io/tool.state.producer"
-	toolStateRecordedAttr = "dagger.io/tool.state.recorded"
-)
-
 // fieldwiseState returns the state to rebind after a same-type tool return,
 // and whether there is anything to rebind at all.
 //
@@ -1420,7 +1410,8 @@ const (
 // fields that changed are re-applied to the receiver with the pure
 // __withField setter, so the recorded state is
 // recv!__withField(...)!__withField(...). A return whose fields all match the
-// receiver records nothing.
+// receiver records nothing. The producing call itself remains visible in the
+// trace, as the tool call's own span.
 //
 // A module object's producing call is never recorded: if its state can't be
 // expressed field-wise, the error fails the tool call. Only objects without
@@ -1433,19 +1424,12 @@ func (m *MCP) fieldwiseState(ctx context.Context, srv *dagql.Server, recv, retur
 	if recv == nil {
 		return nil, false, fmt.Errorf("record %s state: no previous state", returned.Type().Name())
 	}
-	span := trace.SpanFromContext(ctx)
-	if producer, err := returned.RecipeID(ctx); err == nil && producer != nil {
-		span.SetAttributes(attribute.String(toolStateProducerAttr, producer.Digest().String()))
-	}
 	state, err := WithModuleObjectFields(ctx, srv, recv, returned)
 	if err != nil {
 		return nil, false, fmt.Errorf("record %s state: %w", returned.Type().Name(), err)
 	}
 	if state == nil {
 		return nil, false, nil
-	}
-	if recorded, err := state.RecipeID(ctx); err == nil && recorded != nil {
-		span.SetAttributes(attribute.String(toolStateRecordedAttr, recorded.Digest().String()))
 	}
 	return state, true, nil
 }
