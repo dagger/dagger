@@ -147,8 +147,10 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 	}
 	// Merge the same delta into the approved working tree as well as HEAD.
 	// Restoring the old tree after committing would undo off-baseline input.
-	mergedAfter, err := mergeIntoWorkingTree(ctx, srv, working, args.Changes)
-	if err != nil {
+	var mergedAfter dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, working, &mergedAfter, dagql.Selector{Field: "__mergeForWorkspaceCommit", Args: []dagql.NamedInput{
+		{Name: "changes", Value: args.Changes},
+	}}); err != nil {
 		return inst, fmt.Errorf("apply commit changes to working tree: %w", err)
 	}
 	commitArgs := gitRefWithCommitArgs{Changes: args.Changes, Message: opts.Message, Date: opts.Date, AuthorName: opts.AuthorName, AuthorEmail: opts.AuthorEmail, Signoff: opts.Signoff}
@@ -193,21 +195,6 @@ func (s *workspaceSchema) withCommit(ctx context.Context, parent dagql.ObjectRes
 		return inst, err
 	}
 	return checkpointWorkspaceMetadataComposition(ctx, srv, overlaid, frozen.Self(), frozen.Self().SelectedEnv())
-}
-
-// mergeIntoWorkingTree merges changes into the working tree now, so a
-// conflict is reported by the commit that asked for the merge.
-func mergeIntoWorkingTree(ctx context.Context, srv *dagql.Server, working dagql.ObjectResult[*core.Changeset], changes dagql.ID[*core.Changeset]) (merged dagql.ObjectResult[*core.Directory], err error) {
-	if err := srv.Select(ctx, working, &merged, dagql.Selector{Field: "__mergeForWorkspaceCommit", Args: []dagql.NamedInput{
-		{Name: "changes", Value: changes},
-	}}); err != nil {
-		return merged, err
-	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return merged, err
-	}
-	return merged, cache.Evaluate(ctx, merged)
 }
 
 // changesetMergeForWorkspaceCommit keeps the native reconciliation result on a
