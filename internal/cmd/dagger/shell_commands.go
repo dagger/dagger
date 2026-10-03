@@ -227,8 +227,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				h.llmSession.Target().Clear()
-				return nil
+				return h.llmSession.Target().Clear()
 			},
 		},
 		{
@@ -241,12 +240,9 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				target := h.llmSession.Target()
-				compacted, err := target.Compact(ctx)
-				if err != nil {
-					return err
-				}
-				return target.updateLLM(compacted)
+				// Compacts the focused agent in place: same runtime, same
+				// roster entry, owned or attached.
+				return h.llmSession.Target().CompactInPlace(ctx)
 			},
 		},
 		{

@@ -272,7 +272,7 @@ func (DaggerCMDSuite) TestAgentWorkspaceChanges(ctx context.Context, t *testctx.
 	require.Equal(t, sha, git("rev-parse", "HEAD"))
 	require.Empty(t, git("status", "--porcelain"))
 	require.Empty(t, changes.Body(80), "saving commit-only changes clears the panel")
-	s.Target().reset()
+	require.NoError(t, s.Target().reset())
 	waitRefresh(s)
 	clearedSHA, err := s.Target().llm.Workspace().Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)

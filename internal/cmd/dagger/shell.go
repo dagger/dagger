@@ -367,43 +367,40 @@ func (h *shellCallHandler) DequeuePrompt() idtui.PromptInput {
 	return msg
 }
 
-// BranchFromID branches the LLM conversation to the state identified by the
+// BranchFromID branches the focused conversation to the state identified by the
 // encoded DAG ID (an LLM.withPrompt/withResponse call, located by the TUI from
 // a span's LLMCallDigest). When summary.Summarize is set, the conversation
 // being abandoned is summarized first and the summary injected into the branch
 // target so context carries forward.
+//
+// Like EditFromID, the target is captured before the work goes async, and the
+// branch goes through the same turn-synchronizing path as rewind
+// (sessionAgent.Branch): a turn in flight is stopped before the agent is
+// reseeded in place, since the engine refuses to reseed a running agent.
 func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, summary idtui.BranchSummary) func() {
+	target, err := h.focusedConversation()
 	return func() {
-		s, err := h.llm(ctx)
+		if target == nil && err == nil {
+			// No session yet (nothing was ever prompted): initialize one; there
+			// is no focus to have preserved.
+			var s *LLMSession
+			if s, err = h.llm(ctx); err == nil {
+				target = s.Target()
+			}
+		}
 		if err != nil {
 			slog.Error("failed to initialize LLM for branch", "error", err)
 			return
 		}
-
-		// Load the target LLM state (the point we're branching to).
 		loadedLLM := dagger.Ref[*dagger.LLM](h.dag, dagger.ID(encodedID))
-
-		// If the user requested summarization, summarize the OLD branch (the
-		// current conversation being abandoned) and inject the summary into the
-		// branch target, providing context when continuing from the earlier
-		// point.
-		if summary.Summarize {
-			summaryText, err := s.Target().BranchSummary(ctx, summary.CustomPrompt)
-			if err != nil {
-				slog.Error("failed to summarize old branch", "error", err)
-				// Fall through to branch without summary.
-			} else {
-				loadedLLM = loadedLLM.WithPrompt(fmt.Sprintf(
-					"The user explored a different conversation branch before returning here. Summary of that exploration:\n\n%s",
-					summaryText,
-				))
+		if err := target.Branch(ctx, loadedLLM, summary); err != nil {
+			slog.Error("failed to branch", "error", err)
+			var detached *agentDetachedError
+			if !errors.As(err, &detached) {
+				return
 			}
-		}
-
-		// updateLLM also refreshes the status line for the branched-to state.
-		if err := s.Target().updateLLM(loadedLLM); err != nil {
-			slog.Error("failed to update LLM for branch", "error", err)
-			return
+			// The branch was adopted locally even though the runtime was
+			// left behind; the error above says so.
 		}
 		// A branch may derive a new title from its next prompt.
 		h.resetPromptTitle()
@@ -411,19 +408,22 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 	}
 }
 
+// focusedConversation is the conversation the prompt currently addresses, or
+// nil when no session has been initialized yet. It never initializes one.
+func (h *shellCallHandler) focusedConversation() (*sessionAgent, error) {
+	s, err := h.llmMaybe()
+	if err != nil || s == nil {
+		return nil, err
+	}
+	return s.Target(), nil
+}
+
 // EditFromID captures the currently focused conversation, then returns the
 // asynchronous rewind operation used by the TUI's inline editor. Capturing the
 // target before the goroutine starts preserves focus routing even if the user
 // switches agents while the interrupt is landing.
 func (h *shellCallHandler) EditFromID(ctx context.Context, encodedID string) func() error {
-	h.llmL.Lock()
-	s := h.llmSession
-	err := h.llmErr
-	var target *sessionAgent
-	if s != nil {
-		target = s.Target()
-	}
-	h.llmL.Unlock()
+	target, err := h.focusedConversation()
 	if err != nil {
 		return func() error { return err }
 	}
