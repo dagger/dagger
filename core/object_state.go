@@ -241,16 +241,19 @@ func canonicalStateValue(val any) (any, error) {
 }
 
 // changedStateFields returns, in sorted order, the names of fields whose
-// value differs between prev and next. It fails when next drops a field prev
-// has: __withField can only set, and null is not the same as absent.
+// value differs between prev and next. A field next drops counts as null:
+// __withField can only set, and fields are statically typed, so a missing
+// field is rare and null is the closest state to record.
 func changedStateFields(prev, next map[string]any) ([]string, error) {
+	names := slices.Collect(maps.Keys(next))
 	for name := range prev {
 		if _, ok := next[name]; !ok {
-			return nil, fmt.Errorf("field %q was removed", name)
+			names = append(names, name)
 		}
 	}
+	slices.Sort(names)
 	var changed []string
-	for _, name := range slices.Sorted(maps.Keys(next)) {
+	for _, name := range names {
 		nextKey, err := stateValueKey(next[name])
 		if err != nil {
 			return nil, fmt.Errorf("field %q: %w", name, err)
@@ -326,8 +329,9 @@ func (obj *ModuleObject) stateSetterField(srv *dagql.Server) (dagql.Field[*Modul
 
 // WithModuleObjectFields records next's state as a chain of __withField
 // selects rooted at prev: prev!__withField(...)!__withField(...), one per
-// changed field in sorted name order. It returns a nil result when no field
-// changed. Both must be module objects of the same type.
+// changed field in sorted name order; a field next lacks is set to null. It
+// returns a nil result when no field changed. Both must be module objects of
+// the same type.
 func WithModuleObjectFields(ctx context.Context, srv *dagql.Server, prev, next dagql.AnyObjectResult) (dagql.AnyObjectResult, error) {
 	prevObj, ok := dagql.UnwrapAs[*ModuleObject](prev)
 	if !ok || prevObj == nil {

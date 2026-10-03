@@ -68,10 +68,12 @@ The LLM acts through the methods of the objects it's bound to via
   loaded. Instead MCP diffs the returned module object against the receiver
   and rebinds `recv!__withField(name:, value:)!…` — one pure, engine-owned,
   hidden setter per changed field (`core/object_state.go`); object references
-  ride in `value` as ID edges. A return that changes nothing records nothing.
-  Non-module objects, dropped fields and collection objects fall back to the
-  raw return with a warning. The producing call's digest is kept as a span
-  attribute on the tool call (`dagger.io/tool.state.producer`).
+  ride in `value` as ID edges. A return that changes nothing records nothing;
+  a field the return drops is recorded as null. A module object's producing
+  call is never recorded: a state that can't be encoded fails the tool call.
+  Core objects, which have no fields to diff, are rebound as returned.
+  Collection objects are not supported yet. The producing call's digest is
+  kept as a span attribute on the tool call (`dagger.io/tool.state.producer`).
 - To the *model*, objects are never named, passed, or returned as handles;
   binding is author-side. There is no `Type#N` registry and no free-form
   script surface. Host-writing fields (`export`) are simply not reachable:

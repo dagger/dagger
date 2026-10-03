@@ -1372,7 +1372,10 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 			// (step() persists this as a withTools selector); the method's own print
 			// output is the response. The state is recorded field-wise on the
 			// receiver, not as the call that produced it (see fieldwiseState).
-			state, changed := m.fieldwiseState(ctx, srv, recv, obj)
+			state, changed, err := m.fieldwiseState(ctx, srv, recv, obj)
+			if err != nil {
+				return nil, err
+			}
 			if changed {
 				if err := m.rebindBoundTool(typeName, state); err != nil {
 					return nil, err
@@ -1417,17 +1420,18 @@ const (
 // fields that changed are re-applied to the receiver with the pure
 // __withField setter, so the recorded state is
 // recv!__withField(...)!__withField(...). A return whose fields all match the
-// receiver records nothing. Anything that can't be expressed that way (a
-// non-module object, a dropped field, an unencodable value, ...) falls back to
-// rebinding the returned object as is.
-func (m *MCP) fieldwiseState(ctx context.Context, srv *dagql.Server, recv, returned dagql.AnyObjectResult) (dagql.AnyObjectResult, bool) {
-	if recv == nil {
-		return returned, true
+// receiver records nothing.
+//
+// A module object's producing call is never recorded: if its state can't be
+// expressed field-wise, the error fails the tool call. Only objects without
+// module fields (core types) are rebound as returned, since there is nothing
+// to diff.
+func (m *MCP) fieldwiseState(ctx context.Context, srv *dagql.Server, recv, returned dagql.AnyObjectResult) (dagql.AnyObjectResult, bool, error) {
+	if _, ok := dagql.UnwrapAs[*ModuleObject](returned); !ok {
+		return returned, true, nil
 	}
-	_, recvIsModObj := dagql.UnwrapAs[*ModuleObject](recv)
-	_, retIsModObj := dagql.UnwrapAs[*ModuleObject](returned)
-	if !recvIsModObj || !retIsModObj {
-		return returned, true
+	if recv == nil {
+		return nil, false, fmt.Errorf("record %s state: no previous state", returned.Type().Name())
 	}
 	span := trace.SpanFromContext(ctx)
 	if producer, err := returned.RecipeID(ctx); err == nil && producer != nil {
@@ -1435,18 +1439,15 @@ func (m *MCP) fieldwiseState(ctx context.Context, srv *dagql.Server, recv, retur
 	}
 	state, err := WithModuleObjectFields(ctx, srv, recv, returned)
 	if err != nil {
-		slog.Warn("could not record tool state field-wise; recording the producing call instead",
-			"type", returned.Type().Name(),
-			"error", err)
-		return returned, true
+		return nil, false, fmt.Errorf("record %s state: %w", returned.Type().Name(), err)
 	}
 	if state == nil {
-		return nil, false
+		return nil, false, nil
 	}
 	if recorded, err := state.RecipeID(ctx); err == nil && recorded != nil {
 		span.SetAttributes(attribute.String(toolStateRecordedAttr, recorded.Digest().String()))
 	}
-	return state, true
+	return state, true, nil
 }
 
 // syncObject forces an object result (running its side effects) when it has a
