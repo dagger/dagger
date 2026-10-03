@@ -22,6 +22,9 @@ const (
 	LockOperationGitLatest = "git-latest"
 	LockOperationGitSHA    = "git-sha"
 	LockOperationVanityURL = "vanity-url"
+	// LockOperationVanityVersion maps a vanity source URL and a requested
+	// version to the version that the vanity host selected.
+	LockOperationVanityVersion = "vanity-version"
 
 	LatestReleaseVersion  = "v1.0.0-beta.11"
 	VersionQueriesVersion = "v1.0.0-beta.12"
