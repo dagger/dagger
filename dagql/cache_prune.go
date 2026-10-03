@@ -144,7 +144,7 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	}
 
 	c.egraphMu.Lock()
-	report.BeforeCompaction = c.cacheMetadataEstimateLocked()
+	report.BeforeCompaction = c.metadataPruneEstimateLocked()
 	report.AfterInitialCompaction = report.BeforeCompaction
 	report.AfterPrune = report.BeforeCompaction
 	if report.BeforeCompaction.EstimatedBytes <= maximumBytes {
@@ -153,9 +153,11 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	}
 	report.Triggered = true
 	c.traceMetadataPruneStarted(ctx, maximumBytes, targetBytes)
-	_, report.InitialCompactionOldClassSlots, report.InitialCompactionNewClassSlots = c.compactEqClassesLocked(true)
-	report.AfterInitialCompaction = c.cacheMetadataEstimateLocked()
-	report.AfterPrune = report.AfterInitialCompaction
+	if !c.blobBacked {
+		_, report.InitialCompactionOldClassSlots, report.InitialCompactionNewClassSlots = c.compactEqClassesLocked(true)
+		report.AfterInitialCompaction = c.cacheMetadataEstimateLocked()
+		report.AfterPrune = report.AfterInitialCompaction
+	}
 	c.egraphMu.Unlock()
 
 	if report.AfterInitialCompaction.EstimatedBytes <= maximumBytes {
@@ -219,14 +221,12 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		}
 	}
 
-	if len(plan) > 0 {
-		c.egraphMu.Lock()
+	c.egraphMu.Lock()
+	if len(plan) > 0 && !c.blobBacked {
 		_, report.FinalCompactionOldClassSlots, report.FinalCompactionNewClassSlots = c.compactEqClassesLocked(true)
-		report.AfterPrune = c.cacheMetadataEstimateLocked()
-		c.egraphMu.Unlock()
-	} else {
-		report.AfterPrune = c.MetadataEstimate()
 	}
+	report.AfterPrune = c.metadataPruneEstimateLocked()
+	c.egraphMu.Unlock()
 
 	if report.RemovedPersistedRootCount > 0 && c.snapshotGC != nil {
 		report.SnapshotGCAttempted = true
@@ -237,6 +237,16 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	}
 
 	return report, nil
+}
+
+// metadataPruneEstimateLocked is what the memory stage measures: an engine's
+// structural estimate, or a blob-backed cache's pool (poolEstimateLocked).
+// Requires egraphMu.
+func (c *Cache) metadataPruneEstimateLocked() CacheMetadataEstimate {
+	if c.blobBacked {
+		return c.poolEstimateLocked()
+	}
+	return c.cacheMetadataEstimateLocked()
 }
 
 func metadataPruneLog(ctx context.Context, report CacheMetadataPruneReport, err error) {
@@ -265,6 +275,7 @@ func metadataPruneLog(ctx context.Context, report CacheMetadataPruneReport, err 
 		"simulatedCollectedResultCount", report.SimulatedCollectedResultCount,
 		"simulatedStructuralBytes", report.SimulatedStructuralBytes,
 		"removedPersistedRootCount", report.RemovedPersistedRootCount,
+		"droppedValues", report.DroppedValues,
 		"candidatesExhausted", report.CandidatesExhausted,
 		"snapshotGCAttempted", report.SnapshotGCAttempted,
 		"snapshotGCSucceeded", report.SnapshotGCSucceeded,
@@ -281,12 +292,16 @@ func metadataPruneLog(ctx context.Context, report CacheMetadataPruneReport, err 
 // deferred.
 func (c *Cache) measurePruneState(ctx context.Context, policyIdx int) (map[sharedResultID]struct{}, pruneSnapshot, bool, error) {
 	activeRoots := c.snapshotSessionResultIDs()
-	if err := c.measureAllResultSizes(ctx); err != nil {
-		if err == errCacheUsageChanged {
-			slog.Debug("dagql prune defer policy: incomplete usage measurement", "policyIndex", policyIdx)
-			return nil, pruneSnapshot{}, false, nil
+	// A blob-backed cache measures its blobs from its stored parts, in the
+	// snapshot below.
+	if !c.blobBacked {
+		if err := c.measureAllResultSizes(ctx); err != nil {
+			if err == errCacheUsageChanged {
+				slog.Debug("dagql prune defer policy: incomplete usage measurement", "policyIndex", policyIdx)
+				return nil, pruneSnapshot{}, false, nil
+			}
+			return nil, pruneSnapshot{}, false, err
 		}
-		return nil, pruneSnapshot{}, false, err
 	}
 	snapshot, err := c.snapshotPruneStateCancelable(activeRoots, pruneSnapshotDisk, 0, newPruneCancellationChecker(ctx))
 	if err == errCacheUsageChanged {
@@ -429,7 +444,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 		}
 	}
 
-	if compactedNeeded {
+	if compactedNeeded && !c.blobBacked {
 		c.egraphMu.Lock()
 		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(false); compacted {
 			slog.Debug("dagql prune compacted eq classes",
@@ -460,7 +475,7 @@ func (c *Cache) snapshotPruneStateCancelable(
 	checker *pruneCancellationChecker,
 ) (_ pruneSnapshot, rerr error) {
 	var usage *cacheUsageSnapshot
-	if mode == pruneSnapshotDisk {
+	if mode == pruneSnapshotDisk && !c.blobBacked {
 		ctx := context.Background()
 		if checker != nil {
 			ctx = checker.ctx
@@ -483,11 +498,21 @@ func (c *Cache) snapshotPruneStateCancelable(
 		c.egraphMu.RLock()
 		defer c.egraphMu.RUnlock()
 	}
+	if c.blobBacked {
+		var blobs *storedBlobUsage
+		if mode == pruneSnapshotDisk {
+			var err error
+			if blobs, err = c.storedBlobUsageLocked(checker); err != nil {
+				return pruneSnapshot{}, err
+			}
+		}
+		return c.snapshotPruneStateLocked(activeRoots, mode, directResultBytes, checker, nil, blobs)
+	}
 	identities, err := c.pruneUsageIdentitiesLocked(usage)
 	if err != nil {
 		return pruneSnapshot{}, err
 	}
-	return c.snapshotPruneStateLocked(activeRoots, mode, directResultBytes, checker, identities)
+	return c.snapshotPruneStateLocked(activeRoots, mode, directResultBytes, checker, identities, nil)
 }
 
 // pruneUsageIdentitiesLocked removes measurement holds and validates the live
@@ -512,6 +537,7 @@ func (c *Cache) snapshotPruneStateLocked(
 	directResultBytes int64,
 	checker *pruneCancellationChecker,
 	identities map[sharedResultID][]string,
+	blobs *storedBlobUsage,
 ) (pruneSnapshot, error) {
 	snapshot := pruneSnapshot{
 		results:         make(map[sharedResultID]pruneSnapshotResult, len(c.resultsByID)),
@@ -537,7 +563,13 @@ func (c *Cache) snapshotPruneStateLocked(
 	}
 
 	if mode == pruneSnapshotDisk {
-		if err := c.snapshotPruneDiskUsageIdentitiesLocked(&snapshot, identities, checker); err != nil {
+		if blobs != nil {
+			// A blob-backed cache's usage identities are its blobs, and its
+			// used bytes the pool's distinct blobs.
+			identities = blobs.byResult
+			snapshot.usedBytes = blobs.poolBytes
+		}
+		if err := c.snapshotPruneDiskUsageIdentitiesLocked(&snapshot, identities, blobs, checker); err != nil {
 			return pruneSnapshot{}, err
 		}
 	}
@@ -602,12 +634,23 @@ func (c *Cache) snapshotPruneStateLocked(
 			expiresAtUnix:            edge.expiresAtUnix,
 		}
 		if mode == pruneSnapshotMetadata {
-			snapshotResult.directResultBytes = directResultBytes + res.payloadBytes
-			snapshotResult.entry.SizeBytes = snapshotResult.directResultBytes
+			direct := directResultBytes + res.payloadBytes
+			if c.blobBacked {
+				direct = res.storedValueBytes()
+			}
+			snapshotResult.directResultBytes = direct
+			snapshotResult.entry.SizeBytes = direct
 		} else {
 			usageIdentities := identities[resID]
 			sizeBytes := int64(0)
-			for _, measured := range res.cacheUsageSizeByIdentity {
+			measuredSizes := res.cacheUsageSizeByIdentity
+			if blobs != nil {
+				measuredSizes = make(map[string]int64, len(usageIdentities))
+				for _, identity := range usageIdentities {
+					measuredSizes[identity] = blobs.sizes[identity]
+				}
+			}
+			for _, measured := range measuredSizes {
 				if checker != nil {
 					if err := checker.check(); err != nil {
 						return pruneSnapshot{}, err
@@ -634,7 +677,9 @@ func (c *Cache) snapshotPruneStateLocked(
 			snapshotResult.entry.SizeBytes = sizeBytes
 			snapshotResult.callLabel = callLabel
 			snapshotResult.callFrame = callFrame
-			snapshot.usedBytes += sizeBytes
+			if blobs == nil {
+				snapshot.usedBytes += sizeBytes
+			}
 		}
 		for child := range c.resultOwnershipChildrenLocked(res) {
 			if child.owner != nil {
@@ -650,7 +695,7 @@ func (c *Cache) snapshotPruneStateLocked(
 	return snapshot, nil
 }
 
-func (c *Cache) snapshotPruneDiskUsageIdentitiesLocked(snapshot *pruneSnapshot, identities map[sharedResultID][]string, checker *pruneCancellationChecker) error {
+func (c *Cache) snapshotPruneDiskUsageIdentitiesLocked(snapshot *pruneSnapshot, identities map[sharedResultID][]string, blobs *storedBlobUsage, checker *pruneCancellationChecker) error {
 	for resID, res := range c.resultsByID {
 		if checker != nil {
 			if err := checker.check(); err != nil {
@@ -670,7 +715,11 @@ func (c *Cache) snapshotPruneDiskUsageIdentitiesLocked(snapshot *pruneSnapshot, 
 			if identityState.ownerID == 0 || resID < identityState.ownerID {
 				identityState.ownerID = resID
 			}
-			if sizeBytes, ok := res.cacheUsageSizeByIdentity[usageIdentity]; ok && sizeBytes > identityState.sizeBytes {
+			sizeBytes, ok := res.cacheUsageSizeByIdentity[usageIdentity]
+			if blobs != nil {
+				sizeBytes, ok = blobs.sizes[usageIdentity], true
+			}
+			if ok && sizeBytes > identityState.sizeBytes {
 				identityState.sizeBytes = sizeBytes
 			}
 			identityState.aliveMembers++

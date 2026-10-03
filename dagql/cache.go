@@ -1719,6 +1719,7 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 	}
 	delete(c.persistedEdgesByResult, resultID)
 	droppedAt = time.Now()
+	entriesBefore := len(c.resultsByID)
 	res = c.resultsByID[resultID]
 	if res != nil {
 		var err error
@@ -1732,6 +1733,10 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
+	if c.blobBacked && len(c.resultsByID) < entriesBefore {
+		// The Cloud compacts its classes on collection, not in a prune.
+		c.eqClassRemoved = true
+	}
 	c.egraphMu.Unlock()
 	if c.testAfterRetentionDrop != nil {
 		c.testAfterRetentionDrop(resultID)
@@ -2547,7 +2552,11 @@ type sharedResult struct {
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key. Only a blob-backed cache (the Cloud)
 	// sets them. Guarded by egraphMu.
-	storedParts                 map[string]PersistedPartOffer
+	storedParts map[string]PersistedPartOffer
+	// storedRecordBytes is the size of the record a blob-backed cache stores
+	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
+	// Guarded by egraphMu.
+	storedRecordBytes           int64
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.
