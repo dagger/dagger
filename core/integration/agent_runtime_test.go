@@ -951,6 +951,10 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.NoError(t, h.reseedAgent(ctx, t, string(compacted)))
 		require.Equal(t, "IDLE", h.state(ctx, t))
+
+		// The staff sendTo order: resume first — a no-op on an idle agent,
+		// which must not answer the held note — then send.
+		require.Equal(t, "IDLE", h.mustVerb(ctx, t, "resume"))
 		time.Sleep(time.Second)
 		require.Equal(t, "IDLE", h.state(ctx, t), "held input must not start a turn")
 
@@ -962,55 +966,6 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.Equal(t, nextReply, lastReply)
 		require.Equal(t, 1, strings.Count(transcript, summary))
 		require.NotContains(t, transcript, oldPrompt)
-	})
-
-	t.Run("resume retries a branched prompt", func(ctx context.Context, t *testctx.T) {
-		// Branching from a prompt reseeds the conversation that ends in it,
-		// then resumes: "retry from here". The reseed alone holds the prompt
-		// (IDLE, never a parked loop's false RUNNING); the resume steps it.
-		const (
-			prompt     = "prompt to branch from"
-			reply      = "the reply to the branched prompt"
-			nextPrompt = "prompt sent after the retry"
-			nextReply  = "the post-retry reply"
-		)
-		model := cannedRecordingModel(ctx, t, c, c.LLM().
-			WithPrompt(prompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: reply},
-			}).
-			WithPrompt(nextPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: nextReply},
-			}))
-		h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "branched"})
-		_, got, err := h.sendAndWait(ctx, t, prompt)
-		require.NoError(t, err)
-		require.Equal(t, reply, got)
-
-		branch, err := c.LLM(dagger.LLMOpts{Model: model}).WithPrompt(prompt).ID(ctx)
-		require.NoError(t, err)
-		require.NoError(t, h.reseedAgent(ctx, t, string(branch)))
-		require.Equal(t, "IDLE", h.state(ctx, t))
-		_, err = h.verb(ctx, t, "resume")
-		require.NoError(t, err)
-
-		// The retried turn runs to completion: IDLE again, with the prompt
-		// answered exactly once.
-		state, err := h.waitFor(ctx, t, "IDLE")
-		require.NoError(t, err)
-		require.Equal(t, "IDLE", state)
-		transcript, lastReply := h.snapshot(ctx, t)
-		require.Equal(t, reply, lastReply)
-		require.Equal(t, 1, strings.Count(transcript, prompt))
-
-		// The next send opens its own turn on the settled history: the
-		// recorded follow-up resolving is the replay provider's proof that
-		// it was not merged into the branched prompt.
-		delivery, got, err := h.sendAndWait(ctx, t, nextPrompt)
-		require.NoError(t, err)
-		require.Equal(t, "STARTED", delivery)
-		require.Equal(t, nextReply, got)
 	})
 
 	t.Run("queued mail drains onto the new conversation", func(ctx context.Context, t *testctx.T) {

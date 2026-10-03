@@ -14,11 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Compaction and branch summaries reseed a conversation ending in a note the
-// model has not answered. The engine holds such input for the next turn; only
-// an explicit Resume retries it. These tests pin the CLI's half: /compact,
-// auto-compaction and a summarized branch never resume the runtime on their
-// own, while a plain branch ("retry from here") does.
+// Compaction summaries, branch summaries, and the tool results of a reply a
+// branch kept leave a conversation ending in input the model has not
+// answered. The engine holds such input to lead the next message; resume is a
+// no-op on it. These tests pin the CLI's half: like Pi's /tree and Claude
+// Code's /rewind, /compact, auto-compaction and every kind of branch never
+// resume or send on their own.
 
 // chainQueryPath returns the field path of a single-chain GraphQL query as
 // the SDK renders it (`query{node(id:"x"){withPrompt(...){model}}}` ->
@@ -186,10 +187,36 @@ func TestBranchWithSummaryDoesNotStartATurn(t *testing.T) {
 	require.True(t, cd.sawChain("node", "withPrompt", "model"), "the summary note is appended to the branch target")
 }
 
-func TestPlainBranchRetriesFromThere(t *testing.T) {
+func TestPlainBranchDoesNotStartATurn(t *testing.T) {
+	// A branch from a reply (whatever its target leaves pending is held by
+	// the engine) and the inline-edit rewind a plain branch from a prompt
+	// uses: neither resumes nor sends.
 	a, rt, _ := idleAgent(t, map[string]any{"model": "test-model"})
-	target := dagger.Ref[*dagger.LLM](a.session.dag, "branch-point")
+	target := dagger.Ref[*dagger.LLM](a.session.dag, "after-a-reply")
 	require.NoError(t, a.Branch(t.Context(), target, idtui.BranchSummary{}))
-	require.Equal(t, []string{"reseed", "resume"}, rt.verbLog(),
-		"a plain branch resumes, so a branched-from prompt is answered again")
+	require.Equal(t, []string{"reseed"}, rt.verbLog())
+
+	a, rt, _ = idleAgent(t, map[string]any{"model": "test-model"})
+	h := &shellCallHandler{dag: a.session.dag, mode: modeShell, llmSession: a.session}
+	require.NoError(t, h.EditFromID(t.Context(), "before-a-prompt")())
+	require.Equal(t, []string{"reseed"}, rt.verbLog())
+	require.Equal(t, modePrompt, h.mode)
+}
+
+func TestBranchMidTurnLeavesTheAgentParked(t *testing.T) {
+	// Mid-turn, the branch interrupts first (Claude's "Esc, then rewind")
+	// and never resumes afterwards: the agent stays parked until the user's
+	// next message.
+	for _, summary := range []idtui.BranchSummary{{}, {Summarize: true}} {
+		a, rt, _ := idleAgent(t, map[string]any{
+			"transcript":    "user: hi\nassistant: hello",
+			"contextWindow": 200_000,
+			"lastReply":     "what the abandoned branch explored",
+			"model":         "test-model",
+		})
+		rt.setState(dagger.AgentStateRunning)
+		target := dagger.Ref[*dagger.LLM](a.session.dag, "branch-point")
+		require.NoError(t, a.Branch(t.Context(), target, summary))
+		require.Equal(t, []string{"interrupt", "reseed"}, rt.verbLog(), "summarize=%t", summary.Summarize)
+	}
 }

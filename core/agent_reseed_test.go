@@ -57,11 +57,11 @@ func TestAgentReseedRejectsPausedDrain(t *testing.T) {
 
 // TestAgentReseedHoldsPendingInput covers a reseed whose conversation ends in
 // input the model has not answered: a compaction summary, a branch summary, or
-// a branched-from prompt. Reseed itself never steps it — the input is HELD to
-// lead the next turn, and the projection says so (IDLE, not a parked loop's
-// false RUNNING). Retrying it is the caller's explicit choice: Resume steps
-// held input, opening the turn truthfully; a message sent instead opens a
-// fresh turn with the held input in front of it.
+// the tool results of a reply a branch kept. Reseed never steps it — the input
+// is HELD to lead the next message, and the projection says so (IDLE, not a
+// parked loop's false RUNNING). Resume does not step it either (it stays a
+// no-op on an idle agent); the next message opens a fresh turn with the held
+// input in front of it.
 func TestAgentReseedHoldsPendingInput(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -115,30 +115,30 @@ func TestAgentReseedHoldsPendingInput(t *testing.T) {
 		require.True(t, woken(rt))
 	})
 
-	t.Run("resume retries the held input", func(t *testing.T) {
+	t.Run("resume leaves held input held", func(t *testing.T) {
+		// The staff sendTo order: resume (a no-op on an idle agent), then
+		// send. The held note must not be answered on its own in between.
 		rt := newRuntime(true, false)
 		require.NoError(t, rt.Reseed(ctx, conversation("pending", prompt)))
 		require.NoError(t, rt.Resume(ctx))
-		require.True(t, woken(rt), "resume wakes the parked loop to step it")
-		require.False(t, rt.held)
-		require.True(t, rt.turnOpen, "the retried input opens a turn")
-		require.Equal(t, AgentStateRunning, rt.State())
+		require.True(t, rt.held)
+		require.False(t, rt.turnOpen)
+		require.Equal(t, AgentStateIdle, rt.State())
 
-		// A send racing the wake joins the retried turn rather than
-		// claiming a new one.
 		ref, err := rt.enqueue("follow-up", nil, "")
 		require.NoError(t, err)
-		require.Equal(t, AgentMessageSteered, rt.messages[ref].deliveryHint)
+		require.Equal(t, AgentMessageStarted, rt.messages[ref].deliveryHint)
 	})
 
-	t.Run("resume of an interrupted agent retries too", func(t *testing.T) {
+	t.Run("resume of an interrupted agent keeps holding", func(t *testing.T) {
 		rt := newRuntime(true, true)
 		require.NoError(t, rt.Reseed(ctx, conversation("pending", prompt)))
 		require.False(t, woken(rt))
 		require.Equal(t, AgentStatePaused, rt.State())
 		require.NoError(t, rt.Resume(ctx))
-		require.True(t, woken(rt))
-		require.Equal(t, AgentStateRunning, rt.State())
+		require.True(t, rt.held)
+		require.False(t, rt.turnOpen)
+		require.Equal(t, AgentStateIdle, rt.State())
 	})
 
 	t.Run("settled conversation holds nothing", func(t *testing.T) {

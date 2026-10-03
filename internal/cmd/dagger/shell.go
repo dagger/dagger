@@ -376,10 +376,11 @@ func (h *shellCallHandler) DequeuePrompt() idtui.PromptInput {
 // Like EditFromID, the target is captured before the work goes async, and the
 // branch goes through the same turn-synchronizing path as rewind
 // (sessionAgent.Branch): a turn in flight is stopped before the agent is
-// reseeded in place, since the engine refuses to reseed a running agent.
-func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, summary idtui.BranchSummary) func() {
+// reseeded in place, since the engine refuses to reseed a running agent. A
+// nil error means the frontend may load the branched-from prompt's text.
+func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, summary idtui.BranchSummary) func() error {
 	target, err := h.focusedConversation()
-	return func() {
+	return func() error {
 		if target == nil && err == nil {
 			// No session yet (nothing was ever prompted): initialize one; there
 			// is no focus to have preserved.
@@ -390,14 +391,14 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 		}
 		if err != nil {
 			slog.Error("failed to initialize LLM for branch", "error", err)
-			return
+			return err
 		}
 		loadedLLM := dagger.Ref[*dagger.LLM](h.dag, dagger.ID(encodedID))
 		if err := target.Branch(ctx, loadedLLM, summary); err != nil {
 			slog.Error("failed to branch", "error", err)
 			var detached *agentDetachedError
 			if !errors.As(err, &detached) {
-				return
+				return err
 			}
 			// The branch was adopted locally even though the runtime was
 			// left behind; the error above says so.
@@ -405,6 +406,7 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 		// A branch may derive a new title from its next prompt.
 		h.resetPromptTitle()
 		h.mode = modePrompt
+		return nil
 	}
 }
 

@@ -385,11 +385,12 @@ type ShellHandler interface {
 	// RestoreAfterHistory restores the mode saved before history navigation.
 	RestoreAfterHistory()
 
-	// BranchFromID branches the LLM conversation from the state identified by
+	// BranchFromID branches the LLM conversation to the state identified by
 	// the encoded DAG ID, optionally summarizing the abandoned branch first.
-	// It returns an async function that performs the branch (may be nil), to
-	// be run by the caller in a goroutine.
-	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func()
+	// It never starts a turn. It returns an async function that performs the
+	// branch (may be nil), to be run by the caller in a goroutine; a nil error
+	// means the frontend may load a branched-from prompt's text.
+	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func() error
 
 	// EditFromID interrupts the focused conversation and rewinds it to the
 	// encoded pre-prompt LLM state. The returned operation runs asynchronously;

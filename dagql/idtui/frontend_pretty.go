@@ -6807,39 +6807,10 @@ func (fe *frontendPretty) promptEditCall(span *dagui.Span) *callpbv1.Call {
 		// prompt, or an engine event (a rewind marker included).
 		return nil
 	}
-	digest := spanLLMCallDigest(span)
-	if digest == "" {
+	promptCall := fe.db.LLMMessageCall(span)
+	if promptCall == nil || promptCall.Field != "withPrompt" {
+		// withContent (images) cannot round-trip through the text editor.
 		return nil
-	}
-	promptCall := fe.db.Call(digest)
-	for promptCall != nil && promptCall.Field != "withPrompt" {
-		promptCall = fe.db.Call(promptCall.ReceiverDigest)
-	}
-	if promptCall == nil {
-		return nil
-	}
-
-	var peers []*dagui.Span
-	for _, candidate := range fe.db.Spans.Order {
-		if candidate != nil && !candidate.Internal &&
-			candidate.LLMRole == telemetry.LLMRoleUser &&
-			candidate.LLMCallDigest == digest &&
-			fe.sameNearestAgent(candidate, span) {
-			peers = append(peers, candidate)
-		}
-	}
-	slices.SortFunc(peers, func(a, b *dagui.Span) int {
-		return a.StartTime.Compare(b.StartTime)
-	})
-	selected := slices.Index(peers, span)
-	if selected < 0 {
-		return nil
-	}
-	for range len(peers) - selected - 1 {
-		promptCall = fe.db.Call(promptCall.ReceiverDigest)
-		if promptCall == nil || promptCall.Field != "withPrompt" {
-			return nil
-		}
 	}
 	return promptCall
 }
@@ -6854,23 +6825,11 @@ func (fe *frontendPretty) promptEditTarget(span *dagui.Span) (string, string, bo
 	if promptCall == nil || promptCall.ReceiverDigest == "" {
 		return "", "", false
 	}
-	var prompt string
-	var found bool
-	for _, arg := range promptCall.Args {
-		if arg.Name == "prompt" && arg.Value != nil {
-			prompt = arg.Value.GetString_()
-			found = true
-			break
-		}
-	}
-	if !found {
-		return "", "", false
-	}
 	encoded, err := encodedIDForCallDigest(fe.db, promptCall.ReceiverDigest)
 	if err != nil {
 		return "", "", false
 	}
-	return prompt, encoded, true
+	return dagui.LLMMessageText(promptCall), encoded, true
 }
 
 func nearestAgent(span *dagui.Span) *dagui.Span {
@@ -6880,14 +6839,6 @@ func nearestAgent(span *dagui.Span) *dagui.Span {
 		}
 	}
 	return nil
-}
-
-func (fe *frontendPretty) sameNearestAgent(a, b *dagui.Span) bool {
-	aa, bb := nearestAgent(a), nearestAgent(b)
-	if aa == nil || bb == nil {
-		return aa == bb
-	}
-	return aa.AgentID == bb.AgentID
 }
 
 // spanBelongsToFocusedAgent prevents a nested worker's surfaced message from
@@ -6920,9 +6871,19 @@ func (fe *frontendPretty) editPrompt() {
 		return
 	}
 	fe.clearQueuedMessage()
+	fe.runRewind(work, prompt, true)
+}
+
+// runRewind runs a rewind (inline edit, or a branch) off the UI thread — it
+// may interrupt an in-flight engine step — and, once it holds, enters insert
+// mode at the bottom with prompt loaded for rewording: always for an inline
+// edit (replace), only into an empty input for a branch, so a draft the user
+// was typing is never clobbered. An empty prompt (a branch from a reply)
+// loads nothing. Nothing is submitted: the user decides what runs next.
+func (fe *frontendPretty) runRewind(work func() error, prompt string, replace bool) {
 	go func() {
 		if err := work(); err != nil {
-			slog.Error("failed to rewind prompt for editing", "error", err)
+			slog.Error("failed to rewind the conversation", "error", err)
 			fe.dispatch(func() {
 				fe.setPromptError(err)
 				fe.promptFg = termenv.ANSIRed
@@ -6933,7 +6894,9 @@ func (fe *frontendPretty) editPrompt() {
 		}
 		fe.dispatch(func() {
 			fe.clearPromptError()
-			fe.textInput.SetValue(prompt)
+			if prompt != "" && (replace || fe.textInput.Value() == "") {
+				fe.textInput.SetValue(prompt)
+			}
 			fe.goEnd()
 			fe.enterInsertMode()
 			fe.syncPrompt()
@@ -6942,9 +6905,41 @@ func (fe *frontendPretty) editPrompt() {
 	}()
 }
 
+// branchTarget is where `b` takes the conversation: the encoded LLM state to
+// rewind to and, for a branch from a message, that message's text to load
+// back into the input.
+type branchTarget struct {
+	encodedID  string
+	prompt     string
+	fromPrompt bool
+}
+
+// branchTargetFor resolves the branch target for a transcript row (see
+// dagui.DB.LLMBranchDigest): just before a message (any user-role row, the
+// user's own or another agent's), or just after a reply and its tool results.
+func (fe *frontendPretty) branchTargetFor(span *dagui.Span) (branchTarget, error) {
+	digest, err := fe.db.LLMBranchDigest(span)
+	if err != nil {
+		return branchTarget{}, err
+	}
+	encoded, err := encodedIDForCallDigest(fe.db, digest)
+	if err != nil {
+		return branchTarget{}, err
+	}
+	target := branchTarget{encodedID: encoded}
+	if carrier := dagui.LLMCallCarrier(span); carrier != nil && carrier.LLMRole == telemetry.LLMRoleUser {
+		target.fromPrompt = true
+		target.prompt = dagui.LLMMessageText(fe.db.LLMMessageCall(carrier))
+	}
+	return target, nil
+}
+
 // branch prompts the user for a summarization choice, then branches the LLM
-// conversation from the focused span's LLM call. Available in nav mode when the
-// focused span (or an ancestor) carries an LLMCallDigest.
+// conversation from the focused row, the way Pi's /tree and Claude Code's
+// /rewind do: from a message, back to just before it with its text returned
+// to an empty input; from a reply, to just after it. No turn is started.
+// Available in nav mode when the focused span (or an ancestor) carries an
+// LLMCallDigest.
 func (fe *frontendPretty) branch() {
 	if !fe.FocusedSpan.IsValid() || fe.shell == nil {
 		return
@@ -6954,9 +6949,9 @@ func (fe *frontendPretty) branch() {
 		return
 	}
 
-	encodedID := fe.llmBranchID(focused)
-	if encodedID == "" {
-		slog.Warn("could not find LLM call for branching", "digest", focused.LLMCallDigest)
+	target, err := fe.branchTargetFor(focused)
+	if err != nil {
+		slog.Warn("could not resolve the LLM state to branch to", "digest", focused.LLMCallDigest, "err", err)
 		return
 	}
 
@@ -7001,38 +6996,38 @@ func (fe *frontendPretty) branch() {
 						if f.State == huh.StateAborted {
 							return
 						}
-						fe.doBranch(encodedID, BranchSummary{
+						fe.doBranch(target, BranchSummary{
 							Summarize:    true,
 							CustomPrompt: customPrompt,
 						})
 					},
 				)
 			case choiceSummarize:
-				fe.doBranch(encodedID, BranchSummary{Summarize: true})
+				fe.doBranch(target, BranchSummary{Summarize: true})
 			default:
-				fe.doBranch(encodedID, BranchSummary{})
+				fe.doBranch(target, BranchSummary{})
 			}
 		},
 	)
 	fe.Update()
 }
 
-// doBranch performs the actual branch operation asynchronously.
-func (fe *frontendPretty) doBranch(encodedID string, summary BranchSummary) {
-	work := fe.shell.BranchFromID(fe.shellCtx, encodedID, summary)
-	if work != nil {
-		fe.runShellAsync(func() {
-			work()
-			fe.dispatch(func() {
-				// After branching, follow the bottom and switch to insert mode
-				// so the user can immediately see new spans and type a prompt.
-				fe.goEnd()
-				fe.enterInsertMode()
-				fe.syncPrompt()
-				fe.Update()
-			})
-		})
+// doBranch performs the branch asynchronously. A plain branch from a message
+// IS the inline-edit rewind (EditFromID): back to just before the message,
+// its text returned to the input. Everything else — a summary to attach, or
+// a branch from a reply — goes through BranchFromID. Either way the input is
+// filled (if empty) only for a branch from a message, and no turn starts.
+func (fe *frontendPretty) doBranch(target branchTarget, summary BranchSummary) {
+	var work func() error
+	if target.fromPrompt && !summary.Summarize {
+		work = fe.shell.EditFromID(fe.shellCtx, target.encodedID)
+	} else {
+		work = fe.shell.BranchFromID(fe.shellCtx, target.encodedID, summary)
 	}
+	if work == nil {
+		return
+	}
+	fe.runRewind(work, target.prompt, false)
 }
 
 func (fe *frontendPretty) terminal() {
@@ -7119,26 +7114,6 @@ func spanLLMCallDigest(span *dagui.Span) string {
 		}
 	}
 	return ""
-}
-
-// llmBranchID returns the encoded DAG ID of the LLM state a branch from the
-// focused span keeps (see dagui.DB.LLMBranchDigest): a prompt's own state, or
-// the state that settles a reply -- never the request a reply answered, which
-// would silently drop the reply the user picked. Returns "" if the span (or
-// its ancestors) don't have a call digest or the state can't be
-// resolved/encoded.
-func (fe *frontendPretty) llmBranchID(span *dagui.Span) string {
-	digest, err := fe.db.LLMBranchDigest(span)
-	if err != nil {
-		slog.Warn("could not resolve the LLM state to branch to", "err", err)
-		return ""
-	}
-	id, err := encodedIDForCallDigest(fe.db, digest)
-	if err != nil {
-		slog.Debug("failed to load ID from LLM call span", "err", err)
-		return ""
-	}
-	return id
 }
 
 // encodedIDForCallDigest rebuilds the ID of the dagql call with the given
