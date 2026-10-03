@@ -172,6 +172,8 @@ func (srv *Server) registerNestedClientTransport(
 		return nil, fmt.Errorf("nested client %q transport was concurrently registered", metadata.ClientID)
 	}
 	client.transportLease = sess.newClientLifecycleLeaseLocked(client, engine.ClientLeaseTransport, metadata.ClientID)
+	sess.lastClientSeq++
+	record.seq = sess.lastClientSeq
 	sess.clientRecords[metadata.ClientID] = record
 	sess.clientRuntimes[metadata.ClientID] = client
 	sess.clientMu.Unlock()

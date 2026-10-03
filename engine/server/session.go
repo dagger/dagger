@@ -109,6 +109,7 @@ type daggerSession struct {
 
 	clientRecords  map[string]*clientRecord  // clientID -> stable identity and routing record
 	clientRuntimes map[string]*clientRuntime // clientID -> published non-quiescent execution runtime
+	lastClientSeq  uint64                    // the seq of the last published record
 	clientMu       sync.RWMutex
 
 	attachables *sessionAttachableManager
@@ -280,6 +281,10 @@ type clientRecord struct {
 	// If the client is nested, parentClientIDs is its immutable ancestry from
 	// the session root to its direct parent.
 	parentClientIDs []string
+
+	// seq orders records by creation within the session. It is set under
+	// daggerSession.clientMu when the record is published.
+	seq uint64
 
 	// accepting is protected by the session scopeMu and changes monotonically
 	// from true to false. The opaque transport handle is stable record identity;
@@ -776,10 +781,6 @@ func logClientTelemetryOp(lg *slog.Logger, what string, start time.Time, traceDu
 	default:
 		lg.ExtraDebug(what)
 	}
-}
-
-func (sess *daggerSession) getMainClientCaller(ctx context.Context) (engineutil.SessionCaller, error) {
-	return sess.getClientCaller(ctx, sess.mainClientCallerID)
 }
 
 func (sess *daggerSession) LoadOrStoreTelemetrySeenKey(key string) bool {
@@ -1426,7 +1427,7 @@ func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *dagg
 	engineUtilOpts.Dialer = dialer
 	engineUtilOpts.GetClientCaller = sess.getClientCaller
 	engineUtilOpts.GetHostServiceCaller = sess.resolveHostServiceCaller
-	engineUtilOpts.GetMainClientCaller = sess.getMainClientCaller
+	engineUtilOpts.GetProviderCaller = sess.getProviderCaller
 	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
 	engineUtilOpts.Interactive = sess.interactive
 	engineUtilOpts.InteractiveCommand = sess.interactiveCommand
@@ -2055,6 +2056,8 @@ func (srv *Server) getOrInitClient(
 			_ = client.closeTelemetryDB()
 			return nil, nil, fmt.Errorf("client %q was concurrently registered as a nested client", clientID)
 		}
+		sess.lastClientSeq++
+		record.seq = sess.lastClientSeq
 		sess.clientRecords[clientID] = record
 		sess.clientRuntimes[clientID] = client
 		sess.clientMu.Unlock()

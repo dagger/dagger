@@ -11,6 +11,7 @@ package core
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,14 +21,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/charmbracelet/huh"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/session/terminal"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
@@ -46,6 +50,87 @@ func connectEngineClient(ctx context.Context, t testing.TB, params client.Params
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 	return c
+}
+
+func (SessionAttachablesSuite) TestTerminalGoesToRequestingClient(ctx context.Context, t *testctx.T) {
+	var mu sync.Mutex
+	var opened []string
+	recordTerminal := func(name string) terminal.WithTerminalFunc {
+		return func(func(io.Reader, io.Writer, io.Writer) error) error {
+			mu.Lock()
+			opened = append(opened, name)
+			mu.Unlock()
+			return errors.New("test terminal declined")
+		}
+	}
+
+	creator := connectEngineClient(ctx, t, client.Params{WithTerminal: recordTerminal("creator")})
+	joiner := connectEngineClient(ctx, t, client.Params{
+		SessionID:    creator.SessionID,
+		WithTerminal: recordTerminal("joiner"),
+	})
+
+	_, err := joiner.Dagger().Container().
+		From(alpineImage).
+		WithEnvVariable("BUST", identity.NewID()).
+		Terminal().
+		Sync(ctx)
+	require.Error(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{"joiner"}, opened)
+}
+
+type recordingPromptHandler struct {
+	mu      sync.Mutex
+	prompts []string
+}
+
+func (h *recordingPromptHandler) HandlePrompt(_ context.Context, title, _ string, dest any) error {
+	h.mu.Lock()
+	h.prompts = append(h.prompts, title)
+	h.mu.Unlock()
+	// Answer no: a yes would be persisted for every later client on this host.
+	if b, ok := dest.(*bool); ok {
+		*b = false
+	}
+	return nil
+}
+
+func (h *recordingPromptHandler) HandleForm(context.Context, *huh.Form) error {
+	return errors.New("forms are not used by this test")
+}
+
+func (SessionAttachablesSuite) TestPromptGoesToClientWithPromptHandler(ctx context.Context, t *testctx.T) {
+	// The creator has no prompt handler; the joiner has one.
+	creator := connectEngineClient(ctx, t, client.Params{})
+	prompts := &recordingPromptHandler{}
+	connectEngineClient(ctx, t, client.Params{
+		SessionID:     creator.SessionID,
+		PromptHandler: prompts,
+	})
+
+	c := creator.Dagger()
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("greet me").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Hello!"},
+		}))
+
+	// A remote module that uses the LLM asks for permission with a prompt.
+	require.NoError(t, c.ModuleSource(directModuleRef).AsModule().Serve(ctx))
+	err := c.Do(ctx, &dagger.Request{
+		Query: `query($model: String!, $bust: String!) {
+			llmDirect(model: $model) { prompt(stringArg: "greet me", cacheBuster: $bust) }
+		}`,
+		Variables: map[string]any{"model": model, "bust": identity.NewID()},
+	}, &dagger.Response{})
+	require.ErrorContains(t, err, "was denied LLM access")
+
+	prompts.mu.Lock()
+	defer prompts.mu.Unlock()
+	require.Equal(t, []string{"Allow LLM access?"}, prompts.prompts)
 }
 
 const (
