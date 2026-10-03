@@ -95,7 +95,10 @@ func (sess *daggerSession) attachableProvider(requesterID, service string) (engi
 		if caller := sess.oldestRootProvider(service); caller != nil {
 			return caller, nil
 		}
-		return nil, fmt.Errorf("no attached client provides a %s; run `dagger sessions attach %s`", kind.name, sess.sessionID)
+		if sess.detached {
+			return nil, fmt.Errorf("no attached client provides a %s; run `dagger sessions attach %s`", kind.name, sess.sessionID)
+		}
+		return nil, fmt.Errorf("no attached client provides a %s", kind.name)
 	case ruleSessionCredentials:
 		if caller := sess.oldestRootProvider(service); caller != nil {
 			return caller, nil
