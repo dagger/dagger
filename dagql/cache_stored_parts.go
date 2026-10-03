@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,9 @@ import (
 	"maps"
 	"slices"
 	"time"
+
+	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/opencontainers/go-digest"
 )
 
 // A blob-backed cache, the Cloud's, keeps its entries' parts as layer chains
@@ -147,4 +151,42 @@ func restoreStoredPartsLocked(res *sharedResult, env *PersistedResultEnvelope, c
 	}
 	res.storedRecordBytes = int64(len(callFrameJSON) + len(stripped))
 	return nil
+}
+
+// StoredPart names one stored part: the number of its entry, and its address.
+type StoredPart struct {
+	Number  uint64
+	Address PersistedPartAddress
+}
+
+// DropStoredParts removes every stored part whose layer chain names the blob,
+// on every entry, and returns them, sorted. The service calls it when the
+// blob store no longer has the blob, so that no later bundle or offer
+// carries those parts. It changes nothing else: the values, and the entries
+// their parts named, stay.
+func (c *Cache) DropStoredParts(blob digest.Digest) ([]StoredPart, error) {
+	if !c.blobBacked {
+		return nil, errors.New("drop stored parts: the cache has no blob store")
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	var dropped []StoredPart
+	for id, res := range c.resultsByID {
+		for key, part := range res.storedParts {
+			if !slices.ContainsFunc(part.Chain.Layers, func(layer snapshots.ExportLayer) bool {
+				return layer.Descriptor.Digest == blob
+			}) {
+				continue
+			}
+			delete(res.storedParts, key)
+			dropped = append(dropped, StoredPart{Number: uint64(id), Address: part.Address})
+		}
+		if len(res.storedParts) == 0 {
+			res.storedParts = nil
+		}
+	}
+	slices.SortFunc(dropped, func(a, b StoredPart) int {
+		return cmp.Or(cmp.Compare(a.Number, b.Number), comparePartAddresses(a.Address, b.Address))
+	})
+	return dropped, nil
 }
