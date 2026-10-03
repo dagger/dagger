@@ -246,6 +246,9 @@ type daggerSession struct {
 	interactive        bool
 	interactiveCommand []string
 
+	// detached sessions do not end when their main client leaves.
+	detached bool
+
 	allowedLLMModules []string
 
 	gitPushApprovals gitPushApprovals
@@ -1101,6 +1104,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
 	sess.allowedLLMModules = clientMetadata.AllowedLLMModules
+	sess.detached = clientMetadata.DetachedSession
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
@@ -2226,7 +2230,8 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 		"clientID", client.clientID,
 	).Info("all client connections closed")
 
-	if client.clientID != sess.mainClientCallerID {
+	// A detached session ends only when it is stopped.
+	if client.clientID != sess.mainClientCallerID || sess.detached {
 		return
 	}
 
@@ -3003,6 +3008,8 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 
 	sess := client.daggerSession
 	isMainClient := client.clientID == sess.mainClientCallerID
+	// In a detached session the main client leaves like any other client.
+	endsSession := isMainClient && !sess.detached
 	slog := slog.With(
 		"isMainClient", isMainClient,
 		"sessionID", sess.sessionID,
@@ -3042,7 +3049,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		return err
 	}
 
-	if isMainClient {
+	if endsSession {
 		slog.Info("main client is shutting down")
 		// Every wait on Cloud from here until the request returns shares one
 		// deadline, well within the client's own shutdown limit.
@@ -3117,7 +3124,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
 	}
 
-	if isMainClient {
+	if endsSession {
 		// All metric readers are stopped and the session providers have completed
 		// their final flush. If the token cannot safely outlive the client, drain
 		// the three Cloud signals while its attachables can still refresh OAuth.
