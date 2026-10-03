@@ -176,6 +176,10 @@ type valueMergePrep struct {
 	// references, itself included.
 	records map[uint64]PersistedRecord
 	refs    map[uint64][]uint64
+	// recordBytes are, on a blob-backed cache, each record's size as
+	// persistence writes it, by ordinal (encodedRecordBytes): relocation
+	// changes only reference numbers.
+	recordBytes map[uint64]int64
 	// completeParts are the part keys each record proves complete, by
 	// ordinal. A part key is an address and its completeness, which the
 	// record's payload decides; relocation rewrites only reference numbers,
@@ -205,7 +209,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 	if err != nil {
 		return nil, err
 	}
-	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, completeParts: map[uint64][]string{}}
+	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: map[uint64]int64{}, completeParts: map[uint64][]string{}}
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
@@ -262,6 +266,9 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 		}
 		prep.completeParts[id] = recordCompletePartKeys(rec)
 		prep.records[id] = rec
+		if c.blobBacked {
+			prep.recordBytes[id] = encodedRecordBytes(rec)
+		}
 		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
 		res.storeResultCall(rec.Call)
 		if !c.blobBacked {
@@ -434,6 +441,8 @@ type mergeRow struct {
 	// action that installs it.
 	rec  PersistedRecord
 	deps []sharedResultID
+	// recordBytes is rec's size, on a blob-backed cache.
+	recordBytes int64
 	// offers are the record's incoming offers, and admitted those this row's
 	// selection admitted, in commit order: a later row can still supersede
 	// one for the same part. The final set per entry and part key is
@@ -669,6 +678,7 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		// every row's, are checked at the final numbers with the graph
 		// (checkMergeGraphLocked).
 		row.rec = rec
+		row.recordBytes = prep.recordBytes[row.ordinal]
 		if !c.blobBacked {
 			row.offers = rec.Envelope.PendingOffers
 		}
@@ -1002,6 +1012,7 @@ type mergeReplacement struct {
 func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow) {
 	rec := row.rec
 	res.imported = true
+	res.storedRecordBytes = row.recordBytes
 	res.expiresAtUnix = row.value.ExpiresAtUnix
 	res.sessionResourceHandle = rec.Envelope.SessionResourceHandle
 	res.description = row.plan.row.description
@@ -1219,6 +1230,7 @@ func completePartKeysLocked(res *sharedResult) []string {
 // egraphMu for writing.
 func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, queue collectionQueue) collectionQueue {
 	if c.blobBacked {
+		res.storedRecordBytes = 0
 		res.payloadMu.Lock()
 		res.persistedEnvelope = nil
 		res.hasValue = false
