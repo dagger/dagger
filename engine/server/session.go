@@ -992,8 +992,12 @@ func (srv *Server) initializeDaggerSession(
 		Hosts: srv.registryHosts,
 		Auth: serverresolver.NewSessionAuthSource(
 			sess.authProvider,
-			func(ctx context.Context) (*grpc.ClientConn, error) {
-				return srv.sessionMainClientConn(ctx, sess)
+			func(context.Context) (*grpc.ClientConn, error) {
+				caller, err := sess.attachableProvider("", registryAuthService)
+				if err != nil || caller == nil {
+					return nil, err
+				}
+				return caller.Conn(), nil
 			},
 		),
 		ContentStore: srv.contentStore,
@@ -3581,28 +3585,6 @@ func (srv *Server) SessionScopedContext(ctx context.Context) (context.Context, e
 		return nil, err
 	}
 	return record.daggerSession.withClosingCancel(context.WithoutCancel(ctx)), nil
-}
-
-func (srv *Server) sessionMainClientConn(ctx context.Context, sess *daggerSession) (*grpc.ClientConn, error) {
-	if sess == nil {
-		return nil, errors.New("session is nil")
-	}
-	record, err := srv.clientRecordFromIDs(sess.sessionID, sess.mainClientCallerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get main client %q: %w", sess.mainClientCallerID, err)
-	}
-	caller, err := srv.clientAttachableCaller(ctx, sess.sessionID, record.clientID, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get main client caller %q: %w", sess.mainClientCallerID, err)
-	}
-	if caller == nil {
-		return nil, fmt.Errorf("main client caller %q was nil", sess.mainClientCallerID)
-	}
-	conn := caller.Conn()
-	if conn == nil {
-		return nil, fmt.Errorf("main client conn %q was nil", sess.mainClientCallerID)
-	}
-	return conn, nil
 }
 
 // The nearest ancestor client that is not a module (either a caller from the host like the CLI

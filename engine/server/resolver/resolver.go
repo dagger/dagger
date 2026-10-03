@@ -795,17 +795,20 @@ type resolveImageConfigResult struct {
 }
 
 type sessionAuthSource struct {
-	authProvider      *auth.RegistryAuthProvider
-	getMainClientConn func(context.Context) (*grpc.ClientConn, error)
+	authProvider    *auth.RegistryAuthProvider
+	getProviderConn func(context.Context) (*grpc.ClientConn, error)
 }
 
+// NewSessionAuthSource looks up credentials in the session's registry auth
+// store, then through getProviderConn, which returns a nil connection when no
+// client provides registry credentials.
 func NewSessionAuthSource(
 	authProvider *auth.RegistryAuthProvider,
-	getMainClientConn func(context.Context) (*grpc.ClientConn, error),
+	getProviderConn func(context.Context) (*grpc.ClientConn, error),
 ) AuthSource {
 	return &sessionAuthSource{
-		authProvider:      authProvider,
-		getMainClientConn: getMainClientConn,
+		authProvider:    authProvider,
+		getProviderConn: getProviderConn,
 	}
 }
 
@@ -825,12 +828,15 @@ func (s *sessionAuthSource) Credentials(ctx context.Context, host string) (Crede
 		return Credentials{}, err
 	}
 
-	if s.getMainClientConn == nil {
+	if s.getProviderConn == nil {
 		return Credentials{}, ErrCredentialsNotFound
 	}
-	conn, err := s.getMainClientConn(ctx)
+	conn, err := s.getProviderConn(ctx)
 	if err != nil {
-		return Credentials{}, fmt.Errorf("get main client conn: %w", err)
+		return Credentials{}, fmt.Errorf("get registry auth provider conn: %w", err)
+	}
+	if conn == nil {
+		return Credentials{}, ErrCredentialsNotFound
 	}
 	resp, err = bkauth.NewAuthClient(conn).Credentials(ctx, &bkauth.CredentialsRequest{Host: host})
 	if err != nil {
