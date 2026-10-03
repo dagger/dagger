@@ -244,6 +244,7 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 			return
 		}
 
+		enginetel.NormalizeTraceRequest(&req) // child processes post arbitrary OTLP
 		spans := telemetry.SpansFromPB(req.ResourceSpans)
 		forwarder := telemetry.SpanForwarder{Processors: telemetry.SpanProcessors}
 		if exportErr := forwarder.ExportSpans(r.Context(), spans); exportErr != nil {
@@ -265,6 +266,7 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 			http.Error(w, unmarshalErr.Error(), http.StatusBadRequest)
 			return
 		}
+		enginetel.NormalizeLogsRequest(&req)
 		forwarder := telemetry.LogForwarder{Processors: telemetry.LogProcessors}
 		if exportErr := telemetry.ReexportLogsFromPB(r.Context(), forwarder, &req); exportErr != nil {
 			http.Error(w, exportErr.Error(), http.StatusInternalServerError)
@@ -285,6 +287,7 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 			http.Error(w, unmarshalErr.Error(), http.StatusBadRequest)
 			return
 		}
+		enginetel.NormalizeMetricsRequest(&req)
 		if exportErr := enginetel.ReexportMetricsFromPB(r.Context(), telemetry.MetricExporters, &req); exportErr != nil {
 			http.Error(w, exportErr.Error(), http.StatusInternalServerError)
 			return

@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -284,7 +285,7 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 	var eg errgroup.Group
 	for target, targetSpans := range byTarget {
 		eg.Go(func() error {
-			err := exp.ps.Spans(target).ExportSpans(ctx, targetSpans)
+			err := exportSpansRecovered(ctx, exp.ps.Spans(target), targetSpans)
 			for _, digest := range payloadsByTarget[target] {
 				exp.sess.settleCallPayload(digest, []string{target}, err == nil)
 			}
@@ -296,6 +297,23 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 	}
 	return eg.Wait()
 }
+
+// exportSpansRecovered turns a panic in exp into an error. Spans posted over
+// OTLP are decoded lazily (otel.SpansFromPB), so a malformed field only blows
+// up when the store write reads it -- here, on a fan-out goroutine outside the
+// HTTP handler's recovery, where a panic would take the whole engine down.
+// The payload is normalized first (enginetel.NormalizeTraceRequest); this is
+// the backstop for whatever that does not anticipate, failing just the batch.
+func exportSpansRecovered(ctx context.Context, exp sdktrace.SpanExporter, spans []sdktrace.ReadOnlySpan) (rerr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic exporting spans", "panic", r, "spans", len(spans), "stack", string(debug.Stack()))
+			rerr = fmt.Errorf("panic exporting %d spans: %v", len(spans), r)
+		}
+	}()
+	return exp.ExportSpans(ctx, spans)
+}
+
 func (sessionSpanExporter) ForceFlush(context.Context) error { return nil }
 func (sessionSpanExporter) Shutdown(context.Context) error   { return nil }
 
@@ -596,6 +614,9 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Foreign OTLP: fill in the optional fields otel-go's conversion would
+	// dereference (see engine/telemetry/otlpnormalize.go).
+	enginetel.NormalizeTraceRequest(&req)
 	spans := telemetry.SpansFromPB(req.ResourceSpans)
 	slog.Debug("exporting spans", "spans", len(spans), "origin", clientID)
 
@@ -639,6 +660,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 
 	slog.Debug("exporting logs", "origin", clientID)
 
+	enginetel.NormalizeLogsRequest(&req) // foreign OTLP, as for traces
 	start := time.Now()
 	exporter := record.daggerSession.postedLogExporter(clientID)
 	if err := telemetry.ReexportLogsFromPB(r.Context(), exporter, &req); err != nil {
@@ -679,6 +701,7 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 
 	slog.Debug("exporting metrics", "origin", clientID)
 
+	enginetel.NormalizeMetricsRequest(&req) // foreign OTLP, as for traces
 	start := time.Now()
 	exporters := record.daggerSession.postedMetricExporters(clientMetricExporter{record: record, ps: ps})
 	if err := enginetel.ReexportMetricsFromPB(r.Context(), exporters, &req); err != nil {
