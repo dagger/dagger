@@ -198,3 +198,34 @@ func TestClientCloseBoundsTelemetryDrain(t *testing.T) {
 		t.Fatal("telemetry drain did not honor shutdown timeout")
 	}
 }
+
+// A session telemetry stream ends only when the session does, so a client
+// that leaves a live session must not wait for it.
+func TestCloseDoesNotWaitForSessionTelemetry(t *testing.T) {
+	internalCtx, cancelInternal := context.WithCancelCause(context.Background())
+	defer cancelInternal(context.Canceled)
+	closeCtx, closeRequests := context.WithCancelCause(context.Background())
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	hc := &httpClient{inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == engine.ShutdownEndpoint {
+			return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
+		}
+		if req.Header.Get(engine.SessionTelemetryHeader) != "true" {
+			return nil, errors.New("expected a session subscription")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {enginetel.LiveContentType}}, Body: reader, Request: req}, nil
+	})}}
+	c := &Client{Params: Params{SessionTelemetry: true}, internalCtx: internalCtx, internalCancel: cancelInternal, closeCtx: closeCtx,
+		closeRequests: closeRequests, httpClient: hc, telemetry: new(errgroup.Group), eg: new(errgroup.Group)}
+	consumer := &otlpConsumer{httpClient: hc, path: "/v1/traces", session: true, eg: c.telemetry}
+	ctx, cancelTelemetry := c.telemetryContext(t.Context())
+	defer cancelTelemetry(context.Canceled)
+	require.NoError(t, consumer.Consume(ctx, func([]byte, liveTelemetryEncoding) error { return nil }))
+	go func() { _ = enginetel.WriteLiveHello(writer, 0) }()
+
+	start := time.Now()
+	require.NoError(t, c.Close())
+	require.Less(t, time.Since(start), time.Second, "leaving a live session should not wait for the session to end")
+}
