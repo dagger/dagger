@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -972,7 +973,7 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 		if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), recv, &val, sel); err != nil {
 			return nil, err
 		}
-		return m.routeObjectMethodResult(ctx, srv, typeName, val)
+		return m.routeObjectMethodResult(ctx, srv, typeName, recv, val)
 	}
 }
 
@@ -1337,7 +1338,7 @@ func resolveObjectAddress(ctx context.Context, srv *dagql.Server, addr, addressF
 //   - any other object: sync it, return its print (else a type description).
 //   - Void/null: return its print, else "(done)".
 //   - scalar/list/record: return the value.
-func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, typeName string, val dagql.AnyResult) (any, error) {
+func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, typeName string, recv dagql.AnyObjectResult, val dagql.AnyResult) (any, error) {
 	// A Changeset overlays onto the workspace (a Workspace replaces it, an LLM
 	// replaces the whole conversation), returning a summary. step() persists the
 	// resulting workspace via a withWorkspace selector, or resumes from the
@@ -1369,9 +1370,13 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 		if obj.Type().Name() == typeName {
 			// Same-type return: the result is the agent's new state. Rebind it
 			// (step() persists this as a withTools selector); the method's own print
-			// output is the response.
-			if err := m.rebindBoundTool(typeName, obj); err != nil {
-				return nil, err
+			// output is the response. The state is recorded field-wise on the
+			// receiver, not as the call that produced it (see fieldwiseState).
+			state, changed := m.fieldwiseState(ctx, srv, recv, obj)
+			if changed {
+				if err := m.rebindBoundTool(typeName, state); err != nil {
+					return nil, err
+				}
 			}
 			return m.logsOrDone(ctx), nil
 		}
@@ -1392,6 +1397,56 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 
 	// Scalar, list, enum, or record: return the value directly.
 	return m.outputToLLM(ctx, srv, val)
+}
+
+// Span attributes on a tool call that returned its bound object's own type:
+// the call that produced the new state, and the state recorded in its place.
+// The recorded state no longer mentions the producing call, so this is where
+// its provenance survives.
+const (
+	toolStateProducerAttr = "dagger.io/tool.state.producer"
+	toolStateRecordedAttr = "dagger.io/tool.state.recorded"
+)
+
+// fieldwiseState returns the state to rebind after a same-type tool return,
+// and whether there is anything to rebind at all.
+//
+// The returned object's identity is the call that produced it — typically a
+// @cache(Never) method like start or restart — so recording it as the binding
+// would replay that call wherever the state is loaded again. Instead, the
+// fields that changed are re-applied to the receiver with the pure
+// __withField setter, so the recorded state is
+// recv!__withField(...)!__withField(...). A return whose fields all match the
+// receiver records nothing. Anything that can't be expressed that way (a
+// non-module object, a dropped field, an unencodable value, ...) falls back to
+// rebinding the returned object as is.
+func (m *MCP) fieldwiseState(ctx context.Context, srv *dagql.Server, recv, returned dagql.AnyObjectResult) (dagql.AnyObjectResult, bool) {
+	if recv == nil {
+		return returned, true
+	}
+	_, recvIsModObj := dagql.UnwrapAs[*ModuleObject](recv)
+	_, retIsModObj := dagql.UnwrapAs[*ModuleObject](returned)
+	if !recvIsModObj || !retIsModObj {
+		return returned, true
+	}
+	span := trace.SpanFromContext(ctx)
+	if producer, err := returned.RecipeID(ctx); err == nil && producer != nil {
+		span.SetAttributes(attribute.String(toolStateProducerAttr, producer.Digest().String()))
+	}
+	state, err := WithModuleObjectFields(ctx, srv, recv, returned)
+	if err != nil {
+		slog.Warn("could not record tool state field-wise; recording the producing call instead",
+			"type", returned.Type().Name(),
+			"error", err)
+		return returned, true
+	}
+	if state == nil {
+		return nil, false
+	}
+	if recorded, err := state.RecipeID(ctx); err == nil && recorded != nil {
+		span.SetAttributes(attribute.String(toolStateRecordedAttr, recorded.Digest().String()))
+	}
+	return state, true
 }
 
 // syncObject forces an object result (running its side effects) when it has a
