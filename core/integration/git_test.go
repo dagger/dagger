@@ -2558,7 +2558,7 @@ func gitUserConfig(ctr *dagger.Container) *dagger.Container {
 
 // High-level test strategy:
 // 1. Use Dagger to create isolated container environments for testing
-// 2. Mount gitcredential implementation + generated proto inside container as the session package
+// 2. Build a harness that calls the gitcredential implementation, within the repo's module
 // 3. Run tests and collect output through container stdout
 func (GitSuite) TestGitCredentialProto(ctx context.Context, t *testctx.T) {
 	tests := []struct {
@@ -2765,61 +2765,58 @@ exit 1
 	// setup dagger
 	client := connect(ctx, t)
 
-	wd, err := os.Getwd()
+	// Build the harness inside the repo's own module, so its dependencies
+	// come from the root go.mod and go.sum at the versions the engine is built
+	// with, rather than being resolved at @latest.
+	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
+	code := client.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{
+			"go.mod",
+			"go.sum",
+			// targets of the root go.mod's local replace directives
+			"sdk/go/",
+			"engine/distconsts/",
+			// engine/session/git and the repo packages it imports
+			"engine/session/git/",
+			"engine/session/prompt/",
+			"internal/buildkit/util/sshutil/",
+			"util/gitutil/",
+			"util/grpcutil/",
+			"util/hashutil/",
+			"util/netrc/",
+		},
+	})
 
 	// Create base container with all dependencies
 	baseContainer := client.Container().
-		From("golang:1.25").
-		WithExec([]string{"apt-get", "update"}).
-		WithExec([]string{"apt-get", "install", "-y", "git"}).
-		WithExec([]string{"mkdir", "-p", "/app/git"}).
-		WithWorkdir("/app").
-		// create go.mod so that below main() can test our proto handling
-		WithNewFile("/app/go.mod", `
-module testapp
-
-go 1.24
-
-require (
-    github.com/gogo/protobuf v1.3.2
-    google.golang.org/grpc v1.59.0
-)
-
-replace github.com/dagger/dagger => .
-`).
-		// Mount git implementation as the session pkg
-		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
-		WithMountedDirectory("./engine/session/prompt/", client.Host().Directory(filepath.Join(wd, "../../engine/session/prompt"))).
-		WithMountedDirectory("./internal/buildkit/util/sshutil/", client.Host().Directory(filepath.Join(wd, "../../internal/buildkit/util/sshutil"))).
-		WithMountedDirectory("./util/gitutil/", client.Host().Directory(filepath.Join(wd, "../../util/gitutil"))).
-		WithMountedDirectory("./util/hashutil/", client.Host().Directory(filepath.Join(wd, "../../util/hashutil"))).
-		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
-		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "../../util/grpcutil"))).
-
+		From(golangImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(goCache(client)).
+		WithDirectory("/src", code).
 		// Create test harness that:
 		// 1. Reads request from JSON file
 		// 2. Calls our implementation
 		// 3. Outputs response as JSON
-		WithNewFile("/app/test.go", `
+		WithNewFile("/src/gitcredtest/main.go", `
 package main
 
 import (
     "context"
     "encoding/json"
     "fmt"
-    "io/ioutil"
+    "os"
 
-    "testapp/git"
+    "github.com/dagger/dagger/engine/session/git"
 )
 
 func main() {
-    data, err := ioutil.ReadFile("/request.json")
+    data, err := os.ReadFile("/request.json")
     if err != nil {
         panic(err)
     }
 
-        var request git.GitCredentialRequest
+    var request git.GitCredentialRequest
     if err := json.Unmarshal(data, &request); err != nil {
         panic(err)
     }
@@ -2837,9 +2834,8 @@ func main() {
     fmt.Println(string(responseJSON))
 }
 `).
-		WithNewFile("/request.json", "{}").
-		WithWorkdir("/app").
-		WithExec([]string{"go", "mod", "tidy"})
+		WithWorkdir("/src").
+		WithExec([]string{"go", "build", "-o", "/usr/local/bin/gitcredtest", "./gitcredtest"})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
@@ -2857,7 +2853,7 @@ func main() {
 
 			container = container.
 				WithNewFile("/request.json", string(requestJSON)).
-				WithExec([]string{"go", "run", "test.go"})
+				WithExec([]string{"gitcredtest"})
 
 			// assert response
 			output, err := container.Stdout(ctx)
