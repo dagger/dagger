@@ -119,6 +119,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	)
 	// The stored parts, like the offers, belonged to the old value.
 	cur.storedParts = nil
+	cur.storedRecordBytes = fresh.storedRecordBytes
 	for _, offer := range cur.partOffersLocked() {
 		more, err := c.retirePartOfferLocked(ctx, cur, offer.record.Address)
 		queue = append(queue, more...)

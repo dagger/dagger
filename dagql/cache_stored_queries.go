@@ -2,8 +2,11 @@ package dagql
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"time"
+
+	"github.com/opencontainers/go-digest"
 )
 
 // EquivalentEntries returns the numbers of the entries in the class that dig
@@ -120,4 +123,108 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress) (Part
 		}
 	}
 	return PartAvailability{}, nil
+}
+
+// StoredState is what a blob-backed cache stores: its stored roots, and each
+// entry's stored parts, by entry number. The service rebuilds its own maps of
+// them from it, after a restore or a prune.
+type StoredState struct {
+	Roots []uint64
+	Parts map[uint64][]PersistedPartAddress
+}
+
+// StoredState returns what the cache stores, read under one hold. Only a
+// blob-backed cache answers.
+func (c *Cache) StoredState() (StoredState, error) {
+	if !c.blobBacked {
+		return StoredState{}, fmt.Errorf("stored state: the cache has no blob store")
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	state := StoredState{Parts: map[uint64][]PersistedPartAddress{}}
+	for id := range c.persistedEdgesByResult {
+		if res := c.resultsByID[id]; res != nil && res.hasOwnValueLocked() {
+			state.Roots = append(state.Roots, uint64(id))
+		}
+	}
+	slices.Sort(state.Roots)
+	for id, res := range c.resultsByID {
+		for _, part := range res.storedPartsLocked() {
+			state.Parts[uint64(id)] = append(state.Parts[uint64(id)], part.Address)
+		}
+	}
+	return state, nil
+}
+
+// LiveBlobs returns every layer blob a stored part names, in the pool or
+// not, sorted: the blobs a sweep of the blob store keeps. Only a blob-backed
+// cache answers.
+func (c *Cache) LiveBlobs() ([]digest.Digest, error) {
+	if !c.blobBacked {
+		return nil, fmt.Errorf("live blobs: the cache has no blob store")
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	live := map[digest.Digest]struct{}{}
+	for _, res := range c.resultsByID {
+		for blob := range res.storedBlobsLocked() {
+			live[blob] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(live)), nil
+}
+
+// CloudUsage is what a blob-backed cache holds, as its limits count it.
+type CloudUsage struct {
+	// PoolValues and PoolBytes are the pool as the memory stage measures
+	// it: the values in the closure of the stored roots, each counted as its
+	// record's bytes plus an entry's estimate.
+	PoolValues int
+	PoolBytes  int64
+	// PoolBlobs and PoolBlobBytes are the distinct layer blobs the pool's
+	// stored parts name, as the disk stage measures them.
+	PoolBlobs     int
+	PoolBlobBytes int64
+	// Entries, Terms, ClassSlots and Holdings are the counts the service's
+	// memory estimate weighs, and RecordBytes the bytes of every stored
+	// record, in the pool or not.
+	Entries     int
+	Terms       int
+	ClassSlots  int
+	Holdings    int
+	RecordBytes int64
+}
+
+// CloudUsage measures the cache, read under one hold. Only a blob-backed
+// cache answers.
+func (c *Cache) CloudUsage() (CloudUsage, error) {
+	if !c.blobBacked {
+		return CloudUsage{}, fmt.Errorf("cloud usage: the cache has no blob store")
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	usage := CloudUsage{
+		Entries:    len(c.resultsByID),
+		Terms:      len(c.egraphTerms),
+		ClassSlots: c.eqClassSlotsLocked(),
+		Holdings:   len(c.holderEntries),
+	}
+	// Only the pool's values name the blobs it counts, so this walks the
+	// pool, not every entry as a prune's membership count must.
+	poolBlobs := map[digest.Digest]struct{}{}
+	for _, res := range c.storedPoolLocked() {
+		usage.PoolValues++
+		usage.PoolBytes += res.storedValueBytes()
+		for blob, size := range res.storedBlobsLocked() {
+			if _, counted := poolBlobs[blob]; !counted {
+				poolBlobs[blob] = struct{}{}
+				usage.PoolBlobBytes += size
+			}
+		}
+	}
+	usage.PoolBlobs = len(poolBlobs)
+	for _, res := range c.resultsByID {
+		usage.RecordBytes += res.storedRecordBytes
+	}
+	return usage, nil
 }
