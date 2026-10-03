@@ -257,6 +257,12 @@ type EngineLab {
   # the session, so a repeated call would reuse the first call's output
   # instead of re-running. The nonce env var busts the exec cache underneath
   # for the same reason (same trick as tui-qa).
+  #
+  # Every tool that binds the engine calls `engine.start` first. The recorded
+  # state only references the service; in a new session (e.g. a resumed agent
+  # session) nothing has started it, and the exec's binding alone would start
+  # a cold engine for that one exec and stop it afterwards. Service.start is
+  # a no-op when the service is already running in this session.
   """
   Run a `dagger` command against the live from-source engine - the equivalent
   of `./hack/with-dev ./bin/dagger ...`.
@@ -269,6 +275,7 @@ type EngineLab {
       print("No engine session. Call the engine-lab start tool first.")
       return null
     }
+    engine.start
     # Unset the session this exec gets to the engine running it, so the CLI
     # uses the lab engine (see engine-dev's withoutOuterSession).
     withSource(source)
@@ -290,6 +297,7 @@ type EngineLab {
       print("No engine session. Call the engine-lab start tool first.")
       return null
     }
+    engine.start
     withSource(source)
       .withExec(
         ["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "api", "query", "--no-load-module"],
@@ -312,6 +320,7 @@ type EngineLab {
     if (engine == null) {
       return "No engine session. Call the engine-lab start tool first."
     }
+    engine.start
     client
       .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
       .withExec([
@@ -338,6 +347,7 @@ type EngineLab {
     if (engine == null) {
       return "No engine session. Call the engine-lab start tool first."
     }
+    engine.start
     # The URL and filter travel as env vars so no shell-quoting of user input
     # is needed inside the sh -c script.
     client
@@ -471,6 +481,7 @@ type EngineLab {
     if (engine == null) {
       return "No engine session. Call the engine-lab start tool first."
     }
+    engine.start
     let v = if (on) { "on" } else { "off" }
     client
       .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
@@ -511,6 +522,7 @@ type EngineLab {
       print("No engine session. Call the engine-lab start tool first.")
       return self
     }
+    engine.start
     let flushArg = if (flush) { "1" } else { "0" }
     # The endpoint answers 503 with a hint when recording was never enabled;
     # surface that body instead of a bare curl failure.
