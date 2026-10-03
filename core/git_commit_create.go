@@ -1097,6 +1097,9 @@ func gitCommitDirectory(ctx context.Context, parent dagql.ObjectResult[*GitRef],
 	}}); err != nil {
 		return nil, fmt.Errorf("apply commit changes: %w", err)
 	}
+	if err := merged.Self().Evaluate(ctx); err != nil {
+		return nil, fmt.Errorf("apply commit changes: %w", err)
+	}
 	treeID, err := tree.ID()
 	if err != nil {
 		return nil, err
