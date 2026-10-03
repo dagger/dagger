@@ -207,6 +207,10 @@ type ClientMetadata struct {
 	// or when the engine stops. Only the creating client's value is used.
 	DetachedSession bool `json:"detached_session,omitempty"`
 
+	// JoinExistingSession makes the engine refuse this client, instead of
+	// creating a session, when no session with SessionID exists.
+	JoinExistingSession bool `json:"join_existing_session,omitempty"`
+
 	// Background, PID and Command describe the client process for listings:
 	// whether it runs in the background without a terminal, its process ID,
 	// and a short form of its command line.

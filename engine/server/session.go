@@ -1267,10 +1267,14 @@ func (srv *Server) retireSession(sess *daggerSession) {
 
 // getOrCreateSessionLocked returns the registry session for sessionID. A newly
 // created session is published with lifecycleMu held so its caller is the sole
-// initializer. The caller must hold daggerSessionsMu.
-func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*daggerSession, bool, error) {
+// initializer. With joinExisting, an unknown session ID is an error instead.
+// The caller must hold daggerSessionsMu.
+func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string, joinExisting bool) (*daggerSession, bool, error) {
 	if sess := srv.daggerSessions[sessionID]; sess != nil {
 		return sess, false, nil
+	}
+	if joinExisting {
+		return nil, false, fmt.Errorf("session %q not found", sessionID)
 	}
 	if _, released := srv.releasedSessionIDs[sessionID]; released {
 		return nil, false, fmt.Errorf("session %q was already used and released; session IDs cannot be reused within one engine lifetime", sessionID)
@@ -1834,7 +1838,7 @@ func (srv *Server) getOrInitClient(
 	// A newly constructed session is still unreachable when lifecycleMu is
 	// acquired, so this is the one unpublished-object exception to the rule that
 	// lifecycleMu and daggerSessionsMu are not nested.
-	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID)
+	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID, opts.ClientMetadata.JoinExistingSession)
 	if err != nil {
 		srv.daggerSessionsMu.Unlock()
 		return nil, nil, err

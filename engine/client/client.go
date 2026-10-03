@@ -181,6 +181,10 @@ type Params struct {
 	// engine.ClientMetadata.DetachedSession.
 	DetachedSession bool
 
+	// JoinExistingSession makes Connect fail, instead of creating a session,
+	// when no session with SessionID exists.
+	JoinExistingSession bool
+
 	// Background and Command describe this client process in session
 	// listings; see engine.ClientMetadata.
 	Background bool
@@ -1789,6 +1793,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudScaleOutEngineID:          remoteEngineID,
 		Profile:                        c.Profile,
 		DetachedSession:                c.DetachedSession,
+		JoinExistingSession:            c.JoinExistingSession,
 		Background:                     c.Background,
 		PID:                            os.Getpid(),
 		Command:                        c.Command,
