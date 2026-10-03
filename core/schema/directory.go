@@ -290,6 +290,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("__withGitUncommitted", s.withGitUncommitted).
+			NotReplayable("Reads uncommitted changes from the originating client").
+			WithInput(dagql.PerClientInput).
 			Doc(`(Internal-only) Apply the calling client checkout's uncommitted changes (including untracked files) to this directory, which must be a checkout of the same HEAD.`),
 		dagql.NodeFunc("asWorkspace", s.asWorkspace).
 			View(AfterVersion("v1.0.0-0")).
