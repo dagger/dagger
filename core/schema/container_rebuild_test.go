@@ -96,6 +96,7 @@ func TestContainerMutationsSaveRecipeOverEvaluatedParent(t *testing.T) {
 		{Field: "withoutDockerHealthcheck"},
 		{Field: "__withImageConfigMetadata", Args: []dagql.NamedInput{rebuildTestArg("stopSignal", str("SIGTERM"))}},
 		{Field: "withDefaultTerminalCmd", Args: []dagql.NamedInput{rebuildTestArg("args", dagql.ArrayInput[dagql.String](dagql.NewStringArray("sh")))}},
+		{Field: "withShell", Args: []dagql.NamedInput{rebuildTestArg("interactive", dagql.ArrayInput[dagql.String](dagql.NewStringArray("sh")))}},
 		{Field: "withDirectory", Args: []dagql.NamedInput{rebuildTestArg("path", str("/d")), rebuildTestArg("source", dirID)}},
 		{Field: "withFile", Args: []dagql.NamedInput{rebuildTestArg("path", str("/f")), rebuildTestArg("source", fileID)}},
 		{Field: "withNewFile", Args: []dagql.NamedInput{rebuildTestArg("path", str("/n")), rebuildTestArg("contents", str("c"))}},
@@ -146,19 +147,23 @@ func TestContainerMutationsSaveRecipeOverEvaluatedParent(t *testing.T) {
 	}
 }
 
-// A file write and a metadata edit over evaluated parents are rebuilt on
+// A file write and metadata edits over evaluated parents are rebuilt on
 // another engine when the written bytes are not available there.
 func TestContainerMutationsRebuildOnAnotherEngine(t *testing.T) {
 	testutil.RequireNativeMount(t)
 	salt := transferTestSalt(t)
 	a, b := newTransferTestEngine(t, salt), newTransferTestEngine(t, salt)
 	actx := a.session(t, "a1")
-	var written, edited dagql.ObjectResult[*core.Container]
+	var written, user, edited dagql.ObjectResult[*core.Container]
 	require.NoError(t, a.dag.Select(actx, a.dag.Root(), &written, dagql.Selector{Field: "container"}, dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
 		rebuildTestArg("path", dagql.NewString("/data")), rebuildTestArg("contents", dagql.NewString("rebuilt")),
 	}}))
 	require.NoError(t, a.cache.Evaluate(actx, written))
-	require.NoError(t, a.dag.Select(actx, written, &edited, dagql.Selector{Field: "withUser", Args: []dagql.NamedInput{rebuildTestArg("name", dagql.NewString("app"))}}))
+	require.NoError(t, a.dag.Select(actx, written, &user, dagql.Selector{Field: "withUser", Args: []dagql.NamedInput{rebuildTestArg("name", dagql.NewString("app"))}}))
+	require.NoError(t, a.cache.Evaluate(actx, user))
+	require.NoError(t, a.dag.Select(actx, user, &edited, dagql.Selector{Field: "withShell", Args: []dagql.NamedInput{
+		rebuildTestArg("interactive", dagql.ArrayInput[dagql.String](dagql.NewStringArray("sh"))),
+	}}))
 	require.NoError(t, a.cache.Evaluate(actx, edited))
 
 	// Export the values only: B has no blob for the written bytes.
@@ -173,6 +178,7 @@ func TestContainerMutationsRebuildOnAnotherEngine(t *testing.T) {
 	got := loaded.(dagql.ObjectResult[*core.Container])
 	require.NoError(t, b.cache.EvaluateParts(bctx, got, core.ContainerPartFS))
 	require.Equal(t, "app", got.Self().Config.User)
+	require.Equal(t, []string{"sh"}, got.Self().DefaultTerminalCmd.Args)
 	dir, ok := got.Self().FS.Peek()
 	require.True(t, ok)
 	snapshot, ok := dir.Snapshot.Peek()

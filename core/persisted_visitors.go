@@ -331,6 +331,7 @@ var persistedContainerRecipeVisitors = map[string]persistedLazyVisitor{
 	"withExposedPort":           parentOnly(func(p *persistedContainerWithExposedPortLazy) *uint64 { return &p.ParentResultID }),
 	"withoutExposedPort":        parentOnly(func(p *persistedContainerWithoutExposedPortLazy) *uint64 { return &p.ParentResultID }),
 	"withDefaultTerminalCmd":    parentOnly(func(p *persistedContainerWithDefaultTerminalCmdLazy) *uint64 { return &p.ParentResultID }),
+	"withShell":                 parentOnly(func(p *persistedContainerWithDefaultTerminalCmdLazy) *uint64 { return &p.ParentResultID }),
 	"from": persistedLazyStructVisitor(func(p *persistedContainerFromLazy, w *persistedRefWalker) error {
 		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
 			return err

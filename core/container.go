@@ -4920,7 +4920,8 @@ func decodePersistedContainerRecipe(
 			Port:      persisted.Port,
 			Protocol:  persisted.Protocol,
 		}, nil
-	case "withDefaultTerminalCmd":
+	// withShell sets the same default terminal command, with batch arguments.
+	case "withDefaultTerminalCmd", "withShell":
 		var persisted persistedContainerWithDefaultTerminalCmdLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withDefaultTerminalCmd lazy payload: %w", err)

@@ -4786,26 +4786,22 @@ func (s *containerSchema) withDefaultTerminalCmd(
 		DisableDaggerInDagger:         args.DisableDaggerInDagger,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
-	}, true)
+	})
 }
 
-// withShell passes alwaysLazy=false: no saved recipe format is keyed by its
-// field yet, so an evaluated parent still gets the eager edit.
-func withContainerShell(ctx context.Context, parent dagql.ObjectResult[*core.Container], opts core.DefaultTerminalCmdOpts, alwaysLazy bool) (*core.Container, error) {
+func withContainerShell(ctx context.Context, parent dagql.ObjectResult[*core.Container], opts core.DefaultTerminalCmdOpts) (*core.Container, error) {
 	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	ctr.DefaultTerminalCmd = opts
-	if alwaysLazy || parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithDefaultTerminalCmdLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Opts:      opts,
-		}
-		if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
-			return nil, err
-		}
+	ctr.Lazy = &core.ContainerWithDefaultTerminalCmdLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Opts:      opts,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -4840,7 +4836,7 @@ func (s *containerSchema) withShell(ctx context.Context, parent dagql.ObjectResu
 			opts.Batch[i] = string(arg)
 		}
 	}
-	return withContainerShell(ctx, parent, opts, false)
+	return withContainerShell(ctx, parent, opts)
 }
 
 func (s *containerSchema) shell(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct {
