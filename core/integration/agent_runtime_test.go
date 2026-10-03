@@ -919,34 +919,83 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, transcript, oldPrompt)
 	})
 
-	t.Run("a conversation with pending input retries from there", func(ctx context.Context, t *testctx.T) {
-		// Branching from a prompt reseeds the conversation that ends in it:
-		// the loop is parked IDLE, and the reseed must wake it to re-run the
-		// prompt — not commit it silently, projecting RUNNING over a parked
-		// loop until the next send glues its prompt onto the unstepped one.
+	t.Run("held input leads the next turn", func(ctx context.Context, t *testctx.T) {
+		// Compaction (and a branch with a summary) reseeds a conversation
+		// ending in a note the model has not answered. The reseed must HOLD
+		// it — the agent stays IDLE, nothing steps — so the note leads the
+		// user's next message instead of being answered on its own.
+		const (
+			oldPrompt  = "prompt before compaction"
+			oldReply   = "the pre-compaction reply"
+			summary    = "This session is being continued: the summary"
+			nextPrompt = "prompt after compaction"
+			nextReply  = "the post-compaction reply"
+		)
+		oldModel := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
+			WithPrompt(oldPrompt).
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: oldReply},
+			}))
+		h := spawnAgent(ctx, t, c, spawnOpts{model: oldModel, name: "compacted"})
+		_, got, err := h.sendAndWait(ctx, t, oldPrompt)
+		require.NoError(t, err)
+		require.Equal(t, oldReply, got)
+
+		// The recording has no reply to the summary alone: stepping it would
+		// diverge the replayer and fail the agent.
+		newModel := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
+			WithPrompt(summary).
+			WithPrompt(nextPrompt).
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: nextReply},
+			}))
+		compacted, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: newModel}).WithPrompt(summary).ID(ctx)
+		require.NoError(t, err)
+		require.NoError(t, h.reseedAgent(ctx, t, string(compacted)))
+		require.Equal(t, "IDLE", h.state(ctx, t))
+		time.Sleep(time.Second)
+		require.Equal(t, "IDLE", h.state(ctx, t), "held input must not start a turn")
+
+		delivery, got, err := h.sendAndWait(ctx, t, nextPrompt)
+		require.NoError(t, err)
+		require.Equal(t, "STARTED", delivery)
+		require.Equal(t, nextReply, got)
+		transcript, lastReply := h.snapshot(ctx, t)
+		require.Equal(t, nextReply, lastReply)
+		require.Equal(t, 1, strings.Count(transcript, summary))
+		require.NotContains(t, transcript, oldPrompt)
+	})
+
+	t.Run("resume retries a branched prompt", func(ctx context.Context, t *testctx.T) {
+		// Branching from a prompt reseeds the conversation that ends in it,
+		// then resumes: "retry from here". The reseed alone holds the prompt
+		// (IDLE, never a parked loop's false RUNNING); the resume steps it.
 		const (
 			prompt     = "prompt to branch from"
 			reply      = "the reply to the branched prompt"
 			nextPrompt = "prompt sent after the retry"
 			nextReply  = "the post-retry reply"
 		)
-		model := cannedRecordingModel(ctx, t, c, c.LLM().
+		model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 			WithPrompt(prompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: reply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: reply},
 			}).
 			WithPrompt(nextPrompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: nextReply},
+			WithResponse([]sdkcore.LLMContentBlockInput{
+				{Kind: sdkcore.LLMContentBlockKindText, Text: nextReply},
 			}))
 		h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "branched"})
 		_, got, err := h.sendAndWait(ctx, t, prompt)
 		require.NoError(t, err)
 		require.Equal(t, reply, got)
 
-		branch, err := c.LLM(dagger.LLMOpts{Model: model}).WithPrompt(prompt).ID(ctx)
+		branch, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: model}).WithPrompt(prompt).ID(ctx)
 		require.NoError(t, err)
 		require.NoError(t, h.reseedAgent(ctx, t, string(branch)))
+		require.Equal(t, "IDLE", h.state(ctx, t))
+		_, err = h.verb(ctx, t, "resume")
+		require.NoError(t, err)
 
 		// The retried turn runs to completion: IDLE again, with the prompt
 		// answered exactly once.

@@ -45,6 +45,9 @@ type fakeRuntime struct {
 	snapshot            core.ID
 	state               core.AgentState
 	delivered           chan string
+	// verbs logs send, resume, interrupt and (successful) reseed calls in
+	// order, for policies that are about sequencing.
+	verbs []string
 }
 
 var _ agentRuntime = (*fakeRuntime)(nil)
@@ -59,6 +62,7 @@ func newFakeRuntime() *fakeRuntime {
 func (f *fakeRuntime) SendMessage(_ context.Context, msg string) (agentMessage, error) {
 	f.mu.Lock()
 	f.sent = append(f.sent, msg)
+	f.verbs = append(f.verbs, "send")
 	f.mu.Unlock()
 	f.delivered <- msg
 	return fakeMessage{}, nil
@@ -68,6 +72,7 @@ func (f *fakeRuntime) Resume(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.resumes++
+	f.verbs = append(f.verbs, "resume")
 	return nil
 }
 
@@ -75,6 +80,7 @@ func (f *fakeRuntime) Interrupt(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.interrupts++
+	f.verbs = append(f.verbs, "interrupt")
 	f.state = core.AgentStatePaused
 	return nil
 }
@@ -115,7 +121,14 @@ func (f *fakeRuntime) Reseed(context.Context, *core.LLM) error {
 		return errors.New("cannot reseed a running agent")
 	}
 	f.reseeds++
+	f.verbs = append(f.verbs, "reseed")
 	return nil
+}
+
+func (f *fakeRuntime) verbLog() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.verbs...)
 }
 
 func (f *fakeRuntime) reseedCount() int {
