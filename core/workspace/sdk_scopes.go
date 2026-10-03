@@ -41,6 +41,16 @@ func SDKScopeKey(entry SDKEntry, configDir, workspacePath string) (string, bool,
 // its SDK scopes declare, both as workspace-root-relative paths. Entries that
 // do not resolve inside the workspace are left out.
 func ModuleScopeLocalClients(cfg *Config, configDir string) map[string][]string {
+	return moduleScopeClients(cfg, configDir, true)
+}
+
+// ModuleScopeGitClients maps each module scope, as a workspace-root-relative
+// path, to the git client refs its SDK scopes declare, as written.
+func ModuleScopeGitClients(cfg *Config, configDir string) map[string][]string {
+	return moduleScopeClients(cfg, configDir, false)
+}
+
+func moduleScopeClients(cfg *Config, configDir string, local bool) map[string][]string {
 	if cfg == nil {
 		return nil
 	}
@@ -55,14 +65,18 @@ func ModuleScopeLocalClients(cfg *Config, configDir string) map[string][]string 
 				continue
 			}
 			for _, target := range scope.Clients {
-				if !IsLocalRef(target, "") {
+				if IsLocalRef(target, "") != local {
 					continue
 				}
-				targetPath, err := ResolveSDKManagedPath(configDir, target)
-				if err != nil || slices.Contains(clients[modulePath], targetPath) {
+				if local {
+					if target, err = ResolveSDKManagedPath(configDir, target); err != nil {
+						continue
+					}
+				}
+				if slices.Contains(clients[modulePath], target) {
 					continue
 				}
-				clients[modulePath] = append(clients[modulePath], targetPath)
+				clients[modulePath] = append(clients[modulePath], target)
 			}
 		}
 	}
