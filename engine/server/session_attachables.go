@@ -31,6 +31,10 @@ type sessionAttachableManager struct {
 	// that know their attachables come from an exec's helper treat a missing
 	// entry as the exec having ended (see Wait).
 	expected map[string]*expectedAttachables
+	// registered holds every client ID that has registered attachables. A
+	// registered client without an active caller has left, so lookups for it
+	// fail at once instead of waiting.
+	registered map[string]struct{}
 }
 
 type expectedAttachables struct {
@@ -49,9 +53,10 @@ type sessionAttachableCaller struct {
 
 func newSessionAttachableManager() *sessionAttachableManager {
 	return &sessionAttachableManager{
-		callers:  map[string]*sessionAttachableCaller{},
-		waiters:  map[string][]chan struct{}{},
-		expected: map[string]*expectedAttachables{},
+		callers:    map[string]*sessionAttachableCaller{},
+		waiters:    map[string][]chan struct{}{},
+		expected:   map[string]*expectedAttachables{},
+		registered: map[string]struct{}{},
 	}
 }
 
@@ -79,6 +84,7 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 		return fmt.Errorf("session attachables for client %q already exist", clientID)
 	}
 	m.callers[clientID] = caller
+	m.registered[clientID] = struct{}{}
 	m.wakeWaitersLocked(clientID)
 	m.mu.Unlock()
 
@@ -168,6 +174,10 @@ func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string, fr
 		if exp == nil && fromExecHelper {
 			m.mu.Unlock()
 			return nil, fmt.Errorf("no session attachables for client %q: %w", clientID, errExecEnded)
+		}
+		if _, ok := m.registered[clientID]; ok {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("client %q has left the session: its session attachables connection ended", clientID)
 		}
 
 		waiter := make(chan struct{})
