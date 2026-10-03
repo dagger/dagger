@@ -49,7 +49,7 @@ The LLM acts through the methods of the objects it's bound to via
 
   | Return type | Behavior |
   |---|---|
-  | the bound object's own type | **rebind** it as the new state; the tool's `print` output is the response |
+  | the bound object's own type | **rebind** it as the new state, recorded field-wise (below); the tool's `print` output is the response |
   | `Changeset` | apply to the workspace overlay; return the patch summary |
   | `Workspace` | **rebind the LLM's workspace** to it, with a before/after diff summary |
   | `LLMContent` | return its text and media blocks as the tool result's content, after the tool's `print` output |
@@ -62,6 +62,18 @@ The LLM acts through the methods of the objects it's bound to via
   the LLM's ID (the same shape it uses to persist a `Changeset` overlay via
   `withWorkspace`), so state transitions are ordinary selectors — durable and
   reconstructable when loaded. At most one binding per object type is kept.
+- **State is recorded field-wise, not by the call that produced it.** The
+  returned object's identity is its producing call (often `@cache(Never)`, e.g.
+  `start`), so binding it as-is would replay that call wherever the state is
+  loaded. Instead MCP diffs the returned module object against the receiver
+  and rebinds `recv!__withField(name:, value:)!…` — one pure, engine-owned,
+  hidden setter per changed field (`core/object_state.go`); object references
+  ride in `value` as ID edges. A return that changes nothing records nothing;
+  a field the return drops is recorded as null. A module object's producing
+  call is never recorded: a state that can't be encoded fails the tool call.
+  Core objects, which have no fields to diff, are rebound as returned.
+  Collection objects are refused. The producing call stays visible in the
+  trace as the tool call's own span; only the recipe forgets it.
 - To the *model*, objects are never named, passed, or returned as handles;
   binding is author-side. There is no `Type#N` registry and no free-form
   script surface. Host-writing fields (`export`) are simply not reachable:
