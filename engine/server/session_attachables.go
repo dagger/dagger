@@ -23,6 +23,10 @@ type sessionAttachableManager struct {
 	mu      sync.Mutex
 	callers map[string]*sessionAttachableCaller
 	waiters map[string][]chan struct{}
+	// registered holds every client ID that has registered attachables. A
+	// registered client without an active caller has left, so lookups for it
+	// fail at once instead of waiting.
+	registered map[string]struct{}
 }
 
 type sessionAttachableCaller struct {
@@ -33,8 +37,9 @@ type sessionAttachableCaller struct {
 
 func newSessionAttachableManager() *sessionAttachableManager {
 	return &sessionAttachableManager{
-		callers: map[string]*sessionAttachableCaller{},
-		waiters: map[string][]chan struct{}{},
+		callers:    map[string]*sessionAttachableCaller{},
+		waiters:    map[string][]chan struct{}{},
+		registered: map[string]struct{}{},
 	}
 }
 
@@ -62,6 +67,7 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 		return fmt.Errorf("session attachables for client %q already exist", clientID)
 	}
 	m.callers[clientID] = caller
+	m.registered[clientID] = struct{}{}
 	m.wakeWaitersLocked(clientID)
 	m.mu.Unlock()
 
@@ -96,6 +102,10 @@ func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string) (e
 		if caller, ok := m.callers[clientID]; ok && caller.active() {
 			m.mu.Unlock()
 			return caller, nil
+		}
+		if _, ok := m.registered[clientID]; ok {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("client %q has left the session: its session attachables connection ended", clientID)
 		}
 
 		waiter := make(chan struct{})
