@@ -30,9 +30,12 @@ func WithBlobStore() CacheOption {
 // as the same expired value. Storing a part adds the entries its owner and
 // services name as the entry's dependencies, as installing a part does on an
 // engine, so they live as long as the value; a part that names an entry the
-// cache doesn't have, or one that reaches the entry, is not stored. It
-// reports whether the part was stored. A metadata part carries no bytes and
-// is never stored.
+// cache doesn't have, an entry with no value, or one that reaches the entry,
+// is not stored. A named entry can have lost its value to a prune between the
+// export's merge, which kept it through its sender's holding only, and this
+// call: storing the part would leave a value whose bundle can never be built.
+// It reports whether the part was stored. A metadata part carries no bytes
+// and is never stored.
 func (c *Cache) SetStoredPart(ctx context.Context, number uint64, part PersistedPartOffer, copyExpiresAtUnix int64) (bool, error) {
 	if !c.blobBacked {
 		return false, errors.New("set stored part: the cache has no blob store")
@@ -81,9 +84,9 @@ func (c *Cache) SetStoredPart(ctx context.Context, number uint64, part Persisted
 }
 
 // storedPartDependenciesLocked returns the entries part's owner and services
-// name, or false if one is missing or reaches res, which would close a cycle.
-// The check is an engine's part commit's; the session requirements it also
-// computes don't apply to the Cloud. Requires egraphMu.
+// name, or false if one is missing, has no value, or reaches res, which would
+// close a cycle. The check is an engine's part commit's; the session
+// requirements it also computes don't apply to the Cloud. Requires egraphMu.
 func (c *Cache) storedPartDependenciesLocked(res *sharedResult, part PersistedPartOffer) ([]*sharedResult, bool) {
 	ids := slices.Clone(part.Owner.DependencyIDs)
 	for _, service := range part.Value.Services {
@@ -93,7 +96,7 @@ func (c *Cache) storedPartDependenciesLocked(res *sharedResult, part PersistedPa
 	named := make([]*sharedResult, 0, len(ids))
 	for _, id := range slices.Compact(ids) {
 		dep := c.resultsByID[sharedResultID(id)]
-		if dep == nil {
+		if dep == nil || !dep.hasOwnValueLocked() {
 			return nil, false
 		}
 		named = append(named, dep)

@@ -208,7 +208,8 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
-		droppedAt, removed, err := c.removePersistedEdge(pruneCtx, planEntry.candidate.resultID)
+		droppedAt, removed, droppedValues, err := c.removePrunedEdge(pruneCtx, planEntry.candidate.resultID)
+		report.DroppedValues += droppedValues
 		if removed {
 			report.RemovedPersistedRootCount++
 			report.DroppedEdges = append(report.DroppedEdges, CacheRetentionDrop{ResultID: uint64(planEntry.candidate.resultID), DroppedAt: droppedAt})
@@ -374,7 +375,8 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			if ok {
 				c.tracePruneCandidateSelected(ctx, policyIdx, planEntry.candidate, snapRes, planEntry.reclaimBytes)
 			}
-			droppedAt, removed, err := c.removePersistedEdge(ctx, planEntry.candidate.resultID)
+			droppedAt, removed, droppedValues, err := c.removePrunedEdge(ctx, planEntry.candidate.resultID)
+			report.DroppedValues += droppedValues
 			if removed {
 				report.DroppedEdges = append(report.DroppedEdges, CacheRetentionDrop{ResultID: uint64(planEntry.candidate.resultID), DroppedAt: droppedAt})
 			}
@@ -550,6 +552,16 @@ func (c *Cache) snapshotPruneStateLocked(
 			continue
 		}
 		state := res.loadPayloadState()
+		incoming := res.incomingOwnershipCount
+		if c.blobBacked {
+			// A prune goes through holdings (dropPrunedValuesLocked): an
+			// entry with no value has nothing to free, and a value is kept
+			// by its other owners only.
+			if !state.hasValue && state.persistedEnvelope == nil {
+				continue
+			}
+			incoming -= res.engineHoldingsLocked()
+		}
 		createdAt := state.createdAtUnixNano
 		lastUsedAt := state.lastUsedAtUnixNano
 		if createdAt == 0 {
@@ -578,7 +590,7 @@ func (c *Cache) snapshotPruneStateLocked(
 		edge, hasPersistedEdge := c.persistedEdgesByResult[resID]
 		snapshotResult := pruneSnapshotResult{
 			resultID:      resID,
-			incomingCount: res.incomingOwnershipCount,
+			incomingCount: incoming,
 			deps:          deps,
 			entry: CacheUsageEntry{
 				CreatedTimeUnixNano:       createdAt,
