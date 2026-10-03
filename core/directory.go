@@ -647,6 +647,9 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 
 	case *DirectoryGitTreeLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
+		if lazy.KeepGitDir {
+			return persistedDirectoryLazyKindGitFullCheckout, payload, err
+		}
 		return persistedDirectoryLazyKindGitTree, payload, err
 
 	case *DirectoryGitBundleImportLazy:
@@ -729,7 +732,10 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 		return decodeDirectoryGitCommitTreeLazy(ctx, dec, payload)
 
 	case persistedDirectoryLazyKindGitTree:
-		return decodeDirectoryGitTreeLazy(ctx, dec, payload)
+		return decodeDirectoryGitTreeLazy(ctx, dec, payload, false)
+
+	case persistedDirectoryLazyKindGitFullCheckout:
+		return decodeDirectoryGitTreeLazy(ctx, dec, payload, true)
 
 	case persistedDirectoryLazyKindGitBundleImport:
 		return decodeDirectoryGitBundleImportLazy(ctx, dec, payload)

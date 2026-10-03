@@ -1760,6 +1760,10 @@ func visitPersistedRemoteGitRepositoryRefs(w *persistedRefWalker, p *persistedRe
 
 const persistedDirectoryLazyKindGitTree = "gitTree"
 
+// The full checkout is saved under its own kind: an engine that predates it
+// rejects the recipe instead of rebuilding a tree without .git.
+const persistedDirectoryLazyKindGitFullCheckout = "gitFullCheckout"
+
 type DirectoryGitTreeLazy struct {
 	LazyState
 	ContentDigest digest.Digest
@@ -1776,7 +1780,6 @@ type persistedDirectoryGitTreeLazy struct {
 	ContentDigest digest.Digest `json:"contentDigest,omitempty"`
 	RefResultID   uint64        `json:"refResultID"`
 	DiscardGitDir bool          `json:"discardGitDir"`
-	KeepGitDir    bool          `json:"keepGitDir,omitempty"`
 	Depth         int           `json:"depth"`
 	IncludeTags   bool          `json:"includeTags"`
 }
@@ -1881,9 +1884,9 @@ func (lazy *DirectoryGitTreeLazy) EncodePersisted(ctx context.Context, enc *dagq
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(persistedDirectoryGitTreeLazy{ContentDigest: lazy.ContentDigest, RefResultID: refID, DiscardGitDir: lazy.DiscardGitDir, KeepGitDir: lazy.KeepGitDir, Depth: lazy.Depth, IncludeTags: lazy.IncludeTags})
+	return json.Marshal(persistedDirectoryGitTreeLazy{ContentDigest: lazy.ContentDigest, RefResultID: refID, DiscardGitDir: lazy.DiscardGitDir, Depth: lazy.Depth, IncludeTags: lazy.IncludeTags})
 }
-func decodeDirectoryGitTreeLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
+func decodeDirectoryGitTreeLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage, keepGitDir bool) (Lazy[*Directory], error) {
 	var p persistedDirectoryGitTreeLazy
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return nil, fmt.Errorf("decode DirectoryGitTreeLazy: %w", err)
@@ -1895,7 +1898,7 @@ func decodeDirectoryGitTreeLazy(ctx context.Context, dec *dagql.PersistDecodeCon
 	if err != nil {
 		return nil, err
 	}
-	return &DirectoryGitTreeLazy{LazyState: NewLazyState(), ContentDigest: p.ContentDigest, Ref: ref, DiscardGitDir: p.DiscardGitDir, KeepGitDir: p.KeepGitDir, Depth: p.Depth, IncludeTags: p.IncludeTags}, nil
+	return &DirectoryGitTreeLazy{LazyState: NewLazyState(), ContentDigest: p.ContentDigest, Ref: ref, DiscardGitDir: p.DiscardGitDir, KeepGitDir: keepGitDir, Depth: p.Depth, IncludeTags: p.IncludeTags}, nil
 }
 
 const persistedDirectoryLazyKindGitCommitTree = "gitCommitTree"

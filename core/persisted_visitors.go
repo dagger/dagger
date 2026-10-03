@@ -205,15 +205,8 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 		return nil
 	}),
 
-	persistedDirectoryLazyKindGitTree: persistedLazyStructVisitor(func(p *persistedDirectoryGitTreeLazy, w *persistedRefWalker) error {
-		if err := p.validate(); err != nil {
-			return err
-		}
-		if err := w.child("refResultID", &p.RefResultID); err != nil {
-			return err
-		}
-		return nil
-	}),
+	persistedDirectoryLazyKindGitTree:         persistedLazyStructVisitor(visitPersistedDirectoryGitTreeLazy),
+	persistedDirectoryLazyKindGitFullCheckout: persistedLazyStructVisitor(visitPersistedDirectoryGitTreeLazy),
 
 	persistedDirectoryLazyKindGitBundleImport: persistedLazyStructVisitor(func(p *persistedDirectoryGitBundleImportLazy, w *persistedRefWalker) error {
 		if err := p.validate(); err != nil {
@@ -781,3 +774,10 @@ var persistedCollectionTypeDefVisitor = persistedStructVisitor("", func(p *uint6
 	w.note(changed)
 	return err
 })
+
+func visitPersistedDirectoryGitTreeLazy(p *persistedDirectoryGitTreeLazy, w *persistedRefWalker) error {
+	if err := p.validate(); err != nil {
+		return err
+	}
+	return w.child("refResultID", &p.RefResultID)
+}

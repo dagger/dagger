@@ -352,12 +352,10 @@ func TestLazyOperationResolverCapture(t *testing.T) {
 				}
 			}
 			require.NoError(t, err)
-			savedKind := kind
 			if kind == "gitFullCheckout" {
-				savedKind = "gitTree"
 				require.True(t, result.Self().Lazy.(*core.DirectoryGitTreeLazy).KeepGitDir)
 			}
-			assertResolverLazyOperation(t, ctx, cache, result.Self(), savedKind)
+			assertResolverLazyOperation(t, ctx, cache, result.Self(), kind)
 			if kind != "gitCleaned" {
 				require.Empty(t, server.manager.outputs)
 				require.False(t, result.Self().Lazy.IsEvaluated())

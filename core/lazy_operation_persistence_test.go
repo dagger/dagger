@@ -93,6 +93,17 @@ func TestLazyOperationCodecs(t *testing.T) {
 			decoded, err := decodePersistedDirectoryLazy(f.ctx, dec, kind, raw)
 			require.NoError(t, err)
 			require.NotSame(t, recipe, decoded)
+			if tree, ok := recipe.(*DirectoryGitTreeLazy); ok {
+				// The kind, not a payload field, marks a full checkout, so an
+				// engine without that kind rejects it instead of dropping .git.
+				wantKind := persistedDirectoryLazyKindGitTree
+				if tree.KeepGitDir {
+					wantKind = persistedDirectoryLazyKindGitFullCheckout
+				}
+				require.Equal(t, wantKind, kind)
+				require.Equal(t, tree.KeepGitDir, decoded.(*DirectoryGitTreeLazy).KeepGitDir)
+				require.NotContains(t, string(raw), "keepGitDir")
+			}
 			if scratch, ok := decoded.(*DirectoryScratchLazy); ok {
 				require.Equal(t, "{}", string(raw))
 				require.False(t, scratch.lazyInitComplete.Load())
