@@ -217,8 +217,8 @@ session — is roughly a one-function change in `recipeLoadState`
 load and invalidates every recorded call above it, which is a real cost even
 where the call is harmless. (Observed while testing field-wise tool state:
 within one engine, a fresh client loading such a recipe hit the cache rather
-than re-running the call — the re-execution shows once the result is evicted
-or the engine restarts — and field-wise recording, hack/designs/workspace-agents.md
+than re-running the call — presumably the re-execution shows once the result
+is evicted or the engine restarts, which that test did not exercise — and field-wise recording, hack/designs/workspace-agents.md
 §2, keeps those calls out of module tool state altogether, so the question is
 moot there.) But it is not needed here, and shipping it alone
 would be worse than shipping nothing: it turns 33 loud duplicates into 3
