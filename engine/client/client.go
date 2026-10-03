@@ -33,6 +33,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -191,7 +193,8 @@ type Params struct {
 	SessionTelemetry bool
 
 	// Background and Command describe this client process in session
-	// listings; see engine.ClientMetadata.
+	// listings; see engine.ClientMetadata. A background client has no
+	// terminal, so it does not serve one.
 	Background bool
 	Command    string
 }
@@ -219,6 +222,8 @@ type Client struct {
 	bkName     string
 	numCPU     int
 	sessionSrv *SessionAttachablesServer
+	// attachablesDone is closed when the attachables connection ends.
+	attachablesDone chan struct{}
 
 	// A client for the dagger API that is directly hooked up to this engine client.
 	// Currently used for the dagger CLI so it can avoid making a subprocess of itself...
@@ -646,13 +651,16 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking
 		h2c.NewTunnelListenerAttachable(ctx),
-		// terminal
-		terminal.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git attachable
 		git.NewGitAttachable(ctx, git.GitAttachableOpts{
 			PromptHandler:        c.Params.PromptHandler,
 			SSHAskpassExecutable: c.Params.SSHAskpassExecutable,
 		}),
+	}
+
+	if !c.Params.Background {
+		// terminal
+		attachables = append(attachables, terminal.NewTerminalAttachable(ctx, c.Params.WithTerminal))
 	}
 
 	if c.Params.Stdin != nil && c.Params.Stdout != nil {
@@ -759,7 +767,9 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 // cancelled command still needs them to persist workspace locks and finish
 // other cleanup; Close stops them after the engine acknowledges shutdown.
 func (c *Client) runSessionAttachables() {
+	c.attachablesDone = make(chan struct{})
 	c.eg.Go(func() error {
+		defer close(c.attachablesDone)
 		ctx, cancel, err := c.withClientCloseCancel(c.internalCtx)
 		if err != nil {
 			return err
@@ -768,6 +778,38 @@ func (c *Client) runSessionAttachables() {
 		c.sessionSrv.Run(ctx)
 		return nil
 	})
+}
+
+// AttachablesDone is closed when this client's attachables connection ends:
+// when the client closes, or when the engine closes the client or ends its
+// session.
+func (c *Client) AttachablesDone() <-chan struct{} {
+	return c.attachablesDone
+}
+
+// EngineTelemetryExporters return exporters that push this process's own
+// spans and logs to the engine, into this client's session telemetry.
+func (c *Client) EngineTelemetryExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, error) {
+	httpClient := &http.Client{Transport: roundTripperFunc(c.newTelemetryHTTPClient().Do)}
+	spans, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithEndpointURL("http://dagger/v1/traces"),
+		otlptracehttp.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, nil, fmt.Errorf("create span exporter: %w", err)
+	}
+	logs, err := otlploghttp.New(ctx,
+		otlploghttp.WithEndpointURL("http://dagger/v1/logs"),
+		otlploghttp.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, nil, fmt.Errorf("create log exporter: %w", err)
+	}
+	return spans, logs, nil
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func ConnectSessionAttachables(

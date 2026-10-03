@@ -234,13 +234,16 @@ func (DetachedSessionSuite) TestListSessions(ctx context.Context, t *testctx.T) 
 	require.Equal(t, "dagger call --detach build", *first.Command)
 	require.True(t, first.Background)
 	require.True(t, first.Connected)
-	require.Subset(t, first.Provides, []string{"files", "git", "registry-auth", "secrets", "sockets", "terminal", "tunnels"})
+	require.Subset(t, first.Provides, []string{"files", "git", "registry-auth", "secrets", "sockets", "tunnels"})
+	// A background client has no terminal and no prompt handler.
+	require.NotContains(t, first.Provides, "terminal")
 	require.NotContains(t, first.Provides, "prompt")
 
 	require.Equal(t, joiner.ID, second.ClientID)
 	require.False(t, second.Background)
 	require.Equal(t, "dagger sessions attach", *second.Command)
 	require.Contains(t, second.Provides, "prompt")
+	require.Contains(t, second.Provides, "terminal")
 
 	// The lookups by ID return the same session and client.
 	var res struct {
