@@ -79,6 +79,10 @@ type Server interface {
 	// the session, typically the CLI invoked by the user)
 	MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error)
 
+	// The Client metadata of the root client of the current client's chain:
+	// the client itself if it connected directly, else its first ancestor.
+	RootClientMetadata(context.Context) (*engine.ClientMetadata, error)
+
 	// Metadata about the main client, aka "non-module parent client", aka "NMPC".
 	//
 	// The NMPC is the nearest ancestor client that is not a module.

@@ -70,6 +70,10 @@ func (s *currentTypeDefsTestServer) MainClientCallerMetadata(context.Context) (*
 	return &engine.ClientMetadata{}, nil
 }
 
+func (s *currentTypeDefsTestServer) RootClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	return s.MainClientCallerMetadata(ctx)
+}
+
 func (s *currentTypeDefsTestServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }

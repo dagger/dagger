@@ -3498,6 +3498,27 @@ func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.Client
 	return record.daggerSession.clientMetadataSnapshot(mainRecord)
 }
 
+// The Client metadata of the root client of the current client's chain: the
+// client itself if it connected directly, else its first ancestor.
+func (srv *Server) RootClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	record, err := srv.clientRecordFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sess := record.daggerSession
+	sess.scopeMu.Lock()
+	parentClientIDs := slices.Clone(record.parentClientIDs)
+	sess.scopeMu.Unlock()
+	if len(parentClientIDs) == 0 {
+		return sess.clientMetadataSnapshot(record)
+	}
+	root, err := srv.clientRecordFromIDs(sess.sessionID, parentClientIDs[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve root client: %w", err)
+	}
+	return sess.clientMetadataSnapshot(root)
+}
+
 // The Client metadata of a specific client ID within the same session as the
 // current client.
 func (srv *Server) SpecificClientMetadata(ctx context.Context, clientID string) (*engine.ClientMetadata, error) {
