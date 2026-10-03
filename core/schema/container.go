@@ -202,7 +202,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		// llbtodagger can faithfully apply Docker image config metadata fields that do not yet
 		// have public SDK methods.
 		dagql.NodeFunc("__withImageConfigMetadata", func(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithImageConfigMetadataArgs) (*core.Container, error) {
-			ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+			ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 			if err != nil {
 				return nil, err
 			}
@@ -228,6 +228,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				Shell:       slices.Clone(ctr.Config.Shell),
 				Volumes:     volumes,
 				StopSignal:  ctr.Config.StopSignal,
+			}
+			if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+				return nil, err
 			}
 			return ctr, nil
 		}).
@@ -299,7 +302,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withDockerHealthcheck", func(ctx context.Context, parent dagql.ObjectResult[*core.Container], args WithHealthcheckArgs) (*core.Container, error) {
-			ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+			ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 			if err != nil {
 				return nil, err
 			}
@@ -313,6 +316,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				LazyState:   core.NewLazyState(),
 				Parent:      parent,
 				Healthcheck: hc,
+			}
+			if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+				return nil, err
 			}
 			return ctr, nil
 		}).
@@ -328,7 +334,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withoutDockerHealthcheck", func(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (*core.Container, error) {
-			ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+			ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 			if err != nil {
 				return nil, err
 			}
@@ -339,6 +345,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			ctr.Lazy = &core.ContainerWithoutHealthcheckLazy{
 				LazyState: core.NewLazyState(),
 				Parent:    parent,
+			}
+			if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+				return nil, err
 			}
 			return ctr, nil
 		}).
@@ -1849,7 +1858,7 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -1859,6 +1868,9 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		Target:    target,
 		LinkPath:  linkName,
 	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
@@ -1867,7 +1879,7 @@ type containerGpuArgs struct {
 }
 
 func (s *containerSchema) withGPU(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerGpuArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -1880,11 +1892,14 @@ func (s *containerSchema) withGPU(ctx context.Context, parent dagql.ObjectResult
 		Parent:    parent,
 		Devices:   slices.Clone(args.Devices),
 	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
 func (s *containerSchema) withAllGPUs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -1897,6 +1912,9 @@ func (s *containerSchema) withAllGPUs(ctx context.Context, parent dagql.ObjectRe
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Devices:   devices,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -1937,7 +1955,7 @@ type containerWithoutEntrypointArgs struct {
 }
 
 func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutEntrypointArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -1955,6 +1973,9 @@ func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent dagql.Ob
 		LazyState:       core.NewLazyState(),
 		Parent:          parent,
 		KeepDefaultArgs: args.KeepDefaultArgs,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -1975,7 +1996,7 @@ type containerWithDefaultArgs struct {
 }
 
 func (s *containerSchema) withDefaultArgs(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDefaultArgs) (*core.Container, error) {
-	c, _, err := cloneContainerForSchemaChild(ctx, parent)
+	c, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -1996,6 +2017,9 @@ func (s *containerSchema) withDefaultArgs(ctx context.Context, parent dagql.Obje
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Args:      slices.Clone(args.Args),
+	}
+	if err := evaluateOverBuiltParent(ctx, c, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return c, nil
 }
@@ -2038,7 +2062,7 @@ type containerWithUserArgs struct {
 }
 
 func (s *containerSchema) withUser(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithUserArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2054,11 +2078,14 @@ func (s *containerSchema) withUser(ctx context.Context, parent dagql.ObjectResul
 		Parent:    parent,
 		Name:      args.Name,
 	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
 func (s *containerSchema) withoutUser(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2072,6 +2099,9 @@ func (s *containerSchema) withoutUser(ctx context.Context, parent dagql.ObjectRe
 	ctr.Lazy = &core.ContainerWithoutUserLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2124,7 +2154,7 @@ func (s *containerSchema) withWorkdir(ctx context.Context, parent dagql.ObjectRe
 }
 
 func (s *containerSchema) withoutWorkdir(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2138,6 +2168,9 @@ func (s *containerSchema) withoutWorkdir(ctx context.Context, parent dagql.Objec
 	ctr.Lazy = &core.ContainerWithoutWorkdirLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2207,7 +2240,7 @@ func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent dagql
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2224,6 +2257,9 @@ func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent dagql
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Source:    ef,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2259,7 +2295,7 @@ func (s *containerSchema) withVolatileVariable(ctx context.Context, parent dagql
 		return inst, fmt.Errorf("current call is nil")
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -2269,6 +2305,9 @@ func (s *containerSchema) withVolatileVariable(ctx context.Context, parent dagql
 		Parent:    parent,
 		Name:      args.Name,
 		Value:     args.Value,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2390,7 +2429,7 @@ func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent dagql.O
 }
 
 func (s *containerSchema) withoutVolatileVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutVariableArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2399,6 +2438,9 @@ func (s *containerSchema) withoutVolatileVariable(ctx context.Context, parent da
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Name:      args.Name,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2563,7 +2605,7 @@ type containerWithAnnotationArgs struct {
 }
 
 func (s *containerSchema) withAnnotation(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithAnnotationArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2577,6 +2619,9 @@ func (s *containerSchema) withAnnotation(ctx context.Context, parent dagql.Objec
 		Name:      args.Name,
 		Value:     args.Value,
 	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -2585,7 +2630,7 @@ type containerWithoutAnnotationArgs struct {
 }
 
 func (s *containerSchema) withoutAnnotation(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutAnnotationArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2597,6 +2642,9 @@ func (s *containerSchema) withoutAnnotation(ctx context.Context, parent dagql.Ob
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Name:      args.Name,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2802,7 +2850,7 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 	if err := dagqlCache.Evaluate(ctx, dir); err != nil {
 		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: evaluate source: %w", err)
 	}
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -2831,6 +2879,9 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 	}
 	ctr.Mounts = ctr.Mounts.With(mount)
 
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
+	}
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 	if err != nil {
 		return inst, err
@@ -3066,7 +3117,7 @@ func (s *containerSchema) withMountedVolume(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3085,6 +3136,9 @@ func (s *containerSchema) withMountedVolume(ctx context.Context, parent dagql.Ob
 			Volume: volume,
 		},
 	})
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -3103,7 +3157,7 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3120,6 +3174,9 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 			Size: args.Size.Value.Int(),
 		},
 	})
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -3177,7 +3234,7 @@ type containerWithLabelArgs struct {
 }
 
 func (s *containerSchema) withLabel(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithLabelArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3197,6 +3254,9 @@ func (s *containerSchema) withLabel(ctx context.Context, parent dagql.ObjectResu
 		Name:      args.Name,
 		Value:     args.Value,
 	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -3205,7 +3265,7 @@ type containerWithoutLabelArgs struct {
 }
 
 func (s *containerSchema) withoutLabel(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutLabelArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3220,6 +3280,9 @@ func (s *containerSchema) withoutLabel(ctx context.Context, parent dagql.ObjectR
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Name:      args.Name,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -3514,6 +3577,15 @@ func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult
 	return ctr, parentPendingLazy, nil
 }
 
+// evaluateOverBuiltParent runs a mutation's operation right away when its
+// parent was already built, as the mutation did before it saved the operation.
+func evaluateOverBuiltParent(ctx context.Context, ctr *core.Container, parentPendingLazy bool) error {
+	if parentPendingLazy {
+		return nil
+	}
+	return ctr.Evaluate(ctx)
+}
+
 func expandEnvVar(ctx context.Context, parent *core.Container, input string, expand bool) (string, error) {
 	if !expand {
 		return input, nil
@@ -3571,7 +3643,7 @@ func (s *containerSchema) withSecretVariable(ctx context.Context, parent dagql.O
 	if err != nil {
 		return nil, err
 	}
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3585,6 +3657,9 @@ func (s *containerSchema) withSecretVariable(ctx context.Context, parent dagql.O
 		Name:      args.Name,
 		Secret:    secret,
 	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -3593,7 +3668,7 @@ type containerWithoutSecretVariableArgs struct {
 }
 
 func (s *containerSchema) withoutSecretVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutSecretVariableArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3605,6 +3680,9 @@ func (s *containerSchema) withoutSecretVariable(ctx context.Context, parent dagq
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Name:      args.Name,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -3637,7 +3715,7 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3677,6 +3755,9 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 		Owner:     owner,
 		Mode:      fs.FileMode(args.Mode),
 	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -3706,7 +3787,7 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -3721,6 +3802,9 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 		Source:    dir,
 		Filter:    args.CopyFilter,
 		Owner:     owner,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -3757,7 +3841,7 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -3774,6 +3858,9 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		Owner:       owner,
 	}
 
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
+	}
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 	return inst, err
 }
@@ -3853,6 +3940,7 @@ type containerWithoutDirectoryArgs struct {
 	Expand bool `default:"false"`
 }
 
+//nolint:dupl // symmetric with withoutFile; the distinct argument types preserve the schema operations
 func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutDirectoryArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return inst, err
@@ -3867,7 +3955,7 @@ func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -3875,6 +3963,9 @@ func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Path:      path,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
@@ -3884,6 +3975,7 @@ type containerWithoutFileArgs struct {
 	Expand bool `default:"false"`
 }
 
+//nolint:dupl // symmetric with withoutDirectory; the distinct argument types preserve the schema operations
 func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return inst, err
@@ -3898,7 +3990,7 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -3906,6 +3998,9 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Path:      path,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
@@ -3990,7 +4085,7 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, fmt.Errorf("failed to create new file %s: %w", path, err)
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -4006,6 +4101,9 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		Owner:     owner,
 	}
 
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
@@ -4041,7 +4139,7 @@ func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.Ob
 		return inst, fmt.Errorf("failed to create new file %s: %w", args.Path, err)
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
 	}
@@ -4053,6 +4151,9 @@ func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.Ob
 		Owner:     args.Owner,
 	}
 
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
@@ -4546,7 +4647,7 @@ func (s *containerSchema) withServiceBinding(ctx context.Context, parent dagql.O
 		return nil, err
 	}
 
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -4560,6 +4661,9 @@ func (s *containerSchema) withServiceBinding(ctx context.Context, parent dagql.O
 		Service:   svc,
 		Alias:     args.Alias,
 	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -4571,7 +4675,7 @@ type containerWithExposedPortArgs struct {
 }
 
 func (s *containerSchema) withExposedPort(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithExposedPortArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -4590,6 +4694,9 @@ func (s *containerSchema) withExposedPort(ctx context.Context, parent dagql.Obje
 		Parent:    parent,
 		Port:      port,
 	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -4599,7 +4706,7 @@ type containerWithoutExposedPortArgs struct {
 }
 
 func (s *containerSchema) withoutExposedPort(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutExposedPortArgs) (*core.Container, error) {
-	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -4612,6 +4719,9 @@ func (s *containerSchema) withoutExposedPort(ctx context.Context, parent dagql.O
 		Parent:    parent,
 		Port:      args.Port,
 		Protocol:  args.Protocol,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -4693,6 +4803,9 @@ func withContainerShell(ctx context.Context, parent dagql.ObjectResult[*core.Con
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
 			Opts:      opts,
+		}
+		if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+			return nil, err
 		}
 	}
 	return ctr, nil

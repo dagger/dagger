@@ -57,7 +57,8 @@ func requireRebuildRoute(t *testing.T, ctx context.Context, cache *dagql.Cache, 
 }
 
 // Every Container mutation with its own saved operation keeps it when the
-// parent is already evaluated, as it always did for a pending parent.
+// parent is already evaluated, as it always did for a pending parent, and
+// still runs at the call over an evaluated parent.
 func TestContainerMutationsSaveRecipeOverEvaluatedParent(t *testing.T) {
 	e := newTransferTestEngine(t, transferTestSalt(t))
 	ctx := e.session(t, "recipes")
@@ -120,13 +121,22 @@ func TestContainerMutationsSaveRecipeOverEvaluatedParent(t *testing.T) {
 				name = "evaluated/" + field.Field
 			}
 			t.Run(name, func(t *testing.T) {
-				if field.Field == "__withMountedPathDockerfileCompat" {
+				switch field.Field {
+				case "__withMountedPathDockerfileCompat":
 					// Construction content-hashes the mounted source.
 					testutil.RequireNativeMount(t)
+				case "withDirectory", "withFile", "withNewFile":
+					if evaluated {
+						// Over a built parent the write runs at the call and reads its source.
+						testutil.RequireNativeMount(t)
+					}
 				}
 				var child dagql.ObjectResult[*core.Container]
 				require.NoError(t, e.dag.Select(ctx, parent, &child, field))
 				require.NotNil(t, child.Self().Lazy, "the mutation must install its saved operation")
+				// The work still runs when it always did: at the call over a built
+				// parent, on first read over a pending one.
+				require.Equal(t, !evaluated, dagql.HasPendingLazyEvaluation(child))
 				// Settled metadata names the parts; no part is read.
 				require.NoError(t, e.cache.EvaluateParts(ctx, child, core.ContainerPartMetadata))
 				requireRebuildRoute(t, ctx, e.cache, child)
