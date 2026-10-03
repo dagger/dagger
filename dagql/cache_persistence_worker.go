@@ -27,6 +27,9 @@ func (c *Cache) Checkpoint(ctx context.Context) error {
 		return err
 	}
 	defer op.finish(false)
+	if c.sqlDB == nil || c.pdb == nil {
+		return errors.New("checkpoint: the cache has no persistence database")
+	}
 	c.checkpointMu.Lock()
 	defer c.checkpointMu.Unlock()
 	return c.persistCurrentState(ctx)
