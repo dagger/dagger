@@ -5584,9 +5584,13 @@ func (container *Container) Build(
 		return zero, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
 	}
 	// Return the converted container itself, so the result keeps its recipe.
+	// The build still runs here, at the call.
 	built, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
 	if err != nil {
 		return zero, fmt.Errorf("failed to load container from converted ID: %w", err)
+	}
+	if err := dagqlCache.Evaluate(ctx, built); err != nil {
+		return zero, fmt.Errorf("failed to clone built container state: %w", err)
 	}
 	return withDockerBuildSecretMounts(ctx, srv, built, returnedSecretMounts)
 }
