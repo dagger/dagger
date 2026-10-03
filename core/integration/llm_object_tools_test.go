@@ -536,6 +536,103 @@ type Runner {
 	}
 }
 
+// TestStateReturnRecordsFieldwise covers a @cache(Never) method returning its
+// own type: the recorded binding must be the previous state plus pure
+// __withField setters, not the method call, so restoring the conversation and
+// dispatching a tool on the restored state never re-runs the method. A return
+// that changes no field records nothing.
+func (LLMSuite) TestStateReturnRecordsFieldwise(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	source := c.Directory().
+		WithNewFile("dagger.toml", "[modules.counter]\nsource = \"modules/counter\"\n").
+		WithNewFile("modules/counter/dagger.json", `{"name":"counter","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("modules/counter/main.dang", fmt.Sprintf(`
+type Counter {
+  let count: Int! = 0
+  let last: Directory! = directory
+
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  bump: Counter! {
+    let ran = container.from("alpine:3.22")
+      .withMountedCache("/counter", cacheVolume(%q))
+      .withEnvVariable("CACHEBUST", UUID.v7)
+      .withExec(["sh", "-ec", "test ! -f /counter/bumped || { echo producer-replayed >&2; exit 91; }; touch /counter/bumped"])
+      .sync
+    count += 1
+    self.last = directory.withNewFile("count", toString(count))
+    self
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  noop: Counter! {
+    self
+  }
+
+  readCount: String! {
+    "count: " + toString(count) + "; file: " + last.file("count").contents
+  }
+}
+`, "fieldwise-replay-"+identity.NewID()))
+	script := recomposeRecordingTurn(c.LLM(), "bump", "bump", "noop", "readCount")
+	script = recomposeRecordingTurn(script, "read", "readCount")
+	model := cannedRecordingModel(ctx, t, c, script)
+	ws := source.AsWorkspace()
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws))
+	require.NoError(t, err)
+	result := composed.WithPrompt("bump").Loop()
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "count: 1; file: 1")
+	require.NotContains(t, transcript, "producer-replayed")
+
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, result)
+	require.NoError(t, err)
+	id := new(call.ID)
+	require.NoError(t, id.Decode(string(recipe)))
+	fields := map[string]bool{}
+	collectIDFieldNames(id, fields)
+	require.True(t, fields["__withField"], "the state must be recorded with field setters")
+	require.False(t, fields["bump"], "the producing call must not be recorded")
+	require.False(t, fields["noop"], "an unchanged return must not be recorded")
+	require.False(t, fields["withExec"], "the producing call's side effects must not be recorded")
+	// The latest binding is counter!__withField(count)!__withField(last): one
+	// setter per field bump changed, and none for noop.
+	var setters []string
+	for cur := id; cur != nil && setters == nil; cur = cur.Receiver() {
+		if cur.Field() != "withTools" {
+			continue
+		}
+		for _, arg := range cur.Args() {
+			obj, ok := arg.Value().(*call.LiteralID)
+			if arg.Name() != "object" || !ok {
+				continue
+			}
+			setters = []string{}
+			for state := obj.Value(); state != nil && state.Field() == "__withField"; state = state.Receiver() {
+				setters = append([]string{state.Args()[0].Value().ToInput().(string)}, setters...)
+			}
+		}
+	}
+	require.Equal(t, []string{"count", "last"}, setters)
+
+	// End the producing session, then restore and dispatch a tool on the
+	// restored state: the __withField chain rebuilds it. (Within one engine a
+	// replay of bump would be a cache hit rather than a re-run, so the recipe
+	// shape above is the assertion that matters; the sentinel only guards
+	// against an outright re-execution.)
+	require.NoError(t, c.Close())
+	target := connect(ctx, t)
+	restored := dagger.Ref[*dagger.LLM](target, recipe).WithPrompt("read").Loop()
+	transcript, err = restored.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(transcript, "count: 1; file: 1"), transcript)
+	require.NotContains(t, transcript, "producer-replayed")
+}
+
 // TestChangesetToolKeepsEmptyDirectories locks in that a Changeset-returning
 // tool's empty directories survive the engine's patch normalization
 // (core.normalizeChangesetToPatch). Git patches carry file content only, so
