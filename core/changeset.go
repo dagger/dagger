@@ -2361,3 +2361,50 @@ func toSet(slice []string) map[string]struct{} {
 	}
 	return set
 }
+
+const persistedFileLazyKindChangesetPatch = "changeset.asPatch"
+
+// FileChangesetPatchLazy writes a changeset's Git-compatible patch.
+type FileChangesetPatchLazy struct {
+	LazyState
+	Changeset dagql.ObjectResult[*Changeset]
+}
+
+type persistedFileChangesetPatchLazy struct {
+	ChangesetResultID uint64 `json:"changesetResultID"`
+}
+
+func (lazy *FileChangesetPatchLazy) Evaluate(ctx context.Context, file *File) error {
+	return evaluateFileOutput(ctx, &lazy.LazyState, "Changeset.asPatch", file, func(ctx context.Context) (*File, error) {
+		return lazy.Changeset.Self().AsPatch(ctx)
+	})
+}
+
+func (lazy *FileChangesetPatchLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	changeset, err := attachLazyInput(attach, lazy.Changeset, "FileChangesetPatchLazy.Changeset")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Changeset = changeset
+	return []dagql.AnyResult{changeset}, nil
+}
+
+func (lazy *FileChangesetPatchLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	changesetID, err := encodePersistedObjectRef(enc, lazy.Changeset, "changeset patch changeset")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedFileChangesetPatchLazy{ChangesetResultID: changesetID})
+}
+
+func decodeFileChangesetPatchLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*File], error) {
+	var persisted persistedFileChangesetPatchLazy
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted changeset patch lazy: %w", err)
+	}
+	changeset, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dec, persisted.ChangesetResultID, "changeset patch changeset")
+	if err != nil {
+		return nil, err
+	}
+	return &FileChangesetPatchLazy{LazyState: NewLazyState(), Changeset: changeset}, nil
+}

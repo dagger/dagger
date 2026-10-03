@@ -285,6 +285,9 @@ var persistedFileLazyVisitors = map[string]persistedLazyVisitor{
 		}
 		return w.children("platformVariantResultIDs", p.PlatformVariantResultIDs)
 	}),
+	persistedFileLazyKindChangesetPatch: persistedLazyStructVisitor(func(p *persistedFileChangesetPatchLazy, w *persistedRefWalker) error {
+		return w.child("changesetResultID", &p.ChangesetResultID)
+	}),
 }
 
 // persistedContainerRecipeVisitors declares the references of every Container

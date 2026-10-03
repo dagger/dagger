@@ -1369,11 +1369,16 @@ func (s *directorySchema) changesetAsPatch(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	file, err := parent.Self().AsPatch(ctx)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.File{
+		Platform: query.Platform(),
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+		Lazy:     &core.FileChangesetPatchLazy{LazyState: core.NewLazyState(), Changeset: parent},
+	})
 }
 
 type changesetExportArgs struct {
