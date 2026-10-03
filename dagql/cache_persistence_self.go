@@ -42,8 +42,12 @@ const persistedResultEnvelopeVersion = 5
 type PersistedResultEnvelope struct {
 	Imported      bool                 `json:"imported,omitempty"`
 	PendingOffers []PersistedPartOffer `json:"pendingOffers,omitempty"`
-	Version       int                  `json:"version"`
-	Kind          string               `json:"kind"`
+	// StoredParts are a blob-backed cache's stored parts of the value, which
+	// only its saved envelope carries: in memory they stay on the entry, so
+	// no record sent to an engine carries them.
+	StoredParts []PersistedPartOffer `json:"storedParts,omitempty"`
+	Version     int                  `json:"version"`
+	Kind        string               `json:"kind"`
 	// TypeName identifies the GraphQL value type of object and scalar
 	// envelopes.
 	TypeName string `json:"typeName,omitempty"`

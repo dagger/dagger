@@ -533,6 +533,11 @@ func NewCache(
 		db = c.sqlDB
 	}
 
+	// An engine wipes its store after a stop that was not clean, because its
+	// snapshots may no longer match it. A blob-backed cache has no snapshots,
+	// and its store is a whole, consistent save at every commit (Checkpoint),
+	// so it restores the last save whatever ended the process, and never
+	// marks its store dirty.
 	cleanShutdownVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
 	if err != nil {
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -540,7 +545,7 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("read clean_shutdown metadata: %w", err)
 	}
-	if found && cleanShutdownVal != "1" {
+	if found && cleanShutdownVal != "1" && !c.blobBacked {
 		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
@@ -588,11 +593,13 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("set persistence schema version: %w", err)
 	}
-	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0"); err != nil {
-		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
-			return nil, errors.Join(fmt.Errorf("mark clean_shutdown=0 at startup: %w", err), closeErr)
+	if !c.blobBacked {
+		if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0"); err != nil {
+			if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
+				return nil, errors.Join(fmt.Errorf("mark clean_shutdown=0 at startup: %w", err), closeErr)
+			}
+			return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
 		}
-		return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
 	}
 	if err := c.openIdentity(ctx); err != nil {
 		return nil, errors.Join(err, closeCacheDBs(db, c.pdb))
@@ -2225,6 +2232,9 @@ type Cache struct {
 
 	releaseCleanupErrMu sync.Mutex
 	releaseCleanupErr   error
+
+	// checkpointMu serializes Checkpoint's saves.
+	checkpointMu sync.Mutex
 
 	persistenceResetReason CachePersistenceResetReason
 	// identity names the cache's persistence database across the engine

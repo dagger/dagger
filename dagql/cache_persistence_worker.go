@@ -12,6 +12,26 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+// Checkpoint saves a blob-backed cache, the Cloud's, without closing it: the
+// same save as Close's, the closure of the stored roots in one transaction,
+// with each value's stored parts. A crash during a save keeps the previous
+// one, and a blob-backed cache restores the last save whatever ended the
+// process (NewCache). Only a blob-backed cache checkpoints while it runs: it
+// never decodes a value, so its save copies stored records as they are.
+func (c *Cache) Checkpoint(ctx context.Context) error {
+	if !c.blobBacked {
+		return errors.New("checkpoint: the cache has no blob store")
+	}
+	op, err := c.beginCacheOperation()
+	if err != nil {
+		return err
+	}
+	defer op.finish(false)
+	c.checkpointMu.Lock()
+	defer c.checkpointMu.Unlock()
+	return c.persistCurrentState(ctx)
+}
+
 func (c *Cache) persistCurrentState(ctx context.Context) error {
 	if c.sqlDB == nil || c.pdb == nil {
 		return nil
@@ -116,6 +136,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			resultID:              resultID,
 			imported:              res.imported,
 			pendingOffers:         offers,
+			storedParts:           res.storedPartsLocked(),
 			frame:                 res.loadResultCall().clone(),
 			self:                  payload.self,
 			isObject:              payload.isObject,
@@ -509,6 +530,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		if rerr == nil && snapshot != nil {
 			encoding.Envelope.Imported = snapshot.imported
 			encoding.Envelope.PendingOffers, rerr = clonePartOffers(snapshot.pendingOffers)
+			encoding.Envelope.StoredParts = snapshot.storedParts
 		}
 	}()
 	if snapshot != nil && snapshot.persistedEnvelope != nil {
