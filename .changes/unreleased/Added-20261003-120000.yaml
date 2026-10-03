@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  Run Dagger clients inside a container as their own sessions with
+  `daggerInDaggerNewSession: true` on `withExec`, `asService` and `up`. By
+  default they join the current session as nested clients; with this option each
+  connection gets a new session on the same engine, released when that client
+  closes. The command finds the engine through `DAGGER_ENGINE`, so SDKs need a
+  Dagger CLI: set `_EXPERIMENTAL_DAGGER_CLI_BIN` or let the SDK download one. In
+  Go, this is `ContainerWithExecOpts{DaggerInDaggerNewSession: true}`.
+time: 2026-10-03T12:00:00Z
+custom:
+  Author: sipsma
+  PR: "13866"
