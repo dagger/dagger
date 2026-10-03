@@ -265,6 +265,12 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 	persistedDirectoryLazyKindWithout:     parentOnly(func(p *persistedDirectoryWithoutLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindWithSymlink: parentOnly(func(p *persistedDirectoryWithSymlinkLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindChown:       parentOnly(func(p *persistedDirectoryChownLazy) *uint64 { return &p.ParentResultID }),
+	persistedDirectoryLazyKindMergeChangesets: persistedLazyStructVisitor(func(p *persistedDirectoryMergeChangesetsLazy, w *persistedRefWalker) error {
+		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
+			return err
+		}
+		return w.children("changesResultIDs", p.ChangesResultIDs)
+	}),
 }
 
 // persistedFileLazyVisitors declares the references of every File lazy kind,

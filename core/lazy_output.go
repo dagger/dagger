@@ -136,6 +136,29 @@ func evaluateFileOutput(ctx context.Context, state *LazyState, op string, file *
 	return err
 }
 
+// evaluateDirectoryOutput is evaluateFileOutput for a Directory.
+func evaluateDirectoryOutput(ctx context.Context, state *LazyState, op string, dir *Directory, produce func(context.Context) (*Directory, error)) error {
+	var unmoved *Directory
+	err := dir.evaluateLazy(ctx, state, op, func(ctx context.Context) error {
+		if err := validateLazyDirectoryReceiver(dir); err != nil {
+			return err
+		}
+		out, err := produce(ctx)
+		if err != nil {
+			return err
+		}
+		if err := moveDirectoryOutput(dir, out); err != nil {
+			unmoved = out
+			return err
+		}
+		return nil
+	})
+	if unmoved != nil {
+		err = errors.Join(err, unmoved.OnRelease(context.WithoutCancel(ctx)))
+	}
+	return err
+}
+
 func attachLazyInput[T dagql.Typed](attach func(dagql.AnyResult) (dagql.AnyResult, error), input dagql.ObjectResult[T], label string) (dagql.ObjectResult[T], error) {
 	if isNilValue(input.Self()) {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("%s: missing input", label)

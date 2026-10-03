@@ -1557,23 +1557,6 @@ type changesetWithChangesetArgs struct {
 	OnConflict core.ChangesetMergeConflict `default:"FAIL"`
 }
 
-func mergeConflictStrategyToCore(onConflict core.ChangesetMergeConflict) core.WithChangesetMergeConflict {
-	switch onConflict {
-	case core.FailEarlyOnMergeConflict:
-		return core.FailEarlyOnConflict
-	case core.LeaveConflictMarkersOnMergeConflict:
-		return core.LeaveConflictMarkers
-	case core.PreferOursOnMergeConflict:
-		return core.PreferOursOnConflict
-	case core.PreferTheirsOnMergeConflict:
-		return core.PreferTheirsOnConflict
-	case core.FailOnMergeConflict:
-		fallthrough
-	default:
-		return core.FailOnConflict
-	}
-}
-
 func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (*core.Changeset, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1674,7 +1657,11 @@ func (s *directorySchema) changesetMergeWithChangeset(ctx context.Context, paren
 	if err != nil {
 		return nil, err
 	}
-	return parent.Self().MergeWithChangeset(ctx, change.Self(), mergeConflictStrategyToCore(args.OnConflict))
+	return newChangesetMergeDirectory(ctx, &core.DirectoryMergeChangesetsLazy{
+		Parent:     parent,
+		Changes:    []dagql.ObjectResult[*core.Changeset]{change},
+		OnConflict: args.OnConflict,
+	})
 }
 
 func (s *directorySchema) changesetMergeWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (*core.Directory, error) {
@@ -1682,15 +1669,43 @@ func (s *directorySchema) changesetMergeWithChangesets(ctx context.Context, pare
 	if err != nil {
 		return nil, err
 	}
-	changes := make([]*core.Changeset, len(args.Changes))
+	if len(args.Changes) < 2 {
+		return nil, fmt.Errorf("multi-changeset merge requires at least two changesets")
+	}
+	changes := make([]dagql.ObjectResult[*core.Changeset], len(args.Changes))
 	for i, changeID := range args.Changes {
 		change, err := changeID.Load(ctx, srv)
 		if err != nil {
 			return nil, fmt.Errorf("load changeset %d: %w", i, err)
 		}
-		changes[i] = change.Self()
+		changes[i] = change
 	}
-	return parent.Self().MergeWithChangesets(ctx, changes, mergeConflictsStrategyToCore(args.OnConflict))
+	// The octopus merge supports only FAIL_EARLY and FAIL.
+	onConflict := core.FailOnMergeConflict
+	if mergeConflictsStrategyToCore(args.OnConflict) == core.FailEarlyOnConflicts {
+		onConflict = core.FailEarlyOnMergeConflict
+	}
+	return newChangesetMergeDirectory(ctx, &core.DirectoryMergeChangesetsLazy{
+		Parent:     parent,
+		Changes:    changes,
+		OnConflict: onConflict,
+	})
+}
+
+// newChangesetMergeDirectory returns the directory a changeset merge produces
+// when it is first read.
+func newChangesetMergeDirectory(ctx context.Context, lazy *core.DirectoryMergeChangesetsLazy) (*core.Directory, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	lazy.LazyState = core.NewLazyState()
+	return &core.Directory{
+		Platform: query.Platform(),
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     lazy,
+	}, nil
 }
 
 func (s *directorySchema) changeset(ctx context.Context, q *core.Query, args struct{}) (*core.Changeset, error) {

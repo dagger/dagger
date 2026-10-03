@@ -79,3 +79,39 @@ func TestChangesetPatchRebuildsOnAnotherEngine(t *testing.T) {
 	bctx, loaded := importForRebuild(t, a, actx, b, patch)
 	require.Contains(t, requireRebuiltFile(t, b, bctx, loaded, core.ChangesetPatchFilename), "+after")
 }
+
+// Changeset merges are rebuilt on another engine when their blob is missing.
+func TestChangesetMergesRebuildOnAnotherEngine(t *testing.T) {
+	for _, field := range []string{"__mergeWithChangeset", "__mergeWithChangesets", "__mergeForWorkspaceCommit"} {
+		t.Run(field, func(t *testing.T) {
+			salt := transferTestSalt(t)
+			a, b := newTransferTestEngine(t, salt), newTransferTestEngine(t, salt)
+			actx := dagql.ContextWithServer(a.session(t, "a1"), a.dag)
+			ours := rebuildTestChangeset(t, a, actx, "ours", "0\n", "1\n")
+			changeID := func(path string) dagql.ID[*core.Changeset] {
+				id, err := rebuildTestChangeset(t, a, actx, path, "0\n", "1\n").ID()
+				require.NoError(t, err)
+				return dagql.NewID[*core.Changeset](id)
+			}
+			args := []dagql.NamedInput{rebuildTestArg("changes", changeID("theirs"))}
+			want := []string{"ours", "theirs"}
+			if field == "__mergeWithChangesets" {
+				args = []dagql.NamedInput{rebuildTestArg("changes", dagql.ArrayInput[dagql.ID[*core.Changeset]]{changeID("theirs"), changeID("third")})}
+				want = append(want, "third")
+			}
+			var merged dagql.ObjectResult[*core.Directory]
+			require.NoError(t, a.dag.Select(actx, ours, &merged, dagql.Selector{Field: field, Args: args}))
+			lazy, ok := merged.Self().Lazy.(*core.DirectoryMergeChangesetsLazy)
+			require.True(t, ok, "%T", merged.Self().Lazy)
+			require.Equal(t, field == "__mergeForWorkspaceCommit", lazy.Workspace)
+			requireRebuildRoute(t, actx, a.cache, merged)
+
+			testutil.RequireNativeMount(t)
+			require.NoError(t, a.cache.Evaluate(actx, merged))
+			bctx, loaded := importForRebuild(t, a, actx, b, merged)
+			for _, path := range want {
+				require.Equal(t, "1\n", requireRebuiltFile(t, b, bctx, loaded, path))
+			}
+		})
+	}
+}

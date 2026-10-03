@@ -211,19 +211,15 @@ func (s *directorySchema) changesetMergeForWorkspaceCommit(ctx context.Context, 
 	if err != nil {
 		return inst, err
 	}
-	if dir, supported, err := core.TryNativeWorkspaceMerge(ctx, parent.Self(), incoming.Self()); err != nil {
+	dir, err := newChangesetMergeDirectory(ctx, &core.DirectoryMergeChangesetsLazy{
+		Parent:    parent,
+		Changes:   []dagql.ObjectResult[*core.Changeset]{incoming},
+		Workspace: true,
+	})
+	if err != nil {
 		return inst, err
-	} else if supported {
-		return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	}
-	// Unsupported storage, metadata, divergent baselines and native failures
-	// preserve the existing fail-on-conflict merge, including its filesystem
-	// behavior.
-	err = srv.Select(ctx, parent, &inst, dagql.Selector{Field: "__mergeWithChangeset", Args: []dagql.NamedInput{
-		{Name: "changes", Value: args.Changes},
-		{Name: "onConflict", Value: core.FailOnMergeConflict},
-	}})
-	return inst, err
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 func (s *workspaceSchema) workspaceGitDirectory(ctx context.Context, parent dagql.ObjectResult[*core.WorkspaceGit], _ struct{}) (inst dagql.ObjectResult[*core.Directory], err error) {
