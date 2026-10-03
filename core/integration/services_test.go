@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,6 +82,102 @@ func (ServiceSuite) TestNesting(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.want, out)
 		})
 	}
+}
+
+func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
+	// clientListed reports whether engine.clients lists clientID, or nil if
+	// the query fails, so polling retries instead of failing off the test
+	// goroutine.
+	clientListed := func(ctx context.Context, c *dagger.Client, clientID string) *bool {
+		clients, err := c.Engine().Clients(ctx)
+		if err != nil {
+			return nil
+		}
+		listed := slices.Contains(clients, clientID)
+		return &listed
+	}
+	engineHasClient := func(ctx context.Context, c *dagger.Client, clientID string) bool {
+		listed := clientListed(ctx, c, clientID)
+		return listed != nil && *listed
+	}
+	engineLacksClient := func(ctx context.Context, c *dagger.Client, clientID string) bool {
+		listed := clientListed(ctx, c, clientID)
+		return listed != nil && !*listed
+	}
+
+	// newSessionService runs a Dagger CLI as a service whose query blocks, so its
+	// session stays open until the service stops. engine.clients lists the
+	// main client of every session on the engine.
+	newSessionService := func(c *dagger.Client, clientID string) *dagger.Container {
+		block := fmt.Sprintf(`{ container { from(address: %q) { withEnvVariable(name: "BUST", value: %q) { withExec(args: ["sleep", "3600"]) { sync } } } } }`,
+			alpineImage, identity.NewID())
+		return c.Container().From(busyboxImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithNewFile("/block.graphql", block).
+			WithEnvVariable("DAGGER_SESSION_CLIENT_ID", clientID).
+			WithExposedPort(8080)
+	}
+	const serve = `dagger query --doc /block.graphql & mkdir -p /www && exec httpd -f -p 8080 -h /www`
+
+	t.Run("asService", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		clientID := identity.NewID()
+		svc, err := newSessionService(c, clientID).
+			AsService(dagger.ContainerAsServiceOpts{
+				Args:                     []string{"sh", "-c", serve},
+				DaggerInDaggerNewSession: true,
+			}).
+			Start(ctx)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool { return engineHasClient(ctx, c, clientID) },
+			3*time.Minute, time.Second, "the service's client never started a session")
+
+		_, err = svc.Stop(ctx)
+		require.NoError(t, err)
+		require.Eventually(t, func() bool { return engineLacksClient(ctx, c, clientID) },
+			time.Minute, time.Second, "the service's session outlived the service")
+	})
+
+	t.Run("up", func(ctx context.Context, t *testctx.T) {
+		// up keeps its service running until the calling client closes, so
+		// close that client and observe from another one.
+		c := connect(ctx, t)
+		observer := connect(ctx, t)
+		clientID := identity.NewID()
+		upCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		upErr := make(chan error, 1)
+		go func() {
+			upErr <- newSessionService(c, clientID).Up(upCtx, dagger.ContainerUpOpts{
+				Args:                     []string{"sh", "-c", serve},
+				Random:                   true,
+				DaggerInDaggerNewSession: true,
+			})
+		}()
+
+		require.Eventually(t, func() bool { return engineHasClient(ctx, observer, clientID) },
+			3*time.Minute, time.Second, "the service's client never started a session")
+
+		cancel()
+		<-upErr
+		require.NoError(t, c.Close())
+		require.Eventually(t, func() bool { return engineLacksClient(ctx, observer, clientID) },
+			time.Minute, time.Second, "the service's session outlived its caller")
+	})
+
+	t.Run("conflicts with disableDaggerInDagger", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := c.Container().From(busyboxImage).
+			WithExposedPort(8080).
+			AsService(dagger.ContainerAsServiceOpts{
+				Args:                     []string{"httpd", "-f", "-p", "8080"},
+				DisableDaggerInDagger:    true,
+				DaggerInDaggerNewSession: true,
+			}).
+			Hostname(ctx)
+		requireErrOut(t, err, `cannot set both "disableDaggerInDagger" and "daggerInDaggerNewSession"`)
+	})
 }
 
 func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
