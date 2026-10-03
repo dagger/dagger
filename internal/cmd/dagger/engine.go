@@ -2,10 +2,12 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
@@ -159,6 +161,14 @@ func withEngineAction(
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
 
+		// A background command also sends its own telemetry to the engine,
+		// so that attaching to the session shows its output.
+		var engineTelemetry *engineBoundTelemetry
+		if params.Background {
+			engineTelemetry = backgroundTelemetry
+			ctx = withEngineBoundTelemetry(ctx, engineTelemetry)
+		}
+
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
@@ -174,8 +184,12 @@ func withEngineAction(
 			}
 			Frontend.SetTelemetryError(err)
 		}))
+		var closeTelemetryOnce sync.Once
+		closeTelemetry := func() {
+			closeTelemetryOnce.Do(func() { cleanupTelemetry(rerr) })
+		}
 		cleanup.Add("close telemetry", func() error {
-			cleanupTelemetry(rerr)
+			closeTelemetry()
 			return nil
 		})
 
@@ -183,15 +197,54 @@ func withEngineAction(
 		if err != nil {
 			return cleanup.Run, err
 		}
+		if engineTelemetry != nil {
+			// The client's own telemetry store receives what this process
+			// pushes, so subscribing to it would send it around again.
+			params.EngineTrace, params.EngineLogs, params.EngineMetrics = nil, nil, nil
+			params.EngineTraceWithoutCloud, params.EngineLogsWithoutCloud, params.EngineMetricsWithoutCloud = nil, nil, nil
+		}
 
 		// Connect to and run with the engine
 		sess, err := client.Connect(ctx, params)
 		if err != nil {
+			if engineTelemetry != nil {
+				_ = engineTelemetry.connect(ctx, nil)
+			}
 			return cleanup.Run, err
 		}
-		cleanup.Add("close dagger session", sess.Close)
+		cleanup.Add("close dagger session", func() error {
+			if engineTelemetry != nil {
+				// The command's output and its final span state reach the
+				// engine through this client's connection, so end and flush
+				// them before closing it.
+				closeTelemetry()
+			}
+			return sess.Close()
+		})
 
 		Frontend.SetClient(sess.Dagger())
+
+		if engineTelemetry != nil {
+			if err := engineTelemetry.connect(ctx, sess); err != nil {
+				return cleanup.Run, err
+			}
+			reportBackgroundSession(sess.SessionID)
+			// A background client exits when the engine closes it or ends
+			// its session.
+			var cancel context.CancelCauseFunc
+			ctx, cancel = context.WithCancelCause(ctx)
+			cleanup.Add("stop watching the session", func() error {
+				cancel(nil)
+				return nil
+			})
+			go func() {
+				select {
+				case <-sess.AttachablesDone():
+					cancel(errors.New("the session ended or closed this client"))
+				case <-ctx.Done():
+				}
+			}()
+		}
 
 		return cleanup.Run, fn(ctx, sess)
 	})
@@ -497,6 +550,10 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, Frontend.SpanExporter())
 		cfg.LiveLogExporters = append(cfg.LiveLogExporters, Frontend.LogExporter())
 		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
+	}
+	if t := engineBoundTelemetryFrom(ctx); t != nil {
+		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, engineBoundSpans{t})
+		cfg.LiveLogExporters = append(cfg.LiveLogExporters, engineBoundLogs{t})
 	}
 	if !skipSharedTelemetryExporters {
 		if spans, logs, metrics, ok := configuredCloudExporters(ctx); ok {
