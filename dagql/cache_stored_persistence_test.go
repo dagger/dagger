@@ -182,7 +182,7 @@ func TestCloudRestoresAStoreItNeverClosed(t *testing.T) {
 	// The process dies: nothing saves again or marks the store clean.
 	require.NoError(t, cloud.CloseDiscardingPersistence())
 
-	ctx, cloud = storedPersistenceTestCloud(t, path)
+	_, cloud = storedPersistenceTestCloud(t, path)
 	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason())
 	state := storedPersistenceTestState(cloud)
 	require.Contains(t, state, root)

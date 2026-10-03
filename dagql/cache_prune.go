@@ -516,12 +516,7 @@ func (c *Cache) snapshotPruneStateLocked(
 	}
 
 	if mode == pruneSnapshotDisk {
-		if blobs != nil {
-			// A blob-backed cache's usage identities are its blobs, and its
-			// used bytes the pool's distinct blobs.
-			identities = blobs.byResult
-			snapshot.usedBytes = blobs.poolBytes
-		}
+		identities = snapshot.useStoredBlobs(identities, blobs)
 		if err := c.snapshotPruneDiskUsageIdentitiesLocked(&snapshot, identities, blobs, checker); err != nil {
 			return pruneSnapshot{}, err
 		}
@@ -537,15 +532,9 @@ func (c *Cache) snapshotPruneStateLocked(
 			continue
 		}
 		state := res.loadPayloadState()
-		incoming := res.incomingOwnershipCount
-		if c.blobBacked {
-			// A prune goes through holdings (dropPrunedValuesLocked): an
-			// entry with no value has nothing to free, and a value is kept
-			// by its other owners only.
-			if !state.hasValue && state.persistedEnvelope == nil {
-				continue
-			}
-			incoming -= res.engineHoldingsLocked()
+		incoming, prunable := c.pruneIncomingLocked(res, state)
+		if !prunable {
+			continue
 		}
 		createdAt := state.createdAtUnixNano
 		lastUsedAt := state.lastUsedAtUnixNano
@@ -587,23 +576,13 @@ func (c *Cache) snapshotPruneStateLocked(
 			expiresAtUnix:            edge.expiresAtUnix,
 		}
 		if mode == pruneSnapshotMetadata {
-			direct := directResultBytes
-			if c.blobBacked {
-				direct = res.storedValueBytes()
-			}
+			direct := c.pruneDirectBytesLocked(res, directResultBytes)
 			snapshotResult.directResultBytes = direct
 			snapshotResult.entry.SizeBytes = direct
 		} else {
 			usageIdentities := identities[resID]
 			sizeBytes := int64(0)
-			measuredSizes := res.cacheUsageSizeByIdentity
-			if blobs != nil {
-				measuredSizes = make(map[string]int64, len(usageIdentities))
-				for _, identity := range usageIdentities {
-					measuredSizes[identity] = blobs.sizes[identity]
-				}
-			}
-			for _, measured := range measuredSizes {
+			for _, measured := range blobs.measuredSizes(res, usageIdentities) {
 				if checker != nil {
 					if err := checker.check(); err != nil {
 						return pruneSnapshot{}, err
@@ -646,6 +625,56 @@ func (c *Cache) snapshotPruneStateLocked(
 		return pruneSnapshot{}, err
 	}
 	return snapshot, nil
+}
+
+// useStoredBlobs returns the usage identities the disk stage counts: for a
+// blob-backed cache, whose usage is blobs, its values' blobs, with the used
+// bytes the pool's distinct blobs; otherwise identities as they are.
+func (snapshot *pruneSnapshot) useStoredBlobs(identities map[sharedResultID][]string, blobs *storedBlobUsage) map[sharedResultID][]string {
+	if blobs == nil {
+		return identities
+	}
+	snapshot.usedBytes = blobs.poolBytes
+	return blobs.byResult
+}
+
+// pruneIncomingLocked returns the ownership a prune's simulation counts for
+// res, and whether res has anything to free. A prune of a blob-backed cache
+// goes through holdings (dropPrunedValuesLocked): an entry with no value has
+// nothing to free, and a value is kept by its other owners only. Requires
+// egraphMu.
+func (c *Cache) pruneIncomingLocked(res *sharedResult, state sharedResultPayloadState) (int64, bool) {
+	if !c.blobBacked {
+		return res.incomingOwnershipCount, true
+	}
+	if !state.hasValue && state.persistedEnvelope == nil {
+		return 0, false
+	}
+	return res.incomingOwnershipCount - res.engineHoldingsLocked(), true
+}
+
+// pruneDirectBytesLocked is what the memory stage frees with res: an
+// engine's uniform share, or a blob-backed cache's value's own bytes.
+// Requires egraphMu.
+func (c *Cache) pruneDirectBytesLocked(res *sharedResult, uniform int64) int64 {
+	if c.blobBacked {
+		return res.storedValueBytes()
+	}
+	return uniform
+}
+
+// measuredSizes returns the disk stage's sizes of res's usage identities: its
+// measured snapshots on an engine, its blobs on a blob-backed cache (blobs
+// set).
+func (blobs *storedBlobUsage) measuredSizes(res *sharedResult, identities []string) map[string]int64 {
+	if blobs == nil {
+		return res.cacheUsageSizeByIdentity
+	}
+	sizes := make(map[string]int64, len(identities))
+	for _, identity := range identities {
+		sizes[identity] = blobs.sizes[identity]
+	}
+	return sizes
 }
 
 func (c *Cache) snapshotPruneDiskUsageIdentitiesLocked(snapshot *pruneSnapshot, identities map[sharedResultID][]string, blobs *storedBlobUsage, checker *pruneCancellationChecker) error {
