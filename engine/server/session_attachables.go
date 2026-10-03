@@ -49,6 +49,7 @@ type sessionAttachableCaller struct {
 	ctx       context.Context
 	conn      *grpc.ClientConn
 	supported map[string]struct{}
+	services  map[string]struct{}
 }
 
 func newSessionAttachableManager() *sessionAttachableManager {
@@ -73,9 +74,15 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 		ctx:       ctx,
 		conn:      cc,
 		supported: map[string]struct{}{},
+		services:  map[string]struct{}{},
 	}
 	for _, methodURL := range methodURLs {
-		caller.supported[strings.ToLower(methodURL)] = struct{}{}
+		methodURL = strings.ToLower(methodURL)
+		caller.supported[methodURL] = struct{}{}
+		// method URLs are "/<service>/<method>"
+		if service, _, ok := strings.Cut(strings.TrimPrefix(methodURL, "/"), "/"); ok {
+			caller.services[service] = struct{}{}
+		}
 	}
 
 	m.mu.Lock()
@@ -103,14 +110,22 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 }
 
 func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCaller, bool) {
+	caller := m.lookup(clientID)
+	if caller == nil {
+		return nil, false
+	}
+	return caller, true
+}
+
+func (m *sessionAttachableManager) lookup(clientID string) *sessionAttachableCaller {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	caller, ok := m.callers[clientID]
 	if !ok || !caller.active() {
-		return nil, false
+		return nil
 	}
-	return caller, true
+	return caller
 }
 
 // Expect marks clientID's attachables as coming from a nested exec's session
@@ -233,6 +248,12 @@ func (caller *sessionAttachableCaller) active() bool {
 
 func (caller *sessionAttachableCaller) Supports(method string) bool {
 	_, ok := caller.supported[strings.ToLower(method)]
+	return ok
+}
+
+// Provides reports whether the caller serves the given gRPC service.
+func (caller *sessionAttachableCaller) Provides(service string) bool {
+	_, ok := caller.services[strings.ToLower(service)]
 	return ok
 }
 
