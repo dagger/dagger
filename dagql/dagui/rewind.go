@@ -2,6 +2,8 @@ package dagui
 
 import (
 	"sort"
+
+	telemetry "github.com/dagger/otel-go"
 )
 
 // Rewinds: the client half of the rewind marker contract
@@ -104,12 +106,22 @@ func (db *DB) buildRewinds() ([]*Rewind, map[SpanID]*Rewind) {
 		if len(abandoned) == 0 {
 			continue
 		}
+		// A reply span carries its withResponse digest, but one recorded
+		// before the engine re-stamped it (or still streaming) carries its
+		// REQUEST's. A rewind TO that request keeps the request and answers
+		// it afresh: the old reply is gone even though its digest is the
+		// adopted one. A rewind to a withResponse keeps that reply.
+		answeredAt := ""
+		if call := db.Call(marker.AgentRewindTo); call != nil && call.Field != "withResponse" {
+			answeredAt = marker.AgentRewindTo
+		}
 		owner := nearestAgentID(marker)
 		for span := range db.Spans.Iter() {
 			if span.LLMRole == "" || span.Internal || span.AgentRewindMarker() {
 				continue
 			}
-			if !abandoned[span.LLMCallDigest] {
+			if !abandoned[span.LLMCallDigest] &&
+				(answeredAt == "" || span.LLMRole != telemetry.LLMRoleAssistant || span.LLMCallDigest != answeredAt) {
 				continue
 			}
 			// The same digest is reused when the edited prompt is

@@ -7121,12 +7121,16 @@ func spanLLMCallDigest(span *dagui.Span) string {
 	return ""
 }
 
-// llmBranchID returns the encoded DAG ID for branching from the focused span's
-// LLMCallDigest. Returns "" if the span (or its ancestors) don't have a call
-// digest or the call can't be found/encoded.
+// llmBranchID returns the encoded DAG ID of the LLM state a branch from the
+// focused span keeps (see dagui.DB.LLMBranchDigest): a prompt's own state, or
+// the state that settles a reply -- never the request a reply answered, which
+// would silently drop the reply the user picked. Returns "" if the span (or
+// its ancestors) don't have a call digest or the state can't be
+// resolved/encoded.
 func (fe *frontendPretty) llmBranchID(span *dagui.Span) string {
-	digest := spanLLMCallDigest(span)
-	if digest == "" {
+	digest, err := fe.db.LLMBranchDigest(span)
+	if err != nil {
+		slog.Warn("could not resolve the LLM state to branch to", "err", err)
 		return ""
 	}
 	id, err := encodedIDForCallDigest(fe.db, digest)
