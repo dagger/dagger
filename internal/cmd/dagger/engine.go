@@ -196,6 +196,48 @@ func withEngineAction(
 	})
 }
 
+// setEngineTelemetryParams wires where the client forwards the telemetry the
+// engine streams to it, from the pipeline initEngineTelemetry set up.
+func setEngineTelemetryParams(ctx context.Context, params *client.Params) {
+	// A nested CLI's parent already gets the engine's telemetry; see
+	// engineForwardTargets.
+	parentTelemetry := noTelemetryIndexes
+	if nestedEngineSession() {
+		parentTelemetry = cliEnvTelemetry
+	}
+	spanProcessors, logProcessors, metricExporters := engineForwardTargets(
+		telemetry.SpanProcessors, telemetry.LogProcessors, telemetry.MetricExporters,
+		parentTelemetry)
+	params.EngineTrace = telemetry.SpanForwarder{
+		Processors: spanProcessors,
+	}
+	// The engine names the session (Query.setSessionTitle) with a span-name
+	// record on our primary span; apply it to the live span too, so the span
+	// we export carries the title like the frontend shows it.
+	namer := primarySpanNamer{span: trace.SpanFromContext(ctx)}
+	params.EngineLogs = telemetry.LogForwarder{
+		Processors: append(slices.Clone(logProcessors), namer),
+	}
+	params.EngineMetrics = metricExporters
+	if cloud := cliCloudTelemetry; cloud.configured() {
+		// Ask the engine to publish the session's telemetry to Cloud itself,
+		// and have what it would send us forwarded everywhere else.
+		params.EngineCloudTelemetry = true
+		params.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
+		params.CloudCredentialsPath = auth.CredentialsFile()
+		spanProcessors, logProcessors, metricExporters := engineForwardTargets(
+			telemetry.SpanProcessors, telemetry.LogProcessors, telemetry.MetricExporters,
+			parentTelemetry, cloud)
+		params.EngineTraceWithoutCloud = telemetry.SpanForwarder{
+			Processors: spanProcessors,
+		}
+		params.EngineLogsWithoutCloud = telemetry.LogForwarder{
+			Processors: append(slices.Clone(logProcessors), namer),
+		}
+		params.EngineMetricsWithoutCloud = metricExporters
+	}
+}
+
 // finalizeEngineParams fills in the run-scoped client params that depend on the
 // frontend and telemetry being set up. Must be called inside Frontend.Run,
 // after initEngineTelemetry. Shared by withEngine and withSetupSessions.
@@ -222,31 +264,7 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 
 	params.CloudURLCallback = Frontend.SetCloudURL
 
-	params.EngineTrace = telemetry.SpanForwarder{
-		Processors: telemetry.SpanProcessors,
-	}
-	// The engine names the session (Query.setSessionTitle) with a span-name
-	// record on our primary span; apply it to the live span too, so the span
-	// we export carries the title like the frontend shows it.
-	namer := primarySpanNamer{span: trace.SpanFromContext(ctx)}
-	params.EngineLogs = telemetry.LogForwarder{
-		Processors: append(slices.Clone(telemetry.LogProcessors), namer),
-	}
-	params.EngineMetrics = telemetry.MetricExporters
-	if cloud := cliCloudTelemetry; cloud.configured() {
-		// Ask the engine to publish the session's telemetry to Cloud itself,
-		// and have what it would send us forwarded everywhere else.
-		params.EngineCloudTelemetry = true
-		params.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
-		params.CloudCredentialsPath = auth.CredentialsFile()
-		params.EngineTraceWithoutCloud = telemetry.SpanForwarder{
-			Processors: withoutIndex(telemetry.SpanProcessors, cloud.spans),
-		}
-		params.EngineLogsWithoutCloud = telemetry.LogForwarder{
-			Processors: append(withoutIndex(telemetry.LogProcessors, cloud.logs), namer),
-		}
-		params.EngineMetricsWithoutCloud = withoutIndex(telemetry.MetricExporters, cloud.metrics)
-	}
+	setEngineTelemetryParams(ctx, &params)
 
 	params.WithTerminal = withTerminal
 
@@ -434,93 +452,224 @@ var skipSharedTelemetryExporters bool
 //
 // Internal plumbing sessions (see skipSharedTelemetryExporters) opt out of the
 // process-wide OTLP exporter singletons — the Dagger Cloud exporters and the
-// OTEL_* "Detect" exporters. Those singletons are sync.Once-cached and get shut
+// OTEL_* exporters. Those singletons are sync.Once-cached and get shut
 // down by telemetry.Close(); a pre-command session that wired them up and then
 // tore them down would leave them dead for the real command that runs next in
 // the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
 // telemetry warnings (e.g. the preflight session for a dynamic SDK command).
 // Preparation sessions use only their own frontend exporters.
-func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes) {
-	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
+func engineTelemetryConfig(ctx context.Context) (_ telemetry.Config, cloud, env telemetryIndexes) {
+	return engineTelemetryConfigWith(ctx, enginetel.ConfiguredCloudExporters, configuredEnvExporters)
 }
 
 type configuredCloudExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool)
 
-// cloudTelemetryIndexes locates the CLI's Dagger Cloud exporters in the
+// telemetryIndexes locates a set of the CLI's exporters (its Dagger Cloud
+// exporters, or the ones configured by OTEL_* environment variables) in the
 // pipeline telemetry.Init builds: the span processor's index in the
 // telemetry.SpanProcessors Init sets, and the log and metric exporters'
 // indexes among the ones Init appends, in Config order, to
 // telemetry.LogProcessors and telemetry.MetricExporters. Each is -1 when the
-// CLI does not export to Cloud.
-type cloudTelemetryIndexes struct {
+// CLI has no such exporter.
+type telemetryIndexes struct {
 	spans, logs, metrics int
 }
 
-func (idx cloudTelemetryIndexes) configured() bool {
+func (idx telemetryIndexes) configured() bool {
 	return idx.spans >= 0 && idx.logs >= 0 && idx.metrics >= 0
 }
 
-var noCloudTelemetry = cloudTelemetryIndexes{spans: -1, logs: -1, metrics: -1}
+var noTelemetryIndexes = telemetryIndexes{spans: -1, logs: -1, metrics: -1}
 
 // cliCloudTelemetry is where initEngineTelemetry found the Cloud exporters in
 // the global telemetry slices, so that the engine's telemetry can be
 // forwarded without them when the engine publishes it to Cloud itself.
-var cliCloudTelemetry = noCloudTelemetry
+var cliCloudTelemetry = noTelemetryIndexes
+
+// cliEnvTelemetry is where initEngineTelemetry put the exporters configured
+// by the OTEL_* environment, so that a nested CLI can forward the engine's
+// telemetry without them (see engineForwardTargets).
+var cliEnvTelemetry = noTelemetryIndexes
 
 // withoutIndex returns a copy of all without its i-th element.
 func withoutIndex[T any](all []T, i int) []T {
+	return withoutIndexes(all, i)
+}
+
+// withoutIndexes returns all without the elements at the given indexes;
+// negative indexes are ignored. With none to drop, all is returned as-is, so
+// a nil slice stays nil.
+func withoutIndexes[T any](all []T, drop ...int) []T {
+	if !slices.ContainsFunc(drop, func(i int) bool { return i >= 0 && i < len(all) }) {
+		return all
+	}
 	out := make([]T, 0, len(all))
 	for j, v := range all {
-		if j != i {
+		if !slices.Contains(drop, j) {
 			out = append(out, v)
 		}
 	}
 	return out
 }
 
-func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) (telemetry.Config, cloudTelemetryIndexes) {
+// engineForwardTargets selects where the CLI forwards the telemetry it
+// receives from the engine: every exporter the CLI has, except those in
+// exclude.
+//
+// A nested CLI (one connected through DAGGER_SESSION_PORT, e.g. in a
+// container with nesting enabled, or under `dagger run`) excludes the
+// exporters it detected from its OTEL_* environment: those point back at its
+// parent -- the engine's per-exec telemetry proxy, or `dagger run`'s -- which
+// already receives everything the engine sends this client, since the engine
+// routes a nested client's telemetry to all of its ancestors itself.
+// Forwarding it again would deliver it twice. Spans tolerate that (a newer
+// snapshot replaces the older), but every log record would be stored twice:
+// output shown twice in the parent's UI, and a sub-agent's prompt duplicated
+// in the conversation report an LLM tool result embeds.
+func engineForwardTargets(
+	spans []sdktrace.SpanProcessor,
+	logs []sdklog.Processor,
+	metrics []sdkmetric.Exporter,
+	exclude ...telemetryIndexes,
+) ([]sdktrace.SpanProcessor, []sdklog.Processor, []sdkmetric.Exporter) {
+	var dropSpans, dropLogs, dropMetrics []int
+	for _, idx := range exclude {
+		dropSpans = append(dropSpans, idx.spans)
+		dropLogs = append(dropLogs, idx.logs)
+		dropMetrics = append(dropMetrics, idx.metrics)
+	}
+	return withoutIndexes(spans, dropSpans...),
+		withoutIndexes(logs, dropLogs...),
+		withoutIndexes(metrics, dropMetrics...)
+}
+
+// nestedEngineSession reports whether this CLI connects to its parent's
+// session through DAGGER_SESSION_PORT rather than starting its own; see
+// engine/client's Connect.
+func nestedEngineSession() bool {
+	_, nested := os.LookupEnv("DAGGER_SESSION_PORT")
+	return nested
+}
+
+// configuredEnvExportersFunc returns the exporters the OTEL_* environment
+// configures, each nil when it configures none.
+type configuredEnvExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter)
+
+// configuredEnvExporters is the detection telemetry.Init would do with
+// Config.Detect, done by engineTelemetryConfig instead so that it knows where
+// the detected exporters end up.
+func configuredEnvExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+	var spans sdktrace.SpanExporter
+	var logs sdklog.Exporter
+	var metrics sdkmetric.Exporter
+	if exp, ok := telemetry.ConfiguredSpanExporter(ctx); ok {
+		spans = exp
+	}
+	if exp, ok := telemetry.ConfiguredLogExporter(ctx); ok {
+		logs = exp
+	}
+	if exp, ok := telemetry.ConfiguredMetricExporter(ctx); ok {
+		metrics = exp
+	}
+	return spans, logs, metrics
+}
+
+func engineTelemetryConfigWith(
+	ctx context.Context,
+	configuredCloudExporters configuredCloudExportersFunc,
+	configuredEnvExporters configuredEnvExportersFunc,
+) (_ telemetry.Config, cloud, env telemetryIndexes) {
 	cfg := telemetry.Config{
-		Detect:   !skipSharedTelemetryExporters,
+		// The OTEL_* exporters are added below instead, to locate them.
+		Detect:   false,
 		Resource: Resource(ctx),
 	}
-	cloud := noCloudTelemetry
+	cloud, env = noTelemetryIndexes, noTelemetryIndexes
 	if !frontendTelemetryDisabled(ctx) {
 		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, Frontend.SpanExporter())
 		cfg.LiveLogExporters = append(cfg.LiveLogExporters, Frontend.LogExporter())
 		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
 	}
-	if !skipSharedTelemetryExporters {
-		if spans, logs, metrics, ok := configuredCloudExporters(ctx); ok {
-			// Wrap the Cloud span exporter in a LARGE-queue live processor instead of
-			// letting telemetry.Init wrap it with the default 2048-slot BSP, so the
-			// CLI→Cloud hop does not silently drop spans on a big burst — a cold engine
-			// build is ~15k spans, live-double-emitted ≈ 30k records. The wcprof
-			// completeness carrier rides at the tail and was the first thing to drop;
-			// this keeps the exported trace complete. (SpanProcessors are prepended to
-			// the pipeline by telemetry.Init, same as a LiveTraceExporter would be.)
-			cloud = cloudTelemetryIndexes{
-				spans:   len(cfg.SpanProcessors),
-				logs:    len(cfg.LiveLogExporters),
-				metrics: len(cfg.LiveMetricExporters),
-			}
-			cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewLargeQueueLiveSpanProcessor(spans))
-			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
-			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
+	if skipSharedTelemetryExporters {
+		return cfg, cloud, env
+	}
+	if spans, logs, metrics, ok := configuredCloudExporters(ctx); ok {
+		// Wrap the Cloud span exporter in a LARGE-queue live processor instead of
+		// letting telemetry.Init wrap it with the default 2048-slot BSP, so the
+		// CLI→Cloud hop does not silently drop spans on a big burst — a cold engine
+		// build is ~15k spans, live-double-emitted ≈ 30k records. The wcprof
+		// completeness carrier rides at the tail and was the first thing to drop;
+		// this keeps the exported trace complete. (SpanProcessors are prepended to
+		// the pipeline by telemetry.Init, same as a LiveTraceExporter would be.)
+		cloud = telemetryIndexes{
+			spans:   len(cfg.SpanProcessors),
+			logs:    len(cfg.LiveLogExporters),
+			metrics: len(cfg.LiveMetricExporters),
+		}
+		cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewLargeQueueLiveSpanProcessor(spans))
+		cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
+		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
+	}
+
+	// Add the OTEL_* exporters the way Config.Detect would.
+	spans, logs, metrics := configuredEnvExporters(ctx)
+	liveEnvSpans := -1
+	if spans != nil {
+		if telemetry.LiveTracesEnabled {
+			liveEnvSpans = len(cfg.LiveTraceExporters)
+			cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, spans)
+		} else {
+			// Filter out unfinished spans to avoid confusing external systems:
+			// the engine's are forwarded here too.
+			env.spans = len(cfg.BatchedTraceExporters)
+			cfg.BatchedTraceExporters = append(cfg.BatchedTraceExporters,
+				telemetry.FilterLiveSpansExporter{SpanExporter: spans})
 		}
 	}
-	return cfg, cloud
+	if logs != nil {
+		env.logs = len(cfg.LiveLogExporters)
+		cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
+	}
+	if metrics != nil {
+		env.metrics = len(cfg.LiveMetricExporters)
+		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
+	}
+	// telemetry.Init sets SpanProcessors to cfg.SpanProcessors, then a
+	// processor per live exporter, then one per batched exporter.
+	switch {
+	case liveEnvSpans >= 0:
+		env.spans = len(cfg.SpanProcessors) + liveEnvSpans
+	case env.spans >= 0:
+		env.spans += len(cfg.SpanProcessors) + len(cfg.LiveTraceExporters)
+	}
+	return cfg, cloud, env
+}
+
+// initTelemetryPipeline runs telemetry.Init with cfg and records where it put
+// the Cloud and OTEL_* exporters (cloud and env, as engineTelemetryConfigWith
+// returns them).
+func initTelemetryPipeline(ctx context.Context, cfg telemetry.Config, cloud, env telemetryIndexes) context.Context {
+	cliCloudTelemetry, cliEnvTelemetry = pipelineIndexes(cloud), pipelineIndexes(env)
+	return telemetry.Init(ctx, cfg)
+}
+
+// pipelineIndexes turns indexes into a Config's exporters into indexes into
+// the global slices the next telemetry.Init builds from it. Init replaces
+// telemetry.SpanProcessors but appends to LogProcessors and MetricExporters,
+// which may hold an earlier Init's entries.
+func pipelineIndexes(idx telemetryIndexes) telemetryIndexes {
+	if idx.logs >= 0 {
+		idx.logs += len(telemetry.LogProcessors)
+	}
+	if idx.metrics >= 0 {
+		idx.metrics += len(telemetry.MetricExporters)
+	}
+	return idx
 }
 
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
-	cfg, cloud := engineTelemetryConfig(ctx)
-	// Init replaces telemetry.SpanProcessors but appends to LogProcessors and
-	// MetricExporters, which may hold an earlier Init's entries.
-	if cloud.configured() {
-		cloud.logs += len(telemetry.LogProcessors)
-		cloud.metrics += len(telemetry.MetricExporters)
-	}
-	ctx = telemetry.Init(ctx, cfg)
-	cliCloudTelemetry = cloud
+	cfg, cloud, env := engineTelemetryConfig(ctx)
+	ctx = initTelemetryPipeline(ctx, cfg, cloud, env)
 	// telemetry.Init extracts inherited OTel baggage from the environment.
 	// Re-apply explicit local process settings afterward so a nested Dagger
 	// command's own NO_COLOR/debug request wins over parent baggage.

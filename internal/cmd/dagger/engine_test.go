@@ -2,18 +2,25 @@ package daggercmd
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -51,6 +58,13 @@ func (e *countingMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric
 func (e *countingMetricExporter) Shutdown(context.Context) error   { return nil }
 func (e *countingMetricExporter) ForceFlush(context.Context) error { return nil }
 
+// noEnvExporters stands in for an environment configuring no OTEL_*
+// exporters, keeping the tests from reaching the real (sync.Once-cached,
+// process-wide) ones the test process's own environment configures.
+func noEnvExporters(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+	return nil, nil, nil
+}
+
 func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	oldFrontend := Frontend
 	oldSkip := skipSharedTelemetryExporters
@@ -73,12 +87,13 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg, cloud := engineTelemetryConfigWithCloud(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg, cloud, env := engineTelemetryConfigWith(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
-	})
+	}, noEnvExporters)
 
-	require.True(t, cfg.Detect)
-	require.Equal(t, cloudTelemetryIndexes{spans: 0, logs: 1, metrics: 1}, cloud,
+	require.False(t, cfg.Detect, "OTEL_* exporters are added explicitly, not detected by telemetry.Init")
+	require.Equal(t, noTelemetryIndexes, env)
+	require.Equal(t, telemetryIndexes{spans: 0, logs: 1, metrics: 1}, cloud,
 		"the indexes locate the Cloud exporters, so engine telemetry can be forwarded without them")
 	require.Equal(t, []sdklog.Exporter{localLogs}, withoutIndex(cfg.LiveLogExporters, cloud.logs))
 	require.Equal(t, []sdkmetric.Exporter{localMetrics}, withoutIndex(cfg.LiveMetricExporters, cloud.metrics))
@@ -117,11 +132,10 @@ func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg, _ := engineTelemetryConfigWithCloud(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg, _, _ := engineTelemetryConfigWith(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
-	})
+	}, noEnvExporters)
 
-	require.True(t, cfg.Detect)
 	require.Empty(t, frontend.SpanExporterCalls())
 	require.Empty(t, frontend.LogExporterCalls())
 	require.Empty(t, frontend.MetricExporterCalls())
@@ -180,16 +194,151 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	})
 
 	ctx := context.Background()
+	envExporters := func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+		return tracetest.NewInMemoryExporter(), new(countingLogExporter), new(countingMetricExporter)
+	}
+	noCloud := func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+		return nil, nil, nil, false
+	}
 
 	skipSharedTelemetryExporters = false
-	if cfg, _ := engineTelemetryConfig(ctx); !cfg.Detect {
-		t.Fatal("expected Detect to be enabled for a normal session")
+	if _, _, env := engineTelemetryConfigWith(ctx, noCloud, envExporters); !env.configured() {
+		t.Fatal("expected the OTEL_* exporters for a normal session")
 	}
 
 	skipSharedTelemetryExporters = true
-	if cfg, cloud := engineTelemetryConfig(ctx); cfg.Detect || cloud.configured() {
-		t.Fatal("expected Detect and Cloud to be disabled for an internal silent session")
+	if _, cloud, env := engineTelemetryConfigWith(ctx, noCloud, envExporters); env != noTelemetryIndexes || cloud.configured() {
+		t.Fatal("expected OTEL_* and Cloud exporters to be disabled for an internal silent session")
 	}
+}
+
+// TestNestedCLIDoesNotForwardEngineTelemetryToParent guards against a nested
+// CLI echoing the engine's telemetry back to its parent. The engine already
+// routes a nested client's telemetry to every ancestor, so re-sending it
+// through the OTEL_* exporters stored every log record twice in the parent's
+// store: e.g. a staff_spawn tool result run under a nested `dagger agent`
+// showed the sub-agent's task prompt twice, glued together.
+//
+// Hermetic: the OTEL_* exporters are injected, and the pipeline is built the
+// way telemetry.Init builds it but without Init, which would replace this test
+// process's own global telemetry.
+func TestNestedCLIDoesNotForwardEngineTelemetryToParent(t *testing.T) {
+	for _, live := range []bool{false, true} {
+		t.Run(fmt.Sprintf("live traces %v", live), func(t *testing.T) {
+			testNestedCLIForwarding(t, live)
+		})
+	}
+}
+
+func testNestedCLIForwarding(t *testing.T, liveTraces bool) {
+	oldFrontend := Frontend
+	oldSkip := skipSharedTelemetryExporters
+	oldLive := telemetry.LiveTracesEnabled
+	oldSpans, oldLogs, oldMetrics := telemetry.SpanProcessors, telemetry.LogProcessors, telemetry.MetricExporters
+	oldCloud, oldEnv := cliCloudTelemetry, cliEnvTelemetry
+	t.Cleanup(func() {
+		Frontend = oldFrontend
+		skipSharedTelemetryExporters = oldSkip
+		telemetry.LiveTracesEnabled = oldLive
+		telemetry.SpanProcessors, telemetry.LogProcessors, telemetry.MetricExporters = oldSpans, oldLogs, oldMetrics
+		cliCloudTelemetry, cliEnvTelemetry = oldCloud, oldEnv
+	})
+	skipSharedTelemetryExporters = false
+	telemetry.LiveTracesEnabled = liveTraces
+
+	localSpans := tracetest.NewInMemoryExporter()
+	localLogs := new(countingLogExporter)
+	localMetrics := new(countingMetricExporter)
+	Frontend = &idtui.FrontendMock{
+		SpanExporterFunc:   func() sdktrace.SpanExporter { return localSpans },
+		LogExporterFunc:    func() sdklog.Exporter { return localLogs },
+		MetricExporterFunc: func() sdkmetric.Exporter { return localMetrics },
+	}
+	// The exporters the OTEL_* environment configures, which for a nested CLI
+	// point at its parent.
+	parentSpans := tracetest.NewInMemoryExporter()
+	parentLogs := new(countingLogExporter)
+	parentMetrics := new(countingMetricExporter)
+	cfg, cloud, env := engineTelemetryConfigWith(t.Context(),
+		func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+			return nil, nil, nil, false
+		},
+		func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+			return parentSpans, parentLogs, parentMetrics
+		})
+	require.True(t, env.configured())
+
+	// An earlier Init's leftovers: Init appends to these.
+	telemetry.LogProcessors = []sdklog.Processor{sdklog.NewSimpleProcessor(new(countingLogExporter))}
+	telemetry.MetricExporters = []sdkmetric.Exporter{new(countingMetricExporter)}
+	cliCloudTelemetry, cliEnvTelemetry = pipelineIndexes(cloud), pipelineIndexes(env)
+	// Build the pipeline as telemetry.Init does, with synchronous processors.
+	telemetry.SpanProcessors = slices.Clone(cfg.SpanProcessors)
+	for _, exp := range append(slices.Clone(cfg.LiveTraceExporters), cfg.BatchedTraceExporters...) {
+		telemetry.SpanProcessors = append(telemetry.SpanProcessors, sdktrace.NewSimpleSpanProcessor(exp))
+	}
+	for _, exp := range cfg.LiveLogExporters {
+		telemetry.LogProcessors = append(telemetry.LogProcessors, sdklog.NewSimpleProcessor(exp))
+	}
+	telemetry.MetricExporters = append(telemetry.MetricExporters, cfg.LiveMetricExporters...)
+	require.Same(t, parentMetrics, telemetry.MetricExporters[cliEnvTelemetry.metrics])
+
+	now := time.Now()
+	engineSpan := tracetest.SpanStub{
+		Name: "engine span",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    trace.TraceID{1},
+			SpanID:     trace.SpanID{1},
+			TraceFlags: trace.FlagsSampled,
+		}),
+		StartTime: now,
+		EndTime:   now,
+		Resource:  resource.NewSchemaless(),
+	}.Snapshot()
+	forward := func(t *testing.T) client.Params {
+		t.Helper()
+		localSpans.Reset()
+		parentSpans.Reset()
+		localLogs.exports.Store(0)
+		parentLogs.exports.Store(0)
+		var params client.Params
+		setEngineTelemetryParams(t.Context(), &params)
+		var rec sdklog.Record
+		rec.SetBody(log.StringValue("prompt"))
+		require.NoError(t, params.EngineLogs.Export(t.Context(), []sdklog.Record{rec}))
+		require.NoError(t, params.EngineTrace.ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{engineSpan}))
+		return params
+	}
+
+	t.Run("top-level CLI forwards to its OTEL exporters", func(t *testing.T) {
+		// The test itself may run nested.
+		t.Setenv("DAGGER_SESSION_PORT", "")
+		require.NoError(t, os.Unsetenv("DAGGER_SESSION_PORT"))
+		params := forward(t)
+		require.Len(t, parentSpans.GetSpans(), 1)
+		require.Equal(t, int64(1), parentLogs.exports.Load())
+		require.True(t, slices.Contains(params.EngineMetrics, sdkmetric.Exporter(parentMetrics)))
+		require.Len(t, localSpans.GetSpans(), 1)
+		require.Equal(t, int64(1), localLogs.exports.Load())
+	})
+
+	t.Run("nested CLI forwards only to its own exporters", func(t *testing.T) {
+		t.Setenv("DAGGER_SESSION_PORT", "1234")
+		params := forward(t)
+		require.Empty(t, parentSpans.GetSpans(), "the engine already delivered these spans to the parent")
+		require.Zero(t, parentLogs.exports.Load(), "the engine already delivered these logs to the parent")
+		require.False(t, slices.Contains(params.EngineMetrics, sdkmetric.Exporter(parentMetrics)))
+		require.True(t, slices.Contains(params.EngineMetrics, sdkmetric.Exporter(localMetrics)))
+		require.Len(t, localSpans.GetSpans(), 1)
+		require.Equal(t, int64(1), localLogs.exports.Load())
+	})
+}
+func TestWithoutIndexes(t *testing.T) {
+	all := []string{"frontend", "cloud", "env"}
+	require.Equal(t, []string{"frontend"}, withoutIndexes(all, 2, 1))
+	require.Equal(t, []string{"frontend", "env"}, withoutIndexes(all, -1, 1))
+	require.Equal(t, all, withoutIndexes(all, -1, 3))
+	require.Nil(t, withoutIndexes[string](nil, -1))
 }
 
 func TestConfiguredRunnerHost(t *testing.T) {
