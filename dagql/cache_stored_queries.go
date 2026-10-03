@@ -203,23 +203,28 @@ func (c *Cache) CloudUsage() (CloudUsage, error) {
 	}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	pool := c.poolEstimateLocked()
-	blobs, err := c.storedBlobUsageLocked(nil)
-	if err != nil {
-		return CloudUsage{}, err
-	}
 	usage := CloudUsage{
-		PoolValues:    pool.ResultCount,
-		PoolBytes:     pool.EstimatedBytes,
-		PoolBlobBytes: blobs.poolBytes,
-		Entries:       len(c.resultsByID),
-		Terms:         len(c.egraphTerms),
-		ClassSlots:    c.eqClassSlotsLocked(),
-		Holdings:      len(c.holderEntries),
+		Entries:    len(c.resultsByID),
+		Terms:      len(c.egraphTerms),
+		ClassSlots: c.eqClassSlotsLocked(),
+		Holdings:   len(c.holderEntries),
 	}
+	// Only the pool's values name the blobs it counts, so this walks the
+	// pool, not every entry as a prune's membership count must.
+	poolBlobs := map[digest.Digest]struct{}{}
+	for _, res := range c.storedPoolLocked() {
+		usage.PoolValues++
+		usage.PoolBytes += res.storedValueBytes()
+		for blob, size := range res.storedBlobsLocked() {
+			if _, counted := poolBlobs[blob]; !counted {
+				poolBlobs[blob] = struct{}{}
+				usage.PoolBlobBytes += size
+			}
+		}
+	}
+	usage.PoolBlobs = len(poolBlobs)
 	for _, res := range c.resultsByID {
 		usage.RecordBytes += res.storedRecordBytes
 	}
-	usage.PoolBlobs = blobs.poolBlobs
 	return usage, nil
 }
