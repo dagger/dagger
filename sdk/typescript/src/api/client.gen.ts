@@ -9024,6 +9024,32 @@ export class Engine extends BaseClient {
 
     return response
   }
+
+  /**
+   * The session with the given ID on this engine (experimental).
+   * @param id The session's ID.
+   */
+  session = (id: string): EngineSession => {
+    const ctx = this._ctx.select("session", { id })
+    return new EngineSession(ctx)
+  }
+
+  /**
+   * Sessions on this engine (experimental).
+   */
+  sessions = async (): Promise<EngineSession[]> => {
+    type sessions = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("sessions").select("id")
+
+    const response: Awaited<sessions[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new EngineSession(ctx.copy().selectNode(r.id, "EngineSession")),
+    )
+  }
 }
 
 /**
@@ -9417,6 +9443,341 @@ export class EngineCacheEntrySet extends BaseClient {
     const ctx = this._ctx.select("entryCount")
 
     const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A session on the Dagger engine (experimental)
+ */
+export class EngineSession extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _createdAt?: string = undefined
+  private readonly _detached?: boolean = undefined
+  private readonly _sessionID?: string = undefined
+  private readonly _stop?: Void = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _createdAt?: string,
+    _detached?: boolean,
+    _sessionID?: string,
+    _stop?: Void,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._createdAt = _createdAt
+    this._detached = _detached
+    this._sessionID = _sessionID
+    this._stop = _stop
+  }
+
+  /**
+   * A unique identifier for this EngineSession.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The client of the session with the given ID.
+   * @param id The client's ID.
+   */
+  client = (id: string): EngineSessionClient => {
+    const ctx = this._ctx.select("client", { id })
+    return new EngineSessionClient(ctx)
+  }
+
+  /**
+   * The clients that connected directly to the session.
+   */
+  clients = async (): Promise<EngineSessionClient[]> => {
+    type clients = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("clients").select("id")
+
+    const response: Awaited<clients[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new EngineSessionClient(
+          ctx.copy().selectNode(r.id, "EngineSessionClient"),
+        ),
+    )
+  }
+
+  /**
+   * When the session was created, in RFC 3339 format.
+   */
+  createdAt = async (): Promise<string> => {
+    if (this._createdAt) {
+      return this._createdAt
+    }
+
+    const ctx = this._ctx.select("createdAt")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the session outlives the client that created it.
+   */
+  detached = async (): Promise<boolean> => {
+    if (this._detached) {
+      return this._detached
+    }
+
+    const ctx = this._ctx.select("detached")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The session's ID.
+   */
+  sessionID = async (): Promise<string> => {
+    if (this._sessionID) {
+      return this._sessionID
+    }
+
+    const ctx = this._ctx.select("sessionID")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * End the session and everything running in it. Returns once teardown is scheduled.
+   */
+  stop = async (): Promise<void> => {
+    if (this._stop) {
+      return
+    }
+
+    const ctx = this._ctx.select("stop")
+
+    await ctx.execute()
+  }
+}
+
+/**
+ * A client of a session on the Dagger engine (experimental)
+ */
+export class EngineSessionClient extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _background?: boolean = undefined
+  private readonly _clientID?: string = undefined
+  private readonly _close?: Void = undefined
+  private readonly _command?: string = undefined
+  private readonly _connected?: boolean = undefined
+  private readonly _hostname?: string = undefined
+  private readonly _pid?: number = undefined
+  private readonly _workspace?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _background?: boolean,
+    _clientID?: string,
+    _close?: Void,
+    _command?: string,
+    _connected?: boolean,
+    _hostname?: string,
+    _pid?: number,
+    _workspace?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._background = _background
+    this._clientID = _clientID
+    this._close = _close
+    this._command = _command
+    this._connected = _connected
+    this._hostname = _hostname
+    this._pid = _pid
+    this._workspace = _workspace
+  }
+
+  /**
+   * A unique identifier for this EngineSessionClient.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the client runs in the background, without a terminal.
+   */
+  background = async (): Promise<boolean> => {
+    if (this._background) {
+      return this._background
+    }
+
+    const ctx = this._ctx.select("background")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The client's ID.
+   */
+  clientID = async (): Promise<string> => {
+    if (this._clientID) {
+      return this._clientID
+    }
+
+    const ctx = this._ctx.select("clientID")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Disconnect this client from the session.
+   */
+  close = async (): Promise<void> => {
+    if (this._close) {
+      return
+    }
+
+    const ctx = this._ctx.select("close")
+
+    await ctx.execute()
+  }
+
+  /**
+   * A short form of the client's command line.
+   */
+  command = async (): Promise<string> => {
+    if (this._command) {
+      return this._command
+    }
+
+    const ctx = this._ctx.select("command")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the client's attachables connection is open.
+   */
+  connected = async (): Promise<boolean> => {
+    if (this._connected) {
+      return this._connected
+    }
+
+    const ctx = this._ctx.select("connected")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Host ports this client forwards into the session, with the service each reaches.
+   */
+  forwards = async (): Promise<Port[]> => {
+    type forwards = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("forwards").select("id")
+
+    const response: Awaited<forwards[]> = await ctx.execute()
+
+    return response.map((r) => new Port(ctx.copy().selectNode(r.id, "Port")))
+  }
+
+  /**
+   * The hostname of the machine the client runs on.
+   */
+  hostname = async (): Promise<string> => {
+    if (this._hostname) {
+      return this._hostname
+    }
+
+    const ctx = this._ctx.select("hostname")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The client's process ID.
+   */
+  pid = async (): Promise<number> => {
+    if (this._pid) {
+      return this._pid
+    }
+
+    const ctx = this._ctx.select("pid")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Attachable kinds this client serves, for example files, secrets, terminal.
+   */
+  provides = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("provides")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Address of the workspace this client is bound to, if any.
+   */
+  workspace = async (): Promise<string> => {
+    if (this._workspace) {
+      return this._workspace
+    }
+
+    const ctx = this._ctx.select("workspace")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }

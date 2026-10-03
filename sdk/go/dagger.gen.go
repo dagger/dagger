@@ -7142,6 +7142,49 @@ func (r *Engine) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The session with the given ID on this engine (experimental).
+func (r *Engine) Session(id string) *EngineSession {
+	q := r.query.Select("session")
+	q = q.Arg("id", id)
+
+	return &EngineSession{
+		query: q,
+	}
+}
+
+// Sessions on this engine (experimental).
+func (r *Engine) Sessions(ctx context.Context) ([]EngineSession, error) {
+	q := r.query.Select("sessions")
+
+	q = q.Select("id")
+
+	type sessions struct {
+		Id ID
+	}
+
+	convert := func(fields []sessions) []EngineSession {
+		out := []EngineSession{}
+
+		for i := range fields {
+			val := EngineSession{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "EngineSession")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []sessions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // AsNode returns this Engine as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Engine) AsNode() Node {
@@ -7632,6 +7675,376 @@ func (r *EngineCacheEntrySet) MarshalJSON() ([]byte, error) {
 // AsNode returns this EngineCacheEntrySet as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *EngineCacheEntrySet) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A session on the Dagger engine (experimental)
+type EngineSession struct {
+	query *querybuilder.Selection
+
+	createdAt *string
+	detached  *bool
+	id        *ID
+	sessionID *string
+	stop      *Void
+}
+
+func (r *EngineSession) WithGraphQLQuery(q *querybuilder.Selection) *EngineSession {
+	return &EngineSession{
+		query: q,
+	}
+}
+
+// The client of the session with the given ID.
+func (r *EngineSession) Client(id string) *EngineSessionClient {
+	q := r.query.Select("client")
+	q = q.Arg("id", id)
+
+	return &EngineSessionClient{
+		query: q,
+	}
+}
+
+// The clients that connected directly to the session.
+func (r *EngineSession) Clients(ctx context.Context) ([]EngineSessionClient, error) {
+	q := r.query.Select("clients")
+
+	q = q.Select("id")
+
+	type clients struct {
+		Id ID
+	}
+
+	convert := func(fields []clients) []EngineSessionClient {
+		out := []EngineSessionClient{}
+
+		for i := range fields {
+			val := EngineSessionClient{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "EngineSessionClient")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []clients
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// When the session was created, in RFC 3339 format.
+func (r *EngineSession) CreatedAt(ctx context.Context) (string, error) {
+	if r.createdAt != nil {
+		return *r.createdAt, nil
+	}
+	q := r.query.Select("createdAt")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the session outlives the client that created it.
+func (r *EngineSession) Detached(ctx context.Context) (bool, error) {
+	if r.detached != nil {
+		return *r.detached, nil
+	}
+	q := r.query.Select("detached")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EngineSession.
+func (r *EngineSession) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineSession) XXX_GraphQLType() string {
+	return "EngineSession"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineSession) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineSession) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineSession) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The session's ID.
+func (r *EngineSession) SessionID(ctx context.Context) (string, error) {
+	if r.sessionID != nil {
+		return *r.sessionID, nil
+	}
+	q := r.query.Select("sessionID")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// End the session and everything running in it. Returns once teardown is scheduled.
+func (r *EngineSession) Stop(ctx context.Context) error {
+	if r.stop != nil {
+		return nil
+	}
+	q := r.query.Select("stop")
+
+	return q.Execute(ctx)
+}
+
+// AsNode returns this EngineSession as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EngineSession) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A client of a session on the Dagger engine (experimental)
+type EngineSessionClient struct {
+	query *querybuilder.Selection
+
+	background *bool
+	clientID   *string
+	close_     *Void
+	command    *string
+	connected  *bool
+	hostname   *string
+	id         *ID
+	pid        *int
+	workspace  *string
+}
+
+func (r *EngineSessionClient) WithGraphQLQuery(q *querybuilder.Selection) *EngineSessionClient {
+	return &EngineSessionClient{
+		query: q,
+	}
+}
+
+// Whether the client runs in the background, without a terminal.
+func (r *EngineSessionClient) Background(ctx context.Context) (bool, error) {
+	if r.background != nil {
+		return *r.background, nil
+	}
+	q := r.query.Select("background")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The client's ID.
+func (r *EngineSessionClient) ClientID(ctx context.Context) (string, error) {
+	if r.clientID != nil {
+		return *r.clientID, nil
+	}
+	q := r.query.Select("clientID")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Disconnect this client from the session.
+func (r *EngineSessionClient) Close(ctx context.Context) error {
+	if r.close_ != nil {
+		return nil
+	}
+	q := r.query.Select("close")
+
+	return q.Execute(ctx)
+}
+
+// A short form of the client's command line.
+func (r *EngineSessionClient) Command(ctx context.Context) (string, error) {
+	if r.command != nil {
+		return *r.command, nil
+	}
+	q := r.query.Select("command")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the client's attachables connection is open.
+func (r *EngineSessionClient) Connected(ctx context.Context) (bool, error) {
+	if r.connected != nil {
+		return *r.connected, nil
+	}
+	q := r.query.Select("connected")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Host ports this client forwards into the session, with the service each reaches.
+func (r *EngineSessionClient) Forwards(ctx context.Context) ([]Port, error) {
+	q := r.query.Select("forwards")
+
+	q = q.Select("id")
+
+	type forwards struct {
+		Id ID
+	}
+
+	convert := func(fields []forwards) []Port {
+		out := []Port{}
+
+		for i := range fields {
+			val := Port{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Port")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []forwards
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The hostname of the machine the client runs on.
+func (r *EngineSessionClient) Hostname(ctx context.Context) (string, error) {
+	if r.hostname != nil {
+		return *r.hostname, nil
+	}
+	q := r.query.Select("hostname")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EngineSessionClient.
+func (r *EngineSessionClient) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineSessionClient) XXX_GraphQLType() string {
+	return "EngineSessionClient"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineSessionClient) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineSessionClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineSessionClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The client's process ID.
+func (r *EngineSessionClient) Pid(ctx context.Context) (int, error) {
+	if r.pid != nil {
+		return *r.pid, nil
+	}
+	q := r.query.Select("pid")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Attachable kinds this client serves, for example files, secrets, terminal.
+func (r *EngineSessionClient) Provides(ctx context.Context) ([]string, error) {
+	q := r.query.Select("provides")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Address of the workspace this client is bound to, if any.
+func (r *EngineSessionClient) Workspace(ctx context.Context) (string, error) {
+	if r.workspace != nil {
+		return *r.workspace, nil
+	}
+	q := r.query.Select("workspace")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this EngineSessionClient as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EngineSessionClient) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
