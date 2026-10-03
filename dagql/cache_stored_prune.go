@@ -208,12 +208,11 @@ func (res *sharedResult) storedBlobsLocked() map[digest.Digest]int64 {
 }
 
 // storedBlobUsage is the disk stage's measure of a blob-backed cache: each
-// value's distinct blobs, as usage identities, their sizes, and the count
-// and bytes of the distinct blobs the pool names.
+// value's distinct blobs, as usage identities, their sizes, and the bytes of
+// the distinct blobs the pool names.
 type storedBlobUsage struct {
 	byResult  map[sharedResultID][]string
 	sizes     map[string]int64
-	poolBlobs int
 	poolBytes int64
 }
 
@@ -249,6 +248,5 @@ func (c *Cache) storedBlobUsageLocked(checker *pruneCancellationChecker) (*store
 		slices.Sort(identities)
 		usage.byResult[id] = identities
 	}
-	usage.poolBlobs = len(counted)
 	return usage, nil
 }
