@@ -132,51 +132,11 @@ func (s *gitSchema) gitRefWithCommitDirectory(ctx context.Context, parent dagql.
 	if err != nil {
 		return inst, err
 	}
-	// Same-base local edits can update an isolated Git index directly. The
-	// returned storage owns its new objects through snapshot ancestry, without
-	// a retained checkout or a copy of the parent's history. Divergent and
-	// unsupported inputs, and any native failure, use the general three-way
-	// reconciliation below.
-	if dir, supported, err := core.GitCommitChangesetNative(ctx, parent, changes.Self(), opts); err != nil {
-		return inst, err
-	} else if supported {
-		return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-	}
-	var tree dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}}); err != nil {
-		return inst, err
-	}
-	beforeID, err := changes.Self().Before.ID()
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	var ours dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, tree, &ours, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}}}); err != nil {
-		return inst, err
-	}
-	var merged dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, ours, &merged, dagql.Selector{Field: "withChangeset", Args: []dagql.NamedInput{
-		{Name: "changes", Value: args.Changes}, {Name: "onConflict", Value: core.FailOnMergeConflict},
-	}}); err != nil {
-		return inst, fmt.Errorf("apply commit changes: %w", err)
-	}
-	treeID, err := tree.ID()
-	if err != nil {
-		return inst, err
-	}
-	var applied dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, merged.Self().After, &applied, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](treeID)}}}); err != nil {
-		return inst, err
-	}
-	var ws dagql.ObjectResult[*core.Workspace]
-	if err := srv.Select(ctx, parent, &ws, dagql.Selector{Field: "asWorkspace"}); err != nil {
-		return inst, err
-	}
-	base, err := workspaceGitCheckout(ctx, srv, ws)
-	if err != nil {
-		return inst, err
-	}
-	dir, err := core.GitCommitChangeset(ctx, base, applied.Self(), opts)
+	dir, err := evaluatedDirectory(ctx, query, &core.DirectoryGitCommitLazy{LazyState: core.NewLazyState(), Parent: parent, Changes: changes, Opts: opts})
 	if err != nil {
 		return inst, err
 	}

@@ -2176,7 +2176,11 @@ func (s *gitSchema) fullCheckout(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return inst, err
 	}
-	dir, err := parent.Self().Backend.Tree(ctx, srv, false, 0, false, parent.Self().Repo.Self().Remotes)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := evaluatedDirectory(ctx, query, &core.DirectoryGitTreeLazy{LazyState: core.NewLazyState(), Ref: parent, KeepGitDir: true})
 	if err != nil {
 		return inst, err
 	}
@@ -2242,7 +2246,8 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if err != nil {
 			return inst, err
 		}
-		if lazy, ok := inst.Self().Lazy.(*core.DirectoryGitTreeLazy); ok {
+		// A full checkout is shared and already built: teach its digest directly.
+		if lazy, ok := inst.Self().Lazy.(*core.DirectoryGitTreeLazy); ok && !lazy.KeepGitDir {
 			lazy.ContentDigest = dgst
 		} else {
 			inst, err = inst.WithContentDigest(ctx, dgst)

@@ -1369,11 +1369,15 @@ func (s *directorySchema) changesetAsPatch(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	file, err := parent.Self().AsPatch(ctx)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
+	patch, err := evaluatedFile(ctx, query, &core.FileChangesetPatchLazy{LazyState: core.NewLazyState(), Changeset: parent})
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, patch)
 }
 
 type changesetExportArgs struct {
@@ -1552,23 +1556,6 @@ type changesetWithChangesetArgs struct {
 	OnConflict core.ChangesetMergeConflict `default:"FAIL"`
 }
 
-func mergeConflictStrategyToCore(onConflict core.ChangesetMergeConflict) core.WithChangesetMergeConflict {
-	switch onConflict {
-	case core.FailEarlyOnMergeConflict:
-		return core.FailEarlyOnConflict
-	case core.LeaveConflictMarkersOnMergeConflict:
-		return core.LeaveConflictMarkers
-	case core.PreferOursOnMergeConflict:
-		return core.PreferOursOnConflict
-	case core.PreferTheirsOnMergeConflict:
-		return core.PreferTheirsOnConflict
-	case core.FailOnMergeConflict:
-		fallthrough
-	default:
-		return core.FailOnConflict
-	}
-}
-
 func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetArgs) (*core.Changeset, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1669,7 +1656,11 @@ func (s *directorySchema) changesetMergeWithChangeset(ctx context.Context, paren
 	if err != nil {
 		return nil, err
 	}
-	return parent.Self().MergeWithChangeset(ctx, change.Self(), mergeConflictStrategyToCore(args.OnConflict))
+	return newChangesetMergeDirectory(ctx, &core.DirectoryMergeChangesetsLazy{
+		Parent:     parent,
+		Changes:    []dagql.ObjectResult[*core.Changeset]{change},
+		OnConflict: args.OnConflict,
+	})
 }
 
 func (s *directorySchema) changesetMergeWithChangesets(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetWithChangesetsArgs) (*core.Directory, error) {
@@ -1677,15 +1668,38 @@ func (s *directorySchema) changesetMergeWithChangesets(ctx context.Context, pare
 	if err != nil {
 		return nil, err
 	}
-	changes := make([]*core.Changeset, len(args.Changes))
+	if len(args.Changes) < 2 {
+		return nil, fmt.Errorf("multi-changeset merge requires at least two changesets")
+	}
+	changes := make([]dagql.ObjectResult[*core.Changeset], len(args.Changes))
 	for i, changeID := range args.Changes {
 		change, err := changeID.Load(ctx, srv)
 		if err != nil {
 			return nil, fmt.Errorf("load changeset %d: %w", i, err)
 		}
-		changes[i] = change.Self()
+		changes[i] = change
 	}
-	return parent.Self().MergeWithChangesets(ctx, changes, mergeConflictsStrategyToCore(args.OnConflict))
+	// The octopus merge supports only FAIL_EARLY and FAIL.
+	onConflict := core.FailOnMergeConflict
+	if mergeConflictsStrategyToCore(args.OnConflict) == core.FailEarlyOnConflicts {
+		onConflict = core.FailEarlyOnMergeConflict
+	}
+	return newChangesetMergeDirectory(ctx, &core.DirectoryMergeChangesetsLazy{
+		Parent:     parent,
+		Changes:    changes,
+		OnConflict: onConflict,
+	})
+}
+
+// newChangesetMergeDirectory returns the directory a changeset merge produces,
+// with the merge saved as its operation.
+func newChangesetMergeDirectory(ctx context.Context, lazy *core.DirectoryMergeChangesetsLazy) (*core.Directory, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	lazy.LazyState = core.NewLazyState()
+	return evaluatedDirectory(ctx, query, lazy)
 }
 
 func (s *directorySchema) changeset(ctx context.Context, q *core.Query, args struct{}) (*core.Changeset, error) {
@@ -1770,14 +1784,14 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Obje
 	return buildctxDir, nil
 }
 
-func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
+func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirDockerBuildArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	platform := query.Platform()
@@ -1787,29 +1801,29 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 
 	buildctxDir, err := applyDockerIgnore(ctx, srv, parent, args.Dockerfile)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	ctr := core.NewContainer(platform)
 
 	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	var sshSocket dagql.ObjectResult[*core.Socket]
 	if args.SSH.Valid {
 		sshSocket, err = args.SSH.Value.Load(ctx, srv)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load SSH socket: %w", err)
+			return inst, fmt.Errorf("failed to load SSH socket: %w", err)
 		}
 		if sshSocket.Self() == nil {
-			return nil, fmt.Errorf("failed to load SSH socket: nil socket")
+			return inst, fmt.Errorf("failed to load SSH socket: nil socket")
 		}
 	}
 	buildctxDirID, err := buildctxDir.RecipeID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get build context recipe ID: %w", err)
+		return inst, fmt.Errorf("failed to get build context recipe ID: %w", err)
 	}
 
 	return ctr.Build(
