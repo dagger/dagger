@@ -246,3 +246,53 @@ func TestGitCommitDirectoryRebuildsOnAnotherEngine(t *testing.T) {
 		require.Equal(t, want, rebuildTestHead(t, loaded))
 	})
 }
+
+// Workspace.__pullDirectory is rebuilt on another engine when its blob is
+// missing, with the same history.
+func TestWorkspacePullDirectoryRebuildsOnAnotherEngine(t *testing.T) {
+	testutil.RequireNativeMount(t)
+	salt := transferTestSalt(t)
+	a, b := newTransferTestEngine(t, salt), newTransferTestEngine(t, salt)
+	actx := dagql.ContextWithServer(a.session(t, "a1"), a.dag)
+	repo := rebuildTestGitRepo(t, a, actx)
+	var head dagql.ObjectResult[*core.GitRef]
+	require.NoError(t, a.dag.Select(actx, repo, &head, dagql.Selector{Field: "asGit"}, dagql.Selector{Field: "head"}))
+	var before dagql.ObjectResult[*core.Directory]
+	require.NoError(t, a.dag.Select(actx, head, &before, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{rebuildTestArg("discardGitDir", dagql.NewBoolean(true))}}))
+	beforeID, err := before.ID()
+	require.NoError(t, err)
+	var changes dagql.ObjectResult[*core.Changeset]
+	require.NoError(t, a.dag.Select(actx, before, &changes,
+		dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{rebuildTestArg("path", dagql.NewString("file.txt")), rebuildTestArg("contents", dagql.NewString("pulled\n"))}},
+		dagql.Selector{Field: "changes", Args: []dagql.NamedInput{rebuildTestArg("from", dagql.NewID[*core.Directory](beforeID))}}))
+	changesID, err := changes.ID()
+	require.NoError(t, err)
+	asWorkspace := dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{rebuildTestArg("cwd", dagql.NewString("/"))}}
+	var source, parent dagql.ObjectResult[*core.Workspace]
+	require.NoError(t, a.dag.Select(actx, head, &source, dagql.Selector{Field: "withCommit", Args: []dagql.NamedInput{
+		rebuildTestArg("changes", dagql.NewID[*core.Changeset](changesID)),
+		rebuildTestArg("message", dagql.NewString("pull me")),
+		rebuildTestArg("date", dagql.NewString("2026-01-02T03:04:05Z")),
+		rebuildTestArg("authorName", dagql.NewString("Author")),
+		rebuildTestArg("authorEmail", dagql.NewString("author@example.com")),
+	}}, asWorkspace))
+	require.NoError(t, a.dag.Select(actx, head, &parent, asWorkspace))
+	sourceID, err := source.ID()
+	require.NoError(t, err)
+	var pulled dagql.ObjectResult[*core.Directory]
+	require.NoError(t, a.dag.Select(actx, parent, &pulled, dagql.Selector{Field: "__pullDirectory", Args: []dagql.NamedInput{
+		rebuildTestArg("source", dagql.NewID[*core.Workspace](sourceID)),
+		rebuildTestArg("committerName", dagql.NewString("Committer")),
+		rebuildTestArg("committerEmail", dagql.NewString("committer@example.com")),
+	}}))
+	require.IsType(t, &core.DirectoryWorkspacePullLazy{}, pulled.Self().Lazy)
+	requireRebuildRoute(t, actx, a.cache, pulled)
+	require.NoError(t, a.cache.Evaluate(actx, pulled))
+	want := rebuildTestHead(t, pulled)
+
+	rebuildWithInputs(t, a, actx, b, pulled, []dagql.AnyResult{repo}, func(bctx context.Context, loaded dagql.AnyResult) {
+		require.NoError(t, b.cache.Evaluate(bctx, loaded))
+		require.Equal(t, want, rebuildTestHead(t, loaded))
+		require.Equal(t, "pulled\n", requireRebuiltFile(t, b, bctx, loaded, "file.txt"))
+	})
+}

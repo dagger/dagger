@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type workspaceCommitsFromArgs struct {
@@ -168,43 +169,41 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 }
 
 func (s *workspaceSchema) computeWorkspacePull(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspacePullArgs, apply bool) (*core.Directory, []core.WorkspacePullPick, dagql.ObjectResult[*core.GitRef], error) {
-	ctx, cancel := context.WithTimeout(ctx, core.WorkspacePullTimeout)
-	defer cancel()
-	var head dagql.ObjectResult[*core.GitRef]
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, nil, head, err
+		return nil, nil, dagql.ObjectResult[*core.GitRef]{}, err
 	}
 	source, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		return nil, nil, head, err
+		return nil, nil, dagql.ObjectResult[*core.GitRef]{}, err
 	}
-	if !parent.Self().IsValueWorkspace() || !source.Self().IsValueWorkspace() {
-		return nil, nil, head, fmt.Errorf("pulling requires frozen workspaces; call snapshot first")
-	}
-	base, err := workspaceGitCheckout(ctx, srv, parent)
-	if err != nil {
-		return nil, nil, head, err
-	}
-	if err := srv.Select(ctx, source, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
-		return nil, nil, head, err
-	}
-	var changes dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, parent, &changes, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
-		return nil, nil, head, err
-	}
-	dir, picks, err := core.WorkspacePullCommits(ctx, base, head.Self(), changes.Self(), args.opts(), apply)
-	return dir, picks, head, err
+	return core.ComputeWorkspacePull(ctx, parent, source, args.opts(), apply)
 }
 
-func (s *workspaceSchema) pullDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspacePullArgs) (dagql.ObjectResult[*core.Directory], error) {
-	dir, _, _, err := s.computeWorkspacePull(ctx, parent, args, true)
-	if err != nil {
-		return dagql.ObjectResult[*core.Directory]{}, err
-	}
+func (s *workspaceSchema) pullDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspacePullArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return dagql.ObjectResult[*core.Directory]{}, err
+		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	source, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+	if !parent.Self().IsValueWorkspace() || !source.Self().IsValueWorkspace() {
+		return inst, fmt.Errorf("pulling requires frozen workspaces; call snapshot first")
+	}
+	opts := args.opts()
+	if err := opts.Validate(); err != nil {
+		return inst, err
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.Directory{
+		Platform: query.Platform(),
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     &core.DirectoryWorkspacePullLazy{LazyState: core.NewLazyState(), Parent: parent, Source: source, Opts: opts},
+	})
 }
