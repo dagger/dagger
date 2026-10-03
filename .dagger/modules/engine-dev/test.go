@@ -69,7 +69,7 @@ func (dev *EngineDev) Test(
 		dumpTimes[i] = duration
 	}
 	// FIXME: use the damn standard Go toolchain
-	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
+	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, false)
 	if err != nil {
 		return err
 	}
@@ -90,6 +90,124 @@ func (dev *EngineDev) Test(
 	},
 	).Sync(ctx)
 	return err
+}
+
+// The result of a profiled test run: the test engine's wcprof recording, and
+// how the tests went.
+type TestProfileResult struct {
+	// The test engine's wcprof dump (engine/wcprof), covering every
+	// session the tests opened
+	Dump *dagger.File
+	// The exit status of `go test`
+	ExitCode int
+	// The tail of the test output (stdout and stderr)
+	Output string
+}
+
+// How many trailing lines of test output a TestProfileResult keeps.
+const testProfileOutputLines = 200
+
+// The environment variable that opts benchmark-style integration tests in.
+// They are skipped unless it is set, which keeps them out of CI.
+const benchTestsEnv = "_DAGGER_BENCH"
+
+// Run core engine tests against an engine recording a wcprof wall-clock
+// profile, and return the recording.
+//
+// The test engine records every session from startup (_DAGGER_WCPROF=1). The
+// dump is fetched from its debug endpoint after `go test` exits, whether or
+// not the tests passed, so a failing run still yields a profile. Benchmark
+// tests gated on _DAGGER_BENCH are opted in, since profiling is what they are
+// for: select them with `run` like any other test.
+// +cache="session"
+func (dev *EngineDev) TestProfile(
+	ctx context.Context,
+	// Only run these tests
+	// +optional
+	run string,
+	// Skip these tests
+	// +optional
+	skip string,
+	// +optional
+	// +default="./..."
+	pkg string,
+	// Abort test run on first failure
+	// +optional
+	failfast bool,
+	// How many tests to run in parallel - defaults to the number of CPUs
+	// +optional
+	parallel int,
+	// How long before timing out the test run
+	// +optional
+	timeout string,
+	// +optional
+	race bool,
+	// +default=1
+	// +optional
+	count int,
+	// +optional
+	envFile *dagger.Secret,
+	// Enable verbose output
+	// +optional
+	testVerbose bool,
+	// Enable the given ebpf progs in the engine during tests
+	// +optional
+	ebpfProgs []string,
+) (*TestProfileResult, error) {
+	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, true)
+	if err != nil {
+		return nil, err
+	}
+	ran := dev.test(ctr.WithEnvVariable(benchTestsEnv, "1"), &testOpts{
+		runTestRegex:  run,
+		skipTestRegex: skip,
+		pkg:           pkg,
+		failfast:      failfast,
+		parallel:      parallel,
+		timeout:       timeout,
+		race:          race,
+		count:         count,
+		envs:          envFile,
+		testVerbose:   testVerbose,
+		ldflagValues:  ldflagValues,
+		expectAny:     true,
+	})
+	exitCode, err := ran.ExitCode(ctx)
+	if err != nil {
+		return nil, err
+	}
+	output, err := ran.CombinedOutput(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// The engine service was started explicitly by testContainer, so it is
+	// still the same engine (and recording) after the tests exit.
+	dump := ran.
+		WithExec([]string{
+			"curl", "--fail", "--silent", "--show-error", "--max-time", "300",
+			"-o", "/tmp/wcprof.dump", wcprofDumpURL,
+		}).
+		File("/tmp/wcprof.dump")
+	dump, err = dump.Sync(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetch wcprof dump (tests exited %d):\n%s: %w", exitCode, tailLines(output, 40), err)
+	}
+	return &TestProfileResult{
+		Dump:     dump,
+		ExitCode: exitCode,
+		Output:   tailLines(output, testProfileOutputLines),
+	}, nil
+}
+
+const wcprofDumpURL = "http://daggerengine:6060/debug/wcprof/dump"
+
+// tailLines keeps the last n lines of s.
+func tailLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) <= n {
+		return strings.Join(lines, "\n")
+	}
+	return fmt.Sprintf("… (%d earlier lines omitted) …\n", len(lines)-n) + strings.Join(lines[len(lines)-n:], "\n")
 }
 
 // Run telemetry tests
@@ -125,7 +243,7 @@ func (dev *EngineDev) TestTelemetry(
 	// Goldens compare a warmed cache with the following CLI invocation.
 	// Keep warmup results available after its session closes.
 	dev = dev.WithEngineConfig("worker.oci", "gc = false")
-	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
+	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, false)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +283,9 @@ type testOpts struct {
 	bench         bool
 	ldflagValues  []string
 	dumpAfter     []time.Duration
+	// Don't fail the exec when the tests fail, so the caller can inspect
+	// the exit code and still use the container afterwards
+	expectAny bool
 }
 
 func (dev *EngineDev) test(
@@ -247,9 +368,13 @@ func (dev *EngineDev) test(
 		args = append(watchArgs, args...)
 	}
 
+	var execOpts dagger.ContainerWithExecOpts
+	if opts.expectAny {
+		execOpts.Expect = dagger.ReturnTypeAny
+	}
 	return container.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithExec(withoutOuterSession(args...))
+		WithExec(withoutOuterSession(args...), execOpts)
 }
 
 // Use direct HTTP from the runner: asking the engine to execute a dump command
@@ -337,8 +462,10 @@ exit "$result"
 `
 
 // Build an ephemeral test environment ready to run core engine tests.
+// With wcprof, the test engine records a wcprof wall-clock profile of all its
+// work from startup, readable at http://daggerengine:6060/debug/wcprof/dump.
 // (FIXME: do this more cleanly, and reuse the standard Go toolchain)
-func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*dagger.Container, []string, error) {
+func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcprof bool) (*dagger.Container, []string, error) {
 	devEngine, err := dev.
 		WithEBPFProgs(ebpfProgs).
 		WithEngineConfig(`registry."registry:5000"`, `http = true`).
@@ -358,6 +485,10 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	// during our test suite
 	devEngine = devEngine.
 		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
+	if wcprof {
+		// Read at engine startup (engine/wcprof's init): record everything.
+		devEngine = devEngine.WithEnvVariable("_DAGGER_WCPROF", "1")
+	}
 	devEnginePlatform, err := devEngine.Platform(ctx)
 	if err != nil {
 		return nil, nil, err

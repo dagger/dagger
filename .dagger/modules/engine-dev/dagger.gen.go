@@ -143,6 +143,34 @@ func (r *LoadedEngine) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+func (r TestProfileResult) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Dump     *dagger.File
+		ExitCode int
+		Output   string
+	}
+	concrete.Dump = r.Dump
+	concrete.ExitCode = r.ExitCode
+	concrete.Output = r.Output
+	return json.Marshal(&concrete)
+}
+
+func (r *TestProfileResult) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Dump     *dagger.File
+		ExitCode int
+		Output   string
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Dump = concrete.Dump
+	r.ExitCode = concrete.ExitCode
+	r.Output = concrete.Output
+	return nil
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -570,6 +598,90 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, dumpAfter)
+		case "TestProfile":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var run string
+			if inputArgs["run"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
+				}
+			}
+			var skip string
+			if inputArgs["skip"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
+				}
+			}
+			var pkg string
+			if inputArgs["pkg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["pkg"]), &pkg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
+				}
+			}
+			var failfast bool
+			if inputArgs["failfast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+				}
+			}
+			var parallel int
+			if inputArgs["parallel"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["parallel"]), &parallel)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg parallel", err))
+				}
+			}
+			var timeout string
+			if inputArgs["timeout"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["timeout"]), &timeout)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg timeout", err))
+				}
+			}
+			var race bool
+			if inputArgs["race"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["race"]), &race)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg race", err))
+				}
+			}
+			var count int
+			if inputArgs["count"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["count"]), &count)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
+				}
+			}
+			var envFile *dagger.Secret
+			if inputArgs["envFile"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["envFile"]), &envFile)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg envFile", err))
+				}
+			}
+			var testVerbose bool
+			if inputArgs["testVerbose"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
+				}
+			}
+			var ebpfProgs []string
+			if inputArgs["ebpfProgs"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ebpfProgs"]), &ebpfProgs)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
+				}
+			}
+			return (*EngineDev).TestProfile(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
 		case "TestTelemetry":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -894,22 +1006,39 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 58, 2)}).
 							WithArg("dumpAfter", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Elapsed times after the test runner starts at which to dump engine goroutines", SourceMap: dag.SourceMap("test.go", 61, 2)})).
 					WithFunction(
+						dag.Function("TestProfile",
+							dag.TypeDef().WithObject("TestProfileResult")).
+							WithDescription("Run core engine tests against an engine recording a wcprof wall-clock\nprofile, and return the recording.\n\nThe test engine records every session from startup (_DAGGER_WCPROF=1). The\ndump is fetched from its debug endpoint after `go test` exits, whether or\nnot the tests passed, so a failing run still yields a profile. Benchmark\ntests gated on _DAGGER_BENCH are opted in, since profiling is what they are\nfor: select them with `run` like any other test.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("test.go", 123, 1)).
+							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 127, 2)}).
+							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 130, 2)}).
+							WithArg("pkg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 133, 2), DefaultValue: dagger.JSON("\"./...\"")}).
+							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("test.go", 136, 2)}).
+							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How many tests to run in parallel - defaults to the number of CPUs", SourceMap: dag.SourceMap("test.go", 139, 2)}).
+							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How long before timing out the test run", SourceMap: dag.SourceMap("test.go", 142, 2)}).
+							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 144, 2)}).
+							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 147, 2), DefaultValue: dagger.JSON("1")}).
+							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 149, 2)}).
+							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable verbose output", SourceMap: dag.SourceMap("test.go", 152, 2)}).
+							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 155, 2)})).
+					WithFunction(
 						dag.Function("TestTelemetry",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Run telemetry tests").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("test.go", 97, 1)).
-							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 101, 2)}).
-							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 104, 2)}).
-							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 106, 2)}).
-							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 108, 2)}).
-							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 110, 2)}).
-							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 112, 2)}).
-							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 114, 2)}).
-							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 116, 2), DefaultValue: dagger.JSON("1")}).
-							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 118, 2)}).
-							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 120, 2)}).
-							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 123, 2)})).
+							WithSourceMap(dag.SourceMap("test.go", 215, 1)).
+							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 219, 2)}).
+							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 222, 2)}).
+							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 224, 2)}).
+							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 226, 2)}).
+							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 228, 2)}).
+							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 230, 2)}).
+							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 232, 2)}).
+							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 234, 2), DefaultValue: dagger.JSON("1")}).
+							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 236, 2)}).
+							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 238, 2)}).
+							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 241, 2)})).
 					WithFunction(
 						dag.Function("Tests",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
@@ -957,7 +1086,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("cloudURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 96, 2)}).
 							WithArg("debug", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 99, 2)}).
 							WithArg("extraHosts", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 102, 2)})).
-					WithField("Image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("docker.go", 80, 2)})), nil
+					WithField("Image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("docker.go", 80, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("TestProfileResult", dagger.TypeDefWithObjectOpts{Description: "The result of a profiled test run: the test engine's wcprof recording, and\nhow the tests went.", SourceMap: dag.SourceMap("test.go", 97, 6)}).
+					WithField("Dump", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{Description: "The test engine's wcprof dump (engine/wcprof), covering every\nsession the tests opened", SourceMap: dag.SourceMap("test.go", 100, 2)}).
+					WithField("ExitCode", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{Description: "The exit status of `go test`", SourceMap: dag.SourceMap("test.go", 102, 2)}).
+					WithField("Output", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The tail of the test output (stdout and stderr)", SourceMap: dag.SourceMap("test.go", 104, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

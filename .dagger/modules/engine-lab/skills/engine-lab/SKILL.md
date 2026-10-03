@@ -31,6 +31,8 @@ Workflow:
   engine; then re-run your repro with `dagger`.
 - `engineTest(pkg, run)` runs engine tests with their own ephemeral engine (no
   `start` needed), e.g. pkg "./core/integration" with run "TestSuite/TestSub".
+  Add `wcprofCapture: "<name>"` to profile the test engine with wcprof and
+  keep its recording as a named capture (see below).
 - `dumpId(file, ...)` builds and runs the repo's own `cmd/dump-id` against a
   file in your workspace — no engine session needed. `file` is a
   workspace-relative path to a base64 call ID. Modes mirror the command's
@@ -142,3 +144,27 @@ is replaced), so:
    on either capture.
 
 Captures are lost when the module state resets (e.g. a new session).
+
+### Profiling engine tests and benchmarks
+
+`engineTest(pkg, run, wcprofCapture: "<name>")` runs the tests through
+engine-dev's `testProfile`: the ephemeral test engine records from startup
+(`_DAGGER_WCPROF=1`), and after `go test` exits its dump is kept as a capture
+under `<name>`, alongside the ones `wcprofCapture` takes from the `start`
+engine. No `start`/`wcprofEnable` needed. The result reports the test verdict
+and exit code, the output tail, and the capture summary; a failing run still
+yields its capture, so check the verdict before trusting the numbers.
+
+- Benchmark-style integration tests skip unless `_DAGGER_BENCH` is set;
+  profiled runs set it, so select them with `run`, e.g.
+  `engineTest(pkg: "./core/integration", run: "TestLLM/TestBenchChangesetApply",
+  wcprofCapture: "before")`.
+- The capture holds the whole test engine's work — setup, every client the
+  test opened, teardown. Root reports at the op you care about (e.g.
+  `critpath`/`tree` with `class` matching the tool's or function's call op),
+  or scope them with `client`.
+- To compare code versions, edit the source and run `engineTest` again with
+  another name (each run builds a fresh engine from the current workspace),
+  then `wcprofReport(view: "compare", capture: "after", against: "before")`.
+  An identical re-run in one session may be served from engine-dev's session
+  cache, returning the same capture.

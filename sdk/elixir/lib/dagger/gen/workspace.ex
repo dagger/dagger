@@ -924,6 +924,30 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+
+  Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec with_patch_file(t(), Dagger.File.t(), [{:on_conflict, Dagger.PatchConflict.t() | nil}]) ::
+          Dagger.Workspace.t()
+  def with_patch_file(%__MODULE__{} = workspace, patch, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withPatchFile")
+      |> QB.put_arg("patch", Dagger.ID.id!(patch))
+      |> QB.maybe_put_arg("onConflict", optional_args[:on_conflict])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
 
   A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.

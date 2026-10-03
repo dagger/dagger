@@ -1,0 +1,455 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/dagger/dagger/dagql"
+)
+
+// PatchOnto is a changeset rendered against a tree other than its own Before:
+// applying Patch to that tree with `git apply`, then creating NewDirectories
+// and removing RemovedDirectories, leaves every path the changeset declares as
+// Directory.withChanges would, without comparing the two trees.
+type PatchOnto struct {
+	// Patch is a `git diff --binary` from the tree's content at the
+	// changeset's paths to the changeset's After content there. Empty when
+	// they already match.
+	Patch []byte
+	// NewDirectories are the directories the result must have that a patch
+	// cannot express: directories the changeset adds, and those of After's
+	// that `git apply` prunes once it deletes their last file. Parents come
+	// before their children.
+	NewDirectories []PatchOntoDirectory
+	// RemovedDirectories are the directories the changeset removes that the
+	// patch leaves behind: it deletes their files, and `git apply` removes
+	// the directories that leaves empty, but not, e.g., empty subdirectories.
+	RemovedDirectories []string
+}
+
+// PatchOntoDirectory is a directory to create, with its mode in After.
+type PatchOntoDirectory struct {
+	Path        string
+	Permissions int
+}
+
+// IsEmpty reports whether applying p changes nothing.
+func (p *PatchOnto) IsEmpty() bool {
+	return len(p.Patch) == 0 && len(p.NewDirectories) == 0 && len(p.RemovedDirectories) == 0
+}
+
+var (
+	// ErrPatchTooLarge is returned by RenderPatchOnto when the patch exceeds
+	// its size budget.
+	ErrPatchTooLarge = errors.New("patch exceeds the size budget")
+	// ErrPatchBinary is returned by RenderPatchOnto when the patch would
+	// carry a binary file's content.
+	ErrPatchBinary = errors.New("patch has binary content")
+)
+
+// RenderPatchOnto renders the changeset as a patch against base, a tree the
+// changeset is about to be applied to at prefix (a base-relative directory;
+// "." for its root). Paths in the result are base-relative.
+//
+// Only the changeset's paths are staged — base's content there, and After's —
+// and `git diff` runs between the two, so the cost follows the size of the
+// change rather than of either tree. Because the patch starts from base's own
+// content, applying it reproduces the changeset by construction, even where
+// base and Before differ: a file the changeset adds that base already has
+// becomes a modification, and a file it removes that base never had drops out.
+//
+// The patch is read into memory; past maxBytes it fails with ErrPatchTooLarge.
+// It is meant to be embedded in a recipe, and a binary file's content does not
+// belong there: a build output such as a compiled binary is better rebuilt
+// from its producer than carried, base85-encoded, in every recipe and trace
+// that includes the patch. So a patch that adds, modifies or deletes a binary
+// file fails with ErrPatchBinary, as soon as git writes its first binary hunk.
+func (ch *Changeset) RenderPatchOnto(ctx context.Context, base dagql.ObjectResult[*Directory], prefix string, maxBytes int64) (*PatchOnto, error) {
+	paths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compute changeset paths: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, base, ch.After); err != nil {
+		return nil, fmt.Errorf("evaluate patch trees: %w", err)
+	}
+	var out *PatchOnto
+	err = mountDirectoryOrEmpty(ctx, base, func(baseDir string) error {
+		return mountDirectoryOrEmpty(ctx, ch.After, func(afterDir string) (err error) {
+			out, err = renderPatchOntoDirs(ctx, baseDir, afterDir, prefix, paths, maxBytes)
+			return err
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// renderPatchOntoDirs is RenderPatchOnto over mounted trees, given the
+// changeset's paths.
+func renderPatchOntoDirs(ctx context.Context, baseDir, afterDir, prefix string, paths *ChangesetPaths, maxBytes int64) (*PatchOnto, error) {
+	prefix = strings.TrimPrefix(path.Clean("/"+filepath.ToSlash(prefix)), "/")
+	if prefix == "" {
+		prefix = "."
+	}
+	rooted := func(p string) string {
+		return path.Join(prefix, strings.TrimSuffix(p, "/"))
+	}
+
+	stage, err := os.MkdirTemp("", "dagger-patch-onto-")
+	if err != nil {
+		return nil, fmt.Errorf("create patch staging dir: %w", err)
+	}
+	defer os.RemoveAll(stage)
+	stagedBase := filepath.Join(stage, "a")
+	stagedAfter := filepath.Join(stage, "b")
+	for _, dir := range []string{stagedBase, stagedAfter} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+
+	var baseFiles, afterFiles []string
+	for _, p := range slices.Concat(paths.Added, paths.Modified) {
+		if strings.HasSuffix(p, "/") {
+			continue
+		}
+		afterFiles = append(afterFiles, p)
+		// Whatever base holds there is replaced, including a directory
+		// where After has a file.
+		found, err := treeFiles(baseDir, rooted(p))
+		if err != nil {
+			return nil, err
+		}
+		baseFiles = append(baseFiles, found...)
+	}
+	for _, p := range paths.Removed {
+		found, err := treeFiles(baseDir, rooted(p))
+		if err != nil {
+			return nil, err
+		}
+		baseFiles = append(baseFiles, found...)
+	}
+	slices.Sort(baseFiles)
+	baseFiles = slices.Compact(baseFiles)
+
+	if err := materializeDeltaFiles(ctx, baseDir, stagedBase, baseFiles); err != nil {
+		return nil, fmt.Errorf("stage base files: %w", err)
+	}
+	// After is rooted at prefix within base: stage its files there, so the
+	// patch's paths are base-relative.
+	if err := materializeDeltaFiles(ctx, afterDir, filepath.Join(stagedAfter, prefix), afterFiles); err != nil {
+		return nil, fmt.Errorf("stage after files: %w", err)
+	}
+
+	out := &PatchOnto{}
+	if len(baseFiles) > 0 || len(afterFiles) > 0 {
+		var patch bytes.Buffer
+		var stderr strings.Builder
+		budget := &patchBudgetWriter{w: &patch, remaining: maxBytes}
+		err := writeGitDiffPatch(ctx, stage, nil, budget, io.Discard, &stderr)
+		// Checked first: a small patch fits in the pipe, so git can exit
+		// as usual before it notices we stopped reading.
+		if budget.err != nil {
+			return nil, budget.err
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		out.Patch = patch.Bytes()
+	}
+
+	prunes := newPatchPrunes(baseDir, baseFiles, afterFiles, prefix)
+	out.NewDirectories, err = patchOntoNewDirectories(baseDir, afterDir, prefix, paths, afterFiles, prunes)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range paths.Removed {
+		if !strings.HasSuffix(p, "/") {
+			continue
+		}
+		// A directory replaced by a file is removed by the patch; removing
+		// the path afterwards would take the file too.
+		if _, err := lstatInRoot(afterDir, p); err == nil {
+			continue
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		dir := rooted(p)
+		// Nothing to remove when base lacks it, or the patch's deletions
+		// already leave it empty, so `git apply` removes it.
+		if fi, err := lstatInRoot(baseDir, dir); errors.Is(err, fs.ErrNotExist) || (err == nil && !fi.IsDir()) {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		gone, err := prunes.gone(dir)
+		if err != nil {
+			return nil, fmt.Errorf("inspect directory %q: %w", dir, err)
+		}
+		if !gone {
+			out.RemovedDirectories = append(out.RemovedDirectories, dir)
+		}
+	}
+	return out, nil
+}
+
+// patchPrunes models which directories of base `git apply` removes: after
+// deleting a file, it removes each parent the deletion leaves empty.
+type patchPrunes struct {
+	baseDir string
+	// deleted are the files the patch deletes: base has them, After has no
+	// file there.
+	deleted map[string]bool
+	memo    map[string]bool
+}
+
+func newPatchPrunes(baseDir string, baseFiles, afterFiles []string, prefix string) *patchPrunes {
+	written := make(map[string]bool, len(afterFiles))
+	for _, p := range afterFiles {
+		written[path.Join(prefix, p)] = true
+	}
+	deleted := map[string]bool{}
+	for _, p := range baseFiles {
+		if !written[p] {
+			deleted[p] = true
+		}
+	}
+	return &patchPrunes{baseDir: baseDir, deleted: deleted, memo: map[string]bool{}}
+}
+
+// gone reports whether `git apply` removes the base directory dir: it holds
+// something, and only deleted files and directories that go too. A directory
+// that holds nothing is never removed, since no deletion leads to it.
+func (p *patchPrunes) gone(dir string) (bool, error) {
+	if v, ok := p.memo[dir]; ok {
+		return v, nil
+	}
+	entries, err := os.ReadDir(filepath.Join(p.baseDir, dir))
+	if err != nil {
+		return false, err
+	}
+	result := len(entries) > 0
+	for _, ent := range entries {
+		rel := path.Join(dir, ent.Name())
+		if ent.IsDir() {
+			sub, err := p.gone(rel)
+			if err != nil {
+				return false, err
+			}
+			if !sub {
+				result = false
+				break
+			}
+		} else if !p.deleted[rel] {
+			result = false
+			break
+		}
+	}
+	p.memo[dir] = result
+	return result, nil
+}
+
+// patchOntoNewDirectories lists the directories a patch cannot leave as the
+// changeset would, with their modes: the empty directories the changeset adds,
+// and those `git apply` prunes once it deletes their last file but the
+// changeset keeps. A directory the changeset adds with files in it is left to
+// the patch, which creates it along with them: its mode is lost, but listing
+// every such directory would make each workspace read replay one more step per
+// directory. Paths are base-relative; After is rooted at prefix.
+func patchOntoNewDirectories(baseDir, afterDir, prefix string, paths *ChangesetPaths, afterFiles []string, prunes *patchPrunes) ([]PatchOntoDirectory, error) {
+	rooted := func(p string) string {
+		return path.Join(prefix, strings.TrimSuffix(p, "/"))
+	}
+	dirs, err := addedEmptyDirectories(afterDir, paths, afterFiles, rooted)
+	if err != nil {
+		return nil, err
+	}
+
+	parents := map[string]struct{}{}
+	for p := range prunes.deleted {
+		for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
+			parents[dir] = struct{}{}
+		}
+	}
+	for dir := range parents {
+		if _, ok := dirs[dir]; ok {
+			continue
+		}
+		gone, err := prunes.gone(dir)
+		if err != nil {
+			return nil, fmt.Errorf("inspect directory %q: %w", dir, err)
+		}
+		if !gone {
+			continue
+		}
+		var fi fs.FileInfo
+		if rel, inside := strings.CutPrefix(dir, prefix+"/"); inside || prefix == "." {
+			if prefix == "." {
+				rel = dir
+			}
+			// The changeset keeps it only if After has it.
+			fi, err = lstatInRoot(afterDir, rel)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+		} else {
+			// prefix itself or one of its parents: outside the changeset.
+			fi, err = lstatInRoot(baseDir, dir)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("stat directory %q: %w", dir, err)
+		}
+		if fi.IsDir() {
+			dirs[dir] = int(fi.Mode().Perm())
+		}
+	}
+
+	out := make([]PatchOntoDirectory, 0, len(dirs))
+	for dir, perm := range dirs {
+		out = append(out, PatchOntoDirectory{Path: dir, Permissions: perm})
+	}
+	// Parents sort before their children.
+	slices.SortFunc(out, func(a, b PatchOntoDirectory) int { return strings.Compare(a.Path, b.Path) })
+	return out, nil
+}
+
+// addedEmptyDirectories returns the directories the changeset adds that no
+// file the patch writes lies beneath, by rooted path, with their modes in
+// After.
+func addedEmptyDirectories(afterDir string, paths *ChangesetPaths, afterFiles []string, rooted func(string) string) (map[string]int, error) {
+	// The directories the patch creates, as parents of the files it writes.
+	holdsFiles := map[string]bool{}
+	for _, p := range afterFiles {
+		for dir := path.Dir(p); dir != "." && dir != "/" && !holdsFiles[dir]; dir = path.Dir(dir) {
+			holdsFiles[dir] = true
+		}
+	}
+	dirs := map[string]int{}
+	for _, p := range paths.Added {
+		if !strings.HasSuffix(p, "/") || holdsFiles[strings.TrimSuffix(p, "/")] {
+			continue
+		}
+		fi, err := lstatInRoot(afterDir, p)
+		if err != nil {
+			return nil, fmt.Errorf("stat added directory %q: %w", p, err)
+		}
+		dirs[rooted(p)] = int(fi.Mode().Perm())
+	}
+	return dirs, nil
+}
+
+// treeFiles returns rel itself if it is a file or symlink under root, every
+// file and symlink beneath it if it is a directory, and nothing if it does not
+// exist.
+func treeFiles(root, rel string) ([]string, error) {
+	fi, err := lstatInRoot(root, rel)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !fi.IsDir() {
+		return []string{rel}, nil
+	}
+	var files []string
+	err = filepath.WalkDir(filepath.Join(root, rel), func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		sub, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		files = append(files, filepath.ToSlash(sub))
+		return nil
+	})
+	return files, err
+}
+
+// lstatInRoot is os.Lstat of rel beneath root, refusing to resolve it through
+// a parent that is not a directory: a symlink there could lead out of root. A
+// path whose parent is a symlink or a file does not exist in the tree, so it
+// reports fs.ErrNotExist.
+func lstatInRoot(root, rel string) (fs.FileInfo, error) {
+	rel = path.Clean(filepath.ToSlash(rel))
+	if rel == "." {
+		return os.Lstat(root)
+	}
+	parts := strings.Split(strings.TrimPrefix(rel, "/"), "/")
+	cur := root
+	for i, part := range parts {
+		if part == ".." {
+			return nil, fmt.Errorf("path %q escapes its root", rel)
+		}
+		cur = filepath.Join(cur, part)
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			return nil, err
+		}
+		if i == len(parts)-1 {
+			return fi, nil
+		}
+		if !fi.IsDir() {
+			return nil, fs.ErrNotExist
+		}
+	}
+	return nil, fs.ErrNotExist
+}
+
+// mountDirectoryOrEmpty mounts dir read-only, or an empty directory when it
+// has no snapshot (an empty directory result).
+func mountDirectoryOrEmpty(ctx context.Context, dir dagql.ObjectResult[*Directory], fn func(string) error) error {
+	err := dir.Self().Mount(ctx, dir, fn)
+	if !errors.Is(err, errEmptyResultRef) {
+		return err
+	}
+	empty, err := os.MkdirTemp("", "dagger-empty-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(empty)
+	return fn(empty)
+}
+
+// gitBinaryPatchLine starts each binary hunk of a `git diff --binary`. Text
+// hunk lines always start with ' ', '+', '-' or '\', so it cannot be content.
+var gitBinaryPatchLine = []byte("GIT binary patch\n")
+
+// patchBudgetWriter fails writes past its budget, or of a binary hunk,
+// recording why. It expects whole lines, as writeGitDiffPatch writes them.
+type patchBudgetWriter struct {
+	w         io.Writer
+	remaining int64
+	err       error
+}
+
+func (l *patchBudgetWriter) Write(p []byte) (int, error) {
+	if bytes.Equal(p, gitBinaryPatchLine) {
+		l.err = ErrPatchBinary
+		return 0, l.err
+	}
+	if int64(len(p)) > l.remaining {
+		l.err = ErrPatchTooLarge
+		return 0, l.err
+	}
+	l.remaining -= int64(len(p))
+	return l.w.Write(p)
+}
