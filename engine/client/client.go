@@ -887,7 +887,10 @@ func (c *Client) Close() (rerr error) {
 	shutdownErr := c.shutdownServer()
 	if shutdownErr != nil {
 		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", shutdownErr))
-	} else if c.telemetry != nil {
+	} else if c.telemetry != nil && !c.SessionTelemetry {
+		// A session telemetry stream ends only when the session does, so a
+		// client that leaves a live session closes it below instead.
+		//
 		// A successful /shutdown has flushed the session's telemetry and
 		// marked this client's streams as terminating; the server ends them
 		// once it has sent everything. Drain them now, before internalCancel
