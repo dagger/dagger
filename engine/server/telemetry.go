@@ -1257,6 +1257,13 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	}
 	flush()
 
+	// A client's stream ends when the client shuts down; a session stream,
+	// when the session does.
+	done := record.shutdownCh
+	if r.Header.Get(engine.SessionTelemetryHeader) == "true" {
+		done = record.daggerSession.shutdownCh
+	}
+
 	terminating := false
 	batchLimit := otlpBatchSize
 	// failStream ends the stream for good: the client must not reconnect at
@@ -1307,7 +1314,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			case <-time.After(telemetry.NearlyImmediate):
 				// Poll at the telemetry batching frequency. Tail reads are cheap,
 				// while coupling readers to writers risks blocking shutdown.
-			case <-record.shutdownCh:
+			case <-done:
 				logger.ExtraDebug("shutting down")
 				terminating = true
 			case <-r.Context().Done():

@@ -185,6 +185,11 @@ type Params struct {
 	// when no session with SessionID exists.
 	JoinExistingSession bool
 
+	// SessionTelemetry subscribes EngineTrace, EngineLogs and EngineMetrics
+	// to the whole session's telemetry, from its start until the session
+	// ends, instead of this client's own.
+	SessionTelemetry bool
+
 	// Background and Command describe this client process in session
 	// listings; see engine.ClientMetadata.
 	Background bool
@@ -966,9 +971,11 @@ func (c *Client) Close() (rerr error) {
 type otlpConsumer struct {
 	httpClient *httpClient
 	path       string
-	traceID    trace.TraceID
-	clientID   string
-	eg         *errgroup.Group
+	// session subscribes to the whole session's telemetry.
+	session  bool
+	traceID  trace.TraceID
+	clientID string
+	eg       *errgroup.Group
 
 	// reconnectDelay overrides telemetryReconnectDelay; zero uses the default.
 	reconnectDelay time.Duration
@@ -1110,6 +1117,9 @@ func (c *otlpConsumer) connectOnce(ctx context.Context, cursor int64) (*http.Res
 		Header: make(http.Header),
 	}).WithContext(ctx)
 	req.Header.Set("Accept", enginetel.LiveContentType+", "+enginetel.LegacyLiveContentType)
+	if c.session {
+		req.Header.Set(engine.SessionTelemetryHeader, "true")
+	}
 	if cursor > 0 {
 		value := strconv.FormatInt(cursor, 10)
 		req.Header.Set(enginetel.LiveCursorHeader, value)
@@ -1289,6 +1299,7 @@ func (c *Client) engineMetrics(confirmed bool) []sdkmetric.Exporter {
 func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/traces",
+		session:    c.SessionTelemetry,
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
 		httpClient: httpClient,
@@ -1320,6 +1331,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/logs",
+		session:    c.SessionTelemetry,
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
 		httpClient: httpClient,
@@ -1341,6 +1353,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/metrics",
+		session:    c.SessionTelemetry,
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
 		httpClient: httpClient,
@@ -1357,6 +1370,15 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 		}
 		return nil
 	})
+}
+
+// WaitTelemetry waits until the client's telemetry streams have ended. With
+// SessionTelemetry, they end when the session does.
+func (c *Client) WaitTelemetry() error {
+	if c.telemetry == nil {
+		return nil
+	}
+	return c.telemetry.Wait()
 }
 
 func (c *Client) init(ctx context.Context) error {

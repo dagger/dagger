@@ -284,6 +284,12 @@ const (
 	// An engine decides once per session, before any stream opens, and answers
 	// every stream of the session alike, reconnects included.
 	CloudTelemetryPublisherHeader = "X-Dagger-Cloud-Telemetry-Publisher"
+
+	// SessionTelemetryHeader, set to "true" on a telemetry subscription,
+	// subscribes to the whole session's telemetry instead of the client's
+	// own: the stream replays and follows the store of the session's main
+	// client, which every client's telemetry reaches, until the session ends.
+	SessionTelemetryHeader = "X-Dagger-Session-Telemetry"
 )
 
 func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -582,7 +583,7 @@ func (sess *daggerSession) telemetryRouteClientIDs(record *clientRecord) ([]stri
 			return nil, fmt.Errorf("telemetry ancestor client %q has mismatched ancestry for client %q", parentID, record.clientID)
 		}
 	}
-	return route, nil
+	return sess.withSessionStore(route), nil
 }
 
 // telemetryRouteOriginClientID resolves an immutable origin ID through the
@@ -613,7 +614,22 @@ func (sess *daggerSession) telemetryRouteOriginClientID(originClientID string) (
 		}
 		route = append(route, parentID)
 	}
-	return route, nil
+	return sess.withSessionStore(route), nil
+}
+
+// withSessionStore appends the main client to a telemetry route whose root is
+// another root client, so the main client's store holds the telemetry of
+// the whole session.
+func (sess *daggerSession) withSessionStore(route []string) []string {
+	// route is the origin followed by its ancestors from the root.
+	root := route[0]
+	if len(route) > 1 {
+		root = route[1]
+	}
+	if root == sess.mainClientCallerID {
+		return route
+	}
+	return append(route, sess.mainClientCallerID)
 }
 
 // telemetryDeliveryClientIDs preserves the delivery-domain key order used by
@@ -2389,6 +2405,24 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		if err != nil {
 			return fmt.Errorf("get client record: %w", err)
 		}
+		if r.Method == http.MethodPost {
+			// Root clients push their own telemetry here, authenticated by
+			// their secret token. Nested clients push through their exec's
+			// proxy instead.
+			if err := record.checkRootClientToken(clientMetadata.ClientSecretToken); err != nil {
+				return httpErr(err, http.StatusUnauthorized)
+			}
+			r.Header.Set("X-Dagger-Session-ID", record.daggerSession.sessionID)
+			r.Header.Set("X-Dagger-Client-ID", record.clientID)
+			srv.telemetryPubSub.ServeHTTP(w, r)
+			return nil
+		}
+		if r.Header.Get(engine.SessionTelemetryHeader) == "true" {
+			record, err = srv.clientRecordFromIDs(clientMetadata.SessionID, record.daggerSession.mainClientCallerID)
+			if err != nil {
+				return fmt.Errorf("get main client record: %w", err)
+			}
+		}
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
@@ -4128,4 +4162,23 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
+}
+
+// checkRootClientToken verifies that record is a root client and that token
+// is its secret token.
+func (record *clientRecord) checkRootClientToken(token string) error {
+	sess := record.daggerSession
+	sess.scopeMu.Lock()
+	stored := ""
+	if record.clientMetadata != nil {
+		stored = record.clientMetadata.ClientSecretToken
+	}
+	sess.scopeMu.Unlock()
+	if len(record.parentClientIDs) != 0 {
+		return fmt.Errorf("client %q is not a root client", record.clientID)
+	}
+	if stored == "" || subtle.ConstantTimeCompare([]byte(stored), []byte(token)) != 1 {
+		return errors.New("invalid client secret token")
+	}
+	return nil
 }
