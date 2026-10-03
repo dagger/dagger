@@ -271,6 +271,9 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 		}
 		return w.children("changesResultIDs", p.ChangesResultIDs)
 	}),
+	persistedDirectoryLazyKindGitCommit: parentAndSource("changesResultID",
+		func(p *persistedDirectoryGitCommitLazy) *uint64 { return &p.ParentResultID },
+		func(p *persistedDirectoryGitCommitLazy) *uint64 { return &p.ChangesResultID }),
 }
 
 // persistedFileLazyVisitors declares the references of every File lazy kind,

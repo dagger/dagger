@@ -705,6 +705,9 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 	case *DirectoryMergeChangesetsLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindMergeChangesets, payload, err
+	case *DirectoryGitCommitLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindGitCommit, payload, err
 	default:
 		return "", nil, fmt.Errorf("encode persisted directory lazy: unsupported lazy type %T", lazy)
 	}
@@ -947,6 +950,8 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 		return &DirectoryChownLazy{LazyState: NewLazyState(), Parent: parent, ChownPath: persisted.ChownPath, Owner: persisted.Owner}, nil
 	case persistedDirectoryLazyKindMergeChangesets:
 		return decodeDirectoryMergeChangesetsLazy(ctx, dec, payload)
+	case persistedDirectoryLazyKindGitCommit:
+		return decodeDirectoryGitCommitLazy(ctx, dec, payload)
 	default:
 		return nil, fmt.Errorf("decode persisted directory lazy payload: unsupported lazy kind %q", lazyKind)
 	}
