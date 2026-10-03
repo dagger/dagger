@@ -152,6 +152,12 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 			serviceCtx, span := Tracer().Start(runCtx, result.Artifact.URI, trace.WithAttributes(attribute.String(telemetryattrs.ServiceNameAttr, result.Artifact.URI), attribute.Bool(telemetry.UIRollUpLogsAttr, true)))
 			defer telemetry.EndWithCause(span, &err)
 			service := core.Ref[*core.Service](core.NewQuery(dag), result.Value.ID)
+			// Start the service on its own, so that it belongs to the session
+			// rather than to this client's port forward, and keeps running
+			// when this client leaves.
+			if _, err := service.Start(serviceCtx); err != nil {
+				return err
+			}
 			tunnel, err := core.NewQuery(dag).Host().Tunnel(service, core.HostTunnelOpts{Ports: mappings[i], Native: len(mappings[i]) == 0}).Start(serviceCtx)
 			if err != nil {
 				return err
