@@ -71,6 +71,7 @@ const (
 	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
 	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
+	DaggerEngineEnv       = "DAGGER_ENGINE"
 
 	DaggerQemuEmulatorMountPoint = "/dev/.dagger_qemu_emulator"
 
@@ -1171,6 +1172,47 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		srvCancel(errors.New("container cleanup"))
 	}))
 
+	return nil
+}
+
+// setupNewSessionEndpoint gives the container an engine endpoint of its own,
+// so each Dagger client started in it connects as the main client of a new
+// session rather than as a nested client of the caller's session. The stock
+// CLI and SDKs find it through DAGGER_ENGINE.
+func (c *Client) setupNewSessionEndpoint(ctx context.Context, state *execState) error {
+	if state.execMD == nil || !state.execMD.DaggerInDaggerNewSession {
+		return nil
+	}
+
+	listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
+		return net.Listen("tcp", "127.0.0.1:0")
+	})
+	if err != nil {
+		return fmt.Errorf("listen for new session clients: %w", err)
+	}
+	state.cleanups.Add("close new session listener", cleanups.IgnoreErrs(listener.Close, net.ErrClosed))
+
+	state.spec.Process.Env = append(state.spec.Process.Env, DaggerEngineEnv+"=tcp://"+listener.Addr().String())
+
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	httpSrv := &http.Server{
+		// NOTE: no ReadHeaderTimeout (gosec G112), for the same reason as the
+		// nested client listener above.
+		Handler:   http.HandlerFunc(c.SessionHandler.ServeHTTPToNewSession),
+		Protocols: protocols,
+	}
+	srvPool := pool.New().WithErrors()
+	srvPool.Go(func() error {
+		err := httpSrv.Serve(listener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
+			return fmt.Errorf("serve new session listener: %w", err)
+		}
+		return nil
+	})
+	state.cleanups.Add("wait for new session server", srvPool.Wait)
+	state.cleanups.Add("close new session http server", httpSrv.Close)
 	return nil
 }
 

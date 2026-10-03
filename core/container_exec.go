@@ -72,6 +72,10 @@ type ContainerExecOpts struct {
 	// Disable access to the Dagger API from the executed command.
 	DisableDaggerInDagger bool `default:"false"`
 
+	// Connect Dagger clients started by the command as new sessions instead
+	// of as clients of the current session.
+	DaggerInDaggerNewSession bool `default:"false"`
+
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
@@ -365,6 +369,7 @@ func (container *Container) execMeta(
 	if opts.NoInit {
 		execMD.NoInit = true
 	}
+	execMD.DaggerInDaggerNewSession = opts.DaggerInDaggerNewSession
 
 	var callerModDigest digest.Digest
 	if moduleContext.Self() != nil {

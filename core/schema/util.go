@@ -44,7 +44,21 @@ var (
 	deprecatedNestingArg = dagql.Arg("experimentalPrivilegedNesting").
 				View(AfterVersion(defaultNestingVersion)).
 				Deprecated(`Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.`)
+	newSessionNestingArg = dagql.Arg("daggerInDaggerNewSession").
+				View(AfterVersion(defaultNestingVersion)).
+				Doc(`Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.`,
+			`The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.`,
+			`Cannot be combined with "disableDaggerInDagger".`)
 )
+
+// v1Nesting resolves the v1.0 nesting arguments to whether the command joins
+// the current session as a nested client.
+func v1Nesting(disable, newSession bool) (bool, error) {
+	if disable && newSession {
+		return false, fmt.Errorf(`cannot set both "disableDaggerInDagger" and "daggerInDaggerNewSession"`)
+	}
+	return !disable && !newSession, nil
+}
 
 func Syncer[T dagql.Typed]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {

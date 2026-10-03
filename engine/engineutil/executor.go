@@ -74,6 +74,13 @@ type ExecutionMetadata struct {
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
 
+	// If true, Dagger clients started in the container connect to the engine
+	// as new sessions instead of as nested clients of the caller's session.
+	//
+	// omitempty keeps the serialized form, and therefore the cache keys, of
+	// every other exec unchanged.
+	DaggerInDaggerNewSession bool `json:",omitempty"`
+
 	// ProfArgs is the fully-resolved user command (entrypoint + args), captured
 	// in core at exec-run time BEFORE any engine shim (the QEMU emulator, the
 	// executor's /.init) wraps it, so wall-clock profiling can headline the user's
@@ -219,6 +226,7 @@ func (c *Client) Run(
 		namedSetupFunc{"enableGPU", c.enableGPU},
 		namedSetupFunc{"createCWD", c.createCWD},
 		namedSetupFunc{"setupNestedClient", c.setupNestedClient},
+		namedSetupFunc{"setupNewSessionEndpoint", c.setupNewSessionEndpoint},
 		namedSetupFunc{"installCACerts", c.installCACerts},
 		namedSetupFunc{"runContainer", c.runContainer},
 	)
