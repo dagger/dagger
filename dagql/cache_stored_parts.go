@@ -2,8 +2,10 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 )
@@ -105,4 +107,44 @@ func (c *Cache) storedPartDependenciesLocked(res *sharedResult, part PersistedPa
 		return nil, false
 	}
 	return named, true
+}
+
+// storedPartsLocked returns res's stored parts, sorted by part address key,
+// for its saved envelope. Requires egraphMu.
+func (res *sharedResult) storedPartsLocked() []PersistedPartOffer {
+	if len(res.storedParts) == 0 {
+		return nil
+	}
+	parts := make([]PersistedPartOffer, 0, len(res.storedParts))
+	for _, key := range slices.Sorted(maps.Keys(res.storedParts)) {
+		parts = append(parts, res.storedParts[key])
+	}
+	return parts
+}
+
+// restoreStoredPartsLocked takes a blob-backed cache's restored value's
+// stored parts out of its saved envelope, onto the entry, and sets the size
+// of its record as merge measured it: the call frame's JSON and the envelope's
+// without them. Requires egraphMu for writing.
+func restoreStoredPartsLocked(res *sharedResult, env *PersistedResultEnvelope, callFrameJSON string, payload []byte) error {
+	res.storedRecordBytes = int64(len(callFrameJSON) + len(payload))
+	if len(env.StoredParts) == 0 {
+		return nil
+	}
+	parts := env.StoredParts
+	env.StoredParts = nil
+	res.storedParts = make(map[string]PersistedPartOffer, len(parts))
+	for _, part := range parts {
+		key, err := partAddressKey(part.Address)
+		if err != nil {
+			return err
+		}
+		res.storedParts[key] = part
+	}
+	stripped, err := json.Marshal(env)
+	if err != nil {
+		return err
+	}
+	res.storedRecordBytes = int64(len(callFrameJSON) + len(stripped))
+	return nil
 }
