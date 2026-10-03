@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -204,4 +205,48 @@ func TestCloudRestoresAStoreItNeverClosed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, CachePersistenceResetUncleanShutdown, engine.PersistenceResetReason())
 	require.NoError(t, engine.CloseDiscardingPersistence())
+}
+
+// A checkpoint runs beside the Cloud's other readers, which hold the graph
+// lock for reading too, so it must not write under it: no compressing of
+// class paths. Two stored values joined into one class by a later span leave
+// terms naming merged class numbers, which a save resolves to their roots.
+// Run under -race, this fails if the save writes.
+func TestCheckpointRunsBesideReaders(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPersistenceTestCloud(t, filepath.Join(t.TempDir(), "cloud.db"))
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	a, recipeA := mergeTestSource(t, "checkpoint-a", "value")
+	b, recipeB := mergeTestSource(t, "checkpoint-b", "value")
+	rootA := storedPersistenceTestMerge(t, ctx, cloud, a)[0]
+	storedPersistenceTestMerge(t, ctx, cloud, b)
+	_, err := cloud.AttachRemoteHolding(ctx, HolderKey{Cache: "cache-a", Number: a.Values[0].SenderNumber}, RemoteHolding{
+		Recipe: recipeA, Request: recipeB, Field: "checkpoint-a",
+	})
+	require.NoError(t, err)
+	require.Len(t, cloud.EquivalentEntries(recipeB.String()), 2)
+
+	done := make(chan struct{})
+	var readers sync.WaitGroup
+	for range 4 {
+		readers.Go(func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				cloud.EquivalentEntries(recipeA.String())
+				cloud.EquivalentHolders(recipeB.String())
+				_, _ = cloud.EntryInfo(rootA)
+				_, _ = cloud.StoredBundle(ctx, []uint64{rootA})
+				_, _ = cloud.CloudUsage()
+			}
+		})
+	}
+	for range 20 {
+		require.NoError(t, cloud.Checkpoint(ctx))
+	}
+	close(done)
+	readers.Wait()
 }

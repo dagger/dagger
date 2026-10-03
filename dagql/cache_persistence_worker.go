@@ -50,6 +50,10 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 	return nil
 }
 
+// snapshotPersistState copies, under egraphMu for reading, what the save
+// writes. A Checkpoint runs it beside other readers, so it reads class roots
+// without compressing their paths, which writes.
+//
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
 	var snapshot persistStateSnapshot
@@ -59,7 +63,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	selectedResultIDs, persistedRootIDs := c.snapshotPersistedRootClosureLocked()
 
 	addEqClassID := func(eqClassIDs map[eqClassID]struct{}, eqID eqClassID) {
-		eqID = c.findEqClassLocked(eqID)
+		eqID = c.eqClassRootLocked(eqID)
 		if eqID == 0 {
 			return
 		}
@@ -97,10 +101,10 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			})
 		}
 
-		outputEqClasses := c.outputEqClassesForResultLocked(resultID)
+		outputEqClasses := c.outputEqClassRootsLocked(resultID)
 		outputEqIDs := make([]eqClassID, 0, len(outputEqClasses))
 		for outputEqID := range outputEqClasses {
-			outputEqID = c.findEqClassLocked(outputEqID)
+			outputEqID = c.eqClassRootLocked(outputEqID)
 			if outputEqID == 0 {
 				continue
 			}
@@ -171,7 +175,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		if term == nil {
 			continue
 		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
+		outputEqID := c.eqClassRootLocked(term.outputEqID)
 		if _, retained := retainedOutputEqClassIDs[outputEqID]; !retained {
 			continue
 		}
@@ -184,7 +188,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		inputEqIDs := make([]eqClassID, len(term.inputEqIDs))
 		copy(inputEqIDs, term.inputEqIDs)
 		for i, inputEqID := range inputEqIDs {
-			inputEqID = c.findEqClassLocked(inputEqID)
+			inputEqID = c.eqClassRootLocked(inputEqID)
 			inputEqIDs[i] = inputEqID
 			addEqClassID(eqClassIDs, inputEqID)
 			snapshot.termInputs = append(snapshot.termInputs, persistdb.MirrorTermInput{
