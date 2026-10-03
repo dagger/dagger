@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger/core"
 
@@ -25,6 +26,7 @@ var startListMode bool
 func init() {
 	registerCommandArtifactFlags(startCmd)
 	startCmd.Flags().BoolVarP(&startListMode, "list", "l", false, "List available services")
+	startCmd.Flags().BoolVar(&detachFlag, "detach", false, "Run the services and forward their ports in the background, in a detached session (experimental)")
 }
 
 var startCmd = &cobra.Command{
@@ -38,6 +40,9 @@ var startCmd = &cobra.Command{
 		hiddenAliasesAnnotation: "up",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if detachFlag && !startListMode {
+			return runDetached(cmd.OutOrStdout())
+		}
 		if !startListMode {
 			previous := opts.RootFilter
 			opts.RootFilter = (*dagui.DB).ServiceDisplaySpans
@@ -47,6 +52,7 @@ var startCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		params = backgroundClientParams(params)
 		return withEngine(
 			cmd.Context(),
 			params,
@@ -146,6 +152,15 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 			ports[port] = result.Artifact.URI
 		}
 	}
+	// A detached start has started once every port forward listens.
+	var readyMu sync.Mutex
+	var readyURLs []string
+	var listening sync.WaitGroup
+	listening.Add(len(results))
+	go func() {
+		listening.Wait()
+		reportBackgroundStarted(readyURLs)
+	}()
 	jobs, runCtx := errgroup.WithContext(ctx)
 	for i, result := range results {
 		jobs.Go(func() (err error) {
@@ -179,6 +194,10 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 				urls = append(urls, fmt.Sprintf("%s://localhost:%d", scheme, number))
 			}
 			span.SetAttributes(attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls))
+			readyMu.Lock()
+			readyURLs = append(readyURLs, urls...)
+			readyMu.Unlock()
+			listening.Done()
 			_, ready := Tracer().Start(serviceCtx, "ready "+strings.Join(urls, " "), trace.WithAttributes(attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls)))
 			defer ready.End()
 			<-serviceCtx.Done()

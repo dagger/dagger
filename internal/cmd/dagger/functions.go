@@ -214,6 +214,11 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			},
 			// Between PreRunE and RunE, flags are validated.
 			RunE: func(c *cobra.Command, a []string) error {
+				// Flags after the function name are only parsed once the
+				// module is loaded, so look for --detach there too.
+				if detachFlag || slices.Contains(a, "--detach") {
+					return runDetached(c.OutOrStdout())
+				}
 				if isPrintTraceLinkEnabled(c.Annotations) {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
@@ -234,6 +239,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				// set in initModuleParams: shell shares that helper and needs
 				// the full view).
 				params.WorkspaceModuleScope = functionName(execArgs)
+				params = backgroundClientParams(params)
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
@@ -293,6 +299,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		setFlagCapabilities(fc.cmd.PersistentFlags().Lookup("output"), mayProduceOutput)
 
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
+
+		fc.cmd.PersistentFlags().BoolVar(&detachFlag, "detach", false, "Run the call in the background, in a detached session (experimental)")
 	}
 	return fc.cmd
 }
@@ -1178,6 +1186,9 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 
 		var response any
 
+		// A detached call has started once its function and arguments are
+		// resolved.
+		reportBackgroundStarted(nil)
 		if err := makeRequest(ctx, q, &response); err != nil {
 			return err
 		}

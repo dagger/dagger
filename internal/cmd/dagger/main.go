@@ -56,9 +56,11 @@ var (
 	cpuprofile = os.Getenv("CPUPROFILE")
 	pprofAddr  = os.Getenv("PPROF")
 
-	workdir      string
-	workspaceRef string
-	workspaceEnv string
+	workdir string
+	// invocationDir is the directory the CLI was started in, before --workdir.
+	invocationDir string
+	workspaceRef  string
+	workspaceEnv  string
 
 	silent                    = silentFromEnv()
 	verbose                   int
@@ -1077,6 +1079,7 @@ func resolveProgressFrontend() error {
 
 func Main() {
 	runSSHAskpass()
+	setupBackgroundMode()
 	installRootGlobalFlags()
 	if err := validateFlagCapabilities(rootCmd, os.Args[1:]); err != nil {
 		cmd, _ := resolveCommand(rootCmd, os.Args[1:])
@@ -1086,7 +1089,8 @@ func Main() {
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
 	commandArgs := parseGlobalFlags(rootCmd, os.Args[1:])
-	invocationDir, err := pathutil.Getwd()
+	var err error
+	invocationDir, err = pathutil.Getwd()
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 		os.Exit(1)
@@ -1124,6 +1128,11 @@ func Main() {
 	}
 	replayGlobalFlags(rootCmd)
 	configureProgressOptions()
+	if inBackground {
+		// The background copy of a detached command writes plain progress to
+		// its log file.
+		progress = "plain"
+	}
 	if err := resolveProgressFrontend(); err != nil {
 		fmt.Fprintf(stderr, "%s\n", err)
 		exitWithCode(1)
@@ -1146,8 +1155,14 @@ func Main() {
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
-	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		exitWithCode(commandErrorStatus(err))
+	err = rootCmd.ExecuteContext(ctx)
+	code := 0
+	if err != nil {
+		code = commandErrorStatus(err)
+	}
+	finishBackground(err, code)
+	if code != 0 {
+		exitWithCode(code)
 	}
 	stop()
 }
