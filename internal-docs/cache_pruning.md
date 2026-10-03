@@ -371,11 +371,11 @@ This is absolutely a best-effort pruning pass, not an optimal solver.
 
 ## Structural Estimate And Memory Pruning
 
-The cache exposes an O(1) estimate from cardinalities already protected by
-`egraphMu`:
+The cache exposes an O(1) estimate from cardinalities and a payload total
+already protected by `egraphMu`:
 
 ```text
-estimated bytes = 3072*R + 512*T + 768*C
+estimated bytes = 3072*R + 512*T + 768*C + P
 ```
 
 Where:
@@ -384,13 +384,42 @@ Where:
 - `T` is `len(egraphTerms)`, the number of live symbolic operation terms
 - `C` is `len(egraphParents)-1`, the allocated union-find class-slot
   high-water
+- `P` is the sum of the live results' payload bytes (below)
 
 The weights are a calibrated bundle for ordinary result-owned calls, payloads,
 dependencies, indexes, maps, terms, and classes. They are not claims about the
 isolated size of any one Go object. The estimate intentionally ignores exact
-map capacity, dependency fan-out, call-string length, payload size, imported
-envelope size, and allocator fragmentation. It bounds the reproduced
+map capacity, dependency fan-out, call-string length, and allocator
+fragmentation. It bounds the reproduced
 population-growth problem; it is not a process RSS measurement.
+
+### Payload Bytes
+
+Some values keep a large byte payload in memory for the life of their cache
+entry. The common case is a `File` or `Directory` whose operation is a blob or
+new-file write: the operation stays as the value's recipe after evaluation, so
+its contents stay too. Each module schema's introspection JSON
+(`__schemaJSONFile`) is such a blob, about 0.5 MB per distinct schema.
+
+A value reports such payloads through the optional `CachePayloadSizer`
+interface, which must only read lengths already at hand. Today these do:
+
+- `String`, `JSON`, and `JSONValue`: their length
+- `File`: blob contents, plus saved operation bytes (`lazyJSON`) on restored
+  and transferred values
+- `Directory`: new-file content, plus saved operation bytes
+
+Each `sharedResult` records its `payloadBytes` once, and the cache keeps their
+sum over `resultsByID` in step on every registration, removal, and in-place
+value replacement. A fresh result is measured outside cache locks before it is
+published. An imported or merged row starts at its envelope's encoded length
+and switches to its decoded value's size when it is decoded. Later in-place
+changes to a value, such as a part install swapping a recipe for saved
+operation bytes, keep the earlier measurement.
+
+The payload term is not calibrated and not a heap measurement: it counts only
+what values report, at encoded length, and never walks object graphs or call
+arguments.
 
 The class-slot coefficient is 768 rather than the initial 1,024 hypothesis
 because 1,024 produced a 2.199 churn-compaction estimate-to-heap ratio, outside
@@ -415,6 +444,7 @@ When the estimate exceeds the maximum, `PruneMetadataEstimate`:
 4. computes active closure and candidates using `KeepDuration=0`, no filters,
    and the current deterministic order
 5. gives each simulated collected result the same coarse structural credit
+   plus its own payload bytes
 6. reuses the existing greedy ownership simulation until the target is reached
    or candidates are exhausted
 7. applies persisted-edge cuts through the shared live collector
@@ -850,8 +880,8 @@ Important limitations:
 - the planner is greedy, not optimal
 - it does not reason about richer value/cost tradeoffs
 - disk mode relies on approximate/current physical size measurements
-- structural mode does not model rare large calls, payloads, imported
-  envelopes, map capacity, or allocator fragmentation
+- structural mode does not model rare large calls, payloads that values do not
+  report, map capacity, or allocator fragmentation
 - the full O(N) snapshot and simulation allocate substantial temporary memory
 - it accepts drift between snapshot time and apply time
 
@@ -865,7 +895,8 @@ ownership model.
 The current dagql prune model treats persisted edges as prunable retention roots
 and protects live session closure and unpruneable roots. Disk mode uses measured
 physical size and worker policies. Structural mode triggers automatically or
-manually from an O(1) `R/T/C` estimate, force-compacts class slots, and uses
-equal coarse credit without physical details. Both modes reuse the same graph
+manually from an O(1) `R/T/C` estimate plus reported payload bytes,
+force-compacts class slots, and credits each result an equal structural share
+plus its own payload bytes, without physical details. Both modes reuse the same graph
 snapshot, greedy ownership simulation, live unpruneable recheck, persisted-edge
 cuts, normal ownership cascade, and containerd lease cleanup.
