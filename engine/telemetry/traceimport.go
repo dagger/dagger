@@ -15,7 +15,6 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 
@@ -49,19 +48,15 @@ import (
 // the imported conversation has to surface, and the live session's own root
 // stays the one the TUI is about.
 //
-// DEGRADE, NEVER PANIC. Two shapes are legal OTLP but are dereferenced blindly
-// by the shared re-export path (a nil Resource in otel.ResourceFromPB, a nil
-// Body in otel.LogValueFromPB): a payload carrying no resource info, and an
-// attribute-only log record with no body. The second is precisely what resume
-// rides on — agent state, snapshot digests and call payloads are all
-// empty-bodied records — and §12 lists "does an empty-bodied record survive the
-// Cloud round trip" as unverified. Each Import method fills those in rather
-// than risk a nil dereference taking the CLI down mid-restore.
-//
-// That belongs upstream, and is fixed there by dagger/otel-go#17. These three
-// guards are the stopgap until this repo's otel-go pin includes it; DELETE THEM
-// WITH THAT BUMP, since a decode boundary that answers for its own optional
-// fields is the real fix and duplicating it here only hides the next one.
+// DEGRADE, NEVER PANIC. Each Import method first runs its request through the
+// shared OTLP normalization (otlpnormalize.go), which fills in the legal-but-
+// unguarded shapes otel-go's conversion dereferences blindly — a payload with
+// no resource info, an attribute-only log record with no body — rather than
+// risk a nil dereference taking the CLI down mid-restore. The second is
+// precisely what resume rides on — agent state, snapshot digests and call
+// payloads are all empty-bodied records — and §12 lists "does an empty-bodied
+// record survive the Cloud round trip" as unverified. See otlpnormalize.go
+// for why these guards are still needed (the upstream fix never landed).
 //
 // The transport is somebody else's problem: internal/cloud's OTLP stream
 // client decodes Cloud's binary frames into these three request types and
@@ -139,11 +134,10 @@ func (imp *TraceImporter) ImportSpans(ctx context.Context, req *coltracepb.Expor
 		return nil
 	}
 
+	NormalizeTraceRequest(req) // see "degrade, never panic"
+
 	imp.mu.Lock()
 	for _, resourceSpans := range req.GetResourceSpans() {
-		if resourceSpans.GetResource() == nil {
-			resourceSpans.Resource = &resourcepb.Resource{} // see "degrade, never panic"
-		}
 		for _, scopeSpans := range resourceSpans.GetScopeSpans() {
 			for _, span := range scopeSpans.GetSpans() {
 				imp.noteLocked(resourceSpans, scopeSpans, span)
@@ -194,18 +188,7 @@ func (imp *TraceImporter) ImportLogs(ctx context.Context, req *collogspb.ExportL
 	if imp.sinks.Logs == nil || req == nil {
 		return nil
 	}
-	for _, resourceLogs := range req.GetResourceLogs() {
-		if resourceLogs.GetResource() == nil {
-			resourceLogs.Resource = &resourcepb.Resource{} // see "degrade, never panic"
-		}
-		for _, scopeLogs := range resourceLogs.GetScopeLogs() {
-			for _, record := range scopeLogs.GetLogRecords() {
-				if record.GetBody() == nil {
-					record.Body = &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{}}
-				}
-			}
-		}
-	}
+	NormalizeLogsRequest(req) // see "degrade, never panic"
 	return telemetry.ReexportLogsFromPB(ctx, imp.sinks.Logs, req)
 }
 
@@ -216,11 +199,7 @@ func (imp *TraceImporter) ImportMetrics(ctx context.Context, req *colmetricspb.E
 	if imp.sinks.Metrics == nil || req == nil {
 		return nil
 	}
-	for _, resourceMetrics := range req.GetResourceMetrics() {
-		if resourceMetrics.GetResource() == nil {
-			resourceMetrics.Resource = &resourcepb.Resource{} // see "degrade, never panic"
-		}
-	}
+	NormalizeMetricsRequest(req) // see "degrade, never panic"
 	return ReexportMetricsFromPB(ctx, []sdkmetric.Exporter{imp.sinks.Metrics}, req)
 }
 
