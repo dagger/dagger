@@ -291,8 +291,8 @@ static __always_inline int add_cgroup_bytes(struct __sk_buff *skb,
         if (bytes)
             *bytes += skb->len;
     }
-    /* Both the engine's exact cgroup and the dedicated operation subtree
-     * contribute to this aggregate. The parent hook skips the subtree, so
+    /* Both the engine's exact cgroup and the sibling operation subtrees
+     * contribute to this aggregate. Their hooks cover disjoint cgroups, so
      * each packet is counted once. Workload cgroups remain excluded. */
     struct cgroup_counter_key key = {
         .direction = direction,
@@ -343,7 +343,7 @@ int count_cgroup_egress(struct __sk_buff *skb)
     return add_cgroup_bytes(skb, DIR_TX, 0);
 }
 
-/* Attached only at the engine-owned subprocess subtree, inherited by each
+/* Attached only at the engine-owned subprocess subtrees, inherited by each
  * command's child cgroup. No per-command link or packet event stream needed. */
 SEC("cgroup_skb/ingress")
 int count_operation_ingress(struct __sk_buff *skb)

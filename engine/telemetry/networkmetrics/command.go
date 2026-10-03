@@ -35,9 +35,25 @@ type commandNetworkCounters interface {
 }
 
 func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exec.Cmd) (commandNetworkCounters, error)) func() {
+	command, prepareErr := prepare(cmd)
+	// Cgroup placement also isolates CPU and memory. It does not depend on
+	// having a span or a working network sampler.
+	cleanup := func() {}
+	if prepareErr == nil {
+		cleanup = sync.OnceFunc(func() {
+			go func() {
+				waitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+				defer cancel()
+				_ = command.WaitEmpty(waitCtx)
+				if err := command.Close(); err != nil {
+					slog.DebugContext(ctx, "release subprocess accounting", "error", err)
+				}
+			}()
+		})
+	}
 	span := trace.SpanContextFromContext(ctx)
 	if !span.IsValid() {
-		return func() {}
+		return cleanup
 	}
 	ctx = context.WithoutCancel(ctx)
 	meter := daggerotel.Meter(ctx, "dagger.io/network")
@@ -47,7 +63,7 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 	)
 	available, err := meter.Int64Gauge(telemetryattrs.NetworkAvailable, metric.WithUnit("1"))
 	if err != nil {
-		return func() {}
+		return cleanup
 	}
 	names := []string{
 		telemetryattrs.NetworkRxBytes, telemetryattrs.NetworkTxBytes,
@@ -59,14 +75,13 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 		gauges[i], err = meter.Int64Gauge(name, metric.WithUnit("bytes"))
 		if err != nil {
 			available.Record(ctx, 0, opts)
-			return func() {}
+			return cleanup
 		}
 	}
-	command, err := prepare(cmd)
-	if err != nil {
+	if prepareErr != nil {
 		available.Record(ctx, 0, opts)
-		slog.DebugContext(ctx, "subprocess network accounting unavailable", "error", err)
-		return func() {}
+		slog.DebugContext(ctx, "subprocess network accounting unavailable", "error", prepareErr)
+		return cleanup
 	}
 	var sampleMu sync.Mutex
 	sample := func() {

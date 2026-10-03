@@ -174,3 +174,17 @@ func TestCommandNetworkTimeoutPreservesSamples(t *testing.T) {
 		telemetryattrs.NetworkExternalRxBytes: 17, telemetryattrs.NetworkExternalTxBytes: 19,
 	}, got)
 }
+
+func TestCommandPlacementWithoutSpan(t *testing.T) {
+	counters := &testCommandCounters{closed: make(chan struct{})}
+	prepared := false
+	finish := prepareCommandNetwork(t.Context(), &exec.Cmd{}, func(*exec.Cmd) (commandNetworkCounters, error) {
+		prepared = true
+		return counters, nil
+	})
+	require.True(t, prepared, "CPU and memory isolation does not require a span")
+	finish()
+	finish()
+	waitCommandClosed(t, counters)
+	require.Zero(t, counters.reads.Load(), "do not emit unattributed span metrics")
+}

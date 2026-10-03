@@ -2,16 +2,16 @@
 // Dagger engine process.
 //
 // CPU usage and memory accounting include processes in descendant cgroups.
-// Subprocess network accounting creates descendants for engine commands, not
-// executor workloads. CPU usage values are cumulative since cgroup creation, and the
-// total value reported by the kernel is the accounting source; user and system
-// values are diagnostic components. Memory peak is the peak for the cgroup
+// The standard layout places accounted commands in sibling cgroups, not
+// descendants of the engine. CPU usage values are cumulative since cgroup
+// creation, and the total reported by the kernel is the accounting source;
+// user and system values are diagnostic components. Memory peak is for the cgroup
 // lifetime. Memory breakdown fields are diagnostic and can overlap. These
 // metrics do not imply attribution to a Dagger client or organization. In the
-// standard layout, /init and /buildkit are siblings: user execution cgroups are
-// not included. A different layout (including an engine at the namespace root)
-// can include user workloads. This package observes that boundary; it does not
-// enforce it.
+// standard layout, /engine, /exec, /git, /rg, and /sshfs are siblings: accounted
+// commands and user executions are not included. A different layout (including
+// an engine at the namespace root) can include user workloads. This package
+// observes that boundary; it does not enforce it.
 //
 // CPU quota enforcement counters report only this cgroup's own quota. They
 // exclude throttling caused by ancestor cgroups. Zero does not mean that the

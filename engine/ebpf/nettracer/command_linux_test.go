@@ -22,7 +22,7 @@ func TestCommandWaitEmpty(t *testing.T) {
 	path := t.TempDir()
 	events := filepath.Join(path, "cgroup.events")
 	require.NoError(t, os.WriteFile(events, []byte("populated 1\nfrozen 0\n"), 0o600))
-	c := &Command{path: path, tracer: &Tracer{commands: &commandAccounting{done: make(chan struct{})}}}
+	c := &Command{path: path, accounting: &commandAccounting{done: make(chan struct{})}}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	finished := make(chan error, 1)
@@ -81,13 +81,21 @@ func TestCommandAccounting(t *testing.T) {
 		_, err = io.Copy(conn, bytes.NewReader(make([]byte, 1<<20)))
 		served <- err
 	}()
-	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestCommandNetworkHelper$")
+	git := filepath.Join(t.TempDir(), "git")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	require.NoError(t, os.Symlink(executable, git))
+	cmd := exec.CommandContext(t.Context(), git, "-test.run=^TestCommandNetworkHelper$")
 	cmd.Env = append(os.Environ(), "NETTRACER_HELPER=parent", "NETTRACER_PEER="+listener.Addr().String())
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	command, err := PrepareCommand(cmd)
 	require.NoError(t, err)
+	enginePath, err := currentCgroupPath()
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(filepath.Dir(enginePath), "git"), filepath.Dir(command.path))
+	require.False(t, strings.HasPrefix(command.path, enginePath+"/"))
 	t.Cleanup(func() { require.NoError(t, command.Close()) })
 	require.True(t, cmd.SysProcAttr.Setpgid)
 	require.True(t, cmd.SysProcAttr.UseCgroupFD)
@@ -109,6 +117,80 @@ func TestCommandAccounting(t *testing.T) {
 	require.NoError(t, command.Close())
 	_, err = os.Stat(command.path)
 	require.True(t, os.IsNotExist(err), "command cgroup should be removed: %v", err)
+}
+
+func TestCommandRoot(t *testing.T) {
+	for _, tc := range []struct {
+		engine, root string
+	}{
+		{"/sys/fs/cgroup/engine", "/sys/fs/cgroup"},
+		{"/sys/fs/cgroup/init", "/sys/fs/cgroup"},
+		{"/sys/fs/cgroup/tenant/engine", "/sys/fs/cgroup/tenant"},
+		{"/sys/fs/cgroup", ""},
+		{"/sys/fs/cgroup/../host", ""},
+		{"/outside/engine", ""},
+		{"/sys/fs/cgroup/git", ""},
+		{"/sys/fs/cgroup/rg", ""},
+		{"/sys/fs/cgroup/sshfs", ""},
+		{"/sys/fs/cgroup/exec", ""},
+	} {
+		t.Run(tc.engine, func(t *testing.T) {
+			root, err := commandRoot(tc.engine)
+			if tc.root == "" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.root, root)
+			}
+		})
+	}
+}
+
+func TestCommandPlacementWithoutEBPF(t *testing.T) {
+	root := t.TempDir()
+	a := &commandAccounting{paths: map[string]string{}, pending: map[string]struct{}{}}
+	for _, name := range []string{"git", "rg", "sshfs"} {
+		a.paths[name] = filepath.Join(root, name)
+		require.NoError(t, os.Mkdir(a.paths[name], 0o755))
+	}
+	// Even if engine hooks loaded, missing helper hooks make the aggregate
+	// incomplete once commands are placed outside the engine cgroup.
+	previousTracer := activeTracer.Swap(&Tracer{cgroupEnabled: true})
+	previousCommands := fallbackCommands.Swap(a)
+	t.Cleanup(func() {
+		activeTracer.Store(previousTracer)
+		fallbackCommands.Store(previousCommands)
+	})
+	require.False(t, EngineAccountingAvailable())
+	require.ErrorContains(t, EngineAccountingError(), "aggregate is incomplete")
+	_, err := SampleEngine()
+	require.Error(t, err)
+	for _, name := range []string{"git", "rg", "sshfs"} {
+		t.Run(name, func(t *testing.T) {
+			paths := map[string]bool{}
+			for range 2 {
+				cmd := &exec.Cmd{Path: "/usr/bin/" + name, SysProcAttr: &syscall.SysProcAttr{Setpgid: true}}
+				command, err := PrepareCommand(cmd)
+				require.NoError(t, err)
+				require.Equal(t, a.paths[name], filepath.Dir(command.path))
+				require.False(t, paths[command.path], "operation cgroups must be unique")
+				paths[command.path] = true
+				require.True(t, cmd.SysProcAttr.UseCgroupFD)
+				require.True(t, cmd.SysProcAttr.Setpgid)
+				require.Equal(t, int(command.fd.Fd()), cmd.SysProcAttr.CgroupFD)
+				_, err = command.Sample()
+				require.ErrorContains(t, err, "network accounting is unavailable")
+				require.NoError(t, command.Close())
+				require.NoError(t, command.Close())
+				_, err = os.Stat(command.path)
+				require.True(t, os.IsNotExist(err))
+			}
+		})
+	}
+	cmd := &exec.Cmd{Path: "/usr/bin/dnsmasq"}
+	_, err = PrepareCommand(cmd)
+	require.Error(t, err)
+	require.Nil(t, cmd.SysProcAttr, "shared infrastructure stays in the engine cgroup")
 }
 
 func TestCommandNetworkHelper(t *testing.T) {

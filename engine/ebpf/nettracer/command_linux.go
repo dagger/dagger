@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,13 +19,12 @@ import (
 	"github.com/cilium/ebpf/link"
 )
 
-// commandAccounting owns a subtree containing only engine subprocesses, never
+// commandAccounting owns sibling subtrees for engine subprocesses, never
 // executor workloads. Its hooks survive individual command cgroups, so late
 // socket traffic still contributes to the engine total after span completion.
 type commandAccounting struct {
-	path    string
-	ingress link.Link
-	egress  link.Link
+	paths   map[string]string
+	links   []link.Link
 	mu      sync.Mutex
 	pending map[string]struct{}
 	done    chan struct{}
@@ -32,25 +32,95 @@ type commandAccounting struct {
 	closed  bool
 }
 
-func (t *Tracer) newCommandAccounting(parent string) (_ *commandAccounting, rerr error) {
-	path, err := os.MkdirTemp(parent, "dagger-commands-")
+var fallbackCommands atomic.Pointer[commandAccounting]
+
+// InitCommandPlacement keeps resource isolation available when eBPF cannot
+// load. The engine owns the returned cleanup; clients never install this.
+func InitCommandPlacement() (func() error, error) {
+	if t := Active(); t != nil && t.commands != nil {
+		return func() error { return nil }, nil
+	}
+	if fallbackCommands.Load() != nil {
+		return nil, errors.New("command placement already initialized")
+	}
+	path, err := currentCgroupPath()
 	if err != nil {
 		return nil, err
 	}
-	a := &commandAccounting{path: path, pending: map[string]struct{}{}, done: make(chan struct{}), stopped: make(chan struct{})}
+	a, err := (*Tracer)(nil).newCommandAccounting(path)
+	if err != nil {
+		return nil, err
+	}
+	if !fallbackCommands.CompareAndSwap(nil, a) {
+		_ = a.Close()
+		return nil, errors.New("command placement already initialized")
+	}
+	return func() error {
+		fallbackCommands.CompareAndSwap(a, nil)
+		return a.Close()
+	}, nil
+}
+
+func (t *Tracer) newCommandAccounting(parent string) (_ *commandAccounting, rerr error) {
+	root, err := commandRoot(parent)
+	if err != nil {
+		return nil, err
+	}
+	a := &commandAccounting{paths: map[string]string{}, pending: map[string]struct{}{}, done: make(chan struct{}), stopped: make(chan struct{})}
 	defer func() {
 		if rerr != nil {
-			if a.ingress != nil {
-				_ = a.ingress.Close()
+			for _, hook := range a.links {
+				_ = hook.Close()
 			}
-			if a.egress != nil {
-				_ = a.egress.Close()
+			for _, path := range a.paths {
+				_ = os.Remove(path)
 			}
-			_ = os.Remove(path)
 		}
 	}()
+	for _, name := range []string{"git", "rg", "sshfs"} {
+		path := filepath.Join(root, name)
+		// Do not attach to a category owned by another engine or left behind
+		// by a live helper. That could mix totals or count traffic twice.
+		if err := os.Mkdir(path, 0o755); err != nil {
+			return nil, fmt.Errorf("reserve command cgroup %s: %w", path, err)
+		}
+		a.paths[name] = path
+		// Keep these category cgroups empty. Delegate the available resource
+		// controllers to the per-operation leaves for CPU and memory accounting.
+		controllers, err := os.ReadFile(filepath.Join(path, "cgroup.controllers"))
+		if err != nil {
+			return nil, err
+		}
+		var enable []string
+		for _, controller := range strings.Fields(string(controllers)) {
+			enable = append(enable, "+"+controller)
+		}
+		if len(enable) > 0 {
+			if err := os.WriteFile(filepath.Join(path, "cgroup.subtree_control"), []byte(strings.Join(enable, " ")), 0o644); err != nil {
+				return nil, err
+			}
+		}
+		if t == nil {
+			continue
+		}
+		for _, opts := range []link.CgroupOptions{
+			{Path: path, Attach: ebpf.AttachCGroupInetIngress, Program: t.objs.CountOperationIngress},
+			{Path: path, Attach: ebpf.AttachCGroupInetEgress, Program: t.objs.CountOperationEgress},
+		} {
+			hook, err := link.AttachCgroup(opts)
+			if err != nil {
+				return nil, err
+			}
+			a.links = append(a.links, hook)
+		}
+	}
 	// Probe clone-into-cgroup before touching any operation. Seccomp can allow
 	// BPF and cgroup creation while denying clone3; metrics must stay optional.
+	path, err := os.MkdirTemp(a.paths["git"], "probe-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(path)
 	fd, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -61,20 +131,22 @@ func (t *Tracer) newCommandAccounting(parent string) (_ *commandAccounting, rerr
 	if err := probe.Run(); err != nil {
 		return nil, fmt.Errorf("probe cgroup process placement: %w", err)
 	}
-	a.ingress, err = link.AttachCgroup(link.CgroupOptions{
-		Path: path, Attach: ebpf.AttachCGroupInetIngress, Program: t.objs.CountOperationIngress,
-	})
-	if err != nil {
-		return nil, err
-	}
-	a.egress, err = link.AttachCgroup(link.CgroupOptions{
-		Path: path, Attach: ebpf.AttachCGroupInetEgress, Program: t.objs.CountOperationEgress,
-	})
-	if err != nil {
-		return nil, err
-	}
 	go a.reap()
 	return a, nil
+}
+
+// Never escape the delegated hierarchy when the engine runs at its root.
+// Custom layouts can use any leaf name, but must provide a sibling parent.
+func commandRoot(enginePath string) (string, error) {
+	enginePath = filepath.Clean(enginePath)
+	if enginePath == "/sys/fs/cgroup" || !strings.HasPrefix(enginePath, "/sys/fs/cgroup/") {
+		return "", errors.New("engine cgroup has no delegated sibling parent")
+	}
+	switch filepath.Base(enginePath) {
+	case "git", "rg", "sshfs", "exec":
+		return "", errors.New("engine is in a reserved workload cgroup")
+	}
+	return filepath.Dir(enginePath), nil
 }
 
 func (a *commandAccounting) reap() {
@@ -117,21 +189,26 @@ func (a *commandAccounting) Close() error {
 	defer a.mu.Unlock()
 	a.closed = true
 	var errs []error
-	errs = append(errs, a.ingress.Close(), a.egress.Close())
+	for _, hook := range a.links {
+		errs = append(errs, hook.Close())
+	}
 	for path := range a.pending {
 		errs = append(errs, os.Remove(path))
 	}
-	errs = append(errs, os.Remove(a.path))
+	for _, path := range a.paths {
+		errs = append(errs, os.Remove(path))
+	}
 	return errors.Join(errs...)
 }
 
 type Command struct {
-	tracer    *Tracer
-	path      string
-	fd        *os.File
-	id        uint64
-	closeOnce sync.Once
-	closeErr  error
+	tracer     *Tracer
+	accounting *commandAccounting
+	path       string
+	fd         *os.File
+	id         uint64
+	closeOnce  sync.Once
+	closeErr   error
 }
 
 // PrepareCommand places a command in its own accounting cgroup at clone time.
@@ -139,16 +216,23 @@ type Command struct {
 // An error leaves cmd unchanged; callers can run it without network metrics.
 func PrepareCommand(cmd *exec.Cmd) (_ *Command, rerr error) {
 	t := Active()
-	if t == nil || t.commands == nil {
-		if t != nil && t.commandErr != nil {
-			return nil, t.commandErr
-		}
-		return nil, errors.New("subprocess network accounting is unavailable")
+	a := fallbackCommands.Load()
+	if t != nil && t.commands != nil {
+		a = t.commands
+	} else {
+		t = nil
+	}
+	if a == nil {
+		return nil, errors.New("subprocess accounting is unavailable")
 	}
 	if cmd.Process != nil || (cmd.SysProcAttr != nil && cmd.SysProcAttr.UseCgroupFD) {
 		return nil, errors.New("command already started or has an assigned cgroup")
 	}
-	path, err := os.MkdirTemp(t.commands.path, "command-")
+	parent, ok := a.paths[filepath.Base(cmd.Path)]
+	if !ok {
+		return nil, fmt.Errorf("no accounting cgroup for command %q", cmd.Path)
+	}
+	path, err := os.MkdirTemp(parent, "operation-")
 	if err != nil {
 		return nil, err
 	}
@@ -161,26 +245,28 @@ func PrepareCommand(cmd *exec.Cmd) (_ *Command, rerr error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Command{tracer: t, path: path, fd: fd}
+	c := &Command{tracer: t, accounting: a, path: path, fd: fd}
 	defer func() {
 		if rerr != nil {
 			_ = fd.Close()
 		}
 	}()
-	c.id, err = cgroupID(path)
-	if err != nil {
-		return nil, err
-	}
-	values := make([]uint64, t.cpus)
-	var reserved []netbytesOperationCounterKey
-	for _, key := range c.keys() {
-		if err := t.objs.OperationByteCounters.Update(key, values, ebpf.UpdateNoExist); err != nil {
-			for _, key := range reserved {
-				_ = t.objs.OperationByteCounters.Delete(key)
-			}
+	if t != nil {
+		c.id, err = cgroupID(path)
+		if err != nil {
 			return nil, err
 		}
-		reserved = append(reserved, key)
+		values := make([]uint64, t.cpus)
+		var reserved []netbytesOperationCounterKey
+		for _, key := range c.keys() {
+			if err := t.objs.OperationByteCounters.Update(key, values, ebpf.UpdateNoExist); err != nil {
+				for _, key := range reserved {
+					_ = t.objs.OperationByteCounters.Delete(key)
+				}
+				return nil, err
+			}
+			reserved = append(reserved, key)
+		}
 	}
 	attrs := new(syscall.SysProcAttr)
 	if cmd.SysProcAttr != nil {
@@ -203,6 +289,9 @@ func (c *Command) keys() []netbytesOperationCounterKey {
 }
 
 func (c *Command) Sample() (Sample, error) {
+	if c.tracer == nil {
+		return Sample{}, errors.New("subprocess network accounting is unavailable")
+	}
 	var sample Sample
 	dst := []*uint64{&sample.InternalRX, &sample.ExternalRX, &sample.InternalTX, &sample.ExternalTX}
 	for i, key := range c.keys() {
@@ -243,7 +332,7 @@ func (c *Command) WaitEmpty(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-c.tracer.commands.done:
+		case <-c.accounting.done:
 			return errors.New("subprocess accounting stopped")
 		case <-ticker.C:
 		}
@@ -253,10 +342,12 @@ func (c *Command) WaitEmpty(ctx context.Context) error {
 func (c *Command) Close() error {
 	c.closeOnce.Do(func() {
 		var errs []error
-		for _, key := range c.keys() {
-			errs = append(errs, c.tracer.objs.OperationByteCounters.Delete(key))
+		if c.tracer != nil {
+			for _, key := range c.keys() {
+				errs = append(errs, c.tracer.objs.OperationByteCounters.Delete(key))
+			}
 		}
-		errs = append(errs, c.fd.Close(), c.tracer.commands.remove(c.path))
+		errs = append(errs, c.fd.Close(), c.accounting.remove(c.path))
 		c.closeErr = errors.Join(errs...)
 	})
 	return c.closeErr

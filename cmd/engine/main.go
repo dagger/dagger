@@ -322,6 +322,7 @@ func main() { //nolint:gocyclo
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
 	var resourceMetrics *sdkmetric.MeterProvider
 	var networkAccounting *nettracer.Tracer
+	var closeCommandPlacement func() error
 
 	// One random ID names this engine process in all its telemetry
 	// (service.instance.id), its cache events included, and marks the epoch
@@ -384,6 +385,11 @@ func main() { //nolint:gocyclo
 		remoteCache := newRemoteCacheIntegration(&cfg)
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
 		networkAccounting, err = nettracer.New()
+		var placementErr error
+		closeCommandPlacement, placementErr = nettracer.InitCommandPlacement()
+		if placementErr != nil {
+			bklog.G(ctx).Warnf("command cgroup placement unavailable: %s", placementErr)
+		}
 		enginetel.SetCommandNetworkHook(networkmetrics.PrepareCommandNetwork)
 		if err != nil {
 			bklog.G(ctx).Warnf("network accounting unavailable: %s", err)
@@ -638,6 +644,11 @@ func main() { //nolint:gocyclo
 		// event provider; flush them before the global providers close.
 		eventExport.shutdownAtExit(ctx)
 		closeResourceMetrics(ctx, resourceMetrics)
+		if closeCommandPlacement != nil {
+			if err := closeCommandPlacement(); err != nil {
+				bklog.G(ctx).WithError(err).Warn("command cgroup cleanup incomplete")
+			}
+		}
 		if networkAccounting != nil {
 			if err := networkAccounting.Close(); err != nil {
 				bklog.G(ctx).WithError(err).Warn(

@@ -923,6 +923,8 @@ func writeGitDiffPatch(ctx context.Context, root string, pathSpecs []string, out
 	cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
 	cmd.Stdout = rewriter
 	cmd.Stderr = logErr
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	runErr := cmd.Run()
 	if flushErr := rewriter.Flush(); flushErr != nil && runErr == nil {
 		return flushErr
@@ -2067,7 +2069,10 @@ func gitCmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
-	if output, err := gitCmd(ctx, dir, args...).CombinedOutput(); err != nil {
+	cmd := gitCmd(ctx, dir, args...)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
+	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git %v: %w: %s", args, err, output)
 	}
 	return nil
@@ -2076,6 +2081,8 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 // runGitOutput runs git and returns its stdout.
 func runGitOutput(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := gitCmd(ctx, dir, args...)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
