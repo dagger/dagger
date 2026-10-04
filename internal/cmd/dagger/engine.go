@@ -218,6 +218,15 @@ func withEngineAction(
 				// engine through this client's connection, so end and flush
 				// them before closing it.
 				closeTelemetry()
+				// A command that created its session and failed before it
+				// started leaves nothing to attach to, and the user never
+				// saw the session's ID: end the session.
+				if rerr != nil && params.DetachedSession && !backgroundStatus.hasStarted() {
+					stopErr := sess.Dagger().Engine().Session(sess.SessionID).Stop(context.WithoutCancel(ctx))
+					if stopErr != nil {
+						slog.Warn("failed to stop the session of a command that did not start", "error", stopErr)
+					}
+				}
 			}
 			return sess.Close()
 		})

@@ -400,3 +400,28 @@ func (SessionCLISuite) TestFunctionDetachArgument(ctx context.Context, t *testct
 	require.NoError(t, err)
 	require.Equal(t, "d1", strings.TrimSpace(string(out)))
 }
+
+func (SessionCLISuite) TestDetachedStartFailureLeavesNoSession(ctx context.Context, t *testctx.T) {
+	dir := detachWorkspace(t, 23460)
+	marker := "no-such-function-" + strings.ToLower(identity.NewID())
+	out, err := hostDaggerExec(ctx, t, dir, "call", "--detach", marker)
+	require.Error(t, err)
+	require.Contains(t, string(out), marker)
+
+	// The session the background command created is stopped.
+	mgmt := connectEngineClient(ctx, t, client.Params{}).Dagger()
+	require.Eventually(t, func() bool {
+		sessions, err := trySessions(ctx, mgmt)
+		if err != nil {
+			return false
+		}
+		for _, sess := range sessions {
+			for _, c := range sess.Clients {
+				if c.Command != nil && strings.Contains(*c.Command, marker) {
+					return false
+				}
+			}
+		}
+		return true
+	}, time.Minute, time.Second, "the failed command's session is still listed")
+}
