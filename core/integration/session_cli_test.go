@@ -597,3 +597,31 @@ func (SessionCLISuite) TestDetachKeepsProcessForHostDependencies(ctx context.Con
 		})
 	}
 }
+
+func (SessionCLISuite) TestUpNoForward(ctx context.Context, t *testctx.T) {
+	const port = 23465
+	dir := detachWorkspace(t, port)
+
+	t.Run("requires detach", func(ctx context.Context, t *testctx.T) {
+		out, err := hostDaggerExec(ctx, t, dir, "up", "--no-forward")
+		require.Error(t, err)
+		require.Contains(t, string(out), "--no-forward requires --detach")
+	})
+
+	id, out := detachWithOutput(ctx, t, dir, "up", "--detach", "--no-forward")
+	require.Contains(t, out, noLocalProcess)
+	require.Contains(t, out, "Forward: dagger --session "+id+" up --detach")
+	require.NotContains(t, out, "Forwarding:")
+	requireNoProcess(ctx, t, id)
+	_, err := httpGet(fmt.Sprintf("http://localhost:%d/", port))
+	require.Error(t, err, "the port is forwarded")
+
+	// The service runs in the session: a call there reaches it, and a later
+	// forward reaches the same instance.
+	nonce, err := hostDaggerOutput(ctx, t, dir, "--session", id, "call", "fetch")
+	require.NoError(t, err)
+	detach(ctx, t, dir, "--session", id, "up", "--detach")
+	got, err := httpGet(fmt.Sprintf("http://localhost:%d/", port))
+	require.NoError(t, err)
+	require.Equal(t, strings.TrimSpace(string(nonce)), got)
+}

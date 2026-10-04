@@ -208,6 +208,9 @@ func runDetached(out io.Writer) error {
 			for _, url := range msg.URLs {
 				fmt.Fprintf(out, "Forwarding: %s\n", url)
 			}
+			if noForwardFlag {
+				fmt.Fprintf(out, "Forward: dagger --session %s up --detach\n", sessionID)
+			}
 			fmt.Fprintf(out, "Attach: dagger sessions attach %s\n", sessionID)
 			fmt.Fprintf(out, "Stop: dagger sessions stop %s\n", sessionID)
 			if msg.NoProcess {
