@@ -87,9 +87,10 @@ func backgroundLogPath(pid int) string {
 }
 
 type backgroundStatusPipe struct {
-	mu   sync.Mutex
-	w    *os.File
-	done bool
+	mu      sync.Mutex
+	w       *os.File
+	done    bool
+	started bool
 }
 
 // send writes a status message. Once the command has started or failed, the
@@ -104,10 +105,18 @@ func (p *backgroundStatusPipe) send(msg backgroundStatusMessage) {
 		return
 	}
 	_ = json.NewEncoder(p.w).Encode(msg)
+	p.started = p.started || msg.Started
 	if msg.Started || msg.Error != "" {
 		p.done = true
 		p.w.Close()
 	}
+}
+
+// hasStarted reports whether the command reported that it started.
+func (p *backgroundStatusPipe) hasStarted() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.started
 }
 
 // reportBackgroundSession tells the foreground process the session ID.
