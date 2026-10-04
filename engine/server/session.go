@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,6 +68,7 @@ import (
 
 type daggerSession struct {
 	sessionID          string
+	createdAt          time.Time
 	archiveMu          sync.Mutex
 	archiveManifest    *archive.Manifest
 	archiveExpected    agentcontrol.Expectation
@@ -109,6 +111,7 @@ type daggerSession struct {
 
 	clientRecords  map[string]*clientRecord  // clientID -> stable identity and routing record
 	clientRuntimes map[string]*clientRuntime // clientID -> published non-quiescent execution runtime
+	lastClientSeq  uint64                    // the seq of the last published record
 	clientMu       sync.RWMutex
 
 	attachables *sessionAttachableManager
@@ -202,6 +205,9 @@ type daggerSession struct {
 	interactive        bool
 	interactiveCommand []string
 
+	// detached sessions do not end when their main client leaves.
+	detached bool
+
 	allowedLLMModules []string
 
 	gitPushApprovals gitPushApprovals
@@ -280,6 +286,10 @@ type clientRecord struct {
 	// If the client is nested, parentClientIDs is its immutable ancestry from
 	// the session root to its direct parent.
 	parentClientIDs []string
+
+	// seq orders records by creation within the session. It is set under
+	// daggerSession.clientMu when the record is published.
+	seq uint64
 
 	// accepting is protected by the session scopeMu and changes monotonically
 	// from true to false. The opaque transport handle is stable record identity;
@@ -573,7 +583,7 @@ func (sess *daggerSession) telemetryRouteClientIDs(record *clientRecord) ([]stri
 			return nil, fmt.Errorf("telemetry ancestor client %q has mismatched ancestry for client %q", parentID, record.clientID)
 		}
 	}
-	return route, nil
+	return sess.withSessionStore(route), nil
 }
 
 // telemetryRouteOriginClientID resolves an immutable origin ID through the
@@ -604,7 +614,27 @@ func (sess *daggerSession) telemetryRouteOriginClientID(originClientID string) (
 		}
 		route = append(route, parentID)
 	}
-	return route, nil
+	return sess.withSessionStore(route), nil
+}
+
+// withSessionStore appends the main client to a telemetry route whose root is
+// another root client in a detached session, so the main client's store holds
+// the telemetry of the whole session for the session stream. In an attached
+// session the main client's store holds only its own work, since that is
+// what its display shows.
+func (sess *daggerSession) withSessionStore(route []string) []string {
+	if !sess.detached {
+		return route
+	}
+	// route is the origin followed by its ancestors from the root.
+	root := route[0]
+	if len(route) > 1 {
+		root = route[1]
+	}
+	if root == sess.mainClientCallerID {
+		return route
+	}
+	return append(route, sess.mainClientCallerID)
 }
 
 // telemetryDeliveryClientIDs preserves the delivery-domain key order used by
@@ -776,10 +806,6 @@ func logClientTelemetryOp(lg *slog.Logger, what string, start time.Time, traceDu
 	default:
 		lg.ExtraDebug(what)
 	}
-}
-
-func (sess *daggerSession) getMainClientCaller(ctx context.Context) (engineutil.SessionCaller, error) {
-	return sess.getClientCaller(ctx, sess.mainClientCallerID)
 }
 
 func (sess *daggerSession) LoadOrStoreTelemetrySeenKey(key string) bool {
@@ -991,8 +1017,12 @@ func (srv *Server) initializeDaggerSession(
 		Hosts: srv.registryHosts,
 		Auth: serverresolver.NewSessionAuthSource(
 			sess.authProvider,
-			func(ctx context.Context) (*grpc.ClientConn, error) {
-				return srv.sessionMainClientConn(ctx, sess)
+			func(context.Context) (*grpc.ClientConn, error) {
+				caller, err := sess.attachableProvider("", registryAuthService)
+				if err != nil || caller == nil {
+					return nil, err
+				}
+				return caller.Conn(), nil
 			},
 		),
 		ContentStore: srv.contentStore,
@@ -1009,6 +1039,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
 	sess.allowedLLMModules = clientMetadata.AllowedLLMModules
+	sess.detached = clientMetadata.DetachedSession
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
@@ -1257,16 +1288,21 @@ func (srv *Server) retireSession(sess *daggerSession) {
 
 // getOrCreateSessionLocked returns the registry session for sessionID. A newly
 // created session is published with lifecycleMu held so its caller is the sole
-// initializer. The caller must hold daggerSessionsMu.
-func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*daggerSession, bool, error) {
+// initializer. With joinExisting, an unknown session ID is an error instead.
+// The caller must hold daggerSessionsMu.
+func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string, joinExisting bool) (*daggerSession, bool, error) {
 	if sess := srv.daggerSessions[sessionID]; sess != nil {
 		return sess, false, nil
+	}
+	if joinExisting {
+		return nil, false, fmt.Errorf("session %q not found", sessionID)
 	}
 	if _, released := srv.releasedSessionIDs[sessionID]; released {
 		return nil, false, fmt.Errorf("session %q was already used and released; session IDs cannot be reused within one engine lifetime", sessionID)
 	}
 	sess := &daggerSession{
 		sessionID:          sessionID,
+		createdAt:          time.Now(),
 		mainClientCallerID: clientID,
 		clientRecords:      map[string]*clientRecord{},
 		clientRuntimes:     map[string]*clientRuntime{},
@@ -1426,7 +1462,7 @@ func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *dagg
 	engineUtilOpts.Dialer = dialer
 	engineUtilOpts.GetClientCaller = sess.getClientCaller
 	engineUtilOpts.GetHostServiceCaller = sess.resolveHostServiceCaller
-	engineUtilOpts.GetMainClientCaller = sess.getMainClientCaller
+	engineUtilOpts.GetProviderCaller = sess.getProviderCaller
 	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
 	engineUtilOpts.Interactive = sess.interactive
 	engineUtilOpts.InteractiveCommand = sess.interactiveCommand
@@ -1823,7 +1859,7 @@ func (srv *Server) getOrInitClient(
 	// A newly constructed session is still unreachable when lifecycleMu is
 	// acquired, so this is the one unpublished-object exception to the rule that
 	// lifecycleMu and daggerSessionsMu are not nested.
-	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID)
+	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID, opts.ClientMetadata.JoinExistingSession)
 	if err != nil {
 		srv.daggerSessionsMu.Unlock()
 		return nil, nil, err
@@ -2055,6 +2091,8 @@ func (srv *Server) getOrInitClient(
 			_ = client.closeTelemetryDB()
 			return nil, nil, fmt.Errorf("client %q was concurrently registered as a nested client", clientID)
 		}
+		sess.lastClientSeq++
+		record.seq = sess.lastClientSeq
 		sess.clientRecords[clientID] = record
 		sess.clientRuntimes[clientID] = client
 		sess.clientMu.Unlock()
@@ -2113,7 +2151,8 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 		"clientID", client.clientID,
 	).Info("all client connections closed")
 
-	if client.clientID != sess.mainClientCallerID {
+	// A detached session ends only when it is stopped.
+	if client.clientID != sess.mainClientCallerID || sess.detached {
 		return
 	}
 
@@ -2371,6 +2410,24 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		if err != nil {
 			return fmt.Errorf("get client record: %w", err)
 		}
+		if r.Method == http.MethodPost {
+			// Root clients push their own telemetry here, authenticated by
+			// their secret token. Nested clients push through their exec's
+			// proxy instead.
+			if err := record.checkRootClientToken(clientMetadata.ClientSecretToken); err != nil {
+				return httpErr(err, http.StatusUnauthorized)
+			}
+			r.Header.Set("X-Dagger-Session-ID", record.daggerSession.sessionID)
+			r.Header.Set("X-Dagger-Client-ID", record.clientID)
+			srv.telemetryPubSub.ServeHTTP(w, r)
+			return nil
+		}
+		if r.Header.Get(engine.SessionTelemetryHeader) == "true" {
+			record, err = srv.clientRecordFromIDs(clientMetadata.SessionID, record.daggerSession.mainClientCallerID)
+			if err != nil {
+				return fmt.Errorf("get main client record: %w", err)
+			}
+		}
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
@@ -2512,7 +2569,32 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		panic(fmt.Errorf("handle session attachables: %w", err))
 	}
+
+	// The client has left, with every nested client that used its
+	// attachables. Their tunnels and terminals cannot work anymore, and
+	// nobody else can stop them.
+	if err := record.daggerSession.stopClientServices(context.WithoutCancel(ctx), record.clientID); err != nil {
+		slog.WarnContext(ctx, "failed to stop services of departed client", "clientID", record.clientID, "error", err)
+	}
 	return nil
+}
+
+// stopClientServices stops the client-specific services of the client that
+// serves attachablesClientID and of the nested clients that use its
+// attachables.
+func (sess *daggerSession) stopClientServices(ctx context.Context, attachablesClientID string) error {
+	sess.clientMu.RLock()
+	records := slices.Collect(maps.Values(sess.clientRecords))
+	sess.clientMu.RUnlock()
+	clientIDs := map[string]struct{}{attachablesClientID: {}}
+	sess.scopeMu.Lock()
+	for _, record := range records {
+		if record.attachablesClientID == attachablesClientID {
+			clientIDs[record.clientID] = struct{}{}
+		}
+	}
+	sess.scopeMu.Unlock()
+	return sess.services.StopClientServices(ctx, sess.sessionID, clientIDs)
 }
 
 // withRequestTelemetrySuppression applies a request's telemetry opt-out (the
@@ -2850,7 +2932,8 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		return err
 	}
 
-	if client.clientID == sess.mainClientCallerID {
+	// In a detached session the main client leaves like any other client.
+	if client.clientID == sess.mainClientCallerID && !sess.detached {
 		slog.Info("main client is shutting down")
 		// Every wait on Cloud from here until the request returns shares
 		// one deadline, well within the client's own shutdown limit.
@@ -3491,6 +3574,27 @@ func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.Client
 	return record.daggerSession.clientMetadataSnapshot(mainRecord)
 }
 
+// The Client metadata of the root client of the current client's chain: the
+// client itself if it connected directly, else its first ancestor.
+func (srv *Server) RootClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	record, err := srv.clientRecordFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sess := record.daggerSession
+	sess.scopeMu.Lock()
+	parentClientIDs := slices.Clone(record.parentClientIDs)
+	sess.scopeMu.Unlock()
+	if len(parentClientIDs) == 0 {
+		return sess.clientMetadataSnapshot(record)
+	}
+	root, err := srv.clientRecordFromIDs(sess.sessionID, parentClientIDs[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve root client: %w", err)
+	}
+	return sess.clientMetadataSnapshot(root)
+}
+
 // The Client metadata of a specific client ID within the same session as the
 // current client.
 func (srv *Server) SpecificClientMetadata(ctx context.Context, clientID string) (*engine.ClientMetadata, error) {
@@ -3578,28 +3682,6 @@ func (srv *Server) SessionScopedContext(ctx context.Context) (context.Context, e
 		return nil, err
 	}
 	return record.daggerSession.withClosingCancel(context.WithoutCancel(ctx)), nil
-}
-
-func (srv *Server) sessionMainClientConn(ctx context.Context, sess *daggerSession) (*grpc.ClientConn, error) {
-	if sess == nil {
-		return nil, errors.New("session is nil")
-	}
-	record, err := srv.clientRecordFromIDs(sess.sessionID, sess.mainClientCallerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get main client %q: %w", sess.mainClientCallerID, err)
-	}
-	caller, err := srv.clientAttachableCaller(ctx, sess.sessionID, record.clientID, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get main client caller %q: %w", sess.mainClientCallerID, err)
-	}
-	if caller == nil {
-		return nil, fmt.Errorf("main client caller %q was nil", sess.mainClientCallerID)
-	}
-	conn := caller.Conn()
-	if conn == nil {
-		return nil, fmt.Errorf("main client conn %q was nil", sess.mainClientCallerID)
-	}
-	return conn, nil
 }
 
 // The nearest ancestor client that is not a module (either a caller from the host like the CLI
@@ -4085,4 +4167,23 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
+}
+
+// checkRootClientToken verifies that record is a root client and that token
+// is its secret token.
+func (record *clientRecord) checkRootClientToken(token string) error {
+	sess := record.daggerSession
+	sess.scopeMu.Lock()
+	stored := ""
+	if record.clientMetadata != nil {
+		stored = record.clientMetadata.ClientSecretToken
+	}
+	sess.scopeMu.Unlock()
+	if len(record.parentClientIDs) != 0 {
+		return fmt.Errorf("client %q is not a root client", record.clientID)
+	}
+	if stored == "" || subtle.ConstantTimeCompare([]byte(stored), []byte(token)) != 1 {
+		return errors.New("invalid client secret token")
+	}
+	return nil
 }

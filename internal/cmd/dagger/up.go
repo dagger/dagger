@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -23,6 +24,7 @@ var upListMode bool
 func init() {
 	registerCommandArtifactFlags(upCmd)
 	upCmd.Flags().BoolVarP(&upListMode, "list", "l", false, "List available services")
+	upCmd.Flags().BoolVar(&detachFlag, "detach", false, "Run the services and forward their ports in the background, in a detached session (experimental)")
 }
 
 var upCmd = &cobra.Command{
@@ -33,6 +35,9 @@ var upCmd = &cobra.Command{
 		showFinalProgressKey: "true",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if detachFlag && !upListMode {
+			return runDetached(cmd.OutOrStdout())
+		}
 		if !upListMode {
 			previous := opts.RootFilter
 			opts.RootFilter = (*dagui.DB).ServiceDisplaySpans
@@ -42,6 +47,7 @@ var upCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		params = backgroundClientParams(params)
 		return withEngine(
 			cmd.Context(),
 			params,
@@ -141,12 +147,27 @@ func runServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.Artifa
 			ports[port] = result.Artifact.URI
 		}
 	}
+	// A detached up has started once every port forward listens.
+	var readyMu sync.Mutex
+	var readyURLs []string
+	var listening sync.WaitGroup
+	listening.Add(len(results))
+	go func() {
+		listening.Wait()
+		reportBackgroundStarted(readyURLs)
+	}()
 	jobs, runCtx := errgroup.WithContext(ctx)
 	for i, result := range results {
 		jobs.Go(func() (err error) {
 			serviceCtx, span := Tracer().Start(runCtx, result.Artifact.URI, trace.WithAttributes(attribute.String(telemetryattrs.ServiceNameAttr, result.Artifact.URI), attribute.Bool(telemetry.UIRollUpLogsAttr, true)))
 			defer telemetry.EndWithCause(span, &err)
 			service := dagger.Ref[*dagger.Service](dag, result.Value.ID)
+			// Start the service on its own, so that it belongs to the session
+			// rather than to this client's port forward, and keeps running
+			// when this client leaves.
+			if _, err := service.Start(serviceCtx); err != nil {
+				return err
+			}
 			tunnel, err := dag.Host().Tunnel(service, dagger.HostTunnelOpts{Ports: mappings[i], Native: len(mappings[i]) == 0}).Start(serviceCtx)
 			if err != nil {
 				return err
@@ -168,6 +189,10 @@ func runServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.Artifa
 				urls = append(urls, fmt.Sprintf("%s://localhost:%d", scheme, number))
 			}
 			span.SetAttributes(attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls))
+			readyMu.Lock()
+			readyURLs = append(readyURLs, urls...)
+			readyMu.Unlock()
+			listening.Done()
 			_, ready := Tracer().Start(serviceCtx, "ready "+strings.Join(urls, " "), trace.WithAttributes(attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls)))
 			defer ready.End()
 			<-serviceCtx.Done()

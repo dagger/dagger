@@ -116,7 +116,7 @@ func TestMayCallEngineFlags(t *testing.T) {
 	flags := pflag.NewFlagSet("engine", pflag.ContinueOnError)
 	installMayCallEngineFlags(flags)
 
-	expected := []string{"cloud", "engine", "interactive", "interactive-command", "profile", "shell-command-on-error", "shell-on-error"}
+	expected := []string{"cloud", "engine", "interactive", "interactive-command", "profile", "session", "shell-command-on-error", "shell-on-error"}
 	var count int
 	flags.VisitAll(func(*pflag.Flag) { count++ })
 	require.Equal(t, len(expected), count)
@@ -283,6 +283,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger sdk scope name",
 		"dagger sdk scope sdk",
 		"dagger session",
+		"dagger sessions",
 		"dagger settings",
 		"dagger setup",
 		"dagger script",
@@ -673,6 +674,7 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"dagger query",
 		"dagger run",
 		"dagger session",
+		"dagger sessions",
 		"dagger script",
 		"dagger shell",
 		"dagger trace",

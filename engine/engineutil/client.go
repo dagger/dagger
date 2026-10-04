@@ -55,6 +55,13 @@ type SessionCaller interface {
 	Supports(method string) bool
 }
 
+// Interactive attachable services, routed by GetProviderCaller.
+const (
+	TerminalService = "dagger.terminal.Terminal"
+	PromptService   = "dagger.prompt.Prompt"
+	PipeService     = "dagger.pipe.Pipe"
+)
+
 // Opts combines server-scoped runtime dependencies with per-client session plumbing.
 // Server-scoped fields are initialized once with NewOpts and shallow-copied for each client.
 type Opts struct {
@@ -87,8 +94,10 @@ type Opts struct {
 	Dialer               *net.Dialer
 	GetClientCaller      func(context.Context, string) (SessionCaller, error)
 	GetHostServiceCaller func(context.Context, string) (SessionCaller, error)
-	GetMainClientCaller  func(context.Context) (SessionCaller, error)
-	GetRegistryResolver  func(context.Context) (*serverresolver.Resolver, error)
+	// GetProviderCaller returns the client that answers calls to the given
+	// interactive service for the client in context.
+	GetProviderCaller   func(context.Context, string) (SessionCaller, error)
+	GetRegistryResolver func(context.Context) (*serverresolver.Resolver, error)
 
 	Interactive        bool
 	InteractiveCommand []string
@@ -461,9 +470,9 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 
 func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
 	// the flag hasn't allowed this LLM call, so prompt the user
-	caller, err := c.GetMainClientCaller(ctx)
+	caller, err := c.GetProviderCaller(ctx, PromptService)
 	if err != nil {
-		return fmt.Errorf("failed to get main client caller to prompt for allow llm: %w", err)
+		return fmt.Errorf("failed to get client to prompt for allow llm: %w", err)
 	}
 
 	response, err := prompt.NewPromptClient(caller.Conn()).PromptBool(ctx, &prompt.BoolRequest{
@@ -483,9 +492,9 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 }
 
 func (c *Client) PromptHumanHelp(ctx context.Context, title, question string) (string, error) {
-	caller, err := c.GetMainClientCaller(ctx)
+	caller, err := c.GetProviderCaller(ctx, PromptService)
 	if err != nil {
-		return "", fmt.Errorf("failed to get main client caller to prompt user for human help: %w", err)
+		return "", fmt.Errorf("failed to get client to prompt user for human help: %w", err)
 	}
 
 	response, err := prompt.NewPromptClient(caller.Conn()).PromptString(ctx, &prompt.StringRequest{
@@ -906,9 +915,9 @@ type TerminalClient struct {
 func (c *Client) OpenTerminal(
 	ctx context.Context,
 ) (*TerminalClient, error) {
-	caller, err := c.GetMainClientCaller(ctx)
+	caller, err := c.GetProviderCaller(ctx, TerminalService)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+		return nil, fmt.Errorf("failed to get client to open terminal: %w", err)
 	}
 	terminalClient := terminal.NewTerminalClient(caller.Conn())
 
@@ -1035,9 +1044,9 @@ func (c *Client) OpenTerminal(
 func (c *Client) OpenPipe(
 	ctx context.Context,
 ) (io.ReadWriteCloser, error) {
-	caller, err := c.GetMainClientCaller(ctx)
+	caller, err := c.GetProviderCaller(ctx, PipeService)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+		return nil, fmt.Errorf("failed to get client to open pipe: %w", err)
 	}
 
 	// grpc service client

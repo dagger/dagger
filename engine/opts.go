@@ -201,6 +201,22 @@ type ClientMetadata struct {
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
 	Profile bool `json:"profile,omitempty"`
+
+	// DetachedSession asks for the session this client creates to outlive it:
+	// a detached session ends only when it is stopped through the engine API
+	// or when the engine stops. Only the creating client's value is used.
+	DetachedSession bool `json:"detached_session,omitempty"`
+
+	// JoinExistingSession makes the engine refuse this client, instead of
+	// creating a session, when no session with SessionID exists.
+	JoinExistingSession bool `json:"join_existing_session,omitempty"`
+
+	// Background, PID and Command describe the client process for listings:
+	// whether it runs in the background without a terminal, its process ID,
+	// and a short form of its command line.
+	Background bool   `json:"background,omitempty"`
+	PID        int    `json:"pid,omitempty"`
+	Command    string `json:"command,omitempty"`
 }
 
 type suppressTelemetryCtxKey struct{}
@@ -268,6 +284,14 @@ const (
 	// An engine decides once per session, before any stream opens, and answers
 	// every stream of the session alike, reconnects included.
 	CloudTelemetryPublisherHeader = "X-Dagger-Cloud-Telemetry-Publisher"
+
+	// SessionTelemetryHeader, set to "true" on a telemetry subscription,
+	// subscribes to the session's telemetry instead of the client's own: the
+	// stream replays and follows the store of the session's main client until
+	// the session ends. In a detached session every client's telemetry
+	// reaches that store; in an attached one, the main client's and its
+	// nested clients'.
+	SessionTelemetryHeader = "X-Dagger-Session-Telemetry"
 )
 
 func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {

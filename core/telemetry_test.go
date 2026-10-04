@@ -127,6 +127,10 @@ func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientM
 	return &engine.ClientMetadata{}, nil
 }
 
+func (ms *mockServer) RootClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	return ms.MainClientCallerMetadata(ctx)
+}
+
 func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
@@ -216,6 +220,13 @@ func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID stri
 }
 func (ms *mockServer) EngineName() string { return "mockEngine" }
 func (ms *mockServer) Clients() []string  { return []string{} }
+func (ms *mockServer) EngineSessions(context.Context) ([]*EngineSession, error) {
+	return nil, nil
+}
+func (ms *mockServer) StopEngineSession(context.Context, string) error { return nil }
+func (ms *mockServer) CloseEngineSessionClient(context.Context, string, string) error {
+	return nil
+}
 
 func (ms *mockServer) CloudEngineClient(context.Context, string, string, []string) (*engineclient.Client, bool, error) {
 	return nil, false, nil

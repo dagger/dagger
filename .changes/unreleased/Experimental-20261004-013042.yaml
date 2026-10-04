@@ -1,0 +1,11 @@
+kind: Experimental
+body: |
+  Add detachable sessions: `dagger call --detach` and `dagger up --detach`
+  continue a command in a background process, in a session that outlives it.
+  Run any command in an existing session with the global `--session` flag,
+  and list, inspect, attach to and stop sessions with `dagger sessions`. The
+  engine API gains `Engine.sessions` and `Engine.session(id)`.
+time: 2026-10-04T01:30:42.000000000Z
+custom:
+    Author: sipsma
+    PR: "14481"

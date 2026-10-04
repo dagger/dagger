@@ -117,6 +117,9 @@ type FuncCommand struct {
 	c   *client.Client
 	ctx context.Context
 
+	// sessionBeforeFunction is --session as parsed before the function name.
+	sessionBeforeFunction string
+
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
 	withFn *modFunction
@@ -179,6 +182,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			},
 			// Between PreRunE and RunE, flags are validated.
 			RunE: func(c *cobra.Command, a []string) error {
+				if detachFlag {
+					return runDetached(c.OutOrStdout())
+				}
+				fc.sessionBeforeFunction = sessionFlag
 				if isPrintTraceLinkEnabled(c.Annotations) {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
@@ -199,6 +206,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				// set in initModuleParams: shell shares that helper and needs
 				// the full view).
 				params.WorkspaceModuleScope = functionName(execArgs)
+				params = backgroundClientParams(params)
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
@@ -258,6 +266,16 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		setFlagCapabilities(fc.cmd.PersistentFlags().Lookup("output"), mayProduceOutput)
 
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
+
+		// Not persistent, so that a function's own detach argument keeps
+		// its name.
+		fc.cmd.Flags().BoolVar(&detachFlag, "detach", false, "Run the call in the background, in a detached session (experimental)")
+		fc.cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+			if err.Error() == "unknown flag: --detach" {
+				return fmt.Errorf("--detach must come before the function name")
+			}
+			return err
+		})
 	}
 	return fc.cmd
 }
@@ -349,6 +367,12 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	cmd, flags, err := fc.loadCommand(c, a)
 	if err != nil {
 		return err
+	}
+
+	// Flags after the function name are parsed only now, once the client
+	// is connected, so a --session there came too late.
+	if sessionFlag != fc.sessionBeforeFunction {
+		return fmt.Errorf("--session must come before the function name")
 	}
 
 	if fc.needsHelp {
@@ -785,6 +809,9 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 
 		var response any
 
+		// A detached call has started once its function and arguments are
+		// resolved.
+		reportBackgroundStarted(nil)
 		if err := makeRequest(ctx, q, &response); err != nil {
 			return err
 		}

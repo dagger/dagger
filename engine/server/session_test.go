@@ -943,7 +943,8 @@ func TestClientRecordLookupsAreIndependentFromExecutableRuntime(t *testing.T) {
 		parentClientIDs: []string{"root"},
 	}
 	sess := &daggerSession{
-		sessionID: "session",
+		sessionID:          "session",
+		mainClientCallerID: "root",
 		clientRecords: map[string]*clientRecord{
 			root.clientID:  root,
 			child.clientID: child,
@@ -1613,7 +1614,7 @@ func TestClientAncestryAndTelemetryRouteOrdering(t *testing.T) {
 	root := &clientRuntime{clientRecord: &clientRecord{clientID: "root"}}
 	parent := &clientRuntime{clientRecord: &clientRecord{clientID: "parent", parentClientIDs: []string{"root"}}}
 	child := &clientRuntime{clientRecord: &clientRecord{clientID: "child", parentClientIDs: []string{"root", "parent"}}}
-	sess := &daggerSession{clientRuntimes: map[string]*clientRuntime{
+	sess := &daggerSession{mainClientCallerID: "root", clientRuntimes: map[string]*clientRuntime{
 		root.clientID:   root,
 		parent.clientID: parent,
 		child.clientID:  child,
@@ -3050,7 +3051,7 @@ func TestFailedSessionInitializationCanRetrySameID(t *testing.T) {
 		releasedSessionIDs: map[string]struct{}{},
 	}
 	srv.daggerSessionsMu.Lock()
-	failed, created, err := srv.getOrCreateSessionLocked("s", "m")
+	failed, created, err := srv.getOrCreateSessionLocked("s", "m", false)
 	srv.daggerSessionsMu.Unlock()
 	require.NoError(t, err)
 	require.True(t, created)
@@ -3063,7 +3064,7 @@ func TestFailedSessionInitializationCanRetrySameID(t *testing.T) {
 	require.False(t, sessionIDReleased(srv, "s"))
 
 	srv.daggerSessionsMu.Lock()
-	retry, created, err := srv.getOrCreateSessionLocked("s", "m")
+	retry, created, err := srv.getOrCreateSessionLocked("s", "m", false)
 	srv.daggerSessionsMu.Unlock()
 	require.NoError(t, err)
 	require.True(t, created)
@@ -5542,4 +5543,41 @@ func TestIsCoreRootFieldCoversEveryCoreQueryField(t *testing.T) {
 	// `id` is core on Query, but a module function named `id` is rejected by
 	// name, and that error needs the module loaded to be produced at all.
 	require.False(t, isCoreRootField("id"))
+}
+
+// Telemetry of another root client reaches the main client's store only in
+// a detached session; in an attached one the main client's store, which its
+// own display reads, holds only its own work.
+func TestOtherRootTelemetryReachesMainStoreOnlyWhenDetached(t *testing.T) {
+	t.Parallel()
+
+	for _, detached := range []bool{false, true} {
+		main := &clientRecord{clientID: "main"}
+		other := &clientRecord{clientID: "other"}
+		child := &clientRecord{clientID: "child", parentClientIDs: []string{"other"}}
+		sess := &daggerSession{
+			mainClientCallerID: "main",
+			detached:           detached,
+			clientRecords: map[string]*clientRecord{
+				main.clientID:  main,
+				other.clientID: other,
+				child.clientID: child,
+			},
+		}
+		want := []string{"child", "other"}
+		if detached {
+			want = append(want, "main")
+		}
+
+		route, err := sess.telemetryRouteOriginClientID("child")
+		require.NoError(t, err)
+		require.Equal(t, want, route, "detached=%v", detached)
+		route, err = sess.telemetryRouteClientIDs(child)
+		require.NoError(t, err)
+		require.Equal(t, want, route, "detached=%v", detached)
+
+		route, err = sess.telemetryRouteOriginClientID("main")
+		require.NoError(t, err)
+		require.Equal(t, []string{"main"}, route, "detached=%v", detached)
+	}
 }
