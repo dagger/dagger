@@ -21,6 +21,13 @@ const (
 	ExecutionIDAttr            = "dagger.io/execution.id"
 	ExecutionInternalAttr      = "dagger.io/execution.internal"
 	ResourceAvailableName      = "dagger.io/resource.sample.available"
+	// Only workload export has these memory.stat readings. memory.current
+	// minus inactive_file is the working set, and anon is its lower bound.
+	MemoryAnonName         = "dagger.io/metrics.memory.anon"
+	MemoryInactiveFileName = "dagger.io/metrics.memory.inactive_file"
+
+	// The scope of the readings that only workload export has.
+	workloadReadingScope = "dagger.io/engine.buildkit"
 )
 
 type workloadReadingsKey struct{}
@@ -136,7 +143,16 @@ func RecordResourceAvailability(ctx context.Context, source string, available bo
 		if available {
 			value = 1
 		}
-		o.record(ctx, workloadReadingInstrument{"dagger.io/engine.buildkit", ResourceAvailableName, "1"}, value, attribute.String("source", source))
+		o.record(ctx, workloadReadingInstrument{workloadReadingScope, ResourceAvailableName, "1"}, value, attribute.String("source", source))
+	}
+}
+
+// RecordWorkloadMemoryStat belongs only to the workload export, like
+// RecordResourceAvailability, so CLI and Cloud metrics do not change.
+func RecordWorkloadMemoryStat(ctx context.Context, anon, inactiveFile int64) {
+	if o, _ := ctx.Value(workloadReadingsKey{}).(*WorkloadReadings); o != nil {
+		o.record(ctx, workloadReadingInstrument{workloadReadingScope, MemoryAnonName, "bytes"}, anon)
+		o.record(ctx, workloadReadingInstrument{workloadReadingScope, MemoryInactiveFileName, "bytes"}, inactiveFile)
 	}
 }
 
