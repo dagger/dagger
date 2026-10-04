@@ -7,12 +7,17 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"slices"
 	"sync"
+	"time"
 	"weak"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/handler/extension"
+	"github.com/99designs/gqlgen/graphql/handler/lru"
+	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/dagger/dagger/engine"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
@@ -48,6 +53,12 @@ type Server struct {
 	typeDefs       map[string]TypeDef
 	typeDefFilters map[string]ViewFilter
 	directives     map[string]DirectiveSpec
+
+	// subscriptions holds the Subscription root's fields by name (later
+	// installs last, as for class fields), in subscriptionOrder. Guarded by
+	// installLock.
+	subscriptions     map[string][]SubscriptionField
+	subscriptionOrder []string
 
 	schemas       map[call.View]*ast.Schema
 	schemaDigests map[call.View]digest.Digest
@@ -231,6 +242,7 @@ func newBlankServer() *Server {
 		typeDefs:       map[string]TypeDef{},
 		typeDefFilters: map[string]ViewFilter{},
 		directives:     map[string]DirectiveSpec{},
+		subscriptions:  map[string][]SubscriptionField{},
 		installLock:    &sync.RWMutex{},
 		schemas:        make(map[call.View]*ast.Schema),
 		schemaDigests:  make(map[call.View]digest.Digest),
@@ -273,6 +285,10 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	for name, directive := range s.directives {
 		out.directives[name] = directive
 	}
+	for name, fields := range s.subscriptions {
+		out.subscriptions[name] = slices.Clone(fields)
+	}
+	out.subscriptionOrder = slices.Clone(s.subscriptionOrder)
 	for name, objectType := range s.objects {
 		forkable, ok := objectType.(ForkableObjectType)
 		if !ok {
@@ -331,8 +347,23 @@ func (s *Server) invalidateSchemaCache() {
 }
 
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
-	// TODO: avoid this deprecated method, and customize the options
-	srv := handler.NewDefaultServer(es)
+	// The transports and extensions of handler.NewDefaultServer, plus
+	// graphql-sse (dagql.SSE) for subscriptions. Transports are consulted in
+	// order and POST would claim the same requests, so SSE goes first.
+	srv := handler.New(es)
+	srv.AddTransport(SSE{KeepAlive: SSEKeepAlive})
+	srv.AddTransport(transport.Websocket{
+		KeepAlivePingInterval: 10 * time.Second,
+	})
+	srv.AddTransport(transport.Options{})
+	srv.AddTransport(transport.GET{})
+	srv.AddTransport(transport.POST{})
+	srv.AddTransport(transport.MultipartForm{})
+	srv.SetQueryCache(lru.New[*ast.QueryDocument](1000))
+	srv.Use(extension.Introspection{})
+	srv.Use(extension.AutomaticPersistedQuery{
+		Cache: lru.New[string](100),
+	})
 
 	srv.SetValidationRulesFn(func() *rules.Rules {
 		validationRules := rules.NewDefaultRules()
@@ -974,6 +1005,11 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			def := iface.Definition(view)
 			schema.AddTypes(def)
 		})
+		if def := s.subscriptionDefinitionLocked(view); def != nil {
+			schema.Subscription = def
+			schema.AddTypes(def)
+			schema.AddPossibleType(def.Name, def)
+		}
 		sortutil.RangeSorted(s.scalars, func(name string, t ScalarType) {
 			if filter, ok := s.scalarFilters[name]; ok && !filter.Contains(view) {
 				return
@@ -1046,8 +1082,24 @@ type ExtendedError interface {
 }
 
 // Exec implements graphql.ExecutableSchema.
-func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
+//
+// gqlgen calls the returned handler repeatedly until it returns nil: once for
+// a query (the handler is one-shot), once per value for a subscription.
+func (s *Server) Exec(execCtx context.Context) graphql.ResponseHandler {
+	if gqlOp := graphql.GetOperationContext(execCtx); gqlOp != nil &&
+		gqlOp.Operation != nil && gqlOp.Operation.Operation == ast.Subscription {
+		if err := gqlOp.Validate(execCtx); err != nil {
+			return graphql.OneShot(graphql.ErrorResponse(execCtx, "validate: %s", err))
+		}
+		return s.execSubscription(execCtx, gqlOp)
+	}
+	var done bool
 	return func(ctx context.Context) (res *graphql.Response) {
+		if done {
+			return nil
+		}
+		done = true
+
 		gqlOp := graphql.GetOperationContext(ctx)
 
 		if err := gqlOp.Validate(ctx); err != nil {
