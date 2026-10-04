@@ -302,11 +302,14 @@ func isHTTPGitRef(ref string) bool {
 	if !isObviouslyRemoteWorkspaceRef(ref) {
 		return false
 	}
-	scheme, _, hasScheme := strings.Cut(ref, "://")
-	if !hasScheme {
-		return !strings.HasPrefix(ref, "git@")
+	u, err := gitutil.ParseURL(ref)
+	if errors.Is(err, gitutil.ErrUnknownProtocol) {
+		// A ref with no protocol, such as github.com/org/repo, is cloned over
+		// https, unless it is SCP-style host:path, which git clones over SSH.
+		host, _, _ := strings.Cut(ref, "/")
+		return !strings.Contains(host, ":")
 	}
-	return scheme == gitutil.HTTPProtocol || scheme == gitutil.HTTPSProtocol
+	return err == nil && (u.Scheme == gitutil.HTTPProtocol || u.Scheme == gitutil.HTTPSProtocol)
 }
 
 // isHTTPGitAddress reports whether an argument address is an http(s) git
