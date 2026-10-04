@@ -121,6 +121,17 @@ func (s *metadataStore) getOrCreate(id string) *cacheMetadata {
 	return md
 }
 
+// ids returns the id of every entry currently in the store.
+func (s *metadataStore) ids() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := make([]string, 0, len(s.refs))
+	for id := range s.refs {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func (s *metadataStore) clear(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -1,0 +1,13 @@
+kind: Fixed
+body: |
+  The engine no longer retains snapshot metadata after the snapshot itself has
+  been garbage collected. Records and their metadata are in-memory only and were
+  released from just one path that a committed record never reaches, so
+  contenthash's marshalled path tree — one per distinct directory the engine had
+  ever checksummed — stayed resident for the lifetime of the process. On a busy
+  CI engine that reached 4.4 GB of a 5.7 GB heap and grew for as long as the
+  engine ran.
+time: 2026-09-19T09:00:00Z
+custom:
+  Author: apercivall
+  PR: 14251

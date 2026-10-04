@@ -291,7 +291,19 @@ func (sn *applySnapshotDiffTestSnapshotter) Remove(_ context.Context, key string
 	return nil
 }
 
-func (sn *applySnapshotDiffTestSnapshotter) Walk(context.Context, ctdsnapshots.WalkFunc, ...string) error {
+func (sn *applySnapshotDiffTestSnapshotter) Walk(ctx context.Context, fn ctdsnapshots.WalkFunc, _ ...string) error {
+	sn.mu.Lock()
+	infos := make([]ctdsnapshots.Info, 0, len(sn.snapshots))
+	for _, info := range sn.snapshots {
+		infos = append(infos, info)
+	}
+	sn.mu.Unlock()
+
+	for _, info := range infos {
+		if err := fn(ctx, info); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
