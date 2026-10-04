@@ -21,12 +21,17 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var startListMode bool
+var (
+	startListMode bool
+	// noForwardFlag is start's --no-forward.
+	noForwardFlag bool
+)
 
 func init() {
 	registerCommandArtifactFlags(startCmd)
 	startCmd.Flags().BoolVarP(&startListMode, "list", "l", false, "List available services")
 	startCmd.Flags().BoolVar(&detachFlag, "detach", false, "Run the services and forward their ports in the background, in a detached session (experimental)")
+	startCmd.Flags().BoolVar(&noForwardFlag, "no-forward", false, "With --detach, only start the services, leaving no local process; forward them later with 'dagger --session ID start --detach' (experimental)")
 }
 
 var startCmd = &cobra.Command{
@@ -40,6 +45,9 @@ var startCmd = &cobra.Command{
 		hiddenAliasesAnnotation: "up",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if noForwardFlag && !detachFlag && !inBackground {
+			return fmt.Errorf("--no-forward requires --detach")
+		}
 		if detachFlag && !startListMode {
 			return runDetached(cmd.OutOrStdout())
 		}
@@ -93,6 +101,9 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 	}
 	if len(results) == 0 {
 		return fmt.Errorf("no services found")
+	}
+	if noForwardFlag {
+		return startServices(ctx, dag, results)
 	}
 	cfg, err := artifactWorkspaceConfig(ctx, core.NewQuery(dag).CurrentWorkspace())
 	if err != nil {
@@ -209,4 +220,24 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 		return nil
 	}
 	return err
+}
+
+// startServices starts the services in the session and leaves them running,
+// with no forwarding.
+func startServices(ctx context.Context, dag *dagger.Client, results []artifactValueResult) error {
+	jobs, ctx := errgroup.WithContext(ctx)
+	for _, result := range results {
+		if result.Value == nil || result.Value.Type != "Service" {
+			return fmt.Errorf("%s did not return a Service", result.Artifact.URI)
+		}
+		jobs.Go(func() error {
+			_, err := core.Ref[*core.Service](core.NewQuery(dag), result.Value.ID).Start(ctx)
+			return err
+		})
+	}
+	if err := jobs.Wait(); err != nil {
+		return err
+	}
+	reportStartedWithoutProcess()
+	return nil
 }
