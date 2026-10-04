@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -118,6 +117,9 @@ type FuncCommand struct {
 	c   *client.Client
 	ctx context.Context
 
+	// sessionBeforeFunction is --session as parsed before the function name.
+	sessionBeforeFunction string
+
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
 	withFn *modFunction
@@ -180,11 +182,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			},
 			// Between PreRunE and RunE, flags are validated.
 			RunE: func(c *cobra.Command, a []string) error {
-				// Flags after the function name are only parsed once the
-				// module is loaded, so look for --detach there too.
-				if detachFlag || slices.Contains(a, "--detach") {
+				if detachFlag {
 					return runDetached(c.OutOrStdout())
 				}
+				fc.sessionBeforeFunction = sessionFlag
 				if isPrintTraceLinkEnabled(c.Annotations) {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
@@ -266,7 +267,15 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 
-		fc.cmd.PersistentFlags().BoolVar(&detachFlag, "detach", false, "Run the call in the background, in a detached session (experimental)")
+		// Not persistent, so that a function's own detach argument keeps
+		// its name.
+		fc.cmd.Flags().BoolVar(&detachFlag, "detach", false, "Run the call in the background, in a detached session (experimental)")
+		fc.cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+			if err.Error() == "unknown flag: --detach" {
+				return fmt.Errorf("--detach must come before the function name")
+			}
+			return err
+		})
 	}
 	return fc.cmd
 }
@@ -358,6 +367,12 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	cmd, flags, err := fc.loadCommand(c, a)
 	if err != nil {
 		return err
+	}
+
+	// Flags after the function name are parsed only now, once the client
+	// is connected, so a --session there came too late.
+	if sessionFlag != fc.sessionBeforeFunction {
+		return fmt.Errorf("--session must come before the function name")
 	}
 
 	if fc.needsHelp {

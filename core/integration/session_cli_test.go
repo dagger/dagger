@@ -74,6 +74,9 @@ source = "dang"
   pub web: Service! {
     %[2]s
   }
+  pub flags(detach: String!): String! {
+    detach
+  }
   pub fetch: String! {
     container.from(%[1]q).withServiceBinding("web", %[2]s).withExec(["wget", "-qO-", "http://web:%[3]d/"]).stdout
   }
@@ -362,4 +365,38 @@ func (SessionCLISuite) TestSessionFlagReusesService(ctx context.Context, t *test
 	out, err := hostDaggerOutput(ctx, t, dir, "--session", id, "call", "fetch")
 	require.NoError(t, err)
 	require.Equal(t, nonce, strings.TrimSpace(string(out)))
+}
+
+func (SessionCLISuite) TestSessionFlagsAfterFunctionName(ctx context.Context, t *testctx.T) {
+	dir := detachWorkspace(t, 23458)
+
+	t.Run("unknown session", func(ctx context.Context, t *testctx.T) {
+		unknown := identity.NewID()
+		out, err := hostDaggerExec(ctx, t, dir, "call", "echo", "--msg", "hi", "--session", unknown)
+		require.Error(t, err)
+		require.Contains(t, string(out), "--session must come before the function name")
+		mgmt := connectEngineClient(ctx, t, client.Params{}).Dagger()
+		_, ok := findSession(listSessions(ctx, t, mgmt), unknown)
+		require.False(t, ok)
+	})
+
+	t.Run("known session", func(ctx context.Context, t *testctx.T) {
+		id := detach(ctx, t, dir, "call", "--detach", "sleepy")
+		out, err := hostDaggerExec(ctx, t, dir, "call", "echo", "--msg", "hi", "--session", id)
+		require.Error(t, err)
+		require.Contains(t, string(out), "--session must come before the function name")
+	})
+
+	t.Run("detach", func(ctx context.Context, t *testctx.T) {
+		out, err := hostDaggerExec(ctx, t, dir, "call", "echo", "--msg", "hi", "--detach")
+		require.Error(t, err)
+		require.Contains(t, string(out), "--detach must come before the function name")
+	})
+}
+
+func (SessionCLISuite) TestFunctionDetachArgument(ctx context.Context, t *testctx.T) {
+	dir := detachWorkspace(t, 23459)
+	out, err := hostDaggerOutput(ctx, t, dir, "call", "flags", "--detach", "d1")
+	require.NoError(t, err)
+	require.Equal(t, "d1", strings.TrimSpace(string(out)))
 }
