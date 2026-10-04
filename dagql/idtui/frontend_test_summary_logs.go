@@ -10,6 +10,12 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
+func closeTestSummaryLogs(logs map[dagui.SpanID]*Vterm) {
+	for _, term := range logs {
+		term.Close()
+	}
+}
+
 func appendTestSummaryLogRecords(logs map[dagui.SpanID]*Vterm, profile termenv.Profile, spanID dagui.SpanID, records []sdklog.Record) {
 	if logs == nil || !spanID.IsValid() {
 		return

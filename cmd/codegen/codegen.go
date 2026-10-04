@@ -55,6 +55,15 @@ func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err e
 		}
 	}
 
+	// Generated clients do not support subscriptions yet: they read the pull
+	// twins (e.g. Agent.events) instead. Without this, the Subscription root
+	// would be generated as an ordinary query-shaped object whose methods
+	// cannot work (hack/designs/graphql-subscriptions.md §6).
+	if sub := introspectionSchema.Subscription(); sub != nil {
+		introspectionSchema.ScrubType(sub.Name)
+		introspectionSchema.SubscriptionType = nil
+	}
+
 	// Set the parent schema
 	generator.SetSchemaParents(introspectionSchema)
 
