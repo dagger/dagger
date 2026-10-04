@@ -47,9 +47,9 @@ func WriteSelected(w io.Writer, format, query string, data any) error {
 }
 
 // Selected returns the value a call's query selects from its response data.
-// The query selects one field per function in the call's chain, so the value
-// is at the end of that path, mapped over any lists on the way, as the CLI's
-// query builder unpacks it.
+// The query selects one field per function in the call's chain. As the CLI's
+// query builder unpacks it, the value is at the end of that path, or at the
+// first list on the way, which is kept whole with its items' fields.
 func Selected(query string, data any) (any, error) {
 	doc, err := parser.ParseQuery(&ast.Source{Input: query})
 	if err != nil {
@@ -71,21 +71,14 @@ func Selected(query string, data any) (any, error) {
 }
 
 func selectPath(v any, path []string) any {
-	if len(path) == 0 {
-		return v
-	}
-	switch t := v.(type) {
-	case map[string]any:
-		return selectPath(t[path[0]], path[1:])
-	case []any:
-		items := make([]any, len(t))
-		for i, item := range t {
-			items[i] = selectPath(item, path)
+	for _, key := range path {
+		m, ok := v.(map[string]any)
+		if !ok {
+			break
 		}
-		return items
-	default:
-		return v
+		v = m[key]
 	}
+	return v
 }
 
 // JSON prints a result as indented JSON.

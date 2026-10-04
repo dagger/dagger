@@ -91,6 +91,9 @@ source = "dang"
   pub ctr: Container! {
     container.from(%[1]q)
   }
+  pub ctrs: [Container!]! {
+    [container.from(%[1]q).withExec(["echo", "one"]), container.from(%[1]q).withExec(["echo", "two"])]
+  }
   pub dir: Directory! {
     directory.withNewFile("a", "b")
   }
@@ -538,6 +541,10 @@ func (SessionCLISuite) TestProcessFreeResults(ctx context.Context, t *testctx.T)
 
 	t.Run("id", func(ctx context.Context, t *testctx.T) {
 		requireSameResult(ctx, t, "ctr")
+	})
+
+	t.Run("json through a list", func(ctx context.Context, t *testctx.T) {
+		requireSameResult(ctx, t, "--json", "ctrs", "stdout")
 	})
 
 	t.Run("failure", func(ctx context.Context, t *testctx.T) {
