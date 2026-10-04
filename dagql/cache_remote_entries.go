@@ -115,11 +115,27 @@ type RemoteHoldingUpdate struct {
 type RemoteChange struct {
 	Candidates []HolderKey
 	Recipes    []digest.Digest
+	// recipes is the set of Recipes, which a merge's change can list by the
+	// thousand.
+	recipes map[digest.Digest]struct{}
 }
 
+// addRecipeOf adds entry's recipe digest to Recipes, once, in the order the
+// entries were first added.
 func (ch *RemoteChange) addRecipeOf(entry *sharedResult) {
-	if len(entry.recipeKeys) > 0 && !slices.Contains(ch.Recipes, entry.recipeKeys[0]) {
-		ch.Recipes = append(ch.Recipes, entry.recipeKeys[0])
+	if len(entry.recipeKeys) == 0 {
+		return
+	}
+	if ch.recipes == nil {
+		ch.recipes = make(map[digest.Digest]struct{}, len(ch.Recipes)+1)
+		for _, recipe := range ch.Recipes {
+			ch.recipes[recipe] = struct{}{}
+		}
+	}
+	recipe := entry.recipeKeys[0]
+	if _, ok := ch.recipes[recipe]; !ok {
+		ch.recipes[recipe] = struct{}{}
+		ch.Recipes = append(ch.Recipes, recipe)
 	}
 }
 
