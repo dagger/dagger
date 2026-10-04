@@ -201,8 +201,11 @@ re-exec pinning `Agent.send` uses for messages (core/schema/agent.go:292-325).
 The event's ID is therefore `…llm(…).agent(handle:"…").event(seq: 3)`:
 loadable with `node(id:)` from any request in the session, usable as an
 argument, and what the pull twin returns too. `Agent.event(seq:)` is
-`DoNotCache` and reads the live log, so a stale ID in a new incarnation
-(§7) fails loudly instead of replaying a cached fact from another runtime.
+**cached**, like `Agent.message`: a `DoNotCache` result is detached and has
+no addressable ID, which would defeat the point. Caching is sound because an
+entry's log is append-only for the session (seq n always denotes the same
+transition) and the chain is per-session by construction; a restore is a new
+session, so a cached event can never answer for another incarnation (§8).
 
 ### 3.4 Transport
 
@@ -268,6 +271,10 @@ extend type Agent {
   events(after: Int! = 0): [AgentEvent!]!
 }
 ```
+
+As served in the v1 view, typed ID scalars render as plain `ID`, so the
+argument is `agent: ID!` on the wire: a client declares
+`subscription($agent: ID!, $after: Int) { agentEvents(agent: $agent, after: $after) { … } }`.
 
 **No new runtime concept.** This is `notify` with a subscription as the sink.
 The single choke point, `transitionLocked` (core/agent.go:1283), already
@@ -469,7 +476,8 @@ busy (engine-side proposal §3.8) is a follow-up.
 | dagql: `Subscribe`/`SubscriptionField`, schema emission, `Exec` streaming, SSE transport, unit tests | spike | ~450 LOC |
 | core: transition log, `Subscription.agentEvents`, `AgentEvent`, `Agent.event/events`, turn refusal | spike | ~350 LOC |
 | integration test through a nested client | spike | ~150 LOC |
-| codegen skips `Subscription`; docs schema regen | follow-up | small |
+| codegen skips `Subscription` (Go/TS via cmd/codegen) | spike | small |
+| docs schema regen; Python/PHP/Elixir/Rust codegen skip | follow-up | small |
 | `Mailbox`, `notify(mailbox:)`, `schedule`, `mailboxEvents` | design only | ~1 week (the proposals' estimate) |
 | Go/TS/Python subscription codegen | design only | ~3 d each |
 
@@ -505,6 +513,45 @@ Open:
 6. **HTTP/1.1 connection limits.** Each subscription holds a connection.
    Fine for engine clients (h2c to the nested listener; one per session
    otherwise); a browser client would want the single-connection mode.
-7. **CLI.** `dagger query` does not send the `Accept` header, so it gets
-   the refusal. A `dagger query --subscribe` (stream `next` payloads as
+7. **CLI.** `dagger api query` refuses a subscription client-side ("client
+   does not support subscriptions", the Go client's guard) before it reaches
+   the engine. A `dagger api query --subscribe` (stream `next` payloads as
    JSON lines) is cheap and would make subscriptions scriptable.
+8. **Module loading.** `ensureRequestModulesLoaded` narrows which pending
+   workspace modules a request loads by peeking its root fields
+   (`dagql.PeekRootFields`), which only understands queries; a subscription
+   therefore demands every pending module. Subscription fields are all core
+   today, so peeking could demand none.
+
+## 9. Implementation status
+
+The spike is built on this branch, one commit per layer:
+
+- **designs: graphql subscriptions in dagql** — this document.
+- **dagql: serve subscriptions over graphql-sse** — `dagql/subscription.go`
+  (`Subscribe`, `SubscriptionField`, `Server.InstallSubscription`, schema
+  emission, `execSubscription`/`runSubscription`), `dagql/sse.go` (the
+  transport), `Exec` one-shot for queries, `NewDefaultHandler` with SSE ahead
+  of POST. `dagql/subscription_test.go` pins the exact wire bytes, honest
+  IDs on pushed objects, resolver and validation errors as `next`+`complete`,
+  the refusal without `Accept`, queries over SSE, and cancellation by
+  closing the request.
+- **core: subscribe to agent lifecycle events** — the transition log
+  (`core/agent_events.go`, two hooks in core/agent.go), `AgentEvent`,
+  `Agent.event(seq:)`, `Agent.events(after:)`, `Subscription.agentEvents`,
+  turn refusal; the Subscription root is kept out of core module typedefs.
+  `TestAgentRuntime/TestAgentEventsSubscription` subscribes from a Python
+  script in a container through its nested client: refusal without
+  `Accept`, replay from `after: 0` (IDLE#1 → RUNNING#2 → IDLE#3 with the
+  reply), the level event on a fresh subscription, live push of a second
+  turn sent while the stream is open (RUNNING#4 → IDLE#5), reloading a
+  pushed event by ID, and the pull twin returning the same five entries.
+- **codegen: skip the Subscription root.**
+
+Deltas from the design above, found while building: `Agent.event` is cached
+(§3.3); the v1 view spells the agent argument `ID!` (§4.1); an empty
+`dagql.Fields[*core.AgentEvent]{}.Install` is needed for the struct-tag
+fields to appear.
+
+Not built: the Mailbox (§4.2), SDK subscription codegen (§6), a CLI
+subscribe mode, incarnation-aware cursors, per-event leases.
