@@ -355,24 +355,24 @@ func (SessionAttachablesSuite) TestHostServiceFailsWhenSourceClientLeaves(ctx co
 				require.Fail(t, "watcher did not start")
 			}
 
-			// A new connection through the host service fails fast, naming the
-			// client that left.
+			// A new connection through the host service fails fast. Its error is
+			// either the engine's report that the host service exited or the
+			// client's own reset connection, whichever arrives first.
 			probeCtx, cancel := context.WithTimeout(ctx, 75*time.Second)
 			defer cancel()
 			start := time.Now()
 			_, err = probe(probeCtx)
 			require.Error(t, err)
 			require.Less(t, time.Since(start), 10*time.Second, "probe should fail fast, got: %v", err)
-			requireErrOut(t, err, "(aliased as hs) exited")
-			requireErrOut(t, err, joinerID)
 
 			// The container service bound to it stops because its dependency
-			// exited.
+			// exited, naming the client that left.
 			select {
 			case err := <-watchErr:
 				require.Error(t, err)
 				requireErrOut(t, err, "(aliased as app) exited")
 				requireErrOut(t, err, "(aliased as hs) exited")
+				requireErrOut(t, err, joinerID)
 			case <-time.After(30 * time.Second):
 				require.Fail(t, "container service bound to the host service did not stop")
 			}
