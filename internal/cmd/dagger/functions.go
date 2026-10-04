@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -120,6 +121,12 @@ type FuncCommand struct {
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
 	withFn *modFunction
+
+	// receiver is the type the next function in the chain is called on.
+	receiver string
+	// hostDependent records that the chain or its arguments use the host, so
+	// a detached call keeps its process.
+	hostDependent bool
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -266,7 +273,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 		// Not persistent, so that a function's own detach argument keeps
 		// its name.
-		fc.cmd.Flags().BoolVar(&detachFlag, "detach", false, "Run the call in the background, in a detached session (experimental)")
+		fc.cmd.Flags().BoolVar(&detachFlag, "detach", false, "Run the call in a detached session: in the engine alone when it needs nothing from this machine, else in a background process (experimental)")
 		fc.cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 			if err.Error() == "unknown flag: --detach" {
 				return fmt.Errorf("--detach must come before the function name")
@@ -542,6 +549,7 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		// For Query constructors (both no-op and `with`), only add the
 		// `with(args...)` selection if constructor flags were actually set.
 		// This avoids an empty `with()` selection when no args are provided.
+		defer func() { fc.receiver = fn.ReturnType.Name() }()
 		if isQueryConstructor {
 			return fc.selectWith(c)
 		}
@@ -713,6 +721,9 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 // selectFunc adds the function selection to the query.
 func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	fc.q = fc.q.Select(fn.Name)
+	if slices.Contains(hostCoreFields[fc.receiver], fn.Name) {
+		fc.hostDependent = true
+	}
 
 	missingFlags := []string{}
 	workspaceArgs := []string{}
@@ -743,6 +754,9 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 			continue
 		}
 
+		if hostDependentValue(flag.Value) {
+			fc.hostDependent = true
+		}
 		p.Go(func() (flagResult, error) {
 			v, err := a.GetFlagValue(fc.ctx, flag, fc.c.Dagger(), fc.mod)
 			if err != nil {
@@ -802,6 +816,12 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 				return callresult.EncodedID(o, "")
 			}
 			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e, autoApply)
+		}
+
+		// A detached call with no host dependency runs on its own in the
+		// engine, and this process exits.
+		if inBackground && !fc.hostDependent && runsWithoutHost(fn.ReturnType) {
+			return runInEngine(ctx, fc.c.Dagger(), q, fn.ReturnType)
 		}
 
 		var response any

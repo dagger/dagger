@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"dagger.io/dagger"
 	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -43,9 +44,28 @@ func detachWorkspace(t *testctx.T, port int) string {
 	t.Helper()
 	dir := t.TempDir()
 	hostGitInit(t, dir)
+	for path, contents := range detachWorkspaceFiles(port) {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, filepath.Dir(path)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, path), []byte(contents), 0o644))
+	}
+	return dir
+}
+
+// detachRemoteWorkspace serves the same workspace from a git server in c's
+// session, and returns its git ref for -W.
+func detachRemoteWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, port int) string {
+	t.Helper()
+	content := c.Directory()
+	for path, contents := range detachWorkspaceFiles(port) {
+		content = content.WithNewFile(path, contents)
+	}
+	return workspaceSelectionRemoteRef(ctx, t, c, content)
+}
+
+func detachWorkspaceFiles(port int) map[string]string {
 	web := fmt.Sprintf(`container.from(%q).withExposedPort(%d).asService(args: ["sh", "-c", "mkdir -p /www && cat /proc/sys/kernel/random/uuid > /www/index.html && exec httpd -f -p %d -h /www"])`,
 		busyboxImage, port, port)
-	files := map[string]string{
+	return map[string]string{
 		"dagger.toml": `[modules.m]
 source = ".dagger/modules/m"
 entrypoint = true
@@ -61,6 +81,18 @@ source = "dang"
   }
   pub echo(msg: String!): String! {
     container.from(%[1]q).withExec(["echo", msg]).stdout
+  }
+  pub slow(msg: String!): String! {
+    "slow:" + container.from(%[1]q).withExec(["sh", "-c", "sleep 20; echo " + msg]).stdout
+  }
+  pub list(msg: String!): [String!]! {
+    [msg, msg + "-2"]
+  }
+  pub ctr: Container! {
+    container.from(%[1]q)
+  }
+  pub dir: Directory! {
+    directory.withNewFile("a", "b")
   }
   pub fail(msg: String!): String! {
     container.from(%[1]q).withExec(["sh", "-c", "echo " + msg + "; exit 3"]).stdout
@@ -80,14 +112,15 @@ source = "dang"
   pub fetch: String! {
     container.from(%[1]q).withServiceBinding("web", %[2]s).withExec(["wget", "-qO-", "http://web:%[3]d/"]).stdout
   }
+  pub secretLen(s: Secret!): String! {
+    "ok"
+  }
+  pub changes: Changeset! {
+    directory.withNewFile("x", "y").changes(directory)
+  }
 }
 `, alpineImage, web, port),
 	}
-	for path, contents := range files {
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, filepath.Dir(path)), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, path), []byte(contents), 0o644))
-	}
-	return dir
 }
 
 var detachedSessionLine = regexp.MustCompile(`(?m)^Session: (\S+)$`)
@@ -95,6 +128,13 @@ var detachedSessionLine = regexp.MustCompile(`(?m)^Session: (\S+)$`)
 // detach runs a command with --detach and returns the session it reports.
 // The session is stopped when the test ends.
 func detach(ctx context.Context, t *testctx.T, dir string, args ...string) string {
+	t.Helper()
+	id, _ := detachWithOutput(ctx, t, dir, args...)
+	return id
+}
+
+// detachWithOutput is detach, also returning the command's output.
+func detachWithOutput(ctx context.Context, t *testctx.T, dir string, args ...string) (string, string) {
 	t.Helper()
 	out, err := hostDaggerExec(ctx, t, dir, args...)
 	require.NoError(t, err, string(out))
@@ -104,7 +144,22 @@ func detach(ctx context.Context, t *testctx.T, dir string, args ...string) strin
 	t.Cleanup(func() {
 		_, _ = hostDaggerExec(context.WithoutCancel(ctx), t, dir, "sessions", "stop", id)
 	})
-	return id
+	return id, string(out)
+}
+
+// noLocalProcess is what a detached command prints when it left no process.
+const noLocalProcess = "No local process is running."
+
+// requireNoProcess requires that the session's only client is a background
+// client whose process has exited.
+func requireNoProcess(ctx context.Context, t *testctx.T, id string) {
+	t.Helper()
+	clients := sessionClients(ctx, t, id)
+	require.Len(t, clients, 1)
+	require.True(t, clients[0].Background)
+	pid := *clients[0].PID
+	require.Eventually(t, func() bool { return processGone(pid) }, 10*time.Second, 200*time.Millisecond,
+		"process %d still running", pid)
 }
 
 // sessionClients returns the clients of a session, as the engine lists them.
@@ -424,4 +479,121 @@ func (SessionCLISuite) TestDetachedStartFailureLeavesNoSession(ctx context.Conte
 		}
 		return true
 	}, time.Minute, time.Second, "the failed command's session is still listed")
+}
+
+func (SessionCLISuite) TestProcessFreeCall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ref := detachRemoteWorkspace(ctx, t, c, 23461)
+	dir := t.TempDir()
+	marker := identity.NewID()
+
+	id, out := detachWithOutput(ctx, t, dir, "-W", ref, "call", "--detach", "slow", "--msg", marker)
+	require.Contains(t, out, noLocalProcess)
+	require.NotContains(t, out, "Log:")
+
+	// The process is gone within seconds, while the call sleeps for 20s; the
+	// call still runs to its end.
+	requireNoProcess(ctx, t, id)
+	attached := attachUntil(ctx, t, dir, id, "slow:"+marker)
+	t.Logf("attach output:\n%s", attached)
+}
+
+func (SessionCLISuite) TestProcessFreeResults(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ref := detachRemoteWorkspace(ctx, t, c, 23462)
+	dir := t.TempDir()
+
+	// requireSameResult runs a call in the foreground, then process-free, and
+	// requires that attach shows each line the foreground printed, as the
+	// output of the detached command.
+	requireSameResult := func(ctx context.Context, t *testctx.T, args ...string) {
+		foreground, err := hostDaggerOutput(ctx, t, dir, append([]string{"-W", ref, "call"}, args...)...)
+		require.NoError(t, err)
+		var lines []string
+		for _, line := range strings.Split(strings.TrimRight(string(foreground), "\n"), "\n") {
+			lines = append(lines, "| "+line)
+		}
+		require.NotEmpty(t, lines)
+
+		id, out := detachWithOutput(ctx, t, dir, append([]string{"-W", ref, "call", "--detach"}, args...)...)
+		require.Contains(t, out, noLocalProcess)
+		attached := attachUntil(ctx, t, dir, id, lines[len(lines)-1])
+		t.Logf("attach output:\n%s", attached)
+		for _, line := range lines {
+			require.Regexp(t, `(?m)^\d+\s+: \[[^]]+\] `+regexp.QuoteMeta(line)+`$`, attached)
+		}
+	}
+
+	t.Run("plain", func(ctx context.Context, t *testctx.T) {
+		requireSameResult(ctx, t, "list", "--msg", identity.NewID())
+	})
+
+	t.Run("json", func(ctx context.Context, t *testctx.T) {
+		requireSameResult(ctx, t, "--json", "list", "--msg", identity.NewID())
+	})
+
+	t.Run("json scalar", func(ctx context.Context, t *testctx.T) {
+		requireSameResult(ctx, t, "--json", "echo", "--msg", identity.NewID())
+	})
+
+	t.Run("id", func(ctx context.Context, t *testctx.T) {
+		requireSameResult(ctx, t, "ctr")
+	})
+
+	t.Run("failure", func(ctx context.Context, t *testctx.T) {
+		marker := identity.NewID()
+		id, out := detachWithOutput(ctx, t, dir, "-W", ref, "call", "--detach", "fail", "--msg", marker)
+		require.Contains(t, out, noLocalProcess)
+		attached := attachUntil(ctx, t, dir, id, "fail --msg "+marker+" ERROR")
+		t.Logf("attach output:\n%s", attached)
+		require.Contains(t, attached, marker)
+		require.Contains(t, attached, "exit code: 3")
+	})
+}
+
+func (SessionCLISuite) TestProcessFreeStop(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ref := detachRemoteWorkspace(ctx, t, c, 23463)
+	dir := t.TempDir()
+
+	id, out := detachWithOutput(ctx, t, dir, "-W", ref, "call", "--detach", "sleepy")
+	require.Contains(t, out, noLocalProcess)
+	requireNoProcess(ctx, t, id)
+
+	// Stopping waits for the session's work, so a query it did not cancel
+	// would keep it waiting for 10 minutes.
+	stopCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	stopOut, err := hostDaggerExec(stopCtx, t, dir, "sessions", "stop", id)
+	require.NoError(t, err, string(stopOut))
+	require.Contains(t, string(stopOut), "Stopped session "+id)
+}
+
+func (SessionCLISuite) TestDetachKeepsProcessForHostDependencies(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ref := detachRemoteWorkspace(ctx, t, c, 23464)
+	local := detachWorkspace(t, 23464)
+	dir := t.TempDir()
+	extra := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(extra, "hello.txt"), []byte("extra"), 0o644))
+
+	for _, tc := range []struct {
+		name string
+		dir  string
+		args []string
+	}{
+		{"no workspace flag", local, []string{"call", "--detach", "echo", "--msg", "hi"}},
+		{"local directory", dir, []string{"-W", ref, "call", "--detach", "read", "--extra", extra}},
+		{"secret", dir, []string{"-W", ref, "call", "--detach", "secret-len", "--s", "env://HOME"}},
+		{"output", dir, []string{"-W", ref, "call", "--detach", "-o", filepath.Join(dir, "out.txt"), "echo", "--msg", "hi"}},
+		{"changeset", dir, []string{"-W", ref, "call", "--detach", "changes"}},
+		{"core export", dir, []string{"-W", ref, "call", "--detach", "dir", "export", "--path", filepath.Join(dir, "exported")}},
+		{"core up", dir, []string{"-W", ref, "call", "--detach", "web", "up"}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			_, out := detachWithOutput(ctx, t, tc.dir, tc.args...)
+			require.Contains(t, out, "Log: ")
+			require.NotContains(t, out, noLocalProcess)
+		})
+	}
 }
