@@ -123,7 +123,7 @@ dagger api call [options] [function]...
 
 ```
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
-      --detach               Run the call in the background, in a detached session (experimental)
+      --detach               Run the call in a detached session: in the engine alone when it needs nothing from this machine, else in a background process (experimental)
   -j, --json                 Present result as JSON
   -m, --load-module string   Use a one-off module (local path or git ref)
   -M, --no-load-module       Don't load any module for this command
@@ -2830,6 +2830,7 @@ dagger up [FILTERS] [OPTIONS]
   -f, --format FORMAT   Output FORMAT: table, link, or cli (requires --list) (default "table")
   -l, --list            List available services
       --module NAME     Select artifacts from module NAME
+      --no-forward      With --detach, only start the services, leaving no local process; forward them later with 'dagger --session ID up --detach' (experimental)
 ```
 
 ### Options inherited from parent commands
