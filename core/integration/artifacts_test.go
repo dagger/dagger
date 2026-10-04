@@ -1467,7 +1467,9 @@ func (ArtifactsSuite) TestLazyValueFailures(ctx context.Context, t *testctx.T) {
 
 func (ArtifactsSuite) TestCheckScaleOut(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
-	c := connect(ctx, t, sink.clientOpts()...)
+	c := connect(ctx, t, append(sink.clientOpts(),
+		dagger.WithEnvironmentVariable("_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT", "60s"),
+	)...)
 	target := devEngineContainerAsService(devEngineContainer(c))
 	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithServiceBinding("scaleout-engine", target).
