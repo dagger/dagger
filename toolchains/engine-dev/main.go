@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -222,21 +221,7 @@ func (dev *EngineDev) Service(
 ) (*dagger.Service, error) {
 	// Support 256 layers of nested dagger engines :-P
 	dev = dev.IncrementSubnet()
-	cacheVolumeName := "dagger-dev-engine-state"
-	if !sharedCache {
-		version, err := dag.Version().Version(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if version != "" {
-			cacheVolumeName = "dagger-dev-engine-state-" + version
-		} else {
-			cacheVolumeName = "dagger-dev-engine-state-" + rand.Text()
-		}
-		if name != "" {
-			cacheVolumeName += "-" + name
-		}
-	}
+	cacheVolumeName := engineStateCacheKey(name, sharedCache)
 
 	devEngine, err := dev.Container(ctx, "", gpuSupport, version, "")
 	if err != nil {
