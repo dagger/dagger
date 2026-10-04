@@ -2,6 +2,9 @@ kind: Experimental
 body: |
   Add detachable sessions: `dagger call --detach` and `dagger up --detach`
   continue a command in a background process, in a session that outlives it.
+  A detached call that needs nothing from this machine, such as a call on a
+  git-ref workspace given with `-W`, runs in the engine with no local process
+  left, and `dagger up --detach --no-forward` only starts the services.
   Run any command in an existing session with the global `--session` flag,
   and list, inspect, attach to and stop sessions with `dagger sessions`. The
   engine API gains `Engine.sessions` and `Engine.session(id)`.
