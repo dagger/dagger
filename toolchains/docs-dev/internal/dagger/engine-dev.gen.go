@@ -742,6 +742,10 @@ type EngineDevTestOpts struct {
 	// Enable the given ebpf progs in the engine during tests
 	//
 	EbpfProgs []string // engine-dev (../../../../toolchains/engine-dev/test.go:57:2)
+	//
+	// Enable privileged eBPF tests (Linux 6.15 or newer)
+	//
+	Ebpf bool // engine-dev (../../../../toolchains/engine-dev/test.go:60:2)
 }
 
 // Run core engine tests
@@ -798,6 +802,10 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 		// `ebpfProgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
 			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+		// `ebpf` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ebpf) {
+			q = q.Arg("ebpf", opts[i].Ebpf)
 		}
 	}
 
@@ -933,36 +941,36 @@ type EngineDevTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:87:2)
+	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:91:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:90:2)
+	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:94:2)
 
-	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:92:2)
+	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:96:2)
 
-	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:94:2)
+	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:98:2)
 
-	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:96:2)
+	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:100:2)
 
-	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:98:2)
+	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:102:2)
 
-	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:100:2)
+	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:104:2)
 
 	// Default: 1
-	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:102:2)
+	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:106:2)
 
-	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:104:2)
+	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:108:2)
 
-	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:106:2)
+	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:110:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../../../toolchains/engine-dev/test.go:109:2)
+	EbpfProgs []string // engine-dev (../../../../toolchains/engine-dev/test.go:113:2)
 }
 
 // Run telemetry tests
-func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../toolchains/engine-dev/test.go:83:1)
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../toolchains/engine-dev/test.go:87:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument

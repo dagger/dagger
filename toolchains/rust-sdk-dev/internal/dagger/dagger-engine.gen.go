@@ -742,6 +742,10 @@ type DaggerEngineTestOpts struct {
 	// Enable the given ebpf progs in the engine during tests
 	//
 	EbpfProgs []string // dagger-engine (../../../../toolchains/engine-dev/test.go:57:2)
+	//
+	// Enable privileged eBPF tests (Linux 6.15 or newer)
+	//
+	Ebpf bool // dagger-engine (../../../../toolchains/engine-dev/test.go:60:2)
 }
 
 // Run core engine tests
@@ -798,6 +802,10 @@ func (r *DaggerEngine) Test(ctx context.Context, opts ...DaggerEngineTestOpts) e
 		// `ebpfProgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
 			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+		// `ebpf` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ebpf) {
+			q = q.Arg("ebpf", opts[i].Ebpf)
 		}
 	}
 
@@ -933,36 +941,36 @@ type DaggerEngineTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // dagger-engine (../../../../toolchains/engine-dev/test.go:87:2)
+	Run string // dagger-engine (../../../../toolchains/engine-dev/test.go:91:2)
 	//
 	// Skip these tests
 	//
-	Skip string // dagger-engine (../../../../toolchains/engine-dev/test.go:90:2)
+	Skip string // dagger-engine (../../../../toolchains/engine-dev/test.go:94:2)
 
-	Update bool // dagger-engine (../../../../toolchains/engine-dev/test.go:92:2)
+	Update bool // dagger-engine (../../../../toolchains/engine-dev/test.go:96:2)
 
-	Failfast bool // dagger-engine (../../../../toolchains/engine-dev/test.go:94:2)
+	Failfast bool // dagger-engine (../../../../toolchains/engine-dev/test.go:98:2)
 
-	Parallel int // dagger-engine (../../../../toolchains/engine-dev/test.go:96:2)
+	Parallel int // dagger-engine (../../../../toolchains/engine-dev/test.go:100:2)
 
-	Timeout string // dagger-engine (../../../../toolchains/engine-dev/test.go:98:2)
+	Timeout string // dagger-engine (../../../../toolchains/engine-dev/test.go:102:2)
 
-	Race bool // dagger-engine (../../../../toolchains/engine-dev/test.go:100:2)
+	Race bool // dagger-engine (../../../../toolchains/engine-dev/test.go:104:2)
 
 	// Default: 1
-	Count int // dagger-engine (../../../../toolchains/engine-dev/test.go:102:2)
+	Count int // dagger-engine (../../../../toolchains/engine-dev/test.go:106:2)
 
-	EnvFile *Secret // dagger-engine (../../../../toolchains/engine-dev/test.go:104:2)
+	EnvFile *Secret // dagger-engine (../../../../toolchains/engine-dev/test.go:108:2)
 
-	TestVerbose bool // dagger-engine (../../../../toolchains/engine-dev/test.go:106:2)
+	TestVerbose bool // dagger-engine (../../../../toolchains/engine-dev/test.go:110:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // dagger-engine (../../../../toolchains/engine-dev/test.go:109:2)
+	EbpfProgs []string // dagger-engine (../../../../toolchains/engine-dev/test.go:113:2)
 }
 
 // Run telemetry tests
-func (r *DaggerEngine) TestTelemetry(opts ...DaggerEngineTestTelemetryOpts) *Changeset { // dagger-engine (../../../../toolchains/engine-dev/test.go:83:1)
+func (r *DaggerEngine) TestTelemetry(opts ...DaggerEngineTestTelemetryOpts) *Changeset { // dagger-engine (../../../../toolchains/engine-dev/test.go:87:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
