@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"net/http"
@@ -63,6 +65,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/wcprof"
+	"github.com/dagger/dagger/internal/callresult"
 	"github.com/dagger/dagger/util/cleanups"
 )
 
@@ -2621,6 +2624,14 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		wcprof.EnsureRecorder()
 	}
 	profiling := profiledSession || wcprof.GloballyEnabled()
+
+	detachFormat, err := sess.detachedQueryFormat(r)
+	if err != nil {
+		return gqlErr(err, http.StatusBadRequest)
+	}
+	// A detached query hands its in-flight count and span to its work.
+	handedOff := false
+
 	sess.dagqlMu.Lock()
 	if sess.dagqlClosing {
 		sess.dagqlMu.Unlock()
@@ -2628,16 +2639,23 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	}
 	sess.dagqlInFlight++
 	sess.dagqlMu.Unlock()
-	defer func() {
+	endInFlight := func() {
 		sess.dagqlMu.Lock()
 		sess.dagqlInFlight--
 		if sess.dagqlInFlight == 0 {
 			sess.dagqlCond.Broadcast()
 		}
 		sess.dagqlMu.Unlock()
+	}
+	defer func() {
+		if !handedOff {
+			endInFlight()
+		}
 	}()
 
 	ctx := sess.withClosingCancel(r.Context())
+	// The span the request came from: the client's command.
+	commandSpan := trace.SpanContextFromContext(ctx)
 
 	// A request may opt out of telemetry wholesale (e.g. the CLI's context
 	// visualizer polling ever-growing read-only conversation state, whose
@@ -2665,12 +2683,12 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	// we end up with orphaned spans in their own separate traces from tests etc.
 	// A telemetry-suppressed request skips the wrapper span too: a suppressed
 	// poll must contribute zero spans to the client's telemetry DB.
+	var span trace.Span
 	if !telemetrySuppressed && trace.SpanContextFromContext(ctx).IsValid() {
 		// create a span to record telemetry into the client's DB
 		//
 		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
 		clientTracer := sess.tracerProvider.Tracer(InstrumentationLibrary)
-		var span trace.Span
 		attrs := []attribute.KeyValue{
 			attribute.Bool(telemetry.UIPassthroughAttr, true),
 		}
@@ -2680,8 +2698,13 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		ctx, span = clientTracer.Start(ctx,
 			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
 			trace.WithAttributes(attrs...),
+			detachedQueryLinks(detachFormat, commandSpan),
 		)
-		defer telemetry.EndWithCause(span, &rerr)
+		defer func() {
+			if !handedOff {
+				telemetry.EndWithCause(span, &rerr)
+			}
+		}()
 
 		// wcprof completeness checksum: record this trace and its
 		// session-root span once, from the OUTERMOST query (a main client has no
@@ -2750,7 +2773,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	// session attachables, which only become available after the session
 	// attachables handshake completes (after init locks are released).
 	wsCtx, wsOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.workspaceLoad", wcprof.OpOpts{ClientID: client.clientID})
-	err := srv.ensureWorkspaceLoaded(wsCtx, client)
+	err = srv.ensureWorkspaceLoaded(wsCtx, client)
 	wsOp.EndErr(err)
 	if err != nil {
 		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
@@ -2785,9 +2808,117 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		r = r.WithContext(queryCtx)
 	}
 
+	if detachFormat != "" {
+		err := sess.serveDetachedQuery(w, r, gqlSrv, detachFormat, span, commandSpan, endInFlight)
+		handedOff = err == nil
+		return err
+	}
+
 	gqlSrv.ServeHTTP(w, r)
 	return nil
 }
+
+// detachedQueryFormat returns the result format of a detach-marked query, or
+// "" for an ordinary one. A detached query runs on its own, after its client
+// may have left; in an attached session that would end the session and the
+// query with it.
+func (sess *daggerSession) detachedQueryFormat(r *http.Request) (string, error) {
+	format := r.Header.Get(engine.DetachQueryHeader)
+	if format != "" && !sess.detached {
+		return "", errors.New("a detached query needs a detached session")
+	}
+	return format, nil
+}
+
+// detachedQueryLinks links a detached query's span to the command span the
+// request came from, as a cause. The command span ends when its client hands
+// the query off, and the link carries the query's failure to it.
+func detachedQueryLinks(format string, commandSpan trace.SpanContext) trace.SpanStartOption {
+	if format == "" {
+		return trace.WithLinks()
+	}
+	return trace.WithLinks(trace.Link{
+		SpanContext: commandSpan,
+		Attributes: []attribute.KeyValue{
+			attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause),
+		},
+	})
+}
+
+// serveDetachedQuery runs a query on its own and replies at once, so the work
+// continues after its client leaves. The work holds a clone of the request's
+// client scope, which keeps the client's runtime, and stops with the session:
+// teardown cancels it and waits for it. When the work ends, it ends span,
+// failed if the query failed, and writes the result in format on the span the
+// request came from, where the CLI prints a command's output.
+func (sess *daggerSession) serveDetachedQuery(
+	w http.ResponseWriter,
+	r *http.Request,
+	gqlSrv http.Handler,
+	format string,
+	span trace.Span,
+	commandSpan trace.SpanContext,
+	done func(),
+) error {
+	// The server closes the request body once the handler returns.
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return gqlErr(fmt.Errorf("read detached query: %w", err), http.StatusBadRequest)
+	}
+	var params struct{ Query string }
+	if err := json.Unmarshal(body, &params); err != nil {
+		return gqlErr(fmt.Errorf("decode detached query: %w", err), http.StatusBadRequest)
+	}
+	ctx, lease, err := engine.DetachClientScope(r.Context(), engine.ClientLeaseRequest, "detached query")
+	if err != nil {
+		return gqlErr(fmt.Errorf("detach query: %w", err), http.StatusInternalServerError)
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	ctx = sess.withClosingCancel(ctx)
+	req := r.Clone(ctx)
+	req.Body = io.NopCloser(bytes.NewReader(body))
+
+	go func() {
+		defer done()
+		defer lease.Release()
+		defer cancel(errors.New("detached query done"))
+
+		res := &detachedResponse{header: http.Header{}}
+		gqlSrv.ServeHTTP(res, req)
+		var resp struct {
+			Data   any
+			Errors []struct{ Message string }
+		}
+		err := json.Unmarshal(res.body.Bytes(), &resp)
+		for _, gqlErr := range resp.Errors {
+			err = errors.Join(err, errors.New(gqlErr.Message))
+		}
+		if resp.Data != nil && commandSpan.IsValid() {
+			stdio := telemetry.SpanStdio(trace.ContextWithSpanContext(ctx, commandSpan), InstrumentationLibrary)
+			if writeErr := callresult.WriteSelected(stdio.Stdout, format, params.Query, resp.Data); writeErr != nil {
+				err = errors.Join(err, fmt.Errorf("write result: %w", writeErr))
+			}
+			stdio.Close()
+		}
+		if span != nil {
+			telemetry.EndWithCause(span, &err)
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	_, err = w.Write([]byte(`{"data":null}`))
+	return err
+}
+
+// detachedResponse records the response of a detached query.
+type detachedResponse struct {
+	header http.Header
+	body   bytes.Buffer
+}
+
+func (r *detachedResponse) Header() http.Header         { return r.header }
+func (r *detachedResponse) Write(p []byte) (int, error) { return r.body.Write(p) }
+func (r *detachedResponse) WriteHeader(int)             {}
 
 func (client *clientRuntime) claimSingleQueryRequest() error {
 	if client.clientMetadata == nil || !client.clientMetadata.SingleQuery {

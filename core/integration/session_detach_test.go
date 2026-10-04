@@ -29,6 +29,7 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 )
@@ -470,4 +471,10 @@ func (DetachedSessionSuite) TestJoinExistingSessionOnly(ctx context.Context, t *
 	mgmt := connectEngineClient(ctx, t, client.Params{}).Dagger()
 	_, ok := findSession(listSessions(ctx, t, mgmt), sessionID)
 	require.False(t, ok)
+}
+
+func (DetachedSessionSuite) TestDetachedQueryNeedsDetachedSession(ctx context.Context, t *testctx.T) {
+	c := connectEngineClient(ctx, t, client.Params{})
+	_, err := c.Dagger().DefaultPlatform(engine.ContextWithDetachedQuery(ctx, "plain"))
+	require.ErrorContains(t, err, "a detached query needs a detached session")
 }

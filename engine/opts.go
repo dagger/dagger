@@ -44,6 +44,13 @@ const (
 	// observer re-reading ever-growing state emits volume quadratic in that
 	// state's size, bloating the engine-side telemetry stores.
 	SuppressTelemetryHeader = "X-Dagger-Suppress-Telemetry"
+
+	// DetachQueryHeader makes the engine run a single /query request on its
+	// own and reply at once, so the work continues after the client leaves.
+	// Its value is the format the engine writes the result in, on the span
+	// the request came from: "plain", "json" or "id" (see
+	// internal/callresult). Only in a detached session.
+	DetachQueryHeader = "X-Dagger-Detach-Query"
 )
 
 // ExtraModule specifies a module to load at connect time in addition to
@@ -234,6 +241,21 @@ func ContextWithTelemetrySuppression(ctx context.Context) context.Context {
 func TelemetrySuppressedFromContext(ctx context.Context) bool {
 	val, _ := ctx.Value(suppressTelemetryCtxKey{}).(bool)
 	return val
+}
+
+type detachQueryCtxKey struct{}
+
+// ContextWithDetachedQuery marks the context so that HTTP requests made with
+// it carry DetachQueryHeader with the given result format.
+func ContextWithDetachedQuery(ctx context.Context, format string) context.Context {
+	return context.WithValue(ctx, detachQueryCtxKey{}, format)
+}
+
+// DetachedQueryFromContext returns the result format of a context marked
+// with ContextWithDetachedQuery, or "".
+func DetachedQueryFromContext(ctx context.Context) string {
+	format, _ := ctx.Value(detachQueryCtxKey{}).(string)
+	return format
 }
 
 type clientMetadataCtxKey struct{}
