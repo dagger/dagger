@@ -3,7 +3,6 @@ package daggercmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,19 +12,17 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/internal/callresult"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/querybuilder"
@@ -802,7 +799,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// just want to return the object's name, without making an API request.
 		if q == nil {
 			if fn.ReturnType.Name() == "Query" {
-				return printEncodedID(o, "")
+				return callresult.EncodedID(o, "")
 			}
 			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e, autoApply)
 		}
@@ -924,7 +921,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 
 	// Command chain ended in an object, so add the _type field.
 	if returnType.AsFunctionProvider() != nil {
-		return printID(o, response, returnType)
+		return callresult.ID(o, response)
 	}
 
 	buf := new(bytes.Buffer)
@@ -1243,82 +1240,16 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	return err
 }
 
-func printID(w io.Writer, response any, typeDef *modTypeDef) error {
-	switch {
-	case typeDef.AsList != nil:
-		for _, v := range response.([]any) {
-			fmt.Fprint(w, "- ")
-			if err := printID(w, v, typeDef.AsList.ElementTypeDef); err != nil {
-				return err
-			}
-		}
-		return nil
-	case typeDef.AsObject != nil:
-		switch v := response.(type) {
-		case nil:
-			// A nullable object field that resolved to null. "null" is both valid
-			// JSON and unambiguous in plain output.
-			_, err := fmt.Fprintln(w, "null")
-			return err
-		case string:
-			return printEncodedID(w, v)
-		case map[string]any:
-			id, ok := v["id"]
-			if !ok {
-				return fmt.Errorf("printID: no ID found in object: %+v", v)
-			}
-			return printID(w, id, typeDef)
-		default:
-			return fmt.Errorf("printID: unexpected type for object: %T", v)
-		}
-	default:
-		return fmt.Errorf("printID: unexpected type: %s", typeDef.String())
-	}
-}
-
-func printEncodedID(w io.Writer, encodedID string) error {
-	if encodedID == "" {
-		// special case: return value was the root object (Query itself)
-		fmt.Fprintln(w, "Query")
-		return nil
-	}
-	var id call.ID
-	if err := id.Decode(encodedID); err != nil {
-		return fmt.Errorf("failed to decode ID: %w", err)
-	}
-	dig, err := idDigest(encodedID)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(w, "%s@%s\n", id.Type().ToAST().Name(), dig)
-	return err
-}
-
-func idDigest(encodedID string) (digest.Digest, error) {
-	var id call.ID
-	if err := id.Decode(encodedID); err != nil {
-		return "", fmt.Errorf("failed to decode ID: %w", err)
-	}
-	if id.IsHandle() {
-		return hashutil.HashStrings(encodedID), nil
-	}
-	return id.Digest(), nil
-}
-
 func printResponse(w io.Writer, response any, typeDef *modTypeDef) error {
 	if jsonOutput {
-		// disable HTML escaping to improve readability
-		encoder := json.NewEncoder(w)
-		encoder.SetEscapeHTML(false)
-		encoder.SetIndent("", "    ")
-		return encoder.Encode(response)
+		return callresult.JSON(w, response)
 	}
 
 	if typeDef != nil && typeDef.AsFunctionProvider() != nil {
-		return printID(w, response, typeDef)
+		return callresult.ID(w, response)
 	}
 
-	return printPlainResult(w, response)
+	return callresult.Plain(w, response)
 }
 
 // writeOutputFile writes the buffer to a file, creating the parent directories
@@ -1328,31 +1259,4 @@ func writeOutputFile(path string, buf *bytes.Buffer) error {
 		return err
 	}
 	return os.WriteFile(path, buf.Bytes(), 0o644)
-}
-
-func printPlainResult(w io.Writer, r any) error {
-	switch t := r.(type) {
-	case []any:
-		for _, v := range t {
-			if err := printPlainResult(w, v); err != nil {
-				return err
-			}
-			fmt.Fprintln(w)
-		}
-		return nil
-	case map[string]any:
-		// NB: we're only interested in values because this is where we unwrap
-		// things like {"container":{"from":{"withExec":{"stdout":"foo"}}}}.
-		for _, v := range t {
-			if err := printPlainResult(w, v); err != nil {
-				return err
-			}
-		}
-		return nil
-	case string:
-		fmt.Fprint(w, t)
-	default:
-		fmt.Fprintf(w, "%+v", t)
-	}
-	return nil
 }
