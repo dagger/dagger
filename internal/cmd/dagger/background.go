@@ -150,9 +150,13 @@ func finishBackground(err error, code int) {
 // runDetached starts the current command in the background and reports what
 // it says once it has started.
 func runDetached(out io.Writer) error {
+	// Remove the --detach this command consumed. It comes before any
+	// function name, so it is the first one.
 	var args []string
+	consumed := false
 	for _, arg := range os.Args[1:] {
-		if arg == "--detach" || arg == "--detach=true" {
+		if !consumed && (arg == "--detach" || arg == "--detach=true") {
+			consumed = true
 			continue
 		}
 		args = append(args, arg)
