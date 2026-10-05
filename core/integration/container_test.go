@@ -393,11 +393,11 @@ func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testc
 		require.NoError(t, err)
 		require.Equal(t, "goodbye\n", stderr)
 
-		_, err = exec.Stdout(ctx)
+		stdout, err = exec.Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello\n", stdout)
 
-		_, err = exec.Stderr(ctx)
+		stderr, err = exec.Stderr(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "goodbye\n", stderr)
 	})
@@ -418,14 +418,85 @@ func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testc
 		require.NoError(t, err)
 		require.Equal(t, "goodbye\n", stderr)
 
-		_, err = exec.Stdout(ctx)
+		stdout, err = exec.Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello\n", stdout)
 
-		_, err = exec.Stderr(ctx)
+		stderr, err = exec.Stderr(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "goodbye\n", stderr)
 	})
+}
+
+// TestExecRedirectNotLogged: a stream redirected to a file goes only to that
+// file, not to the exec's logs, while the other stream is still logged.
+// Container.stdout/stderr keep returning the redirected output.
+func (ContainerSuite) TestExecRedirectNotLogged(ctx context.Context, t *testctx.T) {
+	// The markers are upper-cased by the exec so they only ever appear in its
+	// output, never in its args.
+	cacheBuster := identity.NewID()
+	execs := func(c *dagger.Client) (redirectOut, redirectErr *dagger.Container) {
+		base := c.Container().From(alpineImage).
+			WithEnvVariable("CACHEBUST", cacheBuster)
+		redirectOut = base.WithExec([]string{"sh", "-c",
+			"echo out-redirected | tr a-z A-Z; echo err-logged | tr a-z A-Z >&2",
+		}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "/out",
+		})
+		redirectErr = base.WithExec([]string{"sh", "-c",
+			"echo out-logged | tr a-z A-Z; echo err-redirected | tr a-z A-Z >&2",
+		}, dagger.ContainerWithExecOpts{
+			RedirectStderr: "/err",
+		})
+		return redirectOut, redirectErr
+	}
+
+	c, sink := connectWithTrace(ctx, t)
+	redirectOut, redirectErr := execs(c)
+
+	// Only sync here: reading the output back (File.contents, Container.stdout)
+	// would put it in the logs as call results.
+	_, err := redirectOut.Sync(ctx)
+	require.NoError(t, err)
+	_, err = redirectErr.Sync(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, c.Close()) // close + flush logs
+
+	_, logReqs := sink.capture()
+	var logs strings.Builder
+	for _, req := range logReqs {
+		for _, rl := range req.GetResourceLogs() {
+			for _, sl := range rl.GetScopeLogs() {
+				for _, rec := range sl.GetLogRecords() {
+					logs.WriteString(rec.GetBody().GetStringValue())
+					logs.Write(rec.GetBody().GetBytesValue())
+				}
+			}
+		}
+	}
+	require.Contains(t, logs.String(), "ERR-LOGGED")
+	require.Contains(t, logs.String(), "OUT-LOGGED")
+	require.NotContains(t, logs.String(), "OUT-REDIRECTED")
+	require.NotContains(t, logs.String(), "ERR-REDIRECTED")
+
+	// The redirected output still lands in the file and in Container.stdout
+	// and stderr. Read it back from a separate session.
+	redirectOut, redirectErr = execs(connect(ctx, t))
+
+	out, err := redirectOut.File("/out").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "OUT-REDIRECTED\n", out)
+	out, err = redirectOut.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "OUT-REDIRECTED\n", out)
+
+	errOut, err := redirectErr.File("/err").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ERR-REDIRECTED\n", errOut)
+	errOut, err = redirectErr.Stderr(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ERR-REDIRECTED\n", errOut)
 }
 
 func (ContainerSuite) TestExecWithWorkdir(ctx context.Context, t *testctx.T) {

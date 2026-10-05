@@ -1,0 +1,13 @@
+kind: Breaking
+body: |
+  `Container.withExec` no longer logs a stream that is redirected to a file with
+  `redirectStdout` or `redirectStderr`.
+
+  Before, the redirected output was also shown in the exec's logs (the TUI,
+  traces, and LLM tool results). Now it is written only to the file. The stream
+  that is not redirected is still logged, and `Container.stdout` and
+  `Container.stderr` still return the redirected output.
+time: 2026-10-05T20:40:00.000000000+00:00
+custom:
+    Author: vito
+    PR: "TBD"
