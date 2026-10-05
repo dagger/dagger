@@ -103,6 +103,11 @@ func (d *Dictionary) Parse(name string) (Identifier, error) {
 	// With only one case of letters (HTTP_CLIENT, http_client), case carries
 	// no information; treating capitals as acronyms would make CLIENT one.
 	cased := hasUpperLetter && hasLowerLetter
+	// All-caps input still has no boundaries between adjacent acronyms
+	// (JSONAPI), so its chunks may split where dictionary entries cover them
+	// completely, as runs of capitals do in cased input. Lowercase input never
+	// splits: too many words happen to be spelled as runs of entries.
+	allCaps := hasUpperLetter && !hasLowerLetter
 
 	var words []Word
 	for _, chunk := range strings.FieldsFunc(name, func(r rune) bool {
@@ -114,7 +119,7 @@ func (d *Dictionary) Parse(name string) (Identifier, error) {
 		} else {
 			pieces = []string{strings.ToLower(chunk)}
 		}
-		words = append(words, d.segment(pieces)...)
+		words = append(words, d.segment(pieces, allCaps)...)
 	}
 	return Identifier{Name: name, Words: glueDigits(words)}, nil
 }
@@ -179,7 +184,11 @@ type cut struct {
 type pieceInfo struct {
 	text       string
 	start, end int // cut range
-	caps       bool
+	// caps marks a caps piece, whose heuristic words are acronyms.
+	caps bool
+	// cover marks a piece the dictionary may look inside, if its entries
+	// cover the whole piece: a caps piece, or a chunk of all-caps input.
+	cover bool
 }
 
 // score ranks a division of a chunk into words; lower is better.
@@ -208,11 +217,13 @@ func (s score) less(o score) bool {
 }
 
 // segment chooses the best division of one chunk's pieces into words.
-func (d *Dictionary) segment(pieces []string) []Word {
+// allCaps reports that the chunk came from all-caps input, lowercased.
+func (d *Dictionary) segment(pieces []string, allCaps bool) []Word {
 	var cuts []cut
 	infos := make([]pieceInfo, len(pieces))
 	for i, p := range pieces {
-		infos[i] = pieceInfo{text: p, start: len(cuts), caps: isCapsPiece(p)}
+		caps := isCapsPiece(p)
+		infos[i] = pieceInfo{text: p, start: len(cuts), caps: caps, cover: caps || allCaps}
 		start := 0
 		for k := 1; k <= len(p); k++ {
 			if k == len(p) || isDigit(p[k]) != isDigit(p[k-1]) {
@@ -264,7 +275,7 @@ func (d *Dictionary) segment(pieces []string) []Word {
 
 		// A run of capitals has no internal boundaries, so it is the one
 		// place the dictionary looks inside a cut: HTTPAPI is HTTP + API.
-		if info.caps && i == info.start {
+		if info.cover && i == info.start {
 			if words, sc, ok := d.coverCaps(info.text); ok {
 				relax(i, info.end, sc, words)
 			}
@@ -290,7 +301,8 @@ func (d *Dictionary) segment(pieces []string) []Word {
 	return out
 }
 
-// coverCaps writes a whole caps piece as a sequence of dictionary entries and
+// coverCaps writes a whole run of capitals (a caps piece, or a lowercased
+// chunk of all-caps input) as a sequence of dictionary entries and
 // digit runs, with the fewest entries, then the fewest plurals. It fails if
 // any letter is left over (HTTPX).
 func (d *Dictionary) coverCaps(p string) ([]Word, score, bool) {

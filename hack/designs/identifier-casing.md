@@ -153,6 +153,13 @@ it is **caseless**: case carries no information, so every chunk is lowercased
 and taken as one piece in step 3. Without this rule, `HTTP_CLIENT` would turn
 `CLIENT` into an acronym.
 
+All-caps input still says one thing: each chunk is a run of capitals, with no
+boundaries between adjacent acronyms (`JSONAPI`, `HTMLURL`). So when the input
+is all caps, every chunk is also eligible for the full dictionary cover that
+caps pieces get in step 4: `JSONAPI` → `JSON`·`API`, but `HTTP_CLIENT` stays
+`HTTP`·`client` and `HTTPX_CLIENT` stays `httpx`·`client`, because `CLIENT` and
+`HTTPX` can't be covered completely. All-lowercase input never splits.
+
 ### 3. Pieces and digit cuts
 
 In cased mode, each chunk is split into **pieces** at case boundaries. There is
@@ -186,12 +193,13 @@ Each candidate word is one of:
    (case-insensitively), or the spelling plus `s`.
    - `I`+`Pv`+`6` → `IPv6`; `Git`+`Hub` → `GitHub`; `3`+`D` → `3D`; `e`+`2`+`e`
      → `E2E`; `Ids` → `ID`+`s`.
-2. **Caps piece cover:** a whole caps piece written as a sequence of dictionary
-   entries and digit runs. `HTTPAPI` → `HTTP`+`API`; `HTTP2` → `HTTP`+`2`;
-   `APIs` → `API`+`s` (only the last entry can take the piece's plural `s`). This
-   is the only place the dictionary looks *inside* a segment, because a run of
-   capitals has no internal boundary information. If the cover isn't complete
-   (`HTTPX`), this candidate doesn't apply.
+2. **Caps piece cover:** a whole caps piece, or a whole chunk of all-caps input
+   (step 2), written as a sequence of dictionary entries and digit runs.
+   `HTTPAPI` → `HTTP`+`API`; `HTTP2` → `HTTP`+`2`; `APIs` → `API`+`s` (only
+   the last entry can take the piece's plural `s`). This is the only place the
+   dictionary looks *inside* a segment, because a run of capitals has no
+   internal boundary information. If the cover isn't complete (`HTTPX`), this
+   candidate doesn't apply.
 3. **Heuristic word:** consecutive cut segments within one piece, as a single
    word.
 
@@ -206,8 +214,9 @@ The chosen division is the one that is best by, in order:
 **Why matches must line up with boundaries.** Dictionary matching only
 compares whole cut segments, never arbitrary substrings. That's what keeps
 `Capital` from containing `API` and `Identity` from containing `ID`. Lowercase
-segments are never split internally. The only place inside a word where a
-dictionary entry can apply is a letter/digit cut (`get3d` → `get` + `3D`).
+segments are never split internally. The only places inside a word where a
+dictionary entry can apply are a letter/digit cut (`get3d` → `get` + `3D`) and
+a run of capitals that entries cover completely.
 
 ### 5. Digit gluing
 
@@ -304,7 +313,7 @@ covers `HTTP2`, `SHA` covers `SHA256`.
   CSS DNS EOF GUID HTML HTTP HTTPS ID IP JSON LHS QPS RAM RHS RPC SLA SMTP SQL
   SSH TCP TLS TTL UDP UI UID UUID URI URL UTF8 VM XML XMPP XSRF XSS`
 - The Go SDK's Dagger additions: `FS SDK LLM`
-- Acronyms found in the core schema: `GPU VCS SHA MCP OCI`
+- Acronyms found in the core schema: `GPU VCS SHA MCP OCI SSHFS`
 - Common in modules: `E2E CLI TUI IO PR EC2 MD5`
 - Terms: `GitHub GitLab OAuth IPv4 IPv6 iOS macOS gRPC GraphQL 3D 2D`. Their
   `capitalized` forms are `Oauth Ipv4 Ipv6 Ios MacOS Grpc`; the brands
@@ -564,12 +573,13 @@ the `engine/naming` tests.
    `withFinalTypeName` unnecessary, and why every core type name passes
    through unchanged.
 
-One exception applies to all three: a name made only of acronyms and terms
-formats in `PASCAL`/`UPPERCASE` with no lowercase letter (`htmlURL` →
-`HTMLURL`). That output parses caseless, and lowercase is never split, so it
-comes back as one word (`htmlurl`, see [Known Limitations](#known-limitations)).
-The only such core name is the `htmlURL` field, which the schema uses in
-`CAMEL`, where it round-trips.
+One caveat applies to the last two: a lowercase word is never split, but the
+same word in all caps is, wherever dictionary entries cover it completely. So
+an ordinary word spelled like a run of entries changes under `SCREAMING_SNAKE`
+(without the `SSHFS` entry, `sshfsVolume` → `SSHFS_VOLUME` → `SSH_FS_VOLUME`).
+Such a word is an acronym the dictionary doesn't know, and the remedy is to add
+it; `SSHFS` is in the initial dictionary for exactly this reason, and the core
+schema has no other case.
 
 ## Known Limitations
 
@@ -578,8 +588,8 @@ The only such core name is the `htmlURL` field, which the schema uses in
 | Unknown acronym through a lowercase form | `httpx_client` → `HttpxClient` | add it to the dictionary |
 | Unknown adjacent acronyms | `HTTPXAPIClient` → `HTTPXAPI` · `client` | add the unknown one |
 | Unknown mixed-case brand | `PostgreSQL` (not an initial entry) → `postgre_sql` | add the term |
-| Adjacent acronyms in all-caps input without separators | `E2EAPI` → `e2eapi` (caseless; lowercase is never split) | write `E2E_API` |
-| A name made only of acronyms, in `PASCAL`/`UPPERCASE` | `htmlURL` → `HTMLURL` → `htmlurl` | format it in another casing, or with `CAPITALIZED` (`HtmlUrl`) |
+| A term followed by an acronym in one run of capitals | `gRPCAPI` → `g` · `RPC` · `API`; `iOSSDK` → `i` · `OSSDK` | write `gRPC_API`, or add the combination |
+| An unknown acronym spelled like a run of entries, in lowercase | `sshfs` stays a word, but `SSHFS` splits into `SSH` · `FS` | add the acronym (`SSHFS` is an initial entry) |
 | Dictionary overrides author casing | `Sha256Sum` → `SHA256Sum`; `HttpClient` → `HTTPClient` | intended |
 | A dictionary entry splits a lowercase word at a digit | `md5sum` → `md5_sum` / `MD5Sum` (because `MD5` is an entry) | intended; `base64`, `int32` stay whole |
 | Digit-led words not in the dictionary | `Get4KStream` → `get4_k_stream` | add the term (`4K`) |
@@ -630,7 +640,10 @@ package, plus any SDK that keeps a local copy for offline use) must pass.
 | `Identity` | identity | `Identity` | `identity` | `identity` | `Identity` |
 | `HTTPXClient` | ^HTTPX · client | `HTTPXClient` | `httpxClient` | `httpx_client` | `HttpxClient` |
 | `httpx_client` | httpx · client | `HttpxClient` | `httpxClient` | `httpx_client` | `HttpxClient` |
-| `E2EAPI` | e2eapi | `E2eapi` | `e2eapi` | `e2eapi` | `E2eapi` |
+| `E2EAPI` | ^E2E · ^API | `E2EAPI` | `e2eAPI` | `e2e_api` | `E2eApi` |
+| `JSONAPI` | ^JSON · ^API | `JSONAPI` | `jsonAPI` | `json_api` | `JsonApi` |
+| `HTMLURL` | ^HTML · ^URL | `HTMLURL` | `htmlURL` | `html_url` | `HtmlUrl` |
+| `HTTPX_CLIENT` | httpx · client | `HttpxClient` | `httpxClient` | `httpx_client` | `HttpxClient` |
 | `Café` | error: non-ASCII | | | | |
 
 ## Open Questions
@@ -648,8 +661,11 @@ package, plus any SDK that keeps a local copy for offline use) must pass.
    implementation, or should the engine ship formatted names in the
    introspection JSON it already hands to codegen?
 4. **Splitting all-caps input** (`E2EAPI`) by full dictionary cover, as for
-   caps pieces. Rejected for now: the same rule on lowercase words risks
-   false positives, and all-caps input almost always has separators.
+   caps pieces. Resolved: each chunk of all-caps input splits only if
+   dictionary entries (and digit runs) cover it completely; lowercase input
+   never splits, because the same rule on lowercase words risks false
+   positives. Without it, `PASCAL` names made only of acronyms (`JSONAPI`,
+   `HTMLURL`) wouldn't come back unchanged.
 
 ## Implementation Plan
 
