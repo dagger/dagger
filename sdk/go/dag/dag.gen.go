@@ -154,6 +154,14 @@ func File(name string, contents string, opts ...core.FileOpts) *core.File {
 	return core.NewFile(name, contents, opts...)
 }
 
+// Format many names at once, for codegen. Returns them in input order.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func FormatIdentifiers(ctx context.Context, names []string, casing dagger.Casing, opts ...dagger.FormatIdentifiersOpts) ([]string, error) {
+	client := initClient()
+	return client.FormatIdentifiers(ctx, names, casing, opts...)
+}
+
 // Creates a function.
 //
 // Deprecated: use dagger.io/dagger/core.NewFunction instead.
@@ -196,6 +204,16 @@ func ID(ctx context.Context) (core.ID, error) {
 	return core.NewID(ctx)
 }
 
+// Parse a name in any casing into words.
+//
+// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input or input with no letters or digits.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func Identifier(name string) *dagger.Identifier {
+	client := initClient()
+	return client.Identifier(name)
+}
+
 // Initialize a JSON value
 //
 // Deprecated: use dagger.io/dagger/core.NewJSON instead.
@@ -235,6 +253,14 @@ func Module() *core.Module {
 // Deprecated: use dagger.io/dagger/core.NewModuleSource instead.
 func ModuleSource(refString string, opts ...core.ModuleSourceOpts) *core.ModuleSource {
 	return core.NewModuleSource(refString, opts...)
+}
+
+// The acronyms and terms used to parse and format identifiers.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func NamingDictionary(ctx context.Context) ([]dagger.NamingTerm, error) {
+	client := initClient()
+	return client.NamingDictionary(ctx)
 }
 
 // Load any object by its ID.

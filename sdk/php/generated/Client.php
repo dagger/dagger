@@ -511,6 +511,41 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Parse a name in any casing into words.
+     *
+     * Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input or input with no letters or digits.
+     */
+    public function identifier(string $name): Identifier
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('identifier');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Identifier($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Format many names at once, for codegen. Returns them in input order.
+     */
+    public function formatIdentifiers(array $names, Casing $casing, ?AcronymStyle $acronyms = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('formatIdentifiers');
+        $leafQueryBuilder->setArgument('names', $names);
+        $leafQueryBuilder->setArgument('casing', $casing);
+        if (null !== $acronyms) {
+        $leafQueryBuilder->setArgument('acronyms', $acronyms);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'formatIdentifiers');
+    }
+
+    /**
+     * The acronyms and terms used to parse and format identifiers.
+     */
+    public function namingDictionary(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('namingDictionary');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'namingDictionary');
+    }
+
+    /**
      * Load a GraphQL introspection schema for merging.
      */
     public function schema(Json $json): Schema
