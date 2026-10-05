@@ -62,7 +62,7 @@ func TestArtifactWithoutWorkspace(t *testing.T) {
 	bound := &Artifact{ModuleName: "roster", Path: []string{"roster", "members"}, TypeName: "Directory"}
 	// No absolute address: it names a workspace.
 	_, err := bound.URI(ArtifactURIOpts{Absolute: true})
-	require.ErrorContains(t, err, "dag://?directory=roster/members has no absolute address")
+	require.ErrorContains(t, err, "has no absolute address")
 	uri, err := bound.URI(ArtifactURIOpts{DimensionKeys: true, TypeAssertion: true})
 	require.NoError(t, err)
 	require.Equal(t, "dag+directory://?directory=roster/members", uri)

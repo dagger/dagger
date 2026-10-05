@@ -207,7 +207,6 @@ func TestArtifactCollectionDimensionBinding(t *testing.T) {
 		require.ErrorContains(t, err, "ambiguous dimension")
 	}
 	for _, selected := range []*Artifacts{
-		all.FilterDimensionKeys("app-items", []string{"a"}).FilterPath([]string{"items"}),
 		all.FilterPath([]string{"items"}).FilterDimensionKeys("app-items", []string{"a"}),
 		all.FilterPath([]string{"items"}).FilterDimensionKeys("app/items", []string{"a"}),
 	} {

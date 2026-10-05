@@ -299,7 +299,7 @@ func (*artifactsSchema) pathDefinitions(_ context.Context, parent *core.Artifact
 		if err != nil {
 			return nil, err
 		}
-		parent = &core.Artifacts{Entries: items, Scope: parent.Scope}
+		parent = &core.Artifacts{Entries: items}
 	}
 	return parent.PathDefinitions(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion})
 }
@@ -739,12 +739,14 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			continue
 		}
 		seenFailures[failure.Name] = true
-		result.Entries = append(result.Entries, &core.Artifact{
+		entry := &core.Artifact{
 			ModuleName: failure.Name, Path: []string{failure.Name, "load"}, DimensionKeys: []*core.ArtifactDimensionKey{},
 			Directives: []string{"check"}, TypeName: "Check", LoadFailure: &failure, Workspace: parent,
-		})
+		}
+		scope = append(scope, entry)
+		result.Entries = append(result.Entries, entry)
 	}
-	result.Scope = (&core.Artifacts{Entries: slices.Concat(scope, result.Entries)}).DimensionDefinitions()
+	result.Scope = (&core.Artifacts{Entries: scope}).DimensionDefinitions()
 	result.NameEntries()
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	if err := validateArtifactPaths(result.Entries); err != nil {

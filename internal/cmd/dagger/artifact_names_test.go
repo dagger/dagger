@@ -10,11 +10,11 @@ import (
 
 func TestArtifactTypeNames(t *testing.T) {
 	paths := []artifactListPath{
-		{URI: "dag+check://go/modules/test", Dimensions: []string{"go/modules", "type:Check"}},
-		{URI: "dag+check://go/modules/generate/stale", Dimensions: []string{"go/modules", "type:Check"}},
-		{URI: "dag+check://sdk/generate/stale", Dimensions: []string{"type:Check"}},
-		{URI: "dag+container://backend/container", Dimensions: []string{"type:Container"}},
-		{URI: "dag+container://frontend/container", Dimensions: []string{"type:Container"}},
+		{URI: "dag+check://?check=go/modules/test", Dimensions: []string{"go/modules", "type:Check"}},
+		{URI: "dag+check://?check=go/modules/generate/stale", Dimensions: []string{"go/modules", "type:Check"}},
+		{URI: "dag+check://?check=sdk/generate/stale", Dimensions: []string{"type:Check"}},
+		{URI: "dag+container://?container=backend/container", Dimensions: []string{"type:Container"}},
+		{URI: "dag+container://?container=frontend/container", Dimensions: []string{"type:Container"}},
 	}
 	index, err := newArtifactNameIndex(paths)
 	require.NoError(t, err)
@@ -29,7 +29,7 @@ func TestArtifactTypeNames(t *testing.T) {
 		require.Equal(t, []string{"go/modules/generate/stale"}, index.matches("type:Check", "stale", filters))
 	}
 	require.Equal(t, "backend/container", index.short("type:Container", "backend/container", nil))
-	paths = append(paths, artifactListPath{URI: "dag+check://other/go/modules/test", Dimensions: []string{"go/modules", "type:Check"}})
+	paths = append(paths, artifactListPath{URI: "dag+check://?check=other/go/modules/test", Dimensions: []string{"go/modules", "type:Check"}})
 	index, err = newArtifactNameIndex(paths)
 	require.NoError(t, err)
 	// Even an empty sibling with the same dimensions prevents a short name.
@@ -39,8 +39,8 @@ func TestArtifactTypeNames(t *testing.T) {
 
 func TestArtifactModuleNames(t *testing.T) {
 	paths := []artifactListPath{
-		{URI: "dag+check://test", ModuleName: "go", Dimensions: []string{"module", "type:Check"}},
-		{URI: "dag+check://playwright/test", ModuleName: "playwright", Dimensions: []string{"module", "type:Check"}},
+		{URI: "dag+check://?check=test", ModuleName: "go", Dimensions: []string{"module", "type:Check"}},
+		{URI: "dag+check://?check=playwright/test", ModuleName: "playwright", Dimensions: []string{"module", "type:Check"}},
 	}
 	index, err := newArtifactNameIndex(paths)
 	require.NoError(t, err)
@@ -65,13 +65,13 @@ func TestArtifactGeneratorCheckNames(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			paths := []artifactListPath{
-				{URI: "dag+check://" + prefix + "/docs/stale", ModuleName: "tools", Dimensions: dimensions},
-				{URI: "dag+check://" + prefix + "/clients/stale", ModuleName: "tools", Dimensions: dimensions},
-				{URI: "dag+check://other/docs/stale", ModuleName: "other", Dimensions: dimensions},
+				{URI: "dag+check://?check=" + prefix + "/docs/stale", ModuleName: "tools", Dimensions: dimensions},
+				{URI: "dag+check://?check=" + prefix + "/clients/stale", ModuleName: "tools", Dimensions: dimensions},
+				{URI: "dag+check://?check=other/docs/stale", ModuleName: "other", Dimensions: dimensions},
 			}
 			if collection {
 				// Another collection can use the same generator names.
-				paths = append(paths, artifactListPath{URI: "dag+check://tools/other/docs/stale", ModuleName: "tools", Dimensions: []string{"module", "type:Check", "tools/other"}})
+				paths = append(paths, artifactListPath{URI: "dag+check://?check=tools/other/docs/stale", ModuleName: "tools", Dimensions: []string{"module", "type:Check", "tools/other"}})
 			}
 			for range 2 {
 				index, err := newArtifactNameIndex(paths)

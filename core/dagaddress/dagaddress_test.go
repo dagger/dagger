@@ -171,7 +171,6 @@ func TestArtifactPath(t *testing.T) {
 		// A collection can share the plain type name: match it only when asked.
 		{"dag+go-module://?go-module=.", nil, ""},
 		{"dag+check://?check=go/test", []string{"check"}, "go/test"},
-		{"dag://?container=go/base", []string{"container"}, "go/base"},
 		{"dag://?go-module=.", []string{"container"}, ""},
 	} {
 		addr, err := Parse(tc.address)

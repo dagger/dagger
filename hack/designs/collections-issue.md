@@ -270,17 +270,17 @@ The container for one test has this address:
 }
 ```
 
-The Artifacts `uri()` formatter includes the collection dimension keys. It writes the static keys as the path:
+The Artifacts `uri()` formatter prints the type dimension key, then the collection dimension keys. It prints no path:
 
 ```text
-dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect
+dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
 ```
 
 Collection selection inserts `get(key: ...)` calls. `get` and the keys are not path segments. The engine enumerates item objects and their children. It also retains the collection object at its own path, without a key for that collection. Thus `go/modules` is a `GoModules` artifact; adding a `Go.modules` key at the same path selects a `GoModule` artifact. `batch` is an explicit path on the collection object, not a child of each item.
 
 #### Artifact identity
 
-Artifact identity is the set of all dimension keys, including the static keys. The type dimension key is the full path, so the path adds no information. The engine compares the path and the keys together (`artifactIdentity`); the result is the same.
+Artifact identity is the set of all dimension keys, including the static keys. The type dimension key is the full path, so the path adds no information.
 
 Distinct keys remain distinct even if `get` returns the same object. Filters never rewrite addresses or turn a collection artifact into a subset.
 
@@ -351,16 +351,16 @@ TestConnect
 TestQuery
 
 $ dagger list -a go/modules/tests/container --go-module=sdk/go --go-test=TestConnect
-dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect
+dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
 ```
 
-Use the Artifacts flags `--<dimension>=<key>`. They accept exact identifiers, short names, or qualified names, unambiguous on the selected paths. If a short name conflicts with a command flag, help and runnable lists use the qualified name. A DAG link query also accepts dimension names that conflict with flags. Repeat flags for alternatives; do not split values on commas. Use schema metadata to register flags, including for empty collections.
+Use the Artifacts flags `--<dimension>=<key>`. They accept exact identifiers, short names, or qualified names, unambiguous in the workspace. If a short name conflicts with a command flag, help and runnable lists use the qualified name. A DAG link query also accepts dimension names that conflict with flags. Repeat flags for alternatives; do not split values on commas. Use schema metadata to register flags, including for empty collections.
 
 A flag has the same meaning as one query pair, and the two combine. Quote an address that contains `&`:
 
 ```console
 $ dagger list -a 'dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect'
-dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect
+dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
 ```
 
 `Workspace.resolve` accepts the same complete address:
@@ -383,7 +383,7 @@ dagger call go modules get --key=sdk/go tests subset --keys=TestConnect --keys=T
 
 `dagger check` and `dagger generate` use the shared Artifacts selection API. Add dimension filters to their path and directive filters. The dimension names, key text, and filter rules are the same as for `dagger list`.
 
-Resolve dimension names within the selected paths. Then merge keys for the same dimension with OR, and combine different dimensions with AND. An omitted dimension selects all keys. An empty key list matches nothing.
+Resolve dimension names in the workspace. Then merge keys for the same dimension with OR, and combine different dimensions with AND. An omitted dimension selects all keys. An empty key list matches nothing.
 
 For execution, intersect the filters with each collection's keys, then call `subset` with the matching keys. Passing the raw filter to `subset` would fail when a requested test exists in another Go module only.
 
