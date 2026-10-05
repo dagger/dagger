@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/naming"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,6 +43,8 @@ func TestPersistedMetadataFamiliesSurviveRestart(t *testing.T) {
 	emptyChanges, err := NewChangeset(ctx, before, before)
 	require.NoError(t, err)
 	emptyChangesRes := env.attach(t, ctx, cache, srv, "migration-empty-changes", emptyChanges).(dagql.ObjectResult[*Changeset])
+	identifier, err := naming.Parse("prerequisiteSHAs_on_IPv6")
+	require.NoError(t, err)
 
 	type fixture struct {
 		field string
@@ -134,6 +137,16 @@ func TestPersistedMetadataFamiliesSurviveRestart(t *testing.T) {
 		{"terminal-legacy", &TerminalLegacy{}, func(t *testing.T, restored dagql.Typed) { require.Equal(t, &TerminalLegacy{}, restored) }},
 		{"module-config-client", &modules.ModuleConfigClient{Generator: "go", Directory: "./gen"}, func(t *testing.T, restored dagql.Typed) {
 			require.Equal(t, &modules.ModuleConfigClient{Generator: "go", Directory: "./gen"}, restored)
+		}},
+		{"identifier", NewIdentifier(identifier), func(t *testing.T, restored dagql.Typed) {
+			require.Equal(t, NewIdentifier(identifier), restored)
+			require.Equal(t, identifier, restored.(*Identifier).Naming(), "the restored words are the parsed words")
+		}},
+		{"identifier-word", NewIdentifier(identifier).Words[3], func(t *testing.T, restored dagql.Typed) {
+			require.Equal(t, &IdentifierWord{Text: "IPv6", Kind: IdentifierWordKindTerm, Term: &NamingTerm{Spelling: "IPv6", Capitalized: "Ipv6"}}, restored)
+		}},
+		{"naming-term", &NamingTerm{Spelling: "gRPC", Capitalized: "Grpc"}, func(t *testing.T, restored dagql.Typed) {
+			require.Equal(t, &NamingTerm{Spelling: "gRPC", Capitalized: "Grpc"}, restored)
 		}},
 	}
 
