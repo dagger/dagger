@@ -4753,9 +4753,9 @@ type ContainerWithExecOpts struct {
 	Stdin string
 	// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
 	RedirectStdin string
-	// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+	// Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
 	RedirectStdout string
-	// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+	// Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
 	RedirectStderr string
 	// Exit codes this command is allowed to exit with without error
 	//

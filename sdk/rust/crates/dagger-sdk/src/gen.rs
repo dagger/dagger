@@ -3282,13 +3282,13 @@ pub struct ContainerWithExecOpts<'a> {
     /// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    /// Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
     /// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdin: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+    /// Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
     /// Content to write to the command's standard input. Example: "Hello world")

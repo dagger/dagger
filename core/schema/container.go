@@ -660,9 +660,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("redirectStdin").Doc(
 					`Redirect the command's standard input from a file in the container. Example: "./stdin.txt"`),
 				dagql.Arg("redirectStdout").Doc(
-					`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`),
+					`Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"`),
 				dagql.Arg("redirectStderr").Doc(
-					`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
+					`Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
 				disableNestingArg,
 				legacyNestingArg,

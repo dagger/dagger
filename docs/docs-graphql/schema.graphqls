@@ -1866,12 +1866,14 @@ type Container implements Exportable & Node & Syncer {
     redirectStdin: String = ""
 
     """
-    Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+    Redirect the command's standard output to a file in the container. The
+    redirected output is not logged. Example: "./stdout.txt"
     """
     redirectStdout: String = ""
 
     """
-    Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    Redirect the command's standard error to a file in the container. The
+    redirected output is not logged. Example: "./stderr.txt"
     """
     redirectStderr: String = ""
 

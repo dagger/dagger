@@ -1044,12 +1044,12 @@ export type ContainerWithExecOpts = {
   redirectStdin?: string
 
   /**
-   * Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+   * Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
    */
   redirectStdout?: string
 
   /**
-   * Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+   * Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
    */
   redirectStderr?: string
 
@@ -7533,8 +7533,8 @@ export class Container extends BaseClient {
    * @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
    * @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
    * @param opts.redirectStdin Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+   * @param opts.redirectStdout Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
