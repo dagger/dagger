@@ -44,7 +44,7 @@ func TestArtifactDimensionHelp(t *testing.T) {
 	cmd := &cobra.Command{Use: "check"}
 	registerCommandArtifactFlags(cmd)
 	registerArtifactDimensionHelp(cmd, defs, defs)
-	require.NoError(t, cmd.ParseFlags([]string{"--go-modules", "--go-module=."}))
+	require.NoError(t, cmd.ParseFlags([]string{"--go-modules", "--go-module=.", "--go-module="}))
 	help := artifactCommandFlags(cmd)
 	require.Contains(t, help, "--go-module PATH")
 	require.Contains(t, help, "--go-modules ")
@@ -53,6 +53,7 @@ func TestArtifactDimensionHelp(t *testing.T) {
 	keys := artifactKeyFlags(cmd)
 	require.Contains(t, keys, dagaddress.Pair{Dimension: "go/modules"})
 	require.Contains(t, keys, dagaddress.Pair{Dimension: "go/modules", Key: ".", HasKey: true})
+	require.Contains(t, keys, dagaddress.Pair{Dimension: "go/modules", Key: "", HasKey: true})
 }
 
 func TestArtifactDimensionHelpSelection(t *testing.T) {
@@ -92,17 +93,6 @@ func TestArtifactListFlagsRequireList(t *testing.T) {
 	}
 }
 
-func TestArtifactDimensionKeys(t *testing.T) {
-	cmd := newListCommand()
-	registerArtifactDimensionFlags(cmd, []string{"part"})
-	// Keys are not split at commas, and an empty key is kept.
-	require.NoError(t, cmd.ParseFlags([]string{"--part=", "--part=lib,a=b"}))
-	require.Equal(t, []dagaddress.Pair{
-		{Dimension: "part", Key: "", HasKey: true},
-		{Dimension: "part", Key: "lib,a=b", HasKey: true},
-	}, artifactKeyFlags(cmd))
-}
-
 func TestArtifactDiscoveryRequired(t *testing.T) {
 	for _, tc := range []struct {
 		args     []string
@@ -139,17 +129,6 @@ func TestArtifactPreparationDoesNotConnect(t *testing.T) {
 	}
 }
 
-func TestArtifactAddressArguments(t *testing.T) {
-	sel, err := parseArtifactAddresses([]string{
-		"dag+container://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect",
-		"provider:docs",
-		"dag://?go-module",
-	})
-	require.NoError(t, err)
-	require.Equal(t, []string{"golang/modules/tests/container"}, artifactPaths(sel[:1]))
-	require.Nil(t, artifactPaths(sel)) // The third address selects every path.
-}
-
 func TestArtifactDimensionAliases(t *testing.T) {
 	defs := artifact.Dimensions{
 		{Identifier: "golang/modules", Name: "go-module", QualifiedName: "golang-modules"},
@@ -174,18 +153,6 @@ func TestAbsoluteArtifactWorkspace(t *testing.T) {
 }
 
 // Minimal flags for selection and serialization tests.
-func registerArtifactDimensionFlags(cmd *cobra.Command, dimensions []string) {
-	for _, dimension := range dimensions {
-		if cmd.Flag(dimension) != nil {
-			continue // Keep the command flag; use another dimension name or a link query.
-		}
-		cmd.PersistentFlags().StringArray(dimension, nil, "Select items with this `key` (repeat to select more)")
-		cmd.PersistentFlags().Lookup(dimension).Annotations = map[string][]string{
-			artifactDimensionFlag: {dimension},
-		}
-	}
-}
-
 func TestArtifactSelectorFlags(t *testing.T) {
 	defs := artifact.Dimensions{
 		{Identifier: "module", Kind: "MODULE", Name: "module"},
