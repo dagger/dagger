@@ -1815,4 +1815,38 @@ func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
 		// ID decoded directly into the same container, no address lookup.
 		require.Contains(t, out, marker)
 	})
+
+	t.Run("a list mixing addresses and IDs lifts element-wise", func(ctx context.Context, t *testctx.T) {
+		const marker = "address-lift list element"
+		ctrID, err := c.Container().From(alpineImage).
+			WithNewFile("/marker.txt", marker).ID(ctx)
+		require.NoError(t, err)
+		args, err := json.Marshal(map[string]any{
+			// The plain image has no marker, so it prints its OS instead.
+			"cmd":       []string{"sh", "-c", "cat /marker.txt 2>/dev/null || cat /etc/os-release"},
+			"sandboxes": []string{alpineImage, string(ctrID)},
+		})
+		require.NoError(t, err)
+
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
+			WithPrompt("what OS is every sandbox running?").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "execAll",
+					Arguments: dagger.JSON(args)},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-tools $(runner) | with-prompt "what OS is every sandbox running?" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The image ref lifted into the real image, and the ID decoded
+		// directly into the container holding the marker.
+		require.Contains(t, out, "Alpine Linux")
+		require.Contains(t, out, marker)
+	})
 }
