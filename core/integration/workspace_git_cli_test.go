@@ -71,14 +71,22 @@ with open("/stdout", "w+") as stdout, open("/stderr", "w+") as stderr:
         request = urllib.request.Request(url + "/key", data=b"up up enter", method="POST")
         with urllib.request.urlopen(request, timeout=5) as response:
             assert response.status == 200
+        # The primary span ends during console cleanup, after SIGINT. Wait
+        # for the query's result in its live logs instead of its span status.
+        with urllib.request.urlopen(url + "/spans?q=api%20query", timeout=2) as response:
+            spans = response.read().decode()
+        primary = next(line.split()[0] for line in spans.splitlines() if "api query" in line)
+        request = urllib.request.Request(url + "/zoom", data=primary.encode(), method="POST")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert response.status == 200
         while time.monotonic() < deadline:
-            with urllib.request.urlopen(url + "/spans?q=dagger", timeout=2) as response:
-                spans = response.read().decode()
-            if any("  ok " in line and "api query" in line for line in spans.splitlines()):
+            with urllib.request.urlopen(url + "/screen", timeout=5) as response:
+                screen = response.read().decode()
+            if '"message": "nested approval"' in screen:
                 break
             time.sleep(0.1)
         else:
-            raise AssertionError("snapshot query never completed after approval: " + spans)
+            raise AssertionError("snapshot query never completed after approval: " + screen)
         cli.send_signal(signal.SIGINT)  # The console stays open after completion.
         assert cli.wait(timeout=10) == 0
         stdout.seek(0)
