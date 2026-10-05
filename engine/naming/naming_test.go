@@ -48,7 +48,10 @@ var testVectors = []struct {
 	{"Identity", "identity", "Identity", "identity", "identity", "Identity"},
 	{"HTTPXClient", "^HTTPX · client", "HTTPXClient", "httpxClient", "httpx_client", "HttpxClient"},
 	{"httpx_client", "httpx · client", "HttpxClient", "httpxClient", "httpx_client", "HttpxClient"},
-	{"E2EAPI", "e2eapi", "E2eapi", "e2eapi", "e2eapi", "E2eapi"},
+	{"E2EAPI", "^E2E · ^API", "E2EAPI", "e2eAPI", "e2e_api", "E2eApi"},
+	{"JSONAPI", "^JSON · ^API", "JSONAPI", "jsonAPI", "json_api", "JsonApi"},
+	{"HTMLURL", "^HTML · ^URL", "HTMLURL", "htmlURL", "html_url", "HtmlUrl"},
+	{"HTTPX_CLIENT", "httpx · client", "HttpxClient", "httpxClient", "httpx_client", "HttpxClient"},
 }
 
 // unknownAcronyms are test vector inputs with acronyms the dictionary doesn't
@@ -175,9 +178,17 @@ func TestParseDetails(t *testing.T) {
 		{"utf8_string", "^UTF8 · string"},
 		{"runE2EAPITest", "run · ^E2E · ^API · test"},
 		{"Get4KStream", "get4 · k · stream"},
+		// All-caps chunks split only where entries cover them completely.
+		{"HTTPAPIS", "^HTTP · ^API+s"},
+		{"MY_HTTPAPI_CLIENT", "my · ^HTTP · ^API · client"},
+		{"UTF8JSON", "^UTF8 · ^JSON"},
+		{"HTTPXAPI", "httpxapi"},
+		{"httpapi", "httpapi"},
 		// Known limitations.
 		{"HTTPXAPIClient", "^HTTPXAPI · client"},
 		{"PostgreSQL", "postgre · ^SQL"},
+		{"gRPCAPI", "g · ^RPC · ^API"},
+		{"iOSSDK", "i · ^OSSDK"},
 		// Separators are hard boundaries.
 		{"foo.bar-baz qux", "foo · bar · baz · qux"},
 		{"__init__", "init"},
@@ -196,7 +207,6 @@ func TestKnownLimitations(t *testing.T) {
 	}{
 		{"httpx_client", Pascal, "HttpxClient"},
 		{"PostgreSQL", Snake, "postgre_sql"},
-		{"E2EAPI", Snake, "e2eapi"},
 		{"Sha256Sum", Pascal, "SHA256Sum"},
 		{"HttpClient", Pascal, "HTTPClient"},
 		{"md5sum", Snake, "md5_sum"},
@@ -204,10 +214,11 @@ func TestKnownLimitations(t *testing.T) {
 		{"int32", Snake, "int32"},
 		{"Get4KStream", Snake, "get4_k_stream"},
 		{"E2ETest", Kebab, "e2e-test"},
-		// A name made only of acronyms is all caps in PASCAL, which parses
-		// caseless, so its boundaries are lost.
-		{"htmlURL", Pascal, "HTMLURL"},
-		{"HTMLURL", Snake, "htmlurl"},
+		// Lowercase input never splits; all-caps input splits only where
+		// dictionary entries cover a whole chunk.
+		{"e2eapi", Pascal, "E2eapi"},
+		{"HTTPXAPI", Snake, "httpxapi"},
+		{"HTTP_CLIENT", Pascal, "HTTPClient"},
 	} {
 		got, err := Convert(tc.input, tc.casing, Uppercase)
 		if err != nil {
@@ -285,26 +296,22 @@ func TestDictionary(t *testing.T) {
 }
 
 // guaranteeInputs are the names the guarantee tests check: the test vector
-// inputs and every casing of them.
+// inputs and every casing of them except FLAT, which is output-only.
 func guaranteeInputs(t *testing.T) []string {
 	var names []string
 	for _, tc := range testVectors {
 		names = append(names, tc.input)
 		id := mustParse(t, tc.input)
 		for _, c := range Casings {
+			if c == Flat {
+				continue
+			}
 			for _, s := range AcronymStyles {
 				names = append(names, id.Format(c, s))
 			}
 		}
 	}
 	return names
-}
-
-// allCapsRun reports whether formatted is several words run together in
-// capitals, like HTMLURL from htmlURL in PASCAL. All-caps input parses
-// caseless and lowercase is never split, so the guarantees exclude it.
-func allCapsRun(id Identifier, c Casing, formatted string) bool {
-	return (c == Pascal || c == Camel) && len(id.Words) > 1 && !hasLower(formatted)
 }
 
 // Guarantee 1: names the dictionary covers keep their words through every
@@ -319,9 +326,6 @@ func checkRoundTrip(t *testing.T, name string) {
 		}
 		for _, s := range AcronymStyles {
 			formatted := id.Format(c, s)
-			if allCapsRun(id, c, formatted) {
-				continue
-			}
 			if got := describe(mustParse(t, formatted)); got != want {
 				t.Errorf("%q via %s/%s %q: got words %q, want %q", name, c, s, formatted, got, want)
 			}
@@ -337,9 +341,6 @@ func checkIdempotent(t *testing.T, name string) {
 	id := mustParse(t, name)
 	for _, c := range []Casing{Pascal, Camel, Snake, ScreamingSnake} {
 		once := id.Format(c, Uppercase)
-		if allCapsRun(id, c, once) {
-			continue
-		}
 		if twice := mustParse(t, once).Format(c, Uppercase); twice != once {
 			t.Errorf("%q in %s: %q formats again as %q", name, c, once, twice)
 		}
@@ -358,6 +359,19 @@ func TestRoundTrip(t *testing.T) {
 func TestIdempotent(t *testing.T) {
 	for _, name := range guaranteeInputs(t) {
 		checkIdempotent(t, name)
+	}
+}
+
+// Names made only of acronyms and terms are all caps in PASCAL/UPPERCASE, so
+// they rely on all-caps input splitting by dictionary cover.
+func TestAllAcronymNames(t *testing.T) {
+	for _, name := range []string{"htmlURL", "JSONAPI", "HTTPAPI", "GitHubAPI", "IPv6URL", "E2EAPI", "sha256URL", "IDs", "GPUsAPI"} {
+		checkRoundTrip(t, name)
+		checkIdempotent(t, name)
+		id := mustParse(t, name)
+		if pascal := id.Format(Pascal, Uppercase); mustParse(t, pascal).Format(Pascal, Uppercase) != pascal {
+			t.Errorf("canonical PASCAL name %q came back changed", pascal)
+		}
 	}
 }
 

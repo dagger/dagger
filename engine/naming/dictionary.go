@@ -158,6 +158,10 @@ var initialTerms = []Term{
 	{Spelling: "SHA"},
 	{Spelling: "MCP"},
 	{Spelling: "OCI"},
+	// A lowercase word is never split, but all-caps input is: without this
+	// entry, sshfsVolume would be sshfs · volume, and its SCREAMING_SNAKE
+	// form SSHFS_VOLUME would parse as SSH · FS · volume.
+	{Spelling: "SSHFS"},
 
 	// Common in modules.
 	{Spelling: "E2E"},
