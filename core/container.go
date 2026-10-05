@@ -4920,7 +4920,8 @@ func decodePersistedContainerRecipe(
 			Port:      persisted.Port,
 			Protocol:  persisted.Protocol,
 		}, nil
-	case "withDefaultTerminalCmd":
+	// withShell sets the same default terminal command, with batch arguments.
+	case "withDefaultTerminalCmd", "withShell":
 		var persisted persistedContainerWithDefaultTerminalCmdLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container withDefaultTerminalCmd lazy payload: %w", err)
@@ -5452,28 +5453,29 @@ func (container *Container) Build(
 	secrets []dagql.ObjectResult[*Secret],
 	noInit bool,
 	sshSocket dagql.ObjectResult[*Socket],
-) (*Container, error) {
+) (dagql.ObjectResult[*Container], error) {
+	var zero dagql.ObjectResult[*Container]
 	dockerfilePath := dockerfile
 	if dockerfilePath == "" {
 		dockerfilePath = defaultDockerfileName
 	}
 	dagqlCache, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
 	if err := dagqlCache.Evaluate(ctx, dockerfileDir); err != nil {
-		return nil, fmt.Errorf("failed to evaluate Dockerfile directory: %w", err)
+		return zero, fmt.Errorf("failed to evaluate Dockerfile directory: %w", err)
 	}
 	dockerfileRef, err := dockerfileDir.Self().Snapshot.GetOrEval(ctx, dockerfileDir.Result)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Dockerfile directory snapshot: %w", err)
+		return zero, fmt.Errorf("failed to get Dockerfile directory snapshot: %w", err)
 	}
 	if dockerfileRef == nil {
-		return nil, fmt.Errorf("failed to load Dockerfile %q: directory is empty", dockerfilePath)
+		return zero, fmt.Errorf("failed to load Dockerfile %q: directory is empty", dockerfilePath)
 	}
 	dockerfileSelector, err := dockerfileDir.Self().Dir.GetOrEval(ctx, dockerfileDir.Result)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Dockerfile directory selector: %w", err)
+		return zero, fmt.Errorf("failed to get Dockerfile directory selector: %w", err)
 	}
 	var dockerfileBytes []byte
 	err = MountRef(ctx, dockerfileRef, func(root string, _ *mount.Mount) error {
@@ -5488,24 +5490,24 @@ func (container *Container) Build(
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read Dockerfile %q: %w", dockerfilePath, err)
+		return zero, fmt.Errorf("failed to read Dockerfile %q: %w", dockerfilePath, err)
 	}
 	if syntaxRef, _, _, ok := dockerfileparser.DetectSyntax(dockerfileBytes); ok && !isKnownDockerfileSyntaxFrontend(syntaxRef) {
-		return nil, fmt.Errorf("dockerBuild syntax frontend %q is unsupported in hard-cutover path", syntaxRef)
+		return zero, fmt.Errorf("dockerBuild syntax frontend %q is unsupported in hard-cutover path", syntaxRef)
 	}
 	mainContext := llbtodagger.DockerfileMainContextSentinelState()
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
 	rslvr, err := query.RegistryResolver(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get registry resolver: %w", err)
+		return zero, fmt.Errorf("failed to get registry resolver: %w", err)
 	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return zero, fmt.Errorf("failed to get server: %w", err)
 	}
 
 	buildArgMap := make(map[string]string, len(buildArgs))
@@ -5517,18 +5519,18 @@ func (container *Container) Build(
 	for _, secret := range secrets {
 		secretRecipeID, err := secret.RecipeID(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("get dockerBuild secret recipe ID: %w", err)
+			return zero, fmt.Errorf("get dockerBuild secret recipe ID: %w", err)
 		}
 		secretName, err := secret.Self().Name(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("get dockerBuild secret name: %w", err)
+			return zero, fmt.Errorf("get dockerBuild secret name: %w", err)
 		}
 		if secretName == "" {
-			return nil, fmt.Errorf("secret has no name and cannot be referenced from Dockerfile secret id")
+			return zero, fmt.Errorf("secret has no name and cannot be referenced from Dockerfile secret id")
 		}
 		if existing, found := secretIDsByLLBID[secretName]; found {
 			if existing.Digest() != secretRecipeID.Digest() {
-				return nil, fmt.Errorf("multiple secrets provided for dockerBuild secret id %q", secretName)
+				return zero, fmt.Errorf("multiple secrets provided for dockerBuild secret id %q", secretName)
 			}
 			continue
 		}
@@ -5542,7 +5544,7 @@ func (container *Container) Build(
 	if sshSocket.Self() != nil {
 		sshSocketRecipeID, err := sshSocket.RecipeID(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("get dockerBuild ssh socket recipe ID: %w", err)
+			return zero, fmt.Errorf("get dockerBuild ssh socket recipe ID: %w", err)
 		}
 		sshSocketIDsByLLBID[""] = sshSocketRecipeID
 	}
@@ -5567,11 +5569,11 @@ func (container *Container) Build(
 
 	st, img, _, _, err := dockerfile2llb.Dockerfile2LLB(ctx, dockerfileBytes, convertOpt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert Dockerfile to LLB: %w", err)
+		return zero, fmt.Errorf("failed to convert Dockerfile to LLB: %w", err)
 	}
 	def, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal Dockerfile LLB: %w", err)
+		return zero, fmt.Errorf("failed to marshal Dockerfile LLB: %w", err)
 	}
 	containerID, err := llbtodagger.DefinitionToIDWithOptions(def.ToPB(), img, llbtodagger.DefinitionToIDOptions{
 		MainContextDirectoryID: contextDirID,
@@ -5580,19 +5582,37 @@ func (container *Container) Build(
 		NoInit:                 noInit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
+		return zero, fmt.Errorf("failed to convert Dockerfile LLB to Dagger ID: %w", err)
 	}
-	loadedContainerRes, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
+	// Return the converted container itself, so the result keeps its recipe.
+	// The build still runs here, at the call.
+	built, err := dagql.NewID[*Container](containerID).Load(ctx, srv)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load container from converted ID: %w", err)
+		return zero, fmt.Errorf("failed to load container from converted ID: %w", err)
 	}
-	builtContainer := new(Container)
-	if err := materializeContainerStateFromParent(ctx, builtContainer, loadedContainerRes); err != nil {
-		return nil, fmt.Errorf("failed to clone built container state: %w", err)
+	if err := dagqlCache.Evaluate(ctx, built); err != nil {
+		return zero, fmt.Errorf("failed to clone built container state: %w", err)
 	}
-	builtContainer.Secrets = append(builtContainer.Secrets, returnedSecretMounts...)
+	return withDockerBuildSecretMounts(ctx, srv, built, returnedSecretMounts)
+}
 
-	return builtContainer, nil
+// withDockerBuildSecretMounts mounts the build's secrets on its result. Mode 0
+// and no owner keep each mount exactly as the build declares it.
+func withDockerBuildSecretMounts(ctx context.Context, srv *dagql.Server, built dagql.ObjectResult[*Container], mounts []ContainerSecret) (dagql.ObjectResult[*Container], error) {
+	for _, mount := range mounts {
+		secretID, err := mount.Secret.ID()
+		if err != nil {
+			return dagql.ObjectResult[*Container]{}, fmt.Errorf("get dockerBuild secret ID: %w", err)
+		}
+		if err := srv.Select(ctx, built, &built, dagql.Selector{Field: "withMountedSecret", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(mount.MountPath)},
+			{Name: "source", Value: dagql.NewID[*Secret](secretID)},
+			{Name: "mode", Value: dagql.Int(0)},
+		}}); err != nil {
+			return dagql.ObjectResult[*Container]{}, fmt.Errorf("mount dockerBuild secret %q: %w", mount.MountPath, err)
+		}
+	}
+	return built, nil
 }
 
 // mutates container caller must have handled cloning or creating a new child.

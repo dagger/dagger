@@ -469,6 +469,12 @@ func encodePersistedFileLazy(ctx context.Context, enc *dagql.PersistEncodeContex
 	case *FileChownLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedFileLazyKindChown, payload, err
+	case *FileContainerImageLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedFileLazyKindContainerImage, payload, err
+	case *FileChangesetPatchLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedFileLazyKindChangesetPatch, payload, err
 	default:
 		return "", nil, fmt.Errorf("encode persisted file lazy: unsupported lazy type %T", lazy)
 	}
@@ -557,6 +563,10 @@ func decodePersistedFileLazy(ctx context.Context, dec *dagql.PersistDecodeContex
 			return nil, err
 		}
 		return &FileChownLazy{LazyState: NewLazyState(), Parent: parent, Owner: persisted.Owner}, nil
+	case persistedFileLazyKindContainerImage:
+		return decodeFileContainerImageLazy(ctx, dec, payload)
+	case persistedFileLazyKindChangesetPatch:
+		return decodeFileChangesetPatchLazy(ctx, dec, payload)
 	default:
 		return nil, fmt.Errorf("decode persisted file lazy payload: unsupported lazy kind %q", lazyKind)
 	}

@@ -347,7 +347,8 @@ func TestEagerContainerMountMetadataResolvers(t *testing.T) {
 
 		child, err := schema.withMountedTemp(ctx, parent, containerWithMountedTempArgs{Path: "/tmp"})
 		require.NoError(t, err)
-		require.Nil(t, child.Lazy)
+		// An evaluated parent still saves the recipe, so another engine can rebuild it.
+		require.IsType(t, &core.ContainerWithMountedTempLazy{}, child.Lazy)
 		require.Len(t, child.Mounts, 1)
 		require.Equal(t, "/tmp", child.Mounts[0].Target)
 		require.NotNil(t, child.Mounts[0].TmpfsSource)
@@ -374,7 +375,7 @@ func TestEagerContainerMountMetadataResolvers(t *testing.T) {
 			ReadOnly: true,
 		})
 		require.NoError(t, err)
-		require.Nil(t, child.Lazy)
+		require.IsType(t, &core.ContainerWithMountedVolumeLazy{}, child.Lazy)
 		require.Len(t, child.Mounts, 1)
 		require.Equal(t, "/volume", child.Mounts[0].Target)
 		require.True(t, child.Mounts[0].Readonly)
@@ -402,7 +403,7 @@ func TestEagerContainerMountMetadataResolvers(t *testing.T) {
 			Mode:   0o400,
 		})
 		require.NoError(t, err)
-		require.Nil(t, child.Lazy)
+		require.IsType(t, &core.ContainerWithMountedSecretLazy{}, child.Lazy)
 		require.Len(t, child.Secrets, 1)
 		require.Equal(t, "/secret", child.Secrets[0].MountPath)
 		require.Nil(t, child.Secrets[0].Owner)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -590,4 +591,100 @@ func workspacePullPatchID(ctx context.Context, dir, sha string) (string, error) 
 		return "", nil
 	}
 	return fields[0], nil
+}
+
+// ComputeWorkspacePull integrates source's commits into parent's Git checkout
+// with parent's uncommitted changes on top. Both workspaces must be frozen.
+// With apply unset, it only reports the commits it would pick.
+func ComputeWorkspacePull(ctx context.Context, parent, source dagql.ObjectResult[*Workspace], opts WorkspacePullOpts, apply bool) (*Directory, []WorkspacePullPick, dagql.ObjectResult[*GitRef], error) {
+	ctx, cancel := context.WithTimeout(ctx, WorkspacePullTimeout)
+	defer cancel()
+	var head dagql.ObjectResult[*GitRef]
+	if !parent.Self().IsValueWorkspace() || !source.Self().IsValueWorkspace() {
+		return nil, nil, head, fmt.Errorf("pulling requires frozen workspaces; call snapshot first")
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, nil, head, err
+	}
+	var base dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, parent, &base, dagql.Selector{Field: "git"}, dagql.Selector{Field: "__checkout"}); err != nil {
+		return nil, nil, head, err
+	}
+	if err := srv.Select(ctx, source, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
+		return nil, nil, head, err
+	}
+	var changes dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, parent, &changes, dagql.Selector{Field: "git"}, dagql.Selector{Field: "uncommitted"}); err != nil {
+		return nil, nil, head, err
+	}
+	dir, picks, err := WorkspacePullCommits(ctx, base, head.Self(), changes.Self(), opts, apply)
+	return dir, picks, head, err
+}
+
+const persistedDirectoryLazyKindWorkspacePull = "workspace.pull"
+
+// DirectoryWorkspacePullLazy produces Workspace.__pullDirectory: parent's
+// checkout with source's selected commits applied. Commit identity and dates
+// come from the source commits and Opts, so a rerun produces the same history.
+type DirectoryWorkspacePullLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Workspace]
+	Source dagql.ObjectResult[*Workspace]
+	Opts   WorkspacePullOpts
+}
+
+type persistedDirectoryWorkspacePullLazy struct {
+	ParentResultID uint64            `json:"parentResultID"`
+	SourceResultID uint64            `json:"sourceResultID"`
+	Opts           WorkspacePullOpts `json:"opts"`
+}
+
+func (lazy *DirectoryWorkspacePullLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	return evaluateDirectoryOutput(ctx, &lazy.LazyState, "Workspace.__pullDirectory", dir, func(ctx context.Context) (*Directory, error) {
+		out, _, _, err := ComputeWorkspacePull(ctx, lazy.Parent, lazy.Source, lazy.Opts, true)
+		return out, err
+	})
+}
+
+func (lazy *DirectoryWorkspacePullLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachLazyInput(attach, lazy.Parent, "DirectoryWorkspacePullLazy.Parent")
+	if err != nil {
+		return nil, err
+	}
+	source, err := attachLazyInput(attach, lazy.Source, "DirectoryWorkspacePullLazy.Source")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Source = source
+	return []dagql.AnyResult{parent, source}, nil
+}
+
+func (lazy *DirectoryWorkspacePullLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "workspace pull parent")
+	if err != nil {
+		return nil, err
+	}
+	sourceID, err := encodePersistedObjectRef(enc, lazy.Source, "workspace pull source")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedDirectoryWorkspacePullLazy{ParentResultID: parentID, SourceResultID: sourceID, Opts: lazy.Opts})
+}
+
+func decodeDirectoryWorkspacePullLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
+	var persisted persistedDirectoryWorkspacePullLazy
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted workspace pull lazy: %w", err)
+	}
+	parent, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dec, persisted.ParentResultID, "workspace pull parent")
+	if err != nil {
+		return nil, err
+	}
+	source, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dec, persisted.SourceResultID, "workspace pull source")
+	if err != nil {
+		return nil, err
+	}
+	return &DirectoryWorkspacePullLazy{LazyState: NewLazyState(), Parent: parent, Source: source, Opts: persisted.Opts}, nil
 }
