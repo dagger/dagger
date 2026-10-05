@@ -25,6 +25,7 @@ func collectionArtifactFixture() *Artifacts {
 			})
 		}
 	}
+	artifacts.Scope = artifacts.DimensionDefinitions()
 	return artifacts
 }
 
@@ -200,11 +201,13 @@ func TestArtifactCollectionExpansionPrunesParents(t *testing.T) {
 
 func TestArtifactCollectionDimensionBinding(t *testing.T) {
 	all := collectionArtifactFixture()
-	_, err := all.FilterDimensionKeys("item", []string{"a"}).BindDimensions()
-	require.ErrorContains(t, err, "ambiguous dimension")
+	// A path filter does not narrow name resolution.
+	for _, selected := range []*Artifacts{all, all.FilterPath([]string{"items"})} {
+		_, err := selected.FilterDimensionKeys("item", []string{"a"}).BindDimensions()
+		require.ErrorContains(t, err, "ambiguous dimension")
+	}
 	for _, selected := range []*Artifacts{
-		all.FilterDimensionKeys("item", []string{"a"}).FilterPath([]string{"items"}),
-		all.FilterPath([]string{"items"}).FilterDimensionKeys("item", []string{"a"}),
+		all.FilterDimensionKeys("app-items", []string{"a"}).FilterPath([]string{"items"}),
 		all.FilterPath([]string{"items"}).FilterDimensionKeys("app-items", []string{"a"}),
 		all.FilterPath([]string{"items"}).FilterDimensionKeys("app/items", []string{"a"}),
 	} {
@@ -214,15 +217,17 @@ func TestArtifactCollectionDimensionBinding(t *testing.T) {
 		require.Equal(t, []*ArtifactDimensionKey{{Dimension: "app/items", Key: "a"}, {Dimension: "type:Item", Key: "items"}}, expanded.Entries[0].DimensionKeys)
 		uri, err := expanded.Entries[0].URI(ArtifactURIOpts{DimensionKeys: true})
 		require.NoError(t, err)
-		require.Equal(t, "dag://items?item=a", uri)
-		addr, err := dagaddress.Parse(expanded.URI())
-		require.NoError(t, err)
-		roundTrip, err := all.FilterURI(addr)
-		require.NoError(t, err)
-		roundTrip, err = roundTrip.Expand(context.Background())
-		require.NoError(t, err)
-		require.Len(t, roundTrip.Entries, 1)
-		require.Equal(t, expanded.Entries[0].DimensionKeys, roundTrip.Entries[0].DimensionKeys)
+		require.Equal(t, "dag://?artifact-item=items&app-items-item=a", uri)
+		for _, printed := range []string{uri, expanded.URI()} {
+			addr, err := dagaddress.Parse(printed)
+			require.NoError(t, err)
+			roundTrip, err := all.FilterURI(addr)
+			require.NoError(t, err)
+			roundTrip, err = roundTrip.Expand(context.Background())
+			require.NoError(t, err)
+			require.Len(t, roundTrip.Entries, 1)
+			require.Equal(t, expanded.Entries[0].DimensionKeys, roundTrip.Entries[0].DimensionKeys)
+		}
 	}
 	require.Empty(t, all.Selector.Dimensions)
 }

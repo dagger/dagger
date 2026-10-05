@@ -141,6 +141,41 @@ type DimensionFilter struct {
 
 // DimensionFilters groups the query pairs by dimension, in first-seen order.
 // A pair without a key makes the whole dimension match any key.
+// TypeKey returns the type dimension key of an address without a path. That
+// key holds the artifact path. types are CLI-case types that may name the
+// key, in addition to the address's own type assertion. A collection with the
+// type's name keeps the plain name, so qualified type names match first.
+func (addr *Address) TypeKey(types ...string) (Pair, bool) {
+	if addr.Path != "" {
+		return Pair{}, false
+	}
+	types = append(types, addr.Types...)
+	for _, plain := range []bool{false, true} {
+		for _, pair := range addr.Query {
+			if !pair.HasKey {
+				continue
+			}
+			if !plain && strings.HasPrefix(pair.Dimension, "type:") {
+				return pair, true
+			}
+			for _, typ := range types {
+				if !plain && pair.Dimension == "artifact-"+typ || plain && pair.Dimension == typ {
+					return pair, true
+				}
+			}
+		}
+	}
+	return Pair{}, false
+}
+
+// ArtifactPath returns the path, or the type dimension key that holds it.
+func (addr *Address) ArtifactPath(types ...string) string {
+	if pair, ok := addr.TypeKey(types...); ok {
+		return pair.Key
+	}
+	return addr.Path
+}
+
 func (addr *Address) DimensionFilters() []DimensionFilter {
 	var filters []DimensionFilter
 	index := map[string]int{}

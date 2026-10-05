@@ -299,7 +299,7 @@ func (*artifactsSchema) pathDefinitions(_ context.Context, parent *core.Artifact
 		if err != nil {
 			return nil, err
 		}
-		parent = &core.Artifacts{Entries: items}
+		parent = &core.Artifacts{Entries: items, Scope: parent.Scope}
 	}
 	return parent.PathDefinitions(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion})
 }
@@ -712,23 +712,29 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		}
 		nodes = append(nodes, sdkNodes...)
 	}
+	// Names resolve against every loaded node, including those the include
+	// patterns skip.
+	var scope []*core.Artifact
 	for _, node := range nodes {
-		match, err := matchWorkspaceInclude(ctx, node, include)
-		if err != nil {
-			return nil, err
-		}
-		if !match {
-			continue
-		}
 		path := node.CommandPath().CliCase()
 		if len(path) == 0 {
 			path = node.Path().CliCase()
 		}
-		result.Entries = append(result.Entries, &core.Artifact{
+		entry := &core.Artifact{
 			ModuleName: node.Path()[0], Path: path, DimensionKeys: []*core.ArtifactDimensionKey{},
 			Directives: node.Directives, TypeName: node.ObjectType().Name, Node: node, Workspace: parent,
-		})
+		}
+		scope = append(scope, entry)
+		match, err := matchWorkspaceInclude(ctx, node, include)
+		if err != nil {
+			return nil, err
+		}
+		if match {
+			result.Entries = append(result.Entries, entry)
+		}
 	}
+	result.Scope = (&core.Artifacts{Entries: scope}).DimensionDefinitions()
+	result.NameEntries()
 	seenFailures := map[string]bool{}
 	for _, failure := range failures {
 		if seenFailures[failure.Name] {

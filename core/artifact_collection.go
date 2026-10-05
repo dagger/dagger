@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -20,7 +19,28 @@ func (a *Artifact) dimensionName(identifier string) string {
 	if name := a.DimensionNames[identifier]; name != "" {
 		return name
 	}
+	if typeName, ok := strings.CutPrefix(identifier, "type:"); ok {
+		return ArtifactTypeName(typeName)
+	}
 	return identifier
+}
+
+// dimensionNames maps each of the artifact's dimensions to its display name
+// in scope.
+func dimensionNames(scope artifact.Dimensions, a *Artifact) map[string]string {
+	names := map[string]string{}
+	for _, dim := range a.DimensionDefinitions() {
+		names[dim.Identifier] = scope.DisplayName(dim)
+	}
+	return names
+}
+
+// NameEntries sets the display names that each entry's address uses.
+func (a *Artifacts) NameEntries() {
+	scope := a.nameScope()
+	for _, entry := range a.Entries {
+		entry.DimensionNames = dimensionNames(scope, entry)
+	}
 }
 
 func collectionInputFromText(typ *TypeDef, text string) (dagql.Input, error) {
@@ -54,27 +74,28 @@ func (a *Artifact) DimensionDefinitions() []*ArtifactDimension {
 }
 
 func (a *Artifacts) DimensionDefinitions() artifact.Dimensions {
-	dims := map[string]*ArtifactDimension{}
-	for _, artifact := range a.Entries {
-		for _, dim := range artifact.DimensionDefinitions() {
-			dims[dim.Identifier] = dim
-		}
+	sets := make([]artifact.Dimensions, 0, len(a.Entries))
+	for _, entry := range a.Entries {
+		sets = append(sets, entry.DimensionDefinitions())
 	}
-	result := make([]*ArtifactDimension, 0, len(dims))
-	for _, id := range slices.Sorted(maps.Keys(dims)) {
-		result = append(result, dims[id])
-	}
-	return result
+	return artifact.Union(sets...)
 }
 
-// BindDimensions resolves names using the selected schema paths only. This is
-// delayed until a result is requested, so filter order cannot bind an alias to
-// a dimension that happened to have matching runtime keys.
+// nameScope is where dimension names resolve: every loaded dimension, not
+// only those on the selected paths.
+func (a *Artifacts) nameScope() artifact.Dimensions {
+	return artifact.Union(a.Scope, a.DimensionDefinitions())
+}
+
+// BindDimensions resolves names in the name scope. This is delayed until a
+// result is requested, so filter order cannot bind an alias to a dimension
+// that happened to have matching runtime keys.
 func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 	bound := a.filter(func(*Artifact) bool { return true })
 	bound.Selector.Dimensions = nil
 	bound.Selector.DimensionAlternatives = nil
-	dims := a.DimensionDefinitions()
+	dims := a.nameScope()
+	selected := a.DimensionDefinitions()
 	for _, filter := range a.Selector.Dimensions {
 		id, err := dims.Resolve(filter.Dimension)
 		if err != nil {
@@ -89,7 +110,7 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 			if err != nil {
 				return nil, err
 			}
-			if slices.ContainsFunc(dims, func(d *ArtifactDimension) bool { return d.Identifier == id }) && !slices.Contains(ids, id) {
+			if slices.ContainsFunc(selected, func(d *ArtifactDimension) bool { return d.Identifier == id }) && !slices.Contains(ids, id) {
 				ids = append(ids, id)
 			}
 		}
@@ -103,7 +124,7 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 }
 
 func (a *Artifacts) ResolveDimension(name string) (string, error) {
-	return a.DimensionDefinitions().Resolve(name)
+	return a.nameScope().Resolve(name)
 }
 
 func (a *Artifacts) hasCollections() bool {
@@ -162,6 +183,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 	}
 	items := []*Artifact{}
 	seen := map[string]bool{}
+	scope := a.nameScope()
 	for _, selected := range a.Entries {
 		for node := selected.Node; node != nil; node = node.Parent {
 			if node.CollectionDimension == nil || node.CollectionDimension.Identifier != dimension {
@@ -195,6 +217,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 				}
 			}
 			item.setStaticDimensions()
+			item.DimensionNames = dimensionNames(scope, &item)
 			id, err := item.identity()
 			if err != nil {
 				return nil, err
@@ -298,7 +321,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 			}
 			// Match the exclusion with its own selector. The entries already
 			// satisfy the inclusion filters.
-			excluded, err := (&Artifacts{Entries: result.Entries}).FilterURI(address)
+			excluded, err := (&Artifacts{Entries: result.Entries, Scope: a.Scope}).FilterURI(address)
 			if err != nil {
 				return nil, err
 			}
@@ -339,13 +362,13 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 		}
 		return bound, nil
 	}
-	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector}
+	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, Scope: bound.Scope}
+	scope := bound.nameScope()
 	// Each worker owns one slot; flatten only after all workers finish so
 	// discovery order is independent of evaluation completion order.
 	entries := make([][]*Artifact, len(bound.Entries))
 	group, ctx := errgroup.WithContext(ctx)
 	for i, template := range bound.Entries {
-		dims := template.DimensionDefinitions()
 		// An exact collection path without its dimension selects the collection.
 		if template.Node != nil && template.Node.CollectionDimension != nil && bound.hasExactPath(template.Path) && !bound.selectsDimension(template.Node.CollectionDimension.Identifier) {
 			continue
@@ -355,11 +378,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 			if err != nil {
 				return err
 			}
-			dimensionNames := map[string]string{}
-			pathDims := bound.FilterPath(template.Path).DimensionDefinitions()
-			for _, dim := range dims {
-				dimensionNames[dim.Identifier] = pathDims.DisplayName(dim)
-			}
+			names := dimensionNames(scope, template)
 			for _, node := range nodes {
 				item := template.Clone()
 				item.Node = node
@@ -371,7 +390,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 				}
 				slices.Reverse(item.DimensionKeys)
 				item.setStaticDimensions()
-				item.DimensionNames = dimensionNames
+				item.DimensionNames = names
 				entries[i] = append(entries[i], item)
 			}
 			return nil
@@ -518,7 +537,8 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			prefix = parent.CollectionDimension.Identifier
 		}
 		identifier := strings.Join(append([]string{prefix}, path...), "/")
-		itemType := members.Get.ReturnType.Self().AsObject.Value.Self().OriginalName
+		// The namespaced name keeps short names unique across modules.
+		itemType := members.Get.ReturnType.Self().AsObject.Value.Self().Name
 		dim := &ArtifactDimension{
 			Kind: "COLLECTION", CollectionType: obj.Name,
 			Identifier:     identifier,

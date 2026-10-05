@@ -16,8 +16,11 @@ import (
 )
 
 type artifactValueResult struct {
-	Artifact struct{ URI string }
-	Value    *struct {
+	Artifact struct {
+		URI  string
+		Path []string
+	}
+	Value *struct {
 		ID   dagger.ID
 		Type string `json:"__typename"`
 	}
@@ -49,7 +52,7 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *dagge
 	err = dag.Do(ctx, &dagger.Request{
 		Query: `query ArtifactValues($id: ID!, $failFast: Boolean!` + params + `) {
    selection: node(id: $id) { ... on Artifacts { values(failFast: $failFast` + args + `) {
-    artifact { uri } error { message values { name value } } value { id __typename }
+    artifact { uri path } error { message values { name value } } value { id __typename }
    } } }
   }`,
 		Variables: variables,
@@ -207,7 +210,7 @@ func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *da
 		Node struct{ PathDefinitions []artifactLoadFailure }
 	}
 	err = dag.Do(ctx, &dagger.Request{Query: `query ArtifactLoadErrors($id: ID!) {
-  node(id: $id) { ... on Artifacts { pathDefinitions { uri loadError } } }
+  node(id: $id) { ... on Artifacts { pathDefinitions(typeAssertion: true) { uri loadError } } }
  }`, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
 	if err != nil {
 		return nil, err

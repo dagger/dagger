@@ -47,7 +47,7 @@ func resolveModuleRef(ctx context.Context, address *core.Address, typeName strin
 		return true, err
 	}
 	ctx = core.WorkspaceToContext(ctx, ws)
-	artifact, err := resolveWorkspaceArtifact(ctx, ws, parsed, addr)
+	artifact, err := resolveWorkspaceArtifact(ctx, ws, parsed, addr, typeName)
 	if err != nil {
 		return true, err
 	}
@@ -84,11 +84,12 @@ func hasModuleRefScope(address *core.Address) bool {
 }
 
 // resolveWorkspaceArtifact is Workspace.artifacts(include: [path]).filterUri(uri).one().
-// The include pattern narrows module loading to the modules the path names.
-func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], parsed *dagaddress.Address, uri string) (*core.Artifact, error) {
+// The include pattern narrows module loading to the module the path names.
+// typeName is the expected type, which may name the type key holding the path.
+func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], parsed *dagaddress.Address, uri, typeName string) (*core.Artifact, error) {
 	var include []string
-	if parsed.Path != "" {
-		include = []string{parsed.Path}
+	if path := parsed.ArtifactPath(core.ArtifactTypeName(typeName)); path != "" {
+		include = []string{path}
 	}
 	artifacts, err := (&workspaceSchema{}).collectArtifacts(ctx, ws, include)
 	if err != nil {
