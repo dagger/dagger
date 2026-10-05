@@ -238,7 +238,7 @@ func TestArtifactCollectionDimensionAlternatives(t *testing.T) {
 	expanded, err := selected.Expand(context.Background())
 	require.NoError(t, err)
 	require.Len(t, expanded.Entries, 4)
-	narrowed, err := selected.FilterPath([]string{"items"}).FilterDimensionKeys("item", []string{"a"}).Expand(context.Background())
+	narrowed, err := selected.FilterPath([]string{"items"}).FilterDimensionKeys("app-items", []string{"a"}).Expand(context.Background())
 	require.NoError(t, err)
 	require.Len(t, narrowed.Entries, 1)
 	for _, names := range [][]string{nil, {}, {"missing"}} {
@@ -273,7 +273,7 @@ func TestArtifactCollectionExactEndpoints(t *testing.T) {
 func TestArtifactCollectionExclusions(t *testing.T) {
 	all, err := collectionArtifactFixture().FilterPattern("items*")
 	require.NoError(t, err)
-	exclusion, err := dagaddress.Parse("items?item=a")
+	exclusion, err := dagaddress.Parse("items?app-items=a")
 	require.NoError(t, err)
 	selected, err := all.WithoutURI(exclusion)
 	require.NoError(t, err)
@@ -284,7 +284,7 @@ func TestArtifactCollectionExclusions(t *testing.T) {
 	require.Equal(t, []*ArtifactDimensionKey{{Dimension: "type:Items", Key: "items"}}, expanded.Entries[0].DimensionKeys)
 	require.Equal(t, []*ArtifactDimensionKey{{Dimension: "app/items", Key: "b"}, {Dimension: "type:Item", Key: "items"}}, expanded.Entries[1].DimensionKeys)
 	for _, key := range []string{"a", "b"} {
-		narrowed := all.FilterDimensionKeys("item", []string{key})
+		narrowed := all.FilterDimensionKeys("app-items", []string{key})
 		narrowed, err = narrowed.WithoutURI(exclusion)
 		require.NoError(t, err)
 		expanded, err := narrowed.Expand(t.Context())

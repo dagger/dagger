@@ -733,8 +733,6 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			result.Entries = append(result.Entries, entry)
 		}
 	}
-	result.Scope = (&core.Artifacts{Entries: scope}).DimensionDefinitions()
-	result.NameEntries()
 	seenFailures := map[string]bool{}
 	for _, failure := range failures {
 		if seenFailures[failure.Name] {
@@ -746,6 +744,8 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			Directives: []string{"check"}, TypeName: "Check", LoadFailure: &failure, Workspace: parent,
 		})
 	}
+	result.Scope = (&core.Artifacts{Entries: slices.Concat(scope, result.Entries)}).DimensionDefinitions()
+	result.NameEntries()
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	if err := validateArtifactPaths(result.Entries); err != nil {
 		return nil, err

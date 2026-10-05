@@ -28,7 +28,7 @@ func newArtifactNameIndex(paths []artifactListPath) (artifactNameIndex, error) {
 		}
 		for _, dimension := range path.Dimensions {
 			if strings.HasPrefix(dimension, "type:") {
-				candidate := artifactNamedPath{key: address.ArtifactPath(), module: path.ModuleName, dimensions: path.Dimensions}
+				candidate := artifactNamedPath{key: address.ArtifactPath(address.Types...), module: path.ModuleName, dimensions: path.Dimensions}
 				if !slices.ContainsFunc(index[dimension], func(p artifactNamedPath) bool {
 					return p.key == candidate.key && slices.Equal(p.dimensions, candidate.dimensions)
 				}) {

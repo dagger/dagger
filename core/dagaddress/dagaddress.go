@@ -13,6 +13,7 @@ package dagaddress
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -139,35 +140,6 @@ type DimensionFilter struct {
 	Keys      []string
 }
 
-// DimensionFilters groups the query pairs by dimension, in first-seen order.
-// A pair without a key makes the whole dimension match any key.
-// TypeKey returns the type dimension key of an address without a path. That
-// key holds the artifact path. types are CLI-case types that may name the
-// key, in addition to the address's own type assertion. A collection with the
-// type's name keeps the plain name, so qualified type names match first.
-func (addr *Address) TypeKey(types ...string) (Pair, bool) {
-	if addr.Path != "" {
-		return Pair{}, false
-	}
-	types = append(types, addr.Types...)
-	for _, plain := range []bool{false, true} {
-		for _, pair := range addr.Query {
-			if !pair.HasKey {
-				continue
-			}
-			if !plain && strings.HasPrefix(pair.Dimension, "type:") {
-				return pair, true
-			}
-			for _, typ := range types {
-				if !plain && pair.Dimension == "artifact-"+typ || plain && pair.Dimension == typ {
-					return pair, true
-				}
-			}
-		}
-	}
-	return Pair{}, false
-}
-
 // ArtifactPath returns the path, or the type dimension key that holds it.
 func (addr *Address) ArtifactPath(types ...string) string {
 	if pair, ok := addr.TypeKey(types...); ok {
@@ -176,6 +148,36 @@ func (addr *Address) ArtifactPath(types ...string) string {
 	return addr.Path
 }
 
+// TypeKey returns the type dimension key of an address without a path. That
+// key holds the artifact path. It matches "type:<Type>", and
+// "artifact-<type>" for types and the type assertion. A collection can share
+// the plain "<type>", so the plain name matches only for types: pass only
+// types that cannot name a collection here. A printed address uses the plain
+// name only when no collection has it, so its own type assertion is safe.
+func (addr *Address) TypeKey(types ...string) (Pair, bool) {
+	if addr.Path != "" {
+		return Pair{}, false
+	}
+	for _, plain := range []bool{false, true} {
+		for _, pair := range addr.Query {
+			if !pair.HasKey {
+				continue
+			}
+			if !plain && strings.HasPrefix(pair.Dimension, "type:") {
+				return pair, true
+			}
+			for _, typ := range slices.Concat(types, addr.Types) {
+				if !plain && pair.Dimension == "artifact-"+typ || plain && pair.Dimension == typ && slices.Contains(types, typ) {
+					return pair, true
+				}
+			}
+		}
+	}
+	return Pair{}, false
+}
+
+// DimensionFilters groups the query pairs by dimension, in first-seen order.
+// A pair without a key makes the whole dimension match any key.
 func (addr *Address) DimensionFilters() []DimensionFilter {
 	var filters []DimensionFilter
 	index := map[string]int{}

@@ -335,32 +335,32 @@ func TestMergeScopeArtifacts(t *testing.T) {
 		return uris
 	}
 
-	all, err := mergeScopeArtifacts(bound, shadowed, nil, workspace, nil)
+	all, err := mergeScopeArtifacts(bound, shadowed, nil, &Artifacts{Entries: workspace}, nil)
 	require.NoError(t, err)
 	require.Nil(t, all.Selector.Paths)
-	require.Equal(t, []string{"dag://app/build", "dag://git-tools/head", "dag://roster/members", "dag://roster/members/dir"}, uris(all))
+	require.Equal(t, []string{"dag://?container=app/build", "dag://?git-ref=git-tools/head", "dag://?directory=roster/members", "dag://?directory=roster/members/dir"}, uris(all))
 	require.Same(t, bound[0], all.Entries[2], "the bound roster wins")
 
-	narrowed, err := mergeScopeArtifacts(bound, shadowed, nil, workspace[3:], []string{"roster:members"})
+	narrowed, err := mergeScopeArtifacts(bound, shadowed, nil, &Artifacts{Entries: workspace[3:]}, []string{"roster:members"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"roster/members/**"}, narrowed.Selector.Paths)
 	// The workspace part arrives already narrowed by Workspace.artifacts;
 	// include narrows the bound part the same way.
-	require.Equal(t, []string{"dag://app/build", "dag://roster/members", "dag://roster/members/dir"}, uris(narrowed))
+	require.Equal(t, []string{"dag://?container=app/build", "dag://?directory=roster/members", "dag://?directory=roster/members/dir"}, uris(narrowed))
 
 	// A roster bound as a fresh construction has the workspace's values: the
 	// workspace's roster wins, entrypoint shorthand and all.
 	fresh := map[string]bool{"roster": true}
-	all, err = mergeScopeArtifacts(bound, shadowed, fresh, workspace, nil)
+	all, err = mergeScopeArtifacts(bound, shadowed, fresh, &Artifacts{Entries: workspace}, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"dag://app/build", "dag://git-tools/head", "dag://lint", "dag://roster/load", "dag://roster/members"}, uris(all))
+	require.Equal(t, []string{"dag://?container=app/build", "dag://?git-ref=git-tools/head", "dag://?check=lint", "dag://?check=roster/load", "dag://?directory=roster/members"}, uris(all))
 	require.Same(t, workspace[0], all.Entries[4], "the workspace roster wins")
 	// Not where the workspace has no roster, nor one that failed to load:
 	// the binding is all there is.
 	for _, ws := range [][]*Artifact{workspace[3:], workspace[1:2]} {
-		all, err = mergeScopeArtifacts(bound, shadowed, fresh, ws, nil)
+		all, err = mergeScopeArtifacts(bound, shadowed, fresh, &Artifacts{Entries: ws}, nil)
 		require.NoError(t, err)
-		require.Contains(t, uris(all), "dag://roster/members/dir")
-		require.NotContains(t, uris(all), "dag://roster/load")
+		require.Contains(t, uris(all), "dag://?directory=roster/members/dir")
+		require.NotContains(t, uris(all), "dag://?check=roster/load")
 	}
 }

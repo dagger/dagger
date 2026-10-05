@@ -59,7 +59,7 @@ func TestArtifactTypedConversion(t *testing.T) {
 		{name: "reject mixed selection before evaluation", entries: []*core.Artifact{
 			{TypeName: "Changeset", Path: []string{"edit"}},
 			{TypeName: "Service", Path: []string{"serve"}},
-		}, wantErr: "dag://serve is a Service, not changeset"},
+		}, wantErr: "dag://?service=serve is a Service, not changeset"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, srv, _, _ := resolverOutputFixture(t)

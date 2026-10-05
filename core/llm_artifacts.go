@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dagger/dagger/core/artifact"
 	"slices"
 	"strings"
 
@@ -41,7 +42,7 @@ func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string
 		return nil, err
 	}
 	ws := m.scopeWorkspace(srv)
-	var workspace []*Artifact
+	workspace := &Artifacts{}
 	if ws.Self() != nil {
 		workspace, err = scopeWorkspaceArtifacts(ctx, srv, ws, include)
 		if err != nil {
@@ -66,8 +67,9 @@ func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string
 // over the bound ones. include narrows the bound part the way
 // Workspace.artifacts already narrowed the workspace part, and is recorded as
 // the selection's paths.
-func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, workspace []*Artifact, include []string) (*Artifacts, error) {
-	result := &Artifacts{Entries: []*Artifact{}}
+func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, workspace *Artifacts, include []string) (*Artifacts, error) {
+	// Names resolve in both parts, including entries that include skips.
+	result := &Artifacts{Entries: []*Artifact{}, Scope: artifact.Union(workspace.Scope, (&Artifacts{Entries: bound}).DimensionDefinitions())}
 	if include != nil {
 		result.Selector.Paths = make([]string, 0, len(include))
 		for _, pattern := range include {
@@ -77,7 +79,7 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, wor
 	// A fresh binding yields to a workspace module that loaded; not to one
 	// that failed to, whose failure would hide the working binding.
 	yields := map[string]bool{}
-	for _, entry := range workspace {
+	for _, entry := range workspace.Entries {
 		if name := ArtifactTypeName(entry.ModuleName); fresh[name] && entry.LoadFailure == nil {
 			yields[name] = true
 		}
@@ -94,12 +96,13 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, wor
 			result.Entries = append(result.Entries, entry)
 		}
 	}
-	for _, entry := range workspace {
+	for _, entry := range workspace.Entries {
 		if name := ArtifactTypeName(entry.ModuleName); !shadowed[name] || yields[name] {
 			result.Entries = append(result.Entries, entry)
 		}
 	}
 	slices.SortStableFunc(result.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
+	result.NameEntries()
 	return result, nil
 }
 
@@ -343,7 +346,7 @@ func schemaHasWorkspaceArtifacts(srv *dagql.Server) bool {
 // scopeWorkspaceArtifacts selects Workspace.artifacts on the scope's
 // workspace, so its discovery rules (load failures, SDK generators,
 // entrypoint shorthand) apply unchanged.
-func scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace], include []string) ([]*Artifact, error) {
+func scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace], include []string) (*Artifacts, error) {
 	srv = srv.Canonical()
 	sel := dagql.Selector{View: srv.View, Field: "artifacts"}
 	if include != nil {
@@ -357,7 +360,7 @@ func scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, ws dagql.Ob
 	for _, entry := range artifacts.Self().Entries {
 		entries = append(entries, entry.Clone())
 	}
-	return entries, nil
+	return &Artifacts{Entries: entries, Scope: artifacts.Self().Scope}, nil
 }
 
 // scopeLLM returns the conversation whose scope (LLM.artifacts) a tool

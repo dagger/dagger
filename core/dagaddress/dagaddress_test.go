@@ -158,3 +158,24 @@ func TestIsAddress(t *testing.T) {
 	require.False(t, IsAddress("tcp://localhost:8080"))
 	require.False(t, IsAddress("dagger://x"))
 }
+
+func TestArtifactPath(t *testing.T) {
+	for _, tc := range []struct {
+		address string
+		types   []string
+		path    string
+	}{
+		{"dag://go/test?go-module=.", nil, "go/test"},
+		{"dag://?type:Check=go/test&go-module=.", nil, "go/test"},
+		{"dag+go-module://?artifact-go-module=go/modules&go-module=.", nil, "go/modules"},
+		// A collection can share the plain type name: match it only when asked.
+		{"dag+go-module://?go-module=.", nil, ""},
+		{"dag+check://?check=go/test", []string{"check"}, "go/test"},
+		{"dag://?container=go/base", []string{"container"}, "go/base"},
+		{"dag://?go-module=.", []string{"container"}, ""},
+	} {
+		addr, err := Parse(tc.address)
+		require.NoError(t, err)
+		require.Equal(t, tc.path, addr.ArtifactPath(tc.types...), tc.address)
+	}
+}

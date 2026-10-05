@@ -56,7 +56,7 @@ Collections (dimensions whose keys address items):
   member: RosterMember items of RosterMembers, keyed by name (The member's name)
 
 Modules that failed to load (they may hide artifacts of any type):
-  dag+check://broken/load — LOAD ERROR: loading module "broken": boom
+  dag+check://?check=broken/load — LOAD ERROR: loading module "broken": boom
     syntax error
 
 Narrow with type (e.g. type: "Check"), address (e.g. address: "<module>/**") or keys. view: "items" lists every fully keyed address; dimension: "<collection>" lists its keys.`,
@@ -80,20 +80,20 @@ func TestFindArtifactsPathRows(t *testing.T) {
 
 	// Each path appears once, with a placeholder for every collection it
 	// still needs a key for, and the placeholders are explained once.
-	require.Equal(t, `dag+check://broken/load — LOAD ERROR: loading module "broken": boom
+	require.Equal(t, `dag+check://?check=broken/load — LOAD ERROR: loading module "broken": boom
     syntax error
-dag+check://go/lint — Lint the Go code.
-dag+git-ref://roster/members/head?member=<name> — The member's committed history. [tool Roster, live]
-dag+roster-member://roster/members?member=<name> — The member with this name. [tool Roster, live]
-dag+roster-members://roster/members — The roster's members. [tool Roster, live]
+dag+check://?check=go/lint — Lint the Go code.
+dag+git-ref://?git-ref=roster/members/head&member=<name> — The member's committed history. [tool Roster, live]
+dag+roster-member://?roster-member=roster/members&member=<name> — The member with this name. [tool Roster, live]
+dag+roster-members://?roster-members=roster/members — The roster's members. [tool Roster, live]
 
 Replace each <placeholder> with a key (view: "items" lists every fully keyed address):
   member=<name> — The member's name; list its keys with FindArtifacts(dimension: "member")`, render(scope))
 
 	// A type filter keeps load failures: they could hide any type.
-	require.Equal(t, `dag+check://broken/load — LOAD ERROR: loading module "broken": boom
+	require.Equal(t, `dag+check://?check=broken/load — LOAD ERROR: loading module "broken": boom
     syntax error
-dag+git-ref://roster/members/head?member=<name> — The member's committed history. [tool Roster, live]
+dag+git-ref://?git-ref=roster/members/head&member=<name> — The member's committed history. [tool Roster, live]
 
 Replace each <placeholder> with a key (view: "items" lists every fully keyed address):
   member=<name> — The member's name; list its keys with FindArtifacts(dimension: "member")`,
@@ -101,7 +101,7 @@ Replace each <placeholder> with a key (view: "items" lists every fully keyed add
 
 	checks, err := scope.FilterURI(&dagaddress.Address{HasScheme: true, Types: []string{"check"}, Path: "go/**"})
 	require.NoError(t, err)
-	require.Equal(t, "dag+check://go/lint — Lint the Go code.", render(checks))
+	require.Equal(t, "dag+check://?check=go/lint — Lint the Go code.", render(checks))
 
 	none, err := scope.FilterURI(&dagaddress.Address{Path: "nothing/**"})
 	require.NoError(t, err)
@@ -127,17 +127,17 @@ func TestFindArtifactsItemRows(t *testing.T) {
 	}}
 	rows, err := artifactItemRows(expanded, tag)
 	require.NoError(t, err)
-	require.Equal(t, `dag+check://broken/load — LOAD ERROR: loading module "broken": boom
+	require.Equal(t, `dag+check://?check=broken/load — LOAD ERROR: loading module "broken": boom
     syntax error
-dag+git-ref://roster/members/head?member=chief — The member's committed history. [tool Roster, live]
-dag+git-ref://roster/members/head?member=worker%20one — The member's committed history. [tool Roster, live]`,
+dag+git-ref://?git-ref=roster/members/head&member=chief — The member's committed history. [tool Roster, live]
+dag+git-ref://?git-ref=roster/members/head&member=worker%20one — The member's committed history. [tool Roster, live]`,
 		renderArtifactRows(rows, nil))
 
 	// The addresses select the items they name.
 	addr, err := dagaddress.Parse(rows[2].Address)
 	require.NoError(t, err)
 	require.Equal(t, []string{"git-ref"}, addr.Types)
-	require.Equal(t, []dagaddress.Pair{{Dimension: "member", Key: "worker one", HasKey: true}}, addr.Query)
+	require.Equal(t, []dagaddress.Pair{{Dimension: "git-ref", Key: "roster/members/head", HasKey: true}, {Dimension: "member", Key: "worker one", HasKey: true}}, addr.Query)
 }
 
 func TestFindArtifactsInlineKeys(t *testing.T) {
@@ -171,12 +171,12 @@ func TestFindArtifactsInlineKeys(t *testing.T) {
 	// A few keys are listed inline, sorted, so the model needs no second
 	// call to learn them. The roster's receiver is evaluated once, though
 	// two paths share it.
-	require.Equal(t, `dag+check://broken/load — LOAD ERROR: loading module "broken": boom
+	require.Equal(t, `dag+check://?check=broken/load — LOAD ERROR: loading module "broken": boom
     syntax error
-dag+check://go/lint — Lint the Go code.
-dag+git-ref://roster/members/head?member=<name> — The member's committed history. [tool Roster, live]
-dag+roster-member://roster/members?member=<name> — The member with this name. [tool Roster, live]
-dag+roster-members://roster/members — The roster's members. [tool Roster, live]
+dag+check://?check=go/lint — Lint the Go code.
+dag+git-ref://?git-ref=roster/members/head&member=<name> — The member's committed history. [tool Roster, live]
+dag+roster-member://?roster-member=roster/members&member=<name> — The member with this name. [tool Roster, live]
+dag+roster-members://?roster-members=roster/members — The roster's members. [tool Roster, live]
 
 Replace each <placeholder> with a key (view: "items" lists every fully keyed address):
   member=<name> — The member's name; keys: alpha, beta, chief, worker one`,

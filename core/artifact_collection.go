@@ -25,21 +25,31 @@ func (a *Artifact) dimensionName(identifier string) string {
 	return identifier
 }
 
-// dimensionNames maps each of the artifact's dimensions to its display name
-// in scope.
-func dimensionNames(scope artifact.Dimensions, a *Artifact) map[string]string {
-	names := map[string]string{}
-	for _, dim := range a.DimensionDefinitions() {
+// displayNames maps each dimension in the name scope to its display name. A
+// name has one meaning per scope, so entries share these names.
+func (a *Artifacts) displayNames() map[string]string {
+	scope := a.nameScope()
+	names := make(map[string]string, len(scope))
+	for _, dim := range scope {
 		names[dim.Identifier] = scope.DisplayName(dim)
 	}
 	return names
 }
 
+// dimensionNames selects the names of the artifact's own dimensions.
+func dimensionNames(names map[string]string, a *Artifact) map[string]string {
+	own := map[string]string{}
+	for _, dim := range a.DimensionDefinitions() {
+		own[dim.Identifier] = names[dim.Identifier]
+	}
+	return own
+}
+
 // NameEntries sets the display names that each entry's address uses.
 func (a *Artifacts) NameEntries() {
-	scope := a.nameScope()
+	names := a.displayNames()
 	for _, entry := range a.Entries {
-		entry.DimensionNames = dimensionNames(scope, entry)
+		entry.DimensionNames = dimensionNames(names, entry)
 	}
 }
 
@@ -183,7 +193,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 	}
 	items := []*Artifact{}
 	seen := map[string]bool{}
-	scope := a.nameScope()
+	names := a.displayNames()
 	for _, selected := range a.Entries {
 		for node := selected.Node; node != nil; node = node.Parent {
 			if node.CollectionDimension == nil || node.CollectionDimension.Identifier != dimension {
@@ -217,7 +227,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 				}
 			}
 			item.setStaticDimensions()
-			item.DimensionNames = dimensionNames(scope, &item)
+			item.DimensionNames = dimensionNames(names, &item)
 			id, err := item.identity()
 			if err != nil {
 				return nil, err
@@ -363,7 +373,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 		return bound, nil
 	}
 	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, Scope: bound.Scope}
-	scope := bound.nameScope()
+	names := bound.displayNames()
 	// Each worker owns one slot; flatten only after all workers finish so
 	// discovery order is independent of evaluation completion order.
 	entries := make([][]*Artifact, len(bound.Entries))
@@ -378,7 +388,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 			if err != nil {
 				return err
 			}
-			names := dimensionNames(scope, template)
+			templateNames := dimensionNames(names, template)
 			for _, node := range nodes {
 				item := template.Clone()
 				item.Node = node
@@ -390,7 +400,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 				}
 				slices.Reverse(item.DimensionKeys)
 				item.setStaticDimensions()
-				item.DimensionNames = names
+				item.DimensionNames = templateNames
 				entries[i] = append(entries[i], item)
 			}
 			return nil

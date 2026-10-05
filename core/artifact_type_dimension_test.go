@@ -23,7 +23,7 @@ func TestArtifactModuleSelectionBeforeExpansion(t *testing.T) {
 	require.Equal(t, []string{"go", "playwright"}, selected.DimensionKeys("module"))
 	uri, err := selected.Entries[0].URI(ArtifactURIOpts{DimensionKeys: true})
 	require.NoError(t, err)
-	require.Equal(t, "dag://?check=test", uri, "the path already identifies the module")
+	require.Equal(t, "dag://?check=test", uri, "the type key already identifies the module")
 	address, err := dagaddress.Parse("dag://?module=playwright")
 	require.NoError(t, err)
 	selected, err = all.FilterURI(address)
