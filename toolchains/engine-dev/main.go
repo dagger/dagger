@@ -228,12 +228,18 @@ func (dev *EngineDev) Service(
 		return nil, err
 	}
 
+	sharing := dagger.CacheSharingModeLocked
+	if !sharedCache {
+		sharing = dagger.CacheSharingModeShared
+		devEngine = devEngine.WithEntrypoint(isolatedEngineEntrypoint(distconsts.EngineDefaultStateDir, engineEntrypointPath))
+	}
+
 	devEngine = devEngine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
-			// Only one engine can safely use a state dir at a time. LOCKED keeps the
-			// cache identity stable while serializing concurrent users.
-			Sharing: dagger.CacheSharingModeLocked,
+			// Shared state requires exclusive access. Isolated engines use separate
+			// runtime directories and can safely mount the volume concurrently.
+			Sharing: sharing,
 		})
 
 	if metrics {
