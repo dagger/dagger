@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  A function called through a module entrypoint now shows its body directly under the call, with the entrypoint's plumbing collapsed into one internal span.
+time: 2026-10-05T18:14:00Z
+custom:
+  Author: eunomie
+  PR: 14494
