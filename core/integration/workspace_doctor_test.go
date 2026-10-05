@@ -2,8 +2,10 @@ package core
 
 import (
 	"context"
+	"strings"
 
 	"dagger.io/dagger"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -36,12 +38,13 @@ func (WorkspaceSuite) TestDoctorCLI(ctx context.Context, t *testctx.T) {
 			if tc.lock != "" {
 				ctr = ctr.WithNewFile("/work/dagger.lock", tc.lock)
 			}
-			out, err := ctr.WithExec(append([]string{"dagger"}, tc.command...), dagger.ContainerWithExecOpts{
+			out, err := ctr.WithExec(append([]string{"dagger", "--progress=plain"}, tc.command...), dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true, Expect: tc.expect,
-			}).Stdout(ctx)
+			}).Stderr(ctx)
 			require.NoError(t, err)
+			out = ansi.Strip(out)
 			for _, want := range tc.want {
-				require.Contains(t, out, want)
+				require.Contains(t, out, doctorLine(want))
 			}
 		})
 	}
@@ -49,20 +52,22 @@ func (WorkspaceSuite) TestDoctorCLI(ctx context.Context, t *testctx.T) {
 		for _, command := range [][]string{{"workspace", "doctor"}, {"doctor"}} {
 			out, err := base.WithEnvVariable("XDG_CONFIG_HOME", "/doctor-config").
 				WithNewFile("/doctor-config/dagger/credentials.json", "broken").
-				With(workspaceSelectionDaggerExec(command...)).Stdout(ctx)
+				With(workspaceSelectionDaggerExec(append([]string{"--progress=plain"}, command...)...)).Stderr(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "WARN Cloud login")
-			require.Contains(t, out, "PASS Engine")
+			out = ansi.Strip(out)
+			require.Contains(t, out, doctorLine("WARN Cloud login"))
+			require.Contains(t, out, doctorLine("PASS Engine"))
 		}
 	})
 	t.Run("remote workspace", func(ctx context.Context, t *testctx.T) {
 		source := c.Directory().WithNewFile("dagger.toml", "")
 		ref := workspaceSelectionRemoteRef(ctx, t, c, source)
-		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "workspace", "doctor")).Stdout(ctx)
+		out, err := base.With(workspaceSelectionDaggerExec("--progress=plain", "-W", ref, "workspace", "doctor")).Stderr(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "PASS Workspace config")
-		require.Contains(t, out, "WARN Lockfile")
-		require.Contains(t, out, "PASS Engine")
+		out = ansi.Strip(out)
+		require.Contains(t, out, doctorLine("PASS Workspace config"))
+		require.Contains(t, out, doctorLine("WARN Lockfile"))
+		require.Contains(t, out, doctorLine("PASS Engine"))
 	})
 }
 
@@ -101,17 +106,17 @@ func (p *Provider) Directory() *dagger.Directory { return dag.Directory() }
 		{name: "module wiring", settings: "dir = \"provider:directory\"\n", extra: "[modules.provider]\nsource = \"provider\"\n", want: []string{`PASS Module settings "probe"`}},
 		{name: "invalid module wiring", settings: "dir = \"provider:missing\"\n", extra: "[modules.provider]\nsource = \"provider\"\n", fail: true, want: []string{`FAIL Module settings "probe"`}},
 		{name: "enum setting", settings: "flavor = \"VANILLA\"\n", want: []string{`PASS Module settings "probe"`}},
-		{name: "invalid enum setting", settings: "flavor = \"INVALID\"\n", fail: true, want: []string{"FAIL", "flavor"}},
+		{name: "invalid enum setting", settings: "flavor = \"INVALID\"\n", fail: true, want: []string{"ERROR", "flavor"}},
 		{name: "unknown settings", settings: "typo = true\n", fail: true, want: []string{`FAIL Module settings "probe"`, `unknown setting "typo"`}},
-		{name: "invalid primitive", settings: "count = \"not-an-int\"\n", fail: true, want: []string{"FAIL", "count"}},
-		{name: "invalid bool", settings: "enabled = 42\n", fail: true, want: []string{"FAIL", "enabled"}},
+		{name: "invalid primitive", settings: "count = \"not-an-int\"\n", fail: true, want: []string{"ERROR", "count"}},
+		{name: "invalid bool", settings: "enabled = 42\n", fail: true, want: []string{"ERROR", "enabled"}},
 		{name: "invalid address", settings: "dir = \"/does-not-exist\"\n", fail: true, want: []string{`FAIL Module settings "probe"`, "dir"}},
 		{name: "selected environment", settings: "count = 3\n", extra: "[env.bad.modules.probe.settings]\ntyppo = true\n", args: []string{"--env=bad"}, fail: true, want: []string{`FAIL Module settings "probe"`, "typpo"}},
 		{name: "continue after load failure", extra: "[modules.broken]\nsource = \"does-not-exist\"\n", fail: true, want: []string{`FAIL Module loading "broken"`, `PASS Module settings "probe"`}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			dir := newWorkspaceSettingsWorkdir(ctx, t, "[modules.probe]\nsource = \"probe\"\n[modules.probe.settings]\n"+tc.settings+tc.extra, fixture, provider)
-			args := append([]string{"workspace", "doctor"}, tc.args...)
+			args := append([]string{"--progress=plain", "workspace", "doctor"}, tc.args...)
 			out, err := hostDaggerExec(ctx, t, dir, args...)
 			if tc.fail {
 				require.Error(t, err)
@@ -119,8 +124,24 @@ func (p *Provider) Directory() *dagger.Directory { return dag.Directory() }
 				require.NoError(t, err)
 			}
 			for _, want := range tc.want {
-				require.Contains(t, string(out), want)
+				require.Contains(t, ansi.Strip(string(out)), doctorLine(want))
 			}
 		})
 	}
+}
+
+// doctorLine maps "STATUS name" to how plain progress shows that diagnostic:
+// a passing span is DONE, a failing span is ERROR, and a warning names its
+// reason after the diagnostic. Other strings are matched as given.
+func doctorLine(want string) string {
+	status, name, _ := strings.Cut(want, " ")
+	switch status {
+	case "PASS":
+		return name + " DONE"
+	case "FAIL":
+		return name + " ERROR"
+	case "WARN":
+		return name + ": "
+	}
+	return want
 }

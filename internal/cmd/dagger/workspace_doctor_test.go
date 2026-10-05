@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -57,12 +56,11 @@ func TestWorkspaceDoctorFiles(t *testing.T) {
 			require.NoError(t, os.Mkdir(nested, 0700))
 			ws, err := workspacepkg.Detect(t.Context(), localPathExists, nested)
 			require.NoError(t, err)
-			var out bytes.Buffer
-			report := &doctorReport{out: &out}
+			report := &doctorReport{}
 			doctorWorkspaceFiles(t.Context(), report, ws, os.ReadFile)
 			require.Len(t, report.errs, tc.failures)
 			for _, want := range tc.output {
-				require.Contains(t, out.String(), want)
+				require.Contains(t, doctorStatuses(report), want)
 			}
 			// Diagnostics never repair or regenerate files.
 			for name, contents := range tc.files {
@@ -75,22 +73,20 @@ func TestWorkspaceDoctorFiles(t *testing.T) {
 }
 
 func TestWorkspaceDoctorWarnings(t *testing.T) {
-	var out bytes.Buffer
-	report := &doctorReport{out: &out}
+	report := &doctorReport{}
 	doctorWorkspaceFiles(t.Context(), report, nil, os.ReadFile)
-	report.result("Cloud login", "", errors.New("not authenticated"), true)
+	report.result(t.Context(), "Cloud login", "", errors.New("not authenticated"), true)
 	require.Empty(t, report.errs)
-	require.Contains(t, out.String(), "WARN Cloud login")
-	report.result("Engine", "", errors.New("connection refused"), false)
+	require.Contains(t, doctorStatuses(report), "WARN Cloud login")
+	report.result(t.Context(), "Engine", "", errors.New("connection refused"), false)
 	require.Len(t, report.errs, 1)
-	require.Contains(t, out.String(), "FAIL Engine")
+	require.Contains(t, doctorStatuses(report), "FAIL Engine")
 }
 
 func TestWorkspaceDoctorRemoteFiles(t *testing.T) {
 	for _, cwd := range []string{"/", "/src"} {
 		t.Run(cwd, func(t *testing.T) {
-			var out bytes.Buffer
-			report := &doctorReport{out: &out}
+			report := &doctorReport{}
 			doctorWorkspaceFilesInRoot(t.Context(), report, cwd, func(dir string) ([]string, error) {
 				switch dir {
 				case ".":
@@ -106,8 +102,16 @@ func TestWorkspaceDoctorRemoteFiles(t *testing.T) {
 				return nil, nil
 			})
 			require.Empty(t, report.errs)
-			require.Contains(t, out.String(), "PASS Workspace config")
-			require.Contains(t, out.String(), "WARN Lockfile")
+			require.Contains(t, doctorStatuses(report), "PASS Workspace config")
+			require.Contains(t, doctorStatuses(report), "WARN Lockfile")
 		})
 	}
+}
+
+func doctorStatuses(report *doctorReport) []string {
+	statuses := make([]string, 0, len(report.results))
+	for _, result := range report.results {
+		statuses = append(statuses, string(result.Status)+" "+result.Name)
+	}
+	return statuses
 }

@@ -289,6 +289,8 @@ func init() {
 		moduleClientAddCmd,
 		moduleClientRemoveCmd,
 		moduleClientUpdateCmd,
+		workspaceDoctorCmd,
+		doctorAliasCmd,
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline)
 	}
@@ -319,8 +321,6 @@ func init() {
 	}
 
 	for _, cmd := range []*cobra.Command{
-		workspaceDoctorCmd,
-		doctorAliasCmd,
 		apiFunctionsCmd,
 		functionsAliasCmd,
 		moduleUpdateCmd,
