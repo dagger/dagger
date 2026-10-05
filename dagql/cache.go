@@ -2314,6 +2314,11 @@ type Cache struct {
 	partContentSource *PartContentSource
 	snapshotGC        func(context.Context) error
 
+	// usageSnapshotChains carries the parent chains the last usage pass
+	// resolved into the next one; see snapshotChains.
+	usageSnapshotChainsMu sync.Mutex
+	usageSnapshotChains   snapshotChainMemo
+
 	// Test hooks are nil in production. Tests use them to pause inside or
 	// between lifecycle critical sections without timing-based coordination.
 	testAfterSessionResultRecord    func()
@@ -2326,6 +2331,8 @@ type Cache struct {
 	testAfterSessionOperationEnter  func(string)
 	testBeforeSessionOperationExit  func(string)
 	testAfterCacheClosing           func()
+	// testBeforePrunePolicy runs at the start of each disk prune policy.
+	testBeforePrunePolicy func(policyIdx int)
 	// testAfterLazyAttemptReleased runs on the attempt's goroutine after its
 	// row hold is released and before its operation ends: the point after
 	// which a caller returned by attempt.done can count ownership.
@@ -5346,6 +5353,13 @@ type cacheUsageMeasurementInput struct {
 	identities       []string
 	existingSizeByID map[string]int64
 	sizeMayChange    bool
+
+	// ownIdentities are the payload's own snapshots, before identities was
+	// expanded with their ancestors. The payload can only size these.
+	ownIdentities []string
+	// chainsIncomplete reports that some parent link is unresolved, so the
+	// identities may omit snapshots the row retains.
+	chainsIncomplete bool
 }
 
 type cacheUsageIdentityMeasurement struct {
@@ -5418,9 +5432,13 @@ func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.Sn
 		}
 
 		if !ok {
-			if input.self != nil {
+			switch {
+			case input.ownIdentities != nil && !slices.Contains(input.ownIdentities, identity):
+				// An ancestor of the payload's own snapshots.
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
+			case input.self != nil:
 				sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, snapshotManager, input.self, identity)
-			} else if len(input.snapshotLinks) > 0 {
+			case len(input.snapshotLinks) > 0:
 				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
 			}
 			if err != nil {
